@@ -1,0 +1,59 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Ignore dependency folder
+node_modules/
+
+# Ignore temporary files
+*.log
+*.tmp
+
+# Ignore IDE-specific folder
+.vscode/
+
+# CMake build directory
+build/
+cmake-build-debug/
+cmake-build-release/
+CMakeUserPresets.json
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+
+# Visual Studio files (if applicable)
+*.vcxproj
+*.sln
+*.suo
+*.user
+*.filters
+*.vcproj.user
+*.vcxproj.user
+
+# Other common temporary files
+*.o
+*.obj
+*.lo
+*.la
+*.so
+*.a
+*.dll
+*.lib
+*.exe
+*.out
+*.log
+*.swp
+*~
+.#*

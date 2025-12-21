@@ -1,0 +1,256 @@
+{
+  "schemaVersion": "f8service/1",
+  "canonicalId": "fun.feel8.player",
+  "serviceSlug": "f8_player",
+  "label": "Media Player",
+  "description": "Control surface for the native media player service.",
+  "tags": ["mediasource"],
+  "version": "0.1.0",
+  "launch": {
+    "command": "./player",
+    "args": ["--instance", "{{instanceId}}"],
+    "env": {}
+  },
+  "state": [
+    {
+      "name": "video.shm.name",
+      "label": "Video SHM Name",
+      "description": "Shared memory region used for decoded video frames.",
+      "type": "string",
+      "default": "shm.{{instanceId}}.video",
+      "required": true,
+      "access": "ro"
+    },
+    {
+      "name": "video.shm.size",
+      "label": "Video SHM Size (bytes)",
+      "description": "Shared memory buffer size for video.",
+      "type": "int",
+      "default": 268435456,
+      "required": true,
+      "access": "init"
+    },
+    {
+      "name": "video.shm.slots",
+      "label": "Video SHM Slots",
+      "description": "Number of shared memory buffers for video.",
+      "type": "int",
+      "default": 2,
+      "required": true,
+      "access": "init"
+    },
+    {
+      "name": "video.shm.max_width",
+      "label": "Video Max Width",
+      "description": "Maximum shared video width (0 = auto).",
+      "type": "int",
+      "default": 960,
+      "required": true,
+      "access": "init"
+    },
+    {
+      "name": "video.shm.max_height",
+      "label": "Video Max Height",
+      "description": "Maximum shared video height (0 = auto).",
+      "type": "int",
+      "default": 960,
+      "required": true,
+      "access": "init"
+    },
+    {
+      "name": "video.shm.max_fps",
+      "label": "Video Max FPS",
+      "description": "Maximum frame rate pushed to shared memory (0 = unlimited).",
+      "type": "int",
+      "default": 30,
+      "required": true,
+      "access": "rw"
+    },
+    {
+      "name": "video.shm.enable",
+      "label": "Enable Video SHM",
+      "description": "Enable or disable shared memory video output.",
+      "type": "bool",
+      "default": true,
+      "required": true,
+      "access": "init"
+    },
+    {
+      "name": "audio.shm.name",
+      "label": "Audio SHM Name",
+      "description": "Shared memory region used for decoded audio samples.",
+      "type": "string",
+      "default": "shm.{{instanceId}}.audio",
+      "required": true,
+      "access": "ro"
+    },
+    {
+      "name": "audio.shm.size",
+      "label": "Audio SHM Size (bytes)",
+      "description": "Shared memory buffer size for audio.",
+      "type": "int",
+      "default": 8388608,
+      "required": true,
+      "access": "init"
+    },
+    {
+      "name": "audio.shm.enable",
+      "label": "Enable Audio SHM",
+      "description": "Enable or disable shared memory audio output.",
+      "type": "bool",
+      "default": true,
+      "required": true,
+      "access": "init"
+    },
+    {
+      "name": "preview.mode",
+      "label": "Preview Mode",
+      "description": "Controls whether preview uses direct rendering or shared memory.",
+      "type": "enum",
+      "enumValues": ["direct", "shm"],
+      "default": "direct",
+      "required": true,
+      "access": "rw"
+    },
+    {
+      "name": "osd.stats",
+      "label": "Show Stats",
+      "description": "Toggle render performance stats overlay.",
+      "type": "bool",
+      "default": false,
+      "required": true,
+      "access": "rw"
+    },
+    {
+      "name": "fullscreen",
+      "label": "Fullscreen",
+      "description": "Start or toggle fullscreen mode.",
+      "type": "bool",
+      "default": false,
+      "required": true,
+      "access": "rw"
+    },
+    {
+      "name": "status.playback",
+      "label": "Playback Status",
+      "description": "Reflects the current playback mode reported by the player.",
+      "type": "enum",
+      "enumValues": ["stopped", "playing", "paused", "buffering"],
+      "default": "stopped",
+      "required": true,
+      "access": "ro"
+    },
+    {
+      "name": "status.error",
+      "label": "Last Error",
+      "description": "Last playback error reported by the native service.",
+      "type": "string",
+      "default": "",
+      "required": true,
+      "access": "ro"
+    },
+    {
+      "name": "volume",
+      "label": "Volume",
+      "description": "Current playback volume percentage (0-100).",
+      "type": "float",
+      "default": 100,
+      "required": true,
+      "access": "rw"
+    },
+    {
+      "name": "media.durationMs",
+      "label": "Duration (ms)",
+      "description": "Total duration of the current media item in milliseconds.",
+      "type": "int",
+      "default": 0,
+      "required": true,
+      "access": "ro"
+    },
+    {
+      "name": "media.positionMs",
+      "label": "Position (ms)",
+      "description": "Current playback position of the active media item in milliseconds.",
+      "type": "int",
+      "default": 0,
+      "required": true,
+      "access": "ro"
+    },
+    {
+      "name": "media.title",
+      "label": "Media Title",
+      "description": "Title of the active media item.",
+      "type": "string",
+      "default": "",
+      "required": true,
+      "access": "ro"
+    },
+    {
+      "name": "media.url",
+      "label": "Media URL",
+      "description": "Source URL or identifier for the active media item.",
+      "type": "string",
+      "default": "",
+      "required": true,
+      "access": "rw"
+    },
+    {
+      "name": "playlist.index",
+      "label": "Playlist Index",
+      "description": "Zero-based index of the active playlist entry.",
+      "type": "int",
+      "default": 0,
+      "required": true,
+      "access": "ro"
+    },
+    {
+      "name": "playlist.count",
+      "label": "Playlist Count",
+      "description": "Number of items available in the active playlist/context.",
+      "type": "int",
+      "default": 0,
+      "required": true,
+      "access": "ro"
+    },
+    {
+      "name": "control.subject",
+      "label": "Control Subject",
+      "description": "NATS subject used to deliver playback control commands to the player.",
+      "type": "string",
+      "default": "svc.{{instanceId}}.control",
+      "required": true,
+      "access": "ro"
+    }
+  ],
+  "commands": [
+    { "name": "PLAY", "description": "Play" },
+    { "name": "INIT", "description": "Initialize" },
+    { "name": "PAUSE", "description": "Pause" },
+    { "name": "STOP", "description": "Stop" },
+    { "name": "TOGGLE", "description": "Toggle Play/Pause" },
+    {
+      "name": "OPEN_URL",
+      "description": "Open URL",
+      "params": [
+        { "name": "url", "description": "Media URL", "type": "string", "required": true },
+        { "name": "title", "description": "Title", "type": "string", "required": false }
+      ]
+    },
+    { "name": "NEXT", "description": "Next Track" },
+    { "name": "PREVIOUS", "description": "Previous Track" },
+    {
+      "name": "SEEK",
+      "description": "Seek",
+      "params": [
+        { "name": "positionMs", "description": "Position (ms)", "type": "int", "required": true }
+      ]
+    },
+    {
+      "name": "SET_VOLUME",
+      "description": "Set Volume",
+      "params": [
+        { "name": "volume", "description": "Volume", "type": "float", "required": true }
+      ]
+    }
+  ]
+}

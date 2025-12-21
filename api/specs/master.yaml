@@ -1,0 +1,320 @@
+openapi: 3.0.3
+info:
+  title: f8 Master API (NATS binding)
+  version: "v1"
+  description: >
+    Contract surface for Web ↔ Daemon communication over NATS request/reply.
+    No HTTP transport; `x-nats-*` extensions define subjects and timeouts.
+servers:
+  - url: nats://local
+    description: NATS request/reply (canonical transport)
+  - url: http://localhost:8080
+    description: HTTP gateway that forwards to NATS for local testing/debugging
+paths:
+  /ping:
+    post:
+      summary: Liveness and capability exchange
+      description: Web checks daemon reachability and retrieves its profile/capabilities.
+      operationId: ping
+      x-nats-subject: f8.master.ping
+      x-nats-timeout-ms: 1000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PingRequest'
+      responses:
+        "200":
+          description: Pong with capability info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PingReply'
+  /config/apply:
+    post:
+      summary: Apply graph/config to daemon
+      description: Pushes user-authored configuration; daemon validates and applies via state manager.
+      operationId: applyConfig
+      x-nats-subject: f8.master.config.apply
+      x-nats-timeout-ms: 3000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplyConfigRequest'
+      responses:
+        "200":
+          description: Config accepted/applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplyConfigReply'
+  /registry/register:
+    post:
+      summary: Register a service instance with f8master
+      description: Submit full manifest for validation and admission; f8master returns confirmed instanceId and optional KV info.
+      operationId: registerService
+      x-nats-subject: f8.master.registry.register
+      x-nats-timeout-ms: 2000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        "200":
+          description: Registration result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterReply'
+  /registry/unregister:
+    post:
+      summary: Unregister a service instance with f8master
+      description: Release registration and cleanup resources before exit.
+      operationId: unregisterService
+      x-nats-subject: f8.master.registry.unregister
+      x-nats-timeout-ms: 2000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnregisterRequest'
+      responses:
+        "200":
+          description: Unregister result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnregisterReply'
+components:
+  schemas:
+    Envelope:
+      type: object
+      properties:
+        msgId:
+          type: string
+          format: uuid
+        traceId:
+          type: string
+          format: uuid
+        clientId:
+          type: string
+        hop:
+          type: integer
+          minimum: 0
+        ts:
+          type: string
+          format: date-time
+        apiVersion:
+          type: string
+          example: v1
+        payload:
+          type: object
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+      required: [msgId, traceId, clientId, hop, ts, apiVersion, payload]
+    ErrorBody:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [error]
+        errorCode:
+          type: string
+          enum: [invalid, conflict, unauthorized, not-found, unavailable, timeout, internal]
+        errorMessage:
+          type: string
+      required: [status, errorCode]
+    PingRequest:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            payload:
+              type: object
+              properties:
+                requestedProfile:
+                  type: string
+                  description: Mode hint (web-only or web-plus-daemon)
+    PingReply:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            payload:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [ok]
+                capabilities:
+                  $ref: '#/components/schemas/Capabilities'
+                profile:
+                  $ref: '#/components/schemas/ProfileSummary'
+              required: [status, capabilities, profile]
+    Capabilities:
+      type: object
+      properties:
+        playback:
+          type: boolean
+        libmpv:
+          type: boolean
+        nats:
+          type: boolean
+        features:
+          type: array
+          items:
+            type: string
+    ProfileSummary:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [web-only, web-plus-daemon]
+        platform:
+          type: string
+          enum: [win, mac, linux]
+        browser:
+          type: string
+          enum: [chrome, edge]
+        hardware:
+          type: object
+          properties:
+            cpuCores:
+              type: integer
+            ramGB:
+              type: integer
+      required: [mode, platform, browser, hardware]
+    ApplyConfigRequest:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            payload:
+              type: object
+              properties:
+                configVersion:
+                  type: string
+                graph:
+                  type: object
+                  description: Serialized graph/config authored from Web.
+              required: [graph]
+    ApplyConfigReply:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            payload:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [ok, error]
+                revision:
+                  type: integer
+                  description: State manager revision after apply.
+                errorCode:
+                  type: string
+                errorMessage:
+                  type: string
+              required: [status]
+    RegisterRequest:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            payload:
+              type: object
+              properties:
+                manifest:
+                  $ref: '#/components/schemas/ServiceManifest'
+                  description: Full service profile (validated against service schema)
+                manifestHash:
+                  type: string
+                  description: Optional sha256 of manifest (hex)
+                instanceId:
+                  type: string
+                  description: Proposed instance id (optional; master may override)
+                bootstrapRev:
+                  type: integer
+                  description: Optional expected state snapshot revision
+                stateHash:
+                  type: string
+                  description: Optional sha256 of initial snapshot
+              required: [manifest]
+    RegisterReply:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            payload:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [ok, error]
+                instanceId:
+                  type: string
+                kvBucket:
+                  type: string
+                  description: KV bucket name assigned/confirmed
+                token:
+                  type: string
+                  description: Bearer token to use for subsequent calls (Authorization header or envelope headers.authorization)
+                errorCode:
+                  type: string
+                  enum: [invalid, conflict, unauthorized, not-found, unavailable, timeout, internal]
+                errorMessage:
+                  type: string
+              required: [status]
+    UnregisterRequest:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            payload:
+              type: object
+              properties:
+                serviceSlug:
+                  type: string
+                  pattern: '^[a-z0-9_-]+$'
+                instanceId:
+                  type: string
+                  description: Runtime-assigned id from registration
+                manifestHash:
+                  type: string
+                  description: Optional sha256 to confirm same manifest
+              required: [serviceSlug, instanceId]
+    UnregisterReply:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            payload:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [ok, error]
+                errorCode:
+                  type: string
+                  enum: [invalid, conflict, unauthorized, not-found, unavailable, timeout, internal]
+                errorMessage:
+                  type: string
+              required: [status]
+    ServiceManifest:
+      $ref: '../../schemas/service.schema.json'
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        Bearer token issued at registration; send as HTTP Authorization header or Envelope.headers.authorization for NATS.

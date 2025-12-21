@@ -1,0 +1,92 @@
+{
+  "$id": "https://f8/schemas/common.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "f8 common definitions",
+  "definitions": {
+    "stateField": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "label": { "type": "string" },
+        "description": { "type": "string" },
+        "type": { "type": "string", "enum": ["bool", "int", "float", "string", "object", "enum"] },
+        "enumValues": { "type": "array", "items": { "type": "string" } },
+        "default": {},
+        "required": { "type": "boolean", "default": false },
+        "minimum": { "type": "number", "description": "Optional lower bound for numeric types" },
+        "maximum": { "type": "number", "description": "Optional upper bound for numeric types" },
+        "step": { "type": "number", "description": "Optional UI step/increment for numeric types" },
+        "schema": {
+          "type": "object",
+          "description": "Optional JSON Schema for complex structures (object/array/tuple) when type=object",
+          "additionalProperties": true
+        },
+        "access": { "type": "string", "enum": ["rw", "ro", "init"], "description": "rw=mutable, ro=read-only, init=only before start" },
+        "uiControl": { "type": "string", "description": "Optional UI hint (slider, spinbox, select, etc.)" },
+        "language": { "type": "string", "description": "Optional language hint for code editors (e.g., javascript, typescript)" },
+        "showOnNode": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, render this control inline on the node body; otherwise only in the inspector"
+        }
+      },
+      "required": ["name", "type", "access"],
+      "additionalProperties": false
+    },
+    "port": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "type": {
+          "type": "string",
+          "description": "Payload type",
+          "enum": ["bool", "int", "float", "string", "object", "enum"]
+        },
+        "schema": {
+          "type": "object",
+          "description": "Optional JSON Schema for complex payloads (object/array/tuple)",
+          "additionalProperties": true
+        },
+        "required": { "type": "boolean", "default": true, "description": "Whether the port must be connected/provided" }
+      },
+      "required": ["name", "type"],
+      "additionalProperties": false
+    },
+    "command": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "params": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/commandParam" },
+          "default": []
+        }
+      },
+      "required": ["name"],
+      "additionalProperties": false
+    },
+    "commandParam": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "type": { "type": "string", "enum": ["bool", "int", "float", "string", "object", "enum"] },
+        "enumValues": { "type": "array", "items": { "type": "string" } },
+        "default": {},
+        "required": { "type": "boolean", "default": false },
+        "minimum": { "type": "number", "description": "Optional lower bound for numeric types" },
+        "maximum": { "type": "number", "description": "Optional upper bound for numeric types" },
+        "step": { "type": "number", "description": "Optional UI step/increment for numeric types" },
+        "schema": {
+          "type": "object",
+          "description": "Optional JSON Schema for complex structures (object/array/tuple) when type=object",
+          "additionalProperties": true
+        },
+        "uiControl": { "type": "string", "description": "Optional UI hint (slider, select, etc.)" }
+      },
+      "required": ["name", "type"],
+      "additionalProperties": false
+    }
+  }
+}

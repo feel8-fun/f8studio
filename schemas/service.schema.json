@@ -1,0 +1,48 @@
+{
+  "$id": "https://f8/schemas/service.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "f8 service profile",
+  "type": "object",
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "f8service/1" },
+    "canonicalId": { "type": "string", "description": "Reverse-DNS style id, e.g., com.example.player" },
+    "serviceSlug": { "type": "string", "pattern": "^[a-z0-9_-]+$", "description": "Safe slug for NATS/KV subjects, e.g., f8_player" },
+    "label": { "type": "string" },
+    "description": { "type": "string" },
+    "tags": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "version": { "type": "string", "description": "SemVer of the service profile" },
+    "launch": {
+      "type": "object",
+      "properties": {
+        "command": { "type": "string", "description": "Executable path or name" },
+        "args": { "type": "array", "items": { "type": "string" }, "default": [] },
+        "env": { "type": "object", "additionalProperties": { "type": "string" } },
+        "workdir": { "type": "string" }
+      },
+      "required": ["command"],
+      "additionalProperties": false
+    },
+    "state": {
+      "type": "array",
+      "items": { "$ref": "./common.schema.json#/definitions/stateField" },
+      "description": "Static state model; keys become state manager entries"
+    },
+    "allowAddState": { "type": "boolean", "default": false, "description": "Allow dynamic user-added state entries" },
+    "commands": {
+      "type": "array",
+      "items": { "$ref": "./common.schema.json#/definitions/command" },
+      "default": []
+    },
+    "rendererId": {
+      "type": "string",
+      "description": "Optional custom UI renderer key for the node (e.g., realtimePlot, 3dViewer)"
+    },
+    "rendererProps": {
+      "type": "object",
+      "description": "Optional renderer-specific configuration for the custom node UI",
+      "additionalProperties": true
+    }
+  },
+  "required": ["schemaVersion", "serviceSlug", "label", "state"],
+  "additionalProperties": false
+}

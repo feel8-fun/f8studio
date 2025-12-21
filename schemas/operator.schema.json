@@ -1,0 +1,81 @@
+{
+  "$id": "https://f8/schemas/operator.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "f8 operator spec",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "f8operator/1"
+    },
+    "canonicalId": {
+      "type": "string",
+      "description": "Reverse-DNS style id for this operator kind (e.g., fun.feel8.program.js-script)"
+    },
+    "label": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "state": {
+      "type": "array",
+      "items": {
+        "$ref": "./common.schema.json#/definitions/stateField"
+      },
+      "default": []
+    },
+    "allowAddState": {
+      "type": "boolean",
+      "default": false
+    },
+    "inPorts": {
+      "type": "array",
+      "items": {
+        "$ref": "./common.schema.json#/definitions/port"
+      },
+      "default": []
+    },
+    "outPorts": {
+      "type": "array",
+      "items": {
+        "$ref": "./common.schema.json#/definitions/port"
+      },
+      "default": []
+    },
+    "allowAddPorts": {
+      "type": "boolean",
+      "default": false
+    },
+    "commands": {
+      "type": "array",
+      "description": "Optional RPC-style commands the node can invoke (e.g., refresh/connect/disconnect)",
+      "items": {
+        "$ref": "./common.schema.json#/definitions/command"
+      },
+      "default": []
+    },
+    "rendererId": {
+      "type": "string",
+      "description": "Optional custom UI renderer key for this operator node (e.g., realtimePlot, 3dViewer)"
+    },
+    "rendererProps": {
+      "type": "object",
+      "description": "Optional renderer-specific configuration for the custom node UI",
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "canonicalId",
+    "label"
+  ],
+  "additionalProperties": false
+}
