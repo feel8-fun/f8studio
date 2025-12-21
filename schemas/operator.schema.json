@@ -1,5 +1,5 @@
 {
-  "$id": "https://f8/schemas/operator.schema.json",
+  "$id": "https://studio.feel8.fun/schemas/operator.schema.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "f8 operator spec",
   "type": "object",
@@ -50,9 +50,15 @@
       },
       "default": []
     },
-    "allowAddPorts": {
+    "allowAddInPorts": {
       "type": "boolean",
-      "default": false
+      "default": false,
+      "description": "Allow dynamic addition of input ports."
+    },
+    "allowAddOutPorts": {
+      "type": "boolean",
+      "default": false,
+      "description": "Allow dynamic addition of output ports."
     },
     "commands": {
       "type": "array",
@@ -61,6 +67,11 @@
         "$ref": "./common.schema.json#/definitions/command"
       },
       "default": []
+    },
+    "allowAddCommands": {
+      "type": "boolean",
+      "default": false,
+      "description": "Allow dynamic addition of commands beyond the declared list."
     },
     "rendererId": {
       "type": "string",

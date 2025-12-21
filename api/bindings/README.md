@@ -41,7 +41,7 @@
 - Cross-instance edges are compiled into half-edges: each end gets its own config; no instance needs full global topology.
   - State bus: source instance knows its stateOut keys and which remote nodes subscribe; on state change it emits `state.<instanceId>.set` (k,v,rev) to its fanout subject. Targets subscribe and apply to their stateIn.
   - Data bus: compiler allocates a unique subject per cross-edge (e.g., `f8.bus.<edgeId>`); source publishes to it, targets subscribe.
-- ServiceHostBase stays minimal (state/KV/heartbeat/register). Data bus pub/sub wiring lives in engine-style hosts (including web-engine); other services that only handle state do not pull in data bus dependencies. Subjects and permissions come from the compiled half-edge config delivered with each subgraph.
+- ServiceHostBase provides state fanout and data bus plumbing based on declared ports. Services that expose `dataInPorts`/`dataOutPorts` (or operator-level ports) get the wiring; services that do not declare ports incur no extra overhead. Subjects and permissions come from the compiled half-edge config delivered with each subgraph.
 - Operator-to-external links: editor can draw links directly from operator ports; the compiler auto-promotes these across container boundaries by synthesizing container ports and half-edges, so runtime still deploys per-instance wiring without exposing internal nodes globally.
 
 ## Runtime graph model (hot update)

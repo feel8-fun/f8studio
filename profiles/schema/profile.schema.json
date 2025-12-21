@@ -1,5 +1,5 @@
 {
-  "$id": "https://f8/profiles/profile.schema.json",
+  "$id": "https://studio.feel8.fun/profiles/profile.schema.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "f8 platform profile",
   "type": "object",

@@ -1,5 +1,5 @@
 {
-  "$id": "https://f8/schemas/service.schema.json",
+  "$id": "https://studio.feel8.fun/schemas/service.schema.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "f8 service profile",
   "type": "object",
@@ -32,6 +32,33 @@
       "type": "array",
       "items": { "$ref": "./common.schema.json#/definitions/command" },
       "default": []
+    },
+    "allowAddCommands": {
+      "type": "boolean",
+      "default": false,
+      "description": "Allow dynamic addition of commands beyond the declared list."
+    },
+    "dataInPorts": {
+      "type": "array",
+      "description": "Data bus inputs exposed by this service (for cross-instance data pub/sub).",
+      "items": { "$ref": "./common.schema.json#/definitions/port" },
+      "default": []
+    },
+    "dataOutPorts": {
+      "type": "array",
+      "description": "Data bus outputs exposed by this service.",
+      "items": { "$ref": "./common.schema.json#/definitions/port" },
+      "default": []
+    },
+    "allowAddDataInPorts": {
+      "type": "boolean",
+      "default": false,
+      "description": "Allow dynamic addition of data bus input ports."
+    },
+    "allowAddDataOutPorts": {
+      "type": "boolean",
+      "default": false,
+      "description": "Allow dynamic addition of data bus output ports."
     },
     "rendererId": {
       "type": "string",

@@ -1,5 +1,5 @@
 {
-  "$id": "https://f8/schemas/common.schema.json",
+  "$id": "https://studio.feel8.fun/schemas/common.schema.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "f8 common definitions",
   "definitions": {
