@@ -12,7 +12,7 @@ Steps:
    - Port compatibility (data/state rules), required fields, allow* flags.
    - Edge kind/scope resolution (intra vs cross).
 2) Assign edgeIds/subjects:
-   - Data (cross): `f8.bus.<edgeId>`; State (cross): `state.<instanceId>.set`.
+   - Data (cross): `f8.bus.<edgeId>`; State (cross): `f8.state.<instanceId>.set`.
    - Intra edges can stay in-memory identifiers.
    - Defaults: cross-instance data edges default to `latest` strategy, queueSize=64, `drop-old` on; timeout optional. JetStream/bridge + DLQ only when cross-instance reliability is required.
 3) Auto-promotion:

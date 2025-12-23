@@ -7,7 +7,7 @@
 ## Responsibilities
 - Load graph snapshot from KV (`graph`) at startup; initialize state from seeded keys.
 - Apply graph diffs/commands at safe points (end of tick), validate, update in-memory graph, bump version (KV revision), and write the new snapshot back to KV. On validation failure, keep the old graph running. If master/control plane is unavailable, continue running the last good graph and reject new apply requests with a clear read-only error.
-- Maintain per-instance state manager; publish `f8.state.<instanceId>.delta` locally; fan out cross-instance state via `state.<instanceId>.set` for subscribed remote nodes.
+- Maintain per-instance state manager; publish `f8.state.<instanceId>.delta` locally; fan out cross-instance state via `f8.state.<instanceId>.set` for subscribed remote nodes.
 - Data bus wiring (engine-only): subscribe/publish to compiled cross-edge subjects (`f8.bus.<edgeId>`), with backpressure/queueing policies as needed.
 - Lifecycle with master: register -> ensure per-instance KV bucket exists -> run -> unregister -> clean up bucket (if owned by master).
 
@@ -19,11 +19,11 @@
 ## Web-engine UI hooks (visualization/control)
 - Web engine shares the same runtime model, plus UI renderers per node.
 - Data printer node: subscribes to its data bus input; on tick, renders the latest payload into the node UI (React component), no extra side effects.
-- Input control node: renders a UI control (e.g., slider); user interactions update the node state; state changes fan out via the normal state bus (`state.<instanceId>.set`) to downstream nodes (web or native services).
+- Input control node: renders a UI control (e.g., slider); user interactions update the node state; state changes fan out via the normal state bus (`f8.state.<instanceId>.set`) to downstream nodes (web or native services).
 - UI is purely view/control; execution graph semantics stay the same. Data/State flow uses the existing buses; DOM work lives inside the renderer.
 
 ## Inputs/outputs (NATS-facing)
-- Command subjects follow `f8.<serviceSlug>.<instanceId>.<verb>` (e.g., apply graph diff, pause/resume, state snapshots). Cross-instance data uses `f8.bus.<edgeId>`, cross-instance state fanout uses `state.<instanceId>.set`.
+- Command subjects follow `f8.<serviceSlug>.<instanceId>.<verb>` (e.g., apply graph diff, pause/resume, state snapshots). Cross-instance data uses `f8.bus.<edgeId>`, cross-instance state fanout uses `f8.state.<instanceId>.set`.
 - Envelope remains the same as master spec; dev mode currently does not enforce bearer tokens.
 - Engine is primarily a NATS microservice; if HTTP is needed, use a single gateway that proxies HTTP->NATS (no per-engine HTTP port).
 
