@@ -17,6 +17,7 @@ const roles = [
   { role: 'master' },
   { role: 'engine', instance: 'engineA' },
   { role: 'engine', instance: 'engineB' },
+  { role: 'engine', instance: 'engineC' },
   { role: 'web' },
 ];
 
@@ -220,6 +221,7 @@ async function runChild(role, instanceId) {
   }
 
   if (role === 'web') {
+    const keepAlive = process.env.KEEP_ALIVE === '1';
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const request = async (subj, payload = {}, timeoutMs = 2000, attempts = 5, delayMs = 200) => {
       let lastErr;
@@ -237,12 +239,27 @@ async function runChild(role, instanceId) {
 
     const publish = (subj, payload = {}) => nc.publish(subj, sc.encode(JSON.stringify(payload)));
 
-    const graphV1 = { edges: [{ edgeId: 'edge1', scope: 'cross', strategy: 'latest', queueSize: 1, dropOld: true }] };
-    const graphV2 = { edges: [{ edgeId: 'edge2', scope: 'cross', strategy: 'latest', queueSize: 1, dropOld: true }] };
+    const graphV1 = {
+      edges: [
+        { edgeId: 'edge1', scope: 'cross', strategy: 'latest', queueSize: 1, dropOld: true },
+        { edgeId: 'edgeFan', scope: 'cross', strategy: 'latest', queueSize: 4, dropOld: true },
+      ],
+    };
+    const graphV2 = {
+      edges: [
+        { edgeId: 'edge2', scope: 'cross', strategy: 'latest', queueSize: 1, dropOld: true },
+        { edgeId: 'edgeFan', scope: 'cross', strategy: 'latest', queueSize: 4, dropOld: true },
+      ],
+    };
     let etag = 0;
 
     await sleep(200);
     const snapshot = async () => request('f8.master.snapshot');
+
+    if (keepAlive) {
+      log('KEEP_ALIVE=1: waiting for manual interaction (no scripted demo).');
+      return;
+    }
 
     log('ping master');
     log(JSON.stringify(await request('f8.master.ping')));
@@ -254,6 +271,8 @@ async function runChild(role, instanceId) {
     log(JSON.stringify(r1));
     if (r1.etag) etag = r1.etag;
     publish('f8.bus.edge1', { payload: { value: 1 }, ts: Date.now() });
+    // fanout edge to all engines
+    publish('f8.bus.edgeFan', { payload: { who: 'all', step: 'v1' }, ts: Date.now() });
 
     setTimeout(async () => {
       log('master down toggle');
@@ -261,6 +280,7 @@ async function runChild(role, instanceId) {
       log('apply graph v2 (expect read-only error)');
       log(JSON.stringify(await request('f8.master.apply', { graph: graphV2, expectedEtag: etag }).catch((e) => ({ error: e.message }))));
       publish('f8.bus.edge1', { payload: { value: 99 }, ts: Date.now() });
+      publish('f8.bus.edgeFan', { payload: { who: 'all', step: 'master-down' }, ts: Date.now() });
     }, 500);
 
     setTimeout(async () => {
@@ -273,12 +293,15 @@ async function runChild(role, instanceId) {
       log(JSON.stringify(r2));
       if (r2.etag) etag = r2.etag;
       publish('f8.bus.edge2', { payload: { value: 7 }, ts: Date.now() });
+      publish('f8.bus.edgeFan', { payload: { who: 'all', step: 'v2' }, ts: Date.now() });
       // fetch state snapshots after recovery
       try {
         const sA = await request('f8.state.engineA.snapshot', {}, 2000, 3, 200);
         const sB = await request('f8.state.engineB.snapshot', {}, 2000, 3, 200);
+        const sC = await request('f8.state.engineC.snapshot', {}, 2000, 3, 200);
         log(`engineA snapshot: ${JSON.stringify(sA)}`);
         log(`engineB snapshot: ${JSON.stringify(sB)}`);
+        log(`engineC snapshot: ${JSON.stringify(sC)}`);
       } catch (e) {
         log(`snapshot fetch error: ${e.message}`);
       }

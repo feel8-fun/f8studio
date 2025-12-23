@@ -5,7 +5,9 @@
   "main": "index.js",
   "scripts": {
     "http-gateway": "node scripts/http-gateway.mjs",
-    "proto:nats": "node scripts/prototype/run-nats.js"
+    "proto:nats": "node scripts/prototype/run-nats.js",
+    "proto:nats:serve": "SET KEEP_ALIVE=1&& node scripts/prototype/run-nats.js",
+    "proto:ui": "node scripts/prototype/web-ui.js"
   },
   "keywords": [],
   "author": "",
