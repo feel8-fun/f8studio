@@ -21,7 +21,11 @@
           "description": "Optional JSON Schema for complex structures (object/array/tuple) when type=object",
           "additionalProperties": true
         },
-        "access": { "type": "string", "enum": ["rw", "ro", "init"], "description": "rw=mutable, ro=read-only, init=only before start" },
+        "access": {
+          "type": "string",
+          "enum": ["rw", "ro", "wo", "init"],
+          "description": "rw=mutable, ro=read-only, wo=write-only (no fanout), init=only before start"
+        },
         "uiControl": { "type": "string", "description": "Optional UI hint (slider, spinbox, select, etc.)" },
         "language": { "type": "string", "description": "Optional language hint for code editors (e.g., javascript, typescript)" },
         "showOnNode": {
@@ -42,6 +46,7 @@
           "description": "Payload type",
           "enum": ["bool", "int", "float", "string", "object", "enum"]
         },
+        "description": { "type": "string" },
         "schema": {
           "type": "object",
           "description": "Optional JSON Schema for complex payloads (object/array/tuple)",

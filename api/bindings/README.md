@@ -41,8 +41,9 @@
 - Cross-instance edges are compiled into half-edges: each end gets its own config; no instance needs full global topology.
   - State bus: source instance knows its stateOut keys and which remote nodes subscribe; on state change it emits `state.<instanceId>.set` (k,v,rev) to its fanout subject. Targets subscribe and apply to their stateIn.
   - Data bus: compiler allocates a unique subject per cross-edge (e.g., `f8.bus.<edgeId>`); source publishes to it, targets subscribe.
-- ServiceHostBase provides state fanout and data bus plumbing based on declared ports. Services that expose `dataInPorts`/`dataOutPorts` (or operator-level ports) get the wiring; services that do not declare ports incur no extra overhead. Subjects and permissions come from the compiled half-edge config delivered with each subgraph.
+- ServiceHostBase provides state fanout and data bus plumbing based on declared ports. Services that expose `inPorts`/`outPorts` (or operator-level ports) get the wiring; services that do not declare ports incur no extra overhead. Subjects and permissions come from the compiled half-edge config delivered with each subgraph.
 - Operator-to-external links: editor can draw links directly from operator ports; the compiler auto-promotes these across container boundaries by synthesizing container ports and half-edges, so runtime still deploys per-instance wiring without exposing internal nodes globally.
+- Cross-instance data edges carry a rate-mismatch strategy (per-link config): high→low fps can use `latest` or `average`, low→high can use `hold`/`repeat` or `interpolate` for numeric data; queues are bounded with drop-old/timeout safeguards. Engines enforce the strategy at tick boundaries.
 
 ## Runtime graph model (hot update)
 - Single graph per engine: runtime only holds one active graph per instance; stored as a KV snapshot (e.g., `graph`, using the KV revision as the version/etag) in the instance bucket.
@@ -50,3 +51,8 @@
 - Concurrency: include `version`/`etag` in updates to avoid stale overwrites; reject on mismatch and require the caller to refresh and reapply.
 - Consistency: structural changes (add/remove nodes/ports/edges) are bundled with dependent changes (e.g., remove state also deletes dependent fanIn/fanOut) before commit, so applied atomically.
 - Failure: if a patch fails validation, keep the old graph running and return an error; only fall back to rebuild/restart as a last resort.
+
+## Lifecycle/status
+- Primary health check: master pings instances on a schedule; failures mark instances degraded. Do not depend on services pushing heartbeats.
+- Status/state lives in each instance's KV bucket (e.g., `status/summary`); editor can watch KV. Suggested fields: `status` (`starting|running|paused|stopped|error`), `lastError`, `graphEtag` (KV revision/etag), `updatedAt`. Optional status pub subject can exist, but keep it small and avoid high-churn metrics.
+- Master should record repeated ping failures in the instance registry so the frontend can surface alerts for unresponsive instances.

@@ -1,7 +1,7 @@
 # Using OpenAPI specs with NATS
 
-The specs define RPC contracts (not HTTP). Workflow:
-- Keep `operationId`, `x-nats-subject`, `x-nats-timeout-ms` for each RPC.
+- Primary transport is NATS request/reply for master/engine/other services. HTTP is optional via a single gateway that proxies HTTP→NATS (e.g., `scripts/http-gateway.mjs`) and serves Swagger UI.
+- Specs define RPC contracts (not HTTP). Keep `operationId`, `x-nats-subject`, `x-nats-timeout-ms`.
 - Run codegen to get models/types (TS/C++) from `api/specs/*.yaml`.
 - Wrap generated types with thin NATS adapters (client + handler) that map `operationId` to `x-nats-subject`.
 - Use schema-based tests (contract tests) to validate payloads.

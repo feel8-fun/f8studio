@@ -34,7 +34,9 @@
         "required": false
       }
     ],
-    "allowAddPorts": true
+    "allowAddInPorts": true,
+    "allowAddOutPorts": true,
+    "allowAddCommands": true
   },
   {
     "schemaVersion": "f8operator/1",
@@ -102,7 +104,9 @@
       }
     ],
     "outPorts": [],
-    "allowAddPorts": false,
+    "allowAddInPorts": false,
+    "allowAddOutPorts": false,
+    "allowAddCommands": false,
     "commands": [
       {
         "name": "refreshDevices",

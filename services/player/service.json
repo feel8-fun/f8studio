@@ -252,5 +252,13 @@
         { "name": "volume", "description": "Volume", "type": "float", "required": true }
       ]
     }
-  ]
+  ],
+  "allowAddCommands": false,
+  "inPorts": [],
+  "outPorts": [
+    { "name": "videoFrames", "type": "object", "description": "Decoded video frames stream", "required": false },
+    { "name": "audioSamples", "type": "object", "description": "Decoded audio samples stream", "required": false }
+  ],
+  "allowAddInPorts": false,
+  "allowAddOutPorts": true
 }
