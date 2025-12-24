@@ -1,7 +1,6 @@
 {
   "schemaVersion": "f8service/1",
-  "canonicalId": "fun.feel8.engine",
-  "serviceSlug": "f8_engine",
+  "serviceClass": "fun.feel8.engine",
   "label": "Engine",
   "description": "Runtime graph host with tick-based execution and cross-instance wiring.",
   "tags": ["engine", "runtime", "graph"],

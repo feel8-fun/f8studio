@@ -282,16 +282,13 @@ components:
             payload:
               type: object
               properties:
-                serviceSlug:
-                  type: string
-                  pattern: '^[a-z0-9_-]+$'
                 instanceId:
                   type: string
                   description: Runtime-assigned id from registration
                 manifestHash:
                   type: string
                   description: Optional sha256 to confirm same manifest
-              required: [serviceSlug, instanceId]
+              required: [instanceId]
     UnregisterReply:
       allOf:
         - $ref: '#/components/schemas/Envelope'

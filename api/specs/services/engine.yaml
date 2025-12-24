@@ -235,13 +235,13 @@ components:
                   items:
                     type: object
                     properties:
-                      canonicalId:
+                      operatorClass:
                         type: string
                       label:
                         type: string
                       rendererId:
                         type: string
-                    required: [canonicalId]
+                    required: [operatorClass]
                 errorCode:
                   type: string
                   enum: [invalid, conflict, unauthorized, not-found, unavailable, timeout, internal]

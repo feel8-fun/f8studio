@@ -16,7 +16,7 @@
 - Persistence/export:
   - Save edges with kind/scope/strategy/queue/timeout per `edge.schema.json`.
   - Persist added ports/commands per node; service manifests use `inPorts`/`outPorts` naming.
-  - At export/split time, generate half-edges and subjects (`f8.state.<instanceId>.set`, `f8.bus.<edgeId>`) and carry strategy metadata for cross data edges.
+- At export/split time, generate half-edges and subjects (`f8.bus.<edgeId>` for data) plus bucket/key mappings for cross-instance state (KV watch), and carry strategy metadata for cross data edges.
 - Validation UX:
   - Inline errors for disallowed additions, type/schema incompatibility, or missing required fields.
   - Mark cross edges and strategy badges on edges/ports for visibility.

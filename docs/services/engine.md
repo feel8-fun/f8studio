@@ -1,14 +1,14 @@
 # Engine Service (runtime graph host)
 
-- Runs a single active graph per instance; manages state, executes nodes/operators, and handles cross-instance wiring (state/data buses).
+- Runs a single active graph per instance; manages state, executes nodes/operators. Cross-instance wiring (state/data buses) comes from the shared ServiceHostBase used by all services when ports are declared.
 - Applies to both native app engines and web-worker engines; same runtime model, different host/runtime env.
-- Built on the minimal ServiceHostBase (state/KV/heartbeat/register) plus engine-specific data bus pub/sub and graph runtime.
+- Built on ServiceHostBase (state/KV/heartbeat/register + cross-instance wiring) plus the engine-specific operator graph runtime.
 
 ## Responsibilities
 - Load graph snapshot from KV (`graph`) at startup; initialize state from seeded keys.
-- Apply graph diffs/commands at safe points (end of tick), validate, update in-memory graph, bump version (KV revision), and write the new snapshot back to KV. On validation failure, keep the old graph running. If master/control plane is unavailable, continue running the last good graph and reject new apply requests with a clear read-only error.
-- Maintain per-instance state manager; publish `f8.state.<instanceId>.delta` locally; fan out cross-instance state via `f8.state.<instanceId>.set` for subscribed remote nodes.
-- Data bus wiring (engine-only): subscribe/publish to compiled cross-edge subjects (`f8.bus.<edgeId>`), with backpressure/queueing policies as needed.
+- Apply graph diffs/commands (delivered via `deployOpGraph`) at safe points (end of tick), validate, update in-memory graph, bump version (KV revision), and write the new snapshot back to KV. On validation failure, keep the old graph running. If master/control plane is unavailable, continue running the last good graph and reject new apply requests with a clear read-only error.
+- Maintain per-instance state manager; write state into the instance KV; cross-instance readers consume the latest value via KV watch (bucket + key).
+- Data bus wiring (when ports are declared): subscribe/publish to compiled cross-edge subjects (`f8.bus.<edgeId>`). Engine uses this for operator-level ports; other services use the same pattern if they expose `inPorts`/`outPorts`.
 - Lifecycle with master: register -> ensure per-instance KV bucket exists -> run -> unregister -> clean up bucket (if owned by master).
 
 ## Tick-based scheduling
@@ -19,16 +19,17 @@
 ## Web-engine UI hooks (visualization/control)
 - Web engine shares the same runtime model, plus UI renderers per node.
 - Data printer node: subscribes to its data bus input; on tick, renders the latest payload into the node UI (React component), no extra side effects.
-- Input control node: renders a UI control (e.g., slider); user interactions update the node state; state changes fan out via the normal state bus (`f8.state.<instanceId>.set`) to downstream nodes (web or native services).
+- Input control node: renders a UI control (e.g., slider); user interactions update the node state; state changes write through the state manager/KV so downstream nodes watching the bucket/key observe updates.
 - UI is purely view/control; execution graph semantics stay the same. Data/State flow uses the existing buses; DOM work lives inside the renderer.
 
 ## Inputs/outputs (NATS-facing)
-- Command subjects follow `f8.<serviceSlug>.<instanceId>.<verb>` (e.g., apply graph diff, pause/resume, state snapshots). Cross-instance data uses `f8.bus.<edgeId>`, cross-instance state fanout uses `f8.state.<instanceId>.set`.
+- Control plane (predefined verbs): `f8.<instanceId>.<verb>` for `deployOpGraph`, `activate`, `deactivate`, `terminate`, `status`, and optional `stateSnapshot`/`setState`. Service-defined commands use `f8.<instanceId>.cmd` with `{command, params, traceId?}`.
+- Data/State bus: cross-instance data uses `f8.bus.<edgeId>` (service ports to operator ports, operator ports to service ports, or service-to-service). Control/state reads/writes still go through the control verbs above, and state propagation across instances is via KV watch on the configured bucket/key.
 - Envelope remains the same as master spec; dev mode currently does not enforce bearer tokens.
 - Engine is primarily a NATS microservice; if HTTP is needed, use a single gateway that proxies HTTP->NATS (no per-engine HTTP port).
 
 ## Service manifest
-- Provide an engine `service.json` (schemaVersion `f8service/1`) describing commands (pause/resume/stop/applyGraph, etc.), status, and configuration fields (e.g., tick rate). Avoid putting high-churn metrics like uptime in persisted state; publish them via status instead. Set `allowAdd*` as appropriate.
+- Provide an engine `service.json` (schemaVersion `f8service/1`) describing commands (pause/resume/stop/deployOpGraph, etc.), status, and configuration fields (e.g., tick rate). Avoid putting high-churn metrics like uptime in persisted state; publish them via status instead. Set `allowAdd*` as appropriate.
 
 ## Rate-mismatch handling (cross-instance data edges)
 - Each cross-instance data edge carries a consume strategy to handle producer/consumer rate differences (configured at link compile time and exposed in the editor):
@@ -43,10 +44,10 @@
   - State bus: types must match exactly (aside from `any`), ranges are not validated on connect.
   - Data bus: consumer schema must be satisfied by producer schema (producer supplies all required consumer fields with compatible types). If producer lacks required consumer fields, block the connection.
 
-## Control plane (master <-> engine) - to define and implement
-- APIs (extend `api/specs/services/engine.yaml`): graph apply/snapshot (existing), plus start/stop/pause/resume, status/health, operator catalog fetch, and error reporting.
-- Handshake/rollout: master sends subgraph + half-edge config, engine applies at safe point and replies with revision; failures report errors without disrupting current graph.
-- Health: write status into the instance KV bucket (e.g., `status/summary`) and rely on KV watches; master can probe if needed to mark node status for the editor. Suggested fields: `status` (`starting|running|paused|stopped|error`), `lastError`, `graphEtag` (KV revision/etag), `updatedAt` (timestamp).
+## Control plane (master <-> engine)
+- Graph apply/snapshot: master calls `f8.<instanceId>.deployOpGraph` with the compiled subgraph/half-edges; engine applies at a safe point and replies with revision/etag. Snapshots can be exposed via `f8.<instanceId>.status` or a dedicated `stateSnapshot`.
+- Lifecycle: `activate`/`deactivate`/`terminate` verbs on `f8.<instanceId>.<verb>`.
+- Health: write status into the instance KV bucket at `status/summary` and rely on KV watches; master can also probe with `$SRV.PING|INFO|STATS.<instanceId>` to mark node status for the editor. Suggested field: `status` (common lifecycle: `starting|deactivated|activated|terminating|error`). Keep any other summary fields consistent with the shared service status conventions.
 - Consistency: use KV revision as etag; engines reject stale updates. Default to single-key graph blob + etag; if multiple keys are ever used, group them behind a commit record. When master is unreachable, engines stay on the last applied graph and mark apply endpoints read-only.
 - Operator catalog: engine should publish its supported operators into its KV bucket under a known key (e.g., `catalog/operators`) for editor/master discovery, in addition to the NATS catalog endpoint.
 - Health feed subjects: optional; KV watch is primary. If used, keep the payload small (status/lastError) and omit high-churn metrics.

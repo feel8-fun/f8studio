@@ -8,9 +8,9 @@
       "type": "string",
       "const": "f8operator/1"
     },
-    "canonicalId": {
+    "operatorClass": {
       "type": "string",
-      "description": "Reverse-DNS style id for this operator kind (e.g., fun.feel8.program.js-script)"
+      "description": "Reverse-DNS style id for this operator kind (e.g., fun.feel8.op.js-script)"
     },
     "label": {
       "type": "string"
@@ -85,7 +85,7 @@
   },
   "required": [
     "schemaVersion",
-    "canonicalId",
+    "operatorClass",
     "label"
   ],
   "additionalProperties": false

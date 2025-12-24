@@ -1,7 +1,7 @@
 [
   {
     "schemaVersion": "f8operator/1",
-    "canonicalId": "fun.feel8.program.js-script",
+    "operatorClass": "fun.feel8.op.program.js-script",
     "label": "JS Script",
     "description": "Execute inline JavaScript on incoming data with stateful context.",
     "tags": [
@@ -40,7 +40,7 @@
   },
   {
     "schemaVersion": "f8operator/1",
-    "canonicalId": "fun.feel8.comm.serialport-out",
+    "operatorClass": "fun.feel8.op.comm.serialport-out",
     "label": "Serial Port",
     "description": "Send text payloads to a Web Serial device and manage connection lifecycle.",
     "tags": [

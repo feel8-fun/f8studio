@@ -5,8 +5,7 @@
   "type": "object",
   "properties": {
     "schemaVersion": { "type": "string", "const": "f8service/1" },
-    "canonicalId": { "type": "string", "description": "Reverse-DNS style id, e.g., com.example.player" },
-    "serviceSlug": { "type": "string", "pattern": "^[a-z0-9_-]+$", "description": "Safe slug for NATS/KV subjects, e.g., f8_player" },
+    "serviceClass": { "type": "string", "description": "Reverse-DNS style id, e.g., fun.feel8.engine" },
     "label": { "type": "string" },
     "description": { "type": "string" },
     "tags": { "type": "array", "items": { "type": "string" }, "default": [] },
@@ -70,6 +69,6 @@
       "additionalProperties": true
     }
   },
-  "required": ["schemaVersion", "serviceSlug", "label", "state"],
+  "required": ["schemaVersion", "serviceClass", "label", "state"],
   "additionalProperties": false
 }

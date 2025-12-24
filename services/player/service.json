@@ -1,7 +1,6 @@
 {
   "schemaVersion": "f8service/1",
-  "canonicalId": "fun.feel8.player",
-  "serviceSlug": "f8_player",
+  "serviceClass": "fun.feel8.player",
   "label": "Media Player",
   "description": "Control surface for the native media player service.",
   "tags": ["mediasource"],

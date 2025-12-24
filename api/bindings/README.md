@@ -21,7 +21,7 @@
   ```
 - Delivery: NATS core is at-most-once. Clients set timeouts and retry with backoff on `timeout|unavailable`, reusing `msgId` for safe dedup. Treat other errors as terminal.
 - Error model: keep a small fixed set (`invalid`, `conflict`, `unauthorized`, `not-found`, `unavailable`, `timeout`, `internal`); include `errorCode` and human-readable `errorMessage`.
-- Subjects: prefer `f8.<serviceSlug>.<instanceId>.<verb>` for instance-directed commands (no load-balancing); `$SRV.*` for service discovery/health; `f8.state.<instanceId>.delta` for per-instance state broadcasts. `serviceSlug` must match `[a-z0-9_-]+`.
+- Subjects: prefer `f8.<instanceId>.<verb>` for instance-directed commands (no load-balancing); `$SRV.*` for service discovery/health.
 - Roles: Web UI is the client (singleton per daemon, enforced at daemon level—not per service profile). A web-worker or micro engine can publish/subscribe under the same `clientId` for lightweight tasks (databus, fanout to visualization), but is not treated as a durable service. Operator catalogs are published as state by the engine at runtime, not part of static manifests.
 - Versioning: semantic (`v1`); do not break existing fields in-place—add new fields or new subjects.
 
@@ -39,8 +39,8 @@
 ## Graph distribution and cross-instance wiring
 - Template vs instance: operator templates live in repo files (e.g., `services/<service>/operators.json`); running instances keep their own dynamic state/ports/scripts in per-instance KV snapshots. Frontend publishes graph diffs via commands; services apply at safe points and write back the new graph/version.
 - Cross-instance edges are compiled into half-edges: each end gets its own config; no instance needs full global topology.
-  - State bus: source instance knows its stateOut keys and which remote nodes subscribe; on state change it emits `state.<instanceId>.set` (k,v,rev) to its fanout subject. Targets subscribe and apply to their stateIn.
-  - Data bus: compiler allocates a unique subject per cross-edge (e.g., `f8.bus.<edgeId>`); source publishes to it, targets subscribe.
+- State: source instance writes to its KV bucket; cross-instance wiring carries bucket/key so targets watch the same KV entry and apply to their stateIn.
+- Data bus: compiler allocates a unique subject per cross-edge (e.g., `f8.bus.<edgeId>`); source publishes to it, targets subscribe.
 - ServiceHostBase provides state fanout and data bus plumbing based on declared ports. Services that expose `inPorts`/`outPorts` (or operator-level ports) get the wiring; services that do not declare ports incur no extra overhead. Subjects and permissions come from the compiled half-edge config delivered with each subgraph.
 - Operator-to-external links: editor can draw links directly from operator ports; the compiler auto-promotes these across container boundaries by synthesizing container ports and half-edges, so runtime still deploys per-instance wiring without exposing internal nodes globally.
 - Cross-instance data edges carry a rate-mismatch strategy (per-link config): high→low fps can use `latest` or `average`, low→high can use `hold`/`repeat` or `interpolate` for numeric data; queues are bounded with drop-old/timeout safeguards. Engines enforce the strategy at tick boundaries.
