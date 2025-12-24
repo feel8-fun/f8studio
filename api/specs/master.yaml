@@ -3,8 +3,7 @@ info:
   title: f8 Master API (NATS binding)
   version: "v1"
   description: >
-    Contract surface for Web ↔ Daemon communication over NATS request/reply.
-    No HTTP transport; `x-nats-*` extensions define subjects and timeouts.
+    Control plane between Web and Master over NATS request/reply. Subjects are defined via `x-nats-*`.
 servers:
   - url: nats://local
     description: NATS request/reply (canonical transport)
@@ -13,8 +12,8 @@ servers:
 paths:
   /ping:
     post:
-      summary: Liveness and capability exchange
-      description: Web checks daemon reachability and retrieves its profile/capabilities.
+      summary: Liveness and capability exchange (client lease)
+      description: Web checks daemon reachability, retrieves capabilities, and refreshes the single-client lease.
       operationId: ping
       x-nats-subject: f8.master.ping
       x-nats-timeout-ms: 1000
@@ -31,30 +30,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PingReply'
-  /config/apply:
+  /graph/deploy:
     post:
-      summary: Apply graph/config to daemon
-      description: Pushes user-authored configuration; daemon validates and applies via state manager.
-      operationId: applyConfig
-      x-nats-subject: f8.master.config.apply
-      x-nats-timeout-ms: 3000
+      summary: Deploy a ServiceGraph
+      description: Web sends the full ServiceGraph; master validates, compiles, launches missing instances, and rolls out subgraphs.
+      operationId: deployGraph
+      x-nats-subject: f8.master.deployGraph
+      x-nats-timeout-ms: 5000
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ApplyConfigRequest'
+              $ref: '#/components/schemas/DeployGraphRequest'
       responses:
         "200":
-          description: Config accepted/applied
+          description: Deploy result
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApplyConfigReply'
+                $ref: '#/components/schemas/DeployGraphReply'
   /registry/register:
     post:
-      summary: Register a service instance with f8master
-      description: Submit full manifest for validation and admission; f8master returns confirmed instanceId and optional KV info.
+      summary: Register a service instance with master
+      description: Submit full manifest for validation and admission; master returns confirmed instanceId and KV info.
       operationId: registerService
       x-nats-subject: f8.master.registry.register
       x-nats-timeout-ms: 2000
@@ -73,7 +72,7 @@ paths:
                 $ref: '#/components/schemas/RegisterReply'
   /registry/unregister:
     post:
-      summary: Unregister a service instance with f8master
+      summary: Unregister a service instance with master
       description: Release registration and cleanup resources before exit.
       operationId: unregisterService
       x-nats-subject: f8.master.registry.unregister
@@ -143,6 +142,7 @@ components:
                 requestedProfile:
                   type: string
                   description: Mode hint (web-only or web-plus-daemon)
+              required: [requestedProfile]
     PingReply:
       allOf:
         - $ref: '#/components/schemas/Envelope'
@@ -158,7 +158,10 @@ components:
                   $ref: '#/components/schemas/Capabilities'
                 profile:
                   $ref: '#/components/schemas/ProfileSummary'
-              required: [status, capabilities, profile]
+                leaseTtlMs:
+                  type: integer
+                  description: Client lease TTL; refreshed on each ping.
+              required: [status, capabilities, profile, leaseTtlMs]
     Capabilities:
       type: object
       properties:
@@ -192,7 +195,7 @@ components:
             ramGB:
               type: integer
       required: [mode, platform, browser, hardware]
-    ApplyConfigRequest:
+    DeployGraphRequest:
       allOf:
         - $ref: '#/components/schemas/Envelope'
         - type: object
@@ -200,13 +203,14 @@ components:
             payload:
               type: object
               properties:
-                configVersion:
-                  type: string
                 graph:
                   type: object
-                  description: Serialized graph/config authored from Web.
+                  description: ServiceGraph document authored from Web.
+                configVersion:
+                  type: string
+                  description: Optional optimistic version/etag.
               required: [graph]
-    ApplyConfigReply:
+    DeployGraphReply:
       allOf:
         - $ref: '#/components/schemas/Envelope'
         - type: object
@@ -219,9 +223,10 @@ components:
                   enum: [ok, error]
                 revision:
                   type: integer
-                  description: State manager revision after apply.
+                  description: Master-side compiled graph revision/etag.
                 errorCode:
                   type: string
+                  enum: [invalid, conflict, unauthorized, not-found, unavailable, timeout, internal]
                 errorMessage:
                   type: string
               required: [status]
@@ -233,22 +238,25 @@ components:
             payload:
               type: object
               properties:
-                manifest:
-                  $ref: '#/components/schemas/ServiceManifest'
-                  description: Full service profile (validated against service schema)
-                manifestHash:
+                serviceClass:
                   type: string
-                  description: Optional sha256 of manifest (hex)
+                  description: Required service type (matches manifest serviceClass).
                 instanceId:
                   type: string
-                  description: Proposed instance id (optional; master may override)
+                  description: Required instance id.
+                manifest:
+                  $ref: '#/components/schemas/ServiceManifest'
+                  description: Full service profile (validated against service schema).
+                manifestHash:
+                  type: string
+                  description: Optional sha256 of manifest (hex).
                 bootstrapRev:
                   type: integer
-                  description: Optional expected state snapshot revision
+                  description: Optional expected state snapshot revision.
                 stateHash:
                   type: string
-                  description: Optional sha256 of initial snapshot
-              required: [manifest]
+                  description: Optional sha256 of initial snapshot.
+              required: [serviceClass, instanceId, manifest]
     RegisterReply:
       allOf:
         - $ref: '#/components/schemas/Envelope'

@@ -27,7 +27,7 @@ Steps:
    - Operator catalog location for engines: write to the instance bucket at `catalog/operators` (JSON array) for editor discovery.
 - Status path convention: engines/services should expose status in `status/summary` in their bucket to align with editor consumption.
 6) Rollout:
-   - Master sends apply to each target (extend `engine.yaml`/service control); engines apply at tick boundary and confirm with new revision.
+   - Master sends apply to each target via the shared service control surface (`deployOpGraph`); engines apply at tick boundary and confirm with new revision.
    - On failure or master unreachability, engines keep the old graph running and mark apply endpoints read-only; master can retry/rollback when available.
 
 Open items:
