@@ -8,13 +8,19 @@
 - Load graph snapshot from KV (`graph`) at startup; initialize state from seeded keys.
 - Apply graph diffs/commands (delivered via `deployOpGraph`) at safe points (end of tick), validate, update in-memory graph, bump version (KV revision), and write the new snapshot back to KV. On validation failure, keep the old graph running. If master/control plane is unavailable, continue running the last good graph and reject new apply requests with a clear read-only error.
 - Maintain per-instance state manager; write state into the instance KV; cross-instance readers consume the latest value via KV watch (bucket + key).
-- Data bus wiring (when ports are declared): subscribe/publish to compiled cross-edge subjects (`f8.bus.<edgeId>`). Engine uses this for operator-level ports; other services use the same pattern if they expose `inPorts`/`outPorts`.
+- Data bus wiring (when ports are declared): subscribe/publish to compiled cross-edge subjects (`f8.bus.<edgeId>`). Engine uses this for operator data ports (`dataInPorts`/`dataOutPorts`); other services use the same pattern if they expose data ports.
 - Lifecycle with master: register -> ensure per-instance KV bucket exists -> run -> unregister -> clean up bucket (if owned by master).
 
 ## Tick-based scheduling
 - Engine runs on discrete ticks to align processing of mixed-rate realtime data; all node executions within a tick see a consistent snapshot of inputs/state.
 - End-of-tick is the safe point: apply queued graph diffs, commit state transitions, emit deltas/fanout, and advance clocks. This avoids mid-tick structural changes and keeps multi-rate streams coherent.
 - Ticks can be fixed-step or adaptive; external triggers (e.g., high-rate streams) enqueue work but effects become visible on the next tick boundary.
+
+## Execution flow (operators)
+- Exec pins: operators may declare `execInPorts` and `execOutPorts` (they can be empty for entry/terminal/pull-only nodes). The compiler introduces `kind=exec` edges between exec pins; each execIn pin accepts only one incoming exec link (expose multiple execIn pins for multiple triggers).
+- Runtime: an operator runs in a tick only if it receives an exec token and its data deps are satisfied (pull-based evaluation fetches upstream data and caches outputs within the tick). Data-only nodes can still be pulled by downstream operators even if they are not on the exec chain.
+- Branching: operator logic decides which execOut(s) to fire. For a bool branch, the operator reads state/input and triggers the true or false execOut accordingly. Switch-like behavior is encoded by multiple execOutPorts and operator logic selecting one (or default).
+- Fan-in: operators with multiple execInPorts can be triggered by any incoming exec edge (aggregate).
 
 ## Web-engine UI hooks (visualization/control)
 - Web engine shares the same runtime model, plus UI renderers per node.

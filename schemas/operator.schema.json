@@ -36,30 +36,6 @@
       "type": "boolean",
       "default": false
     },
-    "inPorts": {
-      "type": "array",
-      "items": {
-        "$ref": "./common.schema.json#/definitions/port"
-      },
-      "default": []
-    },
-    "outPorts": {
-      "type": "array",
-      "items": {
-        "$ref": "./common.schema.json#/definitions/port"
-      },
-      "default": []
-    },
-    "allowAddInPorts": {
-      "type": "boolean",
-      "default": false,
-      "description": "Allow dynamic addition of input ports."
-    },
-    "allowAddOutPorts": {
-      "type": "boolean",
-      "default": false,
-      "description": "Allow dynamic addition of output ports."
-    },
     "commands": {
       "type": "array",
       "description": "Optional RPC-style commands the node can invoke (e.g., refresh/connect/disconnect)",
@@ -72,6 +48,52 @@
       "type": "boolean",
       "default": false,
       "description": "Allow dynamic addition of commands beyond the declared list."
+    },
+    "execInPorts": {
+      "type": "array",
+      "description": "Execution inputs (can be empty for entry/pull-only nodes). Each execIn port may have only one incoming exec link.",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "execOutPorts": {
+      "type": "array",
+      "description": "Execution outputs (can be empty for terminal/pull-only nodes). Operator logic decides which execOut to trigger.",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "allowAddExecInPorts": {
+      "type": "boolean",
+      "default": false
+    },
+    "allowAddExecOutPorts": {
+      "type": "boolean",
+      "default": false
+    },    
+    "dataInPorts": {
+      "type": "array",
+      "description": "Data input ports (can be empty).",
+      "items": {
+        "$ref": "./common.schema.json#/definitions/port"
+      },
+      "default": []
+    },
+    "dataOutPorts": {
+      "type": "array",
+      "description": "Data output ports (can be empty).",
+      "items": {
+        "$ref": "./common.schema.json#/definitions/port"
+      },
+      "default": []
+    },
+    "allowAddDataInPorts": {
+      "type": "boolean",
+      "default": false,
+      "description": "Allow dynamic addition of data input ports."
+    },
+    "allowAddDataOutPorts": {
+      "type": "boolean",
+      "default": false,
+      "description": "Allow dynamic addition of data output ports."
     },
     "rendererId": {
       "type": "string",

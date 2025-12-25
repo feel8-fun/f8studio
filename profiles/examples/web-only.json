@@ -1,8 +1,0 @@
-{
-  "mode": "web-only",
-  "platform": "win",
-  "browser": "chrome",
-  "hardware": { "cpuCores": 4, "ramGB": 8 },
-  "features": { "graphEdit": true, "playback": false, "libmpv": false, "nats": false },
-  "limits": { "bandwidthMbps": 20, "singleUser": true }
-}

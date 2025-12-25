@@ -20,23 +20,27 @@
       }
     ],
     "allowAddState": true,
-    "inPorts": [
+    "dataInPorts": [
       {
         "name": "in",
         "type": "float",
         "required": false
       }
     ],
-    "outPorts": [
+    "dataOutPorts": [
       {
         "name": "out",
         "type": "float",
         "required": false
       }
     ],
-    "allowAddInPorts": true,
-    "allowAddOutPorts": true,
-    "allowAddCommands": true
+    "allowAddDataInPorts": true,
+    "allowAddDataOutPorts": true,
+    "allowAddCommands": true,
+    "execInPorts": ["execIn"],
+    "execOutPorts": ["execOut"],
+    "allowAddExecInPorts": false,
+    "allowAddExecOutPorts": false
   },
   {
     "schemaVersion": "f8operator/1",
@@ -96,16 +100,16 @@
       }
     ],
     "allowAddState": false,
-    "inPorts": [
+    "dataInPorts": [
       {
         "name": "text",
         "type": "string",
         "required": false
       }
     ],
-    "outPorts": [],
-    "allowAddInPorts": false,
-    "allowAddOutPorts": false,
+    "dataOutPorts": [],
+    "allowAddDataInPorts": false,
+    "allowAddDataOutPorts": false,
     "allowAddCommands": false,
     "commands": [
       {
@@ -135,6 +139,10 @@
         "description": "Disconnect from the current device"
       }
     ],
-    "rendererId": "f8/comm/serialport-out"
+    "rendererId": "f8/comm/serialport-out",
+    "execInPorts": ["execIn"],
+    "execOutPorts": ["execOut"],
+    "allowAddExecInPorts": false,
+    "allowAddExecOutPorts": false
   }
 ]

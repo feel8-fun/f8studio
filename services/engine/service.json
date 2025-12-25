@@ -48,8 +48,8 @@
     { "name": "SNAPSHOT", "description": "Get current graph snapshot" }
   ],
   "allowAddCommands": false,
-  "inPorts": [],
-  "outPorts": [],
-  "allowAddInPorts": false,
-  "allowAddOutPorts": false
+  "dataInPorts": [],
+  "dataOutPorts": [],
+  "allowAddDataInPorts": false,
+  "allowAddDataOutPorts": false
 }

@@ -1,8 +1,0 @@
-{
-  "mode": "web-plus-daemon",
-  "platform": "win",
-  "browser": "chrome",
-  "hardware": { "cpuCores": 4, "ramGB": 8 },
-  "features": { "graphEdit": true, "playback": true, "libmpv": true, "nats": true },
-  "limits": { "bandwidthMbps": 20, "singleUser": true }
-}

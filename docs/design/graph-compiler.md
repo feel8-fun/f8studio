@@ -3,14 +3,15 @@
 Goal: deterministically turn the editor graph into deployable per-instance subgraphs and half-edges.
 
 Inputs:
-- Full graph (nodes, edges), with nodes referencing services/operators (inPorts/outPorts, commands, state).
-- Edge metadata per `schemas/edge.schema.json` (kind, scope, strategy, queue, timeout).
+- Full graph (nodes, edges), with nodes referencing services/operators (dataInPorts/dataOutPorts, exec pins, commands, state).
+- Edge metadata per `schemas/edge.schema.json` (kind=`data|state|exec`, scope, strategy/queue/timeout for data).
 - Instance placement (which service/engine hosts which nodes); auto-promotion rules for operator->external links.
 
 Steps:
 1) Validate graph:
    - Port compatibility (data/state rules), required fields, allow* flags.
    - Edge kind/scope resolution (intra vs cross).
+   - Exec edges: allow `kind=exec` between operator exec pins (every operator declares `execInPorts`/`execOutPorts`). Enforce only one link per execIn pin; expose multiple execIn pins when multiple triggers are needed.
 2) Assign edgeIds/subjects:
    - Data/State (cross): `f8.bus.<edgeId>` (edgeId is unique; can represent data or state fanout).
    - Intra edges can stay in-memory identifiers.

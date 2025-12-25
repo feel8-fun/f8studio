@@ -37,27 +37,27 @@
       "default": false,
       "description": "Allow dynamic addition of commands beyond the declared list."
     },
-    "inPorts": {
+    "dataInPorts": {
       "type": "array",
       "description": "Data bus inputs exposed by this service (for cross-instance data pub/sub).",
       "items": { "$ref": "./common.schema.json#/definitions/port" },
       "default": []
     },
-    "outPorts": {
+    "dataOutPorts": {
       "type": "array",
       "description": "Data bus outputs exposed by this service.",
       "items": { "$ref": "./common.schema.json#/definitions/port" },
       "default": []
     },
-    "allowAddInPorts": {
+    "allowAddDataInPorts": {
       "type": "boolean",
       "default": false,
-      "description": "Allow dynamic addition of input ports."
+      "description": "Allow dynamic addition of data input ports."
     },
-    "allowAddOutPorts": {
+    "allowAddDataOutPorts": {
       "type": "boolean",
       "default": false,
-      "description": "Allow dynamic addition of output ports."
+      "description": "Allow dynamic addition of data output ports."
     },
     "rendererId": {
       "type": "string",

@@ -10,8 +10,8 @@
     "toPort": { "type": "string", "description": "Target port name" },
     "kind": {
       "type": "string",
-      "enum": ["data", "state"],
-      "description": "Edge kind: data bus vs state bus"
+      "enum": ["data", "state", "exec"],
+      "description": "Edge kind: data bus, state bus, or execution flow"
     },
     "scope": {
       "type": "string",
