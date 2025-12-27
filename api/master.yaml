@@ -22,14 +22,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PingRequest'
+              $ref: "#/components/schemas/PingRequest"
       responses:
         "200":
           description: Pong with capability info
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PingReply'
+                $ref: "#/components/schemas/PingReply"
   /graph/deploy:
     post:
       summary: Deploy a ServiceGraph
@@ -42,14 +42,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/DeployGraphRequest'
+              $ref: "#/components/schemas/DeployGraphRequest"
       responses:
         "200":
           description: Deploy result
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DeployGraphReply'
+                $ref: "#/components/schemas/DeployGraphReply"
   /registry/register:
     post:
       summary: Register a service instance with master
@@ -62,14 +62,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RegisterRequest'
+              $ref: "#/components/schemas/RegisterRequest"
       responses:
         "200":
           description: Registration result
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RegisterReply'
+                $ref: "#/components/schemas/RegisterReply"
   /registry/unregister:
     post:
       summary: Unregister a service instance with master
@@ -82,14 +82,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UnregisterRequest'
+              $ref: "#/components/schemas/UnregisterRequest"
       responses:
         "200":
           description: Unregister result
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UnregisterReply'
+                $ref: "#/components/schemas/UnregisterReply"
 components:
   schemas:
     Envelope:
@@ -127,13 +127,22 @@ components:
           enum: [error]
         errorCode:
           type: string
-          enum: [invalid, conflict, unauthorized, not-found, unavailable, timeout, internal]
+          enum:
+            [
+              invalid,
+              conflict,
+              unauthorized,
+              not-found,
+              unavailable,
+              timeout,
+              internal,
+            ]
         errorMessage:
           type: string
       required: [status, errorCode]
     PingRequest:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
+        - $ref: "#/components/schemas/Envelope"
         - type: object
           properties:
             payload:
@@ -145,7 +154,7 @@ components:
               required: [requestedProfile]
     PingReply:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
+        - $ref: "#/components/schemas/Envelope"
         - type: object
           properties:
             payload:
@@ -154,50 +163,13 @@ components:
                 status:
                   type: string
                   enum: [ok]
-                capabilities:
-                  $ref: '#/components/schemas/Capabilities'
-                profile:
-                  $ref: '#/components/schemas/ProfileSummary'
                 leaseTtlMs:
                   type: integer
                   description: Client lease TTL; refreshed on each ping.
-              required: [status, capabilities, profile, leaseTtlMs]
-    Capabilities:
-      type: object
-      properties:
-        playback:
-          type: boolean
-        libmpv:
-          type: boolean
-        nats:
-          type: boolean
-        features:
-          type: array
-          items:
-            type: string
-    ProfileSummary:
-      type: object
-      properties:
-        mode:
-          type: string
-          enum: [web-only, web-plus-daemon]
-        platform:
-          type: string
-          enum: [win, mac, linux]
-        browser:
-          type: string
-          enum: [chrome, edge]
-        hardware:
-          type: object
-          properties:
-            cpuCores:
-              type: integer
-            ramGB:
-              type: integer
-      required: [mode, platform, browser, hardware]
+              required: [status, leaseTtlMs]
     DeployGraphRequest:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
+        - $ref: "#/components/schemas/Envelope"
         - type: object
           properties:
             payload:
@@ -212,7 +184,7 @@ components:
               required: [graph]
     DeployGraphReply:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
+        - $ref: "#/components/schemas/Envelope"
         - type: object
           properties:
             payload:
@@ -226,13 +198,22 @@ components:
                   description: Master-side compiled graph revision/etag.
                 errorCode:
                   type: string
-                  enum: [invalid, conflict, unauthorized, not-found, unavailable, timeout, internal]
+                  enum:
+                    [
+                      invalid,
+                      conflict,
+                      unauthorized,
+                      not-found,
+                      unavailable,
+                      timeout,
+                      internal,
+                    ]
                 errorMessage:
                   type: string
               required: [status]
     RegisterRequest:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
+        - $ref: "#/components/schemas/Envelope"
         - type: object
           properties:
             payload:
@@ -240,26 +221,14 @@ components:
               properties:
                 serviceClass:
                   type: string
-                  description: Required service type (matches manifest serviceClass).
+                  description: Required service type.
                 instanceId:
                   type: string
                   description: Required instance id.
-                manifest:
-                  $ref: '#/components/schemas/ServiceManifest'
-                  description: Full service profile (validated against service schema).
-                manifestHash:
-                  type: string
-                  description: Optional sha256 of manifest (hex).
-                bootstrapRev:
-                  type: integer
-                  description: Optional expected state snapshot revision.
-                stateHash:
-                  type: string
-                  description: Optional sha256 of initial snapshot.
-              required: [serviceClass, instanceId, manifest]
+              required: [serviceClass, instanceId]
     RegisterReply:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
+        - $ref: "#/components/schemas/Envelope"
         - type: object
           properties:
             payload:
@@ -278,13 +247,22 @@ components:
                   description: Bearer token to use for subsequent calls (Authorization header or envelope headers.authorization)
                 errorCode:
                   type: string
-                  enum: [invalid, conflict, unauthorized, not-found, unavailable, timeout, internal]
+                  enum:
+                    [
+                      invalid,
+                      conflict,
+                      unauthorized,
+                      not-found,
+                      unavailable,
+                      timeout,
+                      internal,
+                    ]
                 errorMessage:
                   type: string
               required: [status]
     UnregisterRequest:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
+        - $ref: "#/components/schemas/Envelope"
         - type: object
           properties:
             payload:
@@ -299,7 +277,7 @@ components:
               required: [instanceId]
     UnregisterReply:
       allOf:
-        - $ref: '#/components/schemas/Envelope'
+        - $ref: "#/components/schemas/Envelope"
         - type: object
           properties:
             payload:
@@ -310,16 +288,18 @@ components:
                   enum: [ok, error]
                 errorCode:
                   type: string
-                  enum: [invalid, conflict, unauthorized, not-found, unavailable, timeout, internal]
+                  enum:
+                    [
+                      invalid,
+                      conflict,
+                      unauthorized,
+                      not-found,
+                      unavailable,
+                      timeout,
+                      internal,
+                    ]
                 errorMessage:
                   type: string
               required: [status]
     ServiceManifest:
-      $ref: '../../schemas/service.schema.json'
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: >
-        Bearer token issued at registration; send as HTTP Authorization header or Envelope.headers.authorization for NATS.
+      $ref: "../schemas/service.schema.json"
