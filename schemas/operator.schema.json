@@ -1,7 +1,7 @@
 {
   "$id": "https://studio.feel8.fun/schemas/operator.schema.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "f8 operator spec",
+  "title": "OperatorSpec",
   "type": "object",
   "properties": {
     "schemaVersion": {
@@ -25,14 +25,14 @@
       },
       "default": []
     },
-    "state": {
+    "states": {
       "type": "array",
       "items": {
         "$ref": "./common.schema.json#/definitions/stateField"
       },
       "default": []
     },
-    "allowAddState": {
+    "allowAddStates": {
       "type": "boolean",
       "default": false
     },

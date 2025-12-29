@@ -1,0 +1,20 @@
+[project]
+name = "f8studio"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "datamodel-code-generator>=0.50.0",
+    "dearpygui>=2.1.1",
+    "f8engine",
+    "pydantic>=2.12.5",
+]
+
+[tool.uv.workspace]
+members = [
+    "packages/pyengine",
+]
+
+[tool.uv.sources]
+f8engine = { workspace = true, editable = true }
