@@ -41,8 +41,8 @@ def build_demo_registry() -> OperatorRegistry:
             tags=["debug", "output"],
             label="Log",
             description="Print incoming payloads",
-            execInPorts=["in"],
-            execOutPorts=["next"],
+            execInPorts=["exec"],
+            execOutPorts=["exec"],
             allowAddExecInPorts=False,
             allowAddExecOutPorts=False,
             dataInPorts=[
@@ -51,14 +51,60 @@ def build_demo_registry() -> OperatorRegistry:
             dataOutPorts=[],
             allowAddDataInPorts=False,
             allowAddDataOutPorts=False,
+            states=[],
+            allowAddStates=False,
+            commands=[],
+            allowAddCommands=False,
+        )
+    )
+
+    registry.register(
+        OperatorSpec(
+            schemaVersion="f8operator/1",
+            operatorClass="fun.feel8.ops.sine",
+            version="0.1.0",
+            label="Sine Wave",
+            tags=["math", "waveform"],
+            description="Generate a sine wave signal",
+            execInPorts=["exec"],
+            execOutPorts=["exec"],
+            allowAddExecInPorts=False,
+            allowAddExecOutPorts=False,
+            dataInPorts=[],
+            dataOutPorts=[
+                {"name": "value", "type": Type.float, "description": "Sine wave value"},
+            ],
+            allowAddDataInPorts=False,
+            allowAddDataOutPorts=False,
             states=[
                 StateField(
-                    name="level",
-                    label="Level",
-                    type=Type.string,
-                    default="info",
+                    name="frequency",
+                    label="Frequency (Hz)",
+                    type=Type.float,
+                    default=1,
                     access=Access.rw,
-                )
+                ),
+                StateField(
+                    name="amplitude",
+                    label="Amplitude",
+                    type=Type.float,
+                    default=0.5,
+                    access=Access.rw,
+                ),
+                StateField(
+                    name="phase",
+                    label="Phase offset normalized (0-1)",
+                    type=Type.float,
+                    default=0.0,
+                    access=Access.rw,
+                ),
+                StateField(
+                    name="offset",
+                    label="Vertical Offset",
+                    type=Type.float,
+                    default=0.5,
+                    access=Access.rw,
+                ),
             ],
             allowAddStates=False,
             commands=[],
@@ -69,7 +115,17 @@ def build_demo_registry() -> OperatorRegistry:
 
 
 if __name__ == "__main__":
+    import json
+    from pathlib import Path
     registry = build_demo_registry()
     graph = OperatorGraph()
+
+    try:
+        graph_path = Path('graph.json')
+        if graph_path.exists():
+            graph_data = json.load(open(graph_path))
+            graph.load_dict(graph_data['graph'])
+    except Exception as e:
+        print(f"Failed to load graph: {e}")
     
     OperatorGraphEditor(operatorCls_registry=registry, graph=graph).run()

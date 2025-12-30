@@ -17,14 +17,14 @@ from .generated.operator_spec import (
     Command,
     CommandParam,
     OperatorSpec,
-    Port,
+    DataPort,
     StateField,
     Type,
 )
 from .renderer.registry import RendererRegistry, NodeRenderContext
 from .renderer import *
 from .operator import *
-from .op_graph_editor import OperatorGraphEditor
+from .operator_graph_editor import OperatorGraphEditor
 
 __all__ = [
     'Access',
@@ -39,7 +39,7 @@ __all__ = [
     'OperatorInstance',
     'OperatorNotFound',
     'OperatorRegistry',
-    'Port',
+    'DataPort',
     'RegistryError',
     'StateField',
     'Type',

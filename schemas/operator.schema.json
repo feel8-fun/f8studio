@@ -79,7 +79,7 @@
       "type": "array",
       "description": "Data input ports (can be empty).",
       "items": {
-        "$ref": "./common.schema.json#/definitions/port"
+        "$ref": "./common.schema.json#/definitions/dataPort"
       },
       "default": []
     },
@@ -87,7 +87,7 @@
       "type": "array",
       "description": "Data output ports (can be empty).",
       "items": {
-        "$ref": "./common.schema.json#/definitions/port"
+        "$ref": "./common.schema.json#/definitions/dataPort"
       },
       "default": []
     },

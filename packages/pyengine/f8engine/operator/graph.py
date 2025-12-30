@@ -3,8 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .registry import OperatorRegistry
+from ..generated.operator_spec import Access, DataPort, StateField, OperatorSpec
+
 from .instance import OperatorInstance
-from ..generated.operator_spec import Access, Port, StateField
+from ..generated.operator_spec import Access, DataPort, StateField
 
 
 @dataclass
@@ -146,7 +149,7 @@ class OperatorGraph:
 
     def _validate_data_port(
         self, instance: OperatorInstance, port: str, *, direction: str
-    ) -> Port:
+    ) -> DataPort:
         ports = instance.spec.dataOutPorts if direction == 'out' else instance.spec.dataInPorts
         ports = ports or []
         for port_def in ports:
@@ -167,7 +170,7 @@ class OperatorGraph:
                 {
                     'id': node.id,
                     'operatorClass': node.operator_class,
-                    'spec': node.spec.model_dump(),
+                    'spec': node.spec.model_dump(mode='json'),
                     'state': node.state,
                     **({'ctx': node.ctx} if include_ctx else {}),
                 }
@@ -177,3 +180,73 @@ class OperatorGraph:
             'dataEdges': [edge.__dict__ for edge in self.data_edges],
             'stateEdges': [edge.__dict__ for edge in self.state_edges],
         }
+
+    @classmethod
+    def from_dict(
+        cls, payload: dict[str, Any], *, registry: OperatorRegistry | None = None
+    ) -> 'OperatorGraph':
+        """Instantiate a graph from a serialized payload."""
+        graph = cls()
+        graph.load_dict(payload, registry=registry)
+        return graph
+
+    def load_dict(self, payload: dict[str, Any], *, registry: OperatorRegistry | None = None) -> None:
+        """
+        Replace current graph contents from a serialized payload.
+
+        If a registry is provided, specs will be pulled from it when possible; otherwise
+        the embedded spec data is validated and used.
+        """
+        self.nodes.clear()
+        self.exec_edges.clear()
+        self.data_edges.clear()
+        self.state_edges.clear()
+
+        for node_data in payload.get('nodes', []):
+            operator_class = node_data['operatorClass']
+            spec_data = node_data.get('spec')
+            state = node_data.get('state') or {}
+            ctx = node_data.get('ctx') or {}
+
+            spec: OperatorSpec | None = None
+            if spec_data:
+                spec = OperatorSpec.model_validate(spec_data)
+            elif registry:
+                try:
+                    spec = registry.get(operator_class)
+                except Exception:
+                    spec = None
+
+            if spec is None:
+                raise ValueError(f'Missing spec for operatorClass "{operator_class}"')
+
+            instance = OperatorInstance.from_spec(spec, id=node_data['id'], state=state)
+            if ctx:
+                instance.ctx.update(ctx)
+            self.add_node(instance)
+
+        for edge_data in payload.get('execEdges', []):
+            self.connect_exec(
+                edge_data['source_id'],
+                edge_data['out_port'],
+                edge_data['target_id'],
+                edge_data['in_port'],
+            )
+
+        for edge_data in payload.get('dataEdges', []):
+            edge = self.connect_data(
+                edge_data['source_id'],
+                edge_data['out_port'],
+                edge_data['target_id'],
+                edge_data['in_port'],
+            )
+            if 'schema' in edge_data:
+                edge.schema = edge_data['schema']
+
+        for edge_data in payload.get('stateEdges', []):
+            self.connect_state(
+                edge_data['source_id'],
+                edge_data['source_field'],
+                edge_data['target_id'],
+                edge_data['target_field'],
+            )

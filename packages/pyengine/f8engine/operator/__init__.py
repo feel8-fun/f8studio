@@ -7,20 +7,21 @@ from .registry import (
     OperatorNotFound,
     InvalidOperatorSpec,
 )
-from ..generated.operator_spec import OperatorSpec, StateField, Access
+from ..generated.operator_spec import OperatorSpec, StateField, Access, Type
 
 __all__ = [
-    'OperatorGraph',
-    'ExecEdge',
-    'DataEdge',
-    'StateEdge',
-    'OperatorInstance',
-    'OperatorRegistry',
-    'RegistryError',
-    'OperatorAlreadyRegistered',
-    'OperatorNotFound',
-    'InvalidOperatorSpec',
-    'OperatorSpec',
-    'StateField',
-    'Access',
+    "OperatorGraph",
+    "ExecEdge",
+    "DataEdge",
+    "StateEdge",
+    "OperatorInstance",
+    "OperatorRegistry",
+    "RegistryError",
+    "OperatorAlreadyRegistered",
+    "OperatorNotFound",
+    "InvalidOperatorSpec",
+    "OperatorSpec",
+    "StateField",
+    "Access",
+    "Type",
 ]

@@ -9,7 +9,7 @@ Inputs:
 
 Steps:
 1) Validate graph:
-   - Port compatibility (data/state rules), required fields, allow* flags.
+   - DataPort compatibility (data/state rules), required fields, allow* flags.
    - Edge kind/scope resolution (intra vs cross).
    - Exec edges: allow `kind=exec` between operator exec pins (every operator declares `execInPorts`/`execOutPorts`). Enforce only one link per execIn pin; expose multiple execIn pins when multiple triggers are needed.
 2) Assign edgeIds/subjects:

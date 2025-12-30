@@ -77,6 +77,6 @@ class OperatorInstance:
         return {
             'id': self.id,
             'operatorClass': self.operator_class,
-            'spec': self.spec.model_dump(),
+            'spec': self.spec.model_dump(mode='json'),
             'state': self.state,
         }
