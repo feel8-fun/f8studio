@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from f8pysdk import OperatorAccess, OperatorSpec, OperatorStateField
+from f8pysdk import F8OperatorSpec, F8StateFieldAccess, F8StateSpec
+from f8pysdk.generated.data import Schema
 
 
 @dataclass
@@ -17,14 +18,14 @@ class OperatorInstance:
     """
 
     id: str
-    spec: OperatorSpec
+    spec: F8OperatorSpec
     state: dict[str, Any] = field(default_factory=dict)
     ctx: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_spec(
         cls,
-        template: OperatorSpec,
+        template: F8OperatorSpec,
         *,
         id: str | None = None,
         state: dict[str, Any] | None = None,
@@ -37,20 +38,26 @@ class OperatorInstance:
         return cls(id=instance_id, spec=mutable_spec, state=default_state)
 
     @staticmethod
-    def _build_default_state(spec: OperatorSpec) -> dict[str, Any]:
+    def _build_default_state(spec: F8OperatorSpec) -> dict[str, Any]:
         defaults: dict[str, Any] = {}
         for field_def in spec.states or []:
-            if field_def.default is not None:
-                defaults[field_def.name] = field_def.default
+            default_value = OperatorInstance._schema_default(field_def.valueSchema)
+            if default_value is not None:
+                defaults[field_def.name] = default_value
             elif field_def.required:
                 defaults[field_def.name] = None
         return defaults
+
+    @staticmethod
+    def _schema_default(schema: Schema) -> Any | None:
+        root = schema.root
+        return getattr(root, "default", None)
 
     @property
     def operator_class(self) -> str:
         return self.spec.operatorClass
 
-    def get_state_field(self, name: str) -> StateField | None:
+    def get_state_field(self, name: str) -> F8StateSpec | None:
         for field_def in self.spec.states or []:
             if field_def.name == name:
                 return field_def
@@ -60,7 +67,7 @@ class OperatorInstance:
         field_def = self.get_state_field(name)
         if not field_def:
             raise KeyError(f"Unknown state field: {name}")
-        if field_def.access == Access.ro and not allow_readonly:
+        if field_def.access == F8StateFieldAccess.ro and not allow_readonly:
             raise ValueError(f"State field {name} is read-only")
         self.state[name] = value
 

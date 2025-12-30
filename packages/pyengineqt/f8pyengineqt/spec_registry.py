@@ -5,7 +5,7 @@ from typing import Callable
 
 from pydantic import ValidationError
 
-from f8pysdk.generated.operator_spec import OperatorSpec
+from f8pysdk import F8OperatorSpec
 
 
 class RegistryError(Exception):
@@ -28,11 +28,11 @@ class OperatorSpecRegistry:
     """In-memory registry for validated OperatorSpec templates."""
 
     def __init__(self) -> None:
-        self._specs: dict[str, OperatorSpec] = {}
+        self._specs: dict[str, F8OperatorSpec] = {}
 
-    def register(self, spec: OperatorSpec, *, overwrite: bool = False) -> OperatorSpec:
+    def register(self, spec: F8OperatorSpec, *, overwrite: bool = False) -> F8OperatorSpec:
         try:
-            validated = OperatorSpec.model_validate(spec)
+            validated = F8OperatorSpec.model_validate(spec)
         except ValidationError as exc:
             raise InvalidOperatorSpec(str(exc)) from exc
 
@@ -47,14 +47,14 @@ class OperatorSpecRegistry:
         return validated
 
     def register_many(
-        self, specs: Iterable[OperatorSpec], *, overwrite: bool = False
-    ) -> list[OperatorSpec]:
+        self, specs: Iterable[F8OperatorSpec], *, overwrite: bool = False
+    ) -> list[F8OperatorSpec]:
         return [self.register(spec, overwrite=overwrite) for spec in specs]
 
     def unregister(self, operator_class: str) -> None:
         self._specs.pop(operator_class, None)
 
-    def get(self, operator_class: str) -> OperatorSpec:
+    def get(self, operator_class: str) -> F8OperatorSpec:
         if operator_class not in self._specs:
             raise OperatorNotFound(operator_class)
         return self._specs[operator_class].model_copy(deep=True)
@@ -64,12 +64,12 @@ class OperatorSpecRegistry:
         *,
         tags: set[str] | None = None,
         text: str | None = None,
-        predicate: Callable[[OperatorSpec], bool] | None = None,
-    ) -> list[OperatorSpec]:
+        predicate: Callable[[F8OperatorSpec], bool] | None = None,
+    ) -> list[F8OperatorSpec]:
         tags = set(tags or [])
         text_lower = text.lower() if text else None
 
-        def matches(spec: OperatorSpec) -> bool:
+        def matches(spec: F8OperatorSpec) -> bool:
             if tags and not tags.issubset(set(spec.tags or [])):
                 return False
             if text_lower:

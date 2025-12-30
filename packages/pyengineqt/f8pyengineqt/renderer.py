@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Type
 
-from f8pysdk.generated.operator_spec import Access, OperatorSpec, StateField, Type as ValueType
+from f8pysdk import F8PrimitiveTypeEnum, F8StateFieldAccess
+from f8pysdk.generated.data import Schema
 
 from .operator_instance import OperatorInstance
 
@@ -124,20 +125,20 @@ class OperatorNode(NodeBase):  # type: ignore[misc]
     def _build_data_ports(self) -> None:
         assert self.instance is not None
         for port in self.instance.spec.dataInPorts or []:
-            handle = self.add_input(port.name, color=_color_for_type(port.type))  # type: ignore[attr-defined]
+            handle = self.add_input(port.name, color=_color_for_schema(port.valueSchema))  # type: ignore[attr-defined]
             self.port_handles.data_in[port.name] = handle
         for port in self.instance.spec.dataOutPorts or []:
-            handle = self.add_output(port.name, color=_color_for_type(port.type))  # type: ignore[attr-defined]
+            handle = self.add_output(port.name, color=_color_for_schema(port.valueSchema))  # type: ignore[attr-defined]
             self.port_handles.data_out[port.name] = handle
 
     def _build_state_ports(self) -> None:
         assert self.instance is not None
         for field in self.instance.spec.states or []:
-            access = field.access or Access.ro
-            if access in (Access.wo, Access.rw):
+            access = field.access or F8StateFieldAccess.ro
+            if access in (F8StateFieldAccess.wo, F8StateFieldAccess.rw):
                 handle = self.add_input(f'{field.name} [in]', color=(120, 200, 200))  # type: ignore[attr-defined]
                 self.port_handles.state_in[field.name] = handle
-            if access in (Access.ro, Access.rw, Access.init):
+            if access in (F8StateFieldAccess.ro, F8StateFieldAccess.rw, F8StateFieldAccess.init):
                 handle = self.add_output(f'{field.name} [out]', color=(120, 200, 200))  # type: ignore[attr-defined]
                 self.port_handles.state_out[field.name] = handle
 
@@ -146,7 +147,7 @@ class OperatorNode(NodeBase):  # type: ignore[misc]
         if not hasattr(self, 'create_property'):
             return
         for field in self.instance.spec.states or []:
-            value = self.instance.state.get(field.name, field.default)
+            value = self.instance.state.get(field.name, _schema_default(field.valueSchema))
             try:
                 self.create_property(field.name, value)  # type: ignore[attr-defined]
             except Exception:
@@ -206,15 +207,31 @@ class GenericOperatorRenderer(BaseOperatorRenderer):
         return node
 
 
-def _color_for_type(value_type: ValueType | None) -> tuple[int, int, int]:
+def _schema_default(schema: Schema | None) -> Any | None:
+    if not schema:
+        return None
+    return getattr(schema.root, "default", None)
+
+
+def _schema_type(schema: Schema | None) -> str | None:
+    if not schema:
+        return None
+    return getattr(schema.root, "type", None)
+
+
+def _color_for_schema(schema: Schema | None) -> tuple[int, int, int]:
+    type_name = _schema_type(schema)
     palette = {
-        ValueType.bool: (170, 170, 170),
-        ValueType.int: (220, 140, 60),
-        ValueType.float: (90, 160, 255),
-        ValueType.string: (120, 200, 120),
-        ValueType.object: (180, 120, 200),
-        ValueType.enum: (255, 205, 120),
+        F8PrimitiveTypeEnum.boolean: (170, 170, 170),
+        F8PrimitiveTypeEnum.integer: (220, 140, 60),
+        F8PrimitiveTypeEnum.number: (90, 160, 255),
+        F8PrimitiveTypeEnum.string: (120, 200, 120),
+        "array": (160, 120, 200),
+        "object": (180, 120, 200),
+        "any": (200, 200, 200),
     }
-    if value_type is None:
-        return (200, 200, 200)
-    return palette.get(value_type, (200, 200, 200))
+    if isinstance(type_name, F8PrimitiveTypeEnum):
+        return palette.get(type_name, (200, 200, 200))
+    if isinstance(type_name, str):
+        return palette.get(type_name, (200, 200, 200))
+    return (200, 200, 200)

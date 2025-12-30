@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from f8pysdk.generated.edge_spec import EdgeSpec, Kind
+from f8pysdk import F8EdgeKindEmum, F8EdgeSpec
 
 from .operator_graph import OperatorGraph
 from .operator_instance import OperatorInstance
@@ -115,20 +115,20 @@ class OperatorGraphView:
             instance.ctx['pos'] = node_pos
         return node
 
-    def _connect_edge(self, edge: EdgeSpec) -> None:
+    def _connect_edge(self, edge: F8EdgeSpec) -> None:
         try:
             source_node = self._node_index[edge.from_]
             target_node = self._node_index[edge.to]
         except KeyError:
             return
 
-        if edge.kind == Kind.exec:
+        if edge.kind == F8EdgeKindEmum.exec:
             out_port = source_node.port('exec', 'out', edge.fromPort)
             in_port = target_node.port('exec', 'in', edge.toPort)
-        elif edge.kind == Kind.data:
+        elif edge.kind == F8EdgeKindEmum.data:
             out_port = source_node.port('data', 'out', edge.fromPort)
             in_port = target_node.port('data', 'in', edge.toPort)
-        elif edge.kind == Kind.state:
+        elif edge.kind == F8EdgeKindEmum.state:
             out_port = source_node.port('state', 'out', edge.fromPort)
             in_port = target_node.port('state', 'in', edge.toPort)
         else:

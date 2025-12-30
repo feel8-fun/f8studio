@@ -1,8 +1,15 @@
 from __future__ import annotations
 
-from typing import Iterable, Type
+from typing import Iterable
 
-from f8pysdk import OperatorAccess, OperatorDataPort, OperatorSpec, OperatorStateField, OperatorType
+from f8pysdk import (
+    F8DataPortSpec,
+    F8OperatorSpec,
+    F8PrimitiveType,
+    F8PrimitiveTypeEnum,
+    F8StateFieldAccess,
+    F8StateSpec,
+)
 
 from f8pyengineqt.graph_view import OperatorGraphView
 from f8pyengineqt.operator_graph import OperatorGraph
@@ -10,36 +17,53 @@ from f8pyengineqt.renderer import OperatorRendererRegistry
 from f8pyengineqt.spec_registry import OperatorSpecRegistry
 
 
-def _demo_specs() -> Iterable[OperatorSpec]:
+def _number_schema(
+    *,
+    default: float | None = None,
+    minimum: float | None = None,
+    maximum: float | None = None,
+) -> F8PrimitiveType:
+    """Convenience factory for numeric schemas used across demo specs."""
+    return F8PrimitiveType(
+            type=F8PrimitiveTypeEnum.number,
+            default=default,
+            minimum=minimum,
+            maximum=maximum,
+        )
+    
+
+
+def _string_schema(*, default: str | None = None) -> F8PrimitiveType:
+    return F8PrimitiveType(type=F8PrimitiveTypeEnum.string, default=default)
+
+
+def _demo_specs() -> Iterable[F8OperatorSpec]:
     """Small built-in palette so the app can launch without external assets."""
-    yield OperatorSpec(
+    yield F8OperatorSpec(
         operatorClass="feel8.sample.start",
         version="0.0.1",
         label="Start",
         description="Entry trigger for demo graphs.",
         execOutPorts=["next"],
     )
-    yield OperatorSpec(
+    yield F8OperatorSpec(
         operatorClass="feel8.sample.constant",
         version="0.0.1",
         label="Constant",
         description="Emits a configured numeric value.",
         execInPorts=["in"],
         execOutPorts=["out"],
-        dataOutPorts=[OperatorDataPort(name="value", type=OperatorType.float, description="constant output")],
+        dataOutPorts=[F8DataPortSpec(name="value", valueSchema=_number_schema(), description="constant output")],
         states=[
-            OperatorStateField(
+            F8StateSpec(
                 name="value",
                 label="Value",
-                type=OperatorType.float,
-                access=OperatorAccess.rw,
-                default=1.0,
-                minimum=-1000,
-                maximum=1000,
+                valueSchema=_number_schema(default=1.0, minimum=-1000, maximum=1000),
+                access=F8StateFieldAccess.rw,
             )
         ],
     )
-    yield OperatorSpec(
+    yield F8OperatorSpec(
         operatorClass="feel8.sample.add",
         version="0.0.1",
         label="Add",
@@ -47,27 +71,26 @@ def _demo_specs() -> Iterable[OperatorSpec]:
         execInPorts=["enter"],
         execOutPorts=["next"],
         dataInPorts=[
-            OperatorDataPort(name="a", type=OperatorType.float, description="lhs"),
-            OperatorDataPort(name="b", type=OperatorType.float, description="rhs"),
+            F8DataPortSpec(name="a", valueSchema=_number_schema(), description="lhs"),
+            F8DataPortSpec(name="b", valueSchema=_number_schema(), description="rhs"),
         ],
-        dataOutPorts=[OperatorDataPort(name="sum", type=OperatorType.float, description="a+b")],
+        dataOutPorts=[F8DataPortSpec(name="sum", valueSchema=_number_schema(), description="a+b")],
     )
-    yield OperatorSpec(
+    yield F8OperatorSpec(
         operatorClass="feel8.sample.log",
         version="0.0.1",
         label="Log",
         description="Terminal node that inspects incoming data.",
         execInPorts=["enter"],
         dataInPorts=[
-            OperatorDataPort(name="value", type=OperatorType.float, description="value to log", required=False),
+            F8DataPortSpec(name="value", valueSchema=_number_schema(), description="value to log", required=False),
         ],
         states=[
-            OperatorStateField(
+            F8StateSpec(
                 name="label",
                 label="Label",
-                type=OperatorType.string,
-                access=OperatorAccess.rw,
-                default="Log",
+                valueSchema=_string_schema(default="Log"),
+                access=F8StateFieldAccess.rw,
             )
         ],
     )
