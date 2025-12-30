@@ -6,15 +6,7 @@ from typing import Any
 import dearpygui.dearpygui as dpg
 
 from .operator import Access, OperatorGraph, OperatorInstance, OperatorRegistry
-from .renderer import RendererRegistry, BaseOpRenderer
-
-
-@dataclass
-class LinkMeta:
-    kind: str  # exec | data | state
-    edge: Any
-    source_attr: int | str
-    target_attr: int | str
+from .renderer import RendererRegistry, BaseOpRenderer, NodeAttrUserData, LinkUserData
 
 
 class OperatorGraphEditor:
@@ -39,7 +31,6 @@ class OperatorGraphEditor:
 
         self._renderers = {}
 
-        self._link_meta: dict[int | str, LinkMeta] = {}
         self._node_editor_id: int | None = None
         self._node_counter = 0
         self._operator_menu_id: int | None = None
@@ -149,7 +140,7 @@ class OperatorGraphEditor:
         with dpg.node(label=instance.spec.label, parent=self._node_editor_id, tag=instance.id) as node_tag:
             renderer_key = instance.spec.rendererClass or "default"
             rendererClass = self.rendererCls_registry.get(renderer_key)
-            self._renderers[instance.id] = rendererClass(instance.id, instance)
+            self._renderers[instance.id] = rendererClass(dpg.get_alias_id(node_tag), instance)
 
         self._set_node_pos(node_tag, pos)
 
@@ -170,8 +161,8 @@ class OperatorGraphEditor:
 
     def _on_link(self, sender: int, app_data: Any, user_data: Any) -> None:
         from_attr, to_attr = app_data
-        from_meta = dpg.get_item_user_data(from_attr)
-        to_meta = dpg.get_item_user_data(to_attr)
+        from_meta: NodeAttrUserData = dpg.get_item_user_data(from_attr)
+        to_meta: NodeAttrUserData = dpg.get_item_user_data(to_attr)
         assert from_meta.direction == "out" or from_meta.direction == "in", "Invalid from_attr direction"
 
         if from_meta.kind != to_meta.kind:
@@ -181,11 +172,11 @@ class OperatorGraphEditor:
         kind = from_meta.kind
         try:
             if kind == "exec":
-                edge = self.graph.connect_exec(from_meta.node_id, from_meta.port, to_meta.node_id, to_meta.port)
+                edge = self.graph.connect_exec(from_meta.instance_key, from_meta.port, to_meta.instance_key, to_meta.port)
             elif kind == "data":
-                edge = self.graph.connect_data(from_meta.node_id, from_meta.port, to_meta.node_id, to_meta.port)
+                edge = self.graph.connect_data(from_meta.instance_key, from_meta.port, to_meta.instance_key, to_meta.port)
             elif kind == "state":
-                edge = self.graph.connect_state(from_meta.node_id, from_meta.port, to_meta.node_id, to_meta.port)
+                edge = self.graph.connect_state(from_meta.instance_key, from_meta.port, to_meta.instance_key, to_meta.port)
             else:
                 return
         except Exception as exc:  # noqa: BLE001
@@ -193,8 +184,13 @@ class OperatorGraphEditor:
             return
 
         link_tag = dpg.generate_uuid()
-        dpg.add_node_link(from_attr, to_attr, parent=self._node_editor_id, tag=link_tag)
-        self._link_meta[link_tag] = LinkMeta(kind=kind, edge=edge, source_attr=from_attr, target_attr=to_attr)
+        dpg.add_node_link(
+            from_attr,
+            to_attr,
+            parent=self._node_editor_id,
+            tag=link_tag,
+            user_data=LinkUserData(kind=kind, edge=edge, source_attr=from_attr, target_attr=to_attr),
+        )
 
     def _on_delink(self, sender: int, app_data: Any, user_data: Any) -> None:
         link_tag = app_data
@@ -223,8 +219,17 @@ class OperatorGraphEditor:
         prefix = "out" if direction == "out" else "in"
         return f"{node_id}_{prefix}_{kind}_{port}"
 
+    def _link_tags(self) -> list[int | str]:
+        if not self._node_editor_id or not dpg.does_item_exist(self._node_editor_id):
+            return []
+        return list(dpg.get_item_children(self._node_editor_id, 0) or [])
+
+    def _get_link_meta(self, link_tag: int | str) -> LinkUserData | None:
+        if not dpg.does_item_exist(link_tag):
+            return None
+        return dpg.get_item_user_data(link_tag)
+
     def _reset_editor_state(self) -> None:
-        self._link_meta.clear()
         self._renderers.clear()
         if self._node_editor_id:
             dpg.delete_item(self._node_editor_id, children_only=True)
@@ -307,11 +312,16 @@ class OperatorGraphEditor:
             print(f"Skip rebuilding {kind} link {source_id} -> {target_id}: missing pin widgets")
             return
         link_tag = dpg.generate_uuid()
-        dpg.add_node_link(src_attr, dst_attr, parent=self._node_editor_id, tag=link_tag)
-        self._link_meta[link_tag] = LinkMeta(kind=kind, edge=edge_obj, source_attr=src_attr, target_attr=dst_attr)
+        dpg.add_node_link(
+            src_attr,
+            dst_attr,
+            parent=self._node_editor_id,
+            tag=link_tag,
+            user_data=LinkUserData(kind=kind, edge=edge_obj, source_attr=src_attr, target_attr=dst_attr),
+        )
 
     def _remove_link(self, link_tag: int | str, *, delete_item: bool) -> None:
-        link_meta = self._link_meta.pop(link_tag, None)
+        link_meta = self._get_link_meta(link_tag)
         if link_meta:
             if link_meta.kind == "exec":
                 self.graph.disconnect_exec(link_meta.edge)
@@ -325,7 +335,10 @@ class OperatorGraphEditor:
     def _remove_node(self, node_id: int | str) -> None:
         node_id_str = str(node_id)
         # Remove any links touching this node first.
-        for link_tag, link_meta in list(self._link_meta.items()):
+        for link_tag in self._link_tags():
+            link_meta = self._get_link_meta(link_tag)
+            if not link_meta:
+                continue
             src_meta = (
                 dpg.get_item_user_data(link_meta.source_attr)
                 if dpg.does_item_exist(link_meta.source_attr)
