@@ -1,7 +1,7 @@
 {
   "$id": "https://studio.feel8.fun/schemas/operator.schema.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "f8 operator spec",
+  "title": "OperatorSpec",
   "type": "object",
   "properties": {
     "schemaVersion": {
@@ -12,11 +12,17 @@
       "type": "string",
       "description": "Reverse-DNS style id for this operator kind (e.g., fun.feel8.op.js-script)"
     },
+    "version": {
+      "type": "string",
+      "description": "SemVer of the operator profile",
+      "default": "0.0.0"
+    },
     "label": {
       "type": "string"
     },
     "description": {
-      "type": "string"
+      "type": "string",
+      "default": ""
     },
     "tags": {
       "type": "array",
@@ -25,14 +31,14 @@
       },
       "default": []
     },
-    "state": {
+    "states": {
       "type": "array",
       "items": {
         "$ref": "./common.schema.json#/definitions/stateField"
       },
       "default": []
     },
-    "allowAddState": {
+    "allowAddStates": {
       "type": "boolean",
       "default": false
     },
@@ -95,7 +101,7 @@
       "default": false,
       "description": "Allow dynamic addition of data output ports."
     },
-    "rendererId": {
+    "rendererClass": {
       "type": "string",
       "description": "Optional custom UI renderer key for this operator node (e.g., realtimePlot, 3dViewer)"
     },
@@ -108,7 +114,21 @@
   "required": [
     "schemaVersion",
     "operatorClass",
-    "label"
+    "label",
+    "description",
+    "tags",
+    "states",
+    "allowAddStates",
+    "commands",
+    "allowAddCommands",
+    "execInPorts",
+    "execOutPorts",
+    "allowAddExecInPorts",
+    "allowAddExecOutPorts",
+    "dataInPorts",
+    "dataOutPorts",
+    "allowAddDataInPorts",
+    "allowAddDataOutPorts"
   ],
   "additionalProperties": false
 }

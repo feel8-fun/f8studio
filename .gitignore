@@ -57,3 +57,7 @@ CTestTestfile.cmake
 *.swp
 *~
 .#*
+
+
+# Ignore generated code folders
+**/generated/*

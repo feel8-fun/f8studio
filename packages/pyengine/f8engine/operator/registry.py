@@ -1,0 +1,111 @@
+from __future__ import annotations
+
+from collections.abc import Iterable
+from typing import Callable
+
+from pydantic import ValidationError
+
+from ..generated.operator_spec import OperatorSpec
+
+
+class RegistryError(Exception):
+    """Base class for registry failures."""
+
+
+class OperatorAlreadyRegistered(RegistryError):
+    """Raised when attempting to register a duplicate operatorClass without overwrite."""
+
+
+class OperatorNotFound(RegistryError):
+    """Raised when a requested operatorClass is missing."""
+
+
+class InvalidOperatorSpec(RegistryError):
+    """Raised when a spec payload cannot be validated."""
+
+
+class OperatorRegistry:
+    """In-memory registry for validated OperatorSpec templates."""
+
+    def __init__(self) -> None:
+        self._specs: dict[str, OperatorSpec] = {}
+
+    def register(self, spec: OperatorSpec, *, overwrite: bool = False) -> OperatorSpec:
+        """
+        Add a spec to the registry after validation.
+
+        Returns the validated OperatorSpec stored in the registry (immutable template).
+        """
+        try:
+            validated = OperatorSpec.model_validate(spec)
+        except ValidationError as exc:
+            raise InvalidOperatorSpec(str(exc)) from exc
+
+        if validated.schemaVersion != 'f8operator/1':
+            raise InvalidOperatorSpec('schemaVersion must be "f8operator/1"')
+
+        exists = validated.operatorClass in self._specs
+        if exists and not overwrite:
+            raise OperatorAlreadyRegistered(validated.operatorClass)
+
+        self._specs[validated.operatorClass] = validated
+        return validated
+
+    def register_many(
+        self, specs: Iterable[OperatorSpec], *, overwrite: bool = False
+    ) -> list[OperatorSpec]:
+        """Register a collection of specs, returning the stored templates."""
+        return [self.register(spec, overwrite=overwrite) for spec in specs]
+
+    def unregister(self, operator_class: str) -> None:
+        """Remove a spec from the registry if present."""
+        self._specs.pop(operator_class, None)
+
+    def get(self, operator_class: str) -> OperatorSpec:
+        """Fetch a deep copy of the stored spec to avoid mutating the template."""
+        if operator_class not in self._specs:
+            raise OperatorNotFound(operator_class)
+        return self._specs[operator_class].model_copy(deep=True)
+
+    def query(
+        self,
+        *,
+        tags: set[str] | None = None,
+        text: str | None = None,
+        predicate: Callable[[OperatorSpec], bool] | None = None,
+    ) -> list[OperatorSpec]:
+        """
+        Query specs by tags/text and an optional predicate.
+
+        - tags: all tags must be present on the spec (conjunctive).
+        - text: case-insensitive substring match against label/description/operatorClass.
+        - predicate: custom callable to filter.
+        """
+        tags = set(tags or [])
+        text_lower = text.lower() if text else None
+
+        def matches(spec: OperatorSpec) -> bool:
+            if tags and not tags.issubset(set(spec.tags or [])):
+                return False
+            if text_lower:
+                haystack = ' '.join(
+                    filter(
+                        None,
+                        [
+                            spec.operatorClass,
+                            spec.label,
+                            spec.description,
+                        ],
+                    )
+                ).lower()
+                if text_lower not in haystack:
+                    return False
+            if predicate and not predicate(spec):
+                return False
+            return True
+
+        return [spec.model_copy(deep=True) for spec in self._specs.values() if matches(spec)]
+
+    def all(self) -> list[OperatorSpec]:
+        """Return a deep copy of every registered spec."""
+        return [spec.model_copy(deep=True) for spec in self._specs.values()]

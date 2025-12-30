@@ -1,35 +1,82 @@
 {
   "$id": "https://studio.feel8.fun/schemas/service.schema.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "f8 service profile",
+  "title": "ServiceSpec",
   "type": "object",
   "properties": {
-    "schemaVersion": { "type": "string", "const": "f8service/1" },
-    "serviceClass": { "type": "string", "description": "Reverse-DNS style id, e.g., fun.feel8.engine" },
-    "label": { "type": "string" },
-    "description": { "type": "string" },
-    "tags": { "type": "array", "items": { "type": "string" }, "default": [] },
-    "version": { "type": "string", "description": "SemVer of the service profile" },
+    "schemaVersion": {
+      "type": "string",
+      "const": "f8service/1"
+    },
+    "serviceClass": {
+      "type": "string",
+      "description": "Reverse-DNS style id, e.g., fun.feel8.engine"
+    },
+    "version": {
+      "type": "string",
+      "description": "SemVer of the service profile",
+      "default": "0.0.0"
+    },
+    "label": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string",
+      "default": ""
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
     "launch": {
       "type": "object",
       "properties": {
-        "command": { "type": "string", "description": "Executable path or name" },
-        "args": { "type": "array", "items": { "type": "string" }, "default": [] },
-        "env": { "type": "object", "additionalProperties": { "type": "string" } },
-        "workdir": { "type": "string" }
+        "command": {
+          "type": "string",
+          "description": "Executable path or name"
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "workdir": {
+          "type": "string"
+        }
       },
-      "required": ["command"],
+      "required": [
+        "command"
+      ],
       "additionalProperties": false
     },
-    "state": {
+    "states": {
       "type": "array",
-      "items": { "$ref": "./common.schema.json#/definitions/stateField" },
+      "items": {
+        "$ref": "./common.schema.json#/definitions/stateField"
+      },
       "description": "Static state model; keys become state manager entries"
     },
-    "allowAddState": { "type": "boolean", "default": false, "description": "Allow dynamic user-added state entries" },
+    "allowAddStates": {
+      "type": "boolean",
+      "default": false,
+      "description": "Allow dynamic user-added state entries"
+    },
     "commands": {
       "type": "array",
-      "items": { "$ref": "./common.schema.json#/definitions/command" },
+      "items": {
+        "$ref": "./common.schema.json#/definitions/command"
+      },
       "default": []
     },
     "allowAddCommands": {
@@ -40,13 +87,17 @@
     "dataInPorts": {
       "type": "array",
       "description": "Data bus inputs exposed by this service (for cross-instance data pub/sub).",
-      "items": { "$ref": "./common.schema.json#/definitions/port" },
+      "items": {
+        "$ref": "./common.schema.json#/definitions/port"
+      },
       "default": []
     },
     "dataOutPorts": {
       "type": "array",
       "description": "Data bus outputs exposed by this service.",
-      "items": { "$ref": "./common.schema.json#/definitions/port" },
+      "items": {
+        "$ref": "./common.schema.json#/definitions/port"
+      },
       "default": []
     },
     "allowAddDataInPorts": {
@@ -59,7 +110,7 @@
       "default": false,
       "description": "Allow dynamic addition of data output ports."
     },
-    "rendererId": {
+    "rendererClass": {
       "type": "string",
       "description": "Optional custom UI renderer key for the node (e.g., realtimePlot, 3dViewer)"
     },
@@ -69,6 +120,21 @@
       "additionalProperties": true
     }
   },
-  "required": ["schemaVersion", "serviceClass", "label", "state"],
+  "required": [
+    "schemaVersion",
+    "serviceClass",
+    "label",
+    "version",
+    "description",
+    "tags",
+    "states",
+    "allowAddStates",
+    "commands",
+    "allowAddCommands",
+    "dataInPorts",
+    "dataOutPorts",
+    "allowAddDataInPorts",
+    "allowAddDataOutPorts"
+  ],
   "additionalProperties": false
 }

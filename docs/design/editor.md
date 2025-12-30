@@ -31,9 +31,9 @@
 - You can still draw cross-instance links while offline; they are marked pending and will not execute until master returns and compiles the graph.
 
 ## Renderer extensibility (hooks pre-baked)
-- Keep `rendererId` as the lookup key. Resolution order: built-in registry -> dynamic registry -> fallback generic renderer.
-- Provide a registration hook: `registerRenderer(rendererId, componentOrFactory)`; future user plugins call this when loaded.
-- Plugin loading plan: load JS bundles from a trusted local plugins folder (e.g., `~/.feel8/plugins/`, configurable). Require a manifest (name, version, rendererIds, entry path); allow a reload-plugins action for dev. Loader can be disabled by default until an allowlist is configured.
+- Keep `rendererClass` as the lookup key. Resolution order: built-in registry -> dynamic registry -> fallback generic renderer.
+- Provide a registration hook: `registerRenderer(rendererClass, componentOrFactory)`; future user plugins call this when loaded.
+- Plugin loading plan: load JS bundles from a trusted local plugins folder (e.g., `~/.feel8/plugins/`, configurable). Require a manifest (name, version, rendererClasss, entry path); allow a reload-plugins action for dev. Loader can be disabled by default until an allowlist is configured.
 - Safety: only load allowlisted/signed bundles; on load failure, fall back to the generic renderer so nodes still render.
 - Contract to document later: props include node state, ports, commands, status, and callbacks to send commands/update state; host provides theme/styling context.
 - Delivery path: browser fetches plugins via local HTTP served by master/gateway (manifest endpoint + static JS under `/plugins/...`); no direct disk access from the page.

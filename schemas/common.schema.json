@@ -16,7 +16,7 @@
         "minimum": { "type": "number", "description": "Optional lower bound for numeric types" },
         "maximum": { "type": "number", "description": "Optional upper bound for numeric types" },
         "step": { "type": "number", "description": "Optional UI step/increment for numeric types" },
-        "schema": {
+        "objectSchema": {
           "type": "object",
           "description": "Optional JSON Schema for complex structures (object/array/tuple) when type=object",
           "additionalProperties": true
@@ -47,7 +47,7 @@
           "enum": ["bool", "int", "float", "string", "object", "enum"]
         },
         "description": { "type": "string" },
-        "schema": {
+        "objectSchema": {
           "type": "object",
           "description": "Optional JSON Schema for complex payloads (object/array/tuple)",
           "additionalProperties": true
@@ -83,7 +83,7 @@
         "minimum": { "type": "number", "description": "Optional lower bound for numeric types" },
         "maximum": { "type": "number", "description": "Optional upper bound for numeric types" },
         "step": { "type": "number", "description": "Optional UI step/increment for numeric types" },
-        "schema": {
+        "objectSchema": {
           "type": "object",
           "description": "Optional JSON Schema for complex structures (object/array/tuple) when type=object",
           "additionalProperties": true
