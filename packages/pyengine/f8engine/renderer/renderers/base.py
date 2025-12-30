@@ -1,8 +1,15 @@
-from typing import Union
+from typing import Union, Literal
 
+from dataclasses import dataclass
 from ...operator import Type, Access, StateField, OperatorInstance
 import dearpygui.dearpygui as dpg
 
+@dataclass
+class PortUserData:
+    node_id: Union[str, int]
+    port: str
+    kind: Literal["exec", "data", "state"]
+    direction: Literal["in", "out", "field"]
 
 class BaseOpRenderer:
     """Base renderer with helper methods."""
@@ -31,7 +38,8 @@ class BaseOpRenderer:
                 parent=self.node_id,
                 attribute_type=dpg.mvNode_Attr_Input,
                 shape=dpg.mvNode_PinShape_TriangleFilled,
-                user_data=(self.node_id, in_exec, "exec", "in"),
+                user_data=PortUserData(node_id=self.node_id, port=in_exec, kind="exec", direction="in"
+            )
             ):
                 dpg.add_text(in_exec)
 
@@ -41,7 +49,7 @@ class BaseOpRenderer:
                 parent=self.node_id,
                 attribute_type=dpg.mvNode_Attr_Output,
                 shape=dpg.mvNode_PinShape_TriangleFilled,
-                user_data=(self.node_id, out_exec, "exec", "out"),
+                user_data=PortUserData(node_id=self.node_id, port=out_exec, kind="exec", direction="out"),
             ):
                 dpg.add_text(out_exec)
 
@@ -52,7 +60,7 @@ class BaseOpRenderer:
                 parent=self.node_id,
                 attribute_type=dpg.mvNode_Attr_Input,
                 shape=dpg.mvNode_PinShape_CircleFilled,
-                user_data=(self.node_id, in_data.name, "data", "in"),
+                user_data=PortUserData(node_id=self.node_id, port=in_data.name, kind="data", direction="in"),
             ):
                 dpg.add_text(in_data.name)
 
@@ -62,12 +70,12 @@ class BaseOpRenderer:
                 parent=self.node_id,
                 attribute_type=dpg.mvNode_Attr_Output,
                 shape=dpg.mvNode_PinShape_CircleFilled,
-                user_data=(self.node_id, out_data.name, "data", "out"),
+                user_data=PortUserData(node_id=self.node_id, port=out_data.name, kind="data", direction="out"),
             ):
                 dpg.add_text(out_data.name)
 
     def _add_state_field(self, state_field: StateField) -> None:
-        user_data = (self.node_id, state_field.name, "state", "field")
+        user_data = PortUserData(node_id=self.node_id, port=state_field.name, kind="state", direction="field")
         if state_field.type == Type.bool:
             dpg.add_checkbox(
                 default_value=False, tag=f"{self.node_id}_state_field_{state_field.name}", user_data=user_data
@@ -117,7 +125,7 @@ class BaseOpRenderer:
             if access in (Access.wo, Access.rw):
                 with dpg.node_attribute(
                     tag=f"{self.node_id}_in_state_{state_field.name}",
-                    user_data=(self.node_id, state_field.name, "state", "in"),
+                    user_data=PortUserData(node_id=self.node_id, port=state_field.name, kind="state", direction="in"),
                     parent=self.node_id,
                     attribute_type=dpg.mvNode_Attr_Input,
                     shape=dpg.mvNode_PinShape_QuadFilled,
@@ -128,7 +136,7 @@ class BaseOpRenderer:
             if access in (Access.ro, Access.rw, Access.init):
                 with dpg.node_attribute(
                     tag=f"{self.node_id}_out_state_{state_field.name}",
-                    user_data=(self.node_id, state_field.name, "state", "out"),
+                    user_data=PortUserData(node_id=self.node_id, port=state_field.name, kind="state", direction="out"),
                     parent=self.node_id,
                     attribute_type=dpg.mvNode_Attr_Output,
                     shape=dpg.mvNode_PinShape_QuadFilled,

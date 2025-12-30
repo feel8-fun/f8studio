@@ -89,7 +89,7 @@ class OperatorGraph:
         target_port = self._validate_data_port(self.nodes[target_id], in_port, direction='in')
         if any(edge.target_id == target_id and edge.in_port == in_port for edge in self.data_edges):
             raise ValueError(f'data in port {in_port} on {target_id} already has a link')
-        schema = source_port.schema_ or target_port.schema_
+        schema = source_port.objectSchema or target_port.objectSchema
         edge = DataEdge(
             source_id=source_id,
             out_port=out_port,

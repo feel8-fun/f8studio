@@ -6,7 +6,7 @@ from typing import Any
 import dearpygui.dearpygui as dpg
 
 from .operator import Access, OperatorGraph, OperatorInstance, OperatorRegistry
-from .renderer.registry import RendererRegistry, BaseOpRenderer
+from .renderer import RendererRegistry, BaseOpRenderer
 
 
 @dataclass
@@ -39,7 +39,6 @@ class OperatorGraphEditor:
 
         self._renderers = {}
 
-        self._attr_meta: dict[int | str, dict[str, str]] = {}
         self._link_meta: dict[int | str, LinkMeta] = {}
         self._node_editor_id: int | None = None
         self._node_counter = 0
@@ -48,17 +47,17 @@ class OperatorGraphEditor:
         self._save_dialog_id: int | None = None
         self._load_dialog_id: int | None = None
         # Ensure default renderer is present.
-        self.rendererCls_registry.register('default', BaseOpRenderer, overwrite=True)
+        self.rendererCls_registry.register("default", BaseOpRenderer, overwrite=True)
 
     def run(self) -> None:
         """Start the DearPyGui event loop."""
         dpg.create_context()
 
-        with dpg.window(label='PyEngine Graph UI', width=1280, height=720) as main_win:
+        with dpg.window(label="PyEngine Graph UI", width=1280, height=720) as main_win:
             with dpg.menu_bar():
-                with dpg.menu(label='File'):
-                    dpg.add_menu_item(label='Load graph...', callback=self._on_click_load)
-                    dpg.add_menu_item(label='Save graph...', callback=self._on_click_save)
+                with dpg.menu(label="File"):
+                    dpg.add_menu_item(label="Load graph...", callback=self._on_click_load)
+                    dpg.add_menu_item(label="Save graph...", callback=self._on_click_save)
             self._node_editor_id = dpg.add_node_editor(
                 callback=self._on_link,
                 delink_callback=self._on_delink,
@@ -67,6 +66,8 @@ class OperatorGraphEditor:
             )
             with dpg.handler_registry():
                 dpg.add_mouse_double_click_handler(callback=self._on_double_click)
+                dpg.add_key_press_handler(key=dpg.mvKey_Delete, callback=self._on_delete_selected)
+                dpg.add_key_press_handler(key=dpg.mvKey_Back, callback=self._on_delete_selected)
 
         # with dpg.window(label='Operators', width=200, height=400):
         #     self._build_palette()
@@ -75,7 +76,7 @@ class OperatorGraphEditor:
         self._build_file_dialogs()
         self._rebuild_ui_from_graph()
 
-        dpg.create_viewport(title='PyEngine Graph UI', width=1280, height=720)
+        dpg.create_viewport(title="PyEngine Graph UI", width=1280, height=720)
 
         # with dpg.theme() as theme:
         #     with dpg.theme_component():
@@ -100,14 +101,14 @@ class OperatorGraphEditor:
                 label=label,
                 width=-1,
                 callback=self._on_pick_operator,
-                user_data={'operatorClass': spec.operatorClass, 'pos': None},
+                user_data={"operatorClass": spec.operatorClass, "pos": None},
             )
             dpg.add_text(spec.operatorClass, indent=12)
 
     def _build_operator_menu(self) -> None:
         """Popup menu shown on node-editor double click to choose an operator."""
         self._operator_menu_id = dpg.add_window(
-            label='Add operator',
+            label="Add operator",
             show=False,
             no_title_bar=False,
             modal=True,
@@ -118,14 +119,14 @@ class OperatorGraphEditor:
         for spec in self.operatorCls_registry.all():
             label = spec.label or spec.operatorClass
             dpg.add_button(
-                label=f'Add {label}',
+                label=f"Add {label}",
                 width=-1,
                 parent=self._operator_menu_id,
                 callback=self._on_pick_operator,
-                user_data={'operatorClass': spec.operatorClass, 'pos': None},
+                user_data={"operatorClass": spec.operatorClass, "pos": None},
             )
         dpg.add_button(
-            label='Cancel',
+            label="Cancel",
             width=-1,
             parent=self._operator_menu_id,
             callback=lambda: dpg.configure_item(self._operator_menu_id, show=False),
@@ -146,11 +147,10 @@ class OperatorGraphEditor:
         """Create DearPyGui node widgets for an existing operator instance."""
         assert self._node_editor_id is not None
         with dpg.node(label=instance.spec.label, parent=self._node_editor_id, tag=instance.id) as node_tag:
-            renderer_key = instance.spec.rendererClass or 'default'
+            renderer_key = instance.spec.rendererClass or "default"
             rendererClass = self.rendererCls_registry.get(renderer_key)
             self._renderers[instance.id] = rendererClass(instance.id, instance)
 
-        self._register_attr_meta(instance)
         self._set_node_pos(node_tag, pos)
 
     # Event handlers ----------------------------------------------------------
@@ -162,138 +162,68 @@ class OperatorGraphEditor:
             dpg.configure_item(self._operator_menu_id, pos=self._pending_spawn_pos, show=True)
 
     def _on_pick_operator(self, sender: int, app_data: Any, user_data: dict[str, Any]) -> None:
-        operator_class = user_data.get('operatorClass')
-        pos = user_data.get('pos') or self._pending_spawn_pos or (50, 50)
+        operator_class = user_data.get("operatorClass")
+        pos = user_data.get("pos") or self._pending_spawn_pos or (50, 50)
         self._create_node(operator_class, pos)
         if self._operator_menu_id:
             dpg.configure_item(self._operator_menu_id, show=False)
 
-
     def _on_link(self, sender: int, app_data: Any, user_data: Any) -> None:
         from_attr, to_attr = app_data
-        meta_a = self._attr_meta.get(from_attr)
-        meta_b = self._attr_meta.get(to_attr)
-        if not meta_a or not meta_b:
+        from_meta = dpg.get_item_user_data(from_attr)
+        to_meta = dpg.get_item_user_data(to_attr)
+        assert from_meta.direction == "out" or from_meta.direction == "in", "Invalid from_attr direction"
+
+        if from_meta.kind != to_meta.kind:
+            print("Link rejected: mismatched kinds")
             return
 
-        # Normalize so that source is always the out pin.
-        if meta_a['direction'] == 'out':
-            src_meta, dst_meta = meta_a, meta_b
-            src_attr, dst_attr = from_attr, to_attr
-        else:
-            src_meta, dst_meta = meta_b, meta_a
-            src_attr, dst_attr = to_attr, from_attr
-
-        if src_meta['direction'] != 'out' or dst_meta['direction'] != 'in':
-            return
-        if src_meta['kind'] != dst_meta['kind']:
-            return
-
-        kind = src_meta['kind']
+        kind = from_meta.kind
         try:
-            if kind == 'exec':
-                edge = self.graph.connect_exec(
-                    src_meta['node_id'], src_meta['port'], dst_meta['node_id'], dst_meta['port']
-                )
-            elif kind == 'data':
-                edge = self.graph.connect_data(
-                    src_meta['node_id'], src_meta['port'], dst_meta['node_id'], dst_meta['port']
-                )
-            elif kind == 'state':
-                edge = self.graph.connect_state(
-                    src_meta['node_id'], src_meta['port'], dst_meta['node_id'], dst_meta['port']
-                )
+            if kind == "exec":
+                edge = self.graph.connect_exec(from_meta.node_id, from_meta.port, to_meta.node_id, to_meta.port)
+            elif kind == "data":
+                edge = self.graph.connect_data(from_meta.node_id, from_meta.port, to_meta.node_id, to_meta.port)
+            elif kind == "state":
+                edge = self.graph.connect_state(from_meta.node_id, from_meta.port, to_meta.node_id, to_meta.port)
             else:
                 return
         except Exception as exc:  # noqa: BLE001
-            print(f'Link rejected: {exc}')
+            print(f"Link rejected: {exc}")
             return
 
         link_tag = dpg.generate_uuid()
-        dpg.add_node_link(src_attr, dst_attr, parent=self._node_editor_id, tag=link_tag)
-        self._link_meta[link_tag] = LinkMeta(
-            kind=kind, edge=edge, source_attr=src_attr, target_attr=dst_attr
-        )
+        dpg.add_node_link(from_attr, to_attr, parent=self._node_editor_id, tag=link_tag)
+        self._link_meta[link_tag] = LinkMeta(kind=kind, edge=edge, source_attr=from_attr, target_attr=to_attr)
 
     def _on_delink(self, sender: int, app_data: Any, user_data: Any) -> None:
         link_tag = app_data
-        link_meta = self._link_meta.pop(link_tag, None)
-        if not link_meta:
+        self._remove_link(link_tag, delete_item=True)
+
+    def _on_delete_selected(self, sender: int, app_data: Any) -> None:
+        if not self._node_editor_id:
             return
-        if link_meta.kind == 'exec':
-            self.graph.disconnect_exec(link_meta.edge)
-        elif link_meta.kind == 'data':
-            self.graph.disconnect_data(link_meta.edge)
-        elif link_meta.kind == 'state':
-            self.graph.disconnect_state(link_meta.edge)
+        selected_links = dpg.get_selected_links(self._node_editor_id) or []
+        for link_tag in list(selected_links):
+            self._remove_link(link_tag, delete_item=True)
+        selected_nodes = dpg.get_selected_nodes(self._node_editor_id) or []
+        for node_tag in list(selected_nodes):
+            self._remove_node(node_tag)
 
     # Helpers -----------------------------------------------------------------
     def _unique_node_id(self, operator_class: str) -> str:
-        base = operator_class.split('.')[-1]
+        base = operator_class.split(".")[-1]
         while True:
             self._node_counter += 1
-            candidate = f'{base}_{self._node_counter}'
+            candidate = f"{base}_{self._node_counter}"
             if candidate not in self.graph.nodes:
                 return candidate
 
     def _attr_tag(self, node_id: str, *, kind: str, direction: str, port: str) -> str:
-        prefix = 'out' if direction == 'out' else 'in'
-        return f'{node_id}_{prefix}_{kind}_{port}'
-
-    def _register_attr_meta(self, instance: OperatorInstance) -> None:
-        for port in instance.spec.execInPorts or []:
-            attr_id = self._attr_tag(instance.id, kind='exec', direction='in', port=port)
-            self._attr_meta[attr_id] = {
-                'node_id': instance.id,
-                'kind': 'exec',
-                'direction': 'in',
-                'port': port,
-            }
-        for port in instance.spec.execOutPorts or []:
-            attr_id = self._attr_tag(instance.id, kind='exec', direction='out', port=port)
-            self._attr_meta[attr_id] = {
-                'node_id': instance.id,
-                'kind': 'exec',
-                'direction': 'out',
-                'port': port,
-            }
-        for port_def in instance.spec.dataInPorts or []:
-            attr_id = self._attr_tag(instance.id, kind='data', direction='in', port=port_def.name)
-            self._attr_meta[attr_id] = {
-                'node_id': instance.id,
-                'kind': 'data',
-                'direction': 'in',
-                'port': port_def.name,
-            }
-        for port_def in instance.spec.dataOutPorts or []:
-            attr_id = self._attr_tag(instance.id, kind='data', direction='out', port=port_def.name)
-            self._attr_meta[attr_id] = {
-                'node_id': instance.id,
-                'kind': 'data',
-                'direction': 'out',
-                'port': port_def.name,
-            }
-        for field in instance.spec.states or []:
-            access = field.access or Access.ro
-            if access in (Access.wo, Access.rw):
-                attr_id = self._attr_tag(instance.id, kind='state', direction='in', port=field.name)
-                self._attr_meta[attr_id] = {
-                    'node_id': instance.id,
-                    'kind': 'state',
-                    'direction': 'in',
-                    'port': field.name,
-                }
-            if access in (Access.ro, Access.rw, Access.init):
-                attr_id = self._attr_tag(instance.id, kind='state', direction='out', port=field.name)
-                self._attr_meta[attr_id] = {
-                    'node_id': instance.id,
-                    'kind': 'state',
-                    'direction': 'out',
-                    'port': field.name,
-                }
+        prefix = "out" if direction == "out" else "in"
+        return f"{node_id}_{prefix}_{kind}_{port}"
 
     def _reset_editor_state(self) -> None:
-        self._attr_meta.clear()
         self._link_meta.clear()
         self._renderers.clear()
         if self._node_editor_id:
@@ -302,14 +232,12 @@ class OperatorGraphEditor:
     def _reseed_node_counter(self) -> None:
         max_seen = self._node_counter
         for node_id in self.graph.nodes:
-            parts = node_id.rsplit('_', 1)
+            parts = node_id.rsplit("_", 1)
             if len(parts) == 2 and parts[1].isdigit():
                 max_seen = max(max_seen, int(parts[1]))
         self._node_counter = max_seen
 
-    def _node_pos_from_layout(
-        self, layout_positions: dict[str, Any] | None, node_id: str
-    ) -> tuple[float, float]:
+    def _node_pos_from_layout(self, layout_positions: dict[str, Any] | None, node_id: str) -> tuple[float, float]:
         positions = layout_positions or {}
         raw = positions.get(node_id)
         if isinstance(raw, (list, tuple)) and len(raw) == 2:
@@ -337,7 +265,7 @@ class OperatorGraphEditor:
             return
         for edge in self.graph.exec_edges:
             self._add_link_from_edge(
-                kind='exec',
+                kind="exec",
                 source_id=edge.source_id,
                 target_id=edge.target_id,
                 source_port=edge.out_port,
@@ -346,7 +274,7 @@ class OperatorGraphEditor:
             )
         for edge in self.graph.data_edges:
             self._add_link_from_edge(
-                kind='data',
+                kind="data",
                 source_id=edge.source_id,
                 target_id=edge.target_id,
                 source_port=edge.out_port,
@@ -355,7 +283,7 @@ class OperatorGraphEditor:
             )
         for edge in self.graph.state_edges:
             self._add_link_from_edge(
-                kind='state',
+                kind="state",
                 source_id=edge.source_id,
                 target_id=edge.target_id,
                 source_port=edge.source_field,
@@ -373,16 +301,55 @@ class OperatorGraphEditor:
         target_port: str,
         edge_obj: Any,
     ) -> None:
-        src_attr = self._attr_tag(source_id, kind=kind, direction='out', port=source_port)
-        dst_attr = self._attr_tag(target_id, kind=kind, direction='in', port=target_port)
-        if src_attr not in self._attr_meta or dst_attr not in self._attr_meta:
-            print(f'Skip rebuilding {kind} link {source_id} -> {target_id}: missing pin metadata')
+        src_attr = self._attr_tag(source_id, kind=kind, direction="out", port=source_port)
+        dst_attr = self._attr_tag(target_id, kind=kind, direction="in", port=target_port)
+        if not dpg.does_item_exist(src_attr) or not dpg.does_item_exist(dst_attr):
+            print(f"Skip rebuilding {kind} link {source_id} -> {target_id}: missing pin widgets")
             return
         link_tag = dpg.generate_uuid()
         dpg.add_node_link(src_attr, dst_attr, parent=self._node_editor_id, tag=link_tag)
-        self._link_meta[link_tag] = LinkMeta(
-            kind=kind, edge=edge_obj, source_attr=src_attr, target_attr=dst_attr
-        )
+        self._link_meta[link_tag] = LinkMeta(kind=kind, edge=edge_obj, source_attr=src_attr, target_attr=dst_attr)
+
+    def _remove_link(self, link_tag: int | str, *, delete_item: bool) -> None:
+        link_meta = self._link_meta.pop(link_tag, None)
+        if link_meta:
+            if link_meta.kind == "exec":
+                self.graph.disconnect_exec(link_meta.edge)
+            elif link_meta.kind == "data":
+                self.graph.disconnect_data(link_meta.edge)
+            elif link_meta.kind == "state":
+                self.graph.disconnect_state(link_meta.edge)
+        if delete_item and dpg.does_item_exist(link_tag):
+            dpg.delete_item(link_tag)
+
+    def _remove_node(self, node_id: int | str) -> None:
+        node_id_str = str(node_id)
+        # Remove any links touching this node first.
+        for link_tag, link_meta in list(self._link_meta.items()):
+            src_meta = (
+                dpg.get_item_user_data(link_meta.source_attr)
+                if dpg.does_item_exist(link_meta.source_attr)
+                else None
+            )
+            dst_meta = (
+                dpg.get_item_user_data(link_meta.target_attr)
+                if dpg.does_item_exist(link_meta.target_attr)
+                else None
+            )
+            src_node = getattr(src_meta, "node_id", None) if src_meta is not None else None
+            dst_node = getattr(dst_meta, "node_id", None) if dst_meta is not None else None
+            if (src_node and str(src_node) == node_id_str) or (dst_node and str(dst_node) == node_id_str):
+                self._remove_link(link_tag, delete_item=True)
+
+        # Drop node from graph/model.
+        self.graph.remove_node(node_id_str)
+
+        # Cleanup renderer/meta.
+        self._renderers.pop(node_id_str, None)
+
+        # Remove UI item.
+        if dpg.does_item_exist(node_id):
+            dpg.delete_item(node_id)
 
     def _build_file_dialogs(self) -> None:
         self._save_dialog_id = dpg.generate_uuid()
@@ -391,12 +358,12 @@ class OperatorGraphEditor:
             show=False,
             callback=self._on_save_file_selected,
             tag=self._save_dialog_id,
-            default_filename='graph',
+            default_filename="graph",
             width=700,
             height=400,
         ):
-            dpg.add_file_extension('.json', color=(0, 255, 255, 255))
-            dpg.add_file_extension('.*')
+            dpg.add_file_extension(".json", color=(0, 255, 255, 255))
+            dpg.add_file_extension(".*")
 
         self._load_dialog_id = dpg.generate_uuid()
         with dpg.file_dialog(
@@ -407,8 +374,8 @@ class OperatorGraphEditor:
             width=700,
             height=400,
         ):
-            dpg.add_file_extension('.json', color=(0, 255, 255, 255))
-            dpg.add_file_extension('.*')
+            dpg.add_file_extension(".json", color=(0, 255, 255, 255))
+            dpg.add_file_extension(".*")
 
     def _on_click_save(self, sender: int, app_data: Any, user_data: Any) -> None:
         if self._save_dialog_id:
@@ -419,24 +386,24 @@ class OperatorGraphEditor:
             dpg.configure_item(self._load_dialog_id, show=True)
 
     def _on_save_file_selected(self, sender: int, app_data: Any, user_data: Any) -> None:
-        path = app_data.get('file_path_name')
+        path = app_data.get("file_path_name")
         if not path:
             return
         try:
             self._save_graph_to_path(path)
-            print(f'Saved graph to {path}')
+            print(f"Saved graph to {path}")
         except Exception as exc:  # noqa: BLE001
-            print(f'Failed to save graph: {exc}')
+            print(f"Failed to save graph: {exc}")
 
     def _on_load_file_selected(self, sender: int, app_data: Any, user_data: Any) -> None:
-        path = app_data.get('file_path_name')
+        path = app_data.get("file_path_name")
         if not path:
             return
         try:
             self._load_graph_from_file(path)
-            print(f'Loaded graph from {path}')
+            print(f"Loaded graph from {path}")
         except Exception as exc:  # noqa: BLE001
-            print(f'Failed to load graph: {exc}')
+            print(f"Failed to load graph: {exc}")
 
     def _save_graph_to_path(self, path: str) -> None:
         payload = self.graph.to_dict()
@@ -445,16 +412,16 @@ class OperatorGraphEditor:
             if dpg.does_item_exist(node_id):
                 pos = dpg.get_item_pos(node_id)
                 positions[node_id] = [float(pos[0]), float(pos[1])]
-        snapshot = {'graph': payload, 'layout': {'positions': positions}}
-        with open(path, 'w', encoding='utf-8') as fp:
+        snapshot = {"graph": payload, "layout": {"positions": positions}}
+        with open(path, "w", encoding="utf-8") as fp:
             json.dump(snapshot, fp, indent=2)
 
     def _load_graph_from_file(self, path: str) -> None:
-        with open(path, 'r', encoding='utf-8') as fp:
+        with open(path, "r", encoding="utf-8") as fp:
             payload = json.load(fp)
-        graph_payload = payload.get('graph', payload)
-        layout = payload.get('layout', {})
-        positions = layout.get('positions', {})
+        graph_payload = payload.get("graph", payload)
+        layout = payload.get("layout", {})
+        positions = layout.get("positions", {})
         self._apply_graph_payload(graph_payload, layout_positions=positions)
 
     def _apply_graph_payload(
