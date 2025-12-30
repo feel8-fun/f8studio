@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import Any
-
 from f8pysdk import (
     F8DataPortSpec,
     F8EdgeKindEmum,
@@ -11,11 +10,11 @@ from f8pysdk import (
     F8OperatorSpec,
     F8StateFieldAccess,
     F8StateSpec,
+    F8DataTypeSchema
 )
-from f8pysdk.generated.data import Schema
 
 from .operator_instance import OperatorInstance
-from .spec_registry import OperatorSpecRegistry
+from .operators.operator_registry import OperatorSpecRegistry
 
 
 class OperatorGraph:
@@ -248,6 +247,6 @@ class OperatorGraph:
         raise ValueError(f"state field {name} missing on {instance.id}")
 
     @staticmethod
-    def _schema_type(schema: Schema) -> str | None:
+    def _schema_type(schema: F8DataTypeSchema) -> str | None:
         root = schema.root
         return getattr(root, "type", None)

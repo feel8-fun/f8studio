@@ -1,7 +1,7 @@
 {
   "$id": "https://studio.feel8.fun/schemas/common.schema.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "CommonDefinitions",
+  "title": "F8CommonDefinitions",
   "definitions": {
     "stateSpec": {
       "title": "F8StateSpec",
@@ -17,8 +17,7 @@
           "type": "string"
         },
         "valueSchema": {
-          "$ref": "./data.schema.json",
-          "description": "Data schema describing the state value"
+          "$ref": "./data.schema.json#/definitions/F8DataTypeSchema"
         },
         "access": {
           "title": "F8StateFieldAccess",
@@ -65,8 +64,7 @@
           "type": "string"
         },
         "valueSchema": {
-          "$ref": "./data.schema.json",
-          "description": "Data schema describing payloads on this port"
+          "$ref": "./data.schema.json#/definitions/F8DataTypeSchema"
         },
         "description": {
           "type": "string"
@@ -117,9 +115,7 @@
           "type": "string"
         },
         "valueSchema": {
-          "title": "ValueSchema",
-          "$ref": "./data.schema.json",
-          "description": "Data schema describing this parameter"
+          "$ref": "./data.schema.json#/definitions/F8DataTypeSchema"
         },
         "required": {
           "type": "boolean",

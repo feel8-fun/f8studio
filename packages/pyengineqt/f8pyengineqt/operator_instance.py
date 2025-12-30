@@ -4,8 +4,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from f8pysdk import F8OperatorSpec, F8StateFieldAccess, F8StateSpec
-from f8pysdk.generated.data import Schema
-
 
 @dataclass
 class OperatorInstance:

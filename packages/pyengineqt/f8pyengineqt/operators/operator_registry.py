@@ -91,5 +91,5 @@ class OperatorSpecRegistry:
 
         return [spec.model_copy(deep=True) for spec in self._specs.values() if matches(spec)]
 
-    def all(self) -> list[OperatorSpec]:
+    def all(self) -> list[F8OperatorSpec]:
         return [spec.model_copy(deep=True) for spec in self._specs.values()]

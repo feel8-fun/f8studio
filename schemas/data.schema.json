@@ -1,12 +1,11 @@
 {
     "$id": "https://studio.feel8.fun/schemas/data.schema.json",
     "$schema": "http://json-schema.org/draft-07/schema#",
-    "title": "F8DataType",
     "description": "A strict JSON Schema subset for data flow systems, supporting primitive types, objects, arrays, and a wildcard type.",
     "type": "object",
     "definitions": {
         "commonMetadata": {
-            "title": "F8DataTypeCommonMetadata",
+            "title": "F8DataTypeSchemaCommonMetadata",
             "type": "object",
             "properties": {
                 "title": {
@@ -25,7 +24,7 @@
             }
         },
         "primitiveType": {
-            "title": "F8PrimitiveType",
+            "title": "F8PrimitiveTypeSchema",
             "allOf": [
                 {
                     "$ref": "#/definitions/commonMetadata"
@@ -75,7 +74,7 @@
             ]
         },
         "objectType": {
-            "title": "F8ComplexObjectType",
+            "title": "F8ComplexObjectTypeSchema",
             "allOf": [
                 {
                     "$ref": "#/definitions/commonMetadata"
@@ -110,7 +109,7 @@
             ]
         },
         "arrayType": {
-            "title": "F8ArrayType",
+            "title": "F8ArrayTypeSchema",
             "allOf": [
                 {
                     "$ref": "#/definitions/commonMetadata"
@@ -133,7 +132,7 @@
             ]
         },
         "anyType": {
-            "title": "F8AnyType",
+            "title": "F8AnyTypeSchema",
             "description": "Wildcard type that accepts any value",
             "allOf": [
                 {
@@ -151,20 +150,23 @@
                     "additionalProperties": false
                 }
             ]
+        },
+        "F8DataTypeSchema": {
+            "description": "A strict JSON Schema subset for data flow systems, supporting primitive types, objects, arrays, and a wildcard type.",
+            "oneOf": [
+                {
+                    "$ref": "#/definitions/primitiveType"
+                },
+                {
+                    "$ref": "#/definitions/objectType"
+                },
+                {
+                    "$ref": "#/definitions/arrayType"
+                },
+                {
+                    "$ref": "#/definitions/anyType"
+                }
+            ]
         }
-    },
-    "oneOf": [
-        {
-            "$ref": "#/definitions/primitiveType"
-        },
-        {
-            "$ref": "#/definitions/objectType"
-        },
-        {
-            "$ref": "#/definitions/arrayType"
-        },
-        {
-            "$ref": "#/definitions/anyType"
-        }
-    ]
+    }
 }

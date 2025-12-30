@@ -5,16 +5,16 @@ from typing import Iterable
 from f8pysdk import (
     F8DataPortSpec,
     F8OperatorSpec,
-    F8PrimitiveType,
+    F8PrimitiveTypeSchema,
     F8PrimitiveTypeEnum,
     F8StateFieldAccess,
     F8StateSpec,
 )
 
-from f8pyengineqt.graph_view import OperatorGraphView
+from f8pyengineqt.graph_view import OperatorGraphEditor
 from f8pyengineqt.operator_graph import OperatorGraph
-from f8pyengineqt.renderer import OperatorRendererRegistry
-from f8pyengineqt.spec_registry import OperatorSpecRegistry
+from f8pyengineqt.renderers.renderer_registry import OperatorRendererRegistry
+from f8pyengineqt.operators.operator_registry import OperatorSpecRegistry
 
 
 def _number_schema(
@@ -22,19 +22,18 @@ def _number_schema(
     default: float | None = None,
     minimum: float | None = None,
     maximum: float | None = None,
-) -> F8PrimitiveType:
+) -> F8PrimitiveTypeSchema:
     """Convenience factory for numeric schemas used across demo specs."""
-    return F8PrimitiveType(
-            type=F8PrimitiveTypeEnum.number,
-            default=default,
-            minimum=minimum,
-            maximum=maximum,
-        )
-    
+    return F8PrimitiveTypeSchema(
+        type=F8PrimitiveTypeEnum.number,
+        default=default,
+        minimum=minimum,
+        maximum=maximum,
+    )
 
 
-def _string_schema(*, default: str | None = None) -> F8PrimitiveType:
-    return F8PrimitiveType(type=F8PrimitiveTypeEnum.string, default=default)
+def _string_schema(*, default: str | None = None) -> F8PrimitiveTypeSchema:
+    return F8PrimitiveTypeSchema(type=F8PrimitiveTypeEnum.string, default=default)
 
 
 def _demo_specs() -> Iterable[F8OperatorSpec]:
@@ -44,15 +43,15 @@ def _demo_specs() -> Iterable[F8OperatorSpec]:
         version="0.0.1",
         label="Start",
         description="Entry trigger for demo graphs.",
-        execOutPorts=["next"],
+        execOutPorts=["exec"],
     )
     yield F8OperatorSpec(
         operatorClass="feel8.sample.constant",
         version="0.0.1",
         label="Constant",
         description="Emits a configured numeric value.",
-        execInPorts=["in"],
-        execOutPorts=["out"],
+        execInPorts=["exec"],
+        execOutPorts=["exec"],
         dataOutPorts=[F8DataPortSpec(name="value", valueSchema=_number_schema(), description="constant output")],
         states=[
             F8StateSpec(
@@ -68,8 +67,8 @@ def _demo_specs() -> Iterable[F8OperatorSpec]:
         version="0.0.1",
         label="Add",
         description="Adds two inputs and forwards the result.",
-        execInPorts=["enter"],
-        execOutPorts=["next"],
+        execInPorts=["exec"],
+        execOutPorts=["exec"],
         dataInPorts=[
             F8DataPortSpec(name="a", valueSchema=_number_schema(), description="lhs"),
             F8DataPortSpec(name="b", valueSchema=_number_schema(), description="rhs"),
@@ -81,7 +80,8 @@ def _demo_specs() -> Iterable[F8OperatorSpec]:
         version="0.0.1",
         label="Log",
         description="Terminal node that inspects incoming data.",
-        execInPorts=["enter"],
+        tags=["ui"],
+        execInPorts=[],
         dataInPorts=[
             F8DataPortSpec(name="value", valueSchema=_number_schema(), description="value to log", required=False),
         ],
@@ -96,7 +96,7 @@ def _demo_specs() -> Iterable[F8OperatorSpec]:
     )
 
 
-def _seed_graph(view: OperatorGraphView) -> None:
+def _seed_graph(view: OperatorGraphEditor) -> None:
     """Populate the graph with demo nodes and links."""
     start = view.spawn_instance("feel8.sample.start", pos=(-420, 0))
     const_a = view.spawn_instance("feel8.sample.constant", pos=(-180, -120), instance_id="const_a")
@@ -110,10 +110,9 @@ def _seed_graph(view: OperatorGraphView) -> None:
     logger.state["label"] = "Sum"
 
     graph = view.graph
-    graph.connect_exec(start.id, "next", const_a.id, "in")
-    graph.connect_exec(const_a.id, "out", const_b.id, "in")
-    graph.connect_exec(const_b.id, "out", add.id, "enter")
-    graph.connect_exec(add.id, "next", logger.id, "enter")
+    graph.connect_exec(start.id, "exec", const_a.id, "exec")
+    graph.connect_exec(const_a.id, "exec", const_b.id, "exec")
+    graph.connect_exec(const_b.id, "exec", add.id, "exec")
 
     graph.connect_data(const_a.id, "value", add.id, "a")
     graph.connect_data(const_b.id, "value", add.id, "b")
@@ -132,7 +131,7 @@ def main() -> None:
     renderer_registry = OperatorRendererRegistry()
     graph = OperatorGraph()
 
-    view = OperatorGraphView(
+    view = OperatorGraphEditor(
         spec_registry=spec_registry,
         renderer_registry=renderer_registry,
         graph=graph,
