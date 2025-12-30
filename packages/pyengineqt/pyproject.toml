@@ -1,0 +1,18 @@
+[project]
+name = "f8pyengineqt"
+version = "0.1.0"
+description = "Operator flow engine with NodeGraphQt"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "f8pysdk",
+    "nodegraphqt>=0.6.43",
+    "pyside6>=6.10.1",
+    "qtpy>=2.4.3",
+]
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+f8pysdk = { workspace = true }

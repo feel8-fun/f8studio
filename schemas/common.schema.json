@@ -1,21 +1,58 @@
 {
   "$id": "https://studio.feel8.fun/schemas/common.schema.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "f8 common definitions",
+  "title": "CommonDefinitions",
   "definitions": {
     "stateField": {
       "type": "object",
       "properties": {
-        "name": { "type": "string" },
-        "label": { "type": "string" },
-        "description": { "type": "string" },
-        "type": { "type": "string", "enum": ["bool", "int", "float", "string", "object", "enum"] },
-        "enumValues": { "type": "array", "items": { "type": "string" } },
+        "name": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "bool",
+            "int",
+            "float",
+            "string",
+            "object",
+            "enum"
+          ]
+        },
+        "enumValues": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
         "default": {},
-        "required": { "type": "boolean", "default": false },
-        "minimum": { "type": "number", "default": 0.0, "description": "Optional lower bound for numeric types" },
-        "maximum": { "type": "number", "default": 100.0, "description": "Optional upper bound for numeric types" },
-        "step": { "type": "number", "default": 1.0, "description": "Optional UI step/increment for numeric types" },
+        "required": {
+          "type": "boolean",
+          "default": false
+        },
+        "minimum": {
+          "type": "number",
+          "default": 0.0,
+          "description": "Optional lower bound for numeric types"
+        },
+        "maximum": {
+          "type": "number",
+          "default": 100.0,
+          "description": "Optional upper bound for numeric types"
+        },
+        "step": {
+          "type": "number",
+          "default": 1.0,
+          "description": "Optional UI step/increment for numeric types"
+        },
         "objectSchema": {
           "type": "object",
           "description": "Optional JSON Schema for complex structures (object/array/tuple) when type=object",
@@ -23,74 +60,152 @@
         },
         "access": {
           "type": "string",
-          "enum": ["rw", "ro", "wo", "init"],
-          "description": "rw=mutable, ro=read-only, wo=write-only (no fanout), init=only before start"
+          "enum": [
+            "rw",
+            "ro",
+            "wo",
+            "init"
+          ],
+          "description": "rw=mutable, ro=read-only, wo=write-only (no fanout), init=immutable in activation"
         },
-        "uiControl": { "type": "string", "description": "Optional UI hint (slider, spinbox, select, etc.)" },
-        "language": { "type": "string", "description": "Optional language hint for code editors (e.g., javascript, typescript)" },
+        "uiControl": {
+          "type": "string",
+          "description": "Optional UI hint (slider, spinbox, select, etc.)"
+        },
+        "language": {
+          "type": "string",
+          "description": "Optional language hint for code editors (e.g., javascript, typescript)"
+        },
         "showOnNode": {
           "type": "boolean",
           "default": false,
           "description": "If true, render this control inline on the node body; otherwise only in the inspector"
         }
       },
-      "required": ["name", "type", "access"],
+      "required": [
+        "name",
+        "type",
+        "access"
+      ],
       "additionalProperties": false
     },
     "dataPort": {
       "type": "object",
       "properties": {
-        "name": { "type": "string" },
+        "name": {
+          "type": "string"
+        },
         "type": {
           "type": "string",
           "description": "Payload type",
-          "enum": ["bool", "int", "float", "string", "object", "enum"]
+          "enum": [
+            "bool",
+            "int",
+            "float",
+            "string",
+            "object",
+            "enum"
+          ]
         },
-        "description": { "type": "string" },
+        "description": {
+          "type": "string"
+        },
         "objectSchema": {
           "type": "object",
           "description": "Optional JSON Schema for complex payloads (object/array/tuple)",
           "additionalProperties": true
         },
-        "required": { "type": "boolean", "default": true, "description": "Whether the port must be connected/provided" }
+        "required": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether the port must be connected/provided"
+        }
       },
-      "required": ["name", "type"],
+      "required": [
+        "name",
+        "type"
+      ],
       "additionalProperties": false
     },
     "command": {
       "type": "object",
       "properties": {
-        "name": { "type": "string" },
-        "description": { "type": "string" },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
         "params": {
           "type": "array",
-          "items": { "$ref": "#/definitions/commandParam" },
+          "items": {
+            "$ref": "#/definitions/commandParam"
+          },
           "default": []
         }
       },
-      "required": ["name"],
+      "required": [
+        "name"
+      ],
       "additionalProperties": false
     },
     "commandParam": {
       "type": "object",
       "properties": {
-        "name": { "type": "string" },
-        "description": { "type": "string" },
-        "type": { "type": "string", "enum": ["bool", "int", "float", "string", "object", "enum"] },
-        "enumValues": { "type": "array", "items": { "type": "string" } },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "bool",
+            "int",
+            "float",
+            "string",
+            "object",
+            "enum"
+          ]
+        },
+        "enumValues": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "default": {},
-        "required": { "type": "boolean", "default": false },
-        "minimum": { "type": "number", "description": "Optional lower bound for numeric types" },
-        "maximum": { "type": "number", "description": "Optional upper bound for numeric types" },
-        "step": { "type": "number", "description": "Optional UI step/increment for numeric types" },
+        "required": {
+          "type": "boolean",
+          "default": false
+        },
+        "minimum": {
+          "type": "number",
+          "description": "Optional lower bound for numeric types"
+        },
+        "maximum": {
+          "type": "number",
+          "description": "Optional upper bound for numeric types"
+        },
+        "step": {
+          "type": "number",
+          "description": "Optional UI step/increment for numeric types"
+        },
         "objectSchema": {
           "type": "object",
           "description": "Optional JSON Schema for complex structures (object/array/tuple) when type=object",
           "additionalProperties": true
         },
-        "uiControl": { "type": "string", "description": "Optional UI hint (slider, select, etc.)" }
+        "uiControl": {
+          "type": "string",
+          "description": "Optional UI hint (slider, select, etc.)"
+        }
       },
-      "required": ["name", "type"],
+      "required": [
+        "name",
+        "type"
+      ],
       "additionalProperties": false
     }
   }

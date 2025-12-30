@@ -21,8 +21,7 @@
       "type": "string"
     },
     "description": {
-      "type": "string",
-      "default": ""
+      "type": "string"
     },
     "tags": {
       "type": "array",
@@ -47,12 +46,14 @@
         },
         "env": {
           "type": "object",
+          "default": {},
           "additionalProperties": {
             "type": "string"
           }
         },
         "workdir": {
-          "type": "string"
+          "type": "string",
+          "default": "./"
         }
       },
       "required": [
@@ -112,29 +113,19 @@
     },
     "rendererClass": {
       "type": "string",
+      "default": "default",
       "description": "Optional custom UI renderer key for the node (e.g., realtimePlot, 3dViewer)"
     },
     "rendererProps": {
       "type": "object",
+      "default": {},
       "description": "Optional renderer-specific configuration for the custom node UI",
       "additionalProperties": true
     }
   },
   "required": [
-    "schemaVersion",
     "serviceClass",
-    "label",
-    "version",
-    "description",
-    "tags",
-    "states",
-    "allowAddStates",
-    "commands",
-    "allowAddCommands",
-    "dataInPorts",
-    "dataOutPorts",
-    "allowAddDataInPorts",
-    "allowAddDataOutPorts"
+    "label"
   ],
-  "additionalProperties": false
+  "additionalProperties": true
 }

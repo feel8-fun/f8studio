@@ -1,4 +1,4 @@
-from f8engine import Access, OperatorGraph, OperatorGraphEditor, OperatorRegistry, OperatorSpec, StateField, Type
+from f8enginedpg import Access, OperatorGraph, OperatorGraphEditor, OperatorRegistry, OperatorSpec, StateField, Type
 
 
 def build_demo_registry() -> OperatorRegistry:

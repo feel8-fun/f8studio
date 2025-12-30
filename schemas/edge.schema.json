@@ -1,27 +1,52 @@
 {
   "$id": "https://studio.feel8.fun/schemas/edge.schema.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "f8 graph edge",
+  "title": "EdgeSpec",
   "type": "object",
   "properties": {
-    "from": { "type": "string", "description": "Source node id" },
-    "fromPort": { "type": "string", "description": "Source port name" },
-    "to": { "type": "string", "description": "Target node id" },
-    "toPort": { "type": "string", "description": "Target port name" },
+    "from": {
+      "type": "string",
+      "description": "Source node id"
+    },
+    "fromPort": {
+      "type": "string",
+      "description": "Source port name"
+    },
+    "to": {
+      "type": "string",
+      "description": "Target node id"
+    },
+    "toPort": {
+      "type": "string",
+      "description": "Target port name"
+    },
     "kind": {
       "type": "string",
-      "enum": ["data", "state", "exec"],
+      "enum": [
+        "data",
+        "state",
+        "exec"
+      ],
       "description": "Edge kind: data bus, state bus, or execution flow"
     },
     "scope": {
       "type": "string",
-      "enum": ["intra", "cross"],
+      "enum": [
+        "intra",
+        "cross"
+      ],
       "description": "intra = within one instance; cross = crosses instances"
     },
     "strategy": {
       "type": "string",
       "description": "Rate-mismatch handling strategy (only relevant for cross-instance data edges)",
-      "enum": ["latest", "average", "hold", "repeat", "interpolate"],
+      "enum": [
+        "latest",
+        "average",
+        "hold",
+        "repeat",
+        "interpolate"
+      ],
       "default": "latest"
     },
     "queueSize": {
@@ -35,6 +60,13 @@
       "description": "Optional staleness timeout; drop-old beyond this age (data)"
     }
   },
-  "required": ["from", "fromPort", "to", "toPort", "kind", "scope"],
-  "additionalProperties": false
+  "required": [
+    "from",
+    "fromPort",
+    "to",
+    "toPort",
+    "kind",
+    "scope"
+  ],
+  "additionalProperties": true
 }

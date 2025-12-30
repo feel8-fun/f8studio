@@ -1,0 +1,4 @@
+#!/bin/sh
+datamodel-codegen --input ../../schemas/service.schema.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --output f8pysdk/generated/service_spec.py --use-default --strict-nullable
+datamodel-codegen --input ../../schemas/operator.schema.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --output f8pysdk/generated/operator_spec.py --use-default --strict-nullable
+datamodel-codegen --input ../../schemas/edge.schema.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --output f8pysdk/generated/edge_spec.py --use-default --strict-nullable

@@ -21,8 +21,7 @@
       "type": "string"
     },
     "description": {
-      "type": "string",
-      "default": ""
+      "type": "string"
     },
     "tags": {
       "type": "array",
@@ -58,13 +57,17 @@
     "execInPorts": {
       "type": "array",
       "description": "Execution inputs (can be empty for entry/pull-only nodes). Each execIn port may have only one incoming exec link.",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "default": []
     },
     "execOutPorts": {
       "type": "array",
       "description": "Execution outputs (can be empty for terminal/pull-only nodes). Operator logic decides which execOut to trigger.",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "default": []
     },
     "allowAddExecInPorts": {
@@ -74,7 +77,7 @@
     "allowAddExecOutPorts": {
       "type": "boolean",
       "default": false
-    },    
+    },
     "dataInPorts": {
       "type": "array",
       "description": "Data input ports (can be empty).",
@@ -112,23 +115,8 @@
     }
   },
   "required": [
-    "schemaVersion",
     "operatorClass",
-    "label",
-    "description",
-    "tags",
-    "states",
-    "allowAddStates",
-    "commands",
-    "allowAddCommands",
-    "execInPorts",
-    "execOutPorts",
-    "allowAddExecInPorts",
-    "allowAddExecOutPorts",
-    "dataInPorts",
-    "dataOutPorts",
-    "allowAddDataInPorts",
-    "allowAddDataOutPorts"
+    "label"
   ],
-  "additionalProperties": false
+  "additionalProperties": true
 }

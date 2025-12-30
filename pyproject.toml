@@ -7,14 +7,19 @@ requires-python = ">=3.10"
 dependencies = [
     "datamodel-code-generator>=0.50.0",
     "dearpygui>=2.1.1",
-    "f8engine",
     "pydantic>=2.12.5",
+    "f8pyengineqt",
+    "f8pysdk",
 ]
 
 [tool.uv.workspace]
 members = [
-    "packages/pyengine",
+    "packages/pyenginedpg",
+    "packages/pyengineqt",
+    "packages/pysdk",
 ]
 
 [tool.uv.sources]
-f8engine = { workspace = true, editable = true }
+f8enginedpg = { workspace = true, editable = true }
+f8pyengineqt = { workspace = true, editable = true }
+f8pysdk = { workspace = true, editable = true }
