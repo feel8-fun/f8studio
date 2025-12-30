@@ -7,12 +7,14 @@ requires-python = ">=3.10"
 dependencies = [
     "f8pysdk",
     "nodegraphqt>=0.6.43",
+    "pydantic>=2.12.5",
     "pyside6>=6.10.1",
     "qtpy>=2.4.3",
+    "setuptools>=80.9.0",
 ]
 
 [tool.uv]
 package = true
 
 [tool.uv.sources]
-f8pysdk = { workspace = true }
+f8pysdk = { workspace = true, editable = true }

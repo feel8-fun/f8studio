@@ -6,8 +6,6 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "datamodel-code-generator>=0.50.0",
-    "dearpygui>=2.1.1",
-    "pydantic>=2.12.5",
     "f8pyengineqt",
     "f8pysdk",
 ]

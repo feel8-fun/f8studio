@@ -1,7 +1,7 @@
 {
   "$id": "https://studio.feel8.fun/schemas/operator.schema.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "OperatorSpec",
+  "title": "F8OperatorSpec",
   "type": "object",
   "properties": {
     "schemaVersion": {
@@ -33,11 +33,11 @@
     "states": {
       "type": "array",
       "items": {
-        "$ref": "./common.schema.json#/definitions/stateField"
+        "$ref": "./common.schema.json#/definitions/stateSpec"
       },
       "default": []
     },
-    "allowAddStates": {
+    "editableStates": {
       "type": "boolean",
       "default": false
     },
@@ -45,11 +45,11 @@
       "type": "array",
       "description": "Optional RPC-style commands the node can invoke (e.g., refresh/connect/disconnect)",
       "items": {
-        "$ref": "./common.schema.json#/definitions/command"
+        "$ref": "./common.schema.json#/definitions/commandSpec"
       },
       "default": []
     },
-    "allowAddCommands": {
+    "editableCommands": {
       "type": "boolean",
       "default": false,
       "description": "Allow dynamic addition of commands beyond the declared list."
@@ -70,11 +70,11 @@
       },
       "default": []
     },
-    "allowAddExecInPorts": {
+    "editableExecInPorts": {
       "type": "boolean",
       "default": false
     },
-    "allowAddExecOutPorts": {
+    "editableExecOutPorts": {
       "type": "boolean",
       "default": false
     },
@@ -82,7 +82,7 @@
       "type": "array",
       "description": "Data input ports (can be empty).",
       "items": {
-        "$ref": "./common.schema.json#/definitions/dataPort"
+        "$ref": "./common.schema.json#/definitions/dataPortSpec"
       },
       "default": []
     },
@@ -90,16 +90,16 @@
       "type": "array",
       "description": "Data output ports (can be empty).",
       "items": {
-        "$ref": "./common.schema.json#/definitions/dataPort"
+        "$ref": "./common.schema.json#/definitions/dataPortSpec"
       },
       "default": []
     },
-    "allowAddDataInPorts": {
+    "editableDataInPorts": {
       "type": "boolean",
       "default": false,
       "description": "Allow dynamic addition of data input ports."
     },
-    "allowAddDataOutPorts": {
+    "editableDataOutPorts": {
       "type": "boolean",
       "default": false,
       "description": "Allow dynamic addition of data output ports."

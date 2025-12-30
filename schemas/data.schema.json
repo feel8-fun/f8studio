@@ -1,0 +1,170 @@
+{
+    "$id": "https://studio.feel8.fun/schemas/data.schema.json",
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "F8DataType",
+    "description": "A strict JSON Schema subset for data flow systems, supporting primitive types, objects, arrays, and a wildcard type.",
+    "type": "object",
+    "definitions": {
+        "commonMetadata": {
+            "title": "F8DataTypeCommonMetadata",
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "default": {},
+                "examples": {
+                    "type": "array"
+                },
+                "$comment": {
+                    "type": "string"
+                }
+            }
+        },
+        "primitiveType": {
+            "title": "F8PrimitiveType",
+            "allOf": [
+                {
+                    "$ref": "#/definitions/commonMetadata"
+                },
+                {
+                    "properties": {
+                        "type": {
+                            "title": "F8PrimitiveTypeEnum",
+                            "enum": [
+                                "string",
+                                "number",
+                                "integer",
+                                "boolean",
+                                "null"
+                            ]
+                        },
+                        "enum": {
+                            "type": "array"
+                        },
+                        "minimum": {
+                            "type": "number",
+                            "description": "Optional lower bound for numeric types"
+                        },
+                        "maximum": {
+                            "type": "number",
+                            "description": "Optional upper bound for numeric types"
+                        },
+                        "exclusiveMinimum": {
+                            "type": "number",
+                            "description": "Exclusive lower bound for numeric types"
+                        },
+                        "exclusiveMaximum": {
+                            "type": "number",
+                            "description": "Exclusive upper bound for numeric types"
+                        },
+                        "multipleOf": {
+                            "type": "number",
+                            "exclusiveMinimum": 0,
+                            "description": "Optional step/increment (e.g., for sliders or spinboxes)"
+                        }
+                    },
+                    "required": [
+                        "type"
+                    ],
+                    "additionalProperties": false
+                }
+            ]
+        },
+        "objectType": {
+            "title": "F8ComplexObjectType",
+            "allOf": [
+                {
+                    "$ref": "#/definitions/commonMetadata"
+                },
+                {
+                    "properties": {
+                        "type": {
+                            "const": "object"
+                        },
+                        "properties": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#"
+                            }
+                        },
+                        "required": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "additionalProperties": {
+                            "type": "boolean"
+                        }
+                    },
+                    "required": [
+                        "type",
+                        "properties"
+                    ],
+                    "additionalProperties": false
+                }
+            ]
+        },
+        "arrayType": {
+            "title": "F8ArrayType",
+            "allOf": [
+                {
+                    "$ref": "#/definitions/commonMetadata"
+                },
+                {
+                    "properties": {
+                        "type": {
+                            "const": "array"
+                        },
+                        "items": {
+                            "$ref": "#"
+                        }
+                    },
+                    "required": [
+                        "type",
+                        "items"
+                    ],
+                    "additionalProperties": false
+                }
+            ]
+        },
+        "anyType": {
+            "title": "F8AnyType",
+            "description": "Wildcard type that accepts any value",
+            "allOf": [
+                {
+                    "$ref": "#/definitions/commonMetadata"
+                },
+                {
+                    "properties": {
+                        "type": {
+                            "const": "any"
+                        }
+                    },
+                    "required": [
+                        "type"
+                    ],
+                    "additionalProperties": false
+                }
+            ]
+        }
+    },
+    "oneOf": [
+        {
+            "$ref": "#/definitions/primitiveType"
+        },
+        {
+            "$ref": "#/definitions/objectType"
+        },
+        {
+            "$ref": "#/definitions/arrayType"
+        },
+        {
+            "$ref": "#/definitions/anyType"
+        }
+    ]
+}

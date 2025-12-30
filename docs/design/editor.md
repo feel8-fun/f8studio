@@ -1,6 +1,6 @@
 # Editor Design (graph, wiring, validation)
 
-- Node palettes show declared ports/commands; allow adding ports/commands only when the corresponding flags are true (`allowAddDataInPorts`/`allowAddDataOutPorts`/`allowAddExecInPorts`/`allowAddExecOutPorts` for operators, service allowAdd* flags, `allowAddCommands`).
+- Node palettes show declared ports/commands; allow adding ports/commands only when the corresponding flags are true (`editableDataInPorts`/`editableDataOutPorts`/`editableExecInPorts`/`editableExecOutPorts` for operators, service editable* flags, `editableCommands`).
 - Ports: operators use `dataInPorts`/`dataOutPorts` plus `execInPorts`/`execOutPorts`; services use their data port naming. Data vs state vs exec ports are rendered distinctly and cannot be cross-connected.
 - Edge creation:
   - Auto-promote operator->external links across container boundaries by synthesizing container ports and half-edges; nested containers follow the same rule.

@@ -35,7 +35,7 @@
 - Engine is primarily a NATS microservice; if HTTP is needed, use a single gateway that proxies HTTP->NATS (no per-engine HTTP port).
 
 ## Service manifest
-- Provide an engine `service.json` (schemaVersion `f8service/1`) describing commands (pause/resume/stop/deployOpGraph, etc.), status, and configuration fields (e.g., tick rate). Avoid putting high-churn metrics like uptime in persisted state; publish them via status instead. Set `allowAdd*` as appropriate.
+- Provide an engine `service.json` (schemaVersion `f8service/1`) describing commands (pause/resume/stop/deployOpGraph, etc.), status, and configuration fields (e.g., tick rate). Avoid putting high-churn metrics like uptime in persisted state; publish them via status instead. Set `editable*` as appropriate.
 
 ## Rate-mismatch handling (cross-instance data edges)
 - Each cross-instance data edge carries a consume strategy to handle producer/consumer rate differences (configured at link compile time and exposed in the editor):

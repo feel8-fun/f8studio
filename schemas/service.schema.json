@@ -1,7 +1,7 @@
 {
   "$id": "https://studio.feel8.fun/schemas/service.schema.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "ServiceSpec",
+  "title": "F8ServiceSpec",
   "type": "object",
   "properties": {
     "schemaVersion": {
@@ -31,9 +31,10 @@
       "default": []
     },
     "launch": {
+      "title": "F8ServiceLaunchSpec",
       "type": "object",
       "properties": {
-        "command": {
+        "commandSpec": {
           "type": "string",
           "description": "Executable path or name"
         },
@@ -57,18 +58,18 @@
         }
       },
       "required": [
-        "command"
+        "commandSpec"
       ],
       "additionalProperties": false
     },
     "states": {
       "type": "array",
       "items": {
-        "$ref": "./common.schema.json#/definitions/stateField"
+        "$ref": "./common.schema.json#/definitions/stateSpec"
       },
       "description": "Static state model; keys become state manager entries"
     },
-    "allowAddStates": {
+    "editableStates": {
       "type": "boolean",
       "default": false,
       "description": "Allow dynamic user-added state entries"
@@ -76,11 +77,11 @@
     "commands": {
       "type": "array",
       "items": {
-        "$ref": "./common.schema.json#/definitions/command"
+        "$ref": "./common.schema.json#/definitions/commandSpec"
       },
       "default": []
     },
-    "allowAddCommands": {
+    "editableCommands": {
       "type": "boolean",
       "default": false,
       "description": "Allow dynamic addition of commands beyond the declared list."
@@ -89,7 +90,7 @@
       "type": "array",
       "description": "Data bus inputs exposed by this service (for cross-instance data pub/sub).",
       "items": {
-        "$ref": "./common.schema.json#/definitions/dataPort"
+        "$ref": "./common.schema.json#/definitions/dataPortSpec"
       },
       "default": []
     },
@@ -97,16 +98,16 @@
       "type": "array",
       "description": "Data bus outputs exposed by this service.",
       "items": {
-        "$ref": "./common.schema.json#/definitions/dataPort"
+        "$ref": "./common.schema.json#/definitions/dataPortSpec"
       },
       "default": []
     },
-    "allowAddDataInPorts": {
+    "editableDataInPorts": {
       "type": "boolean",
       "default": false,
       "description": "Allow dynamic addition of data input ports."
     },
-    "allowAddDataOutPorts": {
+    "editableDataOutPorts": {
       "type": "boolean",
       "default": false,
       "description": "Allow dynamic addition of data output ports."

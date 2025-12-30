@@ -1,7 +1,7 @@
 {
   "$id": "https://studio.feel8.fun/schemas/edge.schema.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "EdgeSpec",
+  "title": "F8EdgeSpec",
   "type": "object",
   "properties": {
     "from": {
@@ -21,6 +21,7 @@
       "description": "Target port name"
     },
     "kind": {
+      "title": "F8EdgeKindEmum",
       "type": "string",
       "enum": [
         "data",
@@ -30,6 +31,7 @@
       "description": "Edge kind: data bus, state bus, or execution flow"
     },
     "scope": {
+      "title": "F8EdgeScopeEnum",
       "type": "string",
       "enum": [
         "intra",
@@ -38,6 +40,7 @@
       "description": "intra = within one instance; cross = crosses instances"
     },
     "strategy": {
+      "title": "F8EdgeStrategyEnum",
       "type": "string",
       "description": "Rate-mismatch handling strategy (only relevant for cross-instance data edges)",
       "enum": [

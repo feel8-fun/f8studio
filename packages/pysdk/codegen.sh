@@ -1,4 +1,4 @@
 #!/bin/sh
-datamodel-codegen --input ../../schemas/service.schema.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --output f8pysdk/generated/service_spec.py --use-default --strict-nullable
-datamodel-codegen --input ../../schemas/operator.schema.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --output f8pysdk/generated/operator_spec.py --use-default --strict-nullable
-datamodel-codegen --input ../../schemas/edge.schema.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --output f8pysdk/generated/edge_spec.py --use-default --strict-nullable
+
+cd $(dirname "$0")
+datamodel-codegen --input ../../schemas/specs.schema.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --output f8pysdk/generated/ --use-default --strict-nullable --allow-population-by-field-name --use-title-as-name --class-name F8Specs

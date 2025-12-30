@@ -3,7 +3,8 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "CommonDefinitions",
   "definitions": {
-    "stateField": {
+    "stateSpec": {
+      "title": "F8StateSpec",
       "type": "object",
       "properties": {
         "name": {
@@ -15,50 +16,12 @@
         "description": {
           "type": "string"
         },
-        "type": {
-          "type": "string",
-          "enum": [
-            "bool",
-            "int",
-            "float",
-            "string",
-            "object",
-            "enum"
-          ]
-        },
-        "enumValues": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
-        },
-        "default": {},
-        "required": {
-          "type": "boolean",
-          "default": false
-        },
-        "minimum": {
-          "type": "number",
-          "default": 0.0,
-          "description": "Optional lower bound for numeric types"
-        },
-        "maximum": {
-          "type": "number",
-          "default": 100.0,
-          "description": "Optional upper bound for numeric types"
-        },
-        "step": {
-          "type": "number",
-          "default": 1.0,
-          "description": "Optional UI step/increment for numeric types"
-        },
-        "objectSchema": {
-          "type": "object",
-          "description": "Optional JSON Schema for complex structures (object/array/tuple) when type=object",
-          "additionalProperties": true
+        "valueSchema": {
+          "$ref": "./data.schema.json",
+          "description": "Data schema describing the state value"
         },
         "access": {
+          "title": "F8StateFieldAccess",
           "type": "string",
           "enum": [
             "rw",
@@ -67,6 +30,11 @@
             "init"
           ],
           "description": "rw=mutable, ro=read-only, wo=write-only (no fanout), init=immutable in activation"
+        },
+        "required": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, this state must be provided"
         },
         "uiControl": {
           "type": "string",
@@ -84,36 +52,24 @@
       },
       "required": [
         "name",
-        "type",
+        "valueSchema",
         "access"
       ],
       "additionalProperties": false
     },
-    "dataPort": {
+    "dataPortSpec": {
+      "title": "F8DataPortSpec",
       "type": "object",
       "properties": {
         "name": {
           "type": "string"
         },
-        "type": {
-          "type": "string",
-          "description": "Payload type",
-          "enum": [
-            "bool",
-            "int",
-            "float",
-            "string",
-            "object",
-            "enum"
-          ]
+        "valueSchema": {
+          "$ref": "./data.schema.json",
+          "description": "Data schema describing payloads on this port"
         },
         "description": {
           "type": "string"
-        },
-        "objectSchema": {
-          "type": "object",
-          "description": "Optional JSON Schema for complex payloads (object/array/tuple)",
-          "additionalProperties": true
         },
         "required": {
           "type": "boolean",
@@ -123,11 +79,12 @@
       },
       "required": [
         "name",
-        "type"
+        "valueSchema"
       ],
       "additionalProperties": false
     },
-    "command": {
+    "commandSpec": {
+      "title": "F8CommandSpec",
       "type": "object",
       "properties": {
         "name": {
@@ -139,7 +96,7 @@
         "params": {
           "type": "array",
           "items": {
-            "$ref": "#/definitions/commandParam"
+            "$ref": "#/definitions/commandSpecParam"
           },
           "default": []
         }
@@ -149,7 +106,8 @@
       ],
       "additionalProperties": false
     },
-    "commandParam": {
+    "commandSpecParam": {
+      "title": "F8CommandSpecParam",
       "type": "object",
       "properties": {
         "name": {
@@ -158,44 +116,14 @@
         "description": {
           "type": "string"
         },
-        "type": {
-          "type": "string",
-          "enum": [
-            "bool",
-            "int",
-            "float",
-            "string",
-            "object",
-            "enum"
-          ]
+        "valueSchema": {
+          "title": "ValueSchema",
+          "$ref": "./data.schema.json",
+          "description": "Data schema describing this parameter"
         },
-        "enumValues": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "default": {},
         "required": {
           "type": "boolean",
           "default": false
-        },
-        "minimum": {
-          "type": "number",
-          "description": "Optional lower bound for numeric types"
-        },
-        "maximum": {
-          "type": "number",
-          "description": "Optional upper bound for numeric types"
-        },
-        "step": {
-          "type": "number",
-          "description": "Optional UI step/increment for numeric types"
-        },
-        "objectSchema": {
-          "type": "object",
-          "description": "Optional JSON Schema for complex structures (object/array/tuple) when type=object",
-          "additionalProperties": true
         },
         "uiControl": {
           "type": "string",
@@ -204,7 +132,7 @@
       },
       "required": [
         "name",
-        "type"
+        "valueSchema"
       ],
       "additionalProperties": false
     }
