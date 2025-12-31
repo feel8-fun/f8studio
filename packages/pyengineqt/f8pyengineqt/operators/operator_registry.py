@@ -27,6 +27,16 @@ class InvalidOperatorSpec(RegistryError):
 class OperatorSpecRegistry:
     """In-memory registry for validated OperatorSpec templates."""
 
+    @staticmethod
+    def instance() -> "OperatorSpecRegistry":
+        """Get the global singleton instance of the registry."""
+        global _GLOBAL_SPEC_REGISTRY
+        try:
+            return _GLOBAL_SPEC_REGISTRY
+        except NameError:
+            _GLOBAL_SPEC_REGISTRY = OperatorSpecRegistry()
+            return _GLOBAL_SPEC_REGISTRY
+
     def __init__(self) -> None:
         self._specs: dict[str, F8OperatorSpec] = {}
 
@@ -36,7 +46,7 @@ class OperatorSpecRegistry:
         except ValidationError as exc:
             raise InvalidOperatorSpec(str(exc)) from exc
 
-        if validated.schemaVersion != 'f8operator/1':
+        if validated.schemaVersion != "f8operator/1":
             raise InvalidOperatorSpec('schemaVersion must be "f8operator/1"')
 
         exists = validated.operatorClass in self._specs
@@ -46,9 +56,7 @@ class OperatorSpecRegistry:
         self._specs[validated.operatorClass] = validated
         return validated
 
-    def register_many(
-        self, specs: Iterable[F8OperatorSpec], *, overwrite: bool = False
-    ) -> list[F8OperatorSpec]:
+    def register_many(self, specs: Iterable[F8OperatorSpec], *, overwrite: bool = False) -> list[F8OperatorSpec]:
         return [self.register(spec, overwrite=overwrite) for spec in specs]
 
     def unregister(self, operator_class: str) -> None:
@@ -73,7 +81,7 @@ class OperatorSpecRegistry:
             if tags and not tags.issubset(set(spec.tags or [])):
                 return False
             if text_lower:
-                haystack = ' '.join(
+                haystack = " ".join(
                     filter(
                         None,
                         [

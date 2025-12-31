@@ -14,7 +14,7 @@ from f8pysdk import (
 )
 
 from .operator_instance import OperatorInstance
-from .operators.operator_registry import OperatorSpecRegistry
+from ..operators.operator_registry import OperatorSpecRegistry
 
 
 class OperatorGraph:
