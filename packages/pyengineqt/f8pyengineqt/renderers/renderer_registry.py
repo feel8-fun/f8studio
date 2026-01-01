@@ -1,9 +1,9 @@
 from typing import Type
 
-from .generic import GenericOperatorNode, OperatorNodeBase, UiOperatorNode
+from .generic import GenericNode, GenericNode, UiOperatorNode
 
 
-type OperatorRenderer = type[OperatorNodeBase]
+type OperatorRenderer = type[GenericNode]
 
 
 class OperatorRendererRegistry:
@@ -21,20 +21,21 @@ class OperatorRendererRegistry:
 
     def __init__(self) -> None:
         self._renderers: dict[str, OperatorRenderer] = {}
-        self._renderers["default"] = GenericOperatorNode
-        self._renderers["generic"] = GenericOperatorNode
+        self._renderers["default"] = GenericNode
+        self._renderers["generic"] = GenericNode
+        self._renderers["ui"] = UiOperatorNode
 
-    def register(self, renderer_key: str, renderer: type[OperatorNodeBase], *, overwrite: bool = False) -> None:
+    def register(self, renderer_key: str, renderer: type[GenericNode], *, overwrite: bool = False) -> None:
         if renderer_key in self._renderers and not overwrite:
             raise ValueError(f'renderer "{renderer_key}" already registered')
-        if not issubclass(renderer, OperatorNodeBase):
-            raise TypeError("renderer must subclass OperatorNodeBase")
+        if not issubclass(renderer, GenericNode):
+            raise TypeError("renderer must subclass GenericNode")
         self._renderers[renderer_key] = renderer
 
     def unregister(self, renderer_key: str) -> None:
         self._renderers.pop(renderer_key, None)
 
-    def get(self, renderer_key: str) -> type[OperatorNodeBase]:
+    def get(self, renderer_key: str) -> type[GenericNode]:
         if renderer_key not in self._renderers:
             renderer_key = "default"
         return self._renderers[renderer_key]

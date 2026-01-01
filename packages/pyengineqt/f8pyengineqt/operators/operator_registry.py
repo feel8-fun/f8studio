@@ -62,6 +62,9 @@ class OperatorSpecRegistry:
     def unregister(self, operator_class: str) -> None:
         self._specs.pop(operator_class, None)
 
+    def has(self, operator_class: str) -> bool:
+        return operator_class in self._specs
+
     def get(self, operator_class: str) -> F8OperatorSpec:
         if operator_class not in self._specs:
             raise OperatorNotFound(operator_class)

@@ -2,11 +2,12 @@ from __future__ import annotations
 
 
 from NodeGraphQt import BaseNode, NodeGraph
-from ..renderers.generic import OperatorNodeBase
+from ..renderers.generic import GenericNode
 from ..renderers.renderer_registry import OperatorRendererRegistry
 from ..operators.operator_registry import OperatorSpecRegistry
 
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +26,10 @@ class SpecNodeClassRegistry:
             return _GLOBAL_SPEC_NODE_CLASS_REGISTRY
 
     def __init__(self) -> None:
-        self._spec_node_cls_map: dict[str, BaseNode] = {}
+        self._spec_node_cls_map: dict[str, type[GenericNode]] = {}
         self.update()
 
-    def __item__(self, key) -> type[OperatorNodeBase]:
+    def __item__(self, key) -> type[GenericNode]:
         return self.get(key)
 
     def update(self):
@@ -44,15 +45,18 @@ class SpecNodeClassRegistry:
             base_cls = renderer_registry.get(renderer_key)
 
             # Keep the node type namespace consistent with the operator namespace to keep the palette tidy.
-            namespace, class_name = operator_class.rsplit(".", 1) if "." in operator_class else ("", operator_class)
+            namespace = ".".join(operator_class.split(".")[:-1]) or operator_class
+            class_name = "Op_" + re.sub(r"[^0-9a-zA-Z_]", "_", operator_class)
+            if class_name[0].isdigit():
+                class_name = f"Op_{class_name}"
 
             node_cls = type(
                 class_name,
                 (base_cls,),
                 {
                     "__identifier__": namespace,
-                    "NODE_NAME": spec.label or operator_class,
-                    "OPERATOR_CLASS": operator_class,
+                    "NODE_NAME": spec.label,
+                    "SPEC_KEY": operator_class,
                 },
             )
 
@@ -69,7 +73,7 @@ class SpecNodeClassRegistry:
             if node_cls.type_ not in registered_types:
                 node_graph.register_node(node_cls, alias=operator_class)
 
-    def get(self, key) -> type[OperatorNodeBase]:
+    def get(self, key: str) -> type[GenericNode]:
         if key not in self._spec_node_cls_map:
             raise KeyError(f'Node class for spec "{key}" not found')
         return self._spec_node_cls_map[key]

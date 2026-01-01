@@ -87,7 +87,7 @@
                         "properties": {
                             "type": "object",
                             "additionalProperties": {
-                                "$ref": "#"
+                                "$ref": "#/definitions/F8DataTypeSchema"
                             }
                         },
                         "required": {
@@ -120,7 +120,7 @@
                             "const": "array"
                         },
                         "items": {
-                            "$ref": "#"
+                            "$ref": "#/definitions/F8DataTypeSchema"
                         }
                     },
                     "required": [

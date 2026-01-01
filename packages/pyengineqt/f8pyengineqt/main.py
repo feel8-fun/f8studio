@@ -9,10 +9,14 @@ from f8pysdk import (
     F8StateSpec,
     number_schema,
     string_schema,
+    integer_schema,
+    boolean_schema,
+    array_schema,
+    any_schema,
+    complex_object_schema,
 )
 
 from f8pyengineqt.editor.operator_graph_editor import OperatorGraphEditor
-from f8pyengineqt.graph.operator_graph import OperatorGraph
 from f8pyengineqt.renderers.renderer_registry import OperatorRendererRegistry
 from f8pyengineqt.operators.operator_registry import OperatorSpecRegistry
 
@@ -36,7 +40,7 @@ def _demo_specs() -> Iterable[F8OperatorSpec]:
         dataOutPorts=[F8DataPortSpec(name="value", valueSchema=number_schema(), description="constant output")],
         states=[
             F8StateSpec(
-                name="value",
+                name="value2",
                 label="Value",
                 valueSchema=number_schema(default=1.0, minimum=-1000, maximum=1000),
                 access=F8StateFieldAccess.rw,
@@ -71,61 +75,112 @@ def _demo_specs() -> Iterable[F8OperatorSpec]:
                 name="label",
                 label="Label",
                 valueSchema=string_schema(default="Log"),
-                access=F8StateFieldAccess.rw,
-            )
+                access=F8StateFieldAccess.ro,
+            ),
+            F8StateSpec(
+                name="bool",
+                label="bool",
+                valueSchema=boolean_schema(default=True),
+                access=F8StateFieldAccess.ro,
+            ),
+            F8StateSpec(
+                name="count",
+                label="Count",
+                valueSchema=integer_schema(default=5, minimum=0, maximum=100),
+                access=F8StateFieldAccess.ro,
+            ),
+            F8StateSpec(
+                name="options",
+                label="Options",
+                valueSchema=string_schema(enum=["Option A", "Option B", "Option C"]),
+                access=F8StateFieldAccess.ro,
+            ),
+            F8StateSpec(
+                name="metadata",
+                label="Metadata",
+                valueSchema=complex_object_schema(
+                    properties={
+                        "author": string_schema(default="Unknown"),
+                        "version": integer_schema(default=1, minimum=1),
+                        "tags": array_schema(items=string_schema()),
+                    }
+                ),
+                access=F8StateFieldAccess.ro,
+            ),
         ],
     )
 
 
 def _seed_graph(view: OperatorGraphEditor) -> None:
     """Populate the graph with demo nodes and links."""
-    start = view.spawn_instance("feel8.sample.start", pos=(-420, 0))
-    const_a = view.spawn_instance("feel8.sample.constant", pos=(-180, -120), instance_id="const_a")
-    const_b = view.spawn_instance("feel8.sample.constant", pos=(-180, 120), instance_id="const_b")
-    add = view.spawn_instance("feel8.sample.add", pos=(140, 0))
-    logger = view.spawn_instance("feel8.sample.log", pos=(420, 0))
+    start = view.create_node("feel8.sample.start", pos=(-420, 0))
+    const_a = view.create_node("feel8.sample.constant", pos=(-180, -120), name="const_a")
+    const_b = view.create_node("feel8.sample.constant", pos=(-180, 120), name="const_b")
+    add = view.create_node("feel8.sample.add", pos=(140, 0))
+    logger = view.create_node("feel8.sample.log", pos=(420, 0))
 
-    # Example: tweak spec/state per instance.
-    const_a.state["value"] = 3.0
-    const_b.state["value"] = 7.0
-    logger.state["label"] = "Sum"
+    # const_a.set_property("value", 3.0, push_undo=False)
+    # const_b.set_property("value", 7.0, push_undo=False)
+    # logger.set_property("label", "Sum", push_undo=False)
 
-    graph = view.graph
-    graph.connect_exec(start.id, "exec", const_a.id, "exec")
-    graph.connect_exec(const_a.id, "exec", const_b.id, "exec")
-    graph.connect_exec(const_b.id, "exec", add.id, "exec")
+    view.connect(start, kind="exec", out_port="exec", target=const_a, in_port="exec")
+    view.connect(const_a, kind="exec", out_port="exec", target=const_b, in_port="exec")
+    view.connect(const_b, kind="exec", out_port="exec", target=add, in_port="exec")
 
-    graph.connect_data(const_a.id, "value", add.id, "a")
-    graph.connect_data(const_b.id, "value", add.id, "b")
-    graph.connect_data(add.id, "sum", logger.id, "value")
+    view.connect(const_a, kind="data", out_port="value", target=add, in_port="a")
+    view.connect(const_b, kind="data", out_port="value", target=add, in_port="b")
+    view.connect(add, kind="data", out_port="sum", target=logger, in_port="value")
 
 
 def main() -> None:
     from qtpy import QtWidgets  # type: ignore[import-not-found]
-    from NodeGraphQt import NodesPaletteWidget
+    from NodeGraphQt import NodesPaletteWidget, PropertiesBinWidget
 
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
-    OperatorSpecRegistry().instance().register_many(_demo_specs(), overwrite=True)
-    
-    graph = OperatorGraph()
+    # NodeGraphQt's PropertiesBinWidget spinbox widgets reference `self.NoButtons`
+    # which is not available on PySide6 widget instances (only on the class).
+    # Patch the python subclasses so `self.NoButtons` resolves via class lookup.
+    # try:
+    #     from Qt import QtWidgets as _QtWidgets  # NodeGraphQt uses Qt.py internally.
+    #     from NodeGraphQt.custom_widgets.properties_bin import prop_widgets_base as _pwb
 
-    view = OperatorGraphEditor(
-        graph=graph,
-    )
+    #     _pwb.PropSpinBox.NoButtons = _QtWidgets.QAbstractSpinBox.NoButtons
+    #     _pwb.PropDoubleSpinBox.NoButtons = _QtWidgets.QAbstractSpinBox.NoButtons
+    # except Exception:
+    #     pass
+
+    OperatorSpecRegistry.instance().register_many(_demo_specs(), overwrite=True)
+    OperatorRendererRegistry.instance()
+
+    view = OperatorGraphEditor()
     _seed_graph(view)
 
     graph_widget = view.widget()
     palette = NodesPaletteWidget(node_graph=view.node_graph)
+    properties_bin = PropertiesBinWidget(parent=None, node_graph=view.node_graph)
+
+    def _sync_properties_bin(*_args: object) -> None:
+        if properties_bin.limit() == 0 or getattr(properties_bin, "_lock", False):
+            return
+        properties_bin.clear_bin()
+        for node in view.node_graph.selected_nodes():
+            properties_bin.add_node(node)
+
+    view.node_graph.node_selection_changed.connect(_sync_properties_bin)
+    view.node_graph.node_selected.connect(_sync_properties_bin)
+    _sync_properties_bin()
 
     window = QtWidgets.QMainWindow()
     window.setWindowTitle("Feel8 Graph")
     splitter = QtWidgets.QSplitter()
     splitter.addWidget(palette)
     splitter.addWidget(graph_widget)
+    splitter.addWidget(properties_bin)
     splitter.setStretchFactor(0, 0)
     splitter.setStretchFactor(1, 1)
-    splitter.setSizes([260, 940])
+    splitter.setStretchFactor(2, 0)
+    splitter.setSizes([260, 700, 240])
     window.setCentralWidget(splitter)
     window.resize(1200, 720)
     window.show()
