@@ -25,7 +25,7 @@ class InvalidOperatorSpec(RegistryError):
 
 
 class OperatorSpecRegistry:
-    """In-memory registry for validated OperatorSpec templates."""
+    """In-memory registry for validated F8OperatorSpec templates."""
 
     @staticmethod
     def instance() -> "OperatorSpecRegistry":

@@ -5,7 +5,7 @@ from typing import Any
 
 from f8pysdk import (
     F8PrimitiveTypeEnum,
-    F8StateFieldAccess,
+    F8StateAccess,
     F8DataTypeSchema,
     F8OperatorSpec,
     F8ServiceSpec,
@@ -46,7 +46,7 @@ class GenericNode(BaseNode):  # type: ignore[misc]
     """
     Base NodeGraphQt node for editing OperatorSpecs in NodeGraphQt.
 
-    This node is editor-only: it builds ports + properties from an OperatorSpec
+    This node is editor-only: it builds ports + properties from an F8OperatorSpec
     template fetched from `OperatorSpecRegistry` using `OPERATOR_CLASS`.
     """
 
@@ -142,9 +142,9 @@ class GenericNode(BaseNode):  # type: ignore[misc]
 
     def _build_state_ports(self) -> None:
         for field in self.spec.states or []:
-            access = field.access or F8StateFieldAccess.ro
+            access = field.access or F8StateAccess.ro
 
-            if access == F8StateFieldAccess.ro:
+            if access == F8StateAccess.ro:
                 self._add_spacer_port(is_input=True, name=f"[S]{field.name}")
                 handle = self.add_output(
                     name=f"{field.name}[S]",
@@ -153,7 +153,7 @@ class GenericNode(BaseNode):  # type: ignore[misc]
                     painter_func=draw_square_port,
                 )  # type: ignore[attr-defined]
                 self.port_handles.state_out[field.name] = handle
-            elif access == F8StateFieldAccess.wo:
+            elif access == F8StateAccess.wo:
                 handle = self.add_input(
                     name=f"[S]{field.name}",
                     color=STATE_PORT_COLOR,

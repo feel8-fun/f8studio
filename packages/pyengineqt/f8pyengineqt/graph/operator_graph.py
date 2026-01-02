@@ -8,7 +8,7 @@ from f8pysdk import (
     F8EdgeSpec,
     F8EdgeStrategyEnum,
     F8OperatorSpec,
-    F8StateFieldAccess,
+    F8StateAccess,
     F8StateSpec,
     F8DataTypeSchema
 )
@@ -122,7 +122,7 @@ class OperatorGraph:
         source_def = self._validate_state_field(self.nodes[source_id], source_field)
         target_def = self._validate_state_field(self.nodes[target_id], target_field)
 
-        if target_def.access == F8StateFieldAccess.ro:
+        if target_def.access == F8StateAccess.ro:
             raise ValueError(f"target state field {target_field} on {target_id} is read-only")
         if any(edge.to == target_id and edge.toPort == target_field for edge in self.state_edges):
             raise ValueError(f"state field {target_field} on {target_id} already has a link")

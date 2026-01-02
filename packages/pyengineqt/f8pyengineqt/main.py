@@ -5,7 +5,7 @@ from typing import Iterable
 from f8pysdk import (
     F8DataPortSpec,
     F8OperatorSpec,
-    F8StateFieldAccess,
+    F8StateAccess,
     F8StateSpec,
     number_schema,
     string_schema,
@@ -43,7 +43,7 @@ def _demo_specs() -> Iterable[F8OperatorSpec]:
                 name="value2",
                 label="Value",
                 valueSchema=number_schema(default=1.0, minimum=-1000, maximum=1000),
-                access=F8StateFieldAccess.rw,
+                access=F8StateAccess.rw,
             )
         ],
     )
@@ -75,25 +75,25 @@ def _demo_specs() -> Iterable[F8OperatorSpec]:
                 name="label",
                 label="Label",
                 valueSchema=string_schema(default="Log"),
-                access=F8StateFieldAccess.ro,
+                access=F8StateAccess.ro,
             ),
             F8StateSpec(
                 name="bool",
                 label="bool",
                 valueSchema=boolean_schema(default=True),
-                access=F8StateFieldAccess.ro,
+                access=F8StateAccess.ro,
             ),
             F8StateSpec(
                 name="count",
                 label="Count",
                 valueSchema=integer_schema(default=5, minimum=0, maximum=100),
-                access=F8StateFieldAccess.ro,
+                access=F8StateAccess.ro,
             ),
             F8StateSpec(
                 name="options",
                 label="Options",
                 valueSchema=string_schema(enum=["Option A", "Option B", "Option C"]),
-                access=F8StateFieldAccess.ro,
+                access=F8StateAccess.ro,
             ),
             F8StateSpec(
                 name="metadata",
@@ -105,7 +105,7 @@ def _demo_specs() -> Iterable[F8OperatorSpec]:
                         "tags": array_schema(items=string_schema()),
                     }
                 ),
-                access=F8StateFieldAccess.ro,
+                access=F8StateAccess.ro,
             ),
         ],
     )

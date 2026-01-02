@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from f8pysdk import F8OperatorSpec, F8StateFieldAccess, F8StateSpec
+from f8pysdk import F8OperatorSpec, F8StateAccess, F8StateSpec
 
 @dataclass
 class OperatorInstance:
@@ -65,7 +65,7 @@ class OperatorInstance:
         field_def = self.get_state_field(name)
         if not field_def:
             raise KeyError(f"Unknown state field: {name}")
-        if field_def.access == F8StateFieldAccess.ro and not allow_readonly:
+        if field_def.access == F8StateAccess.ro and not allow_readonly:
             raise ValueError(f"State field {name} is read-only")
         self.state[name] = value
 

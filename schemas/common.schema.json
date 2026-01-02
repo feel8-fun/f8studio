@@ -20,7 +20,7 @@
           "$ref": "./data.schema.json#/definitions/F8DataTypeSchema"
         },
         "access": {
-          "title": "F8StateFieldAccess",
+          "title": "F8StateAccess",
           "type": "string",
           "enum": [
             "rw",
