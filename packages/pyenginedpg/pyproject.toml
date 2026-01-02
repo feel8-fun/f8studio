@@ -1,9 +1,0 @@
-[project]
-name = "f8enginedpg"
-version = "0.1.0"
-description = "F8 Studio Python Engine"
-requires-python = ">=3.14"
-dependencies = []
-
-[tool.uv]
-package = true
