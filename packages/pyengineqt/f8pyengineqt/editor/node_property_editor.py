@@ -445,6 +445,76 @@ class SchemaValueEditor(QtWidgets.QWidget):
             self._json.setPlainText(_as_json(value))
 
 
+class PortSpecEditorDialog(QtWidgets.QDialog):
+    def __init__(
+        self,
+        *,
+        title: str,
+        description: str | None,
+        required: bool,
+        schema: F8DataTypeSchema,
+        parent: QtWidgets.QWidget | None = None,
+    ) -> None:
+        super().__init__(parent=parent)
+        self.setWindowTitle(title)
+
+        self._schema: F8DataTypeSchema = schema
+
+        self._description = QtWidgets.QPlainTextEdit()
+        self._description.setPlaceholderText("description")
+        self._description.setPlainText(description or "")
+        self._description.setMaximumHeight(72)
+
+        self._required = QtWidgets.QCheckBox("required")
+        self._required.setChecked(bool(required))
+
+        self._schema_preview = QtWidgets.QPlainTextEdit()
+        self._schema_preview.setReadOnly(True)
+        self._schema_preview.setPlainText(_as_json(schema.model_dump(mode="json")))
+        self._schema_preview.setMaximumHeight(140)
+
+        self._edit_schema = QtWidgets.QPushButton("Edit Schema...")
+        self._edit_schema.clicked.connect(self._on_edit_schema)
+
+        self._error = QtWidgets.QLabel()
+        self._error.setWordWrap(True)
+        self._error.setStyleSheet("color: #c44;")
+
+        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(QtWidgets.QLabel("Description"))
+        layout.addWidget(self._description)
+        layout.addWidget(self._required)
+        layout.addWidget(QtWidgets.QLabel("Schema (JSON)"))
+        layout.addWidget(self._schema_preview)
+        row = QtWidgets.QHBoxLayout()
+        row.addStretch(1)
+        row.addWidget(self._edit_schema)
+        layout.addLayout(row)
+        layout.addWidget(self._error)
+        layout.addWidget(buttons)
+
+    def description(self) -> str:
+        return self._description.toPlainText().strip()
+
+    def required(self) -> bool:
+        return bool(self._required.isChecked())
+
+    def schema(self) -> F8DataTypeSchema:
+        return self._schema
+
+    def _on_edit_schema(self) -> None:
+        dlg = SchemaJsonDialog(title="Edit Port Schema", initial_schema=self._schema, parent=self)
+        if dlg.exec_() != QtWidgets.QDialog.Accepted:
+            return
+        self._schema = dlg.schema()
+        self._schema_preview.setPlainText(_as_json(self._schema.model_dump(mode="json")))
+        self._error.setText("")
+
+
 @dataclass(frozen=True)
 class _NodeSelection:
     node: GenericNode | None
@@ -601,134 +671,139 @@ class EditableStringList(QtWidgets.QWidget):
         self.changed.emit()
 
 
-class DataPortTable(QtWidgets.QWidget):
+class PortRowWidget(QtWidgets.QWidget):
+    changed = QtCore.Signal()
+    removed = QtCore.Signal()
+
+    def __init__(self, port: F8DataPortSpec, *, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent=parent)
+        self._schema = port.valueSchema
+
+        self._name = QtWidgets.QLineEdit(port.name)
+        self._name.setPlaceholderText("name")
+        self._name.textChanged.connect(lambda _: self.changed.emit())
+
+        self._type = QtWidgets.QLabel(_schema_type_label(self._schema))
+        self._type.setStyleSheet("color: #888;")
+        self._type.setMinimumWidth(48)
+
+        self._required = QtWidgets.QCheckBox()
+        self._required.setChecked(bool(port.required))
+        self._required.stateChanged.connect(lambda _: self.changed.emit())
+
+        self._edit = QtWidgets.QToolButton()
+        self._edit.setText("Edit")
+        self._edit.clicked.connect(self._on_edit)
+
+        self._remove = QtWidgets.QToolButton()
+        self._remove.setText("X")
+        self._remove.clicked.connect(lambda: self.removed.emit())
+
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        layout.addWidget(self._name, 1)
+        layout.addWidget(self._type, 0)
+        layout.addWidget(self._required, 0)
+        layout.addWidget(self._edit, 0)
+        layout.addWidget(self._remove, 0)
+
+        self._description = port.description
+
+    def port(self) -> F8DataPortSpec:
+        return F8DataPortSpec(
+            name=self._name.text().strip(),
+            valueSchema=self._schema,
+            required=bool(self._required.isChecked()),
+            description=(self._description or None),
+        )
+
+    def _on_edit(self) -> None:
+        dlg = PortSpecEditorDialog(
+            title=f'Edit Port "{self._name.text().strip() or "port"}"',
+            description=self._description,
+            required=bool(self._required.isChecked()),
+            schema=self._schema,
+            parent=self,
+        )
+        if dlg.exec_() != QtWidgets.QDialog.Accepted:
+            return
+        self._description = dlg.description() or None
+        self._required.setChecked(dlg.required())
+        self._schema = dlg.schema()
+        self._type.setText(_schema_type_label(self._schema))
+        self.changed.emit()
+
+
+class PortListEditor(QtWidgets.QWidget):
     changed = QtCore.Signal()
 
     def __init__(self, *, title: str, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent=parent)
         self._title = QtWidgets.QLabel(title)
-        self._table = QtWidgets.QTableWidget(0, 5)
-        self._table.setHorizontalHeaderLabels(["name", "type", "required", "description", "schema"])
-        self._table.horizontalHeader().setStretchLastSection(True)
-        self._table.verticalHeader().setVisible(False)
-        self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self._table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._title.setStyleSheet("color: #888; font-weight: 600;")
 
-        self._add = QtWidgets.QPushButton("Add")
-        self._remove = QtWidgets.QPushButton("Remove")
+        self._rows_widget = QtWidgets.QWidget()
+        self._rows_layout = QtWidgets.QVBoxLayout(self._rows_widget)
+        self._rows_layout.setContentsMargins(0, 0, 0, 0)
+        self._rows_layout.setSpacing(4)
+        self._rows_layout.addStretch(1)
+
+        self._add = QtWidgets.QToolButton()
+        self._add.setText("+")
         self._add.clicked.connect(self._on_add)
-        self._remove.clicked.connect(self._on_remove)
 
-        btns = QtWidgets.QHBoxLayout()
-        btns.addWidget(self._add)
-        btns.addWidget(self._remove)
-        btns.addStretch(1)
+        header = QtWidgets.QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.addWidget(self._title)
+        header.addStretch(1)
+        header.addWidget(self._add)
 
         layout = QtWidgets.QVBoxLayout(self)
-        layout.addWidget(self._title)
-        layout.addWidget(self._table)
-        layout.addLayout(btns)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        layout.addLayout(header)
+        layout.addWidget(self._rows_widget)
 
     def set_ports(self, ports: list[F8DataPortSpec]) -> None:
-        self._table.setRowCount(0)
+        self._clear_rows()
         for port in ports:
             self._append_row(port)
+        self.changed.emit()
 
     def ports(self) -> list[F8DataPortSpec]:
         ports: list[F8DataPortSpec] = []
-        for row in range(self._table.rowCount()):
-            name_widget = self._table.cellWidget(row, 0)
-            type_widget = self._table.cellWidget(row, 1)
-            req_widget = self._table.cellWidget(row, 2)
-            desc_widget = self._table.cellWidget(row, 3)
-            schema_btn = self._table.cellWidget(row, 4)
-
-            if not isinstance(name_widget, QtWidgets.QLineEdit):
-                continue
-            if not isinstance(type_widget, QtWidgets.QComboBox):
-                continue
-            if not isinstance(req_widget, QtWidgets.QCheckBox):
-                continue
-            if not isinstance(desc_widget, QtWidgets.QLineEdit):
-                continue
-            if not isinstance(schema_btn, QtWidgets.QPushButton):
-                continue
-
-            schema = schema_btn.property("schema")
-            if not isinstance(schema, F8DataTypeSchema):
-                schema = _make_schema_by_type(type_widget.currentText())
-
-            ports.append(
-                F8DataPortSpec(
-                    name=name_widget.text().strip(),
-                    valueSchema=schema,
-                    required=bool(req_widget.isChecked()),
-                    description=desc_widget.text() or None,
-                )
-            )
+        for row in self._iter_rows():
+            try:
+                ports.append(row.port())
+            except Exception:
+                pass
         return ports
 
+    def _iter_rows(self) -> list[PortRowWidget]:
+        rows: list[PortRowWidget] = []
+        for i in range(self._rows_layout.count()):
+            item = self._rows_layout.itemAt(i)
+            w = item.widget() if item else None
+            if isinstance(w, PortRowWidget):
+                rows.append(w)
+        return rows
+
+    def _clear_rows(self) -> None:
+        while self._rows_layout.count():
+            item = self._rows_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self._rows_layout.addStretch(1)
+
     def _append_row(self, port: F8DataPortSpec) -> None:
-        row = self._table.rowCount()
-        self._table.insertRow(row)
+        row = PortRowWidget(port)
+        row.changed.connect(self.changed.emit)
+        row.removed.connect(lambda r=row: self._remove_row(r))
+        self._rows_layout.insertWidget(self._rows_layout.count() - 1, row)
 
-        name = QtWidgets.QLineEdit(port.name)
-        name.textChanged.connect(lambda _: self.changed.emit())
-
-        type_box = QtWidgets.QComboBox()
-        type_box.addItems(
-            [
-                F8PrimitiveTypeEnum.string.value,
-                F8PrimitiveTypeEnum.number.value,
-                F8PrimitiveTypeEnum.integer.value,
-                F8PrimitiveTypeEnum.boolean.value,
-                "object",
-                "array",
-                "any",
-            ]
-        )
-        type_box.setCurrentText(_schema_type_label(port.valueSchema))
-        type_box.currentTextChanged.connect(lambda _: self._on_type_changed(row))
-
-        required = QtWidgets.QCheckBox()
-        required.setChecked(bool(port.required))
-        required.stateChanged.connect(lambda _: self.changed.emit())
-
-        desc = QtWidgets.QLineEdit(port.description or "")
-        desc.textChanged.connect(lambda _: self.changed.emit())
-
-        schema_btn = QtWidgets.QPushButton("Edit…")
-        schema_btn.setProperty("schema", port.valueSchema)
-        schema_btn.clicked.connect(lambda _=False, r=row: self._edit_schema(r))
-
-        self._table.setCellWidget(row, 0, name)
-        self._table.setCellWidget(row, 1, type_box)
-        self._table.setCellWidget(row, 2, required)
-        self._table.setCellWidget(row, 3, desc)
-        self._table.setCellWidget(row, 4, schema_btn)
-
-    def _edit_schema(self, row: int) -> None:
-        btn = self._table.cellWidget(row, 4)
-        if not isinstance(btn, QtWidgets.QPushButton):
-            return
-        current = btn.property("schema")
-        if not isinstance(current, F8DataTypeSchema):
-            current = _make_schema_by_type("any")
-        dlg = SchemaJsonDialog(title="Edit Port Schema", initial_schema=current, parent=self)
-        if dlg.exec_() != QtWidgets.QDialog.Accepted:
-            return
-        btn.setProperty("schema", dlg.schema())
-        type_box = self._table.cellWidget(row, 1)
-        if isinstance(type_box, QtWidgets.QComboBox):
-            type_box.setCurrentText(_schema_type_label(dlg.schema()))
-        self.changed.emit()
-
-    def _on_type_changed(self, row: int) -> None:
-        type_box = self._table.cellWidget(row, 1)
-        btn = self._table.cellWidget(row, 4)
-        if not isinstance(type_box, QtWidgets.QComboBox) or not isinstance(btn, QtWidgets.QPushButton):
-            return
-        btn.setProperty("schema", _make_schema_by_type(type_box.currentText()))
+    def _remove_row(self, row: PortRowWidget) -> None:
+        row.deleteLater()
         self.changed.emit()
 
     def _on_add(self) -> None:
@@ -741,11 +816,412 @@ class DataPortTable(QtWidgets.QWidget):
         self._append_row(F8DataPortSpec(name=candidate, valueSchema=string_schema(), required=True))
         self.changed.emit()
 
-    def _on_remove(self) -> None:
-        row = self._table.currentRow()
-        if row < 0:
+
+class StringRowWidget(QtWidgets.QWidget):
+    changed = QtCore.Signal()
+    removed = QtCore.Signal()
+
+    def __init__(self, value: str, *, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent=parent)
+
+        self._edit = QtWidgets.QLineEdit(value)
+        self._edit.setPlaceholderText("name")
+        self._edit.textChanged.connect(lambda _: self.changed.emit())
+
+        self._remove = QtWidgets.QToolButton()
+        self._remove.setText("X")
+        self._remove.clicked.connect(lambda: self.removed.emit())
+
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        layout.addWidget(self._edit, 1)
+        layout.addWidget(self._remove, 0)
+
+    def value(self) -> str:
+        return self._edit.text().strip()
+
+    def set_value(self, value: str) -> None:
+        self._edit.setText(value)
+
+
+class StringListEditor(QtWidgets.QWidget):
+    changed = QtCore.Signal()
+
+    def __init__(self, *, title: str, base_name: str, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent=parent)
+        self._base_name = base_name
+
+        self._title = QtWidgets.QLabel(title)
+        self._title.setStyleSheet("color: #888; font-weight: 600;")
+
+        self._rows_widget = QtWidgets.QWidget()
+        self._rows_layout = QtWidgets.QVBoxLayout(self._rows_widget)
+        self._rows_layout.setContentsMargins(0, 0, 0, 0)
+        self._rows_layout.setSpacing(4)
+        self._rows_layout.addStretch(1)
+
+        self._add = QtWidgets.QToolButton()
+        self._add.setText("+")
+        self._add.clicked.connect(self._on_add)
+
+        header = QtWidgets.QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.addWidget(self._title)
+        header.addStretch(1)
+        header.addWidget(self._add)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        layout.addLayout(header)
+        layout.addWidget(self._rows_widget)
+
+    def set_items(self, items: list[str]) -> None:
+        self._clear_rows()
+        for value in items:
+            self._append_row(str(value))
+        self.changed.emit()
+
+    def items(self) -> list[str]:
+        return [row.value() for row in self._iter_rows() if row.value()]
+
+    def _iter_rows(self) -> list[StringRowWidget]:
+        rows: list[StringRowWidget] = []
+        for i in range(self._rows_layout.count()):
+            item = self._rows_layout.itemAt(i)
+            w = item.widget() if item else None
+            if isinstance(w, StringRowWidget):
+                rows.append(w)
+        return rows
+
+    def _clear_rows(self) -> None:
+        while self._rows_layout.count():
+            item = self._rows_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self._rows_layout.addStretch(1)
+
+    def _append_row(self, value: str) -> None:
+        row = StringRowWidget(value)
+        row.changed.connect(self.changed.emit)
+        row.removed.connect(lambda r=row: self._remove_row(r))
+        self._rows_layout.insertWidget(self._rows_layout.count() - 1, row)
+
+    def _remove_row(self, row: StringRowWidget) -> None:
+        row.deleteLater()
+        self.changed.emit()
+
+    def _on_add(self) -> None:
+        used = set(self.items())
+        idx = 1
+        candidate = self._base_name
+        while candidate in used:
+            idx += 1
+            candidate = f"{self._base_name}{idx}"
+        self._append_row(candidate)
+        self.changed.emit()
+
+
+class CollapsibleSection(QtWidgets.QWidget):
+    def __init__(self, *, title: str, content: QtWidgets.QWidget, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent=parent)
+
+        self._toggle = QtWidgets.QToolButton()
+        self._toggle.setCheckable(True)
+        self._toggle.setChecked(True)
+        self._toggle.setArrowType(QtCore.Qt.DownArrow)
+        self._toggle.clicked.connect(self._on_toggle)
+
+        self._title = QtWidgets.QLabel(title)
+        self._title.setStyleSheet("font-weight: 700;")
+
+        header = QtWidgets.QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(6)
+        header.addWidget(self._toggle, 0)
+        header.addWidget(self._title, 0)
+        header.addStretch(1)
+
+        self._content = content
+        self._content.setVisible(True)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        layout.addLayout(header)
+        layout.addWidget(self._content)
+
+        line = QtWidgets.QFrame()
+        line.setFrameShape(QtWidgets.QFrame.HLine)
+        line.setStyleSheet("color: #333;")
+        layout.addWidget(line)
+
+    def set_collapsed(self, collapsed: bool) -> None:
+        self._toggle.setChecked(not collapsed)
+        self._on_toggle()
+
+    def _on_toggle(self) -> None:
+        expanded = bool(self._toggle.isChecked())
+        self._toggle.setArrowType(QtCore.Qt.DownArrow if expanded else QtCore.Qt.RightArrow)
+        self._content.setVisible(expanded)
+
+
+class StateSpecEditorDialog(QtWidgets.QDialog):
+    def __init__(self, *, field: F8StateSpec, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent=parent)
+        self.setWindowTitle(f'Edit State "{field.name}"')
+
+        self._schema: F8DataTypeSchema = field.valueSchema
+
+        self._label = QtWidgets.QLineEdit(field.label or "")
+        self._label.setPlaceholderText("label (optional)")
+
+        self._description = QtWidgets.QPlainTextEdit()
+        self._description.setPlaceholderText("description (optional)")
+        self._description.setPlainText(field.description or "")
+        self._description.setMaximumHeight(72)
+
+        self._access = QtWidgets.QComboBox()
+        self._access.addItems([a.value for a in F8StateAccess])
+        self._access.setCurrentText(field.access.value)
+
+        self._required = QtWidgets.QCheckBox("required")
+        self._required.setChecked(bool(field.required))
+
+        self._language = QtWidgets.QLineEdit(field.language or "")
+        self._language.setPlaceholderText("language (optional, eg: javascript)")
+
+        self._show_on_node = QtWidgets.QCheckBox("showOnNode")
+        self._show_on_node.setChecked(bool(getattr(field, "showOnNode", False)))
+
+        self._schema_preview = QtWidgets.QPlainTextEdit()
+        self._schema_preview.setReadOnly(True)
+        self._schema_preview.setPlainText(_as_json(self._schema.model_dump(mode="json")))
+        self._schema_preview.setMaximumHeight(160)
+
+        self._edit_schema = QtWidgets.QPushButton("Edit Schema...")
+        self._edit_schema.clicked.connect(self._on_edit_schema)
+
+        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+
+        form = QtWidgets.QFormLayout()
+        form.addRow("access", self._access)
+        form.addRow("label", self._label)
+        form.addRow("language", self._language)
+        form.addRow("", self._required)
+        form.addRow("", self._show_on_node)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addWidget(QtWidgets.QLabel("Description"))
+        layout.addWidget(self._description)
+        layout.addWidget(QtWidgets.QLabel("Schema (JSON)"))
+        layout.addWidget(self._schema_preview)
+        row = QtWidgets.QHBoxLayout()
+        row.addStretch(1)
+        row.addWidget(self._edit_schema)
+        layout.addLayout(row)
+        layout.addWidget(buttons)
+
+    def access(self) -> F8StateAccess:
+        return F8StateAccess(self._access.currentText())
+
+    def label(self) -> str | None:
+        text = self._label.text().strip()
+        return text or None
+
+    def description(self) -> str | None:
+        text = self._description.toPlainText().strip()
+        return text or None
+
+    def required(self) -> bool:
+        return bool(self._required.isChecked())
+
+    def language(self) -> str | None:
+        text = self._language.text().strip()
+        return text or None
+
+    def show_on_node(self) -> bool:
+        return bool(self._show_on_node.isChecked())
+
+    def schema(self) -> F8DataTypeSchema:
+        return self._schema
+
+    def _on_edit_schema(self) -> None:
+        dlg = SchemaJsonDialog(title="Edit State Schema", initial_schema=self._schema, parent=self)
+        if dlg.exec_() != QtWidgets.QDialog.Accepted:
             return
-        self._table.removeRow(row)
+        self._schema = dlg.schema()
+        self._schema_preview.setPlainText(_as_json(self._schema.model_dump(mode="json")))
+
+
+class StateRowWidget(QtWidgets.QWidget):
+    changed = QtCore.Signal()
+    removed = QtCore.Signal()
+
+    def __init__(self, field: F8StateSpec, *, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent=parent)
+        self._field = field
+
+        self._name = QtWidgets.QLineEdit(field.name)
+        self._name.setPlaceholderText("name")
+        self._name.textChanged.connect(lambda _: self._on_name_changed())
+
+        self._access = QtWidgets.QComboBox()
+        self._access.addItems([a.value for a in F8StateAccess])
+        self._access.setCurrentText(field.access.value)
+        self._access.currentTextChanged.connect(lambda _: self._on_access_changed())
+
+        self._show_on_node = QtWidgets.QCheckBox()
+        self._show_on_node.setChecked(bool(getattr(field, "showOnNode", False)))
+        self._show_on_node.stateChanged.connect(lambda _: self._on_show_on_node_changed())
+        self._show_on_node.setToolTip("showOnNode")
+
+        self._type = QtWidgets.QLabel(_schema_type_label(field.valueSchema))
+        self._type.setStyleSheet("color: #888;")
+        self._type.setMinimumWidth(48)
+
+        self._edit = QtWidgets.QToolButton()
+        self._edit.setText("Edit")
+        self._edit.clicked.connect(self._on_edit)
+
+        self._remove = QtWidgets.QToolButton()
+        self._remove.setText("X")
+        self._remove.clicked.connect(lambda: self.removed.emit())
+
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        layout.addWidget(self._name, 1)
+        layout.addWidget(self._access, 0)
+        layout.addWidget(self._show_on_node, 0)
+        layout.addWidget(self._type, 0)
+        layout.addWidget(self._edit, 0)
+        layout.addWidget(self._remove, 0)
+
+    def field(self) -> F8StateSpec:
+        name = self._name.text().strip()
+        access = F8StateAccess(self._access.currentText())
+        show_on_node = bool(self._show_on_node.isChecked())
+        return F8StateSpec(
+            name=name,
+            label=self._field.label,
+            description=self._field.description,
+            valueSchema=self._field.valueSchema,
+            access=access,
+            required=bool(self._field.required),
+            language=self._field.language,
+            showOnNode=show_on_node,
+        )
+
+    def _on_name_changed(self) -> None:
+        self._field.name = self._name.text().strip()
+        self.changed.emit()
+
+    def _on_access_changed(self) -> None:
+        self._field.access = F8StateAccess(self._access.currentText())
+        self.changed.emit()
+
+    def _on_show_on_node_changed(self) -> None:
+        setattr(self._field, "showOnNode", bool(self._show_on_node.isChecked()))
+        self.changed.emit()
+
+    def _on_edit(self) -> None:
+        dlg = StateSpecEditorDialog(field=self._field, parent=self)
+        if dlg.exec_() != QtWidgets.QDialog.Accepted:
+            return
+        self._field.access = dlg.access()
+        self._access.setCurrentText(self._field.access.value)
+        self._field.label = dlg.label()
+        self._field.description = dlg.description()
+        self._field.required = dlg.required()
+        self._field.language = dlg.language()
+        setattr(self._field, "showOnNode", dlg.show_on_node())
+        self._show_on_node.setChecked(bool(getattr(self._field, "showOnNode", False)))
+        self._field.valueSchema = dlg.schema()
+        self._type.setText(_schema_type_label(self._field.valueSchema))
+        self.changed.emit()
+
+
+class StateListEditor(QtWidgets.QWidget):
+    changed = QtCore.Signal()
+
+    def __init__(self, *, title: str, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent=parent)
+        self._title = QtWidgets.QLabel(title)
+        self._title.setStyleSheet("color: #888; font-weight: 600;")
+
+        self._rows_widget = QtWidgets.QWidget()
+        self._rows_layout = QtWidgets.QVBoxLayout(self._rows_widget)
+        self._rows_layout.setContentsMargins(0, 0, 0, 0)
+        self._rows_layout.setSpacing(4)
+        self._rows_layout.addStretch(1)
+
+        self._add = QtWidgets.QToolButton()
+        self._add.setText("+")
+        self._add.clicked.connect(self._on_add)
+
+        header = QtWidgets.QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.addWidget(self._title)
+        header.addStretch(1)
+        header.addWidget(self._add)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        layout.addLayout(header)
+        layout.addWidget(self._rows_widget)
+
+    def set_fields(self, fields: list[F8StateSpec]) -> None:
+        self._clear_rows()
+        for field in fields:
+            self._append_row(field)
+        self.changed.emit()
+
+    def fields(self) -> list[F8StateSpec]:
+        fields: list[F8StateSpec] = []
+        for row in self._iter_rows():
+            fields.append(row.field())
+        return fields
+
+    def _iter_rows(self) -> list[StateRowWidget]:
+        rows: list[StateRowWidget] = []
+        for i in range(self._rows_layout.count()):
+            item = self._rows_layout.itemAt(i)
+            w = item.widget() if item else None
+            if isinstance(w, StateRowWidget):
+                rows.append(w)
+        return rows
+
+    def _clear_rows(self) -> None:
+        while self._rows_layout.count():
+            item = self._rows_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self._rows_layout.addStretch(1)
+
+    def _append_row(self, field: F8StateSpec) -> None:
+        row = StateRowWidget(field)
+        row.changed.connect(self.changed.emit)
+        row.removed.connect(lambda r=row: self._remove_row(r))
+        self._rows_layout.insertWidget(self._rows_layout.count() - 1, row)
+
+    def _remove_row(self, row: StateRowWidget) -> None:
+        row.deleteLater()
+        self.changed.emit()
+
+    def _on_add(self) -> None:
+        used = {f.name for f in self.fields() if f.name}
+        idx = 1
+        candidate = "state"
+        while candidate in used:
+            idx += 1
+            candidate = f"state{idx}"
+        self._append_row(F8StateSpec(name=candidate, label=None, valueSchema=string_schema(), access=F8StateAccess.rw))
         self.changed.emit()
 
 
@@ -895,9 +1371,7 @@ class StateDefTable(QtWidgets.QWidget):
         while candidate in used:
             idx += 1
             candidate = f"state{idx}"
-        self._append_row(
-            F8StateSpec(name=candidate, label=None, valueSchema=string_schema(), access=F8StateAccess.rw)
-        )
+        self._append_row(F8StateSpec(name=candidate, label=None, valueSchema=string_schema(), access=F8StateAccess.rw))
         self.changed.emit()
 
     def _on_remove(self) -> None:
@@ -919,11 +1393,11 @@ class NodeSpecEditorWidget(QtWidgets.QWidget):
         self._empty = QtWidgets.QLabel("Select a node to edit spec.")
         self._empty.setAlignment(QtCore.Qt.AlignCenter)
 
-        self._exec_in = EditableStringList(label="execInPorts")
-        self._exec_out = EditableStringList(label="execOutPorts")
-        self._data_in = DataPortTable(title="dataInPorts")
-        self._data_out = DataPortTable(title="dataOutPorts")
-        self._states = StateDefTable(title="states")
+        self._exec_in = StringListEditor(title="execInPorts", base_name="exec")
+        self._exec_out = StringListEditor(title="execOutPorts", base_name="exec")
+        self._data_in = PortListEditor(title="dataInPorts")
+        self._data_out = PortListEditor(title="dataOutPorts")
+        self._states = StateListEditor(title="states")
 
         self._apply = QtWidgets.QPushButton("Apply Spec Changes")
         self._apply.clicked.connect(self._apply_to_node)
@@ -931,22 +1405,39 @@ class NodeSpecEditorWidget(QtWidgets.QWidget):
         self._raw_json = QtWidgets.QPushButton("Edit Full Spec JSON...")
         self._raw_json.clicked.connect(self._edit_full_spec_json)
 
-        splitter = QtWidgets.QSplitter()
-        left = QtWidgets.QWidget()
-        left_layout = QtWidgets.QVBoxLayout(left)
-        left_layout.addWidget(self._exec_in)
-        left_layout.addWidget(self._exec_out)
-        left_layout.addStretch(1)
-        splitter.addWidget(left)
+        exec_container = QtWidgets.QWidget()
+        exec_layout = QtWidgets.QVBoxLayout(exec_container)
+        exec_layout.setContentsMargins(0, 0, 0, 0)
+        exec_layout.setSpacing(8)
+        exec_layout.addWidget(self._exec_in)
+        exec_layout.addWidget(self._exec_out)
 
-        right = QtWidgets.QWidget()
-        right_layout = QtWidgets.QVBoxLayout(right)
-        right_layout.addWidget(self._data_in)
-        right_layout.addWidget(self._data_out)
-        right_layout.addWidget(self._states)
-        splitter.addWidget(right)
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
+        ports_container = QtWidgets.QWidget()
+        ports_layout = QtWidgets.QVBoxLayout(ports_container)
+        ports_layout.setContentsMargins(0, 0, 0, 0)
+        ports_layout.setSpacing(8)
+        ports_layout.addWidget(self._data_in)
+        ports_layout.addWidget(self._data_out)
+
+        states_container = QtWidgets.QWidget()
+        states_layout = QtWidgets.QVBoxLayout(states_container)
+        states_layout.setContentsMargins(0, 0, 0, 0)
+        states_layout.setSpacing(8)
+        states_layout.addWidget(self._states)
+
+        self._sections_widget = QtWidgets.QWidget()
+        sections_layout = QtWidgets.QVBoxLayout(self._sections_widget)
+        sections_layout.setContentsMargins(10, 10, 10, 10)
+        sections_layout.setSpacing(10)
+        sections_layout.addWidget(CollapsibleSection(title="Exec", content=exec_container))
+        sections_layout.addWidget(CollapsibleSection(title="Data Ports", content=ports_container))
+        sections_layout.addWidget(CollapsibleSection(title="States", content=states_container))
+        sections_layout.addStretch(1)
+
+        self._scroll = QtWidgets.QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self._scroll.setWidget(self._sections_widget)
 
         btns = QtWidgets.QHBoxLayout()
         btns.addWidget(self._raw_json)
@@ -955,7 +1446,9 @@ class NodeSpecEditorWidget(QtWidgets.QWidget):
 
         self._content = QtWidgets.QWidget()
         content_layout = QtWidgets.QVBoxLayout(self._content)
-        content_layout.addWidget(splitter)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(8)
+        content_layout.addWidget(self._scroll)
         content_layout.addLayout(btns)
 
         layout = QtWidgets.QVBoxLayout(self)
@@ -980,8 +1473,8 @@ class NodeSpecEditorWidget(QtWidgets.QWidget):
     def _sync_ui_from_spec(self) -> None:
         if self._spec is None:
             return
-        self._exec_in.set_items(self._spec.execInPorts or [])
-        self._exec_out.set_items(self._spec.execOutPorts or [])
+        self._exec_in.set_items(list(self._spec.execInPorts or []))
+        self._exec_out.set_items(list(self._spec.execOutPorts or []))
         self._data_in.set_ports(self._spec.dataInPorts or [])
         self._data_out.set_ports(self._spec.dataOutPorts or [])
         self._states.set_fields(self._spec.states or [])
@@ -1069,7 +1562,9 @@ class NodeSpecEditorWidget(QtWidgets.QWidget):
         if next_spec is None:
             return
         if next_spec.operatorClass != self._node.spec.operatorClass:
-            QtWidgets.QMessageBox.warning(self, "Unsupported", "Changing operatorClass on an instance is not supported.")
+            QtWidgets.QMessageBox.warning(
+                self, "Unsupported", "Changing operatorClass on an instance is not supported."
+            )
             return
         if not self._confirm_rebuild():
             return
@@ -1099,7 +1594,9 @@ class NodeSpecEditorWidget(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "Invalid Spec", str(exc))
             return
         if self._node and next_spec.operatorClass != self._node.spec.operatorClass:
-            QtWidgets.QMessageBox.warning(self, "Unsupported", "Changing operatorClass on an instance is not supported.")
+            QtWidgets.QMessageBox.warning(
+                self, "Unsupported", "Changing operatorClass on an instance is not supported."
+            )
             return
         self._spec = next_spec.model_copy(deep=True)
         self._sync_ui_from_spec()
