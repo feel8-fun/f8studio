@@ -134,7 +134,9 @@ def _seed_graph(view: OperatorGraphEditor) -> None:
 
 def main() -> None:
     from qtpy import QtWidgets  # type: ignore[import-not-found]
-    from NodeGraphQt import NodesPaletteWidget, PropertiesBinWidget
+    from NodeGraphQt import NodesPaletteWidget
+
+    from f8pyengineqt.editor.node_property_editor import NodePropertyEditorWidget
 
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
@@ -158,25 +160,21 @@ def main() -> None:
 
     graph_widget = view.widget()
     palette = NodesPaletteWidget(node_graph=view.node_graph)
-    properties_bin = PropertiesBinWidget(parent=None, node_graph=view.node_graph)
+    inspector = NodePropertyEditorWidget(parent=None)
 
-    def _sync_properties_bin(*_args: object) -> None:
-        if properties_bin.limit() == 0 or getattr(properties_bin, "_lock", False):
-            return
-        properties_bin.clear_bin()
-        for node in view.node_graph.selected_nodes():
-            properties_bin.add_node(node)
+    def _sync_inspector(*_args: object) -> None:
+        inspector.set_selected_nodes(list(view.node_graph.selected_nodes()))
 
-    view.node_graph.node_selection_changed.connect(_sync_properties_bin)
-    view.node_graph.node_selected.connect(_sync_properties_bin)
-    _sync_properties_bin()
+    view.node_graph.node_selection_changed.connect(_sync_inspector)
+    view.node_graph.node_selected.connect(_sync_inspector)
+    _sync_inspector()
 
     window = QtWidgets.QMainWindow()
     window.setWindowTitle("Feel8 Graph")
     splitter = QtWidgets.QSplitter()
     splitter.addWidget(palette)
     splitter.addWidget(graph_widget)
-    splitter.addWidget(properties_bin)
+    splitter.addWidget(inspector)
     splitter.setStretchFactor(0, 0)
     splitter.setStretchFactor(1, 1)
     splitter.setStretchFactor(2, 0)

@@ -10,7 +10,7 @@ from ..operators.operator_registry import OperatorSpecRegistry
 from ..renderers.generic import GenericNode
 from ..renderers.renderer_registry import OperatorRendererRegistry
 from .spec_node_class_registry import SpecNodeClassRegistry
-from f8pysdk import F8PrimitiveTypeEnum
+from f8pysdk import F8OperatorSpec, F8PrimitiveTypeEnum
 
 
 class OperatorGraphEditor:
@@ -86,15 +86,18 @@ class OperatorGraphEditor:
 
         This is a one-way conversion for deployment/execution.
         """
-        spec_registry = OperatorSpecRegistry.instance()
         graph = OperatorGraph()
 
         for node in self.operator_nodes():
-            operator_class = node.spec.operatorClass
-            template = spec_registry.get(operator_class)
-
             state: dict[str, Any] = {}
-            for field in template.states or []:
+            spec = node.spec
+            if not isinstance(spec, F8OperatorSpec):
+                try:
+                    spec = OperatorSpecRegistry.instance().get(spec.operatorClass)
+                except Exception:
+                    continue
+
+            for field in spec.states or []:
                 try:
                     value = node.get_property(field.name)
                     schema_type = getattr(field.valueSchema, "type", None) if field.valueSchema else None
@@ -109,7 +112,7 @@ class OperatorGraphEditor:
                 except Exception:
                     pass
 
-            instance = OperatorInstance.from_spec(template, id=node.id, state=state)
+            instance = OperatorInstance.from_spec(spec, id=node.id, state=state)
 
             try:
                 pos = node.pos()

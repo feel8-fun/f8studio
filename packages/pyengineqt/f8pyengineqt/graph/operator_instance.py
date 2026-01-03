@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from f8pysdk import F8OperatorSpec, F8StateAccess, F8StateSpec
+from f8pysdk import F8OperatorSpec, F8StateAccess, F8StateSpec, F8DataTypeSchema, schema_default
 
 @dataclass
 class OperatorInstance:
@@ -39,18 +39,13 @@ class OperatorInstance:
     def _build_default_state(spec: F8OperatorSpec) -> dict[str, Any]:
         defaults: dict[str, Any] = {}
         for field_def in spec.states or []:
-            default_value = OperatorInstance._schema_default(field_def.valueSchema)
+            default_value = schema_default(field_def.valueSchema)
             if default_value is not None:
                 defaults[field_def.name] = default_value
             elif field_def.required:
                 defaults[field_def.name] = None
         return defaults
-
-    @staticmethod
-    def _schema_default(schema: Schema) -> Any | None:
-        root = schema.root
-        return getattr(root, "default", None)
-
+    
     @property
     def operator_class(self) -> str:
         return self.spec.operatorClass
