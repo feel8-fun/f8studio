@@ -9,8 +9,14 @@ from ..graph.operator_instance import OperatorInstance
 from ..operators.operator_registry import OperatorSpecRegistry
 from ..renderers.generic import GenericNode
 from ..renderers.renderer_registry import OperatorRendererRegistry
+from ..schema.compat import schema_is_superset, schema_signature
 from .spec_node_class_registry import SpecNodeClassRegistry
 from f8pysdk import F8OperatorSpec, F8PrimitiveTypeEnum
+from .f8_node_viewer import F8NodeViewer
+
+from pathlib import Path
+
+BASE_PATH = Path(__file__).parent
 
 
 class OperatorGraphEditor:
@@ -22,11 +28,15 @@ class OperatorGraphEditor:
     """
 
     def __init__(self) -> None:
-        self.node_graph = NodeGraph()
+        self.node_graph = NodeGraph(viewer=F8NodeViewer())
+
+        hotkey_path = BASE_PATH / "hotkeys" / "hotkeys.json"
+        self.node_graph.set_context_menu_from_file(str(hotkey_path), "graph")
 
         # Ensure singletons are initialized so the spec node registry can use them.
         OperatorSpecRegistry.instance()
         OperatorRendererRegistry.instance()
+
         self.node_graph._node_factory.clear_registered_nodes()
         SpecNodeClassRegistry.instance().apply(self.node_graph)
 
@@ -65,6 +75,19 @@ class OperatorGraphEditor:
         target: GenericNode,
         in_port: str,
     ) -> None:
+        if kind in ("data", "state"):
+            try:
+                if kind == "data":
+                    out_schema = next(p.valueSchema for p in (source.spec.dataOutPorts or []) if p.name == out_port)
+                    in_schema = next(p.valueSchema for p in (target.spec.dataInPorts or []) if p.name == in_port)
+                else:
+                    out_schema = next(s.valueSchema for s in (source.spec.states or []) if s.name == out_port)
+                    in_schema = next(s.valueSchema for s in (target.spec.states or []) if s.name == in_port)
+                if not schema_is_superset(schema_signature(out_schema), schema_signature(in_schema)):
+                    return
+            except Exception:
+                pass
+
         src_handle = source.port(kind, "out", out_port)
         dst_handle = target.port(kind, "in", in_port)
         if src_handle is None or dst_handle is None:

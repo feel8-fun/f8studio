@@ -81,13 +81,15 @@ def _demo_specs() -> Iterable[F8OperatorSpec]:
                 name="bool",
                 label="bool",
                 valueSchema=boolean_schema(default=True),
-                access=F8StateAccess.ro,
+                access=F8StateAccess.rw,
+                showOnNode=True,
             ),
             F8StateSpec(
                 name="count",
                 label="Count",
                 valueSchema=integer_schema(default=5, minimum=0, maximum=100),
-                access=F8StateAccess.ro,
+                access=F8StateAccess.rw,
+                showOnNode=True,
             ),
             F8StateSpec(
                 name="options",

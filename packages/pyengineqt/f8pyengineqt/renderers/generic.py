@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -14,6 +15,7 @@ from f8pysdk import (
 )
 
 from ..operators.operator_registry import OperatorSpecRegistry
+from ..schema.compat import PORT_KIND_DATA_KEY, PORT_SCHEMA_SIG_DATA_KEY, schema_signature
 
 from NodeGraphQt import BaseNode
 
@@ -24,7 +26,7 @@ from NodeGraphQt.widgets.node_widgets import NodeBaseWidget
 
 from .port_painter import draw_exec_port, draw_square_port
 
-from qtpy import QtCore, QtWidgets
+from qtpy import QtWidgets
 
 EMPTY_PORT_COLOR = (0, 0, 0, 0)
 EXEC_PORT_COLOR = (230, 230, 230)
@@ -33,6 +35,10 @@ STATE_PORT_COLOR = (200, 200, 50)
 
 PORT_ROW_DATA_KEY = 10001
 WIDGET_ROW_DATA_KEY = 10002
+
+PORT_KIND_EXEC = "exec"
+PORT_KIND_DATA = "data"
+PORT_KIND_STATE = "state"
 
 
 def _clean_port_label(port_name: str) -> str:
@@ -48,73 +54,130 @@ def _clean_port_label(port_name: str) -> str:
     return name
 
 
-class _NodeSpinBox(NodeBaseWidget):
+class _InlineStateRowWidget(NodeBaseWidget):
     def __init__(
         self,
-        parent: Any = None,
+        parent: Any,
         *,
         name: str,
-        label: str = "",
-        minimum: int | None = None,
-        maximum: int | None = None,
-        step: int | None = None,
-        value: int | None = None,
-    ) -> None:
-        super().__init__(parent, name, label)
-        widget = QtWidgets.QSpinBox()
-        widget.setMinimumWidth(90)
-        widget.setRange(minimum if minimum is not None else -(2**31), maximum if maximum is not None else 2**31 - 1)
-        if step is not None:
-            widget.setSingleStep(int(step))
-        if value is not None:
-            widget.setValue(int(value))
-        widget.valueChanged.connect(self.on_value_changed)
-        widget.clearFocus()
-        self.set_custom_widget(widget)
-
-    def get_value(self) -> int:
-        return int(self.get_custom_widget().value())
-
-    def set_value(self, value: int | None = None) -> None:
-        widget = self.get_custom_widget()
-        next_value = int(value or 0)
-        if next_value != widget.value():
-            widget.setValue(next_value)
-
-
-class _NodeDoubleSpinBox(NodeBaseWidget):
-    def __init__(
-        self,
-        parent: Any = None,
-        *,
-        name: str,
-        label: str = "",
+        label_text: str,
+        schema: F8DataTypeSchema,
+        value: Any,
+        show_control: bool,
+        read_only: bool,
+        enum_values: list[Any] | None = None,
         minimum: float | None = None,
         maximum: float | None = None,
         step: float | None = None,
-        value: float | None = None,
     ) -> None:
-        super().__init__(parent, name, label)
-        widget = QtWidgets.QDoubleSpinBox()
-        widget.setDecimals(6)
-        widget.setMinimumWidth(110)
-        widget.setRange(minimum if minimum is not None else -1e18, maximum if maximum is not None else 1e18)
-        if step is not None:
-            widget.setSingleStep(float(step))
-        if value is not None:
-            widget.setValue(float(value))
-        widget.valueChanged.connect(self.on_value_changed)
-        widget.clearFocus()
-        self.set_custom_widget(widget)
+        super().__init__(parent, name, "")
+        self._schema = schema
+        self._schema_t = schema_type(schema)
+        self._control: QtWidgets.QWidget | None = None
 
-    def get_value(self) -> float:
-        return float(self.get_custom_widget().value())
+        container = QtWidgets.QWidget()
+        layout = QtWidgets.QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
 
-    def set_value(self, value: float | None = None) -> None:
-        widget = self.get_custom_widget()
-        next_value = float(value or 0.0)
-        if next_value != widget.value():
-            widget.setValue(next_value)
+        label = QtWidgets.QLabel(label_text)
+        label.setStyleSheet("color: rgba(200,200,200,140); font-size: 8pt;")
+        layout.addWidget(label, 1)
+
+        if show_control:
+            self._control = self._build_control(
+                enum_values=enum_values,
+                minimum=minimum,
+                maximum=maximum,
+                step=step,
+            )
+            if self._control is not None:
+                layout.addWidget(self._control, 0)
+                self.set_value(value)
+                self._control.setEnabled(not read_only)
+
+        self.set_custom_widget(container)
+
+    def _build_control(
+        self,
+        *,
+        enum_values: list[Any] | None,
+        minimum: float | None,
+        maximum: float | None,
+        step: float | None,
+    ) -> QtWidgets.QWidget | None:
+        t = self._schema_t
+        if t == F8PrimitiveTypeEnum.boolean:
+            w = QtWidgets.QCheckBox()
+            w.stateChanged.connect(self.on_value_changed)
+            return w
+        if t == F8PrimitiveTypeEnum.integer:
+            w = QtWidgets.QSpinBox()
+            w.setMinimumWidth(80)
+            min_v = int(minimum) if minimum is not None else -(2**31)
+            max_v = int(maximum) if maximum is not None else 2**31 - 1
+            w.setRange(min_v, max_v)
+            if step is not None:
+                w.setSingleStep(int(step))
+            w.valueChanged.connect(self.on_value_changed)
+            return w
+        if t == F8PrimitiveTypeEnum.number:
+            w = QtWidgets.QDoubleSpinBox()
+            w.setDecimals(6)
+            w.setMinimumWidth(100)
+            min_v = float(minimum) if minimum is not None else -1e18
+            max_v = float(maximum) if maximum is not None else 1e18
+            w.setRange(min_v, max_v)
+            if step is not None:
+                try:
+                    w.setSingleStep(float(step))
+                except Exception:
+                    pass
+            w.valueChanged.connect(self.on_value_changed)
+            return w
+        if t == F8PrimitiveTypeEnum.string:
+            if enum_values:
+                w = QtWidgets.QComboBox()
+                w.setMinimumWidth(110)
+                w.addItems([str(v) for v in enum_values])
+                w.currentIndexChanged.connect(self.on_value_changed)
+                return w
+            w = QtWidgets.QLineEdit()
+            w.setMinimumWidth(110)
+            w.editingFinished.connect(self.on_value_changed)
+            return w
+        return None
+
+    def get_value(self) -> Any:
+        if self._control is None:
+            return None
+        if isinstance(self._control, QtWidgets.QCheckBox):
+            return bool(self._control.isChecked())
+        if isinstance(self._control, QtWidgets.QSpinBox):
+            return int(self._control.value())
+        if isinstance(self._control, QtWidgets.QDoubleSpinBox):
+            return float(self._control.value())
+        if isinstance(self._control, QtWidgets.QComboBox):
+            return str(self._control.currentText())
+        if isinstance(self._control, QtWidgets.QLineEdit):
+            return self._control.text()
+        return None
+
+    def set_value(self, value: Any) -> None:
+        if self._control is None:
+            return
+        if isinstance(self._control, QtWidgets.QCheckBox):
+            self._control.setChecked(bool(value))
+        elif isinstance(self._control, QtWidgets.QSpinBox):
+            self._control.setValue(int(value or 0))
+        elif isinstance(self._control, QtWidgets.QDoubleSpinBox):
+            self._control.setValue(float(value or 0.0))
+        elif isinstance(self._control, QtWidgets.QComboBox):
+            idx = self._control.findText("" if value is None else str(value))
+            if idx >= 0:
+                self._control.setCurrentIndex(idx)
+        elif isinstance(self._control, QtWidgets.QLineEdit):
+            self._control.setText("" if value is None else str(value))
 
 
 class GridNodeItem(NodeItem):  # type: ignore[misc]
@@ -123,6 +186,27 @@ class GridNodeItem(NodeItem):  # type: ignore[misc]
 
     This avoids injecting spacer ports just to keep left/right ports aligned.
     """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._suspend_draw = False
+        self._pending_draw = False
+
+    def begin_transaction(self) -> None:
+        self._suspend_draw = True
+
+    def end_transaction(self) -> None:
+        self._suspend_draw = False
+        if self._pending_draw:
+            self._pending_draw = False
+            super().draw_node()
+
+    def draw_node(self) -> None:
+        if getattr(self, "_suspend_draw", False):
+            self._pending_draw = True
+            return
+        self._pending_draw = False
+        super().draw_node()
 
     def _port_row(self, port_item: Any, *, fallback: int) -> int:
         try:
@@ -376,9 +460,71 @@ class GenericNode(BaseNode):  # type: ignore[misc]
         self._apply_state_properties()
         self._apply_inline_state_widgets()
 
+    @contextmanager
+    def _atomic_node_update(self):
+        viewer = None
+        viewport = None
+        try:
+            graph = getattr(self, "graph", None)
+            if graph is not None:
+                try:
+                    viewer = graph.viewer()
+                    viewport = viewer.viewport() if viewer is not None else None
+                except Exception:
+                    viewer = None
+                    viewport = None
+
+            if viewer is not None:
+                try:
+                    viewer.setUpdatesEnabled(False)
+                except Exception:
+                    pass
+            if viewport is not None:
+                try:
+                    viewport.setUpdatesEnabled(False)
+                except Exception:
+                    pass
+
+            try:
+                self.view.begin_transaction()  # type: ignore[attr-defined]
+            except Exception:
+                pass
+
+            yield
+        finally:
+            try:
+                self.view.end_transaction()  # type: ignore[attr-defined]
+            except Exception:
+                try:
+                    self.view.draw_node()
+                except Exception:
+                    pass
+
+            if viewport is not None:
+                try:
+                    viewport.setUpdatesEnabled(True)
+                except Exception:
+                    pass
+            if viewer is not None:
+                try:
+                    viewer.setUpdatesEnabled(True)
+                    viewer.update()
+                except Exception:
+                    pass
+
     def _tag_port_row(self, handle: Any, row: int) -> None:
         try:
             handle.view.setData(PORT_ROW_DATA_KEY, int(row))
+        except Exception:
+            pass
+
+    def _tag_port_meta(self, handle: Any, *, kind: str, schema: Any | None = None) -> None:
+        try:
+            handle.view.setData(PORT_KIND_DATA_KEY, str(kind))
+        except Exception:
+            pass
+        try:
+            handle.view.setData(PORT_SCHEMA_SIG_DATA_KEY, schema_signature(schema))
         except Exception:
             pass
 
@@ -388,7 +534,7 @@ class GenericNode(BaseNode):  # type: ignore[misc]
         except Exception:
             return
         for name, widget in list(widgets.items()):
-            if not str(name).startswith("__inline_state__"):
+            if not (str(name).startswith("__inline_state__") or str(name).startswith("__inline_state_row__")):
                 continue
             try:
                 self.view._widgets.pop(name, None)
@@ -405,16 +551,15 @@ class GenericNode(BaseNode):  # type: ignore[misc]
 
     def _apply_inline_state_widgets(self) -> None:
         """
-        Add per-row inline widgets for state fields with `showOnNode=True`.
+        Add per-row inline widgets for state fields.
 
-        Values are bound to node properties (state name).
+        - Always shows a label in the row.
+        - Shows a control widget only when `showOnNode=True`.
+        - Values are bound to node properties (state name).
         """
         self._clear_inline_widgets()
 
         for field in self.spec.states or []:
-            if not getattr(field, "showOnNode", False):
-                continue
-
             row = self._state_rows.get(field.name)
             if row is None:
                 continue
@@ -426,61 +571,29 @@ class GenericNode(BaseNode):  # type: ignore[misc]
             if current_value is None:
                 current_value = schema_default(field.valueSchema)
 
-            schema_t = schema_type(field.valueSchema)
-            widget: NodeBaseWidget | None = None
-            widget_name = f"__inline_state__{field.name}"
             read_only = field.access == F8StateAccess.ro
+            show_control = bool(getattr(field, "showOnNode", False))
 
-            if schema_t == F8PrimitiveTypeEnum.boolean:
-                w = NodeBaseWidget(None, widget_name, "")
-                cbox = QtWidgets.QCheckBox("")
-                cbox.setChecked(bool(current_value))
-                cbox.stateChanged.connect(w.on_value_changed)
-                w.set_custom_widget(cbox)
-                widget = w
-            elif schema_t == F8PrimitiveTypeEnum.integer:
-                minimum = getattr(field.valueSchema, "minimum", None)
-                maximum = getattr(field.valueSchema, "maximum", None)
-                step = getattr(field.valueSchema, "multipleOf", None)
-                widget = _NodeSpinBox(
-                    None,
-                    name=widget_name,
-                    minimum=int(minimum) if minimum is not None else None,
-                    maximum=int(maximum) if maximum is not None else None,
-                    step=int(step) if step is not None else None,
-                    value=int(current_value or 0),
-                )
-            elif schema_t == F8PrimitiveTypeEnum.number:
-                minimum = getattr(field.valueSchema, "minimum", None)
-                maximum = getattr(field.valueSchema, "maximum", None)
-                step = getattr(field.valueSchema, "multipleOf", None)
-                widget = _NodeDoubleSpinBox(
-                    None,
-                    name=widget_name,
-                    minimum=float(minimum) if minimum is not None else None,
-                    maximum=float(maximum) if maximum is not None else None,
-                    step=float(step) if step is not None else None,
-                    value=float(current_value or 0.0),
-                )
-            elif schema_t == F8PrimitiveTypeEnum.string:
-                enum_values = getattr(field.valueSchema, "enum", None)
-                if enum_values:
-                    from NodeGraphQt.widgets.node_widgets import NodeComboBox
+            widget_name = f"__inline_state_row__{field.name}"
+            label_text = field.label or field.name
+            enum_values = getattr(field.valueSchema, "enum", None)
+            minimum = getattr(field.valueSchema, "minimum", None)
+            maximum = getattr(field.valueSchema, "maximum", None)
+            step = getattr(field.valueSchema, "multipleOf", None)
 
-                    widget = NodeComboBox(None, widget_name, "", items=[str(v) for v in enum_values])
-                    try:
-                        widget.set_value("" if current_value is None else str(current_value))
-                    except Exception:
-                        pass
-                else:
-                    from NodeGraphQt.widgets.node_widgets import NodeLineEdit
-
-                    widget = NodeLineEdit(
-                        None, widget_name, "", text="" if current_value is None else str(current_value)
-                    )
-
-            if widget is None:
-                continue
+            widget = _InlineStateRowWidget(
+                self.view,
+                name=widget_name,
+                label_text=label_text,
+                schema=field.valueSchema,
+                value=current_value,
+                show_control=show_control,
+                read_only=read_only,
+                enum_values=enum_values,
+                minimum=minimum,
+                maximum=maximum,
+                step=step,
+            )
 
             try:
                 widget.setData(WIDGET_ROW_DATA_KEY, int(row))
@@ -497,9 +610,7 @@ class GenericNode(BaseNode):  # type: ignore[misc]
             except Exception:
                 pass
 
-            widget.value_changed.connect(
-                lambda _k, v, _name=field.name: self.set_property(_name, v, push_undo=False)
-            )
+            widget.value_changed.connect(lambda _k, v, _name=field.name: self.set_property(_name, v, push_undo=False))
             try:
                 self.view.add_widget(widget)
             except Exception:
@@ -526,25 +637,171 @@ class GenericNode(BaseNode):  # type: ignore[misc]
         Note: rebuilding ports may disconnect existing links (NodeGraphQt
         deletes ports). Callers should confirm with the user.
         """
+        self._validate_spec_for_ports(spec)
         old_spec = getattr(self, "spec", None)
+        edge_snapshots = self._snapshot_edges()
+        with self._atomic_node_update():
+            try:
+                self.spec = spec
+                self.set_name(self.spec.label)  # type: ignore[attr-defined]
+                self._build_ports()
+                self._apply_state_properties()
+                self._apply_inline_state_widgets()
+                self._restore_edges(edge_snapshots)
+            except Exception:
+                if old_spec is not None:
+                    try:
+                        self.spec = old_spec
+                        self.set_name(self.spec.label)  # type: ignore[attr-defined]
+                        self._build_ports()
+                        self._apply_state_properties()
+                        self._apply_inline_state_widgets()
+                        self._restore_edges(edge_snapshots)
+                    except Exception:
+                        pass
+                raise
+
+    def _spec_port_signature(self, spec: F8OperatorSpec | F8ServiceSpec) -> dict[str, Any]:
+        """
+        Build a signature map for ports owned by this node.
+
+        Used to decide whether an existing connection can be restored after
+        a spec rebuild (eg. if schema type changed, skip reconnect).
+        """
+        sig: dict[str, Any] = {}
+
+        for port in getattr(spec, "dataInPorts", None) or []:
+            try:
+                sig[f"[D]{port.name}"] = schema_type(port.valueSchema)
+            except Exception:
+                sig[f"[D]{port.name}"] = None
+        for port in getattr(spec, "dataOutPorts", None) or []:
+            try:
+                sig[f"{port.name}[D]"] = schema_type(port.valueSchema)
+            except Exception:
+                sig[f"{port.name}[D]"] = None
+
+        for field in getattr(spec, "states", None) or []:
+            access = getattr(field, "access", None) or F8StateAccess.ro
+            try:
+                st = schema_type(field.valueSchema)
+            except Exception:
+                st = None
+            if access != F8StateAccess.ro:
+                sig[f"[S]{field.name}"] = st
+            if access != F8StateAccess.wo:
+                sig[f"{field.name}[S]"] = st
+
+        return sig
+
+    def _port_signature_for_node(self, node: Any, port_name: str) -> Any:
+        """
+        Best-effort signature for a NodeGraphQt port name on the given node.
+
+        Returns `None` if the node does not expose a compatible spec.
+        """
         try:
-            self._validate_spec_for_ports(spec)
-            self.spec = spec
-            self.set_name(self.spec.label)  # type: ignore[attr-defined]
-            self._build_ports()
-            self._apply_state_properties()
-            self._apply_inline_state_widgets()
+            spec = getattr(node, "spec", None)
+            if spec is None:
+                return None
+            if hasattr(node, "_spec_port_signature"):
+                mapping = node._spec_port_signature(spec)  # type: ignore[attr-defined]
+                return mapping.get(port_name)
         except Exception:
-            if old_spec is not None:
+            return None
+        return None
+
+    def _snapshot_edges(self) -> set[tuple[str, str, str, str, Any, Any]]:
+        """
+        Snapshot all pipe connections touching this node as:
+        (src_id, src_port, dst_id, dst_port, src_sig, dst_sig)
+
+        The tuple is always oriented output->input.
+        """
+        edges: set[tuple[str, str, str, str]] = set()
+        try:
+            ports = [*list(self.input_ports()), *list(self.output_ports())]  # type: ignore[attr-defined]
+        except Exception:
+            ports = []
+
+        for port in ports:
+            try:
+                connected = list(port.connected_ports())
+            except Exception:
+                connected = []
+            for other in connected:
                 try:
-                    self.spec = old_spec
-                    self.set_name(self.spec.label)  # type: ignore[attr-defined]
-                    self._build_ports()
-                    self._apply_state_properties()
-                    self._apply_inline_state_widgets()
+                    a_is_out = port.type_() == "out"
+                    b_is_out = other.type_() == "out"
+                    if a_is_out and not b_is_out:
+                        edges.add((port.node().id, port.name(), other.node().id, other.name()))
+                    elif b_is_out and not a_is_out:
+                        edges.add((other.node().id, other.name(), port.node().id, port.name()))
                 except Exception:
-                    pass
-            raise
+                    continue
+
+        snapshots: set[tuple[str, str, str, str, Any, Any]] = set()
+        try:
+            graph = self.graph
+        except Exception:
+            graph = None
+        for src_id, src_port, dst_id, dst_port in edges:
+            if graph is None:
+                snapshots.add((src_id, src_port, dst_id, dst_port, None, None))
+                continue
+            try:
+                src_node = graph.get_node_by_id(src_id)
+                dst_node = graph.get_node_by_id(dst_id)
+            except Exception:
+                src_node = None
+                dst_node = None
+            src_sig = self._port_signature_for_node(src_node, src_port) if src_node is not None else None
+            dst_sig = self._port_signature_for_node(dst_node, dst_port) if dst_node is not None else None
+            snapshots.add((src_id, src_port, dst_id, dst_port, src_sig, dst_sig))
+        return snapshots
+
+    def _restore_edges(self, edge_snapshots: set[tuple[str, str, str, str, Any, Any]]) -> None:
+        """
+        Try to restore connections after ports have been rebuilt.
+
+        Only reconnects edges where ports still exist and both ends
+        have matching port signatures (when available).
+        """
+        try:
+            graph = self.graph
+        except Exception:
+            return
+
+        for src_id, src_port_name, dst_id, dst_port_name, src_sig, dst_sig in edge_snapshots:
+            try:
+                src_node = graph.get_node_by_id(src_id)
+                dst_node = graph.get_node_by_id(dst_id)
+            except Exception:
+                continue
+            if src_node is None or dst_node is None:
+                continue
+
+            if src_sig is not None:
+                current_src_sig = self._port_signature_for_node(src_node, src_port_name)
+                if current_src_sig != src_sig:
+                    continue
+            if dst_sig is not None:
+                current_dst_sig = self._port_signature_for_node(dst_node, dst_port_name)
+                if current_dst_sig != dst_sig:
+                    continue
+
+            try:
+                out_port = src_node.outputs().get(src_port_name)
+                in_port = dst_node.inputs().get(dst_port_name)
+            except Exception:
+                continue
+            if out_port is None or in_port is None:
+                continue
+
+            try:
+                out_port.connect_to(in_port)
+            except Exception:
+                pass
 
     @staticmethod
     def _find_duplicates(values: list[str]) -> list[str]:
@@ -624,6 +881,43 @@ class GenericNode(BaseNode):  # type: ignore[misc]
         except Exception:
             pass
 
+        def force_disconnect(port: Any) -> None:
+            try:
+                connected = list(port.connected_ports())
+            except Exception:
+                connected = []
+            if not connected:
+                return
+
+            try:
+                if port.locked():
+                    port.set_locked(False, connected_ports=False, push_undo=False)
+            except Exception:
+                pass
+
+            for other in connected:
+                other_was_locked = False
+                try:
+                    other_was_locked = bool(other.locked())
+                except Exception:
+                    other_was_locked = False
+                if other_was_locked:
+                    try:
+                        other.set_locked(False, connected_ports=False, push_undo=False)
+                    except Exception:
+                        other_was_locked = False
+
+                try:
+                    port.disconnect_from(other, push_undo=False, emit_signal=False)
+                except Exception:
+                    pass
+                finally:
+                    if other_was_locked:
+                        try:
+                            other.set_locked(True, connected_ports=False, push_undo=False)
+                        except Exception:
+                            pass
+
         for port in list(self.input_ports()):  # type: ignore[attr-defined]
             try:
                 if port.locked():
@@ -631,7 +925,7 @@ class GenericNode(BaseNode):  # type: ignore[misc]
             except Exception:
                 pass
             try:
-                port.clear_connections(push_undo=False, emit_signal=False)
+                force_disconnect(port)
             except Exception:
                 pass
             self.delete_input(port)
@@ -642,7 +936,7 @@ class GenericNode(BaseNode):  # type: ignore[misc]
             except Exception:
                 pass
             try:
-                port.clear_connections(push_undo=False, emit_signal=False)
+                force_disconnect(port)
             except Exception:
                 pass
             self.delete_output(port)
@@ -655,12 +949,14 @@ class GenericNode(BaseNode):  # type: ignore[misc]
         rows = max(len(exec_in), len(exec_out))
 
         for idx, port in enumerate(exec_in):
-            handle = self.add_input(f"[E]{port}", color=EXEC_PORT_COLOR, painter_func=draw_exec_port)  # type: ignore[attr-defined]
+            handle = self.add_input(f"[E]{port}", color=EXEC_PORT_COLOR, multi_input=False, painter_func=draw_exec_port)  # type: ignore[attr-defined]
             self._tag_port_row(handle, row_offset + idx)
+            self._tag_port_meta(handle, kind=PORT_KIND_EXEC)
             self.port_handles.exec_in[port] = handle
         for idx, port in enumerate(exec_out):
-            handle = self.add_output(f"{port}[E]", color=EXEC_PORT_COLOR, painter_func=draw_exec_port)  # type: ignore[attr-defined]
+            handle = self.add_output(f"{port}[E]", color=EXEC_PORT_COLOR, multi_output=False, painter_func=draw_exec_port)  # type: ignore[attr-defined]
             self._tag_port_row(handle, row_offset + idx)
+            self._tag_port_meta(handle, kind=PORT_KIND_EXEC)
             self.port_handles.exec_out[port] = handle
 
         return row_offset + rows
@@ -673,10 +969,12 @@ class GenericNode(BaseNode):  # type: ignore[misc]
         for idx, port in enumerate(data_in):
             handle = self.add_input(f"[D]{port.name}", color=DATA_PORT_COLOR)  # type: ignore[attr-defined]
             self._tag_port_row(handle, row_offset + idx)
+            self._tag_port_meta(handle, kind=PORT_KIND_DATA, schema=port.valueSchema)
             self.port_handles.data_in[port.name] = handle
         for idx, port in enumerate(data_out):
             handle = self.add_output(f"{port.name}[D]", color=DATA_PORT_COLOR)  # type: ignore[attr-defined]
             self._tag_port_row(handle, row_offset + idx)
+            self._tag_port_meta(handle, kind=PORT_KIND_DATA, schema=port.valueSchema)
             self.port_handles.data_out[port.name] = handle
 
         return row_offset + rows
@@ -693,20 +991,22 @@ class GenericNode(BaseNode):  # type: ignore[misc]
                 handle = self.add_input(
                     name=f"[S]{field.name}",
                     color=STATE_PORT_COLOR,
-                    display_name=True,
+                    display_name=False,
                     painter_func=draw_square_port,
                 )  # type: ignore[attr-defined]
                 self._tag_port_row(handle, row)
+                self._tag_port_meta(handle, kind=PORT_KIND_STATE, schema=field.valueSchema)
                 self.port_handles.state_in[field.name] = handle
 
             if access != F8StateAccess.wo:
                 handle = self.add_output(
                     name=f"{field.name}[S]",
                     color=STATE_PORT_COLOR,
-                    display_name=True,
+                    display_name=False,
                     painter_func=draw_square_port,
                 )  # type: ignore[attr-defined]
                 self._tag_port_row(handle, row)
+                self._tag_port_meta(handle, kind=PORT_KIND_STATE, schema=field.valueSchema)
                 self.port_handles.state_out[field.name] = handle
 
         return row_offset + len(fields)
