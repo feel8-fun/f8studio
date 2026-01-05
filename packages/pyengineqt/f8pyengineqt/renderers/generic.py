@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
+import uuid
 
 from f8pysdk import (
     F8PrimitiveTypeEnum,
@@ -439,6 +440,12 @@ class GenericNode(BaseNode):  # type: ignore[misc]
 
     def __init__(self) -> None:
         super().__init__(qgraphics_item=GridNodeItem)
+        stable_id = uuid.uuid4().hex
+        try:
+            self.model.id = stable_id  # type: ignore[attr-defined]
+            self.view.id = stable_id  # type: ignore[attr-defined]
+        except Exception:
+            pass
 
         spec_key = self.SPEC_KEY
         # Lookup order: OperatorSpecRegistry -> ServiceSpecRegistry -> UserSpecsLibrary.
@@ -648,6 +655,12 @@ class GenericNode(BaseNode):  # type: ignore[misc]
                 self._apply_state_properties()
                 self._apply_inline_state_widgets()
                 self._restore_edges(edge_snapshots)
+                try:
+                    graph = getattr(self, "graph", None)
+                    if graph is not None:
+                        graph.property_changed.emit(self, "__spec_changed__", self.spec.operatorClass)
+                except Exception:
+                    pass
             except Exception:
                 if old_spec is not None:
                     try:

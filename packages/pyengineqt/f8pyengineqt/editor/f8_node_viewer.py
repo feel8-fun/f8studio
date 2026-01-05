@@ -73,13 +73,16 @@ class F8NodeViewer(NodeViewer):
         return schema_is_superset(out_sig, in_sig)
 
     def start_live_connection(self, selected_port: Any) -> None:
-        super().start_live_connection(selected_port)
+        try:
+            super().start_live_connection(selected_port)
+        except Exception:
+            return
         try:
             kind = self._port_kind(selected_port)
             color, width, _ = pipe_style_for_kind(kind)
             self._LIVE_PIPE.set_pipe_styling(color=color, width=max(int(width), 2), style=self._LIVE_PIPE.style)
         except Exception:
-            pass
+            return
 
     def establish_connection(self, start_port: Any, end_port: Any) -> None:
         try:
@@ -91,11 +94,20 @@ class F8NodeViewer(NodeViewer):
         except Exception:
             kind = None
 
-        pipe = F8PipeItem(kind=kind)
-        self.scene().addItem(pipe)
-        pipe.set_connections(start_port, end_port)
-        pipe.draw_path(pipe.input_port, pipe.output_port)
-        if start_port.node.selected or end_port.node.selected:
-            pipe.highlight()
-        if not start_port.node.visible or not end_port.node.visible:
-            pipe.hide()
+        try:
+            pipe = F8PipeItem(kind=kind)
+            scene = self.scene()
+            if scene is None:
+                return
+            scene.addItem(pipe)
+            pipe.set_connections(start_port, end_port)
+            pipe.draw_path(pipe.input_port, pipe.output_port)
+            if start_port.node.selected or end_port.node.selected:
+                pipe.highlight()
+            if not start_port.node.visible or not end_port.node.visible:
+                pipe.hide()
+        except Exception:
+            try:
+                super().establish_connection(start_port, end_port)
+            except Exception:
+                return

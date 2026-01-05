@@ -1,6 +1,5 @@
-from typing import Type
-
-from .generic import GenericNode, GenericNode, UiOperatorNode
+from .generic import GenericNode, UiOperatorNode
+from .editor_log import EditorLogNode
 
 
 type OperatorRenderer = type[GenericNode]
@@ -24,6 +23,7 @@ class OperatorRendererRegistry:
         self._renderers["default"] = GenericNode
         self._renderers["generic"] = GenericNode
         self._renderers["ui"] = UiOperatorNode
+        self._renderers["editor_log"] = EditorLogNode
 
     def register(self, renderer_key: str, renderer: type[GenericNode], *, overwrite: bool = False) -> None:
         if renderer_key in self._renderers and not overwrite:

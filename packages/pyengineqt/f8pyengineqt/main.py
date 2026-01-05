@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Iterable
 
 from f8pysdk import (
@@ -17,8 +18,11 @@ from f8pysdk import (
 )
 
 from f8pyengineqt.editor.operator_graph_editor import OperatorGraphEditor
+from f8pyengineqt.editor.service_graph_editor import ServiceGraphEditor
 from f8pyengineqt.renderers.renderer_registry import OperatorRendererRegistry
 from f8pyengineqt.operators.operator_registry import OperatorSpecRegistry
+from f8pyengineqt.services.builtin import ENGINE_SERVICE_CLASS
+from f8pyengineqt.renderers.generic import GenericNode
 
 
 def _demo_specs() -> Iterable[F8OperatorSpec]:
@@ -112,6 +116,58 @@ def _demo_specs() -> Iterable[F8OperatorSpec]:
         ],
     )
 
+    # Editor-only visualization nodes (run in the editor service, not in an engine).
+    yield F8OperatorSpec(
+        operatorClass="feel8.editor.log",
+        version="0.0.1",
+        label="Editor Log",
+        description="Receives data via cross edges and prints / displays it in the editor.",
+        tags=["ui", "editor"],
+        rendererClass="editor_log",
+        dataInPorts=[F8DataPortSpec(name="in", valueSchema=any_schema(), description="data input")],
+        states=[
+            F8StateSpec(
+                name="refreshMs",
+                label="Refresh (ms)",
+                valueSchema=integer_schema(default=200, minimum=16, maximum=5000),
+                access=F8StateAccess.rw,
+                showOnNode=True,
+            ),
+            F8StateSpec(
+                name="print",
+                label="Print",
+                valueSchema=boolean_schema(default=True),
+                access=F8StateAccess.rw,
+                showOnNode=True,
+            ),
+        ],
+    )
+    yield F8OperatorSpec(
+        operatorClass="feel8.editor.oscilloscope",
+        version="0.0.1",
+        label="Oscilloscope",
+        description="Receives numeric data via cross edges and visualizes it (placeholder UI).",
+        tags=["ui", "editor"],
+        rendererClass="ui",
+        dataInPorts=[F8DataPortSpec(name="in", valueSchema=number_schema(), description="signal input")],
+        states=[
+            F8StateSpec(
+                name="refreshMs",
+                label="Refresh (ms)",
+                valueSchema=integer_schema(default=50, minimum=16, maximum=5000),
+                access=F8StateAccess.rw,
+                showOnNode=True,
+            ),
+            F8StateSpec(
+                name="window",
+                label="Window",
+                valueSchema=integer_schema(default=240, minimum=10, maximum=5000),
+                access=F8StateAccess.rw,
+                showOnNode=True,
+            ),
+        ],
+    )
+
 
 def _seed_graph(view: OperatorGraphEditor) -> None:
     """Populate the graph with demo nodes and links."""
@@ -132,6 +188,45 @@ def _seed_graph(view: OperatorGraphEditor) -> None:
     view.connect(const_a, kind="data", out_port="value", target=add, in_port="a")
     view.connect(const_b, kind="data", out_port="value", target=add, in_port="b")
     view.connect(add, kind="data", out_port="sum", target=logger, in_port="value")
+
+
+def _seed_operator_graph(node_graph: object) -> list[GenericNode]:
+    """
+    Populate a NodeGraphQt graph with demo operator nodes.
+
+    Used by both the operator-graph demo and the service-graph demo.
+    """
+    create_kwargs = {"push_undo": False, "selected": False}
+    try:
+        start = node_graph.create_node("feel8.sample.start", pos=[-420.0, 0.0], **create_kwargs)
+        const_a = node_graph.create_node("feel8.sample.constant", pos=[-180.0, -120.0], name="const_a", **create_kwargs)
+        const_b = node_graph.create_node("feel8.sample.constant", pos=[-180.0, 120.0], name="const_b", **create_kwargs)
+        add = node_graph.create_node("feel8.sample.add", pos=[140.0, 0.0], **create_kwargs)
+        logger = node_graph.create_node("feel8.sample.log", pos=[420.0, 0.0], **create_kwargs)
+    except Exception:
+        return []
+
+    nodes = [start, const_a, const_b, add, logger]
+    if not all(isinstance(n, GenericNode) for n in nodes):
+        return []
+
+    def _connect(kind: str, out_node: GenericNode, out_port: str, in_node: GenericNode, in_port: str) -> None:
+        src = out_node.port(kind, "out", out_port)
+        dst = in_node.port(kind, "in", in_port)
+        if src is None or dst is None:
+            return
+        try:
+            src.connect_to(dst)
+        except Exception:
+            return
+
+    _connect("exec", start, "exec", const_a, "exec")
+    _connect("exec", const_a, "exec", const_b, "exec")
+    _connect("exec", const_b, "exec", add, "exec")
+    _connect("data", const_a, "value", add, "a")
+    _connect("data", const_b, "value", add, "b")
+    _connect("data", add, "sum", logger, "value")
+    return [start, const_a, const_b, add, logger]
 
 
 def main() -> None:
@@ -157,10 +252,32 @@ def main() -> None:
     OperatorSpecRegistry.instance().register_many(_demo_specs(), overwrite=True)
     OperatorRendererRegistry.instance()
 
-    view = OperatorGraphEditor()
-    _seed_graph(view)
+    mode = (os.environ.get("F8_EDITOR_MODE") or "svc").strip().lower()
 
-    graph_widget = view.widget()
+    if mode in ("service", "service-graph", "svc"):
+        view = ServiceGraphEditor()
+        graph_widget = view.widget()
+        engine_node = view.node_graph.create_node(
+            ENGINE_SERVICE_CLASS,
+            name="Engine",
+            pos=[-520.0, -260.0],
+            push_undo=False,
+            selected=False,
+        )
+        demo_nodes = _seed_operator_graph(view.node_graph)
+        try:
+            engine_node.wrap_operator_nodes(demo_nodes)
+        except Exception:
+            pass
+        try:
+            engine_node.set_text(f"serviceId={engine_node.id}")
+        except Exception:
+            pass
+    else:
+        view = OperatorGraphEditor()
+        _seed_graph(view)
+        graph_widget = view.widget()
+
     palette = NodesPaletteWidget(node_graph=view.node_graph)
     inspector = NodePropertyEditorWidget(parent=None)
 

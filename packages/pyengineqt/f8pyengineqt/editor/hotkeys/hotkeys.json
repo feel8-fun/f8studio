@@ -188,6 +188,16 @@
     "label":"&Graph",
     "items":[
       {
+        "type":"command",
+        "label":"Run Selected Services",
+        "file":"./hotkey_functions.py",
+        "function_name":"run_selected_services",
+        "shortcut":"Ctrl+R"
+      },
+      {
+        "type":"separator"
+      },
+      {
         "type":"menu",
         "label":"&Background",
         "items":[

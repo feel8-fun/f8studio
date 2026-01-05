@@ -100,6 +100,48 @@ def quit_qt(graph):
     from Qt import QtCore
     QtCore.QCoreApplication.quit()
 
+
+def run_selected_services(graph):
+    """
+    Publish `svc.<serviceId>.cmd.run` for selected engine service nodes.
+    """
+    try:
+        from f8pyengineqt.renderers.service_engine import EngineServiceNode
+        from f8pyengineqt.engine.nats_naming import cmd_subject
+        import os
+        import json
+        import asyncio
+        import nats
+    except Exception:
+        return
+
+    try:
+        nodes = list(graph.selected_nodes() or [])
+    except Exception:
+        nodes = []
+    service_ids = [str(n.id) for n in nodes if isinstance(n, EngineServiceNode)]
+    if not service_ids:
+        return
+
+    url = (os.environ.get("F8_NATS_URL") or "nats://127.0.0.1:4222").strip()
+    payload = json.dumps({"mode": "once"}).encode("utf-8")
+
+    async def _pub() -> None:
+        nc = await nats.connect(servers=[url], connect_timeout=1, reconnect_time_wait=0.5, max_reconnect_attempts=1)
+        try:
+            for sid in service_ids:
+                await nc.publish(cmd_subject(sid, "run"), payload)
+        finally:
+            try:
+                await nc.drain()
+            except Exception:
+                pass
+
+    try:
+        asyncio.run(_pub())
+    except Exception:
+        return
+
 def clear_undo(graph):
     """
     Prompts a warning dialog to clear undo.

@@ -61,6 +61,26 @@
       "type": "integer",
       "minimum": 0,
       "description": "Optional staleness timeout; drop-old beyond this age (data)"
+    },
+    "edgeId": {
+      "type": "string",
+      "description": "Stable id for an edge; required to pair cross-instance half-edges"
+    },
+    "direction": {
+      "type": "string",
+      "enum": [
+        "out",
+        "in"
+      ],
+      "description": "For cross-instance half-edges, indicates the local side: out=local is source/from, in=local is target/to"
+    },
+    "peerServiceId": {
+      "type": "string",
+      "description": "Remote service id for cross-instance half-edges"
+    },
+    "subject": {
+      "type": "string",
+      "description": "NATS subject used for this edge (recommended for cross-instance data half-edges)"
     }
   },
   "required": [

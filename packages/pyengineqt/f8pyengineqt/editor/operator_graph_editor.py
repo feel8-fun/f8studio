@@ -13,6 +13,10 @@ from ..schema.compat import schema_is_superset, schema_signature
 from .spec_node_class_registry import SpecNodeClassRegistry
 from f8pysdk import F8OperatorSpec, F8PrimitiveTypeEnum
 from .f8_node_viewer import F8NodeViewer
+from .engine_manager import EngineManager
+from ..services.service_registry import ServiceSpecRegistry
+from ..services.builtin import engine_service_spec, ENGINE_SERVICE_CLASS
+from ..renderers.service_engine import EngineServiceNode
 
 from pathlib import Path
 
@@ -29,6 +33,7 @@ class OperatorGraphEditor:
 
     def __init__(self) -> None:
         self.node_graph = NodeGraph(viewer=F8NodeViewer())
+        self.engine = EngineManager(self)
 
         hotkey_path = BASE_PATH / "hotkeys" / "hotkeys.json"
         self.node_graph.set_context_menu_from_file(str(hotkey_path), "graph")
@@ -36,9 +41,17 @@ class OperatorGraphEditor:
         # Ensure singletons are initialized so the spec node registry can use them.
         OperatorSpecRegistry.instance()
         OperatorRendererRegistry.instance()
+        ServiceSpecRegistry.instance().register(engine_service_spec(), overwrite=True)
 
         self.node_graph._node_factory.clear_registered_nodes()
         SpecNodeClassRegistry.instance().apply(self.node_graph)
+        try:
+            self.node_graph.register_node(EngineServiceNode, alias=ENGINE_SERVICE_CLASS)
+        except Exception:
+            pass
+
+        # First-version engine: KV sync + topology cache.
+        self.engine.start()
 
     def show(self) -> None:
         if hasattr(self.node_graph, "widget"):

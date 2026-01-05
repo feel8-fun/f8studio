@@ -206,6 +206,9 @@ class OperatorGraph:
 
     # Internal validators -------------------------------------------------
     def _connect_from_spec(self, edge: F8EdgeSpec) -> None:
+        if edge.scope == F8EdgeScopeEnum.cross:
+            self._accept_cross_half_edge(edge)
+            return
         if edge.kind == F8EdgeKindEmum.exec:
             self.connect_exec(edge.from_, edge.fromPort, edge.to, edge.toPort, scope=edge.scope)
         elif edge.kind == F8EdgeKindEmum.data:
@@ -221,6 +224,54 @@ class OperatorGraph:
             )
         elif edge.kind == F8EdgeKindEmum.state:
             self.connect_state(edge.from_, edge.fromPort, edge.to, edge.toPort, scope=edge.scope)
+
+    def _accept_cross_half_edge(self, edge: F8EdgeSpec) -> None:
+        """
+        Accept a cross-instance half-edge without requiring the remote endpoint node to exist.
+
+        Export convention:
+        - `direction="out"`: local endpoint is `from_` / `fromPort`.
+        - `direction="in"`: local endpoint is `to` / `toPort`.
+        """
+        d = getattr(edge, "direction", None)
+        if isinstance(d, str):
+            direction = d.strip().lower()
+        else:
+            try:
+                direction = str(getattr(d, "value", "") or "").strip().lower()
+            except Exception:
+                direction = ""
+            if not direction:
+                try:
+                    direction = str(getattr(d, "name", "") or "").strip().lower().rstrip("_")
+                except Exception:
+                    direction = ""
+        if edge.kind == F8EdgeKindEmum.exec:
+            # v1: cross-instance exec not supported.
+            return
+
+        if edge.kind == F8EdgeKindEmum.data:
+            if direction == "out":
+                self._ensure_node(edge.from_)
+                self._validate_data_port(self.nodes[edge.from_], edge.fromPort, direction="out")
+            elif direction == "in":
+                self._ensure_node(edge.to)
+                self._validate_data_port(self.nodes[edge.to], edge.toPort, direction="in")
+            # Keep as-is (includes extras like edgeId/peerServiceId/strategy).
+            self.data_edges.append(edge)
+            return
+
+        if edge.kind == F8EdgeKindEmum.state:
+            if direction == "out":
+                self._ensure_node(edge.from_)
+                self._validate_state_field(self.nodes[edge.from_], edge.fromPort)
+            elif direction == "in":
+                self._ensure_node(edge.to)
+                target_def = self._validate_state_field(self.nodes[edge.to], edge.toPort)
+                if target_def.access == F8StateAccess.ro:
+                    raise ValueError(f"target state field {edge.toPort} on {edge.to} is read-only")
+            self.state_edges.append(edge)
+            return
 
     def _ensure_node(self, node_id: str) -> None:
         if node_id not in self.nodes:
