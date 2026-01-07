@@ -10,12 +10,19 @@
     },
     "operatorClass": {
       "type": "string",
-      "description": "Reverse-DNS style id for this operator kind (e.g., fun.feel8.op.js-script)"
+      "description": "Operator id within a service (not globally unique). Uniqueness is determined by (serviceClass, operatorClass).",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "serviceClass": {
+      "type": "string",
+      "description": "Reverse-DNS style id for the backend service this operator belongs to (e.g., svc.feel8.engine).",
+      "pattern": "^[a-z0-9]+(\\.[a-z0-9]+)+$"
     },
     "version": {
       "type": "string",
       "description": "SemVer of the operator profile",
-      "default": "0.0.0"
+      "default": "0.0.0",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
     },
     "label": {
       "type": "string"
@@ -115,6 +122,7 @@
     }
   },
   "required": [
+    "serviceClass",
     "operatorClass",
     "label"
   ],

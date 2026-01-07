@@ -11,6 +11,7 @@ from qtpy import QtCore
 
 from ..engine.nats_naming import cmd_subject, ensure_token, kv_bucket_for_service
 from ..runtime.nats_transport import NatsTransport, NatsTransportConfig
+from f8pysdk import F8ServiceLaunchSpec
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,7 @@ class ServiceProcessConfig:
     service_class: str
     nats_url: str
     kv_bucket: str | None = None
+    launch: F8ServiceLaunchSpec | None = None
     python_exe: str | None = None
     module: str | None = None
     operator_runtime_modules: str | None = None
@@ -51,17 +53,38 @@ class ServiceProcessManager(QtCore.QObject):
         if service_id in self._procs:
             return
 
-        python_exe = cfg.python_exe or sys.executable
-        module = cfg.module or "f8pyengineqt.engine.engine_service_process"
+        launch = cfg.launch
+        if launch is not None and str(getattr(launch, "commandSpec", "") or "").strip():
+            program = str(launch.commandSpec)
+            args = [str(a) for a in (launch.args or [])]
+            workdir = str(getattr(launch, "workdir", "") or "").strip() or "./"
+            launch_env = dict(getattr(launch, "env", None) or {})
+        else:
+            python_exe = cfg.python_exe or sys.executable
+            module = cfg.module or "f8pyengineqt.engine.engine_service_process"
+            program = str(python_exe)
+            args = ["-m", str(module)]
+            workdir = "./"
+            launch_env = {}
         bucket = (cfg.kv_bucket or "").strip() or kv_bucket_for_service(service_id)
         nats_url = str(cfg.nats_url).strip() or "nats://127.0.0.1:4222"
 
         proc = QtCore.QProcess(self)
-        proc.setProgram(str(python_exe))
-        proc.setArguments(["-m", str(module)])
+        proc.setProgram(program)
+        proc.setArguments(args)
+        try:
+            proc.setWorkingDirectory(str(Path(workdir).resolve()))
+        except Exception:
+            pass
 
         env = QtCore.QProcessEnvironment.systemEnvironment()
+        for k, v in launch_env.items():
+            try:
+                env.insert(str(k), str(v))
+            except Exception:
+                continue
         env.insert("F8_SERVICE_ID", service_id)
+        env.insert("F8_SERVICE_CLASS", str(cfg.service_class))
         env.insert("F8_NATS_URL", nats_url)
         env.insert("F8_NATS_BUCKET", bucket)
         if cfg.operator_runtime_modules and cfg.operator_runtime_modules.strip():

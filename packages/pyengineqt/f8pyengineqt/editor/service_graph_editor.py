@@ -14,8 +14,9 @@ from .operator_graph_export import export_operator_graph
 from .spec_node_class_registry import SpecNodeClassRegistry
 from ..operators.operator_registry import OperatorSpecRegistry
 from ..renderers.renderer_registry import OperatorRendererRegistry
-from ..services.builtin import ENGINE_SERVICE_CLASS, engine_service_spec
+from ..services.builtin import ENGINE_SERVICE_CLASS, EDITOR_SERVICE_CLASS, editor_service_spec, engine_service_spec
 from ..services.service_registry import ServiceSpecRegistry
+from ..services.discovery_loader import load_discovery_into_registries
 from ..renderers.service_engine import EngineServiceNode
 from f8pysdk import F8EdgeScopeEnum, F8EdgeStrategyEnum
 from .service_process_manager import ServiceProcessConfig, ServiceProcessManager
@@ -45,6 +46,7 @@ class ServiceGraphEditor:
         self._svc_procs.statusChanged.connect(lambda s: print(s))
         self._editor_mgr: EngineManager | None = None
         self._editor_pollers: dict[str, QtCore.QTimer] = {}
+        self._editor_pending: dict[str, object] = {}
         self._editor_last: dict[str, str] = {}
         self._editor_buffers: dict[str, list[float]] = {}
 
@@ -54,6 +56,8 @@ class ServiceGraphEditor:
         OperatorSpecRegistry.instance()
         OperatorRendererRegistry.instance()
         ServiceSpecRegistry.instance().register(engine_service_spec(), overwrite=True)
+        ServiceSpecRegistry.instance().register(editor_service_spec(), overwrite=True)
+        load_discovery_into_registries()
 
         # Root palette supports both service nodes and operator nodes (operators are typically created inside engines).
         SpecNodeClassRegistry.instance().apply(self.node_graph)
@@ -93,6 +97,7 @@ class ServiceGraphEditor:
             except Exception:
                 pass
         self._editor_pollers.clear()
+        self._editor_pending.clear()
         self._editor_last.clear()
         self._editor_buffers.clear()
         if self._editor_mgr is not None:
@@ -113,6 +118,9 @@ class ServiceGraphEditor:
     def _is_editor_node(node: GenericNode) -> bool:
         try:
             spec = getattr(node, "spec", None)
+            svc = str(getattr(spec, "serviceClass", "") or "").strip()
+            if svc:
+                return svc == EDITOR_SERVICE_CLASS
             op = str(getattr(spec, "operatorClass", "") or "")
             if op.startswith("feel8.editor."):
                 return True
@@ -228,6 +236,12 @@ class ServiceGraphEditor:
     def _engine_for_operator(self, node: GenericNode) -> EngineServiceNode | None:
         if self._is_editor_node(node):
             return None
+        try:
+            svc = str(getattr(getattr(node, "spec", None), "serviceClass", "") or "").strip()
+            if svc and svc != ENGINE_SERVICE_CLASS:
+                return None
+        except Exception:
+            pass
         owned = self._operator_owner_engine(node)
         if owned is not None:
             return owned
@@ -255,6 +269,12 @@ class ServiceGraphEditor:
     def _assign_operator_to_engine(self, node: GenericNode) -> EngineServiceNode | None:
         if self._is_editor_node(node):
             return None
+        try:
+            svc = str(getattr(getattr(node, "spec", None), "serviceClass", "") or "").strip()
+            if svc and svc != ENGINE_SERVICE_CLASS:
+                return None
+        except Exception:
+            pass
         engines = self._engine_nodes()
         containing = [e for e in engines if self._is_inside_engine(e, node)]
         if containing:
@@ -360,11 +380,16 @@ class ServiceGraphEditor:
 
         # Spawn the engine service process for this engine backdrop.
         nats_url = (os.environ.get("F8_NATS_URL") or "nats://127.0.0.1:4222").strip()
+        try:
+            launch = ServiceSpecRegistry.instance().get(ENGINE_SERVICE_CLASS).launch
+        except Exception:
+            launch = None
         self._svc_procs.start_service(
             ServiceProcessConfig(
                 service_id=sid,
                 service_class=ENGINE_SERVICE_CLASS,
                 nats_url=nats_url,
+                launch=launch,
                 operator_runtime_modules=(os.environ.get("F8_OPERATOR_RUNTIME_MODULES") or "").strip() or None,
             )
         )
@@ -412,13 +437,14 @@ class ServiceGraphEditor:
         """
         if self._enforcing:
             return
+        if isinstance(node, GenericNode) and self._is_editor_node(node) and name == "refreshMs":
+            self._update_editor_poller(node)
+            return
         if name != "pos":
             return
 
         if isinstance(node, GenericNode):
             if self._is_editor_node(node):
-                if name == "refreshMs":
-                    self._update_editor_poller(node)
                 return
             engine = self._operator_owner_engine(node) or self._engine_for_operator(node)
             if engine is None:
@@ -648,7 +674,7 @@ class ServiceGraphEditor:
         bridge = self._editor_mgr.runtime_bridge()
         if bridge is not None:
             try:
-                bridge.dataPulled.connect(self._on_editor_data_pulled)
+                bridge.dataReceived.connect(self._on_editor_data_received)
             except Exception:
                 pass
 
@@ -657,20 +683,12 @@ class ServiceGraphEditor:
         if node_id in self._editor_pollers:
             return
         self._ensure_editor_manager()
-        if self._editor_mgr is None:
-            return
-        bridge = self._editor_mgr.runtime_bridge()
-        if bridge is None:
-            return
 
         timer = QtCore.QTimer(self.node_graph)
         timer.setSingleShot(False)
 
         def _tick() -> None:
-            try:
-                bridge.request_pull_data(node_id, "in")
-            except Exception:
-                pass
+            self._flush_editor_node(node_id)
 
         timer.timeout.connect(_tick)
         self._editor_pollers[node_id] = timer
@@ -684,6 +702,7 @@ class ServiceGraphEditor:
                 t.stop()
             except Exception:
                 pass
+        self._editor_pending.pop(str(node_id), None)
         self._editor_last.pop(str(node_id), None)
         self._editor_buffers.pop(str(node_id), None)
 
@@ -702,7 +721,7 @@ class ServiceGraphEditor:
         except Exception:
             pass
 
-    def _on_editor_data_pulled(self, node_id: str, port: str, value: object, _ts_ms: object) -> None:
+    def _on_editor_data_received(self, node_id: str, port: str, value: object, _ts_ms: object) -> None:
         if port != "in":
             return
         try:
@@ -721,8 +740,51 @@ class ServiceGraphEditor:
             op = ""
 
         key = str(node_id)
+        if op.endswith(".oscilloscope"):
+            try:
+                buf = self._editor_buffers.setdefault(key, [])
+                buf.append(float(value))  # type: ignore[arg-type]
+            except Exception:
+                return
+            return
+
+        self._editor_pending[key] = value
+
+    def _flush_editor_node(self, node_id: str) -> None:
+        try:
+            node = self.node_graph.get_node_by_id(str(node_id))
+        except Exception:
+            return
+        if not isinstance(node, GenericNode) or not self._is_editor_node(node):
+            return
+
+        op = ""
+        try:
+            op = str(getattr(node.spec, "operatorClass", "") or "")
+        except Exception:
+            op = ""
+
+        key = str(node_id)
         prev = self._editor_last.get(key)
-        cur = str(value)
+
+        if op.endswith(".oscilloscope"):
+            buf = self._editor_buffers.get(key) or []
+            if not buf:
+                return
+            try:
+                n = int(node.get_property("window") or 240)
+            except Exception:
+                n = 240
+            if n <= 0:
+                n = 240
+            if len(buf) > n:
+                del buf[0 : len(buf) - n]
+            cur = f"n={len(buf)} last={buf[-1]:.6g} min={min(buf):.6g} max={max(buf):.6g}"
+        else:
+            if key not in self._editor_pending:
+                return
+            cur = str(self._editor_pending.get(key))
+
         if prev == cur:
             return
         self._editor_last[key] = cur
@@ -739,25 +801,6 @@ class ServiceGraphEditor:
             except Exception:
                 pass
             return
-        elif op.endswith(".oscilloscope"):
-            try:
-                buf = self._editor_buffers.setdefault(key, [])
-                try:
-                    buf.append(float(value))  # type: ignore[arg-type]
-                except Exception:
-                    return
-                try:
-                    n = int(node.get_property("window") or 240)
-                except Exception:
-                    n = 240
-                if n <= 0:
-                    n = 240
-                if len(buf) > n:
-                    del buf[0 : len(buf) - n]
-                if buf:
-                    cur = f"n={len(buf)} last={buf[-1]:.6g} min={min(buf):.6g} max={max(buf):.6g}"
-            except Exception:
-                pass
 
         # Show the latest value as an inline widget on the node (local-only, avoids KV spam).
         try:

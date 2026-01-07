@@ -15,19 +15,22 @@ from f8pysdk import (
     array_schema,
     any_schema,
     complex_object_schema,
+    operator_key,
 )
 
 from f8pyengineqt.editor.operator_graph_editor import OperatorGraphEditor
 from f8pyengineqt.editor.service_graph_editor import ServiceGraphEditor
 from f8pyengineqt.renderers.renderer_registry import OperatorRendererRegistry
-from f8pyengineqt.operators.operator_registry import OperatorSpecRegistry
-from f8pyengineqt.services.builtin import ENGINE_SERVICE_CLASS
+from f8pyengineqt.services.builtin import EDITOR_SERVICE_CLASS, ENGINE_SERVICE_CLASS
+from f8pyengineqt.services.service_operator_registry import ServiceOperatorSpecRegistry
+from f8pyengineqt.services.discovery_loader import load_discovery_into_registries
 from f8pyengineqt.renderers.generic import GenericNode
 
 
 def _demo_specs() -> Iterable[F8OperatorSpec]:
     """Small built-in palette so the app can launch without external assets."""
     yield F8OperatorSpec(
+        serviceClass=ENGINE_SERVICE_CLASS,
         operatorClass="feel8.sample.start",
         version="0.0.1",
         label="Start",
@@ -35,6 +38,7 @@ def _demo_specs() -> Iterable[F8OperatorSpec]:
         execOutPorts=["exec"],
     )
     yield F8OperatorSpec(
+        serviceClass=ENGINE_SERVICE_CLASS,
         operatorClass="feel8.sample.constant",
         version="0.0.1",
         label="Constant",
@@ -52,6 +56,7 @@ def _demo_specs() -> Iterable[F8OperatorSpec]:
         ],
     )
     yield F8OperatorSpec(
+        serviceClass=ENGINE_SERVICE_CLASS,
         operatorClass="feel8.sample.add",
         version="0.0.1",
         label="Add",
@@ -65,6 +70,7 @@ def _demo_specs() -> Iterable[F8OperatorSpec]:
         dataOutPorts=[F8DataPortSpec(name="sum", valueSchema=number_schema(), description="a+b")],
     )
     yield F8OperatorSpec(
+        serviceClass=ENGINE_SERVICE_CLASS,
         operatorClass="feel8.sample.log",
         version="0.0.1",
         label="Log",
@@ -118,6 +124,7 @@ def _demo_specs() -> Iterable[F8OperatorSpec]:
 
     # Editor-only visualization nodes (run in the editor service, not in an engine).
     yield F8OperatorSpec(
+        serviceClass=EDITOR_SERVICE_CLASS,
         operatorClass="feel8.editor.log",
         version="0.0.1",
         label="Editor Log",
@@ -143,6 +150,7 @@ def _demo_specs() -> Iterable[F8OperatorSpec]:
         ],
     )
     yield F8OperatorSpec(
+        serviceClass=EDITOR_SERVICE_CLASS,
         operatorClass="feel8.editor.oscilloscope",
         version="0.0.1",
         label="Oscilloscope",
@@ -171,11 +179,11 @@ def _demo_specs() -> Iterable[F8OperatorSpec]:
 
 def _seed_graph(view: OperatorGraphEditor) -> None:
     """Populate the graph with demo nodes and links."""
-    start = view.create_node("feel8.sample.start", pos=(-420, 0))
-    const_a = view.create_node("feel8.sample.constant", pos=(-180, -120), name="const_a")
-    const_b = view.create_node("feel8.sample.constant", pos=(-180, 120), name="const_b")
-    add = view.create_node("feel8.sample.add", pos=(140, 0))
-    logger = view.create_node("feel8.sample.log", pos=(420, 0))
+    start = view.create_node(operator_key(ENGINE_SERVICE_CLASS, "feel8.sample.start"), pos=(-420, 0))
+    const_a = view.create_node(operator_key(ENGINE_SERVICE_CLASS, "feel8.sample.constant"), pos=(-180, -120), name="const_a")
+    const_b = view.create_node(operator_key(ENGINE_SERVICE_CLASS, "feel8.sample.constant"), pos=(-180, 120), name="const_b")
+    add = view.create_node(operator_key(ENGINE_SERVICE_CLASS, "feel8.sample.add"), pos=(140, 0))
+    logger = view.create_node(operator_key(ENGINE_SERVICE_CLASS, "feel8.sample.log"), pos=(420, 0))
 
     # const_a.set_property("value", 3.0, push_undo=False)
     # const_b.set_property("value", 7.0, push_undo=False)
@@ -198,11 +206,11 @@ def _seed_operator_graph(node_graph: object) -> list[GenericNode]:
     """
     create_kwargs = {"push_undo": False, "selected": False}
     try:
-        start = node_graph.create_node("feel8.sample.start", pos=[-420.0, 0.0], **create_kwargs)
-        const_a = node_graph.create_node("feel8.sample.constant", pos=[-180.0, -120.0], name="const_a", **create_kwargs)
-        const_b = node_graph.create_node("feel8.sample.constant", pos=[-180.0, 120.0], name="const_b", **create_kwargs)
-        add = node_graph.create_node("feel8.sample.add", pos=[140.0, 0.0], **create_kwargs)
-        logger = node_graph.create_node("feel8.sample.log", pos=[420.0, 0.0], **create_kwargs)
+        start = node_graph.create_node(operator_key(ENGINE_SERVICE_CLASS, "feel8.sample.start"), pos=[-420.0, 0.0], **create_kwargs)
+        const_a = node_graph.create_node(operator_key(ENGINE_SERVICE_CLASS, "feel8.sample.constant"), pos=[-180.0, -120.0], name="const_a", **create_kwargs)
+        const_b = node_graph.create_node(operator_key(ENGINE_SERVICE_CLASS, "feel8.sample.constant"), pos=[-180.0, 120.0], name="const_b", **create_kwargs)
+        add = node_graph.create_node(operator_key(ENGINE_SERVICE_CLASS, "feel8.sample.add"), pos=[140.0, 0.0], **create_kwargs)
+        logger = node_graph.create_node(operator_key(ENGINE_SERVICE_CLASS, "feel8.sample.log"), pos=[420.0, 0.0], **create_kwargs)
     except Exception:
         return []
 
@@ -249,7 +257,22 @@ def main() -> None:
     # except Exception:
     #     pass
 
-    OperatorSpecRegistry.instance().register_many(_demo_specs(), overwrite=True)
+    loaded = bool(load_discovery_into_registries())
+    if not loaded:
+        # Fallback built-in demo specs (useful when running without a discovery folder).
+        engine_specs = []
+        editor_specs = []
+        for spec in _demo_specs():
+            svc = str(getattr(spec, "serviceClass", "") or "")
+            if svc == EDITOR_SERVICE_CLASS:
+                editor_specs.append(spec)
+            else:
+                engine_specs.append(spec)
+
+        svc_ops = ServiceOperatorSpecRegistry.instance()
+        svc_ops.register_many(ENGINE_SERVICE_CLASS, engine_specs, overwrite=True)
+        svc_ops.register_many(EDITOR_SERVICE_CLASS, editor_specs, overwrite=True)
+
     OperatorRendererRegistry.instance()
 
     mode = (os.environ.get("F8_EDITOR_MODE") or "svc").strip().lower()

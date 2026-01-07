@@ -16,6 +16,14 @@ import re
 logger = logging.getLogger(__name__)
 
 
+def _spec_key_for(spec: object) -> str:
+    from f8pysdk import operator_key
+
+    service_class = str(getattr(spec, "serviceClass", "") or "").strip()
+    operator_class = str(getattr(spec, "operatorClass", "") or "").strip()
+    return operator_key(service_class, operator_class)
+
+
 class SpecNodeClassRegistry:
     """Registry for renderer classes keyed by rendererClass."""
 
@@ -46,13 +54,15 @@ class SpecNodeClassRegistry:
         for spec in spec_registry.all():
 
             renderer_key = spec.rendererClass or "default"
-            operator_class = spec.operatorClass
+            service_class = str(getattr(spec, "serviceClass", "") or "")
+            operator_class = str(getattr(spec, "operatorClass", "") or "")
+            spec_key = _spec_key_for(spec)
 
             base_cls = renderer_registry.get(renderer_key)
 
-            # Keep the node type namespace consistent with the operator namespace to keep the palette tidy.
-            namespace = ".".join(operator_class.split(".")[:-1]) or operator_class
-            class_name = "Op_" + re.sub(r"[^0-9a-zA-Z_]", "_", operator_class)
+            # Palette grouping: by serviceClass (operatorClass is local and not unique).
+            namespace = service_class or "svc.unknown"
+            class_name = "Op_" + re.sub(r"[^0-9a-zA-Z_]", "_", spec_key)
             if class_name[0].isdigit():
                 class_name = f"Op_{class_name}"
 
@@ -62,11 +72,11 @@ class SpecNodeClassRegistry:
                 {
                     "__identifier__": namespace,
                     "NODE_NAME": spec.label,
-                    "SPEC_KEY": operator_class,
+                    "SPEC_KEY": spec_key,
                 },
             )
 
-            self._spec_node_cls_map[operator_class] = node_cls
+            self._spec_node_cls_map[spec_key] = node_cls
             n += 1
 
         s = 0
@@ -109,9 +119,9 @@ class SpecNodeClassRegistry:
             pass
         registered_types = set(node_graph.registered_nodes())
 
-        for operator_class, node_cls in self._spec_node_cls_map.items():
+        for spec_key, node_cls in self._spec_node_cls_map.items():
             if node_cls.type_ not in registered_types:
-                node_graph.register_node(node_cls, alias=operator_class)
+                node_graph.register_node(node_cls, alias=spec_key)
 
         for service_class, node_cls in self._service_node_cls_map.items():
             if node_cls.type_ not in registered_types:

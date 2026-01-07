@@ -28,6 +28,7 @@ class EngineBackdropNodeItem(BackdropNodeItem):
         super().__init__(name=name, text=text, parent=parent)
         self._drag_active = False
         self._drag_nodes: list[QtWidgets.QGraphicsItem] = []
+
         # Required to receive position change notifications reliably.
         self.setFlag(QtWidgets.QGraphicsItem.ItemSendsGeometryChanges, True)
         self.setFlag(QtWidgets.QGraphicsItem.ItemSendsScenePositionChanges, True)
@@ -46,7 +47,7 @@ class EngineBackdropNodeItem(BackdropNodeItem):
             from NodeGraphQt.qgraphics.port import PortItem
 
             if isinstance(item, (PortItem, PipeItem)):
-                self.setFlag(self.ItemIsMovable, False)
+                self.setFlag(QtWidgets.QGraphicsItem.ItemIsMovable, False)
                 return
 
             viewer = self.viewer()

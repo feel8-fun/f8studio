@@ -5,7 +5,7 @@ from typing import Callable
 
 from pydantic import ValidationError
 
-from f8pysdk import F8OperatorSpec
+from f8pysdk import F8OperatorSpec, operator_key
 
 
 class RegistryError(Exception):
@@ -38,6 +38,7 @@ class OperatorSpecRegistry:
             return _GLOBAL_SPEC_REGISTRY
 
     def __init__(self) -> None:
+        # Keyed by canonical operator key: "{serviceClass}:{operatorClass}"
         self._specs: dict[str, F8OperatorSpec] = {}
 
     def register(self, spec: F8OperatorSpec, *, overwrite: bool = False) -> F8OperatorSpec:
@@ -49,26 +50,32 @@ class OperatorSpecRegistry:
         if validated.schemaVersion != "f8operator/1":
             raise InvalidOperatorSpec('schemaVersion must be "f8operator/1"')
 
-        exists = validated.operatorClass in self._specs
-        if exists and not overwrite:
-            raise OperatorAlreadyRegistered(validated.operatorClass)
+        try:
+            key = operator_key(str(validated.serviceClass), str(validated.operatorClass))
+        except Exception as exc:
+            raise InvalidOperatorSpec(str(exc)) from exc
 
-        self._specs[validated.operatorClass] = validated
+        exists = key in self._specs
+        if exists and not overwrite:
+            raise OperatorAlreadyRegistered(key)
+
+        self._specs[key] = validated
         return validated
 
     def register_many(self, specs: Iterable[F8OperatorSpec], *, overwrite: bool = False) -> list[F8OperatorSpec]:
         return [self.register(spec, overwrite=overwrite) for spec in specs]
 
-    def unregister(self, operator_class: str) -> None:
-        self._specs.pop(operator_class, None)
+    def unregister(self, key: str) -> None:
+        self._specs.pop(str(key), None)
 
-    def has(self, operator_class: str) -> bool:
-        return operator_class in self._specs
+    def has(self, key: str) -> bool:
+        return str(key) in self._specs
 
-    def get(self, operator_class: str) -> F8OperatorSpec:
-        if operator_class not in self._specs:
-            raise OperatorNotFound(operator_class)
-        return self._specs[operator_class].model_copy(deep=True)
+    def get(self, key: str) -> F8OperatorSpec:
+        k = str(key)
+        if k not in self._specs:
+            raise OperatorNotFound(k)
+        return self._specs[k].model_copy(deep=True)
 
     def query(
         self,
@@ -88,6 +95,7 @@ class OperatorSpecRegistry:
                     filter(
                         None,
                         [
+                            getattr(spec, "serviceClass", None),
                             spec.operatorClass,
                             spec.label,
                             spec.description,

@@ -60,7 +60,7 @@ class OperatorGraphEditor:
 
     def create_node(
         self,
-        operator_class: str,
+        spec_key: str,
         *,
         pos: tuple[float, float] | None = None,
         name: str | None = None,
@@ -70,9 +70,9 @@ class OperatorGraphEditor:
             kwargs["pos"] = [float(pos[0]), float(pos[1])]
         if name is not None:
             kwargs["name"] = name
-        node = self.node_graph.create_node(operator_class, **kwargs)
+        node = self.node_graph.create_node(str(spec_key), **kwargs)
         if not isinstance(node, GenericNode):
-            raise TypeError(f"Expected GenericNode for {operator_class}, got {type(node)}")
+            raise TypeError(f"Expected GenericNode for {spec_key}, got {type(node)}")
         return node
 
     def connect(
@@ -125,7 +125,9 @@ class OperatorGraphEditor:
             spec = node.spec
             if not isinstance(spec, F8OperatorSpec):
                 try:
-                    spec = OperatorSpecRegistry.instance().get(spec.operatorClass)
+                    from f8pysdk import operator_key
+
+                    spec = OperatorSpecRegistry.instance().get(operator_key(spec.serviceClass, spec.operatorClass))
                 except Exception:
                     continue
 

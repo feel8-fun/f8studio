@@ -9,6 +9,7 @@ dependencies = [
     "nodegraphqt>=0.6.43",
     "pydantic>=2.12.5",
     "pyside6>=6.10.1",
+    "pyyaml>=6.0",
     "qtpy>=2.4.3",
     "setuptools>=80.9.0",
     "nats-py>=2.10.0",

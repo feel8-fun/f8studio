@@ -574,7 +574,14 @@ class NodeStateEditorWidget(QtWidgets.QWidget):
         self._set_empty_visible(False)
 
         spec = getattr(node, "spec", None)
-        spec_key = getattr(spec, "operatorClass", None) or getattr(spec, "serviceClass", None) or ""
+        try:
+            from f8pysdk import operator_key
+
+            service_class = str(getattr(spec, "serviceClass", "") or "").strip()
+            operator_class = str(getattr(spec, "operatorClass", "") or "").strip()
+            spec_key = operator_key(service_class, operator_class) if (service_class and operator_class) else (service_class or operator_class)
+        except Exception:
+            spec_key = getattr(spec, "operatorClass", None) or getattr(spec, "serviceClass", None) or ""
         header = QtWidgets.QLabel(f"{node.name()}  ({spec_key})")
         header.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
         header.setStyleSheet("font-weight: 600;")

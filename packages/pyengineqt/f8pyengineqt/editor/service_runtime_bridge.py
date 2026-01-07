@@ -11,6 +11,30 @@ from ..engine.nats_naming import ensure_token, kv_bucket_for_service
 from ..runtime import ServiceRuntime, ServiceRuntimeConfig, ServiceRuntimeNode
 
 
+class _BridgeRuntimeNode(ServiceRuntimeNode):
+    def __init__(
+        self,
+        *,
+        bridge: "ServiceRuntimeBridge",
+        node_id: str,
+        data_in_ports: list[str],
+        data_out_ports: list[str],
+        state_fields: list[str],
+    ) -> None:
+        super().__init__(node_id=node_id, data_in_ports=data_in_ports, data_out_ports=data_out_ports, state_fields=state_fields)
+        self._bridge = bridge
+
+    async def on_data(self, port: str, value: Any, *, ts_ms: int | None = None) -> None:
+        try:
+            ts = int(ts_ms) if ts_ms is not None else int(QtCore.QDateTime.currentMSecsSinceEpoch())
+        except Exception:
+            ts = int(QtCore.QDateTime.currentMSecsSinceEpoch())
+        try:
+            self._bridge.dataReceived.emit(str(self.node_id), str(port), value, ts)
+        except Exception:
+            return
+
+
 @dataclass(frozen=True)
 class ServiceRuntimeBridgeConfig:
     service_id: str
@@ -29,6 +53,7 @@ class ServiceRuntimeBridge(QtCore.QObject):
     statusChanged = QtCore.Signal(str)
     # `ts_ms` is a millisecond epoch timestamp (~1e12), which overflows Qt's 32-bit `int`.
     stateUpdated = QtCore.Signal(str, str, object, object, object)  # node_id, field, value, ts_ms, meta
+    dataReceived = QtCore.Signal(str, str, object, object)  # node_id, port, value, ts_ms
     dataPulled = QtCore.Signal(str, str, object, object)  # node_id, port, value, ts_ms
 
     def __init__(self, config: ServiceRuntimeBridgeConfig) -> None:
@@ -196,7 +221,8 @@ class ServiceRuntimeBridge(QtCore.QObject):
 
                 try:
                     rt.register_node(
-                        ServiceRuntimeNode(
+                        _BridgeRuntimeNode(
+                            bridge=self,
                             node_id=str(node_id),
                             data_in_ports=data_in,
                             data_out_ports=data_out,

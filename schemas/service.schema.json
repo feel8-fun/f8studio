@@ -10,12 +10,14 @@
     },
     "serviceClass": {
       "type": "string",
-      "description": "Reverse-DNS style id, e.g., svc.feel8.engine"
+      "description": "Reverse-DNS style id, e.g., svc.feel8.engine",
+      "pattern": "^[a-z0-9]+(\\.[a-z0-9]+)+$"
     },
     "version": {
       "type": "string",
       "description": "SemVer of the service profile",
-      "default": "0.0.0"
+      "default": "0.0.0",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
     },
     "label": {
       "type": "string"

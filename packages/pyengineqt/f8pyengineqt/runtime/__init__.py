@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from .nats_transport import NatsTransport, NatsTransportConfig
-from .service_runtime import ServiceRuntime, ServiceRuntimeConfig
-from .service_runtime_node import ServiceRuntimeNode
+from f8pysdk.runtime import NatsTransport, NatsTransportConfig, ServiceRuntime, ServiceRuntimeConfig, ServiceRuntimeNode
 
 __all__ = [
     "NatsTransport",
@@ -11,4 +9,3 @@ __all__ = [
     "ServiceRuntimeConfig",
     "ServiceRuntimeNode",
 ]
-

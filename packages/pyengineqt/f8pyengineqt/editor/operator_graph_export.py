@@ -16,6 +16,7 @@ from f8pysdk import (
     F8EdgeStrategyEnum,
     F8OperatorSpec,
     F8PrimitiveTypeEnum,
+    operator_key,
 )
 
 
@@ -40,7 +41,7 @@ def export_operator_graph(
         spec = node.spec
         if not isinstance(spec, F8OperatorSpec):
             try:
-                spec = OperatorSpecRegistry.instance().get(spec.operatorClass)
+                spec = OperatorSpecRegistry.instance().get(operator_key(spec.serviceClass, spec.operatorClass))
             except Exception:
                 continue
 

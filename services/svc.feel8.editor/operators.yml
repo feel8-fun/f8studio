@@ -1,0 +1,43 @@
+- operatorClass: feel8.editor.log
+  version: 0.0.1
+  label: Editor Log
+  description: Receives data via cross edges and prints / displays it in the editor.
+  tags: [ui, editor]
+  rendererClass: editor_log
+  dataInPorts:
+    - name: in
+      description: data input
+      valueSchema: { type: any }
+  states:
+    - name: refreshMs
+      label: Refresh (ms)
+      valueSchema: { type: integer, default: 200, minimum: 16, maximum: 5000 }
+      access: rw
+      showOnNode: true
+    - name: print
+      label: Print
+      valueSchema: { type: boolean, default: true }
+      access: rw
+      showOnNode: true
+
+- operatorClass: feel8.editor.oscilloscope
+  version: 0.0.1
+  label: Oscilloscope
+  description: Receives numeric data via cross edges and visualizes it (placeholder UI).
+  tags: [ui, editor]
+  rendererClass: ui
+  dataInPorts:
+    - name: in
+      description: signal input
+      valueSchema: { type: number }
+  states:
+    - name: refreshMs
+      label: Refresh (ms)
+      valueSchema: { type: integer, default: 50, minimum: 16, maximum: 5000 }
+      access: rw
+      showOnNode: true
+    - name: window
+      label: Window
+      valueSchema: { type: integer, default: 240, minimum: 10, maximum: 5000 }
+      access: rw
+      showOnNode: true
