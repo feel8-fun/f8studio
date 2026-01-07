@@ -6,11 +6,14 @@ from typing import Any, Iterable
 
 from qtpy import QtCore, QtWidgets
 
+from NodeGraphQt import BaseNode
+
 from f8pysdk import (
     F8DataPortSpec,
     F8DataTypeSchema,
     F8OperatorSpec,
     F8PrimitiveTypeEnum,
+    F8ServiceSpec,
     F8StateAccess,
     F8StateSpec,
     any_schema,
@@ -25,6 +28,8 @@ from f8pysdk import (
 )
 
 from ..renderers.generic import GenericNode
+from ..renderers.service_engine import EngineServiceNode
+from ..renderers.service_node import ServiceNode
 
 
 def _as_json(value: Any) -> str:
@@ -517,7 +522,7 @@ class PortSpecEditorDialog(QtWidgets.QDialog):
 
 @dataclass(frozen=True)
 class _NodeSelection:
-    node: GenericNode | None
+    node: BaseNode | None
 
 
 class NodeStateEditorWidget(QtWidgets.QWidget):
@@ -544,7 +549,7 @@ class NodeStateEditorWidget(QtWidgets.QWidget):
         layout.addWidget(self._scroll)
         self._set_empty_visible(True)
 
-    def set_node(self, node: GenericNode | None) -> None:
+    def set_node(self, node: BaseNode | None) -> None:
         self._selection = _NodeSelection(node=node)
         self._rebuild()
 
@@ -568,15 +573,17 @@ class NodeStateEditorWidget(QtWidgets.QWidget):
 
         self._set_empty_visible(False)
 
-        header = QtWidgets.QLabel(f"{node.name()}  ({getattr(node.spec, 'operatorClass', '')})")
+        spec = getattr(node, "spec", None)
+        spec_key = getattr(spec, "operatorClass", None) or getattr(spec, "serviceClass", None) or ""
+        header = QtWidgets.QLabel(f"{node.name()}  ({spec_key})")
         header.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
         header.setStyleSheet("font-weight: 600;")
         self._form_layout.insertWidget(0, header)
 
-        for field in node.spec.states or []:
+        for field in getattr(spec, "states", None) or []:
             self._form_layout.insertWidget(self._form_layout.count() - 1, self._build_field_editor(node, field))
 
-    def _build_field_editor(self, node: GenericNode, field: F8StateSpec) -> QtWidgets.QWidget:
+    def _build_field_editor(self, node: BaseNode, field: F8StateSpec) -> QtWidgets.QWidget:
         box = QtWidgets.QGroupBox(field.label or field.name)
         layout = QtWidgets.QVBoxLayout(box)
 
@@ -1602,6 +1609,220 @@ class NodeSpecEditorWidget(QtWidgets.QWidget):
         self._sync_ui_from_spec()
 
 
+class ServiceSpecEditorWidget(QtWidgets.QWidget):
+    specApplied = QtCore.Signal(object)
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent=parent)
+        self._node: BaseNode | None = None
+        self._spec: F8ServiceSpec | None = None
+
+        self._empty = QtWidgets.QLabel("Select a service node to edit spec.")
+        self._empty.setAlignment(QtCore.Qt.AlignCenter)
+
+        self._data_in = PortListEditor(title="dataInPorts")
+        self._data_out = PortListEditor(title="dataOutPorts")
+        self._states = StateListEditor(title="states")
+
+        self._apply = QtWidgets.QPushButton("Apply Spec Changes")
+        self._apply.clicked.connect(self._apply_to_node)
+
+        self._raw_json = QtWidgets.QPushButton("Edit Full Spec JSON...")
+        self._raw_json.clicked.connect(self._edit_full_spec_json)
+
+        ports_container = QtWidgets.QWidget()
+        ports_layout = QtWidgets.QVBoxLayout(ports_container)
+        ports_layout.setContentsMargins(0, 0, 0, 0)
+        ports_layout.setSpacing(8)
+        ports_layout.addWidget(self._data_in)
+        ports_layout.addWidget(self._data_out)
+
+        states_container = QtWidgets.QWidget()
+        states_layout = QtWidgets.QVBoxLayout(states_container)
+        states_layout.setContentsMargins(0, 0, 0, 0)
+        states_layout.setSpacing(8)
+        states_layout.addWidget(self._states)
+
+        self._sections_widget = QtWidgets.QWidget()
+        sections_layout = QtWidgets.QVBoxLayout(self._sections_widget)
+        sections_layout.setContentsMargins(10, 10, 10, 10)
+        sections_layout.setSpacing(10)
+        sections_layout.addWidget(CollapsibleSection(title="Data Ports", content=ports_container))
+        sections_layout.addWidget(CollapsibleSection(title="States", content=states_container))
+        sections_layout.addStretch(1)
+
+        self._scroll = QtWidgets.QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self._scroll.setWidget(self._sections_widget)
+
+        btns = QtWidgets.QHBoxLayout()
+        btns.addWidget(self._raw_json)
+        btns.addStretch(1)
+        btns.addWidget(self._apply)
+
+        self._content = QtWidgets.QWidget()
+        content_layout = QtWidgets.QVBoxLayout(self._content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(8)
+        content_layout.addWidget(self._scroll)
+        content_layout.addLayout(btns)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(self._empty)
+        layout.addWidget(self._content)
+        self._set_empty_visible(True)
+
+    def set_node(self, node: BaseNode | None) -> None:
+        self._node = node
+        spec = getattr(node, "spec", None) if node is not None else None
+        if node is None or not isinstance(spec, F8ServiceSpec):
+            self._spec = None
+            self._set_empty_visible(True)
+            return
+
+        self._spec = spec.model_copy(deep=True)
+        self._sync_ui_from_spec()
+        self._set_empty_visible(False)
+
+        can_apply = callable(getattr(node, "apply_spec", None))
+        editable = any(
+            [
+                bool(getattr(self._spec, "editableDataInPorts", False)),
+                bool(getattr(self._spec, "editableDataOutPorts", False)),
+                bool(getattr(self._spec, "editableStates", False)),
+            ]
+        )
+        self._data_in.setEnabled(bool(getattr(self._spec, "editableDataInPorts", False)) and can_apply)
+        self._data_out.setEnabled(bool(getattr(self._spec, "editableDataOutPorts", False)) and can_apply)
+        self._states.setEnabled(bool(getattr(self._spec, "editableStates", False)) and can_apply)
+        self._apply.setEnabled(bool(editable and can_apply))
+        self._raw_json.setEnabled(bool(editable and can_apply))
+
+    def _set_empty_visible(self, is_empty: bool) -> None:
+        self._empty.setVisible(is_empty)
+        self._content.setVisible(not is_empty)
+
+    def _sync_ui_from_spec(self) -> None:
+        if self._spec is None:
+            return
+        self._data_in.set_ports(self._spec.dataInPorts or [])
+        self._data_out.set_ports(self._spec.dataOutPorts or [])
+        self._states.set_fields(self._spec.states or [])
+
+    @staticmethod
+    def _find_duplicates(values: list[str]) -> list[str]:
+        seen: set[str] = set()
+        dupes: set[str] = set()
+        for value in values:
+            if value in seen:
+                dupes.add(value)
+            else:
+                seen.add(value)
+        return sorted(dupes)
+
+    def _validate_spec(self, spec: F8ServiceSpec) -> list[str]:
+        data_in = [str(p.name).strip() for p in (spec.dataInPorts or [])]
+        data_out = [str(p.name).strip() for p in (spec.dataOutPorts or [])]
+        states = [str(s.name).strip() for s in (spec.states or [])]
+
+        errors: list[str] = []
+        if any(not p for p in data_in):
+            errors.append("dataInPorts contains an empty name.")
+        if any(not p for p in data_out):
+            errors.append("dataOutPorts contains an empty name.")
+        if any(not p for p in states):
+            errors.append("states contains an empty name.")
+
+        dup = self._find_duplicates(data_in)
+        if dup:
+            errors.append(f"Duplicate dataInPorts: {', '.join(dup)}")
+        dup = self._find_duplicates(data_out)
+        if dup:
+            errors.append(f"Duplicate dataOutPorts: {', '.join(dup)}")
+        dup = self._find_duplicates(states)
+        if dup:
+            errors.append(f"Duplicate states: {', '.join(dup)}")
+
+        return errors
+
+    def _collect_spec_from_ui(self) -> F8ServiceSpec | None:
+        if self._spec is None:
+            return None
+        next_spec = self._spec.model_copy(deep=True)
+        if getattr(next_spec, "editableDataInPorts", False):
+            next_spec.dataInPorts = self._data_in.ports()
+        if getattr(next_spec, "editableDataOutPorts", False):
+            next_spec.dataOutPorts = self._data_out.ports()
+        if getattr(next_spec, "editableStates", False):
+            next_spec.states = self._states.fields()
+
+        errors = self._validate_spec(next_spec)
+        if errors:
+            QtWidgets.QMessageBox.warning(self, "Invalid Spec", "\n".join(errors))
+            return None
+        return next_spec
+
+    def _confirm_rebuild(self) -> bool:
+        msg = QtWidgets.QMessageBox(self)
+        msg.setIcon(QtWidgets.QMessageBox.Warning)
+        msg.setWindowTitle("Rebuild Node Ports?")
+        msg.setText("Applying spec changes will rebuild ports and may disconnect existing links.")
+        msg.setStandardButtons(QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel)
+        return msg.exec_() == QtWidgets.QMessageBox.Ok
+
+    def _apply_to_node(self) -> None:
+        if self._node is None or self._spec is None:
+            return
+        apply_spec = getattr(self._node, "apply_spec", None)
+        if not callable(apply_spec):
+            QtWidgets.QMessageBox.warning(self, "Unsupported", "This node does not support applying spec edits.")
+            return
+
+        next_spec = self._collect_spec_from_ui()
+        if next_spec is None:
+            return
+        if next_spec.serviceClass != self._spec.serviceClass:
+            QtWidgets.QMessageBox.warning(
+                self, "Unsupported", "Changing serviceClass on an instance is not supported."
+            )
+            return
+        if not self._confirm_rebuild():
+            return
+        try:
+            apply_spec(next_spec)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Apply Failed", str(exc))
+            return
+        self._spec = next_spec.model_copy(deep=True)
+        self._sync_ui_from_spec()
+        self.specApplied.emit(self._node)
+
+    def _edit_full_spec_json(self) -> None:
+        if self._spec is None:
+            return
+        dlg = JsonTextDialog(
+            title="Edit Full Spec (JSON)",
+            initial_json=_as_json(self._spec.model_dump(mode="json")),
+            parent=self,
+        )
+        if dlg.exec_() != QtWidgets.QDialog.Accepted:
+            return
+        try:
+            payload = json.loads(dlg.json_text())
+            next_spec = F8ServiceSpec.model_validate(payload)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Invalid Spec", str(exc))
+            return
+        if self._spec and next_spec.serviceClass != self._spec.serviceClass:
+            QtWidgets.QMessageBox.warning(
+                self, "Unsupported", "Changing serviceClass on an instance is not supported."
+            )
+            return
+        self._spec = next_spec.model_copy(deep=True)
+        self._sync_ui_from_spec()
+
+
 class NodePropertyEditorWidget(QtWidgets.QWidget):
     """
     Custom inspector replacing NodeGraphQt's PropertiesBinWidget.
@@ -1620,10 +1841,16 @@ class NodePropertyEditorWidget(QtWidgets.QWidget):
 
         self._tabs = QtWidgets.QTabWidget()
         self._state = NodeStateEditorWidget()
-        self._spec = NodeSpecEditorWidget()
-        self._spec.specApplied.connect(self._on_spec_applied)
+
+        self._spec_stack = QtWidgets.QStackedWidget()
+        self._spec_operator = NodeSpecEditorWidget()
+        self._spec_service = ServiceSpecEditorWidget()
+        self._spec_operator.specApplied.connect(self._on_spec_applied)
+        self._spec_service.specApplied.connect(self._on_spec_applied)
+        self._spec_stack.addWidget(self._spec_operator)
+        self._spec_stack.addWidget(self._spec_service)
         self._tabs.addTab(self._state, "State")
-        self._tabs.addTab(self._spec, "Spec")
+        self._tabs.addTab(self._spec_stack, "Spec")
 
         self._multi = QtWidgets.QLabel("Multi-selection editing is not supported yet.")
         self._multi.setAlignment(QtCore.Qt.AlignCenter)
@@ -1635,27 +1862,41 @@ class NodePropertyEditorWidget(QtWidgets.QWidget):
         layout.addWidget(self._tabs, 1)
 
     def _on_spec_applied(self, node: object) -> None:
-        if isinstance(node, GenericNode):
+        if isinstance(node, BaseNode):
             self._state.set_node(node)
 
     def set_selected_nodes(self, nodes: list[Any]) -> None:
-        generic_nodes = [n for n in nodes if isinstance(n, GenericNode)]
-        if len(generic_nodes) != 1:
-            self._multi.setVisible(len(generic_nodes) > 1)
-            if not generic_nodes:
+        editable_nodes = [n for n in nodes if isinstance(n, (GenericNode, ServiceNode, EngineServiceNode))]
+        if len(editable_nodes) != 1:
+            self._multi.setVisible(len(editable_nodes) > 1)
+            if not editable_nodes:
                 self._header.setText("No selection")
             else:
-                self._header.setText(f"{len(generic_nodes)} nodes selected")
+                self._header.setText(f"{len(editable_nodes)} nodes selected")
             self._state.set_node(None)
-            self._spec.set_node(None)
+            self._spec_operator.set_node(None)
+            self._spec_service.set_node(None)
             return
 
-        node = generic_nodes[0]
+        node = editable_nodes[0]
         self._multi.setVisible(False)
-        self._header.setText(f"{node.name()}  ({node.spec.operatorClass})")
+        spec = getattr(node, "spec", None)
+        spec_key = getattr(spec, "operatorClass", None) or getattr(spec, "serviceClass", None) or ""
+        self._header.setText(f"{node.name()}  ({spec_key})")
         try:
-            node.ensure_state_properties()
+            ensure = getattr(node, "ensure_state_properties", None)
+            if callable(ensure):
+                ensure()
         except Exception:
             pass
+
         self._state.set_node(node)
-        self._spec.set_node(node)
+        if isinstance(spec, F8OperatorSpec):
+            self._spec_stack.setCurrentWidget(self._spec_operator)
+            self._spec_operator.set_node(node if isinstance(node, GenericNode) else None)
+        elif isinstance(spec, F8ServiceSpec):
+            self._spec_stack.setCurrentWidget(self._spec_service)
+            self._spec_service.set_node(node)
+        else:
+            self._spec_operator.set_node(None)
+            self._spec_service.set_node(None)

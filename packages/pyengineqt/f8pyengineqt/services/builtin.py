@@ -9,7 +9,7 @@ from f8pysdk import (
 )
 
 
-ENGINE_SERVICE_CLASS = "fun.feel8.engine"
+ENGINE_SERVICE_CLASS = "svc.feel8.engine"
 
 
 def engine_service_spec() -> F8ServiceSpec:

@@ -25,7 +25,7 @@ from NodeGraphQt.qgraphics.node_base import NodeItem
 from NodeGraphQt.constants import NodeEnum, NodePropWidgetEnum, PortEnum
 from NodeGraphQt.widgets.node_widgets import NodeBaseWidget
 
-from .port_painter import draw_exec_port, draw_square_port
+from .internal.port_painter import draw_exec_port, draw_square_port
 
 from qtpy import QtWidgets
 

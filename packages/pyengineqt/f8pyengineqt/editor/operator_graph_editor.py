@@ -15,8 +15,7 @@ from f8pysdk import F8OperatorSpec, F8PrimitiveTypeEnum
 from .f8_node_viewer import F8NodeViewer
 from .engine_manager import EngineManager
 from ..services.service_registry import ServiceSpecRegistry
-from ..services.builtin import engine_service_spec, ENGINE_SERVICE_CLASS
-from ..renderers.service_engine import EngineServiceNode
+from ..services.builtin import engine_service_spec
 
 from pathlib import Path
 
@@ -45,10 +44,7 @@ class OperatorGraphEditor:
 
         self.node_graph._node_factory.clear_registered_nodes()
         SpecNodeClassRegistry.instance().apply(self.node_graph)
-        try:
-            self.node_graph.register_node(EngineServiceNode, alias=ENGINE_SERVICE_CLASS)
-        except Exception:
-            pass
+        # Service nodes are registered via SpecNodeClassRegistry (ServiceSpecRegistry).
 
         # First-version engine: KV sync + topology cache.
         self.engine.start()

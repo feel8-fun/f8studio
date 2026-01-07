@@ -36,6 +36,7 @@ class ServiceGraphEditor:
 
     def __init__(self) -> None:
         self.node_graph = NodeGraph(viewer=F8NodeViewer())
+        self.node_graph._node_factory.clear_registered_nodes()
         self._engine_sync: dict[str, EngineManager] = {}
         self._engine_geom: dict[str, dict[str, Any]] = {}
         self._operator_owner: dict[str, str] = {}
@@ -56,10 +57,7 @@ class ServiceGraphEditor:
 
         # Root palette supports both service nodes and operator nodes (operators are typically created inside engines).
         SpecNodeClassRegistry.instance().apply(self.node_graph)
-        try:
-            self.node_graph.register_node(EngineServiceNode, alias=ENGINE_SERVICE_CLASS)
-        except Exception:
-            pass
+        # Engine service nodes are registered via SpecNodeClassRegistry (ServiceSpecRegistry).
 
         self.node_graph.node_created.connect(self._on_node_created)
         self.node_graph.nodes_deleted.connect(self._on_nodes_deleted)
@@ -351,6 +349,14 @@ class ServiceGraphEditor:
         mgr.start()
         self._engine_sync[sid] = mgr
         self._remember_engine_geom(engine)
+        # Ensure ownership map covers all currently wrapped operator nodes.
+        for op in engine.operator_nodes():
+            try:
+                if not isinstance(op, GenericNode) or self._is_editor_node(op):
+                    continue
+                self._operator_owner[str(op.id)] = sid
+            except Exception:
+                continue
 
         # Spawn the engine service process for this engine backdrop.
         nats_url = (os.environ.get("F8_NATS_URL") or "nats://127.0.0.1:4222").strip()
@@ -489,6 +495,28 @@ class ServiceGraphEditor:
                     if self._operator_owner.get(op_id) == sid:
                         self._revert_node_pos(op, old_xy=op_old)
                 continue
+            # Prevent engine moves that would leave any owned operator outside.
+            rect = self._engine_rect_proposed(engine=engine)
+            if rect is not None:
+                any_outside = False
+                for op_id, owner_id in list(self._operator_owner.items()):
+                    if owner_id != sid:
+                        continue
+                    try:
+                        op = self.node_graph.get_node_by_id(str(op_id))
+                    except Exception:
+                        continue
+                    if not isinstance(op, GenericNode) or self._is_editor_node(op):
+                        continue
+                    if not self._is_inside_engine(engine, op, engine_rect=rect):
+                        any_outside = True
+                        break
+                if any_outside:
+                    self._revert_node_pos(engine, old_xy=old_xy)
+                    for op_id, (op, op_old) in moved_ops.items():
+                        if self._operator_owner.get(op_id) == sid:
+                            self._revert_node_pos(op, old_xy=op_old)
+                    continue
             self._remember_engine_geom(engine)
 
         for op_id, (op, old_xy) in moved_ops.items():
@@ -532,7 +560,16 @@ class ServiceGraphEditor:
                 self._restore_engine_geom(engine, prev)
                 return
 
-        for op in engine.operator_nodes():
+        # Ensure all operators *owned* by this engine remain inside the resized rect.
+        for op_id, owner_id in list(self._operator_owner.items()):
+            if owner_id != sid:
+                continue
+            try:
+                op = self.node_graph.get_node_by_id(str(op_id))
+            except Exception:
+                continue
+            if not isinstance(op, GenericNode) or self._is_editor_node(op):
+                continue
             if not self._is_inside_engine(engine, op, engine_rect=rect_new):
                 self._restore_engine_geom(engine, prev)
                 return

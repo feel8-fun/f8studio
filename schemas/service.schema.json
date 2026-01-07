@@ -10,7 +10,7 @@
     },
     "serviceClass": {
       "type": "string",
-      "description": "Reverse-DNS style id, e.g., fun.feel8.engine"
+      "description": "Reverse-DNS style id, e.g., svc.feel8.engine"
     },
     "version": {
       "type": "string",
