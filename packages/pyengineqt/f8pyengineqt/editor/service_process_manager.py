@@ -54,8 +54,8 @@ class ServiceProcessManager(QtCore.QObject):
             return
 
         launch = cfg.launch
-        if launch is not None and str(getattr(launch, "commandSpec", "") or "").strip():
-            program = str(launch.commandSpec)
+        if launch is not None and str(getattr(launch, "command", "") or "").strip():
+            program = str(launch.command)
             args = [str(a) for a in (launch.args or [])]
             workdir = str(getattr(launch, "workdir", "") or "").strip() or "./"
             launch_env = dict(getattr(launch, "env", None) or {})

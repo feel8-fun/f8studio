@@ -172,6 +172,7 @@ dependencies = [
     { name = "nodegraphqt" },
     { name = "pydantic" },
     { name = "pyside6" },
+    { name = "pyyaml" },
     { name = "qtpy" },
     { name = "setuptools" },
 ]
@@ -183,6 +184,7 @@ requires-dist = [
     { name = "nodegraphqt", specifier = ">=0.6.43" },
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pyside6", specifier = ">=6.10.1" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "qtpy", specifier = ">=2.4.3" },
     { name = "setuptools", specifier = ">=80.9.0" },
 ]
@@ -193,10 +195,14 @@ version = "0.1.0"
 source = { editable = "packages/pysdk" }
 dependencies = [
     { name = "datamodel-code-generator", extra = ["http"] },
+    { name = "nats-py" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "datamodel-code-generator", extras = ["http"], specifier = ">=0.50.0" }]
+requires-dist = [
+    { name = "datamodel-code-generator", extras = ["http"], specifier = ">=0.50.0" },
+    { name = "nats-py", specifier = ">=2.12.0" },
+]
 
 [[package]]
 name = "f8studio"

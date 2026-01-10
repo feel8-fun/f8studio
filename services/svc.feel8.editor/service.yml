@@ -1,7 +1,0 @@
-schemaVersion: f8service/1
-serviceClass: svc.feel8.editor
-version: 0.0.1
-label: Editor
-description: In-process editor service for UI operators.
-tags: [service, editor, ui]
-rendererClass: default

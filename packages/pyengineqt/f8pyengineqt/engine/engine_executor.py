@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any
 
-from f8pysdk import F8EdgeKindEmum
+from f8pysdk import F8EdgeKindEnum
 
 from ..graph.operator_graph import OperatorGraph
 from ..runtime.service_runtime import ServiceRuntime
@@ -102,10 +102,16 @@ class EngineExecutor:
             edges = [
                 e
                 for e in graph.exec_edges
-                if e.kind == F8EdgeKindEmum.exec and str(e.from_) == from_node_id and str(e.fromPort) == out_port
+                if e.kind == F8EdgeKindEnum.exec
+                and str(e.fromServiceId) == self._runtime.service_id
+                and str(e.toServiceId) == self._runtime.service_id
+                and str(e.fromOperatorId) == from_node_id
+                and str(e.fromPort) == out_port
             ]
             for edge in edges:
-                await _exec_node(str(edge.to), str(edge.toPort))
+                if not edge.toOperatorId:
+                    continue
+                await _exec_node(str(edge.toOperatorId), str(edge.toPort))
 
         async def _exec_node(node_id: str, in_port: str) -> None:
             nonlocal visited_steps
@@ -140,7 +146,12 @@ class EngineExecutor:
                 continue
             if not (inst.spec.dataInPorts or []):
                 continue
-            has_outgoing_edge = any(str(e.from_) == str(node_id) for e in graph.data_edges)
+            has_outgoing_edge = any(
+                e.kind == F8EdgeKindEnum.data
+                and str(e.fromServiceId) == self._runtime.service_id
+                and str(e.fromOperatorId) == str(node_id)
+                for e in graph.data_edges
+            )
             if has_outgoing_edge:
                 continue
             try:

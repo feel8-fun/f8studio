@@ -91,7 +91,7 @@ class EngineManager(QtCore.QObject):
             self._export_topology = lambda: editor.to_operator_graph().to_dict(include_ctx=False)  # type: ignore[attr-defined]
         else:
             self._export_topology = lambda: export_operator_graph(
-                self._graph, node_filter=self._node_filter, edge_meta=self._edge_meta
+                self._graph, service_id=self._service_id, node_filter=self._node_filter, edge_meta=self._edge_meta
             ).to_dict(include_ctx=False)
 
         self._applying_engine = False

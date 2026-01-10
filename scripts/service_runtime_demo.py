@@ -8,9 +8,8 @@ from typing import Any
 
 from f8pysdk import (
     F8DataPortSpec,
-    F8EdgeKindEmum,
-    F8EdgeScopeEnum,
-    F8EdgeSpec,
+    F8Edge,
+    F8EdgeKindEnum,
     F8EdgeStrategyEnum,
     F8OperatorSpec,
     number_schema,
@@ -85,20 +84,18 @@ async def main() -> None:
     topo_b = {
         "nodes": [{"id": node_b, "operatorClass": spec_b.operatorClass, "spec": spec_b.model_dump(mode="json"), "state": {}}],
         "edges": [
-            F8EdgeSpec(
-                from_=node_a,
+            F8Edge(
+                edgeId=uuid.uuid4().hex,
+                fromServiceId=svc_a,
+                fromOperatorId=node_a,
                 fromPort="out",
-                to=node_b,
+                toServiceId=svc_b,
+                toOperatorId=node_b,
                 toPort="in",
-                kind=F8EdgeKindEmum.data,
-                scope=F8EdgeScopeEnum.cross,
-                strategy=F8EdgeStrategyEnum.repeat,
+                kind=F8EdgeKindEnum.data,
+                strategy=F8EdgeStrategyEnum.queue,
                 timeoutMs=2500,
                 queueSize=8,
-                edgeId=uuid.uuid4().hex,
-                direction="in",
-                subject=subj,
-                peerServiceId=svc_a,
             ).model_dump(by_alias=True, mode="json")
         ],
     }

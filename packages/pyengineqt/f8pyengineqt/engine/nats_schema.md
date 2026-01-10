@@ -24,18 +24,13 @@ All keys are scoped by service id:
     - `actor`: client id string (used to ignore self-echo)
     - `ts`: ms timestamp (int)
 
-## Cross-Instance Edges (Half-Edges)
+## Cross-Service Edges
 
-Cross-instance edges are stored as two "half-edges", one in the source service topology
-and one in the target service topology. This avoids the need for a separate relay process.
+Cross-service edges are stored as normal edges with explicit endpoints:
+- `fromServiceId/fromOperatorId/fromPort`
+- `toServiceId/toOperatorId/toPort`
 
-- Stored inside `svc.<serviceId>.topology` (per-service OperatorGraph snapshot).
-- Each half-edge is a normal `F8EdgeSpec` with extra fields:
-  - `scope="cross"`
-  - `edgeId`: stable id shared by both halves
-  - `direction`: `"out"` (local is source/from) or `"in"` (local is target/to)
-  - `peerServiceId`: remote service id (remote node/port can be derived from `from/to` + `direction`)
-  - `strategy/queueSize/timeoutMs`: used by the receiver for rate mismatch handling (data)
+Cross-service is determined by `fromServiceId != toServiceId`.
 
 ## Subjects (Core NATS Pub/Sub)
 
@@ -47,7 +42,7 @@ per port and multiple receivers can subscribe independently:
 - Producer publishes:
   - `svc.<fromServiceId>.nodes.<fromNodeId>.data.<portId>` -> JSON bytes `{ "value": ..., "ts": 0 }`
 
-- Cross-instance half-edges include `subject` with the same value so receivers know what to subscribe to.
+- Receivers derive the subject from `fromServiceId/fromOperatorId/fromPort`.
 
 - Request last value (optional):
   - Request: `svc.<serviceId>.data.<port>.get`

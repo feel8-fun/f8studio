@@ -4,32 +4,32 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
-from ..engine.nats_naming import data_subject, ensure_token
 from ..graph.operator_graph import OperatorGraph
 from ..graph.operator_instance import OperatorInstance
-from ..operators.operator_registry import OperatorSpecRegistry
 from ..renderers.generic import GenericNode
+from ..services.service_operator_registry import ServiceOperatorSpecRegistry
 from f8pysdk import (
-    F8EdgeKindEmum,
-    F8EdgeScopeEnum,
-    F8EdgeSpec,
+    F8Edge,
+    F8EdgeKindEnum,
     F8EdgeStrategyEnum,
     F8OperatorSpec,
     F8PrimitiveTypeEnum,
     operator_key,
 )
+from ..engine.nats_naming import ensure_token
 
 
 def export_operator_graph(
     node_graph: Any,
     *,
+    service_id: str,
     node_filter: Callable[[GenericNode], bool] | None = None,
     edge_meta: Callable[..., dict[str, Any]] | None = None,
 ) -> OperatorGraph:
     """
     Export a NodeGraphQt graph (or sub-graph) into an OperatorGraph.
     """
-    graph = OperatorGraph()
+    graph = OperatorGraph(service_id=ensure_token(service_id, label="service_id"))
 
     operator_nodes = [
         n for n in node_graph.all_nodes() if isinstance(n, GenericNode) and (node_filter(n) if node_filter else True)
@@ -41,7 +41,7 @@ def export_operator_graph(
         spec = node.spec
         if not isinstance(spec, F8OperatorSpec):
             try:
-                spec = OperatorSpecRegistry.instance().get(operator_key(spec.serviceClass, spec.operatorClass))
+                spec = ServiceOperatorSpecRegistry.instance().get(operator_key(spec.serviceClass, spec.operatorClass))
             except Exception:
                 continue
 
@@ -103,16 +103,10 @@ def export_operator_graph(
         except Exception:
             return {}
 
-    def _scope_for(source: GenericNode, target: GenericNode, kind: str, *, local_side: str) -> F8EdgeScopeEnum:
-        meta = _call_edge_meta(source, target, kind, local_side)
-        scope = meta.get("scope")
-        return scope if isinstance(scope, F8EdgeScopeEnum) else F8EdgeScopeEnum.intra
-
     def _data_meta_for(
         source: GenericNode, target: GenericNode, *, local_side: str
-    ) -> tuple[F8EdgeScopeEnum, F8EdgeStrategyEnum, int | None, int | None]:
+    ) -> tuple[F8EdgeStrategyEnum, int | None, int | None, dict[str, Any]]:
         meta = _call_edge_meta(source, target, "data", local_side)
-        scope = meta.get("scope") if isinstance(meta.get("scope"), F8EdgeScopeEnum) else F8EdgeScopeEnum.intra
         strategy = F8EdgeStrategyEnum.latest
         queue_size: int | None = None
         timeout_ms: int | None = None
@@ -128,51 +122,21 @@ def export_operator_graph(
                 timeout_ms = int(meta["timeoutMs"])
         except Exception:
             timeout_ms = None
-        return scope, strategy, queue_size, timeout_ms
+        return strategy, queue_size, timeout_ms, meta
+
+    def _service_ids(meta: dict[str, Any]) -> tuple[str, str] | None:
+        from_sid = str(meta.get("fromServiceId") or graph.service_id).strip()
+        to_sid = str(meta.get("toServiceId") or graph.service_id).strip()
+        if not from_sid or not to_sid:
+            return None
+        try:
+            return ensure_token(from_sid, label="fromServiceId"), ensure_token(to_sid, label="toServiceId")
+        except Exception:
+            return None
 
     def _edge_id(kind: str, from_id: str, from_port: str, to_id: str, to_port: str) -> str:
         key = f"{kind}:{from_id}:{from_port}->{to_id}:{to_port}"
         return uuid.uuid5(uuid.NAMESPACE_OID, key).hex
-
-    seen_cross: set[tuple[str, str, str, str, str]] = set()
-    seen_cross_data_out: set[tuple[str, str]] = set()
-
-    def _append_cross(edge: F8EdgeSpec) -> None:
-        k = str(edge.kind)
-        key = (
-            k,
-            str(edge.from_),
-            str(edge.fromPort),
-            str(edge.to),
-            str(edge.toPort),
-        )
-        if key in seen_cross:
-            return
-        seen_cross.add(key)
-        if edge.kind == F8EdgeKindEmum.data:
-            graph.data_edges.append(edge)
-        elif edge.kind == F8EdgeKindEmum.state:
-            graph.state_edges.append(edge)
-        elif edge.kind == F8EdgeKindEmum.exec:
-            graph.exec_edges.append(edge)
-
-    def _from_service_id(meta: dict[str, Any]) -> str:
-        sid = str(meta.get("fromServiceId") or "").strip()
-        if not sid:
-            return ""
-        try:
-            return ensure_token(sid, label="from_service_id")
-        except Exception:
-            return ""
-
-    def _cross_data_subject(meta: dict[str, Any], *, from_node_id: str, out_port: str) -> str:
-        sid = _from_service_id(meta)
-        if not sid:
-            return ""
-        try:
-            return data_subject(sid, from_node_id=from_node_id, port_id=out_port)
-        except Exception:
-            return ""
 
     for source in operator_nodes:
         for raw_out, out_port in source.port_handles.exec_out.items():
@@ -187,13 +151,18 @@ def export_operator_graph(
                 if raw_in is None:
                     continue
                 try:
-                    graph.connect_exec(
-                        source.id,
-                        raw_out,
-                        target.id,
-                        raw_in,
-                        scope=_scope_for(source, target, "exec", local_side="from"),
+                    edge = F8Edge(
+                        edgeId=_edge_id("exec", str(source.id), str(raw_out), str(target.id), str(raw_in)),
+                        fromServiceId=graph.service_id,
+                        fromOperatorId=str(source.id),
+                        fromPort=str(raw_out),
+                        toServiceId=graph.service_id,
+                        toOperatorId=str(target.id),
+                        toPort=str(raw_in),
+                        kind=F8EdgeKindEnum.exec,
+                        strategy=F8EdgeStrategyEnum.latest,
                     )
+                    graph._connect_from_spec(edge)  # type: ignore[attr-defined]
                 except Exception:
                     pass
 
@@ -206,45 +175,29 @@ def export_operator_graph(
                 if raw_in is None:
                     continue
                 try:
-                    scope, strategy, queue_size, timeout_ms = _data_meta_for(source, target, local_side="from")
-                    if target.id in operator_ids:
-                        graph.connect_data(
-                            source.id,
-                            raw_out,
-                            target.id,
-                            raw_in,
-                            scope=scope,
-                            strategy=strategy,
-                            queue_size=queue_size,
-                            timeout_ms=timeout_ms,
-                        )
-                    else:
-                        # Cross-instance half-edge (outgoing).
-                        key = (str(source.id), str(raw_out))
-                        if key in seen_cross_data_out:
+                    strategy, queue_size, timeout_ms, meta = _data_meta_for(source, target, local_side="from")
+                    sids = _service_ids(meta)
+                    if sids is None:
+                        # If service ids are unknown, only export local-only edges.
+                        if target.id not in operator_ids:
                             continue
-                        seen_cross_data_out.add(key)
+                        sids = (graph.service_id, graph.service_id)
+                    from_sid, to_sid = sids
 
-                        meta = _call_edge_meta(source, target, "data", "from")
-                        subj = _cross_data_subject(meta, from_node_id=str(source.id), out_port=str(raw_out))
-                        eid = uuid.uuid5(uuid.NAMESPACE_OID, f"data_out:{source.id}:{raw_out}").hex
-                        _append_cross(
-                            F8EdgeSpec(
-                                from_=str(source.id),
-                                fromPort=str(raw_out),
-                                to=str(target.id),
-                                toPort=str(raw_in),
-                                kind=F8EdgeKindEmum.data,
-                                scope=F8EdgeScopeEnum.cross,
-                                strategy=strategy,
-                                queueSize=queue_size,
-                                timeoutMs=timeout_ms,
-                                edgeId=eid,
-                                direction="out",
-                                subject=subj,
-                                peerServiceId=str(meta.get("toServiceId") or meta.get("peerServiceId") or ""),
-                            )
-                        )
+                    edge = F8Edge(
+                        edgeId=_edge_id("data", str(source.id), str(raw_out), str(target.id), str(raw_in)),
+                        fromServiceId=from_sid,
+                        fromOperatorId=str(source.id),
+                        fromPort=str(raw_out),
+                        toServiceId=to_sid,
+                        toOperatorId=str(target.id),
+                        toPort=str(raw_in),
+                        kind=F8EdgeKindEnum.data,
+                        strategy=strategy,
+                        queueSize=queue_size,
+                        timeoutMs=timeout_ms,
+                    )
+                    graph._connect_from_spec(edge)  # type: ignore[attr-defined]
                 except Exception:
                     pass
 
@@ -257,31 +210,29 @@ def export_operator_graph(
                 if raw_in is None:
                     continue
                 try:
-                    scope = _scope_for(source, target, "state", local_side="from")
-                    if target.id in operator_ids:
-                        graph.connect_state(source.id, raw_out, target.id, raw_in, scope=scope)
-                    else:
-                        meta = _call_edge_meta(source, target, "state", "from")
-                        peer_service_id = str(meta.get("peerServiceId") or "")
-                        eid = _edge_id("state", str(source.id), str(raw_out), str(target.id), str(raw_in))
-                        _append_cross(
-                            F8EdgeSpec(
-                                from_=str(source.id),
-                                fromPort=str(raw_out),
-                                to=str(target.id),
-                                toPort=str(raw_in),
-                                kind=F8EdgeKindEmum.state,
-                                scope=F8EdgeScopeEnum.cross,
-                                strategy=F8EdgeStrategyEnum.hold,
-                                edgeId=eid,
-                                direction="out",
-                                peerServiceId=peer_service_id,
-                            )
-                        )
+                    meta = _call_edge_meta(source, target, "state", "from")
+                    sids = _service_ids(meta)
+                    if sids is None:
+                        if target.id not in operator_ids:
+                            continue
+                        sids = (graph.service_id, graph.service_id)
+                    from_sid, to_sid = sids
+                    edge = F8Edge(
+                        edgeId=_edge_id("state", str(source.id), str(raw_out), str(target.id), str(raw_in)),
+                        fromServiceId=from_sid,
+                        fromOperatorId=str(source.id),
+                        fromPort=str(raw_out),
+                        toServiceId=to_sid,
+                        toOperatorId=str(target.id),
+                        toPort=str(raw_in),
+                        kind=F8EdgeKindEnum.state,
+                        strategy=F8EdgeStrategyEnum.latest,
+                    )
+                    graph._connect_from_spec(edge)  # type: ignore[attr-defined]
                 except Exception:
                     pass
 
-    # Incoming cross-instance half-edges (local node is the target side).
+    # Incoming edges where the local node is the target side.
     for target in operator_nodes:
         for raw_in, in_port in target.port_handles.data_in.items():
             for out_port in in_port.connected_ports():
@@ -294,28 +245,26 @@ def export_operator_graph(
                 if raw_out is None:
                     continue
                 try:
-                    scope, strategy, queue_size, timeout_ms = _data_meta_for(source, target, local_side="to")
-                    meta = _call_edge_meta(source, target, "data", "to")
-                    from_sid = str(meta.get("fromServiceId") or meta.get("peerServiceId") or "")
-                    subj = _cross_data_subject(meta, from_node_id=str(source.id), out_port=str(raw_out))
-                    eid = _edge_id("data", str(source.id), str(raw_out), str(target.id), str(raw_in))
-                    _append_cross(
-                        F8EdgeSpec(
-                            from_=str(source.id),
-                            fromPort=str(raw_out),
-                            to=str(target.id),
-                            toPort=str(raw_in),
-                            kind=F8EdgeKindEmum.data,
-                            scope=F8EdgeScopeEnum.cross,
-                            strategy=strategy,
-                            queueSize=queue_size,
-                            timeoutMs=timeout_ms,
-                            edgeId=eid,
-                            direction="in",
-                            subject=subj,
-                            peerServiceId=from_sid,
-                        )
+                    strategy, queue_size, timeout_ms, meta = _data_meta_for(source, target, local_side="to")
+                    sids = _service_ids(meta)
+                    if sids is None:
+                        # If remote service id is unknown, skip exporting this edge.
+                        continue
+                    from_sid, to_sid = sids
+                    edge = F8Edge(
+                        edgeId=_edge_id("data", str(source.id), str(raw_out), str(target.id), str(raw_in)),
+                        fromServiceId=from_sid,
+                        fromOperatorId=str(source.id),
+                        fromPort=str(raw_out),
+                        toServiceId=to_sid,
+                        toOperatorId=str(target.id),
+                        toPort=str(raw_in),
+                        kind=F8EdgeKindEnum.data,
+                        strategy=strategy,
+                        queueSize=queue_size,
+                        timeoutMs=timeout_ms,
                     )
+                    graph._connect_from_spec(edge)  # type: ignore[attr-defined]
                 except Exception:
                     pass
 
@@ -331,22 +280,22 @@ def export_operator_graph(
                     continue
                 try:
                     meta = _call_edge_meta(source, target, "state", "to")
-                    peer_service_id = str(meta.get("peerServiceId") or "")
-                    eid = _edge_id("state", str(source.id), str(raw_out), str(target.id), str(raw_in))
-                    _append_cross(
-                        F8EdgeSpec(
-                            from_=str(source.id),
-                            fromPort=str(raw_out),
-                            to=str(target.id),
-                            toPort=str(raw_in),
-                            kind=F8EdgeKindEmum.state,
-                            scope=F8EdgeScopeEnum.cross,
-                            strategy=F8EdgeStrategyEnum.hold,
-                            edgeId=eid,
-                            direction="in",
-                            peerServiceId=peer_service_id,
-                        )
+                    sids = _service_ids(meta)
+                    if sids is None:
+                        continue
+                    from_sid, to_sid = sids
+                    edge = F8Edge(
+                        edgeId=_edge_id("state", str(source.id), str(raw_out), str(target.id), str(raw_in)),
+                        fromServiceId=from_sid,
+                        fromOperatorId=str(source.id),
+                        fromPort=str(raw_out),
+                        toServiceId=to_sid,
+                        toOperatorId=str(target.id),
+                        toPort=str(raw_in),
+                        kind=F8EdgeKindEnum.state,
+                        strategy=F8EdgeStrategyEnum.latest,
                     )
+                    graph._connect_from_spec(edge)  # type: ignore[attr-defined]
                 except Exception:
                     pass
 

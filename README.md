@@ -15,6 +15,6 @@ Fresh workspace for the API-first, NATS-only architecture. Current focus is cont
 - `scripts` — codegen, lint, local NATS bootstrap helpers.
 
 ## Next steps
-- Fill `api/specs/master.yaml` and `profiles/schema/profile.schema.json` into codegen/validation flow.
+- Hook `api/master.yaml` and `schemas/protocol.yml` into codegen/validation flow.
 - Add scripts to generate TS/C++ stubs from OpenAPI and wrap NATS req/rep.
 - Wire a minimal prototype: Web ping/echo + config apply via NATS in-memory broker.

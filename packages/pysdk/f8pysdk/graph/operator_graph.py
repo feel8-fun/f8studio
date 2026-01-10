@@ -5,9 +5,8 @@ from typing import Any, Protocol
 from ..generated import (
     F8DataPortSpec,
     F8DataTypeSchema,
-    F8EdgeKindEmum,
-    F8EdgeScopeEnum,
-    F8EdgeSpec,
+    F8Edge,
+    F8EdgeKindEnum,
     F8EdgeStrategyEnum,
     F8OperatorSpec,
     F8StateAccess,
@@ -15,6 +14,7 @@ from ..generated import (
 )
 
 from .operator_instance import OperatorInstance
+from ..runtime.nats_naming import new_id, ensure_token
 
 
 class _SpecRegistryLike(Protocol):
@@ -24,11 +24,12 @@ class _SpecRegistryLike(Protocol):
 class OperatorGraph:
     """In-memory graph of operator instances with exec/data/state edges."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, service_id: str) -> None:
+        self.service_id = ensure_token(service_id, label="service_id")
         self.nodes: dict[str, OperatorInstance] = {}
-        self.exec_edges: list[F8EdgeSpec] = []
-        self.data_edges: list[F8EdgeSpec] = []
-        self.state_edges: list[F8EdgeSpec] = []
+        self.exec_edges: list[F8Edge] = []
+        self.data_edges: list[F8Edge] = []
+        self.state_edges: list[F8Edge] = []
 
     # Node management -----------------------------------------------------
     def add_node(self, instance: OperatorInstance) -> None:
@@ -38,9 +39,21 @@ class OperatorGraph:
 
     def remove_node(self, node_id: str) -> None:
         self.nodes.pop(node_id, None)
-        self.exec_edges = [edge for edge in self.exec_edges if edge.from_ != node_id and edge.to != node_id]
-        self.data_edges = [edge for edge in self.data_edges if edge.from_ != node_id and edge.to != node_id]
-        self.state_edges = [edge for edge in self.state_edges if edge.from_ != node_id and edge.to != node_id]
+        self.exec_edges = [
+            edge
+            for edge in self.exec_edges
+            if edge.fromOperatorId != node_id and edge.toOperatorId != node_id
+        ]
+        self.data_edges = [
+            edge
+            for edge in self.data_edges
+            if edge.fromOperatorId != node_id and edge.toOperatorId != node_id
+        ]
+        self.state_edges = [
+            edge
+            for edge in self.state_edges
+            if edge.fromOperatorId != node_id and edge.toOperatorId != node_id
+        ]
 
     # Edge helpers --------------------------------------------------------
     def connect_exec(
@@ -50,25 +63,27 @@ class OperatorGraph:
         target_id: str,
         in_port: str,
         *,
-        scope: F8EdgeScopeEnum = F8EdgeScopeEnum.intra,
-    ) -> F8EdgeSpec:
+        edge_id: str | None = None,
+    ) -> F8Edge:
         self._ensure_node(source_id)
         self._ensure_node(target_id)
         self._validate_exec_port(self.nodes[source_id], out_port, direction="out")
         self._validate_exec_port(self.nodes[target_id], in_port, direction="in")
 
-        if any(edge.from_ == source_id and edge.fromPort == out_port for edge in self.exec_edges):
+        if any(edge.fromOperatorId == source_id and edge.fromPort == out_port for edge in self.exec_edges):
             raise ValueError(f"exec out port {out_port} on {source_id} already has a link")
-        if any(edge.to == target_id and edge.toPort == in_port for edge in self.exec_edges):
+        if any(edge.toOperatorId == target_id and edge.toPort == in_port for edge in self.exec_edges):
             raise ValueError(f"exec in port {in_port} on {target_id} already has a link")
 
-        edge = F8EdgeSpec(
-            from_=source_id,
+        edge = F8Edge(
+            edgeId=edge_id or new_id(),
+            fromServiceId=self.service_id,
+            fromOperatorId=source_id,
             fromPort=out_port,
-            to=target_id,
+            toServiceId=self.service_id,
+            toOperatorId=target_id,
             toPort=in_port,
-            kind=F8EdgeKindEmum.exec,
-            scope=scope,
+            kind=F8EdgeKindEnum.exec,
             strategy=F8EdgeStrategyEnum.latest,
         )
         self.exec_edges.append(edge)
@@ -81,11 +96,11 @@ class OperatorGraph:
         target_id: str,
         in_port: str,
         *,
-        scope: F8EdgeScopeEnum = F8EdgeScopeEnum.intra,
         strategy: F8EdgeStrategyEnum = F8EdgeStrategyEnum.latest,
         queue_size: int | None = None,
         timeout_ms: int | None = None,
-    ) -> F8EdgeSpec:
+        edge_id: str | None = None,
+    ) -> F8Edge:
         self._ensure_node(source_id)
         self._ensure_node(target_id)
         source_port = self._validate_data_port(self.nodes[source_id], out_port, direction="out")
@@ -93,16 +108,18 @@ class OperatorGraph:
 
         if self._schema_type(source_port.valueSchema) != self._schema_type(target_port.valueSchema):
             raise ValueError(f"data port type mismatch: {source_id}.{out_port} -> {target_id}.{in_port}")
-        if any(edge.to == target_id and edge.toPort == in_port for edge in self.data_edges):
+        if any(edge.toOperatorId == target_id and edge.toPort == in_port for edge in self.data_edges):
             raise ValueError(f"data in port {in_port} on {target_id} already has a link")
 
-        edge = F8EdgeSpec(
-            from_=source_id,
+        edge = F8Edge(
+            edgeId=edge_id or new_id(),
+            fromServiceId=self.service_id,
+            fromOperatorId=source_id,
             fromPort=out_port,
-            to=target_id,
+            toServiceId=self.service_id,
+            toOperatorId=target_id,
             toPort=in_port,
-            kind=F8EdgeKindEmum.data,
-            scope=scope,
+            kind=F8EdgeKindEnum.data,
             strategy=strategy,
             queueSize=queue_size,
             timeoutMs=timeout_ms,
@@ -117,8 +134,8 @@ class OperatorGraph:
         target_id: str,
         target_field: str,
         *,
-        scope: F8EdgeScopeEnum = F8EdgeScopeEnum.intra,
-    ) -> F8EdgeSpec:
+        edge_id: str | None = None,
+    ) -> F8Edge:
         self._ensure_node(source_id)
         self._ensure_node(target_id)
         source_def = self._validate_state_field(self.nodes[source_id], source_field)
@@ -126,32 +143,35 @@ class OperatorGraph:
 
         if target_def.access == F8StateAccess.ro:
             raise ValueError(f"target state field {target_field} on {target_id} is read-only")
-        if any(edge.to == target_id and edge.toPort == target_field for edge in self.state_edges):
+        if any(edge.toOperatorId == target_id and edge.toPort == target_field for edge in self.state_edges):
             raise ValueError(f"state field {target_field} on {target_id} already has a link")
 
-        edge = F8EdgeSpec(
-            from_=source_id,
+        edge = F8Edge(
+            edgeId=edge_id or new_id(),
+            fromServiceId=self.service_id,
+            fromOperatorId=source_id,
             fromPort=source_field,
-            to=target_id,
+            toServiceId=self.service_id,
+            toOperatorId=target_id,
             toPort=target_field,
-            kind=F8EdgeKindEmum.state,
-            scope=scope,
+            kind=F8EdgeKindEnum.state,
             strategy=F8EdgeStrategyEnum.latest,
         )
         self.state_edges.append(edge)
         return edge
 
-    def disconnect_edge(self, edge: F8EdgeSpec) -> None:
-        if edge.kind == F8EdgeKindEmum.exec:
+    def disconnect_edge(self, edge: F8Edge) -> None:
+        if edge.kind == F8EdgeKindEnum.exec:
             self.exec_edges = [e for e in self.exec_edges if e != edge]
-        elif edge.kind == F8EdgeKindEmum.data:
+        elif edge.kind == F8EdgeKindEnum.data:
             self.data_edges = [e for e in self.data_edges if e != edge]
-        elif edge.kind == F8EdgeKindEmum.state:
+        elif edge.kind == F8EdgeKindEnum.state:
             self.state_edges = [e for e in self.state_edges if e != edge]
 
     # Serialization -------------------------------------------------------
     def to_dict(self, *, include_ctx: bool = False) -> dict[str, Any]:
         return {
+            "serviceId": self.service_id,
             "nodes": [
                 {
                     "id": node.id,
@@ -170,8 +190,14 @@ class OperatorGraph:
         }
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any], *, registry: _SpecRegistryLike | None = None) -> "OperatorGraph":
-        graph = cls()
+    def from_dict(
+        cls,
+        payload: dict[str, Any],
+        *,
+        service_id: str,
+        registry: _SpecRegistryLike | None = None,
+    ) -> "OperatorGraph":
+        graph = cls(service_id=service_id)
         graph.load_dict(payload, registry=registry)
         return graph
 
@@ -211,74 +237,46 @@ class OperatorGraph:
             self.add_node(instance)
 
         for edge_data in payload.get("edges", []):
-            edge_spec = F8EdgeSpec.model_validate(edge_data)
+            edge_spec = F8Edge.model_validate(edge_data)
             self._connect_from_spec(edge_spec)
 
     # Internal validators -------------------------------------------------
-    def _connect_from_spec(self, edge: F8EdgeSpec) -> None:
-        if edge.scope == F8EdgeScopeEnum.cross:
-            self._accept_cross_half_edge(edge)
-            return
-        if edge.kind == F8EdgeKindEmum.exec:
-            self.connect_exec(edge.from_, edge.fromPort, edge.to, edge.toPort, scope=edge.scope)
-        elif edge.kind == F8EdgeKindEmum.data:
-            self.connect_data(
-                edge.from_,
-                edge.fromPort,
-                edge.to,
-                edge.toPort,
-                scope=edge.scope,
-                strategy=edge.strategy,
-                queue_size=edge.queueSize,
-                timeout_ms=edge.timeoutMs,
-            )
-        elif edge.kind == F8EdgeKindEmum.state:
-            self.connect_state(edge.from_, edge.fromPort, edge.to, edge.toPort, scope=edge.scope)
+    def _connect_from_spec(self, edge: F8Edge) -> None:
+        cross = str(edge.fromServiceId) != str(edge.toServiceId)
 
-    def _accept_cross_half_edge(self, edge: F8EdgeSpec) -> None:
-        """
-        Accept a cross-instance half-edge without requiring the remote endpoint node to exist.
-
-        Export convention:
-        - `direction="out"`: local endpoint is `from_` / `fromPort`.
-        - `direction="in"`: local endpoint is `to` / `toPort`.
-        """
-        d = getattr(edge, "direction", None)
-        if isinstance(d, str):
-            direction = d.strip().lower()
-        else:
-            try:
-                direction = str(getattr(d, "value", "") or "").strip().lower()
-            except Exception:
-                direction = ""
-            if not direction:
-                try:
-                    direction = str(getattr(d, "name", "") or "").strip().lower().rstrip("_")
-                except Exception:
-                    direction = ""
-        if edge.kind == F8EdgeKindEmum.exec:
-            # v1: cross-instance exec not supported.
+        # Exec edges are only supported intra-service in this SDK.
+        if edge.kind == F8EdgeKindEnum.exec and cross:
             return
 
-        if edge.kind == F8EdgeKindEmum.data:
-            if direction == "out":
-                self._ensure_node(edge.from_)
-                self._validate_data_port(self.nodes[edge.from_], edge.fromPort, direction="out")
-            elif direction == "in":
-                self._ensure_node(edge.to)
-                self._validate_data_port(self.nodes[edge.to], edge.toPort, direction="in")
+        if edge.kind == F8EdgeKindEnum.exec:
+            self._ensure_node(str(edge.fromOperatorId))
+            self._ensure_node(str(edge.toOperatorId))
+            self._validate_exec_port(self.nodes[str(edge.fromOperatorId)], str(edge.fromPort), direction="out")
+            self._validate_exec_port(self.nodes[str(edge.toOperatorId)], str(edge.toPort), direction="in")
+            self.exec_edges.append(edge)
+            return
+
+        if edge.kind == F8EdgeKindEnum.data:
+            if str(edge.fromServiceId) == self.service_id and edge.fromOperatorId:
+                self._ensure_node(str(edge.fromOperatorId))
+                self._validate_data_port(self.nodes[str(edge.fromOperatorId)], str(edge.fromPort), direction="out")
+            if str(edge.toServiceId) == self.service_id and edge.toOperatorId:
+                self._ensure_node(str(edge.toOperatorId))
+                self._validate_data_port(self.nodes[str(edge.toOperatorId)], str(edge.toPort), direction="in")
             self.data_edges.append(edge)
             return
 
-        if edge.kind == F8EdgeKindEmum.state:
-            if direction == "out":
-                self._ensure_node(edge.from_)
-                self._validate_state_field(self.nodes[edge.from_], edge.fromPort)
-            elif direction == "in":
-                self._ensure_node(edge.to)
-                target_def = self._validate_state_field(self.nodes[edge.to], edge.toPort)
+        if edge.kind == F8EdgeKindEnum.state:
+            if str(edge.fromServiceId) == self.service_id and edge.fromOperatorId:
+                self._ensure_node(str(edge.fromOperatorId))
+                self._validate_state_field(self.nodes[str(edge.fromOperatorId)], str(edge.fromPort))
+            if str(edge.toServiceId) == self.service_id and edge.toOperatorId:
+                self._ensure_node(str(edge.toOperatorId))
+                target_def = self._validate_state_field(self.nodes[str(edge.toOperatorId)], str(edge.toPort))
                 if target_def.access == F8StateAccess.ro:
-                    raise ValueError(f"target state field {edge.toPort} on {edge.to} is read-only")
+                    raise ValueError(
+                        f"target state field {edge.toPort} on {edge.toOperatorId} is read-only"
+                    )
             self.state_edges.append(edge)
             return
 

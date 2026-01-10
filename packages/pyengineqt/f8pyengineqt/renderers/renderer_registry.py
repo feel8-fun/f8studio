@@ -5,17 +5,17 @@ from .editor_log import EditorLogNode
 type OperatorRenderer = type[GenericNode]
 
 
-class OperatorRendererRegistry:
+class RendererRegistry:
     """Registry for renderer classes keyed by rendererClass."""
 
     @staticmethod
-    def instance() -> "OperatorRendererRegistry":
+    def instance() -> "RendererRegistry":
         """Get the global singleton instance of the registry."""
         global _GLOBAL_RENDERER_REGISTRY
         try:
             return _GLOBAL_RENDERER_REGISTRY
         except NameError:
-            _GLOBAL_RENDERER_REGISTRY = OperatorRendererRegistry()
+            _GLOBAL_RENDERER_REGISTRY = RendererRegistry()
             return _GLOBAL_RENDERER_REGISTRY
 
     def __init__(self) -> None:

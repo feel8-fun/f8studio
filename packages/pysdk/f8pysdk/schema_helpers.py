@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+from enum import Enum
+
 from .generated import (
     F8DataTypeSchema,
     F8PrimitiveTypeEnum,
     F8PrimitiveTypeSchema,
     F8ArrayTypeSchema,
+    F8ArrayTypeKind,
     F8AnyTypeSchema,
+    F8AnyTypeKind,
     F8ComplexObjectTypeSchema,
+    F8ComplexTypeKind,
 )
 
-OPERATOR_KEY_SEP = ":"
+OPERATOR_KEY_SEP = "|"
 
 
 def operator_key(service_class: str, operator_class: str) -> str:
@@ -43,11 +48,15 @@ def split_operator_key(key: str) -> tuple[str, str]:
 
 
 def schema_type(schema: F8DataTypeSchema) -> str:
-    return schema.type
+    inner = schema.root
+    value = inner.type
+    if isinstance(value, Enum):
+        return str(value.value)
+    return str(value)
 
 
 def schema_default(schema: F8DataTypeSchema) -> any:
-    return schema.default
+    return getattr(schema.root, "default", None)
 
 
 def number_schema(
@@ -88,17 +97,17 @@ def boolean_schema(*, default: bool | None = None) -> F8PrimitiveTypeSchema:
 
 def array_schema(
     *,
-    items: F8PrimitiveTypeSchema,
+    items: F8DataTypeSchema,
 ) -> F8ArrayTypeSchema:
     return F8ArrayTypeSchema(
-        type="array",
+        type=F8ArrayTypeKind.array,
         items=items,
     )
 
 
 def any_schema() -> F8AnyTypeSchema:
     return F8AnyTypeSchema(
-        type="any",
+        type=F8AnyTypeKind.any,
     )
 
 
@@ -107,6 +116,6 @@ def complex_object_schema(
     properties: dict[str, F8DataTypeSchema],
 ) -> F8ComplexObjectTypeSchema:
     return F8ComplexObjectTypeSchema(
-        type="object",
+        type=F8ComplexTypeKind.object,
         properties=properties,
     )

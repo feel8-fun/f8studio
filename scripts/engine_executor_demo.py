@@ -9,9 +9,8 @@ import nats  # type: ignore[import-not-found]
 
 from f8pysdk import (
     F8DataPortSpec,
-    F8EdgeKindEmum,
-    F8EdgeScopeEnum,
-    F8EdgeSpec,
+    F8Edge,
+    F8EdgeKindEnum,
     F8EdgeStrategyEnum,
     F8OperatorSpec,
     F8StateAccess,
@@ -45,9 +44,9 @@ async def main() -> None:
     node_add = uuid.uuid4().hex
     node_log = uuid.uuid4().hex
 
-    spec_start = F8OperatorSpec(operatorClass="feel8.sample.start", version="0.0.1", label="Start", execOutPorts=["exec"])
+    spec_start = F8OperatorSpec(operatorClass="f8/start", version="0.0.1", label="Start", execOutPorts=["exec"])
     spec_const = F8OperatorSpec(
-        operatorClass="feel8.sample.constant",
+        operatorClass="f8/constant",
         version="0.0.1",
         label="Constant",
         execInPorts=["exec"],
@@ -58,7 +57,7 @@ async def main() -> None:
         ],
     )
     spec_add = F8OperatorSpec(
-        operatorClass="feel8.sample.add",
+        operatorClass="f8/add",
         version="0.0.1",
         label="Add",
         execInPorts=["exec"],
@@ -66,7 +65,7 @@ async def main() -> None:
         dataOutPorts=[F8DataPortSpec(name="sum", valueSchema=number_schema())],
     )
     spec_log = F8OperatorSpec(
-        operatorClass="feel8.sample.log",
+        operatorClass="f8/log",
         version="0.0.1",
         label="Log",
         dataInPorts=[F8DataPortSpec(name="value", valueSchema=number_schema())],
@@ -97,58 +96,70 @@ async def main() -> None:
             },
         ],
         "edges": [
-            F8EdgeSpec(
-                from_=node_start,
+            F8Edge(
+                edgeId=uuid.uuid4().hex,
+                fromServiceId=service_id,
+                fromOperatorId=node_start,
                 fromPort="exec",
-                to=node_a,
+                toServiceId=service_id,
+                toOperatorId=node_a,
                 toPort="exec",
-                kind=F8EdgeKindEmum.exec,
-                scope=F8EdgeScopeEnum.intra,
+                kind=F8EdgeKindEnum.exec,
                 strategy=F8EdgeStrategyEnum.latest,
             ).model_dump(by_alias=True, mode="json"),
-            F8EdgeSpec(
-                from_=node_a,
+            F8Edge(
+                edgeId=uuid.uuid4().hex,
+                fromServiceId=service_id,
+                fromOperatorId=node_a,
                 fromPort="exec",
-                to=node_b,
+                toServiceId=service_id,
+                toOperatorId=node_b,
                 toPort="exec",
-                kind=F8EdgeKindEmum.exec,
-                scope=F8EdgeScopeEnum.intra,
+                kind=F8EdgeKindEnum.exec,
                 strategy=F8EdgeStrategyEnum.latest,
             ).model_dump(by_alias=True, mode="json"),
-            F8EdgeSpec(
-                from_=node_b,
+            F8Edge(
+                edgeId=uuid.uuid4().hex,
+                fromServiceId=service_id,
+                fromOperatorId=node_b,
                 fromPort="exec",
-                to=node_add,
+                toServiceId=service_id,
+                toOperatorId=node_add,
                 toPort="exec",
-                kind=F8EdgeKindEmum.exec,
-                scope=F8EdgeScopeEnum.intra,
+                kind=F8EdgeKindEnum.exec,
                 strategy=F8EdgeStrategyEnum.latest,
             ).model_dump(by_alias=True, mode="json"),
-            F8EdgeSpec(
-                from_=node_a,
+            F8Edge(
+                edgeId=uuid.uuid4().hex,
+                fromServiceId=service_id,
+                fromOperatorId=node_a,
                 fromPort="value",
-                to=node_add,
+                toServiceId=service_id,
+                toOperatorId=node_add,
                 toPort="a",
-                kind=F8EdgeKindEmum.data,
-                scope=F8EdgeScopeEnum.intra,
+                kind=F8EdgeKindEnum.data,
                 strategy=F8EdgeStrategyEnum.latest,
             ).model_dump(by_alias=True, mode="json"),
-            F8EdgeSpec(
-                from_=node_b,
+            F8Edge(
+                edgeId=uuid.uuid4().hex,
+                fromServiceId=service_id,
+                fromOperatorId=node_b,
                 fromPort="value",
-                to=node_add,
+                toServiceId=service_id,
+                toOperatorId=node_add,
                 toPort="b",
-                kind=F8EdgeKindEmum.data,
-                scope=F8EdgeScopeEnum.intra,
+                kind=F8EdgeKindEnum.data,
                 strategy=F8EdgeStrategyEnum.latest,
             ).model_dump(by_alias=True, mode="json"),
-            F8EdgeSpec(
-                from_=node_add,
+            F8Edge(
+                edgeId=uuid.uuid4().hex,
+                fromServiceId=service_id,
+                fromOperatorId=node_add,
                 fromPort="sum",
-                to=node_log,
+                toServiceId=service_id,
+                toOperatorId=node_log,
                 toPort="value",
-                kind=F8EdgeKindEmum.data,
-                scope=F8EdgeScopeEnum.intra,
+                kind=F8EdgeKindEnum.data,
                 strategy=F8EdgeStrategyEnum.latest,
             ).model_dump(by_alias=True, mode="json"),
         ],
@@ -179,4 +190,3 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-

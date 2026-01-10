@@ -1,0 +1,9 @@
+schemaVersion: f8serviceEntry/1
+serviceClass: f8/studio
+label: Editor
+version: 0.0.1
+launch:
+  command: uv
+  args: ["run", "python", "-m", "f8pyengineqt.main"]
+  env: {}
+  workdir: "../../../"

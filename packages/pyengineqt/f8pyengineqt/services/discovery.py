@@ -7,6 +7,7 @@ from typing import Any, Iterable
 import yaml
 
 from f8pysdk import F8OperatorSpec, F8ServiceSpec
+from .service_entry import F8ServiceDescribeEntry, F8ServiceDescribeEntryLaunch
 
 
 @dataclass(frozen=True)
@@ -36,17 +37,27 @@ def find_service_dirs(roots: Iterable[Path]) -> list[Path]:
     Discovery structure:
       <root>/<serviceClass>/service.yml
       <root>/<serviceClass>/operators.yml   (optional)
+
+    Note:
+    - `serviceClass` is slash-separated (eg. `f8/engine`), so services may live
+      in nested directories like `<root>/f8/engine/service.yml`.
     """
     found: list[Path] = []
     for root in roots:
         r = Path(root)
         if not r.exists() or not r.is_dir():
             continue
-        for child in sorted(r.iterdir()):
-            if not child.is_dir():
-                continue
-            if (child / "service.yml").is_file():
-                found.append(child)
+        try:
+            for svc_file in sorted(r.rglob("service.yml")):
+                if svc_file.is_file():
+                    found.append(svc_file.parent)
+        except Exception:
+            # Fallback to the immediate children layout.
+            for child in sorted(r.iterdir()):
+                if not child.is_dir():
+                    continue
+                if (child / "service.yml").is_file():
+                    found.append(child)
     return found
 
 
@@ -58,6 +69,37 @@ def load_service_spec(service_dir: Path) -> F8ServiceSpec:
         return F8ServiceSpec.model_validate(data)
     except Exception as exc:
         raise DiscoveryError(f"Invalid service.yml in {service_dir}: {exc}") from exc
+
+
+def load_service_entry(service_dir: Path) -> F8ServiceDescribeEntry:
+    """
+    Load a minimal discovery entry from `service.yml`.
+
+    Supported forms:
+    - `schemaVersion: f8serviceEntry/1` + `launch: {...}`
+    - shorthand: `command: ...` + optional `args/env/workdir` (will be mapped into `launch`)
+    """
+    data = _read_yaml(Path(service_dir) / "service.yml")
+    if not isinstance(data, dict):
+        raise DiscoveryError(f"{service_dir}/service.yml must be a YAML mapping")
+
+    # Shorthand mapping.
+    if "launch" not in data and "command" in data:
+        launch = F8ServiceDescribeEntryLaunch.model_validate(
+            {
+                "command": data.get("command"),
+                "args": data.get("args") or [],
+                "env": data.get("env") or {},
+                "workdir": data.get("workdir") or "./",
+            }
+        )
+        data = dict(data)
+        data["launch"] = launch.model_dump(mode="json")
+
+    try:
+        return F8ServiceDescribeEntry.model_validate(data)
+    except Exception as exc:
+        raise DiscoveryError(f"Invalid service entry in {service_dir}: {exc}") from exc
 
 
 def load_operator_specs(service_dir: Path, *, service_class: str) -> list[F8OperatorSpec]:
@@ -110,4 +152,3 @@ def load_operator_specs(service_dir: Path, *, service_class: str) -> list[F8Oper
     except Exception:
         pass
     return specs
-

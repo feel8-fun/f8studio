@@ -46,10 +46,10 @@ class OperatorRuntimeRegistry:
             importlib.import_module(name)
 
     def _seed_defaults(self) -> None:
-        self.register("feel8.sample.start", lambda node_id, ctx: StartNode(node_id=node_id, ctx=ctx), overwrite=True)
-        self.register("feel8.sample.constant", lambda node_id, ctx: ConstantNode(node_id=node_id, ctx=ctx), overwrite=True)
-        self.register("feel8.sample.add", lambda node_id, ctx: AddNode(node_id=node_id, ctx=ctx), overwrite=True)
-        self.register("feel8.sample.log", lambda node_id, ctx: LogNode(node_id=node_id, ctx=ctx), overwrite=True)
+        self.register("f8/start", lambda node_id, ctx: StartNode(node_id=node_id, ctx=ctx), overwrite=True)
+        self.register("f8/constant", lambda node_id, ctx: ConstantNode(node_id=node_id, ctx=ctx), overwrite=True)
+        self.register("f8/add", lambda node_id, ctx: AddNode(node_id=node_id, ctx=ctx), overwrite=True)
+        self.register("f8/log", lambda node_id, ctx: LogNode(node_id=node_id, ctx=ctx), overwrite=True)
 
     def register(self, operator_class: str, factory: Factory, *, overwrite: bool = False) -> None:
         if operator_class in self._factories and not overwrite:

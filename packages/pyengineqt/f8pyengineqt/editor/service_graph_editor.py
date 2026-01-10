@@ -12,13 +12,12 @@ from .engine_manager import EngineManager
 from .f8_node_viewer import F8NodeViewer
 from .operator_graph_export import export_operator_graph
 from .spec_node_class_registry import SpecNodeClassRegistry
-from ..operators.operator_registry import OperatorSpecRegistry
-from ..renderers.renderer_registry import OperatorRendererRegistry
-from ..services.builtin import ENGINE_SERVICE_CLASS, EDITOR_SERVICE_CLASS, editor_service_spec, engine_service_spec
+from ..renderers.renderer_registry import RendererRegistry
+from ..services.builtin import ENGINE_SERVICE_CLASS, EDITOR_SERVICE_CLASS
 from ..services.service_registry import ServiceSpecRegistry
 from ..services.discovery_loader import load_discovery_into_registries
 from ..renderers.service_engine import EngineServiceNode
-from f8pysdk import F8EdgeScopeEnum, F8EdgeStrategyEnum
+from f8pysdk import F8EdgeStrategyEnum
 from .service_process_manager import ServiceProcessConfig, ServiceProcessManager
 
 BASE_PATH = Path(__file__).parent
@@ -53,10 +52,7 @@ class ServiceGraphEditor:
         hotkey_path = BASE_PATH / "hotkeys" / "hotkeys.json"
         self.node_graph.set_context_menu_from_file(str(hotkey_path), "graph")
 
-        OperatorSpecRegistry.instance()
-        OperatorRendererRegistry.instance()
-        ServiceSpecRegistry.instance().register(engine_service_spec(), overwrite=True)
-        ServiceSpecRegistry.instance().register(editor_service_spec(), overwrite=True)
+        RendererRegistry.instance()
         load_discovery_into_registries()
 
         # Root palette supports both service nodes and operator nodes (operators are typically created inside engines).
@@ -342,23 +338,12 @@ class ServiceGraphEditor:
         def _edge_meta(src: GenericNode, dst: GenericNode, kind: str, local_side: str | None = None) -> dict[str, Any]:
             a_sid = self._service_id_for_node(src)
             b_sid = self._service_id_for_node(dst)
-            scope = (
-                F8EdgeScopeEnum.intra
-                if (a_sid and b_sid and a_sid == b_sid)
-                else F8EdgeScopeEnum.cross
-            )
-            meta: dict[str, Any] = {"scope": scope}
-            if scope == F8EdgeScopeEnum.cross:
-                meta["fromServiceId"] = a_sid
-                meta["toServiceId"] = b_sid
-                if local_side == "from":
-                    meta["peerServiceId"] = b_sid
-                elif local_side == "to":
-                    meta["peerServiceId"] = a_sid
-            if kind == "data" and scope == F8EdgeScopeEnum.cross:
-                # If the receiver is an editor-ui node, default to repeat so GUI polling doesn't see intermittent None.
+            meta: dict[str, Any] = {"fromServiceId": a_sid, "toServiceId": b_sid}
+            cross = bool(a_sid and b_sid and a_sid != b_sid)
+            if kind == "data" and cross:
+                # If the receiver is an editor-ui node, default to queue so GUI polling doesn't see intermittent None.
                 if self._is_editor_node(dst):
-                    meta["strategy"] = F8EdgeStrategyEnum.repeat
+                    meta["strategy"] = F8EdgeStrategyEnum.queue
                     meta["timeoutMs"] = 2500
                     meta["queueSize"] = 64
                 else:
@@ -628,25 +613,23 @@ class ServiceGraphEditor:
         Export a full operator graph snapshot for the service graph.
 
         Edges are annotated with:
-        - `scope=intra` if both endpoints are within the same engine backdrop.
-        - `scope=cross` otherwise (cross-instance), with data edges defaulting to `strategy=latest`.
+        - cross-service edges if `fromServiceId != toServiceId`
+        - data edges default to `strategy=latest` (or `queue` for editor pull nodes)
         """
 
         def _edge_meta(src: GenericNode, dst: GenericNode, kind: str, _local_side: str | None = None) -> dict[str, Any]:
             a_sid = self._service_id_for_node(src)
             b_sid = self._service_id_for_node(dst)
-            scope = (
-                F8EdgeScopeEnum.intra
-                if (a_sid and b_sid and a_sid == b_sid)
-                else F8EdgeScopeEnum.cross
-            )
-            if kind == "data" and scope == F8EdgeScopeEnum.cross:
+            meta: dict[str, Any] = {"fromServiceId": a_sid, "toServiceId": b_sid}
+            cross = bool(a_sid and b_sid and a_sid != b_sid)
+            if kind == "data" and cross:
                 if self._is_editor_node(dst):
-                    return {"scope": scope, "strategy": F8EdgeStrategyEnum.repeat}
-                return {"scope": scope, "strategy": F8EdgeStrategyEnum.latest}
-            return {"scope": scope}
+                    meta["strategy"] = F8EdgeStrategyEnum.queue
+                else:
+                    meta["strategy"] = F8EdgeStrategyEnum.latest
+            return meta
 
-        return export_operator_graph(self.node_graph, edge_meta=_edge_meta)
+        return export_operator_graph(self.node_graph, service_id=EDITOR_SERVICE_ID, edge_meta=_edge_meta)
 
     def _ensure_editor_manager(self) -> None:
         if self._editor_mgr is not None:
@@ -658,12 +641,10 @@ class ServiceGraphEditor:
         def _edge_meta(src: GenericNode, dst: GenericNode, kind: str, local_side: str | None = None) -> dict[str, Any]:
             a_sid = self._service_id_for_node(src)
             b_sid = self._service_id_for_node(dst)
-            scope = F8EdgeScopeEnum.intra if (a_sid and b_sid and a_sid == b_sid) else F8EdgeScopeEnum.cross
-            meta: dict[str, Any] = {"scope": scope, "fromServiceId": a_sid, "toServiceId": b_sid}
-            if scope == F8EdgeScopeEnum.cross:
-                meta["peerServiceId"] = b_sid if local_side == "from" else a_sid
-            if kind == "data" and scope == F8EdgeScopeEnum.cross and self._is_editor_node(dst):
-                meta["strategy"] = F8EdgeStrategyEnum.repeat
+            meta: dict[str, Any] = {"fromServiceId": a_sid, "toServiceId": b_sid}
+            cross = bool(a_sid and b_sid and a_sid != b_sid)
+            if kind == "data" and cross and self._is_editor_node(dst):
+                meta["strategy"] = F8EdgeStrategyEnum.queue
                 meta["timeoutMs"] = 2500
                 meta["queueSize"] = 64
             return meta

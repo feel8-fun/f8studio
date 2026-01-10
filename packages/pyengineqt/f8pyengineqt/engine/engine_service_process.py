@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import argparse
 import asyncio
 import os
 import json
 import uuid
 from dataclasses import dataclass
 from typing import Any
+import sys
 
 from .nats_naming import ensure_token, kv_bucket_for_service
 from .engine_executor import EngineExecutor
@@ -86,7 +88,7 @@ def _env_or(default: str, key: str) -> str:
     return v.strip() if v and v.strip() else default
 
 
-async def main() -> None:
+async def run_service() -> None:
     service_id = _env_or(uuid.uuid4().hex, "F8_SERVICE_ID")
     nats_url = _env_or("nats://127.0.0.1:4222", "F8_NATS_URL")
     bucket = os.environ.get("F8_NATS_BUCKET")
@@ -110,5 +112,21 @@ async def main() -> None:
     await proc.run()
 
 
+def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    parser = argparse.ArgumentParser(add_help=True)
+    parser.add_argument("--describe", action="store_true")
+    args, _unknown = parser.parse_known_args(argv)
+
+    if args.describe:
+        from .describe import describe_payload_json
+
+        print(json.dumps(describe_payload_json(), ensure_ascii=False))
+        return 0
+
+    asyncio.run(run_service())
+    return 0
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    raise SystemExit(main())

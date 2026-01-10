@@ -6,16 +6,16 @@ from NodeGraphQt import BaseNode, NodeGraph
 
 from ..graph.operator_graph import OperatorGraph
 from ..graph.operator_instance import OperatorInstance
-from ..operators.operator_registry import OperatorSpecRegistry
 from ..renderers.generic import GenericNode
-from ..renderers.renderer_registry import OperatorRendererRegistry
+from ..renderers.renderer_registry import RendererRegistry
 from ..schema.compat import schema_is_superset, schema_signature
 from .spec_node_class_registry import SpecNodeClassRegistry
 from f8pysdk import F8OperatorSpec, F8PrimitiveTypeEnum
 from .f8_node_viewer import F8NodeViewer
 from .engine_manager import EngineManager
 from ..services.service_registry import ServiceSpecRegistry
-from ..services.builtin import engine_service_spec
+from ..services.discovery_loader import load_discovery_into_registries
+from ..services.service_operator_registry import ServiceOperatorSpecRegistry
 
 from pathlib import Path
 
@@ -38,9 +38,8 @@ class OperatorGraphEditor:
         self.node_graph.set_context_menu_from_file(str(hotkey_path), "graph")
 
         # Ensure singletons are initialized so the spec node registry can use them.
-        OperatorSpecRegistry.instance()
-        OperatorRendererRegistry.instance()
-        ServiceSpecRegistry.instance().register(engine_service_spec(), overwrite=True)
+        RendererRegistry.instance()
+        load_discovery_into_registries()
 
         self.node_graph._node_factory.clear_registered_nodes()
         SpecNodeClassRegistry.instance().apply(self.node_graph)
@@ -118,7 +117,8 @@ class OperatorGraphEditor:
 
         This is a one-way conversion for deployment/execution.
         """
-        graph = OperatorGraph()
+        service_id = getattr(self.engine, "_service_id", None) or "editor"
+        graph = OperatorGraph(service_id=str(service_id))
 
         for node in self.operator_nodes():
             state: dict[str, Any] = {}
@@ -127,7 +127,7 @@ class OperatorGraphEditor:
                 try:
                     from f8pysdk import operator_key
 
-                    spec = OperatorSpecRegistry.instance().get(operator_key(spec.serviceClass, spec.operatorClass))
+                    spec = ServiceOperatorSpecRegistry.instance().get(operator_key(spec.serviceClass, spec.operatorClass))
                 except Exception:
                     continue
 

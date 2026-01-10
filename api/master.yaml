@@ -302,4 +302,4 @@ components:
                   type: string
               required: [status]
     ServiceManifest:
-      $ref: "../schemas/service.schema.json"
+      $ref: "../schemas/protocol.yml#/components/schemas/F8ServiceSpec"

@@ -4,7 +4,7 @@
 - Ports: operators use `dataInPorts`/`dataOutPorts` plus `execInPorts`/`execOutPorts`; services use their data port naming. Data vs state vs exec ports are rendered distinctly and cannot be cross-connected.
 - Edge creation:
   - Auto-promote operator->external links across container boundaries by synthesizing container ports and half-edges; nested containers follow the same rule.
-  - Edge metadata follows `schemas/edge.schema.json`: `kind` (`data|state|exec`), `scope` (`intra|cross`), optional rate strategy/queue/timeout (only for cross data edges).
+  - Edge metadata follows `schemas/protocol.yml#/components/schemas/F8Edge`: `kind` (`data|state|exec`), optional rate strategy/queue/timeout (only for cross-service data edges).
   - On connect, enforce compatibility:
     - `any` on either end => compatible.
     - State bus: types must match exactly (aside from `any`).
@@ -12,10 +12,10 @@
     - Exec edges: only between exec pins; single incoming link per `execInPort`.
 - Rate mismatch UI for cross-instance data edges:
   - Strategy select (`latest`, `average`, `hold`, `repeat`, `interpolate`), optional queue size, timeout.
-  - Only shown when `kind=data` and `scope=cross`; hide for state/intra edges; warn if average/interpolate on non-numeric types.
+  - Only shown for cross-service data edges (`kind=data` and `fromServiceId != toServiceId`); hide for state/intra edges.
   - Defaults: strategy=`latest`, queueSize=64, `drop-old` on for cross-instance edges; timeout optional.
 - Persistence/export:
-  - Save edges with kind/scope/strategy/queue/timeout per `edge.schema.json` (exec edges use `kind=exec` and `scope=intra|cross`).
+  - Save edges per `schemas/protocol.yml#/components/schemas/F8Edge` (cross-service is determined by `fromServiceId != toServiceId`).
   - Persist added ports/commands per node; operator manifests use `dataInPorts`/`dataOutPorts`/`execInPorts`/`execOutPorts`, service manifests use their port naming.
 - At export/split time, generate half-edges and subjects (`f8.bus.<edgeId>` for data) plus bucket/key mappings for cross-instance state (KV watch), and carry strategy metadata for cross data edges.
 - Validation UX:
@@ -51,7 +51,7 @@
 ## Properties Inspector behavior
 - Supports ServiceNode, OperatorNode, Edge, and canvas background (Web Engine).
 - Editable fields (access=rw) commit on Enter/blur, not per keystroke; commits send updates to master.
-- Edge inspector shows kind/scope/strategy, queue, timeout (per edge schema).
+- Edge inspector shows kind/strategy, queue, timeout (per edge schema).
 - Background selected -> show Web Engine properties.
 
 ## Containment rules

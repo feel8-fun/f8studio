@@ -1,0 +1,611 @@
+openapi: "3.1.0"
+info:
+  title: Feel8 Schemas
+  version: 1.0.0
+  description: Single OpenAPI spec for multi-language model codegen and schema validation.
+
+paths:
+  /describe:
+    get:
+      summary: Describe service/operator/edge schemas
+      responses:
+        "200":
+          description: OK
+
+components:
+  schemas:
+    F8JsonValue:
+      description: Any JSON value.
+      oneOf:
+        - type: string
+        - type: number
+        - type: integer
+        - type: boolean
+        - type: object
+          additionalProperties: true
+        - type: array
+          items: {}
+        - type: "null"
+    F8StateSpec:
+      title: F8StateSpec
+      type: object
+      properties:
+        name:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+        valueSchema:
+          $ref: "#/components/schemas/F8DataTypeSchema"
+        access:
+          title: F8StateAccess
+          type: string
+          enum:
+            - rw
+            - ro
+            - wo
+            - init
+          description: rw=mutable, ro=read-only, wo=write-only (no fanout), init=immutable in activation
+        required:
+          type: boolean
+          default: false
+          description: If true, this state must be provided
+        uiControl:
+          type: string
+          description: Optional UI hint (slider, spinbox, select, etc.)
+        uiLanguage:
+          type: string
+          description: Optional language hint for code editors (e.g., javascript, typescript)
+        showOnNode:
+          type: boolean
+          default: false
+          description: If true, render this control inline on the node body; otherwise only in the inspector
+      required:
+        - name
+        - valueSchema
+        - access
+      additionalProperties: false
+    F8DataPortSpec:
+      title: F8DataPortSpec
+      type: object
+      properties:
+        name:
+          type: string
+        valueSchema:
+          $ref: "#/components/schemas/F8DataTypeSchema"
+        description:
+          type: string
+        required:
+          type: boolean
+          default: true
+          description: Whether the port must be connected/provided
+      required:
+        - name
+        - valueSchema
+      additionalProperties: false
+    F8Command:
+      title: F8Command
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        params:
+          type: array
+          items:
+            $ref: "#/components/schemas/F8CommandParam"
+          default: []
+      required:
+        - name
+      additionalProperties: false
+    F8CommandParam:
+      title: F8CommandParam
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        valueSchema:
+          $ref: "#/components/schemas/F8DataTypeSchema"
+        required:
+          type: boolean
+          default: false
+        uiControl:
+          type: string
+          description: Optional UI hint (slider, select, etc.)
+      required:
+        - name
+        - valueSchema
+      additionalProperties: false
+    F8DataTypeSchemaCommonMetadata:
+      title: F8DataTypeSchemaCommonMetadata
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        default: {}
+        examples:
+          type: array
+          items: {}
+        $comment:
+          type: string
+    F8PrimitiveTypeSchema:
+      title: F8PrimitiveTypeSchema
+      allOf:
+        - $ref: "#/components/schemas/F8DataTypeSchemaCommonMetadata"
+        - type: object
+          properties:
+            type:
+              title: F8PrimitiveTypeEnum
+              type: string
+              enum:
+                - string
+                - number
+                - integer
+                - boolean
+                - "null"
+            enum:
+              type: array
+              items: {}
+            minimum:
+              type: number
+              description: Optional lower bound for numeric types
+            maximum:
+              type: number
+              description: Optional upper bound for numeric types
+            exclusiveMinimum:
+              type: number
+              description: Exclusive lower bound for numeric types
+            exclusiveMaximum:
+              type: number
+              description: Exclusive upper bound for numeric types
+            multipleOf:
+              type: number
+              exclusiveMinimum: 0
+              description: Optional step/increment (e.g., for sliders or spinboxes)
+          required:
+            - type
+          additionalProperties: false
+    F8ComplexObjectTypeSchema:
+      title: F8ComplexObjectTypeSchema
+      allOf:
+        - $ref: "#/components/schemas/F8DataTypeSchemaCommonMetadata"
+        - type: object
+          properties:
+            type:
+              title: F8ComplexTypeKind
+              type: string
+              enum:
+                - object
+            properties:
+              type: object
+              additionalProperties:
+                $ref: "#/components/schemas/F8DataTypeSchema"
+            required:
+              type: array
+              items:
+                type: string
+            additionalProperties:
+              type: boolean
+          required:
+            - type
+            - properties
+          additionalProperties: false
+    F8ArrayTypeSchema:
+      title: F8ArrayTypeSchema
+      allOf:
+        - $ref: "#/components/schemas/F8DataTypeSchemaCommonMetadata"
+        - type: object
+          properties:
+            type:
+              title: F8ArrayTypeKind
+              type: string
+              enum:
+                - array
+            items:
+              $ref: "#/components/schemas/F8DataTypeSchema"
+          required:
+            - type
+            - items
+          additionalProperties: false
+    F8AnyTypeSchema:
+      title: F8AnyTypeSchema
+      description: Wildcard type that accepts any value
+      allOf:
+        - $ref: "#/components/schemas/F8DataTypeSchemaCommonMetadata"
+        - type: object
+          properties:
+            type:
+              title: F8AnyTypeKind
+              type: string
+              enum:
+                - any
+          required:
+            - type
+          additionalProperties: false
+    F8DataTypeSchema:
+      description:
+        A strict JSON Schema subset for data flow systems, supporting primitive types, objects,
+        arrays, and a wildcard type.
+      oneOf:
+        - $ref: "#/components/schemas/F8PrimitiveTypeSchema"
+        - $ref: "#/components/schemas/F8ComplexObjectTypeSchema"
+        - $ref: "#/components/schemas/F8ArrayTypeSchema"
+        - $ref: "#/components/schemas/F8AnyTypeSchema"
+    F8ServiceSpec:
+      title: F8ServiceSpec
+      type: object
+      properties:
+        schemaVersion:
+          title: F8ServiceSchemaVersion
+          type: string
+          enum:
+            - f8service/1
+        serviceClass:
+          type: string
+          description: Slash-separated id, e.g., f8/engine. Avoid dots to keep NodeGraphQt palettes stable.
+          pattern: ^[a-z0-9]+(/[a-z0-9]+)+$
+        rendererClass:
+          type: string
+          default: defaultService
+          description: Optional custom UI renderer key for the node (e.g., realtimePlot, 3dViewer)
+        rendererProps:
+          type: object
+          default: {}
+          description: Optional renderer-specific configuration for the custom node UI
+          additionalProperties: true
+        version:
+          type: string
+          description: SemVer of the service profile
+          default: 0.0.0
+          pattern: ^[0-9]+\.[0-9]+\.[0-9]+$
+        label:
+          type: string
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+          default: []
+        states:
+          type: array
+          items:
+            $ref: "#/components/schemas/F8StateSpec"
+          description: Static state model; keys become state manager entries
+        editableStates:
+          type: boolean
+          default: false
+          description: Allow dynamic user-added state entries
+        commands:
+          type: array
+          items:
+            $ref: "#/components/schemas/F8Command"
+          default: []
+        editableCommands:
+          type: boolean
+          default: false
+          description: Allow dynamic addition of commands beyond the declared list.
+        dataInPorts:
+          type: array
+          description: Data bus inputs exposed by this service (for cross-instance data pub/sub).
+          items:
+            $ref: "#/components/schemas/F8DataPortSpec"
+          default: []
+        dataOutPorts:
+          type: array
+          description: Data bus outputs exposed by this service.
+          items:
+            $ref: "#/components/schemas/F8DataPortSpec"
+          default: []
+        editableDataInPorts:
+          type: boolean
+          default: false
+          description: Allow dynamic addition of data input ports.
+        editableDataOutPorts:
+          type: boolean
+          default: false
+          description: Allow dynamic addition of data output ports.
+      required:
+        - serviceClass
+        - label
+      additionalProperties: true
+
+    F8OperatorSpec:
+      title: F8OperatorSpec
+      type: object
+      properties:
+        schemaVersion:
+          title: F8OperatorSchemaVersion
+          type: string
+          enum:
+            - f8operator/1
+        operatorClass:
+          type: string
+          description:
+            Operator id within a service (not globally unique). Slash-separated path segments.
+            Uniqueness is determined by (serviceClass, operatorClass).
+          pattern: ^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$
+        serviceClass:
+          type: string
+          description:
+            Slash-separated id for the backend service this operator belongs to (e.g., f8/engine).
+            Avoid dots to keep NodeGraphQt palettes stable.
+          pattern: ^[a-z0-9]+(/[a-z0-9]+)+$
+        rendererClass:
+          type: string
+          default: defaultOperator
+          description: Optional custom UI renderer key for this operator node (e.g., realtimePlot, 3dViewer)
+        rendererProps:
+          type: object
+          default: {}
+          description: Optional renderer-specific configuration for the custom node UI
+          additionalProperties: true
+        version:
+          type: string
+          description: SemVer of the operator profile
+          default: 0.0.0
+          pattern: ^[0-9]+\.[0-9]+\.[0-9]+$
+        label:
+          type: string
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+          default: []
+        states:
+          type: array
+          items:
+            $ref: "#/components/schemas/F8StateSpec"
+          default: []
+        editableStates:
+          type: boolean
+          default: false
+        commands:
+          type: array
+          description: Optional RPC-style commands the node can invoke (e.g., refresh/connect/disconnect)
+          items:
+            $ref: "#/components/schemas/F8Command"
+          default: []
+        editableCommands:
+          type: boolean
+          default: false
+          description: Allow dynamic addition of commands beyond the declared list.
+        execInPorts:
+          type: array
+          description:
+            Execution inputs (can be empty for entry/pull-only nodes). Each execIn port may
+            have only one incoming exec link.
+          items:
+            type: string
+          default: []
+        execOutPorts:
+          type: array
+          description:
+            Execution outputs (can be empty for terminal/pull-only nodes). Operator logic decides
+            which execOut to trigger.
+          items:
+            type: string
+          default: []
+        editableExecInPorts:
+          type: boolean
+          default: false
+        editableExecOutPorts:
+          type: boolean
+          default: false
+        dataInPorts:
+          type: array
+          description: Data input ports (can be empty).
+          items:
+            $ref: "#/components/schemas/F8DataPortSpec"
+          default: []
+        dataOutPorts:
+          type: array
+          description: Data output ports (can be empty).
+          items:
+            $ref: "#/components/schemas/F8DataPortSpec"
+          default: []
+        editableDataInPorts:
+          type: boolean
+          default: false
+          description: Allow dynamic addition of data input ports.
+        editableDataOutPorts:
+          type: boolean
+          default: false
+          description: Allow dynamic addition of data output ports.
+      required:
+        - serviceClass
+        - operatorClass
+        - label
+      additionalProperties: true
+
+    F8Edge:
+      title: F8Edge
+      type: object
+      properties:
+        edgeId:
+          type: string
+          description: Stable id for an edge; must be unique within a graph.
+        fromServiceId:
+          type: string
+          description: Source service id
+        fromOperatorId:
+          type: string
+          description: Source operator id
+        fromPort:
+          type: string
+          description: Source port name
+        toServiceId:
+          type: string
+          description: Target service id
+        toOperatorId:
+          type: string
+          description: Target operator id
+        toPort:
+          type: string
+          description: Target port name
+        kind:
+          title: F8EdgeKindEnum
+          type: string
+          enum: [data, state, exec]
+          description: "Edge kind: data bus, state bus, or execution flow"
+        strategy:
+          title: F8EdgeStrategyEnum
+          type: string
+          description: Rate-mismatch handling strategy (only relevant for cross-instance data edges)
+          enum:
+            - latest
+            - queue
+          default: latest
+        queueSize:
+          type: integer
+          minimum: 1
+          description: Optional max queue size for this edge (data)
+        timeoutMs:
+          type: integer
+          minimum: 0
+          description: Optional staleness timeout; drop-old beyond this age (data)
+        direction:
+          title: F8EdgeDirection
+          type: string
+          enum: [out, in]
+          description:
+            "For cross-instance half-edges, indicates the local side: out=local is source/from,
+            in=local is target/to"
+      required:
+        - edgeId
+        - fromServiceId
+        - fromPort
+        - toServiceId
+        - toPort
+        - kind
+      additionalProperties: true
+
+    F8ServiceEntry:
+      title: F8ServiceEntry
+      type: object
+      description:
+        Discovery entry stored in services/*/service.yml. Used by Studio to locate a service
+        entrypoint and query full specs via `--describe`.
+      properties:
+        schemaVersion:
+          title: F8ServiceEntrySchemaVersion
+          type: string
+          enum:
+            - f8serviceEntry/1
+        serviceClass:
+          type: string
+          description:
+            Recommended stable id for caching and graph persistence. If omitted, the `--describe`
+            output must provide service.serviceClass.
+        label:
+          type: string
+          description: Optional short display name (fallback until `--describe` is available).
+        version:
+          type: string
+          description: Optional SemVer hint (fallback until `--describe` is available).
+        launch:
+          $ref: "#/components/schemas/F8ServiceLaunchSpec"
+        describeArgs:
+          type: array
+          items:
+            type: string
+          default:
+            - --describe
+          description: CLI args appended to launch for fetching specs.
+        timeoutMs:
+          type: integer
+          default: 4000
+          minimum: 100
+          description: Describe subprocess timeout.
+      required:
+        - launch
+      additionalProperties: true
+
+    F8ServiceLaunchSpec:
+      title: F8ServiceLaunchSpec
+      type: object
+      properties:
+        command:
+          type: string
+          description: Executable path or name
+        args:
+          type: array
+          items:
+            type: string
+          default: []
+        env:
+          type: object
+          default: {}
+          additionalProperties:
+            type: string
+        workdir:
+          type: string
+          default: ./
+      required:
+        - command
+      additionalProperties: false
+
+    F8RpcError:
+      title: F8RpcError
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          description: Optional structured details (free-form JSON).
+          $ref: "#/components/schemas/F8JsonValue"
+      required: [code, message]
+      additionalProperties: false
+
+    F8RuntimeNode:
+      title: F8RuntimeNode
+      type: object
+      properties:
+        nodeId:
+          type: string
+        serviceClass:
+          type: string
+          description: Service class of the node, required for all nodes.
+        operatorClass:
+          type: string
+          description: Optional operator class for operator nodes; omitted for service nodes.
+        stateValues:
+          type: object
+          description: Map of state name -> value for this node's states.
+          additionalProperties:
+            $ref: "#/components/schemas/F8JsonValue"
+      required: [nodeId, serviceClass]
+      additionalProperties: false
+
+    F8RuntimeGraph:
+      title: F8RuntimeGraph
+      type: object
+      description: Compiled graph artifact deployed to engines.
+      properties:
+        graphId:
+          type: string
+        revision:
+          type: string
+          description: Compiler output revision/etag.
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/F8RuntimeNode"
+          default: []
+        edges:
+          type: array
+          items:
+            $ref: "#/components/schemas/F8Edge"
+          default: []
+      required: [graphId, revision]
+      additionalProperties: false

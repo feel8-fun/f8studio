@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 from collections.abc import Awaitable, Callable
 
-from ..generated import F8EdgeScopeEnum, F8EdgeStrategyEnum
+from ..generated import F8EdgeKindEnum, F8EdgeStrategyEnum
 
 from ..graph.operator_graph import OperatorGraph
 from .nats_naming import (
@@ -332,11 +332,9 @@ class ServiceRuntime:
         """
         Pull-based access to buffered inputs.
 
-        Strategy semantics (v1):
+        Strategy semantics:
         - `latest`: return newest and clear the buffer.
-        - `hold` / `repeat`: return newest if available else return last pulled value.
-        - `average`: average buffered numeric values and clear buffer.
-        - `interpolate`: compute linear interpolation between prev/newest at pull time.
+        - `queue`: pop the oldest buffered item (FIFO).
         - `timeoutMs`: if newest sample is stale, return None.
         """
         node_id = ensure_token(node_id, label="node_id")
@@ -353,22 +351,20 @@ class ServiceRuntime:
         strat = getattr(edge, "strategy", None)
         strategy = strat if isinstance(strat, F8EdgeStrategyEnum) else F8EdgeStrategyEnum.latest
 
-        if strategy == F8EdgeStrategyEnum.average:
-            v = self._avg_buffer(buf)
-            buf.queue.clear()
-        elif strategy == F8EdgeStrategyEnum.interpolate:
-            v = self._interp_buffer(buf, now_ms)
-        else:
-            v = self._latest_buffer(buf)
-            if strategy == F8EdgeStrategyEnum.latest:
-                buf.queue.clear()
+        if strategy == F8EdgeStrategyEnum.queue:
+            if not buf.queue:
+                return None
+            v, ts = buf.queue.pop(0)
+            buf.last_pulled_value = v
+            buf.last_pulled_ts = int(ts) if ts is not None else now_ms
+            return v
 
-        if strategy in (F8EdgeStrategyEnum.hold, F8EdgeStrategyEnum.repeat):
-            if v is None:
-                v = buf.last_pulled_value
-            else:
-                buf.last_pulled_value = v
-                buf.last_pulled_ts = now_ms
+        # latest
+        v = self._latest_buffer(buf)
+        buf.queue.clear()
+        if v is not None:
+            buf.last_pulled_value = v
+            buf.last_pulled_ts = now_ms
         return v
 
     async def _on_cross_data_msg(self, subject: str, payload: bytes) -> None:
@@ -534,7 +530,7 @@ class ServiceRuntime:
         if not isinstance(payload, dict):
             return
         try:
-            graph = OperatorGraph.from_dict(payload)
+            graph = OperatorGraph.from_dict(payload, service_id=self.service_id)
         except Exception:
             return
         self._graph = graph
@@ -557,30 +553,45 @@ class ServiceRuntime:
         # Build intra routes for local nodes.
         intra: dict[tuple[str, str], list[tuple[str, str]]] = {}
         for edge in graph.data_edges:
-            if edge.scope != F8EdgeScopeEnum.intra:
+            if edge.kind != F8EdgeKindEnum.data:
                 continue
-            intra.setdefault((str(edge.from_), str(edge.fromPort)), []).append((str(edge.to), str(edge.toPort)))
+            if str(edge.fromServiceId) != self.service_id or str(edge.toServiceId) != self.service_id:
+                continue
+            if not edge.fromOperatorId or not edge.toOperatorId:
+                continue
+            intra.setdefault((str(edge.fromOperatorId), str(edge.fromPort)), []).append(
+                (str(edge.toOperatorId), str(edge.toPort))
+            )
         self._intra_data_out = intra
 
         # Build cross routes.
         cross_in: dict[str, list[tuple[str, str, Any]]] = {}
         cross_out: dict[tuple[str, str], str] = {}
         for edge in graph.data_edges:
-            if edge.scope != F8EdgeScopeEnum.cross:
+            if edge.kind != F8EdgeKindEnum.data:
                 continue
-            direction = self._edge_direction(edge)
-            subject = str(getattr(edge, "subject", "") or "")
-            if direction == "in":
-                if not subject:
+            if str(edge.fromServiceId) == str(edge.toServiceId):
+                continue
+
+            # Fan-out subject derived from the (remote) source endpoint.
+            from_node_id = str(edge.fromOperatorId or "__service__")
+            subject = data_subject(str(edge.fromServiceId), from_node_id=from_node_id, port_id=str(edge.fromPort))
+
+            # Incoming: local service is the target.
+            if str(edge.toServiceId) == self.service_id:
+                if not edge.toOperatorId:
                     continue
-                to_node = str(edge.to)
+                to_node = str(edge.toOperatorId)
                 if to_node not in self._nodes:
                     continue
                 cross_in.setdefault(subject, []).append((to_node, str(edge.toPort), edge))
-            elif direction == "out":
-                if not subject:
+                continue
+
+            # Outgoing: local service is the source.
+            if str(edge.fromServiceId) == self.service_id:
+                if not edge.fromOperatorId:
                     continue
-                from_node = str(edge.from_)
+                from_node = str(edge.fromOperatorId)
                 if from_node not in self._nodes:
                     continue
                 cross_out[(from_node, str(edge.fromPort))] = subject
@@ -605,25 +616,28 @@ class ServiceRuntime:
         """
         want: dict[tuple[str, str], list[tuple[str, str, Any]]] = {}
         for edge in graph.state_edges:
-            if edge.scope != F8EdgeScopeEnum.cross:
+            if edge.kind != F8EdgeKindEnum.state:
                 continue
-            direction = self._edge_direction(edge)
-            if direction != "in":
+            if str(edge.fromServiceId) == str(edge.toServiceId):
                 continue
-            peer = str(getattr(edge, "peerServiceId", "") or "").strip()
-            if not peer:
+            # Only bind cross-state when local service is the target.
+            if str(edge.toServiceId) != self.service_id:
                 continue
+            peer = str(edge.fromServiceId or "").strip()
             try:
                 peer = ensure_token(peer, label="peerServiceId")
             except Exception:
                 continue
 
+            if not edge.toOperatorId or not edge.fromOperatorId:
+                continue
+
             # local endpoint is `to`, remote endpoint is `from`.
-            local_node = str(edge.to)
+            local_node = str(edge.toOperatorId)
             local_field = str(edge.toPort)
             if local_node not in self._nodes:
                 continue
-            remote_node = str(edge.from_)
+            remote_node = str(edge.fromOperatorId)
             remote_field = str(edge.fromPort)
             remote_key = kv_key_node_state(peer, node_id=remote_node, field=remote_field)
             want.setdefault((peer, remote_key), []).append((local_node, local_field, edge))

@@ -15,6 +15,8 @@ node_modules/
 # Ignore temporary files
 *.log
 *.tmp
+tmp/
+.uv-cache/
 
 # Ignore IDE-specific folder
 .vscode/

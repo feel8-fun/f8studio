@@ -15,7 +15,7 @@ from f8pysdk import (
     schema_type,
 )
 
-from ..operators.operator_registry import OperatorSpecRegistry
+from ..services.service_operator_registry import ServiceOperatorSpecRegistry
 from ..schema.compat import PORT_KIND_DATA_KEY, PORT_SCHEMA_SIG_DATA_KEY, schema_signature
 
 from NodeGraphQt import BaseNode
@@ -428,13 +428,15 @@ class GenericNode(BaseNode):  # type: ignore[misc]
     Base NodeGraphQt node for editing OperatorSpecs in NodeGraphQt.
 
     This node is editor-only: it builds ports + properties from an F8OperatorSpec
-    template fetched from `OperatorSpecRegistry` using `OPERATOR_CLASS`.
+    template fetched from `ServiceOperatorSpecRegistry` using `SPEC_KEY`.
     """
 
     __identifier__ = "feel8.renderer"
     NODE_NAME = "Generic"
 
     SPEC_KEY: str = ""
+
+    LABEL: str = ""
 
     spec: F8OperatorSpec | F8ServiceSpec
 
@@ -448,10 +450,8 @@ class GenericNode(BaseNode):  # type: ignore[misc]
             pass
 
         spec_key = self.SPEC_KEY
-        # Lookup order: OperatorSpecRegistry -> ServiceSpecRegistry -> UserSpecsLibrary.
-
-        if OperatorSpecRegistry.instance().has(spec_key):
-            self.spec = OperatorSpecRegistry.instance().get(spec_key)
+        if ServiceOperatorSpecRegistry.instance().has(spec_key):
+            self.spec = ServiceOperatorSpecRegistry.instance().get(spec_key)
         else:
             raise ValueError(f"Spec [{spec_key}] not found.")
 
