@@ -6,6 +6,9 @@ from f8pysdk import (
     F8ServiceSpec,
     F8StateAccess,
     F8StateSpec,
+    F8ServiceSchemaVersion,
+    F8OperatorSchemaVersion,
+    F8ServiceDescribe,
     any_schema,
     array_schema,
     boolean_schema,
@@ -16,11 +19,12 @@ from f8pysdk import (
 )
 
 
-ENGINE_SERVICE_CLASS = "f8/engine"
+ENGINE_SERVICE_CLASS = "f8.engine"
 
 
 def engine_service_spec() -> F8ServiceSpec:
     return F8ServiceSpec(
+        schemaVersion=F8ServiceSchemaVersion.f8service_1,
         serviceClass=ENGINE_SERVICE_CLASS,
         version="0.0.1",
         label="Engine",
@@ -56,16 +60,18 @@ def engine_service_spec() -> F8ServiceSpec:
 def engine_operator_specs() -> list[F8OperatorSpec]:
     return [
         F8OperatorSpec(
+            schemaVersion=F8OperatorSchemaVersion.f8operator_1,
             serviceClass=ENGINE_SERVICE_CLASS,
-            operatorClass="f8/start",
+            operatorClass="f8.start",
             version="0.0.1",
             label="Start",
             description="Entry trigger for demo graphs.",
             execOutPorts=["exec"],
         ),
         F8OperatorSpec(
+            schemaVersion=F8OperatorSchemaVersion.f8operator_1,
             serviceClass=ENGINE_SERVICE_CLASS,
-            operatorClass="f8/constant",
+            operatorClass="f8.constant",
             version="0.0.1",
             label="Constant",
             description="Emits a configured numeric value.",
@@ -82,8 +88,9 @@ def engine_operator_specs() -> list[F8OperatorSpec]:
             ],
         ),
         F8OperatorSpec(
+            schemaVersion=F8OperatorSchemaVersion.f8operator_1,
             serviceClass=ENGINE_SERVICE_CLASS,
-            operatorClass="f8/add",
+            operatorClass="f8.add",
             version="0.0.1",
             label="Add",
             description="Adds two inputs and forwards the result.",
@@ -96,13 +103,16 @@ def engine_operator_specs() -> list[F8OperatorSpec]:
             dataOutPorts=[F8DataPortSpec(name="sum", description="a+b", valueSchema=number_schema())],
         ),
         F8OperatorSpec(
+            schemaVersion=F8OperatorSchemaVersion.f8operator_1,
             serviceClass=ENGINE_SERVICE_CLASS,
-            operatorClass="f8/log",
+            operatorClass="f8.log",
             version="0.0.1",
             label="Log",
             description="Terminal node that inspects incoming data.",
             tags=["ui"],
-            dataInPorts=[F8DataPortSpec(name="value", description="value to log", required=False, valueSchema=number_schema())],
+            dataInPorts=[
+                F8DataPortSpec(name="value", description="value to log", required=False, valueSchema=number_schema())
+            ],
             states=[
                 F8StateSpec(
                     name="label",
@@ -148,9 +158,7 @@ def engine_operator_specs() -> list[F8OperatorSpec]:
 
 
 def describe_payload_json() -> dict:
-    return {
-        "schemaVersion": "f8describe/1",
-        "service": engine_service_spec().model_dump(mode="json"),
-        "operators": [s.model_dump(mode="json") for s in engine_operator_specs()],
-    }
-
+    return F8ServiceDescribe(
+        service=engine_service_spec(),
+        operators=engine_operator_specs(),
+    ).model_dump(mode="json")

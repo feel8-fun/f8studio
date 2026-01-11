@@ -249,7 +249,7 @@ components:
         serviceClass:
           type: string
           description: Slash-separated id, e.g., f8/engine. Avoid dots to keep NodeGraphQt palettes stable.
-          pattern: ^[a-z0-9]+(/[a-z0-9]+)+$
+          pattern: ^[a-z0-9]+(\.[a-z0-9]+)+$
         rendererClass:
           type: string
           default: defaultService
@@ -311,6 +311,8 @@ components:
           type: boolean
           default: false
           description: Allow dynamic addition of data output ports.
+        launch:
+          $ref: "#/components/schemas/F8ServiceLaunchSpec"
       required:
         - serviceClass
         - label
@@ -330,13 +332,13 @@ components:
           description:
             Operator id within a service (not globally unique). Slash-separated path segments.
             Uniqueness is determined by (serviceClass, operatorClass).
-          pattern: ^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$
+          pattern: ^[a-z0-9][a-z0-9_-]*(\.[a-z0-9][a-z0-9_-]*)*$
         serviceClass:
           type: string
           description:
             Slash-separated id for the backend service this operator belongs to (e.g., f8/engine).
             Avoid dots to keep NodeGraphQt palettes stable.
-          pattern: ^[a-z0-9]+(/[a-z0-9]+)+$
+          pattern: ^[a-z0-9]+(\.[a-z0-9]+)+$
         rendererClass:
           type: string
           default: defaultOperator
@@ -553,19 +555,19 @@ components:
         - command
       additionalProperties: false
 
-    F8RpcError:
-      title: F8RpcError
+    F8ServiceDescribe:
+      title: F8ServiceDescribe
       type: object
       properties:
-        code:
-          type: string
-        message:
-          type: string
-        details:
-          description: Optional structured details (free-form JSON).
-          $ref: "#/components/schemas/F8JsonValue"
-      required: [code, message]
-      additionalProperties: false
+        service:
+          $ref: "#/components/schemas/F8ServiceSpec"
+        operators:
+          type: array
+          items:
+            $ref: "#/components/schemas/F8OperatorSpec"
+          default: []
+      required:
+        - service
 
     F8RuntimeNode:
       title: F8RuntimeNode

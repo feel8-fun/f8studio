@@ -6,6 +6,8 @@ from f8pysdk import (
     F8ServiceSpec,
     F8StateAccess,
     F8StateSpec,
+    F8ServiceSchemaVersion,
+    F8OperatorSchemaVersion,
     any_schema,
     boolean_schema,
     integer_schema,
@@ -13,11 +15,12 @@ from f8pysdk import (
 )
 
 
-STUDIO_SERVICE_CLASS = "f8/studio"
+STUDIO_SERVICE_CLASS = "f8.studio"
 
 
 def studio_service_spec() -> F8ServiceSpec:
     return F8ServiceSpec(
+        schemaVersion=F8ServiceSchemaVersion.f8service_1,
         serviceClass=STUDIO_SERVICE_CLASS,
         version="0.0.1",
         label="Editor",
@@ -34,8 +37,9 @@ def studio_service_spec() -> F8ServiceSpec:
 def studio_operator_specs() -> list[F8OperatorSpec]:
     return [
         F8OperatorSpec(
+            schemaVersion=F8OperatorSchemaVersion.f8operator_1,
             serviceClass=STUDIO_SERVICE_CLASS,
-            operatorClass="f8/studio/log",
+            operatorClass="f8.studio.log",
             version="0.0.1",
             label="Editor Log",
             description="Receives data via cross edges and prints / displays it in the editor.",
@@ -60,8 +64,9 @@ def studio_operator_specs() -> list[F8OperatorSpec]:
             ],
         ),
         F8OperatorSpec(
+            schemaVersion=F8OperatorSchemaVersion.f8operator_1,
             serviceClass=STUDIO_SERVICE_CLASS,
-            operatorClass="f8/studio/oscilloscope",
+            operatorClass="f8.studio.oscilloscope",
             version="0.0.1",
             label="Oscilloscope",
             description="Receives numeric data via cross edges and visualizes it (placeholder UI).",
@@ -90,8 +95,6 @@ def studio_operator_specs() -> list[F8OperatorSpec]:
 
 def describe_payload_json() -> dict:
     return {
-        "schemaVersion": "f8describe/1",
         "service": studio_service_spec().model_dump(mode="json"),
         "operators": [s.model_dump(mode="json") for s in studio_operator_specs()],
     }
-

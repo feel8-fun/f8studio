@@ -6,8 +6,8 @@ from typing import Any, Iterable
 
 import yaml
 
-from f8pysdk import F8OperatorSpec, F8ServiceSpec
-from .service_entry import F8ServiceDescribeEntry, F8ServiceDescribeEntryLaunch
+from f8pysdk import F8OperatorSpec, F8ServiceSpec, F8ServiceEntry, F8ServiceDescribe
+# from .service_entry import F8ServiceDescribeEntryLaunch
 
 
 @dataclass(frozen=True)
@@ -71,7 +71,7 @@ def load_service_spec(service_dir: Path) -> F8ServiceSpec:
         raise DiscoveryError(f"Invalid service.yml in {service_dir}: {exc}") from exc
 
 
-def load_service_entry(service_dir: Path) -> F8ServiceDescribeEntry:
+def load_service_entry(service_dir: Path) -> F8ServiceEntry:
     """
     Load a minimal discovery entry from `service.yml`.
 
@@ -85,7 +85,7 @@ def load_service_entry(service_dir: Path) -> F8ServiceDescribeEntry:
 
     # Shorthand mapping.
     if "launch" not in data and "command" in data:
-        launch = F8ServiceDescribeEntryLaunch.model_validate(
+        launch = F8ServiceEntry.model_validate(
             {
                 "command": data.get("command"),
                 "args": data.get("args") or [],
@@ -97,7 +97,7 @@ def load_service_entry(service_dir: Path) -> F8ServiceDescribeEntry:
         data["launch"] = launch.model_dump(mode="json")
 
     try:
-        return F8ServiceDescribeEntry.model_validate(data)
+        return F8ServiceEntry.model_validate(data)
     except Exception as exc:
         raise DiscoveryError(f"Invalid service entry in {service_dir}: {exc}") from exc
 

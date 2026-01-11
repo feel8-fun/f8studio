@@ -5,10 +5,14 @@ import os
 from pathlib import Path
 import subprocess
 from typing import Any
+import logging
+
+logger = logging.getLogger(__name__)
 
 from .discovery import DiscoveryError, find_service_dirs, load_operator_specs, load_service_entry, load_service_spec
 from .service_catalog import ServiceCatalog
-from .service_entry import F8DescribePayload
+
+from f8pysdk import F8ServiceDescribe
 
 
 def _default_roots() -> list[Path]:
@@ -77,7 +81,8 @@ def load_discovery_into_registries(*, roots: list[Path] | None = None, overwrite
             continue
         try:
             svc = catalog.register_service(payload["service"], overwrite=overwrite)
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to register service from {service_dir}: {e}")
             continue
         found.append(str(svc.serviceClass))
         try:
@@ -135,7 +140,12 @@ def _describe_entry(service_dir: Path, entry: Any) -> dict[str, Any] | None:
         return None
 
     out = (proc.stdout or "").strip()
-    if not out:
+    err = (proc.stderr or "").strip()
+    if err and not out:
+        logger.error(f"Error output from describe command {' '.join(cmd)}:\n{err}")
+        return None
+    elif err:
+        logger.warning(f"Error output from describe command {' '.join(cmd)}:\n{err}")
         return None
 
     data: dict[str, Any] | None = None
@@ -155,7 +165,7 @@ def _describe_entry(service_dir: Path, entry: Any) -> dict[str, Any] | None:
         return None
 
     try:
-        payload = F8DescribePayload.model_validate(data)
+        payload = F8ServiceDescribe.model_validate(data)
         data = payload.model_dump(mode="json")
     except Exception:
         # allow loose payloads as long as required keys exist
@@ -178,6 +188,9 @@ def _describe_entry(service_dir: Path, entry: Any) -> dict[str, Any] | None:
         entry_service_class = str(getattr(entry, "serviceClass", "") or "").strip()
         described_service_class = str((data.get("service") or {}).get("serviceClass") or "").strip()
         if entry_service_class and described_service_class and entry_service_class != described_service_class:
+            logger.error(
+                f"Service class mismatch for {service_dir}: entry has '{entry_service_class}', described has '{described_service_class}'"
+            )
             return None
     except Exception:
         pass

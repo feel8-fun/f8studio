@@ -263,7 +263,7 @@ def _main_gui() -> None:
     # except Exception:
     #     pass
 
-    load_discovery_into_registries()
+    # load_discovery_into_registries()
     # if not loaded:
     #     # Fallback built-in demo specs (useful when running without a discovery folder).
     #     engine_specs = []

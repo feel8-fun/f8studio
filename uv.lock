@@ -6,6 +6,7 @@ requires-python = ">=3.10"
 members = [
     "f8pyengineqt",
     "f8pysdk",
+    "f8pystudio",
     "f8studio",
 ]
 
@@ -205,6 +206,17 @@ requires-dist = [
 ]
 
 [[package]]
+name = "f8pystudio"
+version = "0.1.0"
+source = { editable = "packages/f8pystudio" }
+dependencies = [
+    { name = "nats-py" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "nats-py", specifier = ">=2.12.0" }]
+
+[[package]]
 name = "f8studio"
 version = "0.1.0"
 source = { virtual = "." }
@@ -212,6 +224,7 @@ dependencies = [
     { name = "datamodel-code-generator" },
     { name = "f8pyengineqt" },
     { name = "f8pysdk" },
+    { name = "f8pystudio" },
     { name = "fastapi" },
     { name = "nats-py" },
     { name = "pycrdt" },
@@ -223,6 +236,7 @@ requires-dist = [
     { name = "datamodel-code-generator", specifier = ">=0.50.0" },
     { name = "f8pyengineqt", editable = "packages/pyengineqt" },
     { name = "f8pysdk", editable = "packages/pysdk" },
+    { name = "f8pystudio", editable = "packages/f8pystudio" },
     { name = "fastapi", specifier = ">=0.128.0" },
     { name = "nats-py", specifier = ">=2.12.0" },
     { name = "pycrdt", specifier = ">=0.12.44" },
