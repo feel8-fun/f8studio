@@ -69,7 +69,7 @@ class _JsonDialog(QtWidgets.QDialog):
         self.accept()
 
 
-class NodePropertyEditorWidget(QtWidgets.QWidget):
+class F8NodePropertyEditorWidget(QtWidgets.QWidget):
     """
     Minimal schema-driven property editor for f8pystudio.
 
@@ -161,7 +161,7 @@ class NodePropertyEditorWidget(QtWidgets.QWidget):
         except Exception:
             node_name = str(getattr(node, "NODE_NAME", "") or "Node")
 
-        self._header.setText(f"{node_name}  ({spec_key})")
+        self._header.setText(f"{node_name}\n{node.id}\n({spec_key})")
 
         fields = list(getattr(spec, "stateFields", None) or [])
         if not fields:

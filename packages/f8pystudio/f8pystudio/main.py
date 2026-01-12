@@ -2,8 +2,8 @@ import argparse
 import asyncio
 import json
 from f8pysdk import F8ServiceDescribe
-from f8pystudio.service_host import ServiceHostRegistry
-from f8pystudio.service_catalog import load_discovery_into_registries, ServiceCatalog
+from .service_host import ServiceHostRegistry
+from .service_catalog import load_discovery_into_registries, ServiceCatalog
 
 
 from qtpy import QtWidgets, QtCore
@@ -16,13 +16,14 @@ from NodeGraphQt import (
     GroupNode,
 )
 
+from .nodegraph import *
 
-from f8pystudio.widgets.palette_widget import F8NodesPaletteWidget
+from .widgets.palette_widget import F8NodesPaletteWidget
 
-from f8pystudio.renderNodes import RenderNodeRegistry
-from f8pystudio.deploy import deploy_to_service, export_runtime_graph
-from f8pystudio.widgets.node_property_editor import NodePropertyEditorWidget
-from f8pystudio.service_process_manager import ServiceProcessManager, ServiceProcessConfig
+from .renderNodes import RenderNodeRegistry
+from .deploy import deploy_to_service, export_runtime_graph
+from .widgets.node_property_editor import F8NodePropertyEditorWidget
+from .service_process_manager import ServiceProcessManager, ServiceProcessConfig
 
 
 def _main() -> int:
@@ -46,12 +47,11 @@ def _main() -> int:
 
     ret = load_discovery_into_registries()
 
-
     # TODO: Generate renderer classes
 
     renderNodeReg = RenderNodeRegistry.instance()
     serviceCatalog = ServiceCatalog.instance()
-    
+
     generated_node_cls = []
 
     for svc in serviceCatalog.services.all():
@@ -65,7 +65,6 @@ def _main() -> int:
         )
         generated_node_cls.append(node_cls)
 
-
     for op in serviceCatalog.operators.all():
         print(f'Registering render node for operator "{op.operatorClass}" in service "{op.serviceClass}"')
         # For demo purposes, we just register the GenericRenderNode for all operators.
@@ -77,7 +76,6 @@ def _main() -> int:
             {"__identifier__": op.serviceClass, "NODE_NAME": op.label, "spec": op},
         )
         generated_node_cls.append(node_cls)
-
 
     print(
         f"Loaded {len(serviceCatalog.services.all())} services and {len(serviceCatalog.operators.query(None))} operators."
@@ -91,18 +89,17 @@ def _main() -> int:
     mainwin.resize(1200, 800)
     mainwin.show()
 
-    graph = NodeGraph()
-    graph.node_factory.clear_registered_nodes()
+    studio_graph = F8StudioGraph()
+
+    studio_graph.node_factory.clear_registered_nodes()
 
     for cls in generated_node_cls:
-        graph.node_factory.register_node(cls)
+        studio_graph.node_factory.register_node(cls)
+    palette = F8NodesPaletteWidget(node_graph=studio_graph)
+    # tree = NodesTreeWidget(node_graph=studio_graph)
 
-    palette = F8NodesPaletteWidget(node_graph=graph)
-    # tree = NodesTreeWidget(node_graph=graph)
-
-    mainwin.setCentralWidget(graph.widget)
-
-    prop_editor = NodePropertyEditorWidget(node_graph=graph)
+    mainwin.setCentralWidget(studio_graph.widget)
+    prop_editor = F8NodePropertyEditorWidget(node_graph=studio_graph)
     prop_dock = QtWidgets.QDockWidget("Properties", mainwin)
     prop_dock.setWidget(prop_editor)
     mainwin.addDockWidget(QtCore.Qt.LeftDockWidgetArea, prop_dock)
