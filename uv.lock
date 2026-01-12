@@ -4,6 +4,7 @@ requires-python = ">=3.10"
 
 [manifest]
 members = [
+    "f8pyengine",
     "f8pyengineqt",
     "f8pysdk",
     "f8pystudio",
@@ -164,6 +165,17 @@ wheels = [
 ]
 
 [[package]]
+name = "f8pyengine"
+version = "0.1.0"
+source = { editable = "packages/f8pyengine" }
+dependencies = [
+    { name = "nats-py" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "nats-py", specifier = ">=2.12.0" }]
+
+[[package]]
 name = "f8pyengineqt"
 version = "0.1.0"
 source = { editable = "packages/pyengineqt" }
@@ -222,6 +234,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "datamodel-code-generator" },
+    { name = "f8pyengine" },
     { name = "f8pyengineqt" },
     { name = "f8pysdk" },
     { name = "f8pystudio" },
@@ -234,6 +247,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "datamodel-code-generator", specifier = ">=0.50.0" },
+    { name = "f8pyengine", editable = "packages/f8pyengine" },
     { name = "f8pyengineqt", editable = "packages/pyengineqt" },
     { name = "f8pysdk", editable = "packages/pysdk" },
     { name = "f8pystudio", editable = "packages/f8pystudio" },

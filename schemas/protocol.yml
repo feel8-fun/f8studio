@@ -277,11 +277,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/F8StateSpec"
-          description: Static state model; keys become state manager entries
+          default: []
         editableStates:
           type: boolean
           default: false
-          description: Allow dynamic user-added state entries
+          description: Allow modification of states at runtime.
         commands:
           type: array
           items:
@@ -370,6 +370,7 @@ components:
         editableStates:
           type: boolean
           default: false
+          description: Allow modification of states at runtime.
         commands:
           type: array
           description: Optional RPC-style commands the node can invoke (e.g., refresh/connect/disconnect)

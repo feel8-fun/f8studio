@@ -17,22 +17,12 @@ class ServiceHostRegistry:
     def __init__(self):
         self._service_spec = F8ServiceSpec(
             schemaVersion=F8ServiceSchemaVersion.f8service_1,
-            serviceClass="f8.pystudio",
+            serviceClass="f8.pyengine",
             version="0.0.1",
-            label="PyStudio",
-            description="Service Graph Editor in Python and Qt.",
-            tags=["editor", "ui", "python", "py"],
+            label="PyEngine",
+            description="Python-based execution engine for Feel8 operators.",
+            tags=["engine", "python", "py"],
             rendererClass="",
-            states=[
-                F8StateSpec(
-                    name="tickMs",
-                    label="Refresh Interval (ms)",
-                    description="Interval in milliseconds for refreshing the UI nodes in the editor.",
-                    valueSchema=integer_schema(default=100, minimum=16, maximum=5000),
-                    access=F8StateAccess.rw,
-                    showOnNode=True,
-                ),
-            ],
             editableStates=False,
             editableDataInPorts=False,
             editableDataOutPorts=False,
@@ -41,50 +31,25 @@ class ServiceHostRegistry:
         self._operator_spec_registry: dict[str, F8OperatorSpec] = {}
 
         # debug
-        self._operator_spec_registry["ExampleOperator"] = F8OperatorSpec(
+        self._operator_spec_registry["Tick"] = F8OperatorSpec(
             schemaVersion=F8OperatorSchemaVersion.f8operator_1,
-            serviceClass="f8.pystudio",
-            operatorClass="f8.example_operator",
+            serviceClass="f8.pyengine",
+            operatorClass="f8.tick",
             version="0.0.1",
-            label="Example Operator",
-            description="An example operator for demonstration purposes.",
-            tags=["example", "demo"],
-        )
-
-        self._operator_spec_registry["PrintNodeOperator"] = F8OperatorSpec(
-            schemaVersion=F8OperatorSchemaVersion.f8operator_1,
-            serviceClass="f8.pystudio",
-            operatorClass="f8.print_node_operator",
-            version="0.0.1",
-            label="Print Node",
-            description="Operator that prints node information to the console.",
-            tags=["print", "console"],
-            execInPorts=["exec"],
-            execOutPorts=["exec"],
-            dataInPorts=[
-                F8DataPortSpec(
-                    name="inputData",
-                    description="Data input to be printed.",
-                    valueSchema=any_schema(),
-                ),
-            ],
-            dataOutPorts=[
-                F8DataPortSpec(
-                    name="outputData",
-                    description="Data output after printing.",
-                    valueSchema=any_schema(),
-                ),
-            ],
+            label="Tick",
+            description="Tick operator that generates periodic ticks.",
+            tags=["execution", "timer", "start"],
             states=[
                 F8StateSpec(
-                    name="prefix",
-                    label="Print Prefix",
-                    description="Prefix to add before the printed data.",
-                    valueSchema=any_schema(),
+                    name="tickMs",
+                    label="Refresh Interval (ms)",
+                    description="Interval in milliseconds for refreshing the execution engine cycle.",
+                    valueSchema=integer_schema(default=100, minimum=16, maximum=5000),
                     access=F8StateAccess.rw,
                     showOnNode=True,
                 ),
             ],
+            execOutPorts=["exec"],
         )
 
     @staticmethod

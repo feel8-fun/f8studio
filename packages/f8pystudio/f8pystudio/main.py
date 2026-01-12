@@ -99,6 +99,8 @@ def _main() -> int:
 
     mainwin.setCentralWidget(graph.widget)
 
+    palette._category_tabs
+
     dock = QtWidgets.QDockWidget("Nodes Palette", mainwin)
     dock.setWidget(palette)
     mainwin.addDockWidget(QtCore.Qt.RightDockWidgetArea, dock)
