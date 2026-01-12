@@ -1,6 +1,7 @@
 from NodeGraphQt import NodeObject, BaseNode
 
 from .generic import GenericRenderNode
+from .service_engine import OperatorRunnerNode
 
 
 class RenderNodeRegistry:
@@ -16,6 +17,7 @@ class RenderNodeRegistry:
     def __init__(self) -> None:
         self._renderers: dict[str, NodeObject] = {}
         self._renderers["default"] = GenericRenderNode
+        self._renderers["f8.operator_runner"] = OperatorRunnerNode
 
     def register(self, renderer_key: str, renderer: type[NodeObject]) -> None:
         if renderer_key in self._renderers:

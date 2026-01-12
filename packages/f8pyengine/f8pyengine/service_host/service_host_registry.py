@@ -8,6 +8,8 @@ from f8pysdk import (
     F8StateSpec,
     F8StateAccess,
     integer_schema,
+    number_schema,
+    string_schema,
 )
 
 
@@ -30,7 +32,7 @@ class ServiceHostRegistry:
         )
         self._operator_spec_registry: dict[str, F8OperatorSpec] = {}
 
-        # debug
+        # Built-in demo operators
         self._operator_spec_registry["Tick"] = F8OperatorSpec(
             schemaVersion=F8OperatorSchemaVersion.f8operator_1,
             serviceClass="f8.pyengine",
@@ -50,6 +52,57 @@ class ServiceHostRegistry:
                 ),
             ],
             execOutPorts=["exec"],
+        )
+
+        self._operator_spec_registry["Sine"] = F8OperatorSpec(
+            schemaVersion=F8OperatorSchemaVersion.f8operator_1,
+            serviceClass="f8.pyengine",
+            operatorClass="f8.sine",
+            version="0.0.1",
+            label="Sine",
+            description="Exec-driven sine generator (emits `value`).",
+            tags=["signal", "demo"],
+            execInPorts=["exec"],
+            dataOutPorts=[F8DataPortSpec(name="value", description="sine output", valueSchema=number_schema())],
+            stateFields=[
+                F8StateSpec(
+                    name="hz",
+                    label="Hz",
+                    description="Frequency in Hz.",
+                    valueSchema=number_schema(default=1.0, minimum=0.0, maximum=100.0),
+                    access=F8StateAccess.rw,
+                    showOnNode=True,
+                ),
+                F8StateSpec(
+                    name="amp",
+                    label="Amplitude",
+                    description="Amplitude.",
+                    valueSchema=number_schema(default=1.0, minimum=0.0, maximum=1000.0),
+                    access=F8StateAccess.rw,
+                    showOnNode=True,
+                ),
+            ],
+        )
+
+        self._operator_spec_registry["Print"] = F8OperatorSpec(
+            schemaVersion=F8OperatorSchemaVersion.f8operator_1,
+            serviceClass="f8.pyengine",
+            operatorClass="f8.print",
+            version="0.0.1",
+            label="Print",
+            description="Prints incoming `value` samples.",
+            tags=["sink", "demo"],
+            dataInPorts=[F8DataPortSpec(name="value", description="value to print", valueSchema=number_schema())],
+            stateFields=[
+                F8StateSpec(
+                    name="label",
+                    label="Label",
+                    description="Print label.",
+                    valueSchema=string_schema(default="sine"),
+                    access=F8StateAccess.rw,
+                    showOnNode=True,
+                ),
+            ],
         )
 
     @staticmethod

@@ -2,6 +2,7 @@ from NodeGraphQt import NodeObject, BaseNode
 from NodeGraphQt.base.node import _ClassProperty
 
 from f8pysdk import F8OperatorSpec, F8ServiceSpec
+from f8pysdk.schema_helpers import schema_default
 
 from .internal.port_painter import draw_exec_port, draw_square_port
 
@@ -20,6 +21,7 @@ class GenericRenderNode(BaseNode):
         self._build_exec_port()
         self._build_data_port()
         self._build_state_port()
+        self._build_state_properties()
 
     def _build_exec_port(self):
         if not isinstance(self.spec, F8OperatorSpec):
@@ -69,3 +71,22 @@ class GenericRenderNode(BaseNode):
                 color=STATE_PORT_COLOR,
                 painter_func=draw_square_port,
             )
+
+    def _build_state_properties(self) -> None:
+        for s in self.spec.stateFields or []:
+            name = str(getattr(s, "name", "") or "").strip()
+            if not name:
+                continue
+            try:
+                if self.has_property(name):  # type: ignore[attr-defined]
+                    continue
+            except Exception:
+                pass
+            try:
+                default_value = schema_default(s.valueSchema)
+            except Exception:
+                default_value = None
+            try:
+                self.create_property(name, default_value)
+            except Exception:
+                continue
