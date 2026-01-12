@@ -136,7 +136,7 @@ class EngineServiceNode(BackdropNode):  # type: ignore[misc]
         self._apply_state_properties()
 
     def _apply_state_properties(self) -> None:
-        for field_def in self.service_spec.states or []:
+        for field_def in self.service_spec.stateFields or []:
             if self.has_property(field_def.name):  # type: ignore[attr-defined]
                 continue
             try:

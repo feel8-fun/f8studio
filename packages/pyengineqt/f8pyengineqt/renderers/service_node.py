@@ -114,7 +114,7 @@ class ServiceNode(BaseNode):  # type: ignore[misc]
             self.port_handles.data_out[port.name] = handle
         row_offset += rows
 
-        fields = list(self.spec.states or [])
+        fields = list(self.spec.stateFields or [])
         for idx, field_def in enumerate(fields):
             access = field_def.access or F8StateAccess.ro
             row = row_offset + idx
@@ -197,7 +197,7 @@ class ServiceNode(BaseNode):  # type: ignore[misc]
                     pass
 
     def _apply_state_properties(self) -> None:
-        for field_def in self.spec.states or []:
+        for field_def in self.spec.stateFields or []:
             default_value = schema_default(field_def.valueSchema)
             field_type = schema_type(field_def.valueSchema)
             if self.has_property(field_def.name):  # type: ignore[attr-defined]
@@ -264,7 +264,7 @@ class ServiceNode(BaseNode):  # type: ignore[misc]
             except Exception:
                 sig[f"{port.name}[D]"] = None
 
-        for field in spec.states or []:
+        for field in spec.stateFields or []:
             access = field.access or F8StateAccess.ro
             try:
                 st = schema_type(field.valueSchema)
@@ -377,7 +377,7 @@ class ServiceNode(BaseNode):  # type: ignore[misc]
     def _validate_spec_for_ports(self, spec: F8ServiceSpec) -> None:
         data_in = [str(p.name).strip() for p in (spec.dataInPorts or [])]
         data_out = [str(p.name).strip() for p in (spec.dataOutPorts or [])]
-        states = [str(s.name).strip() for s in (spec.states or [])]
+        states = [str(s.name).strip() for s in (spec.stateFields or [])]
 
         errors: list[str] = []
         if any(not p for p in data_in):

@@ -2,23 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import time
-import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
-from collections.abc import Awaitable, Callable
 
-from ..generated import F8EdgeKindEnum, F8EdgeStrategyEnum
-
-from ..graph.operator_graph import OperatorGraph
-from .nats_naming import (
-    data_subject,
-    ensure_token,
-    kv_bucket_for_service,
-    kv_key_node_state,
-    kv_key_topology,
-)
+from ..generated import F8Edge, F8EdgeKindEnum, F8EdgeStrategyEnum, F8RuntimeGraph
+from .nats_naming import data_subject, ensure_token, kv_bucket_for_service, kv_key_node_state, kv_key_topology
 from .nats_transport import NatsTransport, NatsTransportConfig
 from .service_runtime_node import ServiceRuntimeNode
 
@@ -31,8 +21,6 @@ def _now_ms() -> int:
 class ServiceRuntimeConfig:
     service_id: str
     nats_url: str = "nats://127.0.0.1:4222"
-    kv_bucket: str | None = None
-    actor_id: str | None = None
     publish_all_data: bool = True
 
 
@@ -44,13 +32,9 @@ class _Sub:
 
 @dataclass
 class _InputBuffer:
-    """
-    Per-input-port buffer for rate mismatch handling (pull-based).
-    """
-
     to_node: str
     to_port: str
-    edge: Any
+    edge: F8Edge | None
     queue: list[tuple[Any, int]] = None  # type: ignore[assignment]
     last_seen_value: Any = None
     last_seen_ts: int | None = None
@@ -66,10 +50,10 @@ class _InputBuffer:
 
 class ServiceRuntime:
     """
-    ServiceSDK runtime (v1 + push v2).
+    Service runtime (clean, protocol-first).
 
-    - Shared NATS connection (pub/sub + KV).
-    - Watches `svc.<serviceId>.topology` inside the per-service KV bucket.
+    - Shared NATS connection (pub/sub + JetStream KV).
+    - Watches `svc.<serviceId>.topology` (KV) which must be a `F8RuntimeGraph`.
     - Builds intra/cross routing tables for data edges.
     - Provides a shared state KV API for nodes.
     - Push-based: triggers `ServiceRuntimeNode.on_data()` on new data events.
@@ -77,32 +61,33 @@ class ServiceRuntime:
 
     def __init__(self, config: ServiceRuntimeConfig) -> None:
         self.service_id = ensure_token(config.service_id, label="service_id")
-        self.actor_id = ensure_token(config.actor_id or uuid.uuid4().hex, label="actor_id")
         self._publish_all_data = bool(getattr(config, "publish_all_data", True))
 
-        bucket = (config.kv_bucket or "").strip() or os.environ.get("F8_NATS_BUCKET") or kv_bucket_for_service(self.service_id)
+        bucket = kv_bucket_for_service(self.service_id)
         self._transport = NatsTransport(NatsTransportConfig(url=str(config.nats_url), kv_bucket=str(bucket)))
 
         self._nodes: dict[str, ServiceRuntimeNode] = {}
-        self._graph: OperatorGraph | None = None
+        self._graph: F8RuntimeGraph | None = None
 
         self._topology_key = kv_key_topology(self.service_id)
         self._topology_watch: Any | None = None
         self._local_state_watch: Any | None = None
 
-        # Routing tables (data only for v1).
+        # Routing tables (data only).
         self._intra_data_out: dict[tuple[str, str], list[tuple[str, str]]] = {}
-        self._cross_in_by_subject: dict[str, list[tuple[str, str, Any]]] = {}  # subject -> (to_node,to_port,edge)
-        self._cross_out_subjects: dict[tuple[str, str], str] = {}  # (from_node, out_port) -> subject
+        self._cross_in_by_subject: dict[str, list[tuple[str, str, F8Edge]]] = {}
+        self._cross_out_subjects: dict[tuple[str, str], str] = {}
         self._data_inputs: dict[tuple[str, str], _InputBuffer] = {}
-        self._cross_state_in_by_key: dict[tuple[str, str], list[tuple[str, str, Any]]] = {}
-        self._remote_state_watches: dict[tuple[str, str], Any] = {}
-        self._state_cache: dict[tuple[str, str], tuple[Any, int]] = {}
 
+        # Cross-state binding (remote KV -> local node.on_state + local KV mirror).
+        self._cross_state_in_by_key: dict[tuple[str, str], list[tuple[str, str, F8Edge]]] = {}
+        self._remote_state_watches: dict[tuple[str, str], Any] = {}
+
+        self._state_cache: dict[tuple[str, str], tuple[Any, int]] = {}
         self._subs: dict[str, _Sub] = {}
 
         self._state_listeners: list[Callable[[str, str, Any, int, dict[str, Any]], Awaitable[None] | None]] = []
-        self._topology_listeners: list[Callable[[OperatorGraph], Awaitable[None] | None]] = []
+        self._topology_listeners: list[Callable[[F8RuntimeGraph], Awaitable[None] | None]] = []
 
     def add_state_listener(
         self, cb: Callable[[str, str, Any, int, dict[str, Any]], Awaitable[None] | None]
@@ -114,9 +99,9 @@ class ServiceRuntime:
         """
         self._state_listeners.append(cb)
 
-    def add_topology_listener(self, cb: Callable[[OperatorGraph], Awaitable[None] | None]) -> None:
+    def add_topology_listener(self, cb: Callable[[F8RuntimeGraph], Awaitable[None] | None]) -> None:
         """
-        Listen to topology updates (after `OperatorGraph.from_dict` validation).
+        Listen to topology updates (after `F8RuntimeGraph` validation).
         """
         self._topology_listeners.append(cb)
 
@@ -139,7 +124,6 @@ class ServiceRuntime:
         if self._local_state_watch is None:
             pattern = f"svc.{self.service_id}.nodes.>"
             self._local_state_watch = await self._transport.kv_watch(pattern, cb=self._on_local_state_kv)
-        # Load once (if present).
         await self._reload_topology()
 
     async def stop(self) -> None:
@@ -149,10 +133,12 @@ class ServiceRuntime:
             except Exception:
                 pass
         self._subs.clear()
+
         self._cross_in_by_subject.clear()
         self._intra_data_out.clear()
         self._cross_out_subjects.clear()
         self._data_inputs.clear()
+
         self._cross_state_in_by_key.clear()
         for (_sid, _key), watch in list(self._remote_state_watches.items()):
             try:
@@ -168,7 +154,9 @@ class ServiceRuntime:
             except Exception:
                 pass
         self._remote_state_watches.clear()
+
         self._state_cache.clear()
+
         try:
             if self._topology_watch is not None:
                 watcher, task = self._topology_watch
@@ -182,6 +170,7 @@ class ServiceRuntime:
                     pass
         finally:
             self._topology_watch = None
+
         try:
             if self._local_state_watch is not None:
                 watcher, task = self._local_state_watch
@@ -195,13 +184,14 @@ class ServiceRuntime:
                     pass
         finally:
             self._local_state_watch = None
+
         await self._transport.close()
 
     # ---- KV state -------------------------------------------------------
     async def set_state(self, node_id: str, field: str, value: Any, *, ts_ms: int | None = None) -> None:
         node_id = ensure_token(node_id, label="node_id")
         key = kv_key_node_state(self.service_id, node_id=node_id, field=str(field))
-        payload = {"value": value, "actor": self.actor_id, "ts": int(ts_ms or _now_ms())}
+        payload = {"value": value, "actor": self.service_id, "ts": int(ts_ms or _now_ms())}
         await self._transport.kv_put(key, json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8"))
         self._state_cache[(node_id, str(field))] = (value, int(payload["ts"]))
 
@@ -215,12 +205,9 @@ class ServiceRuntime:
         source: str | None = None,
         meta: dict[str, Any] | None = None,
     ) -> None:
-        """
-        Like `set_state`, but allows additional metadata (eg. `source="editor"`).
-        """
         node_id = ensure_token(node_id, label="node_id")
         key = kv_key_node_state(self.service_id, node_id=node_id, field=str(field))
-        payload: dict[str, Any] = {"value": value, "actor": self.actor_id, "ts": int(ts_ms or _now_ms())}
+        payload: dict[str, Any] = {"value": value, "actor": self.service_id, "ts": int(ts_ms or _now_ms())}
         if source:
             payload["source"] = str(source)
         if meta:
@@ -257,7 +244,7 @@ class ServiceRuntime:
         meta_dict: dict[str, Any] = {}
         if isinstance(payload, dict):
             meta_dict = dict(payload)
-            if str(payload.get("actor") or "") == self.actor_id:
+            if str(payload.get("actor") or "") == self.service_id:
                 return
             v = payload.get("value")
             ts = int(payload.get("ts") or _now_ms())
@@ -282,13 +269,112 @@ class ServiceRuntime:
         except Exception:
             return
 
-    async def set_topology(self, payload: dict[str, Any]) -> None:
+    # ---- topology -------------------------------------------------------
+    async def set_topology(self, graph: F8RuntimeGraph) -> None:
         """
         Publish a full topology snapshot for this service.
         """
+        payload = graph.model_dump(mode="json", by_alias=True)
         await self._transport.kv_put(
             self._topology_key, json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
         )
+
+    async def _on_topology_kv(self, key: str, value: bytes) -> None:
+        if str(key) != self._topology_key:
+            return
+        await self._apply_topology_bytes(value)
+
+    async def _reload_topology(self) -> None:
+        raw = await self._transport.kv_get(self._topology_key)
+        if raw:
+            await self._apply_topology_bytes(raw)
+
+    async def _apply_topology_bytes(self, raw: bytes) -> None:
+        try:
+            payload = json.loads(raw.decode("utf-8")) if raw else {}
+        except Exception:
+            payload = {}
+        if not isinstance(payload, dict):
+            return
+        try:
+            graph = F8RuntimeGraph.model_validate(payload)
+        except Exception:
+            return
+
+        self._graph = graph
+        await self._rebuild_routes()
+
+        for cb in list(self._topology_listeners):
+            try:
+                r = cb(graph)
+                if asyncio.iscoroutine(r):
+                    await r
+            except Exception:
+                continue
+
+    async def _rebuild_routes(self) -> None:
+        graph = self._graph
+        if graph is None:
+            return
+
+        self._data_inputs.clear()
+
+        # Intra (in-process) routing: local service -> local service.
+        intra: dict[tuple[str, str], list[tuple[str, str]]] = {}
+        for edge in graph.edges:
+            if edge.kind != F8EdgeKindEnum.data:
+                continue
+            if str(edge.fromServiceId) != self.service_id or str(edge.toServiceId) != self.service_id:
+                continue
+            if not edge.fromOperatorId or not edge.toOperatorId:
+                continue
+            intra.setdefault((str(edge.fromOperatorId), str(edge.fromPort)), []).append(
+                (str(edge.toOperatorId), str(edge.toPort))
+            )
+        self._intra_data_out = intra
+
+        # Cross routing.
+        cross_in: dict[str, list[tuple[str, str, F8Edge]]] = {}
+        cross_out: dict[tuple[str, str], str] = {}
+        for edge in graph.edges:
+            if edge.kind != F8EdgeKindEnum.data:
+                continue
+            if str(edge.fromServiceId) == str(edge.toServiceId):
+                continue
+            if not edge.fromOperatorId:
+                continue
+
+            subject = data_subject(str(edge.fromServiceId), from_node_id=str(edge.fromOperatorId), port_id=str(edge.fromPort))
+
+            # Incoming: local service is the target.
+            if str(edge.toServiceId) == self.service_id:
+                if not edge.toOperatorId:
+                    continue
+                to_node = str(edge.toOperatorId)
+                if to_node not in self._nodes:
+                    continue
+                cross_in.setdefault(subject, []).append((to_node, str(edge.toPort), edge))
+                continue
+
+            # Outgoing: local service is the source.
+            if str(edge.fromServiceId) == self.service_id:
+                from_node = str(edge.fromOperatorId)
+                if from_node not in self._nodes:
+                    continue
+                cross_out[(from_node, str(edge.fromPort))] = subject
+
+        self._cross_in_by_subject = cross_in
+        self._cross_out_subjects = cross_out
+
+        # Pre-create input buffers for known local inputs.
+        for subject, targets in cross_in.items():
+            for to_node, to_port, edge in targets:
+                self._data_inputs[(str(to_node), str(to_port))] = _InputBuffer(
+                    to_node=str(to_node), to_port=str(to_port), edge=edge
+                )
+
+        await self._sync_subscriptions(set(cross_in.keys()))
+        await self._sync_cross_state_watches(graph)
 
     # ---- data routing ---------------------------------------------------
     async def emit_data(self, node_id: str, port: str, value: Any, *, ts_ms: int | None = None) -> None:
@@ -296,11 +382,11 @@ class ServiceRuntime:
         port = ensure_token(port, label="port_id")
         ts = int(ts_ms or _now_ms())
 
-        # Intra edges (in-process).
+        # Intra edges.
         for to_node, to_port in self._intra_data_out.get((node_id, port), []):
             self._push_input(to_node, to_port, value, ts_ms=ts)
 
-        # Cross edges (fanout) - publish once per (node, out_port).
+        # Cross edges (fan-out) - publish once per (node, out_port).
         if self._publish_all_data:
             subject = data_subject(self.service_id, from_node_id=node_id, port_id=port)
         else:
@@ -311,9 +397,6 @@ class ServiceRuntime:
         await self._transport.publish(subject, payload)
 
     async def publish(self, subject: str, payload: bytes) -> None:
-        """
-        Publish raw bytes to a NATS core subject (service-to-service commands, etc).
-        """
         await self._transport.publish(str(subject), bytes(payload))
 
     async def subscribe(
@@ -323,9 +406,6 @@ class ServiceRuntime:
         queue: str | None = None,
         cb: Callable[[str, bytes], Awaitable[None]] | None = None,
     ) -> Any:
-        """
-        Subscribe to a NATS core subject.
-        """
         return await self._transport.subscribe(str(subject), queue=queue, cb=cb)
 
     async def pull_data(self, node_id: str, port: str) -> Any:
@@ -342,14 +422,16 @@ class ServiceRuntime:
         buf = self._data_inputs.get((node_id, port))
         if buf is None:
             return None
-        edge = getattr(buf, "edge", None) or {}
+        edge = buf.edge
         now_ms = _now_ms()
 
-        if self._is_stale(edge, int(buf.last_seen_ts or now_ms)):
+        last_seen_ts = int(buf.last_seen_ts or now_ms)
+        if self._is_stale(edge, last_seen_ts):
             return None
 
-        strat = getattr(edge, "strategy", None)
-        strategy = strat if isinstance(strat, F8EdgeStrategyEnum) else F8EdgeStrategyEnum.latest
+        strategy = getattr(edge, "strategy", None) if edge is not None else None
+        if not isinstance(strategy, F8EdgeStrategyEnum):
+            strategy = F8EdgeStrategyEnum.latest
 
         if strategy == F8EdgeStrategyEnum.queue:
             if not buf.queue:
@@ -360,7 +442,7 @@ class ServiceRuntime:
             return v
 
         # latest
-        v = self._latest_buffer(buf)
+        v = buf.queue[-1][0] if buf.queue else buf.last_seen_value
         buf.queue.clear()
         if v is not None:
             buf.last_pulled_value = v
@@ -382,8 +464,8 @@ class ServiceRuntime:
                 value = msg
         except Exception:
             value = payload
-        ts_i = int(ts) if ts is not None else _now_ms()
 
+        ts_i = int(ts) if ts is not None else _now_ms()
         for to_node, to_port, edge in targets:
             try:
                 if self._is_stale(edge, ts_i):
@@ -393,34 +475,9 @@ class ServiceRuntime:
                 continue
 
     @staticmethod
-    def _edge_direction(edge: Any) -> str:
-        """
-        Normalize `edge.direction` to "in"/"out".
-
-        Generated schemas may represent direction as an Enum (`Direction.in_`),
-        where `str()` is "Direction.in_" and `.name` is "in_".
-        """
-        d = getattr(edge, "direction", None)
-        if d is None:
-            return ""
-        if isinstance(d, str):
-            return d.strip().lower()
-        try:
-            v = getattr(d, "value", None)
-            if isinstance(v, str) and v:
-                return v.strip().lower()
-        except Exception:
-            pass
-        try:
-            n = getattr(d, "name", None)
-            if isinstance(n, str) and n:
-                return n.strip().lower().rstrip("_")
-        except Exception:
-            pass
-        return str(d).strip().lower().replace("direction.", "").rstrip("_")
-
-    @staticmethod
-    def _is_stale(edge: Any, ts_ms: int) -> bool:
+    def _is_stale(edge: F8Edge | None, ts_ms: int) -> bool:
+        if edge is None:
+            return False
         try:
             timeout = getattr(edge, "timeoutMs", None)
             if timeout is None:
@@ -432,53 +489,12 @@ class ServiceRuntime:
         except Exception:
             return False
 
-    @staticmethod
-    def _interp_buffer(buf: _InputBuffer, now_ms: int) -> Any:
-        if buf.prev_seen_ts is None or buf.last_seen_ts is None:
-            return buf.last_seen_value
-        if buf.prev_seen_value is None:
-            return buf.last_seen_value
-        try:
-            a = float(buf.prev_seen_value)
-            b = float(buf.last_seen_value)
-        except Exception:
-            return buf.last_seen_value
-        t0 = int(buf.prev_seen_ts)
-        t1 = int(buf.last_seen_ts)
-        if t1 <= t0:
-            return buf.last_seen_value
-        if now_ms <= t0:
-            return buf.prev_seen_value
-        if now_ms >= t1:
-            return buf.last_seen_value
-        f = float(now_ms - t0) / float(t1 - t0)
-        return a + (b - a) * f
-
-    @staticmethod
-    def _latest_buffer(buf: _InputBuffer) -> Any:
-        if buf.queue:
-            return buf.queue[-1][0]
-        return buf.last_seen_value
-
-    @staticmethod
-    def _avg_buffer(buf: _InputBuffer) -> Any:
-        vals = []
-        for v, _ts in buf.queue:
-            try:
-                vals.append(float(v))
-            except Exception:
-                continue
-        if not vals:
-            return buf.last_seen_value
-        return sum(vals) / float(len(vals))
-
-    def _push_input(self, to_node: str, to_port: str, value: Any, *, ts_ms: int, edge: Any | None = None) -> None:
+    def _push_input(self, to_node: str, to_port: str, value: Any, *, ts_ms: int, edge: F8Edge | None = None) -> None:
         to_node = str(to_node)
         to_port = str(to_port)
         buf = self._data_inputs.get((to_node, to_port))
         if buf is None:
-            # Fallback buffer without edge metadata.
-            buf = _InputBuffer(to_node=to_node, to_port=to_port, edge=edge or {})
+            buf = _InputBuffer(to_node=to_node, to_port=to_port, edge=edge)
             self._data_inputs[(to_node, to_port)] = buf
         if edge is not None:
             buf.edge = edge
@@ -489,18 +505,17 @@ class ServiceRuntime:
         buf.last_seen_ts = int(ts_ms)
 
         buf.queue.append((value, int(ts_ms)))
-        # Cap queue size using `queueSize` if present.
-        try:
-            max_q = getattr(buf.edge, "queueSize", None)
-            max_n = int(max_q) if max_q is not None else 0
-        except Exception:
-            max_n = 0
-        if max_n <= 0:
-            max_n = 256
+        max_n = 256
+        if buf.edge is not None:
+            try:
+                qs = getattr(buf.edge, "queueSize", None)
+                if qs is not None:
+                    max_n = max(1, int(qs))
+            except Exception:
+                max_n = 256
         if len(buf.queue) > max_n:
             del buf.queue[0 : len(buf.queue) - max_n]
 
-        # Push-based delivery (v2): trigger the target node immediately.
         node = self._nodes.get(to_node)
         if node is None:
             return
@@ -511,128 +526,28 @@ class ServiceRuntime:
         except Exception:
             return
 
-    # ---- topology -------------------------------------------------------
-    async def _on_topology_kv(self, key: str, value: bytes) -> None:
-        if str(key) != self._topology_key:
-            return
-        await self._apply_topology_bytes(value)
-
-    async def _reload_topology(self) -> None:
-        raw = await self._transport.kv_get(self._topology_key)
-        if raw:
-            await self._apply_topology_bytes(raw)
-
-    async def _apply_topology_bytes(self, raw: bytes) -> None:
-        try:
-            payload = json.loads(raw.decode("utf-8")) if raw else {}
-        except Exception:
-            payload = {}
-        if not isinstance(payload, dict):
-            return
-        try:
-            graph = OperatorGraph.from_dict(payload, service_id=self.service_id)
-        except Exception:
-            return
-        self._graph = graph
-        await self._rebuild_routes()
-        for cb in list(self._topology_listeners):
-            try:
-                r = cb(graph)
-                if asyncio.iscoroutine(r):
-                    await r
-            except Exception:
-                continue
-
-    async def _rebuild_routes(self) -> None:
-        graph = self._graph
-        if graph is None:
-            return
-        # Topology can change; reset buffers to avoid keeping stale edges.
-        self._data_inputs.clear()
-
-        # Build intra routes for local nodes.
-        intra: dict[tuple[str, str], list[tuple[str, str]]] = {}
-        for edge in graph.data_edges:
-            if edge.kind != F8EdgeKindEnum.data:
-                continue
-            if str(edge.fromServiceId) != self.service_id or str(edge.toServiceId) != self.service_id:
-                continue
-            if not edge.fromOperatorId or not edge.toOperatorId:
-                continue
-            intra.setdefault((str(edge.fromOperatorId), str(edge.fromPort)), []).append(
-                (str(edge.toOperatorId), str(edge.toPort))
-            )
-        self._intra_data_out = intra
-
-        # Build cross routes.
-        cross_in: dict[str, list[tuple[str, str, Any]]] = {}
-        cross_out: dict[tuple[str, str], str] = {}
-        for edge in graph.data_edges:
-            if edge.kind != F8EdgeKindEnum.data:
-                continue
-            if str(edge.fromServiceId) == str(edge.toServiceId):
-                continue
-
-            # Fan-out subject derived from the (remote) source endpoint.
-            from_node_id = str(edge.fromOperatorId or "__service__")
-            subject = data_subject(str(edge.fromServiceId), from_node_id=from_node_id, port_id=str(edge.fromPort))
-
-            # Incoming: local service is the target.
-            if str(edge.toServiceId) == self.service_id:
-                if not edge.toOperatorId:
-                    continue
-                to_node = str(edge.toOperatorId)
-                if to_node not in self._nodes:
-                    continue
-                cross_in.setdefault(subject, []).append((to_node, str(edge.toPort), edge))
-                continue
-
-            # Outgoing: local service is the source.
-            if str(edge.fromServiceId) == self.service_id:
-                if not edge.fromOperatorId:
-                    continue
-                from_node = str(edge.fromOperatorId)
-                if from_node not in self._nodes:
-                    continue
-                cross_out[(from_node, str(edge.fromPort))] = subject
-        self._cross_in_by_subject = cross_in
-        self._cross_out_subjects = cross_out
-
-        # Pre-create input buffers for known local inputs.
-        for subject, targets in cross_in.items():
-            for to_node, to_port, edge in targets:
-                self._data_inputs[(str(to_node), str(to_port))] = _InputBuffer(
-                    to_node=str(to_node), to_port=str(to_port), edge=edge
-                )
-
-        # Update subscriptions (only for subjects we currently need).
-        await self._sync_subscriptions(set(cross_in.keys()))
-
-        await self._sync_cross_state_watches(graph)
-
-    async def _sync_cross_state_watches(self, graph: OperatorGraph) -> None:
+    # ---- cross-state ----------------------------------------------------
+    async def _sync_cross_state_watches(self, graph: F8RuntimeGraph) -> None:
         """
         Cross-state binding via remote KV watch (read remote, apply to local).
         """
-        want: dict[tuple[str, str], list[tuple[str, str, Any]]] = {}
-        for edge in graph.state_edges:
+        want: dict[tuple[str, str], list[tuple[str, str, F8Edge]]] = {}
+        for edge in graph.edges:
             if edge.kind != F8EdgeKindEnum.state:
                 continue
             if str(edge.fromServiceId) == str(edge.toServiceId):
                 continue
-            # Only bind cross-state when local service is the target.
             if str(edge.toServiceId) != self.service_id:
                 continue
             peer = str(edge.fromServiceId or "").strip()
             try:
-                peer = ensure_token(peer, label="peerServiceId")
+                peer = ensure_token(peer, label="fromServiceId")
             except Exception:
                 continue
 
             if not edge.toOperatorId or not edge.fromOperatorId:
                 continue
 
-            # local endpoint is `to`, remote endpoint is `from`.
             local_node = str(edge.toOperatorId)
             local_field = str(edge.toPort)
             if local_node not in self._nodes:
@@ -702,7 +617,6 @@ class ServiceRuntime:
                 await node.on_state(local_field, v, ts_ms=ts)
             except Exception:
                 pass
-            # Mirror into local KV/cache as the resolved state value.
             try:
                 await self.set_state(local_node_id, local_field, v, ts_ms=ts)
             except Exception:
@@ -710,9 +624,6 @@ class ServiceRuntime:
 
     @staticmethod
     def _parse_state_key(key: str, *, service_id: str) -> tuple[str, str] | None:
-        """
-        Parse `svc.<serviceId>.nodes.<nodeId>.state.<field...>`
-        """
         parts = str(key).strip(".").split(".")
         if len(parts) < 6:
             return None
@@ -726,8 +637,8 @@ class ServiceRuntime:
             return None
         return node_id, field
 
+    # ---- subscriptions --------------------------------------------------
     async def _sync_subscriptions(self, want_subjects: set[str]) -> None:
-        # Remove.
         for subject in list(self._subs.keys()):
             if subject in want_subjects:
                 continue
@@ -739,7 +650,6 @@ class ServiceRuntime:
             except Exception:
                 pass
 
-        # Add.
         for subject in want_subjects:
             if subject in self._subs:
                 continue

@@ -4,7 +4,7 @@ from collections.abc import Iterable
 
 from pydantic import ValidationError
 
-from f8pysdk import F8ServiceSpec
+from f8pysdk import F8ServiceSpec, F8ServiceSchemaVersion
 
 
 class RegistryError(Exception):
@@ -44,8 +44,8 @@ class ServiceSpecRegistry:
         except ValidationError as exc:
             raise InvalidServiceSpec(str(exc)) from exc
 
-        if validated.schemaVersion != "f8service/1":
-            raise InvalidServiceSpec('schemaVersion must be "f8service/1"')
+        if validated.schemaVersion != F8ServiceSchemaVersion.f8service_1:
+            raise InvalidServiceSpec(f'schemaVersion must be "{F8ServiceSchemaVersion.f8service_1}", got "{validated.schemaVersion}"')
 
         exists = validated.serviceClass in self._specs
         if exists and not overwrite:

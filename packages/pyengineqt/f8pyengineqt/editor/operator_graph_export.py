@@ -45,7 +45,7 @@ def export_operator_graph(
             except Exception:
                 continue
 
-        for field in spec.states or []:
+        for field in spec.stateFields or []:
             try:
                 value = node.get_property(field.name)
                 schema_type = getattr(field.valueSchema, "type", None) if field.valueSchema else None

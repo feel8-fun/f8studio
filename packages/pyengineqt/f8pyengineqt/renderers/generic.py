@@ -566,7 +566,7 @@ class GenericNode(BaseNode):  # type: ignore[misc]
         """
         self._clear_inline_widgets()
 
-        for field in self.spec.states or []:
+        for field in self.spec.stateFields or []:
             row = self._state_rows.get(field.name)
             if row is None:
                 continue
@@ -993,7 +993,7 @@ class GenericNode(BaseNode):  # type: ignore[misc]
         return row_offset + rows
 
     def _build_state_ports(self, row_offset: int) -> int:
-        fields = list(self.spec.states or [])
+        fields = list(self.spec.stateFields or [])
         self._state_rows = {}
         for idx, field in enumerate(fields):
             access = field.access or F8StateAccess.ro
@@ -1027,7 +1027,7 @@ class GenericNode(BaseNode):  # type: ignore[misc]
     def _apply_state_properties(self) -> None:
         # Create embedded widgets for state fields and wire them to node properties.
 
-        for field in self.spec.states or []:
+        for field in self.spec.stateFields or []:
             schema = field.valueSchema
             # access = field.access
             # label = field.name

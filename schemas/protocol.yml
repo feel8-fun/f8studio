@@ -273,15 +273,15 @@ components:
           items:
             type: string
           default: []
-        states:
+        stateFields:
           type: array
           items:
             $ref: "#/components/schemas/F8StateSpec"
           default: []
-        editableStates:
+        editableStateFields:
           type: boolean
           default: false
-          description: Allow modification of states at runtime.
+          description: Allow modification of state fields at runtime.
         commands:
           type: array
           items:
@@ -362,15 +362,15 @@ components:
           items:
             type: string
           default: []
-        states:
+        stateFields:
           type: array
           items:
             $ref: "#/components/schemas/F8StateSpec"
           default: []
-        editableStates:
+        editableStateFields:
           type: boolean
           default: false
-          description: Allow modification of states at runtime.
+          description: Allow modification of state fields at runtime.
         commands:
           type: array
           description: Optional RPC-style commands the node can invoke (e.g., refresh/connect/disconnect)
@@ -582,6 +582,36 @@ components:
         operatorClass:
           type: string
           description: Optional operator class for operator nodes; omitted for service nodes.
+        execInPorts:
+          type: array
+          description: Exec input port names (control-flow).
+          items:
+            type: string
+          default: []
+        execOutPorts:
+          type: array
+          description: Exec output port names (control-flow).
+          items:
+            type: string
+          default: []
+        dataInPorts:
+          type: array
+          description: Data input ports (value schemas).
+          items:
+            $ref: "#/components/schemas/F8DataPortSpec"
+          default: []
+        dataOutPorts:
+          type: array
+          description: Data output ports (value schemas).
+          items:
+            $ref: "#/components/schemas/F8DataPortSpec"
+          default: []
+        stateFields:
+          type: array
+          description: State fields for this node (names/schemas/access).
+          items:
+            $ref: "#/components/schemas/F8StateSpec"
+          default: []
         stateValues:
           type: object
           description: Map of state name -> value for this node's states.

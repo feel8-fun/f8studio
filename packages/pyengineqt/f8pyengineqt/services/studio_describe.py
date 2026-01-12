@@ -27,7 +27,7 @@ def studio_service_spec() -> F8ServiceSpec:
         description="In-process editor service for UI operators.",
         tags=["service", "editor", "ui"],
         rendererClass="default",
-        editableStates=False,
+        editableStateFields=False,
         editableDataInPorts=True,
         editableDataOutPorts=True,
         editableCommands=True,
@@ -46,7 +46,7 @@ def studio_operator_specs() -> list[F8OperatorSpec]:
             tags=["ui", "editor"],
             rendererClass="editor_log",
             dataInPorts=[F8DataPortSpec(name="in", description="data input", valueSchema=any_schema())],
-            states=[
+            stateFields=[
                 F8StateSpec(
                     name="refreshMs",
                     label="Refresh (ms)",
@@ -73,7 +73,7 @@ def studio_operator_specs() -> list[F8OperatorSpec]:
             tags=["ui", "editor"],
             rendererClass="ui",
             dataInPorts=[F8DataPortSpec(name="in", description="signal input", valueSchema=number_schema())],
-            states=[
+            stateFields=[
                 F8StateSpec(
                     name="refreshMs",
                     label="Refresh (ms)",

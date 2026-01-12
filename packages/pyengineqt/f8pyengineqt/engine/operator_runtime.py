@@ -26,7 +26,7 @@ class OperatorRuntimeNode(ServiceRuntimeNode):
             node_id=node_id,
             data_in_ports=[p.name for p in (ctx.spec.dataInPorts or [])],
             data_out_ports=[p.name for p in (ctx.spec.dataOutPorts or [])],
-            state_fields=[s.name for s in (ctx.spec.states or [])],
+            state_fields=[s.name for s in (ctx.spec.stateFields or [])],
         )
         self.ctx = ctx
 
@@ -76,4 +76,3 @@ class LogNode(OperatorRuntimeNode):
         if label is None:
             label = self.ctx.initial_state.get("label") or "Log"
         print(f"[engine][{self.node_id}][{label}] value={v}")
-

@@ -4,7 +4,7 @@ from __future__ import annotations
 Runtime subpackage public surface.
 
 Keep this file light: importing `f8pysdk.runtime.*` must not eagerly import
-modules that depend on `f8pysdk.graph.*` to avoid circular imports.
+modules that depend on other heavy subsystems to avoid circular imports.
 """
 
 from typing import TYPE_CHECKING

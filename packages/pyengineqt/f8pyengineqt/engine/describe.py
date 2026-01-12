@@ -31,7 +31,7 @@ def engine_service_spec() -> F8ServiceSpec:
         description="Runs an embedded OperatorGraph as a managed service process.",
         tags=["service", "engine"],
         rendererClass="backdrop",
-        states=[
+        stateFields=[
             F8StateSpec(
                 name="natsUrl",
                 label="NATS URL",
@@ -50,7 +50,7 @@ def engine_service_spec() -> F8ServiceSpec:
                 showOnNode=False,
             ),
         ],
-        editableStates=False,
+        editableStateFields=False,
         editableDataInPorts=True,
         editableDataOutPorts=True,
         editableCommands=True,
@@ -78,7 +78,7 @@ def engine_operator_specs() -> list[F8OperatorSpec]:
             execInPorts=["exec"],
             execOutPorts=["exec"],
             dataOutPorts=[F8DataPortSpec(name="value", description="constant output", valueSchema=number_schema())],
-            states=[
+            stateFields=[
                 F8StateSpec(
                     name="value2",
                     label="Value",
@@ -113,7 +113,7 @@ def engine_operator_specs() -> list[F8OperatorSpec]:
             dataInPorts=[
                 F8DataPortSpec(name="value", description="value to log", required=False, valueSchema=number_schema())
             ],
-            states=[
+            stateFields=[
                 F8StateSpec(
                     name="label",
                     label="Label",

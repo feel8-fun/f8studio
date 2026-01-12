@@ -3,9 +3,26 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ..graph.operator_graph import OperatorGraph
+from ..generated import F8JsonValue, F8RuntimeGraph, F8RuntimeNode
 from .service_operator_runtime_registry import ServiceOperatorRuntimeRegistry
 from .service_runtime import ServiceRuntime
+
+
+def _unwrap_json_value(v: Any) -> Any:
+    if v is None:
+        return None
+    try:
+        if isinstance(v, F8JsonValue):
+            return v.root
+    except Exception:
+        pass
+    try:
+        root = getattr(v, "root", None)
+        if root is not None:
+            return root
+    except Exception:
+        pass
+    return v
 
 
 @dataclass(frozen=True)
@@ -22,10 +39,10 @@ class ServiceHostConfig:
 
 class ServiceHost:
     """
-    Generic service host that binds a `ServiceRuntime` to per-operator runtime nodes.
+    Push-based service host that binds a `ServiceRuntime` to per-node runtime implementations.
 
-    - topology drives creation/removal of local runtime nodes
-    - runtime pushes data into nodes (`on_data`) and manages cross-edge routing
+    - Topology drives creation/removal of local runtime nodes.
+    - Runtime pushes data into nodes (`on_data`) and manages cross-edge routing.
     """
 
     def __init__(
@@ -42,17 +59,29 @@ class ServiceHost:
         self._nodes: dict[str, Any] = {}
         self._runtime.add_topology_listener(self._on_topology)
 
-    async def _on_topology(self, graph: OperatorGraph) -> None:
+    async def _on_topology(self, graph: F8RuntimeGraph) -> None:
         try:
             await self.apply_topology(graph)
         except Exception:
             return
 
-    async def apply_topology(self, graph: OperatorGraph) -> None:
+    async def apply_topology(self, graph: F8RuntimeGraph) -> None:
         """
         Register/unregister local runtime nodes based on the latest topology snapshot.
         """
-        want_ids = set(map(str, graph.nodes.keys()))
+        service_class = str(self._config.service_class or "").strip()
+
+        want_nodes: list[F8RuntimeNode] = []
+        for n in graph.nodes:
+            try:
+                if service_class and str(n.serviceClass) != service_class:
+                    continue
+                want_nodes.append(n)
+            except Exception:
+                continue
+
+        want_ids = {str(n.nodeId) for n in want_nodes}
+
         for node_id in list(self._nodes.keys()):
             if node_id in want_ids:
                 continue
@@ -62,50 +91,51 @@ class ServiceHost:
                 pass
             self._nodes.pop(node_id, None)
 
-        service_class = str(self._config.service_class or "").strip()
-
-        for node_id, inst in graph.nodes.items():
-            nid = str(node_id)
-            if nid in self._nodes:
+        for n in want_nodes:
+            node_id = str(n.nodeId)
+            if node_id in self._nodes:
                 continue
+            initial_state = self._node_initial_state(n)
             try:
-                inst_service_class = str(getattr(inst.spec, "serviceClass", "") or "").strip()
+                node = self._registry.create(node_id=node_id, node=n, initial_state=initial_state)
             except Exception:
-                inst_service_class = ""
-            if inst_service_class and service_class and inst_service_class != service_class:
-                continue
-            try:
-                node = self._registry.create(
-                    node_id=nid,
-                    spec=inst.spec,
-                    initial_state=dict(inst.state or {}),
-                )
-            except Exception:
-                # Fallback: generic no-op runtime node.
                 node = None
             if node is None:
                 continue
-            self._nodes[nid] = node
+            self._nodes[node_id] = node
             try:
                 self._runtime.register_node(node)
             except Exception:
+                self._nodes.pop(node_id, None)
                 continue
 
-        await self._seed_state_defaults(graph)
+        await self._seed_state_defaults(want_nodes)
 
-    async def _seed_state_defaults(self, graph: OperatorGraph) -> None:
+    @staticmethod
+    def _node_initial_state(n: F8RuntimeNode) -> dict[str, Any]:
+        values = getattr(n, "stateValues", None) or {}
+        out: dict[str, Any] = {}
+        if not isinstance(values, dict):
+            return out
+        for k, v in values.items():
+            out[str(k)] = _unwrap_json_value(v)
+        return out
+
+    async def _seed_state_defaults(self, nodes: list[F8RuntimeNode]) -> None:
         """
-        Ensure KV has at least the topology-provided state values.
+        Ensure KV has at least the topology-provided initial state values.
         """
-        for node_id, inst in graph.nodes.items():
-            for k, v in (inst.state or {}).items():
+        for n in nodes:
+            node_id = str(n.nodeId)
+            for k, v in self._node_initial_state(n).items():
                 try:
-                    existing = await self._runtime.get_state(str(node_id), str(k))
+                    existing = await self._runtime.get_state(node_id, str(k))
                 except Exception:
                     existing = None
                 if existing is not None:
                     continue
                 try:
-                    await self._runtime.set_state_with_meta(str(node_id), str(k), v, source="topology")
+                    await self._runtime.set_state_with_meta(node_id, str(k), v, source="topology")
                 except Exception:
                     continue
+

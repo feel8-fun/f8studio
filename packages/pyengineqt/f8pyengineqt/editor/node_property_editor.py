@@ -595,8 +595,8 @@ class NodeStateEditorWidget(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(box)
 
         meta_parts = [field.name, _schema_type_label(field.valueSchema), field.access.value]
-        if field.language:
-            meta_parts.append(f"lang={field.language}")
+        if field.uiLanguage:
+            meta_parts.append(f"lang={field.uiLanguage}")
         meta = QtWidgets.QLabel(" · ".join(meta_parts))
         meta.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
         meta.setStyleSheet("color: #666;")
@@ -609,7 +609,7 @@ class NodeStateEditorWidget(QtWidgets.QWidget):
             layout.addWidget(desc)
 
         read_only = field.access == F8StateAccess.ro
-        editor = SchemaValueEditor(field.valueSchema, language=field.language, read_only=read_only)
+        editor = SchemaValueEditor(field.valueSchema, language=field.uiLanguage, read_only=read_only)
 
         try:
             value = node.get_property(field.name)
@@ -1003,7 +1003,7 @@ class StateSpecEditorDialog(QtWidgets.QDialog):
         self._required = QtWidgets.QCheckBox("required")
         self._required.setChecked(bool(field.required))
 
-        self._language = QtWidgets.QLineEdit(field.language or "")
+        self._language = QtWidgets.QLineEdit(field.uiLanguage or "")
         self._language.setPlaceholderText("language (optional, eg: javascript)")
 
         self._show_on_node = QtWidgets.QCheckBox("showOnNode")
@@ -1127,7 +1127,7 @@ class StateRowWidget(QtWidgets.QWidget):
             valueSchema=self._field.valueSchema,
             access=access,
             required=bool(self._field.required),
-            language=self._field.language,
+            language=self._field.uiLanguage,
             showOnNode=show_on_node,
         )
 
@@ -1152,7 +1152,7 @@ class StateRowWidget(QtWidgets.QWidget):
         self._field.label = dlg.label()
         self._field.description = dlg.description()
         self._field.required = dlg.required()
-        self._field.language = dlg.language()
+        self._field.uiLanguage = dlg.language()
         setattr(self._field, "showOnNode", dlg.show_on_node())
         self._show_on_node.setChecked(bool(getattr(self._field, "showOnNode", False)))
         self._field.valueSchema = dlg.schema()
@@ -1339,7 +1339,7 @@ class StateDefTable(QtWidgets.QWidget):
         required.setChecked(bool(field.required))
         required.stateChanged.connect(lambda _: self.changed.emit())
 
-        language = QtWidgets.QLineEdit(field.language or "")
+        language = QtWidgets.QLineEdit(field.uiLanguage or "")
         language.textChanged.connect(lambda _: self.changed.emit())
 
         schema_btn = QtWidgets.QPushButton("Edit…")
@@ -1491,7 +1491,7 @@ class NodeSpecEditorWidget(QtWidgets.QWidget):
         self._exec_out.set_items(list(self._spec.execOutPorts or []))
         self._data_in.set_ports(self._spec.dataInPorts or [])
         self._data_out.set_ports(self._spec.dataOutPorts or [])
-        self._states.set_fields(self._spec.states or [])
+        self._states.set_fields(self._spec.stateFields or [])
 
     def _collect_spec_from_ui(self) -> F8OperatorSpec | None:
         if self._spec is None:
@@ -1501,7 +1501,7 @@ class NodeSpecEditorWidget(QtWidgets.QWidget):
         spec.execOutPorts = self._exec_out.items()
         spec.dataInPorts = self._data_in.ports()
         spec.dataOutPorts = self._data_out.ports()
-        spec.states = self._states.fields()
+        spec.stateFields = self._states.fields()
         try:
             validated = F8OperatorSpec.model_validate(spec.model_dump(mode="json"))
         except Exception:
@@ -1530,7 +1530,7 @@ class NodeSpecEditorWidget(QtWidgets.QWidget):
         exec_out = [p.strip() for p in (spec.execOutPorts or []) if p.strip()]
         data_in = [p.name.strip() for p in (spec.dataInPorts or []) if p.name and p.name.strip()]
         data_out = [p.name.strip() for p in (spec.dataOutPorts or []) if p.name and p.name.strip()]
-        states = [s.name.strip() for s in (spec.states or []) if s.name and s.name.strip()]
+        states = [s.name.strip() for s in (spec.stateFields or []) if s.name and s.name.strip()]
 
         if any(not p.strip() for p in (spec.execInPorts or [])):
             errors.append("execInPorts contains an empty name.")
@@ -1540,8 +1540,8 @@ class NodeSpecEditorWidget(QtWidgets.QWidget):
             errors.append("dataInPorts contains an empty name.")
         if any(not p.name.strip() for p in (spec.dataOutPorts or []) if p.name is not None):
             errors.append("dataOutPorts contains an empty name.")
-        if any(not s.name.strip() for s in (spec.states or []) if s.name is not None):
-            errors.append("states contains an empty name.")
+        if any(not s.name.strip() for s in (spec.stateFields or []) if s.name is not None):
+            errors.append("stateFields contains an empty name.")
 
         dup = self._find_duplicates(exec_in)
         if dup:
@@ -1697,12 +1697,12 @@ class ServiceSpecEditorWidget(QtWidgets.QWidget):
             [
                 bool(getattr(self._spec, "editableDataInPorts", False)),
                 bool(getattr(self._spec, "editableDataOutPorts", False)),
-                bool(getattr(self._spec, "editableStates", False)),
+                bool(getattr(self._spec, "editableStateFields", False)),
             ]
         )
         self._data_in.setEnabled(bool(getattr(self._spec, "editableDataInPorts", False)) and can_apply)
         self._data_out.setEnabled(bool(getattr(self._spec, "editableDataOutPorts", False)) and can_apply)
-        self._states.setEnabled(bool(getattr(self._spec, "editableStates", False)) and can_apply)
+        self._states.setEnabled(bool(getattr(self._spec, "editableStateFields", False)) and can_apply)
         self._apply.setEnabled(bool(editable and can_apply))
         self._raw_json.setEnabled(bool(editable and can_apply))
 
@@ -1715,7 +1715,7 @@ class ServiceSpecEditorWidget(QtWidgets.QWidget):
             return
         self._data_in.set_ports(self._spec.dataInPorts or [])
         self._data_out.set_ports(self._spec.dataOutPorts or [])
-        self._states.set_fields(self._spec.states or [])
+        self._states.set_fields(self._spec.stateFields or [])
 
     @staticmethod
     def _find_duplicates(values: list[str]) -> list[str]:
@@ -1731,7 +1731,7 @@ class ServiceSpecEditorWidget(QtWidgets.QWidget):
     def _validate_spec(self, spec: F8ServiceSpec) -> list[str]:
         data_in = [str(p.name).strip() for p in (spec.dataInPorts or [])]
         data_out = [str(p.name).strip() for p in (spec.dataOutPorts or [])]
-        states = [str(s.name).strip() for s in (spec.states or [])]
+        states = [str(s.name).strip() for s in (spec.stateFields or [])]
 
         errors: list[str] = []
         if any(not p for p in data_in):
@@ -1749,7 +1749,7 @@ class ServiceSpecEditorWidget(QtWidgets.QWidget):
             errors.append(f"Duplicate dataOutPorts: {', '.join(dup)}")
         dup = self._find_duplicates(states)
         if dup:
-            errors.append(f"Duplicate states: {', '.join(dup)}")
+            errors.append(f"Duplicate stateFields: {', '.join(dup)}")
 
         return errors
 
@@ -1761,8 +1761,8 @@ class ServiceSpecEditorWidget(QtWidgets.QWidget):
             next_spec.dataInPorts = self._data_in.ports()
         if getattr(next_spec, "editableDataOutPorts", False):
             next_spec.dataOutPorts = self._data_out.ports()
-        if getattr(next_spec, "editableStates", False):
-            next_spec.states = self._states.fields()
+        if getattr(next_spec, "editableStateFields", False):
+            next_spec.stateFields = self._states.fields()
 
         errors = self._validate_spec(next_spec)
         if errors:

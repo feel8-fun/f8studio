@@ -23,7 +23,7 @@ class ServiceHostRegistry:
             description="Service Graph Editor in Python and Qt.",
             tags=["editor", "ui", "python", "py"],
             rendererClass="",
-            states=[
+            stateFields=[
                 F8StateSpec(
                     name="tickMs",
                     label="Refresh Interval (ms)",
@@ -33,7 +33,7 @@ class ServiceHostRegistry:
                     showOnNode=True,
                 ),
             ],
-            editableStates=False,
+            editableStateFields=False,
             editableDataInPorts=False,
             editableDataOutPorts=False,
             editableCommands=False,
@@ -75,7 +75,7 @@ class ServiceHostRegistry:
                     valueSchema=any_schema(),
                 ),
             ],
-            states=[
+            stateFields=[
                 F8StateSpec(
                     name="prefix",
                     label="Print Prefix",

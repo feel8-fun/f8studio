@@ -40,7 +40,7 @@ class OperatorInstance:
     @staticmethod
     def _build_default_state(spec: F8OperatorSpec) -> dict[str, Any]:
         defaults: dict[str, Any] = {}
-        for field_def in spec.states or []:
+        for field_def in spec.stateFields or []:
             default_value = schema_default(field_def.valueSchema)
             if default_value is not None:
                 defaults[field_def.name] = default_value
@@ -61,7 +61,7 @@ class OperatorInstance:
         return operator_key(self.service_class, self.operator_class)
 
     def get_state_field(self, name: str) -> F8StateSpec | None:
-        for field_def in self.spec.states or []:
+        for field_def in self.spec.stateFields or []:
             if field_def.name == name:
                 return field_def
         return None

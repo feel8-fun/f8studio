@@ -169,7 +169,7 @@ class EngineManager(QtCore.QObject):
             if node_id in self._seeded_nodes:
                 continue
             try:
-                fields = [s.name for s in (node.spec.states or [])]
+                fields = [s.name for s in (node.spec.stateFields or [])]
             except Exception:
                 fields = []
             for name in fields:
@@ -245,7 +245,7 @@ class EngineManager(QtCore.QObject):
             self.schedule_topology_sync()
             return
         try:
-            state_fields = {s.name: s for s in (node.spec.states or [])}
+            state_fields = {s.name: s for s in (node.spec.stateFields or [])}
         except Exception:
             state_fields = {}
         if name not in state_fields:
@@ -301,7 +301,7 @@ class EngineManager(QtCore.QObject):
         if self._node_filter is not None and not self._node_filter(node):
             return
         try:
-            fields = [s.name for s in (node.spec.states or [])]
+            fields = [s.name for s in (node.spec.stateFields or [])]
         except Exception:
             fields = []
         for name in fields:

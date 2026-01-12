@@ -89,8 +89,8 @@ class OperatorGraphEditor:
                     out_schema = next(p.valueSchema for p in (source.spec.dataOutPorts or []) if p.name == out_port)
                     in_schema = next(p.valueSchema for p in (target.spec.dataInPorts or []) if p.name == in_port)
                 else:
-                    out_schema = next(s.valueSchema for s in (source.spec.states or []) if s.name == out_port)
-                    in_schema = next(s.valueSchema for s in (target.spec.states or []) if s.name == in_port)
+                    out_schema = next(s.valueSchema for s in (source.spec.stateFields or []) if s.name == out_port)
+                    in_schema = next(s.valueSchema for s in (target.spec.stateFields or []) if s.name == in_port)
                 if not schema_is_superset(schema_signature(out_schema), schema_signature(in_schema)):
                     return
             except Exception:
@@ -131,7 +131,7 @@ class OperatorGraphEditor:
                 except Exception:
                     continue
 
-            for field in spec.states or []:
+            for field in spec.stateFields or []:
                 try:
                     value = node.get_property(field.name)
                     schema_type = getattr(field.valueSchema, "type", None) if field.valueSchema else None

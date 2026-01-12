@@ -22,8 +22,8 @@ class ServiceHostRegistry:
             label="PyEngine",
             description="Python-based execution engine for Feel8 operators.",
             tags=["engine", "python", "py"],
-            rendererClass="",
-            editableStates=False,
+            rendererClass="f8.operator_runner",
+            editableStateFields=False,
             editableDataInPorts=False,
             editableDataOutPorts=False,
             editableCommands=False,
@@ -39,7 +39,7 @@ class ServiceHostRegistry:
             label="Tick",
             description="Tick operator that generates periodic ticks.",
             tags=["execution", "timer", "start"],
-            states=[
+            stateFields=[
                 F8StateSpec(
                     name="tickMs",
                     label="Refresh Interval (ms)",

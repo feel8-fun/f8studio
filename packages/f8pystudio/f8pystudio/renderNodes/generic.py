@@ -55,7 +55,7 @@ class GenericRenderNode(BaseNode):
 
     def _build_state_port(self):
 
-        for s in self.spec.states:
+        for s in self.spec.stateFields:
             if not s.showOnNode:
                 continue
             self.add_input(

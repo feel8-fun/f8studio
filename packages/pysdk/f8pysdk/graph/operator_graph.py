@@ -299,7 +299,7 @@ class OperatorGraph:
         raise ValueError(f"{direction} data port {port} missing on {instance.id}")
 
     def _validate_state_field(self, instance: OperatorInstance, name: str) -> F8StateSpec:
-        for field_def in instance.spec.states or []:
+        for field_def in instance.spec.stateFields or []:
             if field_def.name == name:
                 return field_def
         raise ValueError(f"state field {name} missing on {instance.id}")
