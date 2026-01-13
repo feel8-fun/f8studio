@@ -1,13 +1,13 @@
 from NodeGraphQt import NodeObject, BaseNode
 
-from .generic import GenericRenderNode
-from .generic_operator import GenericOperatorRenderNode
-from .operator_runner import OperatorRunnerRenderNode
+from .internal.base import F8BaseRenderNode
+from .op_generic import GenericOpRenderNode
+from .svc_container import ContainerSvcRenderNode
 
 
 class RenderNodeRegistry:
     """Registry for renderer classes keyed by rendererClass."""
-    
+
     @staticmethod
     def instance() -> "RenderNodeRegistry":
         # Singleton instance accessor.
@@ -17,9 +17,12 @@ class RenderNodeRegistry:
 
     def __init__(self) -> None:
         self._renderers: dict[str, NodeObject] = {}
-        self._renderers["default"] = GenericRenderNode
-        self._renderers["f8.generic_operator"] = GenericOperatorRenderNode
-        self._renderers["f8.operator_runner"] = OperatorRunnerRenderNode
+        self._renderers["default"] = F8BaseRenderNode
+        self._renderers["default_svc"] = F8BaseRenderNode
+        self._renderers["default_op"] = GenericOpRenderNode
+        self._renderers["default_container"] = ContainerSvcRenderNode
+
+        
 
     def register(self, renderer_key: str, renderer: type[NodeObject]) -> None:
         if renderer_key in self._renderers:

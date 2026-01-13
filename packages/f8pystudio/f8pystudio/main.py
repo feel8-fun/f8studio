@@ -11,13 +11,13 @@ from NodeGraphQt import (
     NodeGraph,
     NodesPaletteWidget,
     NodesTreeWidget,
+    PropertiesBinWidget,
     BaseNode,
     BackdropNode,
     GroupNode,
 )
 
 from .nodegraph import F8StudioGraph
-
 from .widgets.palette_widget import F8NodesPaletteWidget
 
 from .renderNodes import RenderNodeRegistry
@@ -57,7 +57,9 @@ def _main() -> int:
     for svc in serviceCatalog.services.all():
         print(f'Registering render nodes for service "{svc.serviceClass}"')
 
-        base_cls = renderNodeReg.get(svc.rendererClass)  # Ensure service renderer is registered
+        base_cls = renderNodeReg.get(
+            svc.rendererClass, fallback_key="default_svc"
+        )  # Ensure service renderer is registered
         node_cls = type(
             svc.serviceClass,
             (base_cls,),
@@ -69,7 +71,7 @@ def _main() -> int:
         print(f'Registering render node for operator "{op.operatorClass}" in service "{op.serviceClass}"')
         # For demo purposes, we just register the GenericRenderNode for all operators.
 
-        base_cls = renderNodeReg.get(op.rendererClass)
+        base_cls = renderNodeReg.get(op.rendererClass, fallback_key="default_op")
         node_cls = type(
             op.operatorClass,
             (base_cls,),
@@ -95,23 +97,25 @@ def _main() -> int:
 
     for cls in generated_node_cls:
         studio_graph.node_factory.register_node(cls)
+
+    ### NODE
+    n1 = studio_graph.node_factory.create_node_instance("svc.f8.pyengine")
+    studio_graph.add_node(n1, pos=(0, 0))
+
+    n2 = studio_graph.node_factory.create_node_instance("f8.pyengine.f8.print")
+    studio_graph.add_node(n2, pos=(10, 10))
+
     palette = F8NodesPaletteWidget(node_graph=studio_graph)
-    # tree = NodesTreeWidget(node_graph=studio_graph)
 
     mainwin.setCentralWidget(studio_graph.widget)
-    prop_editor = F8NodePropertyEditorWidget(node_graph=studio_graph)
+    prop_editor = PropertiesBinWidget(node_graph=studio_graph)
     prop_dock = QtWidgets.QDockWidget("Properties", mainwin)
     prop_dock.setWidget(prop_editor)
     mainwin.addDockWidget(QtCore.Qt.LeftDockWidgetArea, prop_dock)
 
-    palette._category_tabs
-
     dock = QtWidgets.QDockWidget("Nodes Palette", mainwin)
     dock.setWidget(palette)
     mainwin.addDockWidget(QtCore.Qt.RightDockWidgetArea, dock)
-    # dock2 = QtWidgets.QDockWidget("Nodes Tree", mainwin)
-    # dock2.setWidget(tree)
-    # mainwin.addDockWidget(QtCore.Qt.LeftDockWidgetArea, dock2)
 
     def _deploy() -> None:
         try:
@@ -201,10 +205,10 @@ def _main() -> int:
     menu = mainwin.menuBar().addMenu("Graph")
     menu.addAction(deploy_action)
     menu.addSeparator()
-    menu.addAction(QtWidgets.QAction("Run Engine", mainwin, triggered=_run_service))
-    menu.addAction(QtWidgets.QAction("Stop Engine", mainwin, triggered=_stop_service))
-    menu.addAction(QtWidgets.QAction("Deploy Selected Engine", mainwin, triggered=_deploy_selected))
-    menu.addAction(QtWidgets.QAction("Deploy + Run", mainwin, triggered=_deploy_and_run))
+    # menu.addAction(QtWidgets.QAction("Run Engine", mainwin, triggered=_run_service))
+    # menu.addAction(QtWidgets.QAction("Stop Engine", mainwin, triggered=_stop_service))
+    # menu.addAction(QtWidgets.QAction("Deploy Selected Engine", mainwin, triggered=_deploy_selected))
+    # menu.addAction(QtWidgets.QAction("Deploy + Run", mainwin, triggered=_deploy_and_run))
 
     app.exec_()
 

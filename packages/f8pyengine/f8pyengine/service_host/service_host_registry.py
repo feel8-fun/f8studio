@@ -24,7 +24,7 @@ class ServiceHostRegistry:
             label="PyEngine",
             description="Python-based execution engine for Feel8 operators.",
             tags=["engine", "python", "py"],
-            rendererClass="f8.operator_runner",
+            rendererClass="default_container",
             editableStateFields=False,
             editableDataInPorts=False,
             editableDataOutPorts=False,

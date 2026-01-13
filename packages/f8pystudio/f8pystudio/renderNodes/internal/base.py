@@ -4,14 +4,14 @@ from NodeGraphQt.base.node import _ClassProperty
 from f8pysdk import F8OperatorSpec, F8ServiceSpec
 from f8pysdk.schema_helpers import schema_default
 
-from .internal.port_painter import draw_exec_port, draw_square_port
+from .port_painter import draw_exec_port, draw_square_port
 
 EXEC_PORT_COLOR = (230, 230, 230)
 DATA_PORT_COLOR = (150, 150, 150)
 STATE_PORT_COLOR = (200, 200, 50)
 
 
-class GenericRenderNode(BaseNode):
+class F8BaseRenderNode(BaseNode):
 
     spec: F8OperatorSpec | F8ServiceSpec
 

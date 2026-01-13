@@ -1,68 +1,43 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Generic
 
-from qtpy import QtCore, QtWidgets
-from Qt import QtWidgets as QtNgQtWidgets
+from qtpy import QtCore, QtWidgets, QtGui
 from NodeGraphQt import NodeGraph, BaseNode
 from NodeGraphQt.errors import NodeCreationError, NodeDeletionError
-from NodeGraphQt.base.commands import (NodeAddedCmd, NodeMovedCmd,
-                                       NodesRemovedCmd, PortConnectedCmd)
+from NodeGraphQt.base.commands import NodeAddedCmd, NodeMovedCmd, NodesRemovedCmd, PortConnectedCmd
 import shortuuid
+import logging
+from Qt import QtWidgets as NGQtWidgets
 
 from f8pysdk import F8OperatorSpec, F8ServiceSpec
 
-from ..renderNodes.operator_runner import OperatorRunnerRenderNode
+from ..renderNodes.op_generic import GenericOpRenderNode
+from ..renderNodes.svc_container import ContainerSvcRenderNode
+
 from .viewer import F8NodeViewer
 
+from ..service_host import ServiceHostRegistry
 
-@dataclass
-class _MoveState:
-    last_ok_pos: dict[str, list[float]] = field(default_factory=dict)
-    last_ok_runner_geom: dict[str, dict[str, Any]] = field(default_factory=dict)
-    runner_drag_child_start: dict[str, dict[str, list[float]]] = field(default_factory=dict)
-    updating: bool = False
+_BASE_OPERATOR_CLS_ = GenericOpRenderNode
+_BASE_CONTAINER_CLS_ = ContainerSvcRenderNode
+_CANVAS_SERVICE_CLASS_ = ServiceHostRegistry.instance().serviceClass
 
-
-def _node_id(node: Any) -> str:
-    try:
-        return str(getattr(node, "id", "") or "")
-    except Exception:
-        return ""
+logger = logging.getLogger(__name__)
 
 
-def _scene_rect(node: Any) -> QtCore.QRectF | None:
-    try:
-        view = getattr(node, "view", None)
-        if view is None:
-            return None
-        return view.sceneBoundingRect()
-    except Exception:
-        return None
+def _scene_rect(node: BaseNode) -> QtCore.QRectF | None:
+    return node.view.sceneBoundingRect()
 
 
-def _clamp_delta(node_rect: QtCore.QRectF, container_rect: QtCore.QRectF) -> QtCore.QPointF:
-    dx = 0.0
-    dy = 0.0
-
-    # If the item is larger than the container we can't fully contain it.
-    # In that case we align the top-left edge to keep behavior predictable.
-    if node_rect.width() > container_rect.width():
-        dx = container_rect.left() - node_rect.left()
-    elif node_rect.left() < container_rect.left():
-        dx = container_rect.left() - node_rect.left()
-    elif node_rect.right() > container_rect.right():
-        dx = container_rect.right() - node_rect.right()
-
-    if node_rect.height() > container_rect.height():
-        dy = container_rect.top() - node_rect.top()
-    elif node_rect.top() < container_rect.top():
-        dy = container_rect.top() - node_rect.top()
-    elif node_rect.bottom() > container_rect.bottom():
-        dy = container_rect.bottom() - node_rect.bottom()
-
-    return QtCore.QPointF(dx, dy)
+def _rect_at_pos(item: QtWidgets.QGraphicsItem, pos: list[float] | tuple[float, float]) -> QtCore.QRectF:
+    """
+    Compute a "scene-like" rect for an item positioned at `pos` (top-left),
+    without requiring the item to be in a scene.
+    """
+    brect = item.boundingRect()
+    return QtCore.QRectF(float(pos[0]), float(pos[1]), brect.width(), brect.height())
 
 
 class F8StudioGraph(NodeGraph):
@@ -74,36 +49,45 @@ class F8StudioGraph(NodeGraph):
             parent (object): object parent.
             **kwargs (dict): Used for overriding internal objects at init time.
         """
-        # We need a custom viewer to get continuous node-move events while dragging.
-        undo_stack = kwargs.pop("undo_stack", None)
-        viewer = kwargs.pop("viewer", None)
-        if viewer is None:
-            if undo_stack is None:
-                undo_stack = QtNgQtWidgets.QUndoStack(parent)
-            viewer = F8NodeViewer(undo_stack=undo_stack)
-        super().__init__(parent, undo_stack=undo_stack, viewer=viewer, **kwargs)
+        # Use a custom viewer to support keyboard shortcuts (Tab search, Delete).
+        undo_stack = kwargs.get("undo_stack") or NGQtWidgets.QUndoStack(parent)
+        viewer = kwargs.get("viewer") or F8NodeViewer(undo_stack=undo_stack)
+
+        kwargs["undo_stack"] = undo_stack
+        kwargs["viewer"] = viewer
+        super().__init__(parent, **kwargs)
+        viewer.set_graph(self)
 
         self.uuid_length = kwargs.get("uuid_length", 4)
         self.uuid_generator = shortuuid.ShortUUID()
-        self._move = _MoveState()
+        # self._move = _MoveState()
 
-        try:
-            self.property_changed.connect(self._on_property_changed)  # type: ignore[attr-defined]
-        except Exception:
-            pass
-        try:
-            self.node_deleted.connect(self._on_node_deleted)  # type: ignore[attr-defined]
-        except Exception:
-            pass
-        try:
-            # Continuous move events during dragging.
-            getattr(self._viewer, "moving_nodes").connect(self._on_nodes_moving)  # type: ignore[attr-defined]
-        except Exception:
-            pass
+        self.property_changed.connect(self._on_property_changed)  # type: ignore[attr-defined]
 
-    
-    def create_node(self, node_type, name=None, selected=True, color=None,
-                    text_color=None, pos=None, push_undo=True):
+        # NodeGraphQt exposes `nodes_deleted` (list[str]), not `node_deleted`.
+        self.nodes_deleted.connect(self._on_nodes_deleted)  # type: ignore[attr-defined]
+
+        # Continuous move events during dragging.
+        if hasattr(self._viewer, "moving_nodes"):
+            self._viewer.moving_nodes.connect(self._on_nodes_moving)  # type: ignore[attr-defined]
+
+    def toggle_node_search(self):
+        """
+        Open node search (tab search menu).
+
+        NodeGraphQt's default implementation only opens when the viewer is
+        under the mouse; for keyboard shortcuts we want it to open when the
+        viewer has focus.
+        """
+        self._viewer.tab_search_set_nodes(self._node_factory.names)
+
+    def _assign_node_id(self, node: BaseNode) -> BaseNode:
+        new_nid = self.new_unique_node_id()
+        node.model.id = new_nid
+        node.view.id = new_nid
+        return node
+
+    def create_node(self, node_type, name=None, selected=True, color=None, text_color=None, pos=None, push_undo=True):
         """
         Create a new node in the node graph.
 
@@ -113,6 +97,8 @@ class F8StudioGraph(NodeGraph):
         Args:
             node_type (str): node instance type.
             name (str): set name of the node.
+
+
             selected (bool): set created node to be selected.
             color (tuple or str): node color ``(255, 255, 255)`` or ``"#FFFFFF"``.
             text_color (tuple or str): text color ``(255, 255, 255)`` or ``"#FFFFFF"``.
@@ -124,27 +110,21 @@ class F8StudioGraph(NodeGraph):
         """
         node = self._node_factory.create_node_instance(node_type)
         if node:
+            node = self._assign_node_id(node)
+
             node._graph = self
             node.model._graph_model = self.model
 
-            # Create a unique node id.
-            node.model.id = self.new_unique_node_id()
-            node.view.id = node.model.id
-
-            wid_types = node.model.__dict__.pop('_TEMP_property_widget_types')
-            prop_attrs = node.model.__dict__.pop('_TEMP_property_attrs')
+            wid_types = node.model.__dict__.pop("_TEMP_property_widget_types")
+            prop_attrs = node.model.__dict__.pop("_TEMP_property_attrs")
 
             if self.model.get_node_common_properties(node.type_) is None:
-                node_attrs = {node.type_: {
-                    n: {'widget_type': wt} for n, wt in wid_types.items()
-                }}
+                node_attrs = {node.type_: {n: {"widget_type": wt} for n, wt in wid_types.items()}}
                 for pname, pattrs in prop_attrs.items():
                     node_attrs[node.type_][pname].update(pattrs)
                 self.model.set_node_common_properties(node_attrs)
 
-            accept_types = node.model.__dict__.pop(
-                '_TEMP_accept_connection_types'
-            )
+            accept_types = node.model.__dict__.pop("_TEMP_accept_connection_types")
             for ptype, pdata in accept_types.get(node.type_, {}).items():
                 for pname, accept_data in pdata.items():
                     for accept_ntype, accept_ndata in accept_data.items():
@@ -156,11 +136,9 @@ class F8StudioGraph(NodeGraph):
                                     node_type=node.type_,
                                     accept_pname=accept_pname,
                                     accept_ptype=accept_ptype,
-                                    accept_ntype=accept_ntype
+                                    accept_ntype=accept_ntype,
                                 )
-            reject_types = node.model.__dict__.pop(
-                '_TEMP_reject_connection_types'
-            )
+            reject_types = node.model.__dict__.pop("_TEMP_reject_connection_types")
             for ptype, pdata in reject_types.get(node.type_, {}).items():
                 for pname, reject_data in pdata.items():
                     for reject_ntype, reject_ndata in reject_data.items():
@@ -172,7 +150,7 @@ class F8StudioGraph(NodeGraph):
                                     node_type=node.type_,
                                     reject_pname=reject_pname,
                                     reject_ptype=reject_ptype,
-                                    reject_ntype=reject_ntype
+                                    reject_ntype=reject_ntype,
                                 )
 
             node.NODE_NAME = self.get_unique_name(name or node.NODE_NAME)
@@ -181,8 +159,8 @@ class F8StudioGraph(NodeGraph):
 
             def format_color(clr):
                 if isinstance(clr, str):
-                    clr = clr.strip('#')
-                    return tuple(int(clr[i:i + 2], 16) for i in (0, 2, 4))
+                    clr = clr.strip("#")
+                    return tuple(int(clr[i : i + 2], 16) for i in (0, 2, 4))
                 return clr
 
             if color:
@@ -197,28 +175,73 @@ class F8StudioGraph(NodeGraph):
 
             node.update()
 
-            undo_cmd = NodeAddedCmd(
-                self, node, pos=node.model.pos, emit_signal=True
-            )
+            ok, msg = self._ensure_operator_in_container(node, pos=pos)
+            if not ok:
+                if msg:
+                    QtWidgets.QMessageBox.warning(None, "Container required", msg)
+                return None
+
+            undo_cmd = NodeAddedCmd(self, node, pos=node.model.pos, emit_signal=True)
             if push_undo:
                 undo_label = 'create node: "{}"'.format(node.NODE_NAME)
                 self._undo_stack.beginMacro(undo_label)
                 for n in self.selected_nodes():
-                    n.set_property('selected', False, push_undo=True)
+                    n.set_property("selected", False, push_undo=True)
                 self._undo_stack.push(undo_cmd)
                 self._undo_stack.endMacro()
             else:
                 for n in self.selected_nodes():
-                    n.set_property('selected', False, push_undo=False)
+                    n.set_property("selected", False, push_undo=False)
                 undo_cmd.redo()
 
-            try:
-                self._on_node_created(node)
-            except Exception:
-                pass
             return node
 
         raise NodeCreationError('Can\'t find node: "{}"'.format(node_type))
+
+    def add_node(self, node, pos=None, selected=True, push_undo=True, inherite_graph_style=True):
+        """Add an existing node to the graph.
+        Args:
+            node (BaseNode): node instance to add.
+            pos (list[int, int]): initial x, y position for the node (default: ``(0, 0)``).
+            selected (bool): set created node to be selected.
+            push_undo (bool): register the command to the undo stack. (default: True)
+            inherite_graph_style (bool): whether to inherite the graph style settings.
+        """
+
+        node = self._assign_node_id(node)
+        if pos:
+            node.model.pos = [float(pos[0]), float(pos[1])]
+            node.view.xy_pos = [float(pos[0]), float(pos[1])]
+
+        ok, msg = self._ensure_operator_in_container(node, pos=pos)
+        if not ok:
+            if msg:
+                QtWidgets.QMessageBox.warning(None, "Container required", msg)
+            return
+
+        super().add_node(
+            node, pos=pos, selected=selected, push_undo=push_undo, inherite_graph_style=inherite_graph_style
+        )
+
+    def delete_node(self, node, push_undo=True):
+        """
+        Delete a node from the graph.
+
+        Note: deleting a service container also deletes its bound operators.
+        """
+        nodes = self._expand_delete_nodes([node])
+        if len(nodes) <= 1:
+            return super().delete_node(node, push_undo=push_undo)
+        return super().delete_nodes(nodes, push_undo=push_undo)
+
+    def delete_nodes(self, nodes, push_undo=True):
+        """
+        Delete multiple nodes from the graph.
+
+        Note: deleting any service container also deletes its bound operators.
+        """
+        nodes = self._expand_delete_nodes(list(nodes or []))
+        return super().delete_nodes(nodes, push_undo=push_undo)
 
     def new_unique_node_id(self) -> str:
         """Generate a new unique node ID."""
@@ -227,579 +250,169 @@ class F8StudioGraph(NodeGraph):
             uuid = self.uuid_generator.random(self.uuid_length)
         return uuid
 
-    # ---- OperatorRunner constraints ------------------------------------
-    def _operator_runners(self) -> list[OperatorRunnerRenderNode]:
-        runners: list[OperatorRunnerRenderNode] = []
-        try:
-            nodes = list(self.all_nodes() or [])
-        except Exception:
-            nodes = []
-        for n in nodes:
-            if isinstance(n, OperatorRunnerRenderNode):
-                runners.append(n)
-        return runners
-
     @staticmethod
     def _is_operator_node(node: Any) -> bool:
-        return isinstance(getattr(node, "spec", None), F8OperatorSpec)
+        return hasattr(node, "spec") and isinstance(node.spec, F8OperatorSpec)  # type: ignore[attr-defined]
 
     @staticmethod
-    def _is_runner_node(node: Any) -> bool:
-        return isinstance(node, OperatorRunnerRenderNode) or isinstance(getattr(node, "spec", None), F8ServiceSpec)
+    def _is_container_node(node: Any) -> bool:
+        return isinstance(node, _BASE_CONTAINER_CLS_)
 
-    def _runner_at_node(self, node: Any) -> OperatorRunnerRenderNode | None:
+    def _container_at_node(self, node: Any) -> _BASE_CONTAINER_CLS_ | None:
         r_node = _scene_rect(node)
         if r_node is None:
             return None
-        for runner in self._operator_runners():
-            r_run = _scene_rect(runner)
+        return self._container_at_rect(r_node)
+
+    def _container_at_rect(self, rect: QtCore.QRectF) -> _BASE_CONTAINER_CLS_ | None:
+        for container in self.all_nodes():
+            if not self._is_container_node(container):
+                continue
+            r_run = _scene_rect(container)
             if r_run is None:
                 continue
-            if r_run.contains(r_node.center()):
-                return runner
+            if r_run.intersects(rect):
+                return container
         return None
 
-    def _runner_for_service_id(self, service_id: str | None) -> OperatorRunnerRenderNode | None:
-        sid = str(service_id or "").strip()
+    def _bind_operator_to_container(self, operator: _BASE_OPERATOR_CLS_, container: _BASE_CONTAINER_CLS_) -> bool:
+        if not self._is_operator_node(operator):
+            logger.warning("Cannot bind non-operator node to container")
+            return False
+        if not self._is_container_node(container):
+            logger.warning("Cannot bind operator node to non-container node")
+            return False
+        if operator.spec.serviceClass != container.spec.serviceClass:
+            logger.warning(
+                f"Operator serviceClass '{operator.spec.serviceClass}' does not match container serviceClass '{container.spec.serviceClass}'"
+            )
+            return False
+
+        sid = container.id
         if not sid:
-            return None
-        for runner in self._operator_runners():
-            rid = _node_id(runner).replace(".", "_")
-            if rid == sid:
-                return runner
-        return None
+            logger.error("Container node has no ID")
+            return False
+        operator.set_property("svcId", sid, push_undo=False)  # type: ignore[attr-defined]
+        container.add_child(operator)
+        return True
 
-    def _bind_operator_to_runner(self, node: Any, runner: OperatorRunnerRenderNode) -> None:
-        sid = _node_id(runner).replace(".", "_")
-        if not sid:
-            return
-        try:
-            setattr(node, "serviceId", sid)
-        except Exception:
-            pass
-        try:
-            node.create_property("serviceId", sid)  # type: ignore[attr-defined]
-        except Exception:
-            pass
-        try:
-            node.set_property("serviceId", sid, push_undo=False)  # type: ignore[attr-defined]
-        except Exception:
-            try:
-                node.set_property("serviceId", sid)  # type: ignore[attr-defined]
-            except Exception:
-                pass
-        try:
-            setattr(node, "parentNodeId", _node_id(runner))
-        except Exception:
-            pass
-        try:
-            runner.add_child(node)
-        except Exception:
-            pass
-        # Do NOT auto-wrap nodes: runner geometry is user-controlled.
+    def _container_bound_nodes(self, container: ContainerSvcRenderNode) -> list[BaseNode]:
+        """
+        Return nodes that are bound to the container (best-effort).
+        """
+        out: list[BaseNode] = []
 
-    def _on_node_created(self, node: Any) -> None:
-        if not self._is_operator_node(node):
-            return
+        # Prefer the node objects tracked by ContainerSvcRenderNode.
+        for child in container._child_nodes:
+            nid = child.id
+            n = self.get_node_by_id(nid)
+            if n is not None:
+                out.append(n)
 
-        runner = self._runner_at_node(node)
-        if runner is None:
-            try:
-                QtWidgets.QMessageBox.warning(
-                    None,
-                    "必须指定 Operator Runner",
-                    "创建 Operator 时必须放在某个 Operator Runner（服务容器）内部。",
-                )
-            except Exception:
-                pass
-            try:
-                self.delete_nodes([node])  # type: ignore[attr-defined]
-            except Exception:
-                pass
-            return
+        # Fallback: view-level tracking.
+        for view in container.view._child_views:
+            nid = view.id
+            n = self.get_node_by_id(nid)
+            if n is not None:
+                out.append(n)
 
-        self._bind_operator_to_runner(node, runner)
-        try:
-            self._move.last_ok_pos[_node_id(node)] = list(node.pos())  # type: ignore[attr-defined]
-        except Exception:
-            pass
-        try:
-            rid = _node_id(runner)
-            if rid and rid not in self._move.last_ok_runner_geom:
-                self._move.last_ok_runner_geom[rid] = {
-                    "pos": list(runner.pos()),
-                    "width": runner.get_property("width"),
-                    "height": runner.get_property("height"),
-                }
-        except Exception:
-            pass
+        # Dedupe by id.
+        return list({n.id: n for n in out}.values())
+
+    def _expand_delete_nodes(self, nodes: list[Any]) -> list[Any]:
+        """
+        Expand delete list so deleting a container cascades to its child operators.
+        """
+        if not nodes:
+            return []
+
+        out: list[Any] = []
+        seen: set[str] = set()
+
+        def add_node_obj(n: Any) -> None:
+            nid = n.id
+            if nid in seen:
+                return
+            seen.add(nid)
+            out.append(n)
+
+            if self._is_container_node(n):
+                for child in self._container_bound_nodes(n):
+                    add_node_obj(child)
+
+        for n in nodes:
+            if n is None:
+                continue
+            add_node_obj(n)
+
+        return out
 
     def _on_property_changed(self, node: Any, name: str, value: Any) -> None:
-        if self._move.updating:
-            return
-        prop = str(name)
+        """
+        Optional hook for reacting to property changes.
 
-        # Clamp runner resize so it always contains its children.
-        # (Runner movement is handled in `_on_nodes_moved` so we can clamp while dragging.)
-        if isinstance(node, OperatorRunnerRenderNode) and prop in ("width", "height"):
-            rid = _node_id(node)
-            if not rid:
-                return
-            runner_rect = _scene_rect(node)
-            if runner_rect is None:
-                return
-            try:
-                children = list(node.contained_nodes() or [])
-            except Exception:
-                children = []
-            bounds: QtCore.QRectF | None = None
-            for c in children:
-                r = _scene_rect(c)
-                if r is None:
-                    continue
-                bounds = r if bounds is None else bounds.united(r)
-            if bounds is None:
-                return
+        (We keep this method defined so signal connections don't need
+        defensive try/except blocks.)
+        """
+        return
 
-            if runner_rect.contains(bounds):
-                return
+    def _on_nodes_moving(self, node_data: Any) -> None:
+        """
+        Optional hook for continuous move events during dragging.
 
-            # Ensure the runner can never be resized smaller than its children.
-            req_w = max(0.0, float(bounds.right() - runner_rect.left()))
-            req_h = max(0.0, float(bounds.bottom() - runner_rect.top()))
-            try:
-                cur_w = float(node.get_property("width") or 0.0)
-                cur_h = float(node.get_property("height") or 0.0)
-            except Exception:
-                cur_w = float(getattr(getattr(node, "view", None), "width", 0.0) or 0.0)
-                cur_h = float(getattr(getattr(node, "view", None), "height", 0.0) or 0.0)
-            next_w = max(cur_w, req_w)
-            next_h = max(cur_h, req_h)
-            if next_w == cur_w and next_h == cur_h:
-                return
+        Only used when the viewer implements a `moving_nodes` signal.
+        """
+        return
 
-            self._move.updating = True
-            try:
-                # Avoid creating another undo entry: this is a constraint clamp.
-                try:
-                    node.set_property("width", next_w, push_undo=False)  # type: ignore[attr-defined]
-                    node.set_property("height", next_h, push_undo=False)  # type: ignore[attr-defined]
-                except Exception:
-                    try:
-                        node.view.width = next_w  # type: ignore[attr-defined]
-                        node.view.height = next_h  # type: ignore[attr-defined]
-                        node.model.width = next_w  # type: ignore[attr-defined]
-                        node.model.height = next_h  # type: ignore[attr-defined]
-                    except Exception:
-                        pass
-            finally:
-                self._move.updating = False
-            return
+    def _ensure_operator_in_container(
+        self,
+        node: Any,
+        *,
+        pos: list[float] | tuple[float, float] | None,
+    ) -> tuple[bool, str | None]:
+        """
+        Enforce:
+        - operator nodes must be placed within a service container (unless canvas-managed)
+        - bind `svcId` and container child relationship
 
-        if prop != "pos":
-            return
+        Returns (ok, message). If ok is False, caller should not keep/add the node.
+        """
         if not self._is_operator_node(node):
-            return
+            return True, None
 
-        # Operators are not allowed to move between runners. Prefer the explicit
-        # parent pointer; fallback to `serviceId` lookup only when missing.
-        runner: OperatorRunnerRenderNode | None = None
-        try:
-            parent_id = str(getattr(node, "parentNodeId", "") or "").strip()
-        except Exception:
-            parent_id = ""
-        if parent_id:
-            try:
-                parent = self.get_node_by_id(parent_id)
-            except Exception:
-                parent = None
-            if isinstance(parent, OperatorRunnerRenderNode):
-                runner = parent
+        if node.spec.serviceClass == _CANVAS_SERVICE_CLASS_:
+            node.set_property("svcId", None, push_undo=False)  # type: ignore[attr-defined]
+            return False, None
 
-        if runner is None:
-            sid = None
-            try:
-                sid = getattr(node, "serviceId", None)
-            except Exception:
-                sid = None
-            if not sid:
-                try:
-                    sid = node.get_property("serviceId")  # type: ignore[attr-defined]
-                except Exception:
-                    sid = None
-            runner = self._runner_for_service_id(sid)
+        in_scene = node.view.scene() is not None
+        node_rect = _scene_rect(node) if in_scene else _rect_at_pos(node.view, pos or node.model.pos)
 
-        if runner is None:
-            self._revert_pos(node)
-            return
+        container = self._container_at_rect(node_rect)
+        if container is None:
+            return False, "Operator nodes must be placed within a service container."
 
-        r_node = _scene_rect(node)
-        r_run = _scene_rect(runner)
-        if r_node is None or r_run is None:
-            return
+        if not self._bind_operator_to_container(node, container):
+            return False, "Operator nodes must be placed within a compatible service container."
 
-        if r_run.contains(r_node):
-            try:
-                self._move.last_ok_pos[_node_id(node)] = list(value)
-            except Exception:
-                pass
-            return
-        delta = _clamp_delta(r_node, r_run)
-        try:
-            cur = list(node.pos())  # type: ignore[attr-defined]
-        except Exception:
-            cur = list(value) if isinstance(value, (list, tuple)) else [0.0, 0.0]
-        next_pos = [float(cur[0]) + float(delta.x()), float(cur[1]) + float(delta.y())]
-        self._move.updating = True
-        try:
-            try:
-                node.set_pos(next_pos)  # type: ignore[attr-defined]
-            except Exception:
-                try:
-                    node.set_property("pos", next_pos, push_undo=False)  # type: ignore[attr-defined]
-                except Exception:
-                    node.set_property("pos", next_pos)  # type: ignore[attr-defined]
-            self._move.last_ok_pos[_node_id(node)] = list(next_pos)
-        finally:
-            self._move.updating = False
+        return True, None
 
-    def _revert_pos(self, node: Any) -> None:
-        nid = _node_id(node)
-        prev = self._move.last_ok_pos.get(nid)
-        if not prev:
-            return
-        self._move.updating = True
-        try:
-            try:
-                node.set_pos(prev)  # type: ignore[attr-defined]
-            except Exception:
-                try:
-                    node.set_property("pos", prev, push_undo=False)  # type: ignore[attr-defined]
-                except Exception:
-                    node.set_property("pos", prev)  # type: ignore[attr-defined]
-        finally:
-            self._move.updating = False
-
-    def _on_node_deleted(self, node: Any) -> None:
-        if not self._is_operator_node(node):
-            return
-        try:
-            parent_id = str(getattr(node, "parentNodeId", "") or "").strip()
-        except Exception:
-            parent_id = ""
-        if not parent_id:
-            return
-        try:
-            parent = self.get_node_by_id(parent_id)
-        except Exception:
-            parent = None
-        if isinstance(parent, OperatorRunnerRenderNode):
-            parent.remove_child(_node_id(node))
-
-    def _assigned_runner_for_operator(self, node: Any) -> OperatorRunnerRenderNode | None:
-        try:
-            parent_id = str(getattr(node, "parentNodeId", "") or "").strip()
-        except Exception:
-            parent_id = ""
-        if parent_id:
-            try:
-                parent = self.get_node_by_id(parent_id)
-            except Exception:
-                parent = None
-            if isinstance(parent, OperatorRunnerRenderNode):
-                return parent
-
-        sid = None
-        try:
-            sid = getattr(node, "serviceId", None)
-        except Exception:
-            sid = None
-        if not sid:
-            try:
-                sid = node.get_property("serviceId")  # type: ignore[attr-defined]
-            except Exception:
-                sid = None
-        return self._runner_for_service_id(sid)
-
-    def _set_node_xy(self, node: Any, pos: list[float]) -> None:
-        try:
-            node.view.xy_pos = pos  # type: ignore[attr-defined]
-            node.model.pos = pos  # type: ignore[attr-defined]
-        except Exception:
-            try:
-                node.set_property("pos", pos, push_undo=False)  # type: ignore[attr-defined]
-            except Exception:
-                try:
-                    node.set_pos(pos)  # type: ignore[attr-defined]
-                except Exception:
-                    pass
-
-    def _on_nodes_moved(self, node_data: dict[Any, Any]) -> None:
+    def _on_nodes_deleted(self, node_ids: list[str]) -> None:
         """
-        Enforce OperatorRunner constraints after a drag move.
-
-        - Operators: clamp to their assigned runner bounds (can't leave or switch runner).
-        - Runners: dragging a runner moves its children together.
+        Keep container child lists clean when nodes are deleted (including undo).
         """
-        if self._move.updating:
+        if not node_ids:
             return
-
-        moved_node_ids = self._moved_node_ids(node_data)
-        extra_undo = self._runner_child_undo_entries(node_data, moved_node_ids)
-
-        # 2) Clamp moved operators as a group per runner.
-        ops_by_runner: dict[str, tuple[OperatorRunnerRenderNode, list[Any]]] = {}
-        for node_view, prev_pos in (node_data or {}).items():
-            try:
-                node = self._model.nodes.get(node_view.id)  # type: ignore[attr-defined]
-            except Exception:
-                node = None
-            if node is None or not self._is_operator_node(node):
+        dead = set(node_ids)
+        for container in self.all_nodes():
+            if not self._is_container_node(container):
                 continue
+            container._child_nodes = [n for n in container._child_nodes if n.id not in dead]
 
-            runner = self._assigned_runner_for_operator(node)
-            if runner is None:
-                # Unbound operators should not exist; revert to previous position.
-                try:
-                    prev = list(prev_pos)
-                    self._move.updating = True
-                    self._set_node_xy(node, [float(prev[0]), float(prev[1])])
-                except Exception:
-                    pass
-                finally:
-                    self._move.updating = False
-                continue
-
-            rid = _node_id(runner)
-            if not rid:
-                continue
-            if rid not in ops_by_runner:
-                ops_by_runner[rid] = (runner, [])
-            ops_by_runner[rid][1].append(node)
-
-        for rid, (runner, nodes) in ops_by_runner.items():
-            runner_rect = _scene_rect(runner)
-            if runner_rect is None:
-                continue
-            bounds: QtCore.QRectF | None = None
-            for n in nodes:
-                r = _scene_rect(n)
-                if r is None:
+            kept = []
+            for view in container.view._child_views:
+                vid = view.id
+                if vid in dead:
+                    view._container_item = None
                     continue
-                bounds = r if bounds is None else bounds.united(r)
-            if bounds is None or runner_rect.contains(bounds):
-                continue
-
-            delta = _clamp_delta(bounds, runner_rect)
-            if delta.x() == 0.0 and delta.y() == 0.0:
-                continue
-
-            self._move.updating = True
-            try:
-                for n in nodes:
-                    cur = list(n.pos())
-                    next_pos = [float(cur[0]) + float(delta.x()), float(cur[1]) + float(delta.y())]
-                    self._set_node_xy(n, next_pos)
-                self._move.last_ok_pos[_node_id(n)] = list(next_pos)
-            finally:
-                self._move.updating = False
-
-        # 3) Register undo for the final (post-clamp) node positions.
-        self._undo_stack.beginMacro("move nodes")
-        try:
-            for node_view, prev_pos in (node_data or {}).items():
-                try:
-                    node = self._model.nodes.get(node_view.id)  # type: ignore[attr-defined]
-                except Exception:
-                    node = None
-                if node is None:
-                    continue
-                try:
-                    cur = list(node.pos())
-                except Exception:
-                    continue
-                if list(prev_pos) == cur:
-                    continue
-                self._undo_stack.push(NodeMovedCmd(node, cur, list(prev_pos)))
-
-            for node, new_pos, prev_pos in extra_undo:
-                if new_pos == prev_pos:
-                    continue
-                self._undo_stack.push(NodeMovedCmd(node, list(new_pos), list(prev_pos)))
-        finally:
-            self._undo_stack.endMacro()
-
-        # Clear per-drag state for moved runners.
-        for node_view in (node_data or {}).keys():
-            try:
-                rid = str(getattr(node_view, "id", "") or "")
-            except Exception:
-                rid = ""
-            if rid:
-                self._move.runner_drag_child_start.pop(rid, None)
-
-    def _moved_node_ids(self, node_data: dict[Any, Any]) -> set[str]:
-        out: set[str] = set()
-        for node_view in (node_data or {}).keys():
-            try:
-                out.add(str(getattr(node_view, "id", "") or ""))
-            except Exception:
-                pass
-        return out
-
-    def _runner_child_undo_entries(
-        self, node_data: dict[Any, Any], moved_node_ids: set[str]
-    ) -> list[tuple[Any, list[float], list[float]]]:
-        """
-        Build undo entries for children moved by runner-drag.
-
-        Children positions are updated continuously in `_on_nodes_moving`.
-        Here we only record undo based on stored drag-start positions.
-        """
-        out: list[tuple[Any, list[float], list[float]]] = []
-        for node_view in (node_data or {}).keys():
-            try:
-                runner = self._model.nodes.get(node_view.id)  # type: ignore[attr-defined]
-            except Exception:
-                runner = None
-            if not isinstance(runner, OperatorRunnerRenderNode):
-                continue
-
-            rid = _node_id(runner)
-            if not rid:
-                continue
-
-            start_map = self._move.runner_drag_child_start.get(rid) or {}
-            if not start_map:
-                continue
-
-            for cid, c_prev in start_map.items():
-                if not cid or cid in moved_node_ids:
-                    continue
-                try:
-                    child = self.get_node_by_id(cid)
-                except Exception:
-                    child = None
-                if child is None:
-                    continue
-                try:
-                    c_cur = list(child.pos())
-                except Exception:
-                    continue
-                out.append((child, list(c_cur), list(c_prev)))
-        return out
-
-    def _on_nodes_moving(self, node_data: dict[Any, Any]) -> None:
-        """
-        Continuous enforcement while dragging (no undo).
-
-        - Runner drag: move children together in real-time.
-        - Operator drag: clamp to runner in real-time.
-        """
-        if self._move.updating:
-            return
-
-        moved_node_ids = self._moved_node_ids(node_data)
-
-        # 1) Runner drag: move children with the runner (real-time).
-        self._move.updating = True
-        try:
-            for node_view, prev_pos in (node_data or {}).items():
-                try:
-                    runner = self._model.nodes.get(node_view.id)  # type: ignore[attr-defined]
-                except Exception:
-                    runner = None
-                if not isinstance(runner, OperatorRunnerRenderNode):
-                    continue
-
-                rid = _node_id(runner)
-                if not rid:
-                    continue
-
-                try:
-                    cur = list(runner.pos())
-                    prev = list(prev_pos)
-                    dx = float(cur[0]) - float(prev[0])
-                    dy = float(cur[1]) - float(prev[1])
-                except Exception:
-                    continue
-
-                if dx == 0.0 and dy == 0.0:
-                    continue
-
-                start_map = self._move.runner_drag_child_start.get(rid)
-                if start_map is None:
-                    start_map = {}
-                    try:
-                        children = list(runner.contained_nodes() or [])
-                    except Exception:
-                        children = []
-                    for child in children:
-                        cid = _node_id(child)
-                        if not cid:
-                            continue
-                        try:
-                            start_map[cid] = list(child.pos())  # type: ignore[attr-defined]
-                        except Exception:
-                            pass
-                    self._move.runner_drag_child_start[rid] = start_map
-
-                for cid, c_start in (start_map or {}).items():
-                    if not cid or cid in moved_node_ids:
-                        continue
-                    try:
-                        child = self.get_node_by_id(cid)
-                    except Exception:
-                        child = None
-                    if child is None:
-                        continue
-                    c_next = [float(c_start[0]) + dx, float(c_start[1]) + dy]
-                    self._set_node_xy(child, c_next)
-                    self._move.last_ok_pos[cid] = list(c_next)
-        finally:
-            self._move.updating = False
-
-        # 2) Operator drag: clamp inside its assigned runner (real-time).
-        ops_by_runner: dict[str, tuple[OperatorRunnerRenderNode, list[Any]]] = {}
-        for node_view, prev_pos in (node_data or {}).items():
-            try:
-                node = self._model.nodes.get(node_view.id)  # type: ignore[attr-defined]
-            except Exception:
-                node = None
-            if node is None or not self._is_operator_node(node):
-                continue
-            runner = self._assigned_runner_for_operator(node)
-            if runner is None:
-                continue
-            rid = _node_id(runner)
-            if not rid:
-                continue
-            if rid not in ops_by_runner:
-                ops_by_runner[rid] = (runner, [])
-            ops_by_runner[rid][1].append(node)
-
-        for rid, (runner, nodes) in ops_by_runner.items():
-            runner_rect = _scene_rect(runner)
-            if runner_rect is None:
-                continue
-            bounds: QtCore.QRectF | None = None
-            for n in nodes:
-                r = _scene_rect(n)
-                if r is None:
-                    continue
-                bounds = r if bounds is None else bounds.united(r)
-            if bounds is None or runner_rect.contains(bounds):
-                continue
-
-            delta = _clamp_delta(bounds, runner_rect)
-            if delta.x() == 0.0 and delta.y() == 0.0:
-                continue
-
-            self._move.updating = True
-            try:
-                for n in nodes:
-                    cur = list(n.pos())
-                    next_pos = [float(cur[0]) + float(delta.x()), float(cur[1]) + float(delta.y())]
-                    self._set_node_xy(n, next_pos)
-            finally:
-                self._move.updating = False
+                kept.append(view)
+            container.view._child_views = kept

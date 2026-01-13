@@ -1,44 +1,50 @@
 from __future__ import annotations
 
-from NodeGraphQt.widgets.viewer import NodeViewer
+from typing import Any
+
 from Qt import QtCore
+from NodeGraphQt.widgets.viewer import NodeViewer
 
 
 class F8NodeViewer(NodeViewer):
     """
-    NodeGraphQt viewer with a "moving_nodes" signal.
+    Studio viewer with basic keyboard shortcuts.
 
-    NodeGraphQt only emits "moved_nodes" on mouse release. For container
-    constraints we also need continuous updates while dragging.
+    - `Delete` / `Backspace`: delete selected nodes
+    - `Tab`: open node search
     """
 
-    moving_nodes = QtCore.Signal(object)
+    def __init__(self, parent=None, undo_stack=None):
+        super().__init__(parent=parent, undo_stack=undo_stack)
+        self.setFocusPolicy(QtCore.Qt.StrongFocus)
+        self._f8_graph: Any | None = None
 
-    def mouseMoveEvent(self, event):
-        super().mouseMoveEvent(event)
+    def set_graph(self, graph: Any) -> None:
+        self._f8_graph = graph
 
-        # Only emit while dragging nodes (not panning/zooming/rubber band).
-        try:
-            if not getattr(self, "LMB_state", False):
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.setFocus()
+
+    def mousePressEvent(self, event):
+        self.setFocus()
+        super().mousePressEvent(event)
+
+    def keyPressEvent(self, event):
+        graph = self._f8_graph
+
+        if graph is not None and event.modifiers() == QtCore.Qt.NoModifier:
+            if event.key() in (QtCore.Qt.Key_Delete, QtCore.Qt.Key_Backspace):
+                nodes = graph.selected_nodes()
+                if nodes:
+                    graph.delete_nodes(nodes)
+                    event.accept()
+                    return
+
+            if event.key() == QtCore.Qt.Key_Tab:
+                graph.toggle_node_search()
+                event.accept()
                 return
-            if getattr(self, "_rubber_band", None) and getattr(self._rubber_band, "isActive", False):
-                return
-            if getattr(self, "ALT_state", False):
-                return
-        except Exception:
-            return
 
-        try:
-            moved_nodes = {
-                n: xy_pos for n, xy_pos in getattr(self, "_node_positions", {}).items()
-                if getattr(n, "xy_pos", None) != xy_pos
-            }
-        except Exception:
-            moved_nodes = {}
-
-        try:
-            if moved_nodes and not getattr(self, "COLLIDING_state", False):
-                self.moving_nodes.emit(moved_nodes)
-        except Exception:
-            return
+        super().keyPressEvent(event)
 
