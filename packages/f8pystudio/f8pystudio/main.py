@@ -16,7 +16,7 @@ from NodeGraphQt import (
     GroupNode,
 )
 
-from .nodegraph import *
+from .nodegraph import F8StudioGraph
 
 from .widgets.palette_widget import F8NodesPaletteWidget
 
@@ -126,7 +126,7 @@ def _main() -> int:
                 return
             nats_url = str(nats_url).strip()
 
-            rt = export_runtime_graph(graph, service_id=service_id)
+            rt = export_runtime_graph(studio_graph, service_id=service_id)
             asyncio.run(deploy_to_service(service_id=service_id, nats_url=nats_url, graph=rt))
             QtWidgets.QMessageBox.information(mainwin, "Deploy", f"Deployed to {service_id}")
         except Exception as exc:
@@ -139,7 +139,7 @@ def _main() -> int:
 
     def _selected_service_container() -> Any | None:
         try:
-            sel = list(graph.selected_nodes() or [])
+            sel = list(studio_graph.selected_nodes() or [])
         except Exception:
             sel = []
         for n in sel:
@@ -159,17 +159,6 @@ def _main() -> int:
         if not sid:
             sid = "engine1"
         return sid
-
-    def _wrap_selected_into_container() -> None:
-        n = _selected_service_container()
-        if n is None:
-            return
-        try:
-            wrap = getattr(n, "wrap_selected_nodes", None)
-            if callable(wrap):
-                wrap()
-        except Exception:
-            return
 
     def _run_service() -> None:
         n = _selected_service_container()
@@ -199,7 +188,7 @@ def _main() -> int:
                 nodes = list(getattr(n, "contained_nodes")() or [])
             except Exception:
                 nodes = []
-            rt = export_runtime_graph(graph, service_id=service_id, include_nodes=nodes)
+            rt = export_runtime_graph(studio_graph, service_id=service_id, include_nodes=nodes)
             asyncio.run(deploy_to_service(service_id=service_id, nats_url=nats_url, graph=rt))
             QtWidgets.QMessageBox.information(mainwin, "Deploy", f"Deployed to {service_id}")
         except Exception as exc:
@@ -212,7 +201,6 @@ def _main() -> int:
     menu = mainwin.menuBar().addMenu("Graph")
     menu.addAction(deploy_action)
     menu.addSeparator()
-    menu.addAction(QtWidgets.QAction("Wrap Selected Into Engine", mainwin, triggered=_wrap_selected_into_container))
     menu.addAction(QtWidgets.QAction("Run Engine", mainwin, triggered=_run_service))
     menu.addAction(QtWidgets.QAction("Stop Engine", mainwin, triggered=_stop_service))
     menu.addAction(QtWidgets.QAction("Deploy Selected Engine", mainwin, triggered=_deploy_selected))

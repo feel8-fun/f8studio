@@ -52,6 +52,7 @@ def export_runtime_graph(
 
     nodes: list[F8RuntimeNode] = []
     edges: list[F8Edge] = []
+    node_service_ids: dict[Any, str] = {}
 
     # Nodes.
     if include_nodes is not None:
@@ -72,6 +73,19 @@ def export_runtime_graph(
         except Exception:
             node_id = uuid.uuid4().hex
         id_map[n] = node_id
+
+        sid = None
+        try:
+            sid = getattr(n, "serviceId", None)
+        except Exception:
+            sid = None
+        if not sid:
+            try:
+                sid = n.get_property("serviceId")
+            except Exception:
+                sid = None
+        sid_s = str(sid or "").strip()
+        node_service_ids[n] = sid_s or service_id
 
         service_class = str(getattr(spec, "serviceClass", "") or "").strip()
         operator_class = getattr(spec, "operatorClass", None)
@@ -150,10 +164,10 @@ def export_runtime_graph(
                 edges.append(
                     F8Edge(
                         edgeId=uuid.uuid4().hex,
-                        fromServiceId=service_id,
+                        fromServiceId=node_service_ids.get(src_node, service_id),
                         fromOperatorId=from_id,
                         fromPort=_raw_port_name(out_name),
-                        toServiceId=service_id,
+                        toServiceId=node_service_ids.get(dst_node, service_id),
                         toOperatorId=to_id,
                         toPort=_raw_port_name(in_name),
                         kind=edge_kind,
