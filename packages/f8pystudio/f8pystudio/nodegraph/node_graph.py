@@ -9,14 +9,13 @@ from NodeGraphQt.errors import NodeCreationError, NodeDeletionError
 from NodeGraphQt.base.commands import NodeAddedCmd, NodeMovedCmd, NodesRemovedCmd, PortConnectedCmd
 import shortuuid
 import logging
-from Qt import QtWidgets as NGQtWidgets
 
 from f8pysdk import F8OperatorSpec, F8ServiceSpec
 
 from ..renderNodes.op_generic import GenericOpRenderNode
 from ..renderNodes.svc_container import ContainerSvcRenderNode
 
-from .viewer import F8NodeViewer
+from .viewer import F8StudioNodeViewer
 
 from ..service_host import ServiceHostRegistry
 
@@ -50,8 +49,8 @@ class F8StudioGraph(NodeGraph):
             **kwargs (dict): Used for overriding internal objects at init time.
         """
         # Use a custom viewer to support keyboard shortcuts (Tab search, Delete).
-        undo_stack = kwargs.get("undo_stack") or NGQtWidgets.QUndoStack(parent)
-        viewer = kwargs.get("viewer") or F8NodeViewer(undo_stack=undo_stack)
+        undo_stack = kwargs.get("undo_stack") or QtGui.QUndoStack(parent)
+        viewer = kwargs.get("viewer") or F8StudioNodeViewer(undo_stack=undo_stack)
 
         kwargs["undo_stack"] = undo_stack
         kwargs["viewer"] = viewer

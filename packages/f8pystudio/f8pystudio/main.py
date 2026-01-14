@@ -7,48 +7,19 @@ from .service_catalog import load_discovery_into_registries, ServiceCatalog
 
 
 from qtpy import QtWidgets, QtCore
-from NodeGraphQt import (
-    NodeGraph,
-    NodesPaletteWidget,
-    NodesTreeWidget,
-    PropertiesBinWidget,
-    BaseNode,
-    BackdropNode,
-    GroupNode,
-)
 
 from .nodegraph import F8StudioGraph
-from .widgets.palette_widget import F8NodesPaletteWidget
+from .widgets.palette_widget import F8StudioNodesPaletteWidget
 
 from .renderNodes import RenderNodeRegistry
-from .deploy import deploy_to_service, export_runtime_graph
-from .widgets.node_property_editor import F8NodePropertyEditorWidget
+
+# from .deploy import deploy_to_service, export_runtime_graph
+from .widgets.node_property_widgets import F8StudioPropertiesBinWidget
 from .service_process_manager import ServiceProcessManager, ServiceProcessConfig
 
 
-def _main() -> int:
-    """F8PyStudio main entry point."""
-    parser = argparse.ArgumentParser(description="F8PyStudio Main")
-    parser.add_argument(
-        "--describe",
-        action="store_true",
-        help="Output the service description in JSON format",
-    )
-    args = parser.parse_args()
-
-    if args.describe:
-        describe = F8ServiceDescribe(
-            service=ServiceHostRegistry.instance().service_spec(),
-            operators=ServiceHostRegistry.instance().operator_specs(),
-        ).model_dump(mode="json")
-
-        print(json.dumps(describe, ensure_ascii=False))
-        raise SystemExit(0)
-
-    ret = load_discovery_into_registries()
-
-    # TODO: Generate renderer classes
-
+def generate_node_classes():
+    """Generate node classes from service catalog."""
     renderNodeReg = RenderNodeRegistry.instance()
     serviceCatalog = ServiceCatalog.instance()
 
@@ -79,9 +50,31 @@ def _main() -> int:
         )
         generated_node_cls.append(node_cls)
 
-    print(
-        f"Loaded {len(serviceCatalog.services.all())} services and {len(serviceCatalog.operators.query(None))} operators."
+    return generated_node_cls
+
+def _main() -> int:
+    """F8PyStudio main entry point."""
+    parser = argparse.ArgumentParser(description="F8PyStudio Main")
+    parser.add_argument(
+        "--describe",
+        action="store_true",
+        help="Output the service description in JSON format",
     )
+    args = parser.parse_args()
+
+    if args.describe:
+        describe = F8ServiceDescribe(
+            service=ServiceHostRegistry.instance().service_spec(),
+            operators=ServiceHostRegistry.instance().operator_specs(),
+        ).model_dump(mode="json")
+
+        print(json.dumps(describe, ensure_ascii=False))
+        raise SystemExit(0)
+
+    ret = load_discovery_into_registries()
+
+    # TODO: Generate renderer classes
+    generated_node_cls = generate_node_classes()
 
     # Simple NodeGraphQt demo
     app = QtWidgets.QApplication([])
@@ -105,10 +98,10 @@ def _main() -> int:
     n2 = studio_graph.node_factory.create_node_instance("f8.pyengine.f8.print")
     studio_graph.add_node(n2, pos=(10, 10))
 
-    palette = F8NodesPaletteWidget(node_graph=studio_graph)
+    palette = F8StudioNodesPaletteWidget(node_graph=studio_graph)
 
     mainwin.setCentralWidget(studio_graph.widget)
-    prop_editor = PropertiesBinWidget(node_graph=studio_graph)
+    prop_editor = F8StudioPropertiesBinWidget(node_graph=studio_graph)
     prop_dock = QtWidgets.QDockWidget("Properties", mainwin)
     prop_dock.setWidget(prop_editor)
     mainwin.addDockWidget(QtCore.Qt.LeftDockWidgetArea, prop_dock)

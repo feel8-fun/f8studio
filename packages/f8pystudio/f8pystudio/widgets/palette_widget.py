@@ -3,7 +3,7 @@ from NodeGraphQt import NodesPaletteWidget
 from collections import defaultdict
 
 
-class F8NodesPaletteWidget(NodesPaletteWidget):
+class F8StudioNodesPaletteWidget(NodesPaletteWidget):
     """Customized NodesPaletteWidget for F8PyStudio."""
 
     def __init__(self, parent=None, node_graph=None):

@@ -6,7 +6,7 @@ from Qt import QtCore
 from NodeGraphQt.widgets.viewer import NodeViewer
 
 
-class F8NodeViewer(NodeViewer):
+class F8StudioNodeViewer(NodeViewer):
     """
     Studio viewer with basic keyboard shortcuts.
 
@@ -41,7 +41,7 @@ class F8NodeViewer(NodeViewer):
                     event.accept()
                     return
 
-            if event.key() == QtCore.Qt.Key_Tab:
+            if event.key() == QtCore.Qt.Key_Insert:
                 graph.toggle_node_search()
                 event.accept()
                 return
