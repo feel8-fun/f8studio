@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from typing import Iterable
 
@@ -7,6 +8,7 @@ from qtpy import QtCore, QtWidgets
 
 from ..nodegraph import F8StudioGraph
 from ..nodegraph.session import last_session_path
+from ..nodegraph.runtime_compiler import compile_runtime_graphs_from_studio
 from .node_property_widgets import F8StudioPropertiesBinWidget
 from .palette_widget import F8StudioNodesPaletteWidget
 
@@ -60,6 +62,13 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         save_action.triggered.connect(self._save_session_action)  # type: ignore[attr-defined]
         menu.addAction(save_action)
 
+        menu.addSeparator()
+
+        compile_action = QtWidgets.QAction("Compile Runtime Graph (print)", self)
+        compile_action.setShortcut("Ctrl+R")
+        compile_action.triggered.connect(self._compile_runtime_action)  # type: ignore[attr-defined]
+        menu.addAction(compile_action)
+
     def closeEvent(self, event):
         self._auto_save_session()
         super().closeEvent(event)
@@ -83,3 +92,15 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.information(self, "No session", f"No session file found at:\n{self._session_file}")
             return
         QtWidgets.QMessageBox.information(self, "Session loaded", f"Loaded:\n{path}")
+
+    def _compile_runtime_action(self) -> None:
+        compiled = compile_runtime_graphs_from_studio(self.studio_graph)
+        payload = compiled.global_graph.model_dump(mode="json", by_alias=True)
+        print("\n=== F8Studio RuntimeGraph (global) ===")
+        print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
+
+        print("\n=== F8Studio RuntimeGraph (per-service) ===")
+        for sid, g in compiled.per_service.items():
+            p = g.model_dump(mode="json", by_alias=True)
+            print(f"\n--- serviceId={sid} ---")
+            print(json.dumps(p, ensure_ascii=False, indent=2, default=str))

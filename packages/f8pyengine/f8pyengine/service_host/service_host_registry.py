@@ -63,6 +63,7 @@ class ServiceHostRegistry:
             description="Exec-driven sine generator (emits `value`).",
             tags=["signal", "sin", "waveform", "generator", "oscillator"],
             execInPorts=["exec"],
+            execOutPorts=["exec"],
             dataOutPorts=[F8DataPortSpec(name="value", description="sine output", valueSchema=number_schema())],
             stateFields=[
                 F8StateSpec(
@@ -109,6 +110,7 @@ class ServiceHostRegistry:
             description="Prints incoming `value` samples.",
             tags=["debug", "console", "print"],
             dataInPorts=[F8DataPortSpec(name="value", description="value to print", valueSchema=number_schema())],
+            execInPorts=["exec"],
             stateFields=[
                 F8StateSpec(
                     name="throttleMs",
