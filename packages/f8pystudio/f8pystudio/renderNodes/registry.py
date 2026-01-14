@@ -1,8 +1,12 @@
 from NodeGraphQt import NodeObject, BaseNode
 
-from .internal.base import F8BaseRenderNode
-from .op_generic import GenericOpRenderNode
-from .svc_container import ContainerSvcRenderNode
+# from .internal.base import F8BaseRenderNode
+
+# from .op_generic import GenericOpRenderNode
+
+from ..nodegraph.service_basenode import F8StudioServiceBaseNode
+from ..nodegraph.container_basenode import F8StudioContainerBaseNode
+from ..nodegraph.operator_basenode import F8StudioOperatorBaseNode
 
 
 class RenderNodeRegistry:
@@ -17,12 +21,9 @@ class RenderNodeRegistry:
 
     def __init__(self) -> None:
         self._renderers: dict[str, NodeObject] = {}
-        self._renderers["default"] = F8BaseRenderNode
-        self._renderers["default_svc"] = F8BaseRenderNode
-        self._renderers["default_op"] = GenericOpRenderNode
-        self._renderers["default_container"] = ContainerSvcRenderNode
-
-        
+        self._renderers["default_svc"] = F8StudioServiceBaseNode
+        self._renderers["default_op"] = F8StudioOperatorBaseNode
+        self._renderers["default_container"] = F8StudioContainerBaseNode
 
     def register(self, renderer_key: str, renderer: type[NodeObject]) -> None:
         if renderer_key in self._renderers:
@@ -34,7 +35,7 @@ class RenderNodeRegistry:
     def unregister(self, renderer_key: str) -> None:
         self._renderers.pop(renderer_key, None)
 
-    def get(self, renderer_key: str, fallback_key: str = "default") -> type[NodeObject]:
+    def get(self, renderer_key: str, fallback_key: str) -> type[NodeObject]:
         if renderer_key not in self._renderers and fallback_key:
             renderer_key = fallback_key
         return self._renderers[renderer_key]

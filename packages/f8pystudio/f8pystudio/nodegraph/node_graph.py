@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass, field
 from typing import Any, Generic
 
@@ -11,16 +13,16 @@ import shortuuid
 import logging
 
 from f8pysdk import F8OperatorSpec, F8ServiceSpec
-
-from ..renderNodes.op_generic import GenericOpRenderNode
-from ..renderNodes.svc_container import ContainerSvcRenderNode
+from .container_basenode import F8StudioContainerBaseNode
+from .operator_basenode import F8StudioOperatorBaseNode
 
 from .viewer import F8StudioNodeViewer
+from .session import last_session_path
 
 from ..service_host import ServiceHostRegistry
 
-_BASE_OPERATOR_CLS_ = GenericOpRenderNode
-_BASE_CONTAINER_CLS_ = ContainerSvcRenderNode
+_BASE_OPERATOR_CLS_ = F8StudioOperatorBaseNode
+_BASE_CONTAINER_CLS_ = F8StudioContainerBaseNode
 _CANVAS_SERVICE_CLASS_ = ServiceHostRegistry.instance().serviceClass
 
 logger = logging.getLogger(__name__)
@@ -59,6 +61,7 @@ class F8StudioGraph(NodeGraph):
 
         self.uuid_length = kwargs.get("uuid_length", 4)
         self.uuid_generator = shortuuid.ShortUUID()
+        self._loading_session = False
         # self._move = _MoveState()
 
         self.property_changed.connect(self._on_property_changed)  # type: ignore[attr-defined]
@@ -70,6 +73,79 @@ class F8StudioGraph(NodeGraph):
         if hasattr(self._viewer, "moving_nodes"):
             self._viewer.moving_nodes.connect(self._on_nodes_moving)  # type: ignore[attr-defined]
 
+    @staticmethod
+    def _strip_port_restore_data(layout_data: dict) -> dict:
+        """
+        NodeGraphQt session format stores `port_deletion_allowed` plus
+        `input_ports`/`output_ports` when ports are removable.
+
+        Loading then calls `node.set_ports(...)`, which rebuilds ports without
+        our custom styling (color / custom port painter). Studio nodes already
+        define their ports from `spec` in `__init__`, so we strip these keys and
+        let nodes rebuild themselves via the node factory.
+        """
+        nodes = layout_data.get("nodes")
+        if not isinstance(nodes, dict):
+            return layout_data
+        for n_data in nodes.values():
+            if not isinstance(n_data, dict):
+                continue
+            n_data.pop("port_deletion_allowed", None)
+            n_data.pop("input_ports", None)
+            n_data.pop("output_ports", None)
+        return layout_data
+
+    @staticmethod
+    def _inject_node_ids(layout_data: dict) -> None:
+        """
+        NodeGraphQt stores node ids as keys under `nodes`, but does not include
+        them in each node dict. We inject `id` so deserialization restores
+        stable ids (instead of the default `0x...`).
+        """
+        nodes = layout_data.get("nodes")
+        if not isinstance(nodes, dict):
+            return
+        for node_id, node_data in nodes.items():
+            if isinstance(node_data, dict) and "id" not in node_data:
+                node_data["id"] = node_id
+
+    def _validate_session_node_types(self, layout_data: dict) -> None:
+        """
+        Validate that node classes referenced by the session are registered.
+
+        We intentionally do NOT auto-register node classes from session data.
+        Node registration should come from service discovery.
+        """
+        nodes = layout_data.get("nodes")
+        if not isinstance(nodes, dict):
+            return
+
+        missing_types: set[str] = set()
+        missing_type_field = 0
+
+        for node_data in nodes.values():
+            if not isinstance(node_data, dict):
+                continue
+
+            node_type = node_data.get("type_")
+            if not isinstance(node_type, str) or not node_type.strip():
+                missing_type_field += 1
+                continue
+
+            node_type = node_type.strip()
+            if node_type not in self._node_factory.nodes:
+                missing_types.add(node_type)
+
+        if missing_type_field or missing_types:
+            parts = []
+            if missing_type_field:
+                parts.append(f"{missing_type_field} node(s) missing `type_` in session data")
+            if missing_types:
+                missing_list = ", ".join(sorted(missing_types))
+                parts.append(f"unregistered node type(s): {missing_list}")
+            msg = "Cannot load session: " + "; ".join(parts) + "."
+            raise NodeCreationError(msg)
+
     def toggle_node_search(self):
         """
         Open node search (tab search menu).
@@ -79,6 +155,56 @@ class F8StudioGraph(NodeGraph):
         viewer has focus.
         """
         self._viewer.tab_search_set_nodes(self._node_factory.names)
+        self._viewer.tab_search_toggle()
+
+    def save_last_session(self) -> str:
+        """
+        Save the current session to `~/.f8/studio/lastSession.json`.
+        """
+        path = last_session_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.save_session(str(path))
+        return str(path)
+
+    def load_last_session(self) -> str | None:
+        """
+        Load `~/.f8/studio/lastSession.json` if it exists.
+        """
+        path = last_session_path()
+        if not path.is_file():
+            return None
+        self.load_session(str(path))
+        return str(path)
+
+    def serialize_session(self):
+        data = super().serialize_session()
+        return self._strip_port_restore_data(data)
+
+    def load_session(self, file_path: str) -> None:
+        """
+        Load a NodeGraphQt session file.
+
+        We temporarily disable studio constraints during deserialization, then
+        rebuild container/operator bindings based on geometry.
+        """
+        file_path = file_path.strip()
+        if not os.path.isfile(file_path):
+            raise IOError(f"file does not exist: {file_path}")
+
+        self._loading_session = True
+        try:
+            self.clear_session()
+            with open(file_path) as data_file:
+                layout_data = json.load(data_file)
+            self._inject_node_ids(layout_data)
+            self._validate_session_node_types(layout_data)
+            layout_data = self._strip_port_restore_data(layout_data)
+            super().deserialize_session(layout_data, clear_session=False, clear_undo_stack=True)
+            self._model.session = file_path
+            self.session_changed.emit(file_path)
+        finally:
+            self._loading_session = False
+        self._rebind_container_children()
 
     def _assign_node_id(self, node: BaseNode) -> BaseNode:
         new_nid = self.new_unique_node_id()
@@ -174,11 +300,12 @@ class F8StudioGraph(NodeGraph):
 
             node.update()
 
-            ok, msg = self._ensure_operator_in_container(node, pos=pos)
-            if not ok:
-                if msg:
-                    QtWidgets.QMessageBox.warning(None, "Container required", msg)
-                return None
+            if not self._loading_session:
+                ok, msg = self._ensure_operator_in_container(node, pos=pos)
+                if not ok:
+                    if msg:
+                        QtWidgets.QMessageBox.warning(None, "Container required", msg)
+                    return None
 
             undo_cmd = NodeAddedCmd(self, node, pos=node.model.pos, emit_signal=True)
             if push_undo:
@@ -207,16 +334,18 @@ class F8StudioGraph(NodeGraph):
             inherite_graph_style (bool): whether to inherite the graph style settings.
         """
 
-        node = self._assign_node_id(node)
+        if not self._loading_session:
+            node = self._assign_node_id(node)
         if pos:
             node.model.pos = [float(pos[0]), float(pos[1])]
             node.view.xy_pos = [float(pos[0]), float(pos[1])]
 
-        ok, msg = self._ensure_operator_in_container(node, pos=pos)
-        if not ok:
-            if msg:
-                QtWidgets.QMessageBox.warning(None, "Container required", msg)
-            return
+        if not self._loading_session:
+            ok, msg = self._ensure_operator_in_container(node, pos=pos)
+            if not ok:
+                if msg:
+                    QtWidgets.QMessageBox.warning(None, "Container required", msg)
+                return
 
         super().add_node(
             node, pos=pos, selected=selected, push_undo=push_undo, inherite_graph_style=inherite_graph_style
@@ -291,17 +420,17 @@ class F8StudioGraph(NodeGraph):
         if not sid:
             logger.error("Container node has no ID")
             return False
-        operator.set_property("svcId", sid, push_undo=False)  # type: ignore[attr-defined]
+        operator.svcId = sid  # type: ignore[attr-defined]
         container.add_child(operator)
         return True
 
-    def _container_bound_nodes(self, container: ContainerSvcRenderNode) -> list[BaseNode]:
+    def _container_bound_nodes(self, container: _BASE_CONTAINER_CLS_) -> list[BaseNode]:
         """
         Return nodes that are bound to the container (best-effort).
         """
         out: list[BaseNode] = []
 
-        # Prefer the node objects tracked by ContainerSvcRenderNode.
+        # Prefer the node objects tracked by _BASE_CONTAINER_CLS_.
         for child in container._child_nodes:
             nid = child.id
             n = self.get_node_by_id(nid)
@@ -349,9 +478,6 @@ class F8StudioGraph(NodeGraph):
     def _on_property_changed(self, node: Any, name: str, value: Any) -> None:
         """
         Optional hook for reacting to property changes.
-
-        (We keep this method defined so signal connections don't need
-        defensive try/except blocks.)
         """
         return
 
@@ -380,7 +506,7 @@ class F8StudioGraph(NodeGraph):
             return True, None
 
         if node.spec.serviceClass == _CANVAS_SERVICE_CLASS_:
-            node.set_property("svcId", None, push_undo=False)  # type: ignore[attr-defined]
+            node.svcId = None  # type: ignore[attr-defined]
             return False, None
 
         in_scene = node.view.scene() is not None
@@ -415,3 +541,43 @@ class F8StudioGraph(NodeGraph):
                     continue
                 kept.append(view)
             container.view._child_views = kept
+
+    def _rebind_container_children(self) -> None:
+        """
+        Rebuild container -> operator bindings from geometry.
+
+        This is used after session load to restore:
+        - container dragging moves operators
+        - operator drag clamping (via `view._container_item`)
+        """
+        containers: list[_BASE_CONTAINER_CLS_] = []
+        operators: list[BaseNode] = []
+        for node in self.all_nodes():
+            if self._is_container_node(node):
+                containers.append(node)
+            elif self._is_operator_node(node):
+                operators.append(node)
+
+        # Clear container child lists.
+        for container in containers:
+            container._child_nodes = []
+            container.view._child_views = []
+
+        # Clear operator back-references.
+        for op in operators:
+            op.view._container_item = None
+
+        # Rebind operators based on intersecting container geometry.
+        for op in operators:
+            if op.spec.serviceClass == _CANVAS_SERVICE_CLASS_:
+                op.svcId = None  # type: ignore[attr-defined]
+                continue
+
+            container = self._container_at_node(op)
+            if container is None:
+                # Leave as orphan so user can fix placement manually.
+                op.svcId = ""  # type: ignore[attr-defined]
+                logger.warning('Operator "%s" is not inside any container after load.', op.name())
+                continue
+
+            self._bind_operator_to_container(op, container)

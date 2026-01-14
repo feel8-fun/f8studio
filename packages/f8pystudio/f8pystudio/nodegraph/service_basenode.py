@@ -1,7 +1,16 @@
-from .internal.base import F8BaseRenderNode
-from f8pysdk import F8OperatorSpec
+from __future__ import annotations
+
+from typing import Any
+
+from qtpy import QtWidgets
+
+from .node_base import F8StudioBaseNode
+
+from f8pysdk import F8ServiceSpec
 
 from collections import OrderedDict
+
+from f8pysdk.schema_helpers import schema_default, schema_type
 
 from qtpy import QtCore, QtGui, QtWidgets
 
@@ -21,8 +30,167 @@ from NodeGraphQt.qgraphics.node_overlay_disabled import XDisabledItem
 from NodeGraphQt.qgraphics.node_text_item import NodeTextItem
 from NodeGraphQt.qgraphics.port import CustomPortItem, PortItem
 
+from .port_painter import draw_square_port, DATA_PORT_COLOR, STATE_PORT_COLOR
 
-class OperatorNodeItem(AbstractNodeItem):
+
+class F8StudioServiceBaseNode(F8StudioBaseNode):
+    """
+    Base class for all single-node service (nodes that are intended to live without
+    a container).
+
+    This class is intentionally small: container binding is orchestrated by
+    `F8StudioGraph`, while the view-level `_container_item` link is managed by
+    the container item.
+    """
+
+    svcId: Any
+
+    def __init__(self, qgraphics_item=None):
+        _nodeitem_cls = qgraphics_item or F8StudioServiceNodeItem
+        assert issubclass(
+            _nodeitem_cls, F8StudioServiceNodeItem
+        ), "F8StudioServiceBaseNode requires a F8StudioServiceNodeItem or subclass."
+        super().__init__(qgraphics_item=_nodeitem_cls)
+        assert isinstance(self.spec, F8ServiceSpec), "F8StudioServiceBaseNode requires F8ServiceSpec"
+
+        self.set_port_deletion_allowed(True)
+
+        self._build_data_port()
+        self._build_state_port()
+        self._build_state_properties()
+
+    def _build_data_port(self):
+
+        for p in self.spec.dataInPorts:
+            self.add_input(
+                f"[D]{p.name}",
+                color=DATA_PORT_COLOR,
+            )
+
+        for p in self.spec.dataOutPorts:
+            self.add_output(
+                f"{p.name}[D]",
+                color=DATA_PORT_COLOR,
+            )
+
+    def _build_state_port(self):
+
+        for s in self.spec.stateFields:
+            if not s.showOnNode:
+                continue
+            self.add_input(
+                f"[S]{s.name}",
+                color=STATE_PORT_COLOR,
+                painter_func=draw_square_port,
+            )
+
+            self.add_output(
+                f"{s.name}[S]",
+                color=STATE_PORT_COLOR,
+                painter_func=draw_square_port,
+            )
+
+    def _build_state_properties(self) -> None:
+        for s in self.spec.stateFields or []:
+            name = str(getattr(s, "name", "") or "").strip()
+            if not name:
+                continue
+            try:
+                if self.has_property(name):  # type: ignore[attr-defined]
+                    continue
+            except Exception:
+                pass
+            try:
+                default_value = schema_default(s.valueSchema)
+            except Exception:
+                default_value = None
+            widget_type, items, prop_range = self._state_widget_for_schema(getattr(s, "valueSchema", None))
+            tooltip = str(getattr(s, "description", "") or "").strip() or None
+            try:
+                self.create_property(
+                    name,
+                    default_value,
+                    items=items,
+                    range=prop_range,
+                    widget_type=widget_type,
+                    widget_tooltip=tooltip,
+                    tab="State",
+                )
+            except Exception:
+                continue
+
+    @staticmethod
+    def _state_widget_for_schema(value_schema) -> tuple[int, list[str] | None, tuple[float, float] | None]:
+        """
+        Best-effort mapping from F8DataTypeSchema -> NodeGraphQt property widget.
+        """
+        if value_schema is None:
+            return NodePropWidgetEnum.QTEXT_EDIT.value, None, None
+        try:
+            t = schema_type(value_schema)
+        except Exception:
+            t = ""
+
+        # enum choice.
+        try:
+            enum_items = list(getattr(getattr(value_schema, "root", None), "enum", None) or [])
+        except Exception:
+            enum_items = []
+        if enum_items:
+            return NodePropWidgetEnum.QCOMBO_BOX.value, [str(x) for x in enum_items], None
+
+        if t == "boolean":
+            return NodePropWidgetEnum.QCHECK_BOX.value, None, None
+        if t == "integer":
+            # Avoid QSpinBox widgets due to PySide6 incompatibilities in NodeGraphQt's PropSpinBox.
+            return NodePropWidgetEnum.QLINE_EDIT.value, None, None
+        if t == "number":
+            # Avoid QDoubleSpinBox widgets due to PySide6 incompatibilities in NodeGraphQt's PropDoubleSpinBox.
+            return NodePropWidgetEnum.QLINE_EDIT.value, None, None
+        if t == "string":
+            return NodePropWidgetEnum.QLINE_EDIT.value, None, None
+
+        # object/array/any (and unknowns) edited as JSON-ish text.
+        return NodePropWidgetEnum.QTEXT_EDIT.value, None, None
+
+    def sync_from_spec(self) -> None:
+        """
+        Rebuild runtime aspects derived from `self.spec`:
+        - ports (exec/data/state)
+        - state properties (adds any missing fields)
+        """
+        try:
+            if not self.port_deletion_allowed():
+                self.set_port_deletion_allowed(True)
+        except Exception:
+            pass
+
+        # Rebuild ports (best-effort; may drop connections).
+        try:
+            for port in list(self._inputs):
+                try:
+                    self.delete_input(port)
+                except Exception:
+                    pass
+            for port in list(self._outputs):
+                try:
+                    self.delete_output(port)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        self._build_data_port()
+        self._build_state_port()
+        self._build_state_properties()
+
+        try:
+            self.view.draw_node()
+        except Exception:
+            pass
+
+
+class F8StudioServiceNodeItem(AbstractNodeItem):
     """
     Base Node item.
 
@@ -32,7 +200,7 @@ class OperatorNodeItem(AbstractNodeItem):
     """
 
     def __init__(self, name="node", parent=None):
-        super(OperatorNodeItem, self).__init__(name, parent)
+        super(F8StudioServiceNodeItem, self).__init__(name, parent)
         self.setFlag(QtWidgets.QGraphicsItem.ItemSendsGeometryChanges, True)
         self.setFlag(QtWidgets.QGraphicsItem.ItemSendsScenePositionChanges, True)
 
@@ -49,8 +217,6 @@ class OperatorNodeItem(AbstractNodeItem):
         self._widgets = OrderedDict()
         self._proxy_mode = False
         self._proxy_mode_threshold = 70
-
-        self._container_item: QtWidgets.QGraphicsItem | None = None
 
     def post_init(self, viewer, pos=None):
         """
@@ -210,7 +376,7 @@ class OperatorNodeItem(AbstractNodeItem):
                 if p.hovered:
                     event.ignore()
                     return
-        super(OperatorNodeItem, self).mousePressEvent(event)
+        super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event):
         """
@@ -222,7 +388,7 @@ class OperatorNodeItem(AbstractNodeItem):
         if event.modifiers() == QtCore.Qt.AltModifier:
             event.ignore()
             return
-        super(OperatorNodeItem, self).mouseReleaseEvent(event)
+        super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event):
         """
@@ -244,66 +410,7 @@ class OperatorNodeItem(AbstractNodeItem):
             viewer = self.viewer()
             if viewer:
                 viewer.node_double_clicked.emit(self.id)
-        super(OperatorNodeItem, self).mouseDoubleClickEvent(event)
-
-    def itemChange(self, change, value):
-        """
-        Re-implemented to update pipes on selection changed.
-
-        Args:
-            change:
-            value:
-        """
-        if change == QtWidgets.QGraphicsItem.ItemSelectedChange and self.scene():
-            self.reset_pipes()
-            if value:
-                self.highlight_pipes()
-            self.setZValue(Z_VAL_NODE)
-            if not self.selected:
-                self.setZValue(Z_VAL_NODE + 1)
-
-        if change == QtWidgets.QGraphicsItem.ItemPositionChange and self.scene():
-            return self._clamp_pos_to_container(value)
-                
-
-        return super(OperatorNodeItem, self).itemChange(change, value)
-
-    def _clamp_pos_to_container(self, proposed_pos: QtCore.QPointF) -> QtCore.QPointF:
-        """
-        Clamp the node's top-left position so the entire node stays within
-        its service container bounds (in scene coordinates).
-        """
-        container = self._container_item
-        if container is None:
-            return proposed_pos
-
-        # Container rect in scene coords.
-        container_rect = container.mapToScene(container.boundingRect()).boundingRect()
-
-        # Small inset so the node doesn't visually overlap the border.
-        padding = 2.0
-        container_rect = container_rect.adjusted(padding, padding, -padding, -padding)
-
-        brect = self.boundingRect()
-        node_w = brect.width()
-        node_h = brect.height()
-
-        x_min = container_rect.left()
-        y_min = container_rect.top()
-        x_max = container_rect.right() - node_w
-        y_max = container_rect.bottom() - node_h
-
-        if x_max < x_min:
-            x_new = x_min
-        else:
-            x_new = min(max(proposed_pos.x(), x_min), x_max)
-
-        if y_max < y_min:
-            y_new = y_min
-        else:
-            y_new = min(max(proposed_pos.y(), y_min), y_max)
-
-        return QtCore.QPointF(x_new, y_new)
+        super().mouseDoubleClickEvent(event)
 
     def _tooltip_disable(self, state):
         """
@@ -1087,17 +1194,9 @@ class OperatorNodeItem(AbstractNodeItem):
         return name in self._widgets.keys()
 
     def from_dict(self, node_dict):
-        super(OperatorNodeItem, self).from_dict(node_dict)
+        super().from_dict(node_dict)
         custom_prop = node_dict.get("custom") or {}
         for prop_name, value in custom_prop.items():
             prop_widget = self._widgets.get(prop_name)
             if prop_widget:
                 prop_widget.set_value(value)
-
-
-class GenericOpRenderNode(F8BaseRenderNode):
-
-    def __init__(self):
-        super().__init__(qgraphics_item=OperatorNodeItem)
-        assert isinstance(self.spec, F8OperatorSpec), "GenericOpRenderNode requires F8OperatorSpec"
-        self.create_property("svcId", None, widget_type=NodePropWidgetEnum.QLABEL.value)

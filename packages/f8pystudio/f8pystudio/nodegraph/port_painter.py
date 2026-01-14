@@ -1,5 +1,9 @@
 from qtpy import QtCore, QtGui
 
+EXEC_PORT_COLOR = (230, 230, 230)
+DATA_PORT_COLOR = (150, 150, 150)
+STATE_PORT_COLOR = (200, 200, 50)
+
 def draw_nothing(painter, rect, info):
     pass
 

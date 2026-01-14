@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from Qt import QtCore
+from Qt import QtCore, QtGui, QtWidgets
 from NodeGraphQt.widgets.viewer import NodeViewer
 
 
@@ -19,6 +19,18 @@ class F8StudioNodeViewer(NodeViewer):
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
         self._f8_graph: Any | None = None
 
+        self._shortcut_search = QtWidgets.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Tab), self)
+        self._shortcut_search.setContext(QtCore.Qt.WidgetShortcut)
+        self._shortcut_search.activated.connect(self._open_node_search)  # type: ignore[attr-defined]
+
+        self._shortcut_delete = QtWidgets.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Delete), self)
+        self._shortcut_delete.setContext(QtCore.Qt.WidgetShortcut)
+        self._shortcut_delete.activated.connect(self._delete_selected_nodes)  # type: ignore[attr-defined]
+
+        self._shortcut_backspace = QtWidgets.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Backspace), self)
+        self._shortcut_backspace.setContext(QtCore.Qt.WidgetShortcut)
+        self._shortcut_backspace.activated.connect(self._delete_selected_nodes)  # type: ignore[attr-defined]
+
     def set_graph(self, graph: Any) -> None:
         self._f8_graph = graph
 
@@ -30,21 +42,16 @@ class F8StudioNodeViewer(NodeViewer):
         self.setFocus()
         super().mousePressEvent(event)
 
-    def keyPressEvent(self, event):
+    def _delete_selected_nodes(self) -> None:
         graph = self._f8_graph
+        if graph is None:
+            return
+        nodes = graph.selected_nodes()
+        if nodes:
+            graph.delete_nodes(nodes)
 
-        if graph is not None and event.modifiers() == QtCore.Qt.NoModifier:
-            if event.key() in (QtCore.Qt.Key_Delete, QtCore.Qt.Key_Backspace):
-                nodes = graph.selected_nodes()
-                if nodes:
-                    graph.delete_nodes(nodes)
-                    event.accept()
-                    return
-
-            if event.key() == QtCore.Qt.Key_Insert:
-                graph.toggle_node_search()
-                event.accept()
-                return
-
-        super().keyPressEvent(event)
-
+    def _open_node_search(self) -> None:
+        graph = self._f8_graph
+        if graph is None:
+            return
+        graph.toggle_node_search()

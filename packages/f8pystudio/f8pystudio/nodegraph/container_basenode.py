@@ -1,87 +1,76 @@
 from __future__ import annotations
 
-from platform import node
-from typing import Any, TYPE_CHECKING
+from collections import OrderedDict
+from typing import Any
 
 from qtpy import QtCore, QtGui, QtWidgets
-from .internal.base import F8BaseRenderNode
-from NodeGraphQt import NodeObject, BaseNode
+
 from NodeGraphQt.constants import Z_VAL_BACKDROP, NodeEnum
 from NodeGraphQt.qgraphics.node_abstract import AbstractNodeItem
 from NodeGraphQt.qgraphics.node_backdrop import BackdropSizer
 
-from f8pysdk import F8OperatorSpec, F8ServiceSpec
-
-if TYPE_CHECKING:
-    from .op_generic import OperatorNodeItem
+from f8pysdk import F8ServiceSpec
+from .node_base import F8StudioBaseNode
 
 
-class ContainerSvcRenderNode(F8BaseRenderNode):
+class F8StudioContainerBaseNode(F8StudioBaseNode):
     """
-    Service container node (engine runner).
+    Base class for all container nodes.
 
-    This is a Backdrop-based container that can wrap operator nodes for deployment.
+    Responsibilities:
+    - track child node objects
+    - keep container view and child views bound (dragging container moves children)
     """
 
-    _child_nodes: list[F8BaseRenderNode]
+    _child_nodes: list[F8StudioBaseNode]
 
-    def __init__(self):
-        assert isinstance(self.spec, F8ServiceSpec), "ContainerSvcRenderNode requires F8ServiceSpec"
-        super().__init__(qgraphics_item=ContainerNodeItem)
-        self.model.color = (5, 129, 138, 255)
-        self._child_nodes: list[F8BaseRenderNode] = []
+    def __init__(self, qgraphics_item=None):
+        _nodeitem_cls = qgraphics_item or F8StudioContainerNodeItem
+        assert issubclass(
+            _nodeitem_cls, F8StudioContainerNodeItem
+        ), "F8StudioContainerBaseNode requires a F8StudioContainerNodeItem or subclass."
+        super().__init__(qgraphics_item=_nodeitem_cls)
+        assert isinstance(self.spec, F8ServiceSpec), "F8StudioContainerBaseNode requires F8ServiceSpec"
 
-    def add_child(self, node: F8BaseRenderNode) -> None:
-        if node not in self._child_nodes:
-            self._child_nodes.append(node)
+        self.model.color = (5, 129, 138, 50)
+        self._child_nodes = []
+
+    def add_child(self, node: F8StudioBaseNode) -> None:
+        if node in self._child_nodes:
+            return
+        self._child_nodes.append(node)
         self.view.add_child(node.view)
 
-    def remove_child(self, node: F8BaseRenderNode) -> None:
-        self.view.remove_child(node.view)
+    def remove_child(self, node: F8StudioBaseNode) -> None:
         if node in self._child_nodes:
             self._child_nodes.remove(node)
+        self.view.remove_child(node.view)
 
-    def contained_nodes(self) -> list[F8BaseRenderNode]:
-        """
-        Returns operator nodes bound to this runner.
-
-        We intentionally do not rely on NodeGraphQt's `wrap_nodes` parenthood,
-        because runner geometry should be user-controlled.
-        """
-        if self.graph is None:
-            return []
-        out: list[F8BaseRenderNode] = []
-        for nid in list(self._child_node_ids):
-            n = self.graph.get_node_by_id(nid)
-            if n is None:
-                self._child_node_ids.discard(nid)
-                continue
-            if not hasattr(n, "spec") or not isinstance(n.spec, F8OperatorSpec):  # type: ignore[attr-defined]
-                continue
-            out.append(n)
-        return out
+    def child_nodes(self) -> list[F8StudioBaseNode]:
+        return list(self._child_nodes)
 
 
-class ContainerNodeItem(AbstractNodeItem):
+class F8StudioContainerNodeItem(AbstractNodeItem):
     """
-    Base Backdrop item.
+    container item.
 
-    Args:
-        name (str): name displayed on the node.
-        text (str): backdrop text.
-        parent (QtWidgets.QGraphicsItem): parent item.
+    This class is intentionally generic so all container types can reuse:
+    - child tracking via `add_child` / `remove_child`
+    - moving children when the container moves
     """
 
-    def __init__(self, name="backdrop", text="", parent=None):
-        super(ContainerNodeItem, self).__init__(name, parent)
+    def __init__(self, name: str = "container", text: str = "", parent=None):
+        super().__init__(name, parent)
         self.setZValue(Z_VAL_BACKDROP)
-        self._properties["backdrop_text"] = text
+        # Match `NodeGraphQt.qgraphics.node_base.NodeItem` API so
+        # `BaseNode.update_model()` can iterate `self.view.widgets`.
+        self._widgets = OrderedDict()
         self._min_size = 500, 300
         self._sizer = BackdropSizer(self, 26.0)
         self._sizer.set_pos(*self._min_size)
         self._child_views: list[AbstractNodeItem] = []
 
-    def _combined_rect(self, nodes):
+    def _combined_rect(self, nodes: list[AbstractNodeItem]) -> QtCore.QRectF:
         group = self.scene().createItemGroup(nodes)
         rect = group.boundingRect()
         self.scene().destroyItemGroup(group)
@@ -91,13 +80,7 @@ class ContainerNodeItem(AbstractNodeItem):
         viewer = self.viewer()
         if viewer:
             viewer.node_double_clicked.emit(self.id)
-        super(ContainerNodeItem, self).mouseDoubleClickEvent(event)
-
-    def mousePressEvent(self, event):
-        super(ContainerNodeItem, self).mousePressEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        super(ContainerNodeItem, self).mouseReleaseEvent(event)
+        super().mouseDoubleClickEvent(event)
 
     def mouseMoveEvent(self, event):
         """Moves child nodes along with the container."""
@@ -113,19 +96,10 @@ class ContainerNodeItem(AbstractNodeItem):
 
     @AbstractNodeItem.xy_pos.setter
     def xy_pos(self, pos=None):
-        """
-        set the item scene postion.
-        ("node.pos" conflicted with "QGraphicsItem.pos()"
-        so it was refactored to "xy_pos".)
-
-        Args:
-            pos (list[float]): x, y scene position.
-        """
         new_x, new_y = pos or [0.0, 0.0]
         delta_x = new_x - self.pos().x()
         delta_y = new_y - self.pos().y()
         self.setPos(new_x, new_y)
-        # update child positions
         for view in self._child_views:
             p = view.xy_pos
             p[0] += delta_x
@@ -146,15 +120,6 @@ class ContainerNodeItem(AbstractNodeItem):
         self.viewer().node_backdrop_updated.emit(self.id, "sizer_double_clicked", size)
 
     def paint(self, painter, option, widget):
-        """
-        Draws the backdrop rect.
-
-        Args:
-            painter (QtGui.QPainter): painter used for drawing the item.
-            option (QtGui.QStyleOptionGraphicsItem):
-                used to describe the parameters needed to draw.
-            widget (QtWidgets.QWidget): not used.
-        """
         painter.save()
         painter.setPen(QtCore.Qt.NoPen)
         painter.setBrush(QtCore.Qt.NoBrush)
@@ -181,12 +146,6 @@ class ContainerNodeItem(AbstractNodeItem):
         for pos in [top_rect.left(), top_rect.right() - 5.0]:
             painter.drawRect(QtCore.QRectF(pos, top_rect.bottom() - 5.0, 5.0, 5.0))
 
-        if self.backdrop_text:
-            painter.setPen(QtGui.QColor(*self.text_color))
-            txt_rect = QtCore.QRectF(top_rect.x() + 5.0, top_rect.height() + 3.0, rect.width() - 5.0, rect.height())
-            painter.setPen(QtGui.QColor(*self.text_color))
-            painter.drawText(txt_rect, QtCore.Qt.AlignLeft | QtCore.Qt.TextWordWrap, self.backdrop_text)
-
         if self.selected:
             sel_color = [x for x in NodeEnum.SELECTED_COLOR.value]
             sel_color[-1] = 15
@@ -209,9 +168,9 @@ class ContainerNodeItem(AbstractNodeItem):
 
         painter.restore()
 
-    def get_nodes(self, inc_intersects=False):
+    def get_nodes(self, inc_intersects: bool = False) -> list[AbstractNodeItem]:
         mode = {True: QtCore.Qt.IntersectsItemShape, False: QtCore.Qt.ContainsItemShape}
-        nodes = []
+        nodes: list[AbstractNodeItem] = []
         if self.scene():
             polygon = self.mapToScene(self.boundingRect())
             rect = polygon.boundingRect()
@@ -223,7 +182,7 @@ class ContainerNodeItem(AbstractNodeItem):
                     nodes.append(item)
         return nodes
 
-    def calc_backdrop_size(self, nodes=None):
+    def calc_backdrop_size(self, nodes: list[AbstractNodeItem] | None = None) -> dict[str, Any]:
         nodes = nodes or self.get_nodes(True)
         if nodes:
             nodes_rect = self._combined_rect(nodes)
@@ -238,12 +197,12 @@ class ContainerNodeItem(AbstractNodeItem):
             "height": nodes_rect.height() + (padding * 2),
         }
 
-    def add_child(self, view: OperatorNodeItem) -> None:
+    def add_child(self, view: Any) -> None:
         if view not in self._child_views:
             self._child_views.append(view)
         view._container_item = self
 
-    def remove_child(self, view: OperatorNodeItem) -> None:
+    def remove_child(self, view: Any) -> None:
         if view in self._child_views:
             self._child_views.remove(view)
         if view._container_item is self:
@@ -258,13 +217,8 @@ class ContainerNodeItem(AbstractNodeItem):
         self._min_size = size
 
     @property
-    def backdrop_text(self):
-        return self._properties["backdrop_text"]
-
-    @backdrop_text.setter
-    def backdrop_text(self, text):
-        self._properties["backdrop_text"] = text
-        self.update(self.boundingRect())
+    def widgets(self):
+        return self._widgets.copy()
 
     @AbstractNodeItem.width.setter
     def width(self, width=0.0):
@@ -275,10 +229,3 @@ class ContainerNodeItem(AbstractNodeItem):
     def height(self, height=0.0):
         AbstractNodeItem.height.fset(self, height)
         self._sizer.set_pos(self._width, self._height)
-
-    def from_dict(self, node_dict):
-        super().from_dict(node_dict)
-        custom_props = node_dict.get("custom") or {}
-        for prop_name, value in custom_props.items():
-            if prop_name == "backdrop_text":
-                self.backdrop_text = value

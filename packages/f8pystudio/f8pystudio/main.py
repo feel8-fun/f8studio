@@ -8,14 +8,11 @@ from .service_catalog import load_discovery_into_registries, ServiceCatalog
 
 from qtpy import QtWidgets, QtCore
 
-from .nodegraph import F8StudioGraph
-from .widgets.palette_widget import F8StudioNodesPaletteWidget
-
 from .renderNodes import RenderNodeRegistry
 
 # from .deploy import deploy_to_service, export_runtime_graph
-from .widgets.node_property_widgets import F8StudioPropertiesBinWidget
 from .service_process_manager import ServiceProcessManager, ServiceProcessConfig
+from .widgets.main_window import F8StudioMainWin
 
 
 def generate_node_classes():
@@ -34,7 +31,7 @@ def generate_node_classes():
         node_cls = type(
             svc.serviceClass,
             (base_cls,),
-            {"__identifier__": "svc", "NODE_NAME": svc.label, "spec": svc},
+            {"__identifier__": "svc", "NODE_NAME": svc.label, "SPEC_TEMPLATE": svc},
         )
         generated_node_cls.append(node_cls)
 
@@ -46,7 +43,7 @@ def generate_node_classes():
         node_cls = type(
             op.operatorClass,
             (base_cls,),
-            {"__identifier__": op.serviceClass, "NODE_NAME": op.label, "spec": op},
+            {"__identifier__": op.serviceClass, "NODE_NAME": op.label, "SPEC_TEMPLATE": op},
         )
         generated_node_cls.append(node_cls)
 
@@ -79,129 +76,95 @@ def _main() -> int:
     # Simple NodeGraphQt demo
     app = QtWidgets.QApplication([])
 
-    mainwin = QtWidgets.QMainWindow()
-    mainwin.setWindowTitle("F8PyStudio - NodeGraphQt Demo")
-    mainwin.resize(1200, 800)
+    mainwin = F8StudioMainWin(generated_node_cls)
     mainwin.show()
 
-    studio_graph = F8StudioGraph()
+    # def _deploy() -> None:
+    #     try:
+    #         service_id, ok = QtWidgets.QInputDialog.getText(mainwin, "Deploy", "Target serviceId")
+    #         if not ok:
+    #             return
+    #         service_id = str(service_id).strip()
+    #         if not service_id:
+    #             return
+    #         nats_url, ok = QtWidgets.QInputDialog.getText(mainwin, "Deploy", "NATS URL", text="nats://127.0.0.1:4222")
+    #         if not ok:
+    #             return
+    #         nats_url = str(nats_url).strip()
 
-    studio_graph.node_factory.clear_registered_nodes()
+    #         rt = export_runtime_graph(studio_graph, service_id=service_id)
+    #         asyncio.run(deploy_to_service(service_id=service_id, nats_url=nats_url, graph=rt))
+    #         QtWidgets.QMessageBox.information(mainwin, "Deploy", f"Deployed to {service_id}")
+    #     except Exception as exc:
+    #         QtWidgets.QMessageBox.critical(mainwin, "Deploy failed", str(exc))
 
-    for cls in generated_node_cls:
-        studio_graph.node_factory.register_node(cls)
-
-    ### NODE
-    n1 = studio_graph.node_factory.create_node_instance("svc.f8.pyengine")
-    studio_graph.add_node(n1, pos=(0, 0))
-
-    n2 = studio_graph.node_factory.create_node_instance("f8.pyengine.f8.print")
-    studio_graph.add_node(n2, pos=(10, 10))
-
-    palette = F8StudioNodesPaletteWidget(node_graph=studio_graph)
-
-    mainwin.setCentralWidget(studio_graph.widget)
-    prop_editor = F8StudioPropertiesBinWidget(node_graph=studio_graph)
-    prop_dock = QtWidgets.QDockWidget("Properties", mainwin)
-    prop_dock.setWidget(prop_editor)
-    mainwin.addDockWidget(QtCore.Qt.LeftDockWidgetArea, prop_dock)
-
-    dock = QtWidgets.QDockWidget("Nodes Palette", mainwin)
-    dock.setWidget(palette)
-    mainwin.addDockWidget(QtCore.Qt.RightDockWidgetArea, dock)
-
-    def _deploy() -> None:
-        try:
-            service_id, ok = QtWidgets.QInputDialog.getText(mainwin, "Deploy", "Target serviceId")
-            if not ok:
-                return
-            service_id = str(service_id).strip()
-            if not service_id:
-                return
-            nats_url, ok = QtWidgets.QInputDialog.getText(mainwin, "Deploy", "NATS URL", text="nats://127.0.0.1:4222")
-            if not ok:
-                return
-            nats_url = str(nats_url).strip()
-
-            rt = export_runtime_graph(studio_graph, service_id=service_id)
-            asyncio.run(deploy_to_service(service_id=service_id, nats_url=nats_url, graph=rt))
-            QtWidgets.QMessageBox.information(mainwin, "Deploy", f"Deployed to {service_id}")
-        except Exception as exc:
-            QtWidgets.QMessageBox.critical(mainwin, "Deploy failed", str(exc))
-
-    deploy_action = QtWidgets.QAction("Deploy…", mainwin)
-    deploy_action.triggered.connect(_deploy)  # type: ignore[attr-defined]
+    # deploy_action = QtWidgets.QAction("Deploy…", mainwin)
+    # deploy_action.triggered.connect(_deploy)  # type: ignore[attr-defined]
 
     proc_mgr = ServiceProcessManager()
 
-    def _selected_service_container() -> Any | None:
-        try:
-            sel = list(studio_graph.selected_nodes() or [])
-        except Exception:
-            sel = []
-        for n in sel:
-            spec = getattr(n, "spec", None)
-            if spec is None:
-                continue
-            if str(getattr(spec, "serviceClass", "") or "") == "f8.pyengine":
-                return n
-        return None
+    # def _selected_service_container() -> Any | None:
+    #     try:
+    #         sel = list(studio_graph.selected_nodes() or [])
+    #     except Exception:
+    #         sel = []
+    #     for n in sel:
+    #         spec = getattr(n, "spec", None)
+    #         if spec is None:
+    #             continue
+    #         if str(getattr(spec, "serviceClass", "") or "") == "f8.pyengine":
+    #             return n
+    #     return None
 
-    def _service_id_for_container(n: Any) -> str:
-        try:
-            sid = str(getattr(n, "id", "") or "")
-        except Exception:
-            sid = ""
-        sid = sid.replace(".", "_").strip()
-        if not sid:
-            sid = "engine1"
-        return sid
+    # def _service_id_for_container(n: Any) -> str:
+    #     try:
+    #         sid = str(getattr(n, "id", "") or "")
+    #     except Exception:
+    #         sid = ""
+    #     sid = sid.replace(".", "_").strip()
+    #     if not sid:
+    #         sid = "engine1"
+    #     return sid
 
-    def _run_service() -> None:
-        n = _selected_service_container()
-        if n is None:
-            return
-        service_id = _service_id_for_container(n)
-        try:
-            proc_mgr.start(ServiceProcessConfig(service_class="f8.pyengine", service_id=service_id))
-        except Exception as exc:
-            QtWidgets.QMessageBox.critical(mainwin, "Run failed", str(exc))
+    # def _run_service() -> None:
+    #     n = _selected_service_container()
+    #     if n is None:
+    #         return
+    #     service_id = _service_id_for_container(n)
+    #     try:
+    #         proc_mgr.start(ServiceProcessConfig(service_class="f8.pyengine", service_id=service_id))
+    #     except Exception as exc:
+    #         QtWidgets.QMessageBox.critical(mainwin, "Run failed", str(exc))
 
-    def _stop_service() -> None:
-        n = _selected_service_container()
-        if n is None:
-            return
-        proc_mgr.stop(_service_id_for_container(n))
+    # def _stop_service() -> None:
+    #     n = _selected_service_container()
+    #     if n is None:
+    #         return
+    #     proc_mgr.stop(_service_id_for_container(n))
 
-    def _deploy_selected() -> None:
-        n = _selected_service_container()
-        if n is None:
-            return
-        service_id = _service_id_for_container(n)
-        try:
-            nats_url = "nats://127.0.0.1:4222"
-            nodes = []
-            try:
-                nodes = list(getattr(n, "contained_nodes")() or [])
-            except Exception:
-                nodes = []
-            rt = export_runtime_graph(studio_graph, service_id=service_id, include_nodes=nodes)
-            asyncio.run(deploy_to_service(service_id=service_id, nats_url=nats_url, graph=rt))
-            QtWidgets.QMessageBox.information(mainwin, "Deploy", f"Deployed to {service_id}")
-        except Exception as exc:
-            QtWidgets.QMessageBox.critical(mainwin, "Deploy failed", str(exc))
+    # def _deploy_selected() -> None:
+    #     n = _selected_service_container()
+    #     if n is None:
+    #         return
+    #     service_id = _service_id_for_container(n)
+    #     try:
+    #         nats_url = "nats://127.0.0.1:4222"
+    #         nodes = []
+    #         try:
+    #             nodes = list(getattr(n, "contained_nodes")() or [])
+    #         except Exception:
+    #             nodes = []
+    #         rt = export_runtime_graph(studio_graph, service_id=service_id, include_nodes=nodes)
+    #         asyncio.run(deploy_to_service(service_id=service_id, nats_url=nats_url, graph=rt))
+    #         QtWidgets.QMessageBox.information(mainwin, "Deploy", f"Deployed to {service_id}")
+    #     except Exception as exc:
+    #         QtWidgets.QMessageBox.critical(mainwin, "Deploy failed", str(exc))
 
-    def _deploy_and_run() -> None:
-        _run_service()
-        _deploy_selected()
+    # def _deploy_and_run() -> None:
+    #     _run_service()
+    #     _deploy_selected()
 
-    menu = mainwin.menuBar().addMenu("Graph")
-    menu.addAction(deploy_action)
-    menu.addSeparator()
-    # menu.addAction(QtWidgets.QAction("Run Engine", mainwin, triggered=_run_service))
-    # menu.addAction(QtWidgets.QAction("Stop Engine", mainwin, triggered=_stop_service))
-    # menu.addAction(QtWidgets.QAction("Deploy Selected Engine", mainwin, triggered=_deploy_selected))
-    # menu.addAction(QtWidgets.QAction("Deploy + Run", mainwin, triggered=_deploy_and_run))
+    # Future: add Service/Deploy actions here (main window already owns Graph menu).
 
     app.exec_()
 

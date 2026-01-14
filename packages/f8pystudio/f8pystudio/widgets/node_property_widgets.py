@@ -8,6 +8,7 @@ from NodeGraphQt import PropertiesBinWidget
 from NodeGraphQt.constants import NodeEnum, NodePropWidgetEnum
 from NodeGraphQt.custom_widgets.properties_bin.node_property_factory import NodePropertyWidgetFactory
 from NodeGraphQt.custom_widgets.properties_bin.node_property_widgets import PropLineEdit
+from NodeGraphQt.custom_widgets.properties_bin.prop_widgets_base import PropLabel
 
 from qtpy import QtWidgets, QtCore, QtGui
 
@@ -1036,12 +1037,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
 
         # sort tabs and properties.
         tab_mapping = defaultdict(list)
-        node_extra_props: list[tuple[str, Any]] = []
         for prop_name, prop_val in model.custom_properties.items():
-            # Put svcId into the built-in "Node" tab (avoid wasting a whole tab).
-            if prop_name == "svcId":
-                node_extra_props.append((prop_name, prop_val))
-                continue
             tab_name = model.get_tab_name(prop_name)
             tab_mapping[tab_name].append((prop_name, prop_val))
 
@@ -1122,26 +1118,23 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
             )
 
             widget.value_changed.connect(self._on_property_changed)
-        if node_extra_props:
-            for prop_name, prop_value in node_extra_props:
-                wid_type = model.get_widget_type(prop_name)
-                widget = widget_factory.get_widget(wid_type) or widget_factory.get_widget(
-                    NodePropWidgetEnum.QLABEL.value
-                )
-                widget.set_name(prop_name)
-                prop_window.add_widget(
-                    name=prop_name,
-                    widget=widget,
-                    value=prop_value,
-                    label=prop_name.replace("_", " "),
-                    tooltip="Bound service container id.",
-                )
-                widget.value_changed.connect(self._on_property_changed)
+
+        spec = getattr(node, "spec", None)
+        if isinstance(spec, F8OperatorSpec):
+            svc_id = getattr(node, "svcId", "")  # type: ignore[attr-defined]
+            sys_widget = PropLabel()
+            sys_widget.set_name("__sys_svcId")
+            prop_window.add_widget(
+                name="__sys_svcId",
+                widget=sys_widget,
+                value=svc_id,
+                label="svcId",
+                tooltip="Bound service container id.",
+            )
 
         self.type_wgt.setText(model.get_property("type_") or "")
 
         # built-in spec editors (if node has F8 spec).
-        spec = getattr(node, "spec", None)
         if isinstance(spec, (F8OperatorSpec, F8ServiceSpec)):
             spec_ports = _F8SpecPortEditor(self, node=node, on_apply=self._on_spec_applied)
             self.__tab.addTab(spec_ports, "Port")
