@@ -7,6 +7,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
+from nats.js.api import StorageType  # type: ignore[import-not-found]
+
 from ..generated import F8Edge, F8EdgeKindEnum, F8EdgeStrategyEnum, F8RuntimeGraph
 from .nats_naming import data_subject, ensure_token, kv_bucket_for_service, kv_key_node_state, kv_key_topology
 from .nats_transport import NatsTransport, NatsTransportConfig
@@ -22,6 +24,8 @@ class ServiceRuntimeConfig:
     service_id: str
     nats_url: str = "nats://127.0.0.1:4222"
     publish_all_data: bool = True
+    kv_storage: StorageType = StorageType.MEMORY
+    delete_bucket_on_stop: bool = False
 
 
 @dataclass
@@ -64,7 +68,14 @@ class ServiceRuntime:
         self._publish_all_data = bool(getattr(config, "publish_all_data", True))
 
         bucket = kv_bucket_for_service(self.service_id)
-        self._transport = NatsTransport(NatsTransportConfig(url=str(config.nats_url), kv_bucket=str(bucket)))
+        self._transport = NatsTransport(
+            NatsTransportConfig(
+                url=str(config.nats_url),
+                kv_bucket=str(bucket),
+                kv_storage=getattr(config, "kv_storage", None),
+                delete_bucket_on_close=bool(getattr(config, "delete_bucket_on_stop", False)),
+            )
+        )
 
         self._nodes: dict[str, ServiceRuntimeNode] = {}
         self._graph: F8RuntimeGraph | None = None
@@ -351,16 +362,12 @@ class ServiceRuntime:
                 if not edge.toOperatorId:
                     continue
                 to_node = str(edge.toOperatorId)
-                if to_node not in self._nodes:
-                    continue
                 cross_in.setdefault(subject, []).append((to_node, str(edge.toPort), edge))
                 continue
 
             # Outgoing: local service is the source.
             if str(edge.fromServiceId) == self.service_id:
                 from_node = str(edge.fromOperatorId)
-                if from_node not in self._nodes:
-                    continue
                 cross_out[(from_node, str(edge.fromPort))] = subject
 
         self._cross_in_by_subject = cross_in
@@ -550,8 +557,6 @@ class ServiceRuntime:
 
             local_node = str(edge.toOperatorId)
             local_field = str(edge.toPort)
-            if local_node not in self._nodes:
-                continue
             remote_node = str(edge.fromOperatorId)
             remote_field = str(edge.fromPort)
             remote_key = kv_key_node_state(peer, node_id=remote_node, field=remote_field)

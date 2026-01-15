@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 import nats  # type: ignore[import-not-found]
+from nats.js.api import KeyValueConfig, StorageType  # type: ignore[import-not-found]
 from nats.js.errors import BucketNotFoundError  # type: ignore[import-not-found]
 
 
@@ -12,7 +13,9 @@ from nats.js.errors import BucketNotFoundError  # type: ignore[import-not-found]
 class NatsTransportConfig:
     url: str
     kv_bucket: str
-    kv_history: int = 64
+    kv_history: int = 1
+    kv_storage: StorageType = StorageType.MEMORY
+    delete_bucket_on_close: bool = False
 
 
 class NatsTransport:
@@ -56,7 +59,12 @@ class NatsTransport:
         try:
             return await self._js.key_value(str(bucket))
         except BucketNotFoundError:
-            return await self._js.create_key_value(bucket=str(bucket), history=int(self._config.kv_history))
+            cfg = KeyValueConfig(
+                bucket=str(bucket),
+                history=int(self._config.kv_history),
+                storage=self._config.kv_storage,
+            )
+            return await self._js.create_key_value(config=cfg)
 
     async def close(self) -> None:
         async with self._lock:
@@ -67,6 +75,13 @@ class NatsTransport:
                     await sub.unsubscribe()
                 except Exception:
                     pass
+
+            if bool(getattr(self._config, "delete_bucket_on_close", False)) and self._js is not None:
+                try:
+                    await self._js.delete_key_value(str(self._config.kv_bucket))
+                except Exception:
+                    pass
+
             if self._nc is not None:
                 try:
                     await self._nc.drain()
