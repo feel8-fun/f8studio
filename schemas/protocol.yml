@@ -471,6 +471,7 @@ components:
           type: integer
           minimum: 1
           description: Optional max queue size for this edge (data)
+          default: 16
         timeoutMs:
           type: integer
           minimum: 0
@@ -576,6 +577,9 @@ components:
       properties:
         nodeId:
           type: string
+        serviceId:
+          type: string
+          description: Service instance id that owns this node (optional for legacy graphs).
         serviceClass:
           type: string
           description: Service class of the node, required for all nodes.
@@ -620,6 +624,30 @@ components:
       required: [nodeId, serviceClass]
       additionalProperties: false
 
+    F8RuntimeService:
+      title: F8RuntimeService
+      type: object
+      description: Runtime service instance metadata included alongside compiled graphs.
+      properties:
+        serviceId:
+          type: string
+          description: Service instance id (unique within a graph deployment).
+        serviceClass:
+          type: string
+          description: Service class for resolving specs/launchers (e.g., f8.pyengine).
+        label:
+          type: string
+          nullable: true
+          description: Optional UI label for the service instance.
+        meta:
+          type: object
+          default: {}
+          description: Optional service instance metadata.
+          additionalProperties:
+            $ref: "#/components/schemas/F8JsonValue"
+      required: [serviceId, serviceClass]
+      additionalProperties: false
+
     F8RuntimeGraph:
       title: F8RuntimeGraph
       type: object
@@ -630,6 +658,12 @@ components:
         revision:
           type: string
           description: Compiler output revision/etag.
+        services:
+          type: array
+          description: Service instances referenced by nodes/edges.
+          items:
+            $ref: "#/components/schemas/F8RuntimeService"
+          default: []
         nodes:
           type: array
           items:

@@ -1,0 +1,160 @@
+{
+  "graphId": "fa6a3bac9cb84435837cde6ecbf6fb81",
+  "revision": "1",
+  "services": [
+    {
+      "serviceId": "ZF4Z",
+      "serviceClass": "f8.pyengine",
+      "label": "PyEngine",
+      "meta": {
+        "name": "Receiver"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "nodeId": "43EZ",
+      "serviceId": "ZF4Z",
+      "serviceClass": "f8.pyengine",
+      "operatorClass": "f8.tick",
+      "execInPorts": [],
+      "execOutPorts": [
+        "exec"
+      ],
+      "dataInPorts": [],
+      "dataOutPorts": [],
+      "stateFields": [
+        {
+          "name": "tickMs",
+          "label": "Refresh Interval (ms)",
+          "description": "Interval in milliseconds for refreshing the execution engine cycle.",
+          "valueSchema": {
+            "title": null,
+            "description": null,
+            "default": 100,
+            "examples": null,
+            "$comment": null,
+            "type": "integer",
+            "enum": null,
+            "minimum": 1.0,
+            "maximum": 50000.0,
+            "exclusiveMinimum": null,
+            "exclusiveMaximum": null,
+            "multipleOf": null
+          },
+          "access": "wo",
+          "required": false,
+          "uiControl": null,
+          "uiLanguage": null,
+          "showOnNode": true
+        }
+      ],
+      "stateValues": {
+        "tickMs": 100
+      }
+    },
+    {
+      "nodeId": "xHky",
+      "serviceId": "ZF4Z",
+      "serviceClass": "f8.pyengine",
+      "operatorClass": "f8.print",
+      "execInPorts": [
+        "exec"
+      ],
+      "execOutPorts": [],
+      "dataInPorts": [
+        {
+          "name": "value",
+          "valueSchema": {
+            "title": null,
+            "description": null,
+            "default": null,
+            "examples": null,
+            "$comment": null,
+            "type": "number",
+            "enum": null,
+            "minimum": null,
+            "maximum": null,
+            "exclusiveMinimum": null,
+            "exclusiveMaximum": null,
+            "multipleOf": null
+          },
+          "description": "value to print",
+          "required": true
+        }
+      ],
+      "dataOutPorts": [],
+      "stateFields": [
+        {
+          "name": "throttleMs",
+          "label": "Throttle (ms)",
+          "description": "Throttle interval in milliseconds.",
+          "valueSchema": {
+            "title": null,
+            "description": null,
+            "default": 100,
+            "examples": null,
+            "$comment": null,
+            "type": "integer",
+            "enum": null,
+            "minimum": 0.0,
+            "maximum": 10000.0,
+            "exclusiveMinimum": null,
+            "exclusiveMaximum": null,
+            "multipleOf": null
+          },
+          "access": "wo",
+          "required": false,
+          "uiControl": null,
+          "uiLanguage": null,
+          "showOnNode": true
+        }
+      ],
+      "stateValues": {
+        "throttleMs": 100
+      }
+    },
+    {
+      "nodeId": "ZF4Z",
+      "serviceId": "ZF4Z",
+      "serviceClass": "f8.pyengine",
+      "operatorClass": null,
+      "execInPorts": [],
+      "execOutPorts": [],
+      "dataInPorts": [],
+      "dataOutPorts": [],
+      "stateFields": [],
+      "stateValues": null
+    }
+  ],
+  "edges": [
+    {
+      "edgeId": "a9352bc89d1f45469b98a7ec4bc24096",
+      "fromServiceId": "68xQ",
+      "fromOperatorId": "yE7i",
+      "fromPort": "value",
+      "toServiceId": "ZF4Z",
+      "toOperatorId": "xHky",
+      "toPort": "value",
+      "kind": "data",
+      "strategy": "latest",
+      "queueSize": 16,
+      "timeoutMs": null,
+      "direction": "in"
+    },
+    {
+      "edgeId": "b40e0a3995294190a1d8c325f5f55a09",
+      "fromServiceId": "ZF4Z",
+      "fromOperatorId": "43EZ",
+      "fromPort": "exec",
+      "toServiceId": "ZF4Z",
+      "toOperatorId": "xHky",
+      "toPort": "exec",
+      "kind": "exec",
+      "strategy": "latest",
+      "queueSize": 16,
+      "timeoutMs": null,
+      "direction": null
+    }
+  ]
+}

@@ -36,7 +36,14 @@ class EngineHost:
         self._nodes: dict[str, Any] = {}
 
     async def apply_topology(self, graph: F8RuntimeGraph) -> None:
-        want_nodes = [n for n in (graph.nodes or []) if str(getattr(n, "serviceClass", "")) == self._config.service_class]
+        # Only materialize executable operator nodes. Container/service nodes may exist in the
+        # runtime graph for metadata/telemetry/state but are not engine-executed.
+        want_nodes = [
+            n
+            for n in (graph.nodes or [])
+            if str(getattr(n, "serviceClass", "")) == self._config.service_class
+            and getattr(n, "operatorClass", None)
+        ]
         want_ids = {str(n.nodeId) for n in want_nodes}
 
         for node_id in list(self._nodes.keys()):
@@ -88,4 +95,3 @@ class EngineHost:
                 except Exception:
                     pass
                 continue
-

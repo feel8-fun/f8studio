@@ -1,0 +1,326 @@
+{
+  "graphId": "fa6a3bac9cb84435837cde6ecbf6fb81",
+  "revision": "1",
+  "services": [
+    {
+      "serviceId": "68xQ",
+      "serviceClass": "f8.pyengine",
+      "label": "PyEngine",
+      "meta": {
+        "name": "Sender"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "nodeId": "sHuR",
+      "serviceId": "68xQ",
+      "serviceClass": "f8.pyengine",
+      "operatorClass": "f8.tick",
+      "execInPorts": [],
+      "execOutPorts": [
+        "exec"
+      ],
+      "dataInPorts": [],
+      "dataOutPorts": [],
+      "stateFields": [
+        {
+          "name": "tickMs",
+          "label": "Refresh Interval (ms)",
+          "description": "Interval in milliseconds for refreshing the execution engine cycle.",
+          "valueSchema": {
+            "title": null,
+            "description": null,
+            "default": 100,
+            "examples": null,
+            "$comment": null,
+            "type": "integer",
+            "enum": null,
+            "minimum": 1.0,
+            "maximum": 50000.0,
+            "exclusiveMinimum": null,
+            "exclusiveMaximum": null,
+            "multipleOf": null
+          },
+          "access": "wo",
+          "required": false,
+          "uiControl": null,
+          "uiLanguage": null,
+          "showOnNode": true
+        }
+      ],
+      "stateValues": {
+        "tickMs": 100
+      }
+    },
+    {
+      "nodeId": "yE7i",
+      "serviceId": "68xQ",
+      "serviceClass": "f8.pyengine",
+      "operatorClass": "f8.sine",
+      "execInPorts": [
+        "exec"
+      ],
+      "execOutPorts": [
+        "exec"
+      ],
+      "dataInPorts": [],
+      "dataOutPorts": [
+        {
+          "name": "value",
+          "valueSchema": {
+            "title": null,
+            "description": null,
+            "default": null,
+            "examples": null,
+            "$comment": null,
+            "type": "number",
+            "enum": null,
+            "minimum": null,
+            "maximum": null,
+            "exclusiveMinimum": null,
+            "exclusiveMaximum": null,
+            "multipleOf": null
+          },
+          "description": "sine output",
+          "required": true
+        }
+      ],
+      "stateFields": [
+        {
+          "name": "hz",
+          "label": "Hz",
+          "description": "Frequency in Hz.",
+          "valueSchema": {
+            "title": null,
+            "description": null,
+            "default": 1.0,
+            "examples": null,
+            "$comment": null,
+            "type": "number",
+            "enum": null,
+            "minimum": 0.0,
+            "maximum": 100.0,
+            "exclusiveMinimum": null,
+            "exclusiveMaximum": null,
+            "multipleOf": null
+          },
+          "access": "wo",
+          "required": false,
+          "uiControl": null,
+          "uiLanguage": null,
+          "showOnNode": true
+        },
+        {
+          "name": "amp",
+          "label": "Amplitude",
+          "description": "Amplitude.",
+          "valueSchema": {
+            "title": null,
+            "description": null,
+            "default": 1.0,
+            "examples": null,
+            "$comment": null,
+            "type": "number",
+            "enum": null,
+            "minimum": 0.0,
+            "maximum": 1000.0,
+            "exclusiveMinimum": null,
+            "exclusiveMaximum": null,
+            "multipleOf": null
+          },
+          "access": "wo",
+          "required": false,
+          "uiControl": null,
+          "uiLanguage": null,
+          "showOnNode": true
+        },
+        {
+          "name": "phase",
+          "label": "Phase",
+          "description": "Normalized phase offset (0.0 - 1.0).",
+          "valueSchema": {
+            "title": null,
+            "description": null,
+            "default": 0.0,
+            "examples": null,
+            "$comment": null,
+            "type": "number",
+            "enum": null,
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "exclusiveMinimum": null,
+            "exclusiveMaximum": null,
+            "multipleOf": null
+          },
+          "access": "wo",
+          "required": false,
+          "uiControl": null,
+          "uiLanguage": null,
+          "showOnNode": true
+        },
+        {
+          "name": "offset",
+          "label": "Offset",
+          "description": "DC offset.",
+          "valueSchema": {
+            "title": null,
+            "description": null,
+            "default": 0.0,
+            "examples": null,
+            "$comment": null,
+            "type": "number",
+            "enum": null,
+            "minimum": -1000.0,
+            "maximum": 1000.0,
+            "exclusiveMinimum": null,
+            "exclusiveMaximum": null,
+            "multipleOf": null
+          },
+          "access": "wo",
+          "required": false,
+          "uiControl": null,
+          "uiLanguage": null,
+          "showOnNode": true
+        }
+      ],
+      "stateValues": {
+        "hz": 1.0,
+        "amp": 1.0,
+        "phase": 0.0,
+        "offset": 0.0
+      }
+    },
+    {
+      "nodeId": "U4AD",
+      "serviceId": "68xQ",
+      "serviceClass": "f8.pyengine",
+      "operatorClass": "f8.print",
+      "execInPorts": [
+        "exec"
+      ],
+      "execOutPorts": [],
+      "dataInPorts": [
+        {
+          "name": "value",
+          "valueSchema": {
+            "title": null,
+            "description": null,
+            "default": null,
+            "examples": null,
+            "$comment": null,
+            "type": "number",
+            "enum": null,
+            "minimum": null,
+            "maximum": null,
+            "exclusiveMinimum": null,
+            "exclusiveMaximum": null,
+            "multipleOf": null
+          },
+          "description": "value to print",
+          "required": true
+        }
+      ],
+      "dataOutPorts": [],
+      "stateFields": [
+        {
+          "name": "throttleMs",
+          "label": "Throttle (ms)",
+          "description": "Throttle interval in milliseconds.",
+          "valueSchema": {
+            "title": null,
+            "description": null,
+            "default": 100,
+            "examples": null,
+            "$comment": null,
+            "type": "integer",
+            "enum": null,
+            "minimum": 0.0,
+            "maximum": 10000.0,
+            "exclusiveMinimum": null,
+            "exclusiveMaximum": null,
+            "multipleOf": null
+          },
+          "access": "wo",
+          "required": false,
+          "uiControl": null,
+          "uiLanguage": null,
+          "showOnNode": true
+        }
+      ],
+      "stateValues": {
+        "throttleMs": 100
+      }
+    },
+    {
+      "nodeId": "68xQ",
+      "serviceId": "68xQ",
+      "serviceClass": "f8.pyengine",
+      "operatorClass": null,
+      "execInPorts": [],
+      "execOutPorts": [],
+      "dataInPorts": [],
+      "dataOutPorts": [],
+      "stateFields": [],
+      "stateValues": null
+    }
+  ],
+  "edges": [
+    {
+      "edgeId": "e8da20737d7e41bf87a8ec6f3f6df37e",
+      "fromServiceId": "68xQ",
+      "fromOperatorId": "sHuR",
+      "fromPort": "exec",
+      "toServiceId": "68xQ",
+      "toOperatorId": "yE7i",
+      "toPort": "exec",
+      "kind": "exec",
+      "strategy": "latest",
+      "queueSize": 16,
+      "timeoutMs": null,
+      "direction": null
+    },
+    {
+      "edgeId": "3af5aae30c1147c3989a3c722c34fa3f",
+      "fromServiceId": "68xQ",
+      "fromOperatorId": "yE7i",
+      "fromPort": "exec",
+      "toServiceId": "68xQ",
+      "toOperatorId": "U4AD",
+      "toPort": "exec",
+      "kind": "exec",
+      "strategy": "latest",
+      "queueSize": 16,
+      "timeoutMs": null,
+      "direction": null
+    },
+    {
+      "edgeId": "c98a28bc2a7e4d729d930caa2b2b74bb",
+      "fromServiceId": "68xQ",
+      "fromOperatorId": "yE7i",
+      "fromPort": "value",
+      "toServiceId": "68xQ",
+      "toOperatorId": "U4AD",
+      "toPort": "value",
+      "kind": "data",
+      "strategy": "latest",
+      "queueSize": 16,
+      "timeoutMs": null,
+      "direction": null
+    },
+    {
+      "edgeId": "a9352bc89d1f45469b98a7ec4bc24096",
+      "fromServiceId": "68xQ",
+      "fromOperatorId": "yE7i",
+      "fromPort": "value",
+      "toServiceId": "ZF4Z",
+      "toOperatorId": "xHky",
+      "toPort": "value",
+      "kind": "data",
+      "strategy": "latest",
+      "queueSize": 16,
+      "timeoutMs": null,
+      "direction": "out"
+    }
+  ]
+}
