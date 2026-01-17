@@ -6,7 +6,7 @@ import uuid
 from typing import Any
 
 from f8pysdk import F8Edge, F8EdgeKindEnum, F8EdgeStrategyEnum, F8RuntimeGraph, F8RuntimeNode
-from f8pysdk.runtime import NatsTransport, NatsTransportConfig, ensure_token, kv_bucket_for_service, kv_key_topology
+from f8pysdk.runtime import NatsTransport, NatsTransportConfig, ensure_token, kv_bucket_for_service, kv_key_rungraph
 
 
 def _now_rev() -> str:
@@ -181,7 +181,7 @@ def export_runtime_graph(
 async def deploy_to_service(*, service_id: str, nats_url: str, graph: F8RuntimeGraph) -> None:
     service_id = ensure_token(service_id, label="service_id")
     bucket = kv_bucket_for_service(service_id)
-    key = kv_key_topology(service_id)
+    key = kv_key_rungraph()
 
     tr = NatsTransport(NatsTransportConfig(url=str(nats_url).strip(), kv_bucket=bucket))
     await tr.connect()

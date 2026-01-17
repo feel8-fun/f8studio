@@ -15,6 +15,7 @@ class NatsTransportConfig:
     kv_bucket: str
     kv_history: int = 1
     kv_storage: StorageType = StorageType.MEMORY
+    delete_bucket_on_connect: bool = False
     delete_bucket_on_close: bool = False
 
 
@@ -49,6 +50,11 @@ class NatsTransport:
                 max_reconnect_attempts=-1,
             )
             self._js = self._nc.jetstream()
+            if bool(getattr(self._config, "delete_bucket_on_connect", False)) and self._js is not None:
+                try:
+                    await self._js.delete_key_value(str(self._config.kv_bucket))
+                except Exception:
+                    pass
             self._kv = await self._open_kv(self._config.kv_bucket)
             if self._kv is not None:
                 self._kv_stores[self._config.kv_bucket] = self._kv
@@ -228,4 +234,3 @@ class NatsTransport:
 
         task = asyncio.create_task(_pump(), name=f"kv_watch:{bucket}:{key_pattern}")
         return (watcher, task)
-

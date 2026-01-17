@@ -542,7 +542,7 @@ class ServiceGraphEditor:
 
         for mgr in self._engine_sync.values():
             try:
-                mgr.schedule_topology_sync()
+                mgr.schedule_rungraph_sync()
             except Exception:
                 pass
 
@@ -589,7 +589,7 @@ class ServiceGraphEditor:
         mgr = self._engine_sync.get(sid)
         if mgr is not None:
             try:
-                mgr.schedule_topology_sync()
+                mgr.schedule_rungraph_sync()
             except Exception:
                 pass
 

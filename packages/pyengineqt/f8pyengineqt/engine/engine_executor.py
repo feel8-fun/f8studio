@@ -28,9 +28,9 @@ class EngineExecutor:
     def graph(self) -> OperatorGraph | None:
         return self._graph
 
-    async def apply_topology(self, graph: OperatorGraph) -> None:
+    async def apply_rungraph(self, graph: OperatorGraph) -> None:
         """
-        Create/update runtime nodes from the latest topology.
+        Create/update runtime nodes from the latest rungraph.
         """
         self._graph = graph
 
@@ -56,7 +56,10 @@ class EngineExecutor:
 
     async def _seed_state_defaults(self, graph: OperatorGraph) -> None:
         """
-        Ensure KV has at least the topology-provided state values.
+        Reconcile rungraph-provided state values into KV.
+
+        If KV already has a value and differs, prefer the rungraph value and write it back
+        with a fresh timestamp (current time).
         """
         for node_id, inst in graph.nodes.items():
             for k, v in (inst.state or {}).items():
@@ -64,10 +67,16 @@ class EngineExecutor:
                     existing = await self._runtime.get_state(str(node_id), str(k))
                 except Exception:
                     existing = None
-                if existing is not None:
+                if existing is not None and existing == v:
                     continue
                 try:
-                    await self._runtime.set_state_with_meta(str(node_id), str(k), v, source="topology")
+                    await self._runtime.set_state_with_meta(
+                        str(node_id),
+                        str(k),
+                        v,
+                        source="rungraph",
+                        meta={"rungraphReconcile": True},
+                    )
                 except Exception:
                     continue
 

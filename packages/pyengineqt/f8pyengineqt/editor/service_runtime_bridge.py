@@ -47,7 +47,7 @@ class ServiceRuntimeBridge(QtCore.QObject):
     """
     Qt-friendly bridge that hosts an asyncio `ServiceRuntime` in a background thread.
 
-    Intended for the editor process (topology/state publisher + remote state consumer).
+    Intended for the editor process (rungraph/state publisher + remote state consumer).
     """
 
     statusChanged = QtCore.Signal(str)
@@ -65,7 +65,7 @@ class ServiceRuntimeBridge(QtCore.QObject):
         self._loop: asyncio.AbstractEventLoop | None = None
 
         self._runtime: ServiceRuntime | None = None
-        self._pending_topology: dict[str, Any] | None = None
+        self._pending_rungraph: dict[str, Any] | None = None
         self._pending_state: list[tuple[str, str, Any, str, int | None]] = []
         self._pending_pulls: set[tuple[str, str]] = set()
         self._known_nodes: set[str] = set()
@@ -97,15 +97,15 @@ class ServiceRuntimeBridge(QtCore.QObject):
             except Exception:
                 pass
 
-    def put_topology(self, payload: dict[str, Any]) -> None:
+    def put_rungraph(self, payload: dict[str, Any]) -> None:
         rt = self._runtime
         loop = self._loop
         if rt is None or loop is None:
-            self._pending_topology = payload
+            self._pending_rungraph = payload
             return
 
         async def _do() -> None:
-            await rt.set_topology(payload)
+            await rt.set_rungraph(payload)
 
         try:
             asyncio.run_coroutine_threadsafe(_do(), loop)
@@ -194,7 +194,7 @@ class ServiceRuntimeBridge(QtCore.QObject):
 
         rt.add_state_listener(_on_state)
 
-        async def _on_topology(graph: Any) -> None:
+        async def _on_rungraph(graph: Any) -> None:
             # Register local nodes so cross half-edges can subscribe/buffer.
             try:
                 nodes = getattr(graph, "nodes", None) or {}
@@ -233,7 +233,7 @@ class ServiceRuntimeBridge(QtCore.QObject):
                 except Exception:
                     continue
 
-        rt.add_topology_listener(_on_topology)
+        rt.add_rungraph_listener(_on_rungraph)
 
         try:
             await rt.start()
@@ -244,11 +244,11 @@ class ServiceRuntimeBridge(QtCore.QObject):
 
         self.statusChanged.emit(f"nats: ready serviceId={service_id} bucket={bucket}")
 
-        pending_topology = self._pending_topology
-        self._pending_topology = None
-        if pending_topology is not None:
+        pending_rungraph = self._pending_rungraph
+        self._pending_rungraph = None
+        if pending_rungraph is not None:
             try:
-                await rt.set_topology(pending_topology)
+                await rt.set_rungraph(pending_rungraph)
             except Exception:
                 pass
 

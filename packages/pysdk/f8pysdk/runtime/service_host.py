@@ -41,7 +41,7 @@ class ServiceHost:
     """
     Push-based service host that binds a `ServiceRuntime` to per-node runtime implementations.
 
-    - Topology drives creation/removal of local runtime nodes.
+    - Rungraph drives creation/removal of local runtime nodes.
     - Runtime pushes data into nodes (`on_data`) and manages cross-edge routing.
     """
 
@@ -57,17 +57,17 @@ class ServiceHost:
         self._registry = registry or ServiceOperatorRuntimeRegistry.instance()
 
         self._nodes: dict[str, Any] = {}
-        self._runtime.add_topology_listener(self._on_topology)
+        self._runtime.add_rungraph_listener(self._on_rungraph)
 
-    async def _on_topology(self, graph: F8RuntimeGraph) -> None:
+    async def _on_rungraph(self, graph: F8RuntimeGraph) -> None:
         try:
-            await self.apply_topology(graph)
+            await self.apply_rungraph(graph)
         except Exception:
             return
 
-    async def apply_topology(self, graph: F8RuntimeGraph) -> None:
+    async def apply_rungraph(self, graph: F8RuntimeGraph) -> None:
         """
-        Register/unregister local runtime nodes based on the latest topology snapshot.
+        Register/unregister local runtime nodes based on the latest rungraph snapshot.
         """
         service_class = str(self._config.service_class or "").strip()
 
@@ -123,7 +123,10 @@ class ServiceHost:
 
     async def _seed_state_defaults(self, nodes: list[F8RuntimeNode]) -> None:
         """
-        Ensure KV has at least the topology-provided initial state values.
+        Reconcile rungraph-provided initial state values into KV.
+
+        If KV already has a value and differs, prefer the rungraph value and write it back
+        with a fresh timestamp (current time).
         """
         for n in nodes:
             node_id = str(n.nodeId)
@@ -132,10 +135,15 @@ class ServiceHost:
                     existing = await self._runtime.get_state(node_id, str(k))
                 except Exception:
                     existing = None
-                if existing is not None:
+                if existing is not None and existing == v:
                     continue
                 try:
-                    await self._runtime.set_state_with_meta(node_id, str(k), v, source="topology")
+                    await self._runtime.set_state_with_meta(
+                        node_id,
+                        str(k),
+                        v,
+                        source="rungraph",
+                        meta={"rungraphReconcile": True},
+                    )
                 except Exception:
                     continue
-

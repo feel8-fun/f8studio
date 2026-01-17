@@ -42,7 +42,7 @@
   - High->low fps (producer faster): `latest` (default; take newest, drop older), `average/window` for numeric types.
   - Low->high fps (producer slower): `hold`/`repeat` last, or `interpolate` for numeric types.
   - Safety defaults: bounded queues per edge (default queueSize = 64), `drop-old` on for cross-instance edges; optional timeout to evict stale payloads. Enable JetStream/bridge + DLQ only when cross-instance reliability is required.
-- Engines apply the strategy at tick boundaries: consume the edge's queue per tick according to the configured policy, so topology order stays intact and multi-rate streams stay coherent.
+- Engines apply the strategy at tick boundaries: consume the edge's queue per tick according to the configured policy, so rungraph order stays intact and multi-rate streams stay coherent.
 
 ## Editor edge compatibility rules (data/state)
 - Enforced at edit time in the editor (and can be rechecked at runtime for safety):
@@ -77,5 +77,5 @@
 
 ## Cross-instance wiring (half-edges)
 - Compiler/splitter generates half-edge configs per subgraph: state fanout (source knows subscribers) and data bus subjects per edge.
-- Engine reads delivered config, sets up pub/sub accordingly; does not need full global topology knowledge.
+- Engine reads delivered config, sets up pub/sub accordingly; does not need full global rungraph knowledge.
 - Operator-to-external links: when an operator links to an external node (even in another engine), the compiler promotes the link through container boundaries by adding synthetic container ports and mapping to the correct half-edges/subjects. Runtime still scopes operators to their engine; promotion is a compile-time convenience.

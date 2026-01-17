@@ -8,7 +8,7 @@ Singleton browser UI that edits graphs and drives the local daemon through maste
 
 ## Responsibilities
 - Discover catalog and instances from master: fetch available service types (from the catalog KV/registry) and the running-instance registry, including status and KV bucket ids.
-- Author and version ServiceGraphs: edit locally, diff, and submit deploys (`deployGraph`) to master whenever topology changes.
+- Author and version ServiceGraphs: edit locally, diff, and submit deploys (`deployGraph`) to master whenever rungraph changes.
 - Deployment call (`deployGraph`) sends the full ServiceGraph (and any per-node config) to master; master handles compile/start/apply and returns the revision/etag.
 - After deploy, drive instances by sending predefined commands to `f8.<instanceId>.<verb>` (e.g., `activate`, `deactivate`) and service-defined commands via `f8.<instanceId>.cmd` with `{command, params}`. Graph deployment is always through master (`deployGraph`), not direct to services.
 - State control rules:

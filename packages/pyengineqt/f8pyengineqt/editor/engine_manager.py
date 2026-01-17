@@ -63,7 +63,7 @@ def _service_id() -> str:
 class EngineManager(QtCore.QObject):
     """
     First-version engine bridge:
-    - publish full topology snapshot (includes per-node specs) to NATS KV.
+    - publish full rungraph snapshot (includes per-node specs) to NATS KV.
     - publish state KV entries to NATS KV and apply remote KV updates to nodes.
     """
 
@@ -88,21 +88,21 @@ class EngineManager(QtCore.QObject):
         self._node_filter = node_filter
         self._edge_meta = edge_meta
         if hasattr(editor, "to_operator_graph"):
-            self._export_topology = lambda: editor.to_operator_graph().to_dict(include_ctx=False)  # type: ignore[attr-defined]
+            self._export_rungraph = lambda: editor.to_operator_graph().to_dict(include_ctx=False)  # type: ignore[attr-defined]
         else:
-            self._export_topology = lambda: export_operator_graph(
+            self._export_rungraph = lambda: export_operator_graph(
                 self._graph, service_id=self._service_id, node_filter=self._node_filter, edge_meta=self._edge_meta
             ).to_dict(include_ctx=False)
 
         self._applying_engine = False
-        self._pending_topology = False
+        self._pending_rungraph = False
         self._pending_kv: dict[str, Any] = {}
         self._nats: ServiceRuntimeBridge | None = None
         self._seeded_nodes: set[str] = set()
 
-        self._topology_timer = QtCore.QTimer(self)
-        self._topology_timer.setSingleShot(True)
-        self._topology_timer.timeout.connect(self._flush_topology)
+        self._rungraph_timer = QtCore.QTimer(self)
+        self._rungraph_timer.setSingleShot(True)
+        self._rungraph_timer.timeout.connect(self._flush_rungraph)
 
         self._kv_timer = QtCore.QTimer(self)
         self._kv_timer.setSingleShot(True)
@@ -112,16 +112,16 @@ class EngineManager(QtCore.QObject):
 
         if self._graph is not None:
             self._graph.node_created.connect(self._on_node_created)
-            self._graph.nodes_deleted.connect(lambda *_a: self.schedule_topology_sync())
-            self._graph.port_connected.connect(lambda *_a: self.schedule_topology_sync())
-            self._graph.port_disconnected.connect(lambda *_a: self.schedule_topology_sync())
+            self._graph.nodes_deleted.connect(lambda *_a: self.schedule_rungraph_sync())
+            self._graph.port_connected.connect(lambda *_a: self.schedule_rungraph_sync())
+            self._graph.port_disconnected.connect(lambda *_a: self.schedule_rungraph_sync())
             self._graph.property_changed.connect(self._on_property_changed)
             try:
-                self._graph.viewer().moved_nodes.connect(lambda *_a: self.schedule_topology_sync())
+                self._graph.viewer().moved_nodes.connect(lambda *_a: self.schedule_rungraph_sync())
             except Exception:
                 pass
             try:
-                self._graph.viewer().node_backdrop_updated.connect(lambda *_a: self.schedule_topology_sync())
+                self._graph.viewer().node_backdrop_updated.connect(lambda *_a: self.schedule_rungraph_sync())
             except Exception:
                 pass
 
@@ -147,7 +147,7 @@ class EngineManager(QtCore.QObject):
         self._nats.start()
         self.statusChanged.emit(f"service: nats mode serviceId={self._service_id} bucket={bucket}")
         self._seed_existing_nodes()
-        self.schedule_topology_sync()
+        self.schedule_rungraph_sync()
 
     def runtime_bridge(self) -> ServiceRuntimeBridge | None:
         return self._nats
@@ -185,7 +185,7 @@ class EngineManager(QtCore.QObject):
                 self._kv_timer.start(self._debounce_ms)
 
     def stop(self) -> None:
-        self._topology_timer.stop()
+        self._rungraph_timer.stop()
         self._kv_timer.stop()
 
         if self._nats is not None:
@@ -196,53 +196,53 @@ class EngineManager(QtCore.QObject):
         self._nats = None
         self._seeded_nodes.clear()
 
-    def schedule_topology_sync(self) -> None:
+    def schedule_rungraph_sync(self) -> None:
         # When scoping by a node filter, nodes can move into scope without a
         # "node_created" event; ensure initial KV keys exist for newly-in-scope nodes.
         try:
             self._seed_existing_nodes()
         except Exception:
             pass
-        self._pending_topology = True
+        self._pending_rungraph = True
         if self._debounce_ms == 0:
-            self._flush_topology()
+            self._flush_rungraph()
             return
-        if not self._topology_timer.isActive():
-            self._topology_timer.start(self._debounce_ms)
+        if not self._rungraph_timer.isActive():
+            self._rungraph_timer.start(self._debounce_ms)
 
-    def _flush_topology(self) -> None:
-        if not self._pending_topology:
+    def _flush_rungraph(self) -> None:
+        if not self._pending_rungraph:
             return
-        self._pending_topology = False
+        self._pending_rungraph = False
         if self._nats is None:
             self.start()
         if self._nats is None:
             return
         try:
-            payload = self._export_topology()
+            payload = self._export_rungraph()
         except Exception as exc:
-            self.statusChanged.emit(f"engine: topology export failed ({exc})")
+            self.statusChanged.emit(f"engine: rungraph export failed ({exc})")
             return
 
         try:
-            self._nats.put_topology(payload)
+            self._nats.put_rungraph(payload)
         except Exception as exc:
-            self.statusChanged.emit(f"nats: put topology failed ({exc})")
+            self.statusChanged.emit(f"nats: put rungraph failed ({exc})")
 
     def _on_property_changed(self, node: Any, name: str, value: Any) -> None:
         if self._applying_engine:
             return
-        # Layout edits (node positions, backdrops resizing) should update topology.
+        # Layout edits (node positions, backdrops resizing) should update rungraph.
         if name in ("pos", "width", "height"):
-            self.schedule_topology_sync()
+            self.schedule_rungraph_sync()
             return
         if not isinstance(node, GenericNode):
             return
         if self._node_filter is not None and not self._node_filter(node):
             return
         if name.startswith("__"):
-            # internal emit (eg. spec changed) -> topology sync
-            self.schedule_topology_sync()
+            # internal emit (eg. spec changed) -> rungraph sync
+            self.schedule_rungraph_sync()
             return
         try:
             state_fields = {s.name: s for s in (node.spec.stateFields or [])}
@@ -295,7 +295,7 @@ class EngineManager(QtCore.QObject):
         )
 
     def _on_node_created(self, node: Any) -> None:
-        self.schedule_topology_sync()
+        self.schedule_rungraph_sync()
         if not isinstance(node, GenericNode):
             return
         if self._node_filter is not None and not self._node_filter(node):

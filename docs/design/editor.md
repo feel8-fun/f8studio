@@ -23,7 +23,7 @@
   - Mark cross edges and strategy badges on edges/ports for visibility.
 
 ## Branch/merge nodes
-- Model branch (switch/gate) and merge (select/priority) explicitly. Each data path uses its own port; merges have multiple input ports (no multi-link into a single port). Topology stays static; branch nodes decide per tick which output carries data; merge nodes define a fixed selection policy.
+- Model branch (switch/gate) and merge (select/priority) explicitly. Each data path uses its own port; merges have multiple input ports (no multi-link into a single port). Rungraph stays static; branch nodes decide per tick which output carries data; merge nodes define a fixed selection policy.
 
 ## Offline/limited mode
 - If master is unavailable, engines keep running the last applied graph, but new apply requests are rejected (read-only notice to the user). Editor enters degraded mode: no deploy, show warning.

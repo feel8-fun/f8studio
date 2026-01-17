@@ -15,7 +15,7 @@ from f8pysdk import (
     number_schema,
 )
 
-from f8pyengineqt.engine.nats_naming import data_subject, kv_bucket_for_service, kv_key_topology
+from f8pyengineqt.engine.nats_naming import data_subject, kv_bucket_for_service, kv_key_rungraph
 from f8pyengineqt.runtime import NatsTransport, NatsTransportConfig, ServiceRuntime, ServiceRuntimeConfig, ServiceRuntimeNode
 
 
@@ -37,12 +37,12 @@ class Consumer(ServiceRuntimeNode):
             await asyncio.sleep(0.2)
 
 
-async def _put_topology(*, nats_url: str, service_id: str, payload: dict[str, Any]) -> None:
+async def _put_rungraph(*, nats_url: str, service_id: str, payload: dict[str, Any]) -> None:
     bucket = kv_bucket_for_service(service_id)
     t = NatsTransport(NatsTransportConfig(url=nats_url, kv_bucket=bucket))
     await t.connect()
     try:
-        await t.kv_put(kv_key_topology(service_id), json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+        await t.kv_put(kv_key_rungraph(), json.dumps(payload, ensure_ascii=False).encode("utf-8"))
     finally:
         await t.close()
 
@@ -77,11 +77,11 @@ async def main() -> None:
         dataInPorts=[F8DataPortSpec(name="in", valueSchema=number_schema())],
     )
 
-    topo_a = {
+    rungraph_a = {
         "nodes": [{"id": node_a, "operatorClass": spec_a.operatorClass, "spec": spec_a.model_dump(mode="json"), "state": {}}],
         "edges": [],
     }
-    topo_b = {
+    rungraph_b = {
         "nodes": [{"id": node_b, "operatorClass": spec_b.operatorClass, "spec": spec_b.model_dump(mode="json"), "state": {}}],
         "edges": [
             F8Edge(
@@ -100,8 +100,8 @@ async def main() -> None:
         ],
     }
 
-    await _put_topology(nats_url=nats_url, service_id=svc_a, payload=topo_a)
-    await _put_topology(nats_url=nats_url, service_id=svc_b, payload=topo_b)
+    await _put_rungraph(nats_url=nats_url, service_id=svc_a, payload=rungraph_a)
+    await _put_rungraph(nats_url=nats_url, service_id=svc_b, payload=rungraph_b)
 
     # Pass explicit buckets to avoid environment overrides (eg. F8_NATS_BUCKET).
     runtime_a = ServiceRuntime(

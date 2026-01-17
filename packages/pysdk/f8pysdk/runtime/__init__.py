@@ -16,7 +16,7 @@ from .nats_naming import (
     ensure_token,
     kv_bucket_for_service,
     kv_key_node_state,
-    kv_key_topology,
+    kv_key_rungraph,
     new_id,
 )
 
@@ -42,7 +42,7 @@ __all__ = [
     "ensure_token",
     "kv_bucket_for_service",
     "kv_key_node_state",
-    "kv_key_topology",
+    "kv_key_rungraph",
     "new_id",
 ]
 

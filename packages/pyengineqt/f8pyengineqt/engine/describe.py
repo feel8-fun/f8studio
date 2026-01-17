@@ -41,9 +41,9 @@ def engine_service_spec() -> F8ServiceSpec:
                 showOnNode=False,
             ),
             F8StateSpec(
-                name="topology",
-                label="Topology",
-                description="Operator graph topology snapshot (published to NATS KV).",
+                name="rungraph",
+                label="Rungraph",
+                description="Operator graph rungraph snapshot (published to NATS KV).",
                 valueSchema=any_schema(),
                 access=F8StateAccess.ro,
                 required=False,

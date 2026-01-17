@@ -22,8 +22,8 @@ class EngineServiceProcessConfig:
     Minimal engine service process (v1).
 
     Today it only:
-    - watches `svc.<serviceId>.topology` in bucket `svc_<serviceId>`
-    - registers runtime nodes for topology nodes so cross-edge subscriptions work
+    - watches `rungraph` in bucket `svc_<serviceId>`
+    - registers runtime nodes for rungraph nodes so cross-edge subscriptions work
     - keeps a shared KV/state cache (ServiceRuntime)
     """
 
@@ -47,11 +47,11 @@ class EngineServiceProcess:
         self._executor = EngineExecutor(self._runtime)
         self._cmd_sub: Any | None = None
 
-        self._runtime.add_topology_listener(self._on_topology)
+        self._runtime.add_rungraph_listener(self._on_rungraph)
 
-    async def _on_topology(self, graph: Any) -> None:
+    async def _on_rungraph(self, graph: Any) -> None:
         try:
-            await self._executor.apply_topology(graph)
+            await self._executor.apply_rungraph(graph)
         except Exception:
             return
 

@@ -24,18 +24,16 @@ def kv_bucket_for_service(service_id: str) -> str:
     return f"svc_{ensure_token(service_id, label='service_id')}"
 
 
-def kv_key_topology(service_id: str) -> str:
-    service_id = ensure_token(service_id, label="service_id")
-    return f"svc.{service_id}.topology"
+def kv_key_rungraph() -> str:
+    return "rungraph"
 
 
-def kv_key_node_state(service_id: str, *, node_id: str, field: str) -> str:
-    service_id = ensure_token(service_id, label="service_id")
+def kv_key_node_state(*, node_id: str, field: str) -> str:
     node_id = ensure_token(node_id, label="node_id")
     field = str(field).strip()
     if not field:
         raise ValueError("field must be non-empty")
-    return f"svc.{service_id}.nodes.{node_id}.state.{field}"
+    return f"nodes.{node_id}.state.{field}"
 
 
 def edge_subject(receiver_service_id: str, edge_id: str) -> str:

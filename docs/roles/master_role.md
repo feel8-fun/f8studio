@@ -4,7 +4,7 @@ Singleton orchestrator on the host; owns the service catalog, instance lifecycle
 
 ## Shared terms
 - `instanceId`: per-process id (short base32/58) assigned or confirmed by master; used for subjects and KV buckets.
-- `ServiceGraph`: user-authored topology of service nodes and edges delivered by the web client.
+- `ServiceGraph`: user-authored rungraph of service nodes and edges delivered by the web client.
 - `OperationGraph`: engine-only operator graph that runs inside an engine service instance.
 - `half-edge`: compiled cross-instance link; carries subject/strategy for one side of a cross data edge (`f8.bus.<edgeId>`) or bucket/key mapping for cross-instance state via KV watch.
 
@@ -18,7 +18,7 @@ Singleton orchestrator on the host; owns the service catalog, instance lifecycle
 - Watch the `services` folder for manifests, validate them, and publish the service catalog into the service registry KV bucket managed by master.
 
 ## Graph deployment (ServiceGraph -> subgraphs)
-1) Receive ServiceGraph from the web client after a topology change (via `deployGraph`).
+1) Receive ServiceGraph from the web client after a rungraph change (via `deployGraph`).
 2) Validate nodes/ports against the available-service catalog; resolve placements/instanceIds.
 3) Ensure required instances exist: create KV bucket, seed config/state, start the process if not running, and wait for register.
 4) Compile the graph: split into per-instance subgraphs; engines get an OperationGraph; other services get the subset relevant to them.

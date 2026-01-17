@@ -39,18 +39,18 @@ async def _run_service(*, service_id: str, nats_url: str) -> None:
     executor = EngineExecutor(runtime)
     host = EngineHost(runtime, executor, config=EngineHostConfig(service_class="f8.pyengine"))
 
-    async def _on_topology(graph) -> None:
-        await host.apply_topology(graph)
-        await executor.apply_topology(graph)
+    async def _on_rungraph(graph) -> None:
+        await host.apply_rungraph(graph)
+        await executor.apply_rungraph(graph)
 
-    runtime.add_topology_listener(_on_topology)
+    runtime.add_rungraph_listener(_on_rungraph)
 
     await runtime.start()
 
     # Optional demo: 10 fps tick drives a 1 Hz sine, printed by a sink node.
     try:
         if os.environ.get("F8_PYENGINE_DEMO", "").strip().lower() in ("1", "true", "yes", "demo_sine"):
-            await runtime.set_topology(_demo_sine_graph(service_id))
+            await runtime.set_rungraph(_demo_sine_graph(service_id))
     except Exception:
         pass
 

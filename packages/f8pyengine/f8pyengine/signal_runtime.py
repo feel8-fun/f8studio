@@ -63,8 +63,5 @@ class PrintRuntimeNode(ServiceRuntimeNode):
     async def on_data(self, port: str, value: Any, *, ts_ms: int | None = None) -> None:
         if str(port) != "value":
             return
-        label = await self.get_state("label")
-        if label is None:
-            label = self._initial_state.get("label", "sine")
-        print(f"[pyengine][{self.node_id}][{label}] ts={ts_ms} value={value}")
+        print(f"[{self.node_id}] ts={ts_ms} value={value}")
 

@@ -20,16 +20,16 @@ from f8pysdk import (
 )
 
 from f8pyengineqt.engine.engine_service_process import EngineServiceProcess, EngineServiceProcessConfig
-from f8pyengineqt.engine.nats_naming import cmd_subject, kv_bucket_for_service, kv_key_topology
+from f8pyengineqt.engine.nats_naming import cmd_subject, kv_bucket_for_service, kv_key_rungraph
 from f8pyengineqt.runtime.nats_transport import NatsTransport, NatsTransportConfig
 
 
-async def _put_topology(*, nats_url: str, service_id: str, payload: dict) -> None:
+async def _put_rungraph(*, nats_url: str, service_id: str, payload: dict) -> None:
     bucket = kv_bucket_for_service(service_id)
     t = NatsTransport(NatsTransportConfig(url=nats_url, kv_bucket=bucket))
     await t.connect()
     try:
-        await t.kv_put(kv_key_topology(service_id), json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+        await t.kv_put(kv_key_rungraph(), json.dumps(payload, ensure_ascii=False).encode("utf-8"))
     finally:
         await t.close()
 
@@ -72,7 +72,7 @@ async def main() -> None:
         states=[F8StateSpec(name="label", label="Label", valueSchema=string_schema(default="Log"), access=F8StateAccess.ro)],
     )
 
-    topo = {
+    rungraph = {
         "nodes": [
             {"id": node_start, "operatorClass": spec_start.operatorClass, "spec": spec_start.model_dump(mode="json"), "state": {}},
             {
@@ -167,7 +167,7 @@ async def main() -> None:
 
     print(f"[demo] nats={nats_url}")
     print(f"[demo] serviceId={service_id} bucket={kv_bucket_for_service(service_id)}")
-    await _put_topology(nats_url=nats_url, service_id=service_id, payload=topo)
+    await _put_rungraph(nats_url=nats_url, service_id=service_id, payload=rungraph)
 
     proc = EngineServiceProcess(EngineServiceProcessConfig(service_id=service_id, nats_url=nats_url))
     task = asyncio.create_task(proc.run(), name="engine_service_process")

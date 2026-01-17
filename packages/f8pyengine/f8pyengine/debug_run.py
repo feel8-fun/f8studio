@@ -76,21 +76,21 @@ async def _run_one_graph(*, graph_path: Path, graph: F8RuntimeGraph, nats_url: s
     executor = EngineExecutor(runtime)
     host = EngineHost(runtime, executor, config=EngineHostConfig(service_class="f8.pyengine"))
 
-    async def _on_topology(g: F8RuntimeGraph) -> None:
-        await host.apply_topology(g)
-        await executor.apply_topology(g)
+    async def _on_rungraph(g: F8RuntimeGraph) -> None:
+        await host.apply_rungraph(g)
+        await executor.apply_rungraph(g)
 
-    runtime.add_topology_listener(_on_topology)
+    runtime.add_rungraph_listener(_on_rungraph)
 
     await runtime.start()
-    await runtime.set_topology(graph)
+    await runtime.set_rungraph(graph)
 
     return _RunningService(graph_path=graph_path, graph=graph, runtime=runtime, host=host, executor=executor)
 
 
 async def _amain(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Debug runner: load per-service F8RuntimeGraph JSON and run PyEngine.")
-    parser.add_argument("--graph", action="append", required=True, help="Path to per-service runtime graph JSON.")
+    parser.add_argument("--graph", required=True, help="Path to per-service runtime graph JSON.")
     parser.add_argument("--nats-url", default="nats://127.0.0.1:4222", help="NATS server URL.")
     parser.add_argument(
         "--service-id",
@@ -108,18 +108,31 @@ async def _amain(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Delete this serviceId's KV bucket on shutdown (unsafe if other processes share the same serviceId).",
     )
+    parser.add_argument(
+        "--delete-bucket-on-start",
+        action="store_true",
+        help="Delete this serviceId's KV bucket on startup (unsafe if other processes share the same serviceId).",
+    )
     args = parser.parse_args(argv)
 
     register_pyengine_runtimes()
 
-    graph_paths = [Path(p).expanduser().resolve() for p in (args.graph or [])]
-    graphs = [(_p, _load_graph(_p)) for _p in graph_paths]
+    graph_path = Path(args.graph).expanduser().resolve()
+    graph = _load_graph(graph_path)
 
     if args.service_id:
-        if len(graphs) != 1:
-            raise SystemExit("--service-id override only supported with a single --graph")
-        gp, g = graphs[0]
-        graphs = [(gp, _rewrite_single_service_id(g, str(args.service_id).strip()))]
+        graph = _rewrite_single_service_id(graph, str(args.service_id).strip())
+
+    if not bool(args.delete_bucket_on_start):
+        try:
+            has_state_values = any(bool(getattr(n, "stateValues", None)) for n in (graph.nodes or []))
+        except Exception:
+            has_state_values = False
+        if has_state_values:
+            print(
+                "debug_run: note: this run will reconcile rungraph stateValues into KV; "
+                "use --delete-bucket-on-start if you want a fully clean state bucket."
+            )
 
     kv_storage: StorageType = StorageType.MEMORY
     if str(args.kv_storage or "").strip() == "memory":
@@ -127,46 +140,45 @@ async def _amain(argv: list[str] | None = None) -> int:
     elif str(args.kv_storage or "").strip() == "file":
         kv_storage = StorageType.FILE
 
-    running: list[_RunningService] = []
+    running: _RunningService | None = None
     try:
-        for gp, g in graphs:
-            if not g.services:
-                raise ValueError(f"{gp}: graph.services is empty")
-            if len(g.services) != 1:
-                raise ValueError(f"{gp}: expected per-service graph with exactly 1 service")
+        if not graph.services:
+            raise ValueError(f"{graph_path}: graph.services is empty")
+        if len(graph.services) != 1:
+            raise ValueError(f"{graph_path}: expected per-service graph with exactly 1 service")
 
-            sid = ensure_token(str(g.services[0].serviceId), label="service_id")
+        sid = ensure_token(str(graph.services[0].serviceId), label="service_id")
 
-            runtime = ServiceRuntime(
-                ServiceRuntimeConfig(
-                    service_id=sid,
-                    nats_url=str(args.nats_url),
-                    kv_storage=kv_storage,
-                    delete_bucket_on_stop=bool(args.delete_bucket_on_exit),
-                )
+        runtime = ServiceRuntime(
+            ServiceRuntimeConfig(
+                service_id=sid,
+                nats_url=str(args.nats_url),
+                kv_storage=kv_storage,
+                delete_bucket_on_start=bool(args.delete_bucket_on_start),
+                delete_bucket_on_stop=bool(args.delete_bucket_on_exit),
             )
-            executor = EngineExecutor(runtime)
-            host = EngineHost(runtime, executor, config=EngineHostConfig(service_class="f8.pyengine"))
+        )
+        executor = EngineExecutor(runtime)
+        host = EngineHost(runtime, executor, config=EngineHostConfig(service_class="f8.pyengine"))
 
-            async def _on_topology(gr: F8RuntimeGraph) -> None:
-                await host.apply_topology(gr)
-                await executor.apply_topology(gr)
+        async def _on_rungraph(gr: F8RuntimeGraph) -> None:
+            await host.apply_rungraph(gr)
+            await executor.apply_rungraph(gr)
 
-            runtime.add_topology_listener(_on_topology)
-            await runtime.start()
-            await runtime.set_topology(g)
+        runtime.add_rungraph_listener(_on_rungraph)
+        await runtime.start()
+        await runtime.set_rungraph(graph)
 
-            running.append(_RunningService(graph_path=gp, graph=g, runtime=runtime, host=host, executor=executor))
+        running = _RunningService(graph_path=graph_path, graph=graph, runtime=runtime, host=host, executor=executor)
         await asyncio.Event().wait()
     finally:
-        for r in running:
+        if running is not None:
             try:
-                await r.executor.stop_source()
+                await running.executor.stop_source()
             except Exception:
                 pass
-        for r in running:
             try:
-                await r.runtime.stop()
+                await running.runtime.stop()
             except Exception:
                 pass
 

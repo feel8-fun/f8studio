@@ -3,7 +3,7 @@ ServiceRuntime SDK (v1)
 This module is the first version of the runtime-side ServiceSDK:
 
 - one process -> one shared NATS connection (core pub/sub + JetStream KV)
-- watch per-service topology from KV: `svc.<serviceId>.topology` inside bucket `svc_<serviceId>`
+- watch per-service rungraph from KV: `rungraph` inside bucket `svc_<serviceId>`
 - route intra data edges in-process
 - route cross data edges by subscribing to producer subjects:
   - `svc.<fromServiceId>.nodes.<fromNodeId>.data.<portId>`

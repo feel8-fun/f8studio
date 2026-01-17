@@ -45,7 +45,7 @@ class OperatorGraphEditor:
         SpecNodeClassRegistry.instance().apply(self.node_graph)
         # Service nodes are registered via SpecNodeClassRegistry (ServiceSpecRegistry).
 
-        # First-version engine: KV sync + topology cache.
+        # First-version engine: KV sync + rungraph cache.
         self.engine.start()
 
     def show(self) -> None:

@@ -12,15 +12,15 @@ This is the first-version cross-language KV layout for f8studio.
 
 ## Keys
 
-All keys are scoped by service id:
+All keys are scoped by bucket (one bucket per service id):
 
-- Topology snapshot (editor-owned, engine reads):
-  - `svc.<serviceId>.topology` -> JSON bytes (OperatorGraph.to_dict payload)
+- Rungraph snapshot (editor-owned, engine reads):
+  - `rungraph` -> JSON bytes (OperatorGraph.to_dict payload)
 
 - State KV entries (shared; engines and editor can write depending on access):
-  - `svc.<serviceId>.nodes.<nodeId>.state.<field>` -> JSON bytes:
+  - `nodes.<nodeId>.state.<field>` -> JSON bytes:
     - `value`: any JSON-serializable
-    - `source`: `"editor" | "engine" | "topology"`
+    - `source`: `"editor" | "engine" | "rungraph"`
     - `actor`: client id string (used to ignore self-echo)
     - `ts`: ms timestamp (int)
 

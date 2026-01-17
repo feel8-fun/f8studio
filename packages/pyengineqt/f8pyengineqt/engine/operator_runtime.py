@@ -45,7 +45,7 @@ class StartNode(OperatorRuntimeNode):
 
 class ConstantNode(OperatorRuntimeNode):
     async def on_exec(self, _in_port: str | None = None) -> list[str]:
-        # Prefer KV state; fallback to initial topology state.
+        # Prefer KV state; fallback to initial rungraph state.
         v = await self.get_state("value2")
         if v is None:
             v = self.ctx.initial_state.get("value2")

@@ -88,8 +88,8 @@ class EngineExecutor:
         node_id = ensure_token(node_id, label="node_id")
         self._nodes.pop(node_id, None)
 
-    # ---- topology -------------------------------------------------------
-    async def apply_topology(self, graph: F8RuntimeGraph) -> None:
+    # ---- rungraph -------------------------------------------------------
+    async def apply_rungraph(self, graph: F8RuntimeGraph) -> None:
         self._graph = graph
         self._rebuild_exec_routes(graph)
         await self._restart_source_if_needed(graph)
@@ -218,4 +218,3 @@ class EngineExecutor:
             for p in list(out_ports or []):
                 for nxt in self._exec_out.get((to_node, str(p)), []):
                     queue.append(nxt)
-
