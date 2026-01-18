@@ -15,8 +15,16 @@ from f8pysdk import (
     number_schema,
 )
 
-from f8pyengineqt.engine.nats_naming import data_subject, kv_bucket_for_service, kv_key_rungraph
-from f8pyengineqt.runtime import NatsTransport, NatsTransportConfig, ServiceRuntime, ServiceRuntimeConfig, ServiceRuntimeNode
+from f8pysdk.runtime import (
+    NatsTransport,
+    NatsTransportConfig,
+    ServiceBus,
+    ServiceBusConfig,
+    ServiceRuntimeNode,
+    data_subject,
+    kv_bucket_for_service,
+    kv_key_rungraph,
+)
 
 
 class Producer(ServiceRuntimeNode):
@@ -57,11 +65,9 @@ async def main() -> None:
     node_b = uuid.uuid4().hex
  
     subj = data_subject(svc_a, from_node_id=node_a, port_id="out")
-    bucket_a = kv_bucket_for_service(svc_a)
-    bucket_b = kv_bucket_for_service(svc_b)
     print(f"[demo] nats={nats_url}")
-    print(f"[demo] svc_a={svc_a} bucket={bucket_a}")
-    print(f"[demo] svc_b={svc_b} bucket={bucket_b}")
+    print(f"[demo] svc_a={svc_a} bucket={kv_bucket_for_service(svc_a)}")
+    print(f"[demo] svc_b={svc_b} bucket={kv_bucket_for_service(svc_b)}")
     print(f"[demo] subject={subj}")
 
     spec_a = F8OperatorSpec(
@@ -103,13 +109,8 @@ async def main() -> None:
     await _put_rungraph(nats_url=nats_url, service_id=svc_a, payload=rungraph_a)
     await _put_rungraph(nats_url=nats_url, service_id=svc_b, payload=rungraph_b)
 
-    # Pass explicit buckets to avoid environment overrides (eg. F8_NATS_BUCKET).
-    runtime_a = ServiceRuntime(
-        ServiceRuntimeConfig(service_id=svc_a, nats_url=nats_url, kv_bucket=bucket_a, publish_all_data=True)
-    )
-    runtime_b = ServiceRuntime(
-        ServiceRuntimeConfig(service_id=svc_b, nats_url=nats_url, kv_bucket=bucket_b, publish_all_data=True)
-    )
+    runtime_a = ServiceBus(ServiceBusConfig(service_id=svc_a, nats_url=nats_url, publish_all_data=True))
+    runtime_b = ServiceBus(ServiceBusConfig(service_id=svc_b, nats_url=nats_url, publish_all_data=True))
 
     producer = Producer(node_id=node_a, data_out_ports=["out"])
     consumer = Consumer(node_id=node_b, data_in_ports=["in"])

@@ -10,7 +10,7 @@ from typing import Any
 from nats.js.api import StorageType  # type: ignore[import-not-found]
 
 from f8pysdk import F8RuntimeGraph
-from f8pysdk.runtime import ServiceRuntime, ServiceRuntimeConfig, ensure_token
+from f8pysdk.runtime import ServiceBus, ServiceBusConfig, ensure_token
 
 from f8pyengine.engine_executor import EngineExecutor
 from f8pyengine.engine_host import EngineHost, EngineHostConfig
@@ -21,7 +21,7 @@ from f8pyengine.runtime_registry import register_pyengine_runtimes
 class _RunningService:
     graph_path: Path
     graph: F8RuntimeGraph
-    runtime: ServiceRuntime
+    runtime: ServiceBus
     host: EngineHost
     executor: EngineExecutor
 
@@ -72,7 +72,7 @@ async def _run_one_graph(*, graph_path: Path, graph: F8RuntimeGraph, nats_url: s
 
     service_id = ensure_token(str(graph.services[0].serviceId), label="service_id")
 
-    runtime = ServiceRuntime(ServiceRuntimeConfig(service_id=service_id, nats_url=str(nats_url)))
+    runtime = ServiceBus(ServiceBusConfig(service_id=service_id, nats_url=str(nats_url)))
     executor = EngineExecutor(runtime)
     host = EngineHost(runtime, executor, config=EngineHostConfig(service_class="f8.pyengine"))
 
@@ -149,8 +149,8 @@ async def _amain(argv: list[str] | None = None) -> int:
 
         sid = ensure_token(str(graph.services[0].serviceId), label="service_id")
 
-        runtime = ServiceRuntime(
-            ServiceRuntimeConfig(
+        runtime = ServiceBus(
+            ServiceBusConfig(
                 service_id=sid,
                 nats_url=str(args.nats_url),
                 kv_storage=kv_storage,

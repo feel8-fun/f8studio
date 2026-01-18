@@ -19,7 +19,7 @@ from f8pysdk import (
     F8StateSpec,
 )
 from f8pysdk.schema_helpers import integer_schema, number_schema, string_schema
-from f8pysdk.runtime import ServiceRuntime, ServiceRuntimeConfig
+from f8pysdk.runtime import ServiceBus, ServiceBusConfig
 
 from f8pyengine.engine_executor import EngineExecutor
 from f8pyengine.engine_host import EngineHost, EngineHostConfig
@@ -35,7 +35,7 @@ def _env_or(default: str, key: str) -> str:
 async def _run_service(*, service_id: str, nats_url: str) -> None:
     register_pyengine_runtimes()
 
-    runtime = ServiceRuntime(ServiceRuntimeConfig(service_id=service_id, nats_url=nats_url))
+    runtime = ServiceBus(ServiceBusConfig(service_id=service_id, nats_url=nats_url))
     executor = EngineExecutor(runtime)
     host = EngineHost(runtime, executor, config=EngineHostConfig(service_class="f8.pyengine"))
 

@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from f8pysdk import F8EdgeKindEnum, F8RuntimeGraph
-from f8pysdk.runtime import ServiceRuntime, ensure_token
+from f8pysdk.runtime import ServiceBus, ensure_token
 
 
 class ExecNodeLike(Protocol):
@@ -65,7 +65,7 @@ class EngineExecutor:
     - Exactly one source node is allowed per graph activation.
     """
 
-    def __init__(self, runtime: ServiceRuntime) -> None:
+    def __init__(self, runtime: ServiceBus) -> None:
         self._runtime = runtime
         self._service_id = ensure_token(runtime.service_id, label="service_id")
 

@@ -22,16 +22,19 @@ from .nats_naming import (
 
 if TYPE_CHECKING:
     from .nats_transport import NatsTransport, NatsTransportConfig
+    from .service_app import ServiceApp, ServiceAppConfig
     from .service_host import ServiceHost, ServiceHostConfig
     from .service_operator_runtime_registry import ServiceOperatorRuntimeRegistry
-    from .service_runtime import ServiceRuntime, ServiceRuntimeConfig
+    from .service_bus import ServiceBus, ServiceBusConfig
     from .service_runtime_node import ServiceRuntimeNode
 
 __all__ = [
     "NatsTransport",
     "NatsTransportConfig",
-    "ServiceRuntime",
-    "ServiceRuntimeConfig",
+    "ServiceApp",
+    "ServiceAppConfig",
+    "ServiceBus",
+    "ServiceBusConfig",
     "ServiceRuntimeNode",
     "ServiceHost",
     "ServiceHostConfig",
@@ -53,10 +56,18 @@ def __getattr__(name: str):
 
         return {"NatsTransport": NatsTransport, "NatsTransportConfig": NatsTransportConfig}[name]
 
-    if name in ("ServiceRuntime", "ServiceRuntimeConfig"):
-        from .service_runtime import ServiceRuntime, ServiceRuntimeConfig
+    if name in ("ServiceApp", "ServiceAppConfig"):
+        from .service_app import ServiceApp, ServiceAppConfig
 
-        return {"ServiceRuntime": ServiceRuntime, "ServiceRuntimeConfig": ServiceRuntimeConfig}[name]
+        return {"ServiceApp": ServiceApp, "ServiceAppConfig": ServiceAppConfig}[name]
+
+    if name in ("ServiceBus", "ServiceBusConfig"):
+        from .service_bus import ServiceBus, ServiceBusConfig
+
+        return {
+            "ServiceBus": ServiceBus,
+            "ServiceBusConfig": ServiceBusConfig,
+        }[name]
 
     if name == "ServiceRuntimeNode":
         from .service_runtime_node import ServiceRuntimeNode

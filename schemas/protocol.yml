@@ -120,6 +120,90 @@ components:
         - name
         - valueSchema
       additionalProperties: false
+
+    F8CommandError:
+      title: F8CommandError
+      type: object
+      description: Standard error payload for runtime/service command calls.
+      properties:
+        code:
+          type: string
+          description: Stable machine-readable error code.
+          enum:
+            - UNKNOWN_CALL
+            - INVALID_ARGS
+            - UNAUTHORIZED
+            - FORBIDDEN
+            - NOT_FOUND
+            - CONFLICT
+            - TIMEOUT
+            - INTERNAL
+        message:
+          type: string
+          description: Human-readable error message (safe to display).
+        details:
+          type: object
+          description: Optional structured details for clients and debugging.
+          default: {}
+          additionalProperties:
+            $ref: "#/components/schemas/F8JsonValue"
+      required:
+        - code
+        - message
+      additionalProperties: false
+
+    F8CommandInvokeRequest:
+      title: F8CommandInvokeRequest
+      type: object
+      description: Request envelope for invoking a service command via req/reply.
+      properties:
+        reqId:
+          type: string
+          description: Caller-generated request id for tracing/deduplication.
+        call:
+          type: string
+          description: Command name (typically matches F8Command.name).
+        args:
+          type: object
+          description: Command arguments (name -> JSON value).
+          default: {}
+          additionalProperties:
+            $ref: "#/components/schemas/F8JsonValue"
+        timeoutMs:
+          type: integer
+          minimum: 0
+          description: Optional runtime-side timeout hint (client still enforces NATS request timeout).
+        meta:
+          type: object
+          description: Optional metadata (traceId, actor, etc.).
+          default: {}
+          additionalProperties:
+            $ref: "#/components/schemas/F8JsonValue"
+      required:
+        - call
+      additionalProperties: false
+
+    F8CommandInvokeReply:
+      title: F8CommandInvokeReply
+      type: object
+      description: Reply envelope for a service command invocation.
+      properties:
+        reqId:
+          type: string
+          description: Echo of the request reqId when provided.
+        ok:
+          type: boolean
+          description: Whether the call succeeded.
+        result:
+          $ref: "#/components/schemas/F8JsonValue"
+        error:
+          anyOf:
+            - $ref: "#/components/schemas/F8CommandError"
+            - type: "null"
+          default: null
+      required:
+        - ok
+      additionalProperties: false
     F8DataTypeSchemaCommonMetadata:
       title: F8DataTypeSchemaCommonMetadata
       type: object
@@ -371,16 +455,6 @@ components:
           type: boolean
           default: false
           description: Allow modification of state fields at runtime.
-        commands:
-          type: array
-          description: Optional RPC-style commands the node can invoke (e.g., refresh/connect/disconnect)
-          items:
-            $ref: "#/components/schemas/F8Command"
-          default: []
-        editableCommands:
-          type: boolean
-          default: false
-          description: Allow dynamic addition of commands beyond the declared list.
         execInPorts:
           type: array
           description:
@@ -637,7 +711,6 @@ components:
           description: Service class for resolving specs/launchers (e.g., f8.pyengine).
         label:
           type: string
-          nullable: true
           description: Optional UI label for the service instance.
         meta:
           type: object

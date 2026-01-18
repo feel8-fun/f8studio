@@ -5,7 +5,7 @@ import os
 from typing import Any
 
 from f8pysdk import F8RuntimeGraph
-from f8pysdk.runtime import ServiceOperatorRuntimeRegistry, ServiceRuntime, ensure_token
+from f8pysdk.runtime import ServiceBus, ServiceOperatorRuntimeRegistry, ensure_token
 
 from .engine_executor import EngineExecutor
 
@@ -18,13 +18,13 @@ class EngineHostConfig:
 class EngineHost:
     """
     Engine-side host that materializes runtime nodes from `F8RuntimeGraph` and wires them to:
-    - `ServiceRuntime` for data/state routing
+    - `ServiceBus` for data/state routing
     - `EngineExecutor` for exec routing / source lifecycle
     """
 
     def __init__(
         self,
-        runtime: ServiceRuntime,
+        runtime: ServiceBus,
         executor: EngineExecutor,
         *,
         config: EngineHostConfig,

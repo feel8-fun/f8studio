@@ -25,7 +25,7 @@ def _debug_state_enabled() -> bool:
 
 
 @dataclass(frozen=True)
-class ServiceRuntimeConfig:
+class ServiceBusConfig:
     service_id: str
     nats_url: str = "nats://127.0.0.1:4222"
     publish_all_data: bool = True
@@ -58,9 +58,9 @@ class _InputBuffer:
             self.queue = []
 
 
-class ServiceRuntime:
+class ServiceBus:
     """
-    Service runtime (clean, protocol-first).
+    Service bus (clean, protocol-first).
 
     - Shared NATS connection (pub/sub + JetStream KV).
     - Watches `rungraph` (KV) which must be a `F8RuntimeGraph`.
@@ -69,7 +69,7 @@ class ServiceRuntime:
     - Push-based: triggers `ServiceRuntimeNode.on_data()` on new data events.
     """
 
-    def __init__(self, config: ServiceRuntimeConfig) -> None:
+    def __init__(self, config: ServiceBusConfig) -> None:
         self.service_id = ensure_token(config.service_id, label="service_id")
         self._publish_all_data = bool(getattr(config, "publish_all_data", True))
         self._debug_state = _debug_state_enabled()
@@ -108,9 +108,7 @@ class ServiceRuntime:
         self._state_listeners: list[Callable[[str, str, Any, int, dict[str, Any]], Awaitable[None] | None]] = []
         self._rungraph_listeners: list[Callable[[F8RuntimeGraph], Awaitable[None] | None]] = []
 
-    def add_state_listener(
-        self, cb: Callable[[str, str, Any, int, dict[str, Any]], Awaitable[None] | None]
-    ) -> None:
+    def add_state_listener(self, cb: Callable[[str, str, Any, int, dict[str, Any]], Awaitable[None] | None]) -> None:
         """
         Listen to local KV state updates for this service.
 
@@ -270,8 +268,7 @@ class ServiceRuntime:
             self._state_cache[(node_id, field)] = (v, ts)
             if self._debug_state:
                 print(
-                    "state_debug[%s] get_state kv node=%s field=%s ts=%s"
-                    % (self.service_id, node_id, field, str(ts))
+                    "state_debug[%s] get_state kv node=%s field=%s ts=%s" % (self.service_id, node_id, field, str(ts))
                 )
             return v
         self._state_cache[(node_id, field)] = (payload, 0)
@@ -430,7 +427,9 @@ class ServiceRuntime:
             if not edge.fromOperatorId:
                 continue
 
-            subject = data_subject(str(edge.fromServiceId), from_node_id=str(edge.fromOperatorId), port_id=str(edge.fromPort))
+            subject = data_subject(
+                str(edge.fromServiceId), from_node_id=str(edge.fromOperatorId), port_id=str(edge.fromPort)
+            )
 
             # Incoming: local service is the target.
             if str(edge.toServiceId) == self.service_id:

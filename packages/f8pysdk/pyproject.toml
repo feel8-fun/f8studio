@@ -5,7 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "datamodel-code-generator[http]>=0.50.0",
+    "datamodel-code-generator[ruff]>=0.50.0",
     "nats-py>=2.12.0",
 ]
 

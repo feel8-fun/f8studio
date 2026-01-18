@@ -5,7 +5,7 @@ from typing import Any
 
 from ..generated import F8JsonValue, F8RuntimeGraph, F8RuntimeNode
 from .service_operator_runtime_registry import ServiceOperatorRuntimeRegistry
-from .service_runtime import ServiceRuntime
+from .service_bus import ServiceBus
 
 
 def _unwrap_json_value(v: Any) -> Any:
@@ -39,7 +39,7 @@ class ServiceHostConfig:
 
 class ServiceHost:
     """
-    Push-based service host that binds a `ServiceRuntime` to per-node runtime implementations.
+    Push-based service host that binds a `ServiceBus` to per-node runtime implementations.
 
     - Rungraph drives creation/removal of local runtime nodes.
     - Runtime pushes data into nodes (`on_data`) and manages cross-edge routing.
@@ -47,7 +47,7 @@ class ServiceHost:
 
     def __init__(
         self,
-        runtime: ServiceRuntime,
+        runtime: ServiceBus,
         *,
         config: ServiceHostConfig,
         registry: ServiceOperatorRuntimeRegistry | None = None,
