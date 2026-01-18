@@ -23,7 +23,7 @@ class NatsTransport:
     """
     Single-process transport for NATS core pub/sub + JetStream KV.
 
-    Intended to be shared by all ServiceRuntimeNode instances in a service process.
+    Intended to be shared by all RuntimeNode instances in a service process.
     """
 
     def __init__(self, config: NatsTransportConfig) -> None:

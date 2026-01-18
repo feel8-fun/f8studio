@@ -42,7 +42,7 @@ class ServiceHost:
     Push-based service host that binds a `ServiceBus` to per-node runtime implementations.
 
     - Rungraph drives creation/removal of local runtime nodes.
-    - Runtime pushes data into nodes (`on_data`) and manages cross-edge routing.
+    - Runtime buffers data edges; exec/data evaluation is driven by the engine layer.
     """
 
     def __init__(

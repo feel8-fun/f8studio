@@ -14,7 +14,7 @@ from f8pysdk import (
     integer_schema,
     number_schema,
 )
-from f8pysdk.runtime import ServiceOperatorRuntimeRegistry, ServiceRuntimeNode
+from f8pysdk.runtime import OperatorRuntimeNode, ServiceOperatorRuntimeRegistry
 
 from .operators.signal_runtime import PrintRuntimeNode, SineRuntimeNode
 from .operators.tick_runtime import TickRuntimeNode
@@ -26,13 +26,13 @@ def register_pyengine_runtimes(registry: ServiceOperatorRuntimeRegistry | None =
     """
     reg = registry or ServiceOperatorRuntimeRegistry.instance()
 
-    def _tick_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> ServiceRuntimeNode:
+    def _tick_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> OperatorRuntimeNode:
         return TickRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
 
-    def _sine_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> ServiceRuntimeNode:
+    def _sine_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> OperatorRuntimeNode:
         return SineRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
 
-    def _print_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> ServiceRuntimeNode:
+    def _print_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> OperatorRuntimeNode:
         return PrintRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
 
     reg.register("f8.pyengine", "f8.tick", _tick_factory, overwrite=True)

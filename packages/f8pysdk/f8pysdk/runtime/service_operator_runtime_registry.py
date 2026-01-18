@@ -5,11 +5,11 @@ from collections.abc import Callable
 from typing import Any
 
 from ..generated import F8RuntimeNode
-from .service_runtime_node import ServiceRuntimeNode
+from .service_runtime_node import OperatorRuntimeNode, RuntimeNode, ServiceNodeRuntimeNode
 
 
-OperatorFactory = Callable[[str, F8RuntimeNode, dict[str, Any]], ServiceRuntimeNode]
-ServiceFactory = Callable[[str, F8RuntimeNode, dict[str, Any]], ServiceRuntimeNode]
+OperatorFactory = Callable[[str, F8RuntimeNode, dict[str, Any]], OperatorRuntimeNode]
+ServiceFactory = Callable[[str, F8RuntimeNode, dict[str, Any]], ServiceNodeRuntimeNode]
 
 
 class RegistryError(Exception):
@@ -159,7 +159,7 @@ class ServiceOperatorRuntimeRegistry:
         node_id: str,
         node: F8RuntimeNode,
         initial_state: dict[str, Any] | None = None,
-    ) -> ServiceRuntimeNode:
+    ) -> RuntimeNode:
         service_class = node.serviceClass
         if not service_class:
             raise ValueError("node.serviceClass must be non-empty")
@@ -170,18 +170,18 @@ class ServiceOperatorRuntimeRegistry:
             if factory is None:
                 if service_class not in self._by_service_operator and service_class not in self._by_service_service:
                     raise ServiceNotRegistered(service_class)
-                return ServiceRuntimeNode(node_id=str(node_id))
+                return ServiceNodeRuntimeNode(node_id=str(node_id))
             return factory(str(node_id), node, dict(initial_state or {}))
 
         reg = self._by_service_operator.get(service_class)
         if reg is None:
             if service_class not in self._by_service_service:
                 raise ServiceNotRegistered(service_class)
-            return ServiceRuntimeNode(node_id=str(node_id))
+            return OperatorRuntimeNode(node_id=str(node_id))
 
         factory = reg.get(str(operator_class))
         if factory is None:
-            return ServiceRuntimeNode(node_id=str(node_id))
+            return OperatorRuntimeNode(node_id=str(node_id))
         return factory(str(node_id), node, dict(initial_state or {}))
 
     def load_modules(self, modules: list[str]) -> None:

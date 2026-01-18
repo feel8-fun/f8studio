@@ -20,14 +20,14 @@ from f8pysdk.runtime import (
     NatsTransportConfig,
     ServiceBus,
     ServiceBusConfig,
-    ServiceRuntimeNode,
+    RuntimeNode,
     data_subject,
     kv_bucket_for_service,
     kv_key_rungraph,
 )
 
 
-class Producer(ServiceRuntimeNode):
+class Producer(RuntimeNode):
     async def run(self) -> None:
         i = 0.0
         while True:
@@ -36,7 +36,7 @@ class Producer(ServiceRuntimeNode):
             await asyncio.sleep(1.0)
 
 
-class Consumer(ServiceRuntimeNode):
+class Consumer(RuntimeNode):
     async def run(self) -> None:
         # Pull faster than producer publish rate to demonstrate `repeat`.
         while True:

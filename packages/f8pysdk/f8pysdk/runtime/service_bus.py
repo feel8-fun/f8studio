@@ -13,7 +13,7 @@ from nats.js.api import StorageType  # type: ignore[import-not-found]
 from ..generated import F8Edge, F8EdgeKindEnum, F8EdgeStrategyEnum, F8RuntimeGraph
 from .nats_naming import data_subject, ensure_token, kv_bucket_for_service, kv_key_node_state, kv_key_rungraph
 from .nats_transport import NatsTransport, NatsTransportConfig
-from .service_runtime_node import ServiceRuntimeNode
+from .service_runtime_node import RuntimeNode
 
 
 def _now_ms() -> int:
@@ -86,7 +86,7 @@ class ServiceBus:
             )
         )
 
-        self._nodes: dict[str, ServiceRuntimeNode] = {}
+        self._nodes: dict[str, RuntimeNode] = {}
         self._graph: F8RuntimeGraph | None = None
 
         self._rungraph_key = kv_key_rungraph()
@@ -125,7 +125,7 @@ class ServiceBus:
         self._rungraph_listeners.append(cb)
 
     # ---- lifecycle ------------------------------------------------------
-    def register_node(self, node: ServiceRuntimeNode) -> None:
+    def register_node(self, node: RuntimeNode) -> None:
         node_id = ensure_token(node.node_id, label="node_id")
         self._nodes[node_id] = node
         node.attach(self)
@@ -136,7 +136,7 @@ class ServiceBus:
         for key in [k for k in self._data_inputs.keys() if k[0] == node_id]:
             self._data_inputs.pop(key, None)
 
-    def get_node(self, node_id: str) -> ServiceRuntimeNode | None:
+    def get_node(self, node_id: str) -> RuntimeNode | None:
         """
         Return the local runtime node instance if registered.
         """

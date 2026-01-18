@@ -19,7 +19,7 @@ Note: in code, the transport/routing core is named `ServiceBus`.
 
 ```mermaid
 classDiagram
-    class ServiceRuntimeNode {
+    class RuntimeNode {
       +node_id
       +on_data()
       +on_state()
@@ -57,7 +57,7 @@ classDiagram
     }
 
     ServiceBus --> NatsTransport : uses
-    ServiceBus --> ServiceRuntimeNode : attach/register
+    ServiceBus --> RuntimeNode : attach/register
     ServiceHost --> ServiceBus : listens rungraph
     ServiceHost --> ServiceOperatorRuntimeRegistry : creates nodes
 ```
@@ -71,7 +71,7 @@ sequenceDiagram
     participant Runtime as ServiceBus
     participant Host as ServiceHost
     participant Registry as RuntimeRegistry
-    participant Node as ServiceRuntimeNode
+    participant Node as RuntimeNode
 
     Studio->>KV: put key="rungraph"
     Runtime->>KV: kv_watch("rungraph")
@@ -80,7 +80,7 @@ sequenceDiagram
     Runtime->>Runtime: _rebuild_routes()
     Runtime->>Host: rungraph listeners
     Host->>Registry: create(node_id, F8RuntimeNode)
-    Registry-->>Host: ServiceRuntimeNode
+    Registry-->>Host: RuntimeNode
     Host->>Runtime: register_node(node)
     Host->>Runtime: seed_state_defaults (set_state_with_meta)
 ```
@@ -112,7 +112,7 @@ sequenceDiagram
     participant Studio
     participant KV as NATS KV (svc_{service})
     participant Runtime as ServiceBus
-    participant Node as ServiceRuntimeNode
+    participant Node as RuntimeNode
 
     Node->>Runtime: set_state(field, value)
     Runtime->>KV: kv_put nodes.{node}.state.{field}
@@ -126,7 +126,7 @@ sequenceDiagram
 
 ### Current issues
 
-- `ServiceRuntimeNode` represents both service node and operator node.
+- `RuntimeNode` represents both service node and operator node.
 - `operatorClass is None` is overloaded to mean "service node".
 - Lifecycle is implicit and rungraph-driven only; service-level state
   (activate/deactivate) is not modeled.
@@ -157,6 +157,12 @@ Concrete implementations:
 Host:
 
 - `MyServiceHost` owns the service node and operator nodes.
+
+Implementation note (current code):
+
+- The SDK currently provides marker base classes `ServiceNodeRuntimeNode` and
+  `OperatorRuntimeNode` (both derive from `RuntimeNode`) to reflect this
+  separation in code.
 
 ```mermaid
 classDiagram
@@ -537,7 +543,7 @@ Service node can override all hooks; operator nodes primarily use `on_create`,
 
 ## Migration Notes
 
-- Keep legacy `ServiceRuntimeNode` as base for both node types.
+- Keep legacy `RuntimeNode` as base for both node types.
 - Registry split: `register_service` vs `register_operator` explicitly.
 - Add default service node if none registered (noop).
 - Keep KV read/write for internal state and cross-service sync.

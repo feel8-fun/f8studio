@@ -5,10 +5,10 @@ import time
 from typing import Any
 
 from f8pysdk import F8RuntimeNode
-from f8pysdk.runtime import ServiceRuntimeNode, ensure_token
+from f8pysdk.runtime import OperatorRuntimeNode, ensure_token
 
 
-class SineRuntimeNode(ServiceRuntimeNode):
+class SineRuntimeNode(OperatorRuntimeNode):
     """
     Exec-driven sine source (not a graph source): on exec, emits a numeric sample.
     """
@@ -48,7 +48,7 @@ class SineRuntimeNode(ServiceRuntimeNode):
         return amp_f * math.sin(2.0 * math.pi * hz_f * t)
 
 
-class PrintRuntimeNode(ServiceRuntimeNode):
+class PrintRuntimeNode(OperatorRuntimeNode):
     """
     Prints incoming values.
 

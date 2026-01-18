@@ -15,7 +15,7 @@ class _RuntimeLike(Protocol):
 
 
 @dataclass
-class ServiceRuntimeNode:
+class RuntimeNode:
     """
     Base class for service runtime nodes.
 
@@ -80,4 +80,22 @@ class ServiceRuntimeNode:
         if self._runtime is None:
             return None
         return await self._runtime.get_state(self.node_id, field)
+
+
+@dataclass
+class ServiceNodeRuntimeNode(RuntimeNode):
+    """
+    Marker base class for service/container nodes.
+
+    Service nodes typically expose lifecycle/commands/state and may provide data outputs.
+    """
+
+
+@dataclass
+class OperatorRuntimeNode(RuntimeNode):
+    """
+    Marker base class for operator nodes.
+
+    Operator nodes are the executable/functional units within a service graph.
+    """
 
