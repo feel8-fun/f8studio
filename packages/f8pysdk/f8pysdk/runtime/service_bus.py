@@ -48,10 +48,12 @@ class _InputBuffer:
     queue: list[tuple[Any, int]] = None  # type: ignore[assignment]
     last_seen_value: Any = None
     last_seen_ts: int | None = None
+    last_seen_ctx_id: str | int | None = None
     prev_seen_value: Any = None
     prev_seen_ts: int | None = None
     last_pulled_value: Any = None
     last_pulled_ts: int | None = None
+    last_pulled_ctx_id: str | int | None = None
 
     def __post_init__(self) -> None:
         if self.queue is None:
@@ -535,22 +537,25 @@ class ServiceBus:
 
         if strategy == F8EdgeStrategyEnum.queue:
             if not buf.queue:
-                await self._ensure_input_available(node_id=node_id, port=port, ctx_id=ctx_id)
+                if ctx_id is None or buf.last_seen_ctx_id != ctx_id:
+                    await self._ensure_input_available(node_id=node_id, port=port, ctx_id=ctx_id)
                 if not buf.queue:
                     return None
             v, ts = buf.queue.pop(0)
             buf.last_pulled_value = v
             buf.last_pulled_ts = int(ts) if ts is not None else now_ms
+            buf.last_pulled_ctx_id = ctx_id
             return v
 
         # latest
-        if not buf.queue and buf.last_seen_value is None:
+        if not buf.queue and (ctx_id is None or buf.last_seen_ctx_id != ctx_id):
             await self._ensure_input_available(node_id=node_id, port=port, ctx_id=ctx_id)
         v = buf.queue[-1][0] if buf.queue else buf.last_seen_value
         buf.queue.clear()
         if v is not None:
             buf.last_pulled_value = v
             buf.last_pulled_ts = now_ms
+            buf.last_pulled_ctx_id = ctx_id
         return v
 
     async def _ensure_input_available(self, *, node_id: str, port: str, ctx_id: str | int | None = None) -> None:
@@ -595,7 +600,7 @@ class ServiceBus:
                     continue
                 if v is None:
                     continue
-                self._buffer_input(str(node_id), str(port), v, ts_ms=_now_ms(), edge=edge, notify=False)
+                self._buffer_input(str(node_id), str(port), v, ts_ms=_now_ms(), edge=edge, ctx_id=ctx_id, notify=False)
         finally:
             stack.discard(key)
 
@@ -648,6 +653,7 @@ class ServiceBus:
             value=value,
             ts_ms=int(ts_ms),
             edge=edge,
+            ctx_id=None,
             notify=False,
         )
 
@@ -659,6 +665,7 @@ class ServiceBus:
         *,
         ts_ms: int,
         edge: F8Edge | None,
+        ctx_id: str | int | None,
         notify: bool,
     ) -> None:
         to_node = str(to_node)
@@ -674,6 +681,7 @@ class ServiceBus:
         buf.prev_seen_ts = buf.last_seen_ts
         buf.last_seen_value = value
         buf.last_seen_ts = int(ts_ms)
+        buf.last_seen_ctx_id = ctx_id
 
         buf.queue.append((value, int(ts_ms)))
         max_n = 256
