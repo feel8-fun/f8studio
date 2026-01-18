@@ -6,7 +6,8 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from f8pysdk import F8EdgeKindEnum, F8RuntimeGraph
-from f8pysdk.runtime import ServiceBus, ensure_token
+from f8pysdk.nats_naming import ensure_token
+from f8pysdk.service_bus import ServiceBus
 
 
 class ExecNodeLike(Protocol):

@@ -10,11 +10,13 @@ from typing import Any
 from nats.js.api import StorageType  # type: ignore[import-not-found]
 
 from f8pysdk import F8RuntimeGraph
-from f8pysdk.runtime import ServiceApp, ServiceAppConfig, ServiceOperatorRuntimeRegistry, ensure_token
+from f8pysdk.nats_naming import ensure_token
+from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
+from f8pysdk.service_app import ServiceApp, ServiceAppConfig
 
 from f8pyengine.engine_executor import EngineExecutor
 from f8pyengine.engine_binder import EngineBinder
-from f8pyengine.runtime_registry import register_pyengine_runtimes
+from f8pyengine.pyengine_node_registry import register_pyengine_runtimes
 
 
 @dataclass(frozen=True)
@@ -78,7 +80,7 @@ async def _amain(argv: list[str] | None = None) -> int:
         default="",
         help=(
             "Comma-separated Python modules to import for registering additional runtime nodes "
-            "(via ServiceOperatorRuntimeRegistry.instance().register(...))."
+            "(via RuntimeNodeRegistry.instance().register(...))."
         ),
     )
     parser.add_argument(
@@ -104,7 +106,7 @@ async def _amain(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    registry = ServiceOperatorRuntimeRegistry.instance()
+    registry = RuntimeNodeRegistry.instance()
     register_pyengine_runtimes(registry)
     modules = [m.strip() for m in str(args.runtime_modules or "").split(",") if m.strip()]
     if modules:

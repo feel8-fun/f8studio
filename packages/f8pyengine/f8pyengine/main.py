@@ -19,11 +19,12 @@ from f8pysdk import (
     F8StateSpec,
 )
 from f8pysdk.schema_helpers import integer_schema, number_schema, string_schema
-from f8pysdk.runtime import ServiceApp, ServiceAppConfig, ServiceOperatorRuntimeRegistry
+from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
+from f8pysdk.service_app import ServiceApp, ServiceAppConfig
 
 from f8pyengine.engine_executor import EngineExecutor
 from f8pyengine.engine_binder import EngineBinder
-from f8pyengine.runtime_registry import register_pyengine_runtimes
+from f8pyengine.pyengine_node_registry import register_pyengine_runtimes
 
 
 def _env_or(default: str, key: str) -> str:
@@ -32,7 +33,7 @@ def _env_or(default: str, key: str) -> str:
 
 
 async def _run_service(*, service_id: str, nats_url: str) -> None:
-    registry = ServiceOperatorRuntimeRegistry.instance()
+    registry = RuntimeNodeRegistry.instance()
     register_pyengine_runtimes(registry)
 
     service_class = "f8.pyengine"
@@ -79,7 +80,7 @@ def _main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.describe:
-        registry = ServiceOperatorRuntimeRegistry.instance()
+        registry = RuntimeNodeRegistry.instance()
         register_pyengine_runtimes(registry)
         describe = registry.describe("f8.pyengine").model_dump(mode="json")
         print(json.dumps(describe, ensure_ascii=False, indent=1))

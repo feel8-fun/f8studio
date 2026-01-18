@@ -10,10 +10,10 @@ from typing import Any
 
 from nats.js.api import StorageType  # type: ignore[import-not-found]
 
-from ..generated import F8Edge, F8EdgeKindEnum, F8EdgeStrategyEnum, F8RuntimeGraph
+from .generated import F8Edge, F8EdgeKindEnum, F8EdgeStrategyEnum, F8RuntimeGraph
 from .nats_naming import data_subject, ensure_token, kv_bucket_for_service, kv_key_node_state, kv_key_rungraph
 from .nats_transport import NatsTransport, NatsTransportConfig
-from .service_runtime_node import RuntimeNode
+from .runtime_node import RuntimeNode
 
 
 def _now_ms() -> int:

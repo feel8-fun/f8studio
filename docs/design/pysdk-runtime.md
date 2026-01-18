@@ -6,7 +6,7 @@ command channel for third-party control.
 
 ## Scope
 
-- Runtime in `packages/pysdk/f8pysdk/runtime`
+- Runtime in `packages/f8pysdk/f8pysdk/*` (top-level package modules)
 - Service process hosts exactly one service instance (service_id)
 - RunGraph contains one service node + many operator nodes
 - NATS used for pub/sub + KV
@@ -21,7 +21,6 @@ Note: in code, the transport/routing core is named `ServiceBus`.
 classDiagram
     class RuntimeNode {
       +node_id
-      +on_data()
       +on_state()
       +emit()
       +pull()
@@ -41,7 +40,7 @@ classDiagram
       +apply_rungraph()
     }
 
-    class ServiceOperatorRuntimeRegistry {
+    class RuntimeNodeRegistry {
       +register()
       +register_service()
       +create()
@@ -59,7 +58,7 @@ classDiagram
     ServiceBus --> NatsTransport : uses
     ServiceBus --> RuntimeNode : attach/register
     ServiceHost --> ServiceBus : listens rungraph
-    ServiceHost --> ServiceOperatorRuntimeRegistry : creates nodes
+    ServiceHost --> RuntimeNodeRegistry : creates nodes
 ```
 
 ### RunGraph apply
@@ -70,7 +69,7 @@ sequenceDiagram
     participant KV as NATS KV (svc_{service})
     participant Runtime as ServiceBus
     participant Host as ServiceHost
-    participant Registry as RuntimeRegistry
+    participant Registry as RuntimeNodeRegistry
     participant Node as RuntimeNode
 
     Studio->>KV: put key="rungraph"
@@ -160,8 +159,8 @@ Host:
 
 Implementation note (current code):
 
-- The SDK currently provides marker base classes `ServiceNodeRuntimeNode` and
-  `OperatorRuntimeNode` (both derive from `RuntimeNode`) to reflect this
+- The SDK currently provides marker base classes `ServiceNode` and
+  `OperatorNode` (both derive from `RuntimeNode`) to reflect this
   separation in code.
 
 ```mermaid

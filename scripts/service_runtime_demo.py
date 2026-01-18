@@ -15,16 +15,10 @@ from f8pysdk import (
     number_schema,
 )
 
-from f8pysdk.runtime import (
-    NatsTransport,
-    NatsTransportConfig,
-    ServiceBus,
-    ServiceBusConfig,
-    RuntimeNode,
-    data_subject,
-    kv_bucket_for_service,
-    kv_key_rungraph,
-)
+from f8pysdk.nats_naming import data_subject, kv_bucket_for_service, kv_key_rungraph
+from f8pysdk.nats_transport import NatsTransport, NatsTransportConfig
+from f8pysdk.runtime_node import RuntimeNode
+from f8pysdk.service_bus import ServiceBus, ServiceBusConfig
 
 
 class Producer(RuntimeNode):

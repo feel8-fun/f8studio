@@ -4,12 +4,13 @@ import asyncio
 from typing import Any
 
 from f8pysdk import F8RuntimeNode
-from f8pysdk.runtime import OperatorRuntimeNode, ensure_token
+from f8pysdk.nats_naming import ensure_token
+from f8pysdk.runtime_node import OperatorNode
 
 from ..engine_executor import SourceContext
 
 
-class TickRuntimeNode(OperatorRuntimeNode):
+class TickRuntimeNode(OperatorNode):
     """
     Source operator that periodically emits exec triggers.
 

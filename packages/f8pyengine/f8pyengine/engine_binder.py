@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from f8pysdk import F8RuntimeGraph
-from f8pysdk.runtime import ServiceBus, ensure_token
+from f8pysdk.nats_naming import ensure_token
+from f8pysdk.service_bus import ServiceBus
 
 from .engine_executor import EngineExecutor
 
@@ -71,4 +72,3 @@ class EngineBinder:
                 self._exec_node_ids.add(node_id)
             except Exception:
                 continue
-

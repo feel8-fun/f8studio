@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from nats.js.api import StorageType  # type: ignore[import-not-found]
 
 from .service_host import ServiceHost, ServiceHostConfig
-from .service_operator_runtime_registry import ServiceOperatorRuntimeRegistry
+from .runtime_node_registry import RuntimeNodeRegistry
 from .service_bus import ServiceBus, ServiceBusConfig
 
 
@@ -17,7 +17,7 @@ class ServiceAppConfig:
     This bundles:
     - `ServiceBus`: NATS+KV transport, routing, state cache
     - `ServiceHost`: rungraph-driven node creation and registration
-    - `ServiceOperatorRuntimeRegistry`: node factory registry (optionally loaded from modules)
+    - `RuntimeNodeRegistry`: node factory registry (optionally loaded from modules)
     """
 
     service_id: str
@@ -41,10 +41,10 @@ class ServiceApp:
         self,
         config: ServiceAppConfig,
         *,
-        registry: ServiceOperatorRuntimeRegistry | None = None,
+        registry: RuntimeNodeRegistry | None = None,
     ) -> None:
         self._config = config
-        self._registry = registry or ServiceOperatorRuntimeRegistry.instance()
+        self._registry = registry or RuntimeNodeRegistry.instance()
 
         for module in list(getattr(config, "registry_modules", []) or []):
             try:
@@ -69,6 +69,10 @@ class ServiceApp:
         )
 
     async def start(self) -> None:
+        try:
+            await self.host.start()
+        except Exception:
+            pass
         await self.bus.start()
 
     async def stop(self) -> None:

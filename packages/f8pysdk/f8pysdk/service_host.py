@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ..generated import F8JsonValue, F8RuntimeGraph, F8RuntimeNode
-from .service_operator_runtime_registry import ServiceOperatorRuntimeRegistry
+from .generated import F8JsonValue, F8RuntimeGraph, F8RuntimeNode
+from .runtime_node_registry import RuntimeNodeRegistry
 from .service_bus import ServiceBus
 
 
@@ -35,6 +35,7 @@ class ServiceHostConfig:
     """
 
     service_class: str
+    service_node_id: str | None = None
 
 
 class ServiceHost:
@@ -50,14 +51,43 @@ class ServiceHost:
         runtime: ServiceBus,
         *,
         config: ServiceHostConfig,
-        registry: ServiceOperatorRuntimeRegistry | None = None,
+        registry: RuntimeNodeRegistry | None = None,
     ) -> None:
         self._runtime = runtime
         self._config = config
-        self._registry = registry or ServiceOperatorRuntimeRegistry.instance()
+        self._registry = registry or RuntimeNodeRegistry.instance()
 
-        self._nodes: dict[str, Any] = {}
+        self._service_node_id = str(getattr(config, "service_node_id", "") or "").strip() or self._runtime.service_id
+        self._service_node: Any | None = None
+        self._operator_nodes: dict[str, Any] = {}
         self._runtime.add_rungraph_listener(self._on_rungraph)
+
+    async def start(self) -> None:
+        """
+        Ensure the service node exists before any rungraph arrives.
+
+        Rungraph-provided service nodes are treated as state snapshots only.
+        """
+        if self._service_node is not None:
+            return
+        service_class = str(self._config.service_class or "").strip()
+        if not service_class:
+            raise ValueError("ServiceHostConfig.service_class must be non-empty")
+        node_id = str(self._service_node_id or "").strip()
+        if not node_id:
+            raise ValueError("service_node_id must be non-empty")
+        try:
+            node = self._registry.create_service_node(service_class=service_class, node_id=node_id, initial_state={})
+        except Exception:
+            node = None
+        if node is None:
+            return
+        self._service_node = node
+        try:
+            self._runtime.register_node(node)
+        except Exception:
+            self._service_node = None
+            return
 
     async def _on_rungraph(self, graph: F8RuntimeGraph) -> None:
         try:
@@ -69,31 +99,42 @@ class ServiceHost:
         """
         Register/unregister local runtime nodes based on the latest rungraph snapshot.
         """
+        if self._service_node is None:
+            try:
+                await self.start()
+            except Exception:
+                return
         service_class = str(self._config.service_class or "").strip()
 
-        want_nodes: list[F8RuntimeNode] = []
+        want_operator_nodes: list[F8RuntimeNode] = []
+        service_snapshot: F8RuntimeNode | None = None
         for n in graph.nodes:
             try:
                 if service_class and str(n.serviceClass) != service_class:
                     continue
-                want_nodes.append(n)
+                if getattr(n, "operatorClass", None) is None:
+                    # Service/container node snapshot (state only).
+                    if str(getattr(n, "nodeId", "")) == str(self._service_node_id):
+                        service_snapshot = n
+                    continue
+                want_operator_nodes.append(n)
             except Exception:
                 continue
 
-        want_ids = {str(n.nodeId) for n in want_nodes}
+        want_ids = {str(n.nodeId) for n in want_operator_nodes}
 
-        for node_id in list(self._nodes.keys()):
+        for node_id in list(self._operator_nodes.keys()):
             if node_id in want_ids:
                 continue
             try:
                 self._runtime.unregister_node(node_id)
             except Exception:
                 pass
-            self._nodes.pop(node_id, None)
+            self._operator_nodes.pop(node_id, None)
 
-        for n in want_nodes:
+        for n in want_operator_nodes:
             node_id = str(n.nodeId)
-            if node_id in self._nodes:
+            if node_id in self._operator_nodes:
                 continue
             initial_state = self._node_initial_state(n)
             try:
@@ -102,14 +143,16 @@ class ServiceHost:
                 node = None
             if node is None:
                 continue
-            self._nodes[node_id] = node
+            self._operator_nodes[node_id] = node
             try:
                 self._runtime.register_node(node)
             except Exception:
-                self._nodes.pop(node_id, None)
+                self._operator_nodes.pop(node_id, None)
                 continue
 
-        await self._seed_state_defaults(want_nodes)
+        if service_snapshot is not None:
+            await self._seed_service_state_defaults(service_snapshot)
+        await self._seed_state_defaults(want_operator_nodes)
 
     @staticmethod
     def _node_initial_state(n: F8RuntimeNode) -> dict[str, Any]:
@@ -147,3 +190,26 @@ class ServiceHost:
                     )
                 except Exception:
                     continue
+
+    async def _seed_service_state_defaults(self, n: F8RuntimeNode) -> None:
+        """
+        Apply rungraph-provided `stateValues` for the service node into KV.
+        """
+        node_id = str(self._service_node_id)
+        for k, v in self._node_initial_state(n).items():
+            try:
+                existing = await self._runtime.get_state(node_id, str(k))
+            except Exception:
+                existing = None
+            if existing is not None and existing == v:
+                continue
+            try:
+                await self._runtime.set_state_with_meta(
+                    node_id,
+                    str(k),
+                    v,
+                    source="rungraph",
+                    meta={"rungraphReconcile": True, "serviceNode": True},
+                )
+            except Exception:
+                continue

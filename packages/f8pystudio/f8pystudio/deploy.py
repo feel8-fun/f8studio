@@ -6,7 +6,8 @@ import uuid
 from typing import Any
 
 from f8pysdk import F8Edge, F8EdgeKindEnum, F8EdgeStrategyEnum, F8RuntimeGraph, F8RuntimeNode
-from f8pysdk.runtime import NatsTransport, NatsTransportConfig, ensure_token, kv_bucket_for_service, kv_key_rungraph
+from f8pysdk.nats_naming import ensure_token, kv_bucket_for_service, kv_key_rungraph
+from f8pysdk.nats_transport import NatsTransport, NatsTransportConfig
 
 
 def _now_rev() -> str:

@@ -4,12 +4,12 @@ import importlib
 from collections.abc import Callable
 from typing import Any
 
-from ..generated import F8RuntimeNode
-from .service_runtime_node import OperatorRuntimeNode, RuntimeNode, ServiceNodeRuntimeNode
+from .generated import F8RuntimeNode
+from .runtime_node import OperatorNode, RuntimeNode, ServiceNode
 
 
-OperatorFactory = Callable[[str, F8RuntimeNode, dict[str, Any]], OperatorRuntimeNode]
-ServiceFactory = Callable[[str, F8RuntimeNode, dict[str, Any]], ServiceNodeRuntimeNode]
+OperatorFactory = Callable[[str, F8RuntimeNode, dict[str, Any]], OperatorNode]
+ServiceFactory = Callable[[str, F8RuntimeNode, dict[str, Any]], ServiceNode]
 
 
 class RegistryError(Exception):
@@ -24,20 +24,23 @@ class OperatorAlreadyRegistered(RegistryError):
     """Raised when an operatorClass is already registered for the same serviceClass."""
 
 
-class ServiceOperatorRuntimeRegistry:
+class RuntimeNodeRegistry:
     """
-    Per-service operator runtime registries (push-based).
+    Per-service runtime node registry.
 
-    Developers register their operator runtime implementations here, typically
-    from an importable module (see `load_modules`).
+    This registry stores factories for creating `RuntimeNode`-derived instances
+    (service node + operator nodes) for a single `serviceClass`.
+
+    Note: This is a process-local registry used by `ServiceHost` to create nodes
+    when applying a rungraph. It is not a network registry.
     """
 
     @staticmethod
-    def instance() -> "ServiceOperatorRuntimeRegistry":
+    def instance() -> "RuntimeNodeRegistry":
         # Singleton instance accessor.
-        if not hasattr(ServiceOperatorRuntimeRegistry, "_instance"):
-            ServiceOperatorRuntimeRegistry._instance = ServiceOperatorRuntimeRegistry()
-        return ServiceOperatorRuntimeRegistry._instance
+        if not hasattr(RuntimeNodeRegistry, "_instance"):
+            RuntimeNodeRegistry._instance = RuntimeNodeRegistry()
+        return RuntimeNodeRegistry._instance
     
 
     def __init__(self) -> None:
@@ -153,6 +156,34 @@ class ServiceOperatorRuntimeRegistry:
             raise OperatorAlreadyRegistered(f"service runtime already registered for {service_class}")
         self._by_service_service[service_class] = factory
 
+    def create_service_node(
+        self,
+        *,
+        service_class: str,
+        node_id: str,
+        initial_state: dict[str, Any] | None = None,
+        node: F8RuntimeNode | None = None,
+    ) -> ServiceNode:
+        """
+        Create the service/container node for a service process.
+
+        If `node` is omitted, a minimal placeholder `F8RuntimeNode` is constructed.
+        """
+        service_class = str(service_class or "").strip()
+        node_id = str(node_id or "").strip()
+        if not service_class:
+            raise ValueError("service_class must be non-empty")
+        if not node_id:
+            raise ValueError("node_id must be non-empty")
+        if node is None:
+            node = F8RuntimeNode(nodeId=str(node_id), serviceClass=str(service_class), operatorClass=None)
+        factory = self._by_service_service.get(service_class)
+        if factory is None:
+            if service_class not in self._by_service_operator and service_class not in self._by_service_service:
+                raise ServiceNotRegistered(service_class)
+            return ServiceNode(node_id=str(node_id))
+        return factory(str(node_id), node, dict(initial_state or {}))
+
     def create(
         self,
         *,
@@ -166,22 +197,22 @@ class ServiceOperatorRuntimeRegistry:
 
         operator_class = node.operatorClass
         if operator_class is None:
-            factory = self._by_service_service.get(service_class)
-            if factory is None:
-                if service_class not in self._by_service_operator and service_class not in self._by_service_service:
-                    raise ServiceNotRegistered(service_class)
-                return ServiceNodeRuntimeNode(node_id=str(node_id))
-            return factory(str(node_id), node, dict(initial_state or {}))
+            return self.create_service_node(
+                service_class=str(service_class),
+                node_id=str(node_id),
+                initial_state=dict(initial_state or {}),
+                node=node,
+            )
 
         reg = self._by_service_operator.get(service_class)
         if reg is None:
             if service_class not in self._by_service_service:
                 raise ServiceNotRegistered(service_class)
-            return OperatorRuntimeNode(node_id=str(node_id))
+            return OperatorNode(node_id=str(node_id))
 
         factory = reg.get(str(operator_class))
         if factory is None:
-            return OperatorRuntimeNode(node_id=str(node_id))
+            return OperatorNode(node_id=str(node_id))
         return factory(str(node_id), node, dict(initial_state or {}))
 
     def load_modules(self, modules: list[str]) -> None:
@@ -189,7 +220,7 @@ class ServiceOperatorRuntimeRegistry:
         Import modules that register runtime implementations.
 
         A module can register by calling:
-        - `ServiceOperatorRuntimeRegistry.instance().register(...)`
+        - `RuntimeNodeRegistry.instance().register(...)`
         """
         for m in modules:
             name = str(m or "").strip()

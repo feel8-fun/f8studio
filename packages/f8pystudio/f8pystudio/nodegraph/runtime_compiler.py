@@ -15,7 +15,7 @@ from f8pysdk import (
     F8RuntimeNode,
     F8RuntimeService,
 )
-from f8pysdk.runtime import ensure_token
+from f8pysdk.nats_naming import ensure_token
 
 
 def _port_kind(name: str) -> F8EdgeKindEnum | None:
