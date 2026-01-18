@@ -6,7 +6,7 @@ from typing import Any
 from f8pysdk import F8RuntimeNode
 from f8pysdk.runtime import ServiceRuntimeNode, ensure_token
 
-from .engine_executor import SourceContext
+from ..engine_executor import SourceContext
 
 
 class TickRuntimeNode(ServiceRuntimeNode):
@@ -27,7 +27,7 @@ class TickRuntimeNode(ServiceRuntimeNode):
         self._exec_out_ports = list(node.execOutPorts or []) or ["exec"]
         self._stop = asyncio.Event()
 
-    async def on_exec(self, _in_port: str | None = None) -> list[str]:
+    async def on_exec(self, _ctx_id: str | int, _in_port: str | None = None) -> list[str]:
         return list(self._exec_out_ports)
 
     async def start_source(self, ctx: SourceContext) -> None:
@@ -43,8 +43,9 @@ class TickRuntimeNode(ServiceRuntimeNode):
                 except Exception:
                     ms = 100
                 await asyncio.sleep(float(ms) / 1000.0)
+                ctx_id = int(asyncio.get_running_loop().time() * 1000)
                 for p in list(self._exec_out_ports):
-                    await ctx.emit_exec(str(p))
+                    await ctx.emit_exec(str(p), ctx_id=ctx_id)
 
         ctx.create_task(_loop(), name=f"tick:{self.node_id}")
 

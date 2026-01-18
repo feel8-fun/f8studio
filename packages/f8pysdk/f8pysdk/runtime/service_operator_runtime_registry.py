@@ -43,11 +43,70 @@ class ServiceOperatorRuntimeRegistry:
     def __init__(self) -> None:
         self._by_service_operator: dict[str, dict[str, OperatorFactory]] = {}
         self._by_service_service: dict[str, ServiceFactory] = {}
+        # Optional: service/operator specs for `--describe` style discovery.
+        # Kept generic to avoid importing pydantic models on import of this module.
+        self._service_specs: dict[str, Any] = {}
+        self._operator_specs: dict[str, dict[str, Any]] = {}
 
     def services(self) -> list[str]:
         keys = set(self._by_service_operator.keys())
         keys.update(self._by_service_service.keys())
+        keys.update(self._service_specs.keys())
+        keys.update(self._operator_specs.keys())
         return sorted(keys)
+
+    # ---- specs (optional) ----------------------------------------------
+    def register_service_spec(self, spec: Any, *, overwrite: bool = False) -> None:
+        """
+        Register a `F8ServiceSpec` for discovery / `--describe`.
+        """
+        service_class = str(getattr(spec, "serviceClass", "") or "").strip()
+        if not service_class:
+            raise ValueError("spec.serviceClass must be non-empty")
+        if service_class in self._service_specs and not overwrite:
+            raise OperatorAlreadyRegistered(f"service spec already registered for {service_class}")
+        self._service_specs[service_class] = spec
+
+    def register_operator_spec(self, spec: Any, *, overwrite: bool = False) -> None:
+        """
+        Register a `F8OperatorSpec` for discovery / `--describe`.
+        """
+        service_class = str(getattr(spec, "serviceClass", "") or "").strip()
+        operator_class = str(getattr(spec, "operatorClass", "") or "").strip()
+        if not service_class:
+            raise ValueError("spec.serviceClass must be non-empty")
+        if not operator_class:
+            raise ValueError("spec.operatorClass must be non-empty")
+        reg = self._operator_specs.get(service_class)
+        if reg is None:
+            reg = {}
+            self._operator_specs[service_class] = reg
+        if operator_class in reg and not overwrite:
+            raise OperatorAlreadyRegistered(f"operator spec already registered for {service_class}/{operator_class}")
+        reg[operator_class] = spec
+
+    def service_spec(self, service_class: str) -> Any | None:
+        return self._service_specs.get(str(service_class or "").strip())
+
+    def operator_specs(self, service_class: str) -> list[Any]:
+        reg = self._operator_specs.get(str(service_class or "").strip()) or {}
+        return list(reg.values())
+
+    def describe(self, service_class: str) -> Any:
+        """
+        Build a `F8ServiceDescribe` payload for the given serviceClass.
+        """
+        service_class = str(service_class or "").strip()
+        if not service_class:
+            raise ValueError("service_class must be non-empty")
+        service = self._service_specs.get(service_class)
+        if service is None:
+            raise ServiceNotRegistered(service_class)
+        operators = list((self._operator_specs.get(service_class) or {}).values())
+        # Lazy import to keep runtime module light by default.
+        from ..generated import F8ServiceDescribe  # type: ignore[import-not-found]
+
+        return F8ServiceDescribe(service=service, operators=operators)
 
     def ensure_service(self, service_class: str) -> dict[str, OperatorFactory]:
         service_class = str(service_class or "").strip()

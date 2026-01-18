@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -11,7 +12,7 @@ from f8pysdk.runtime import ServiceBus, ensure_token
 class ExecNodeLike(Protocol):
     node_id: str
 
-    async def on_exec(self, in_port: str | None = None) -> list[str]: ...
+    async def on_exec(self, ctx_id: str | int, in_port: str | None = None) -> list[str]: ...
 
 
 class SourceNodeLike(ExecNodeLike, Protocol):
@@ -40,8 +41,8 @@ class SourceContext:
         task.add_done_callback(lambda t: self._tasks.discard(t))
         return task
 
-    async def emit_exec(self, out_port: str) -> None:
-        await self.executor.trigger_exec(self.node_id, out_port)
+    async def emit_exec(self, out_port: str, *, ctx_id: str | int) -> None:
+        await self.executor.trigger_exec(self.node_id, out_port, ctx_id=ctx_id)
 
     async def cancel(self) -> None:
         for t in list(self._tasks):
@@ -174,9 +175,9 @@ class EngineExecutor:
         src = self._source_node_id(graph)
         if not src:
             raise RuntimeError("graph has no exec source")
-        await self.trigger_exec(src, "__source__", max_steps=max_steps)
+        await self.trigger_exec(src, "__source__", ctx_id=int(time.time() * 1000), max_steps=max_steps)
 
-    async def trigger_exec(self, node_id: str, out_port: str, *, max_steps: int = 1024) -> None:
+    async def trigger_exec(self, node_id: str, out_port: str, *, ctx_id: str | int, max_steps: int = 1024) -> None:
         """
         Inject an exec trigger from (node_id, out_port) and propagate intra-service exec edges.
         """
@@ -212,7 +213,7 @@ class EngineExecutor:
             if not hasattr(node, "on_exec"):
                 continue
             try:
-                out_ports = await node.on_exec(str(in_port))  # type: ignore[misc]
+                out_ports = await node.on_exec(ctx_id, str(in_port))  # type: ignore[misc]
             except Exception:
                 continue
             for p in list(out_ports or []):

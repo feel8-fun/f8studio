@@ -21,8 +21,14 @@ class SineRuntimeNode(ServiceRuntimeNode):
             state_fields=[s.name for s in (node.stateFields or [])],
         )
         self._initial_state = dict(initial_state or {})
+        self._exec_out_ports = list(getattr(node, "execOutPorts", None) or [])
 
-    async def on_exec(self, _in_port: str | None = None) -> list[str]:
+    async def on_exec(self, _ctx_id: str | int, _in_port: str | None = None) -> list[str]:
+        return list(self._exec_out_ports)
+
+    async def compute_output(self, port: str, ctx_id: str | int | None = None) -> Any:
+        if str(port) != "value":
+            return None
         hz = await self.get_state("hz")
         if hz is None:
             hz = self._initial_state.get("hz", 1.0)
@@ -39,9 +45,7 @@ class SineRuntimeNode(ServiceRuntimeNode):
             amp_f = 1.0
 
         t = time.time()
-        y = amp_f * math.sin(2.0 * math.pi * hz_f * t)
-        await self.emit("value", y)
-        return []
+        return amp_f * math.sin(2.0 * math.pi * hz_f * t)
 
 
 class PrintRuntimeNode(ServiceRuntimeNode):
@@ -60,8 +64,8 @@ class PrintRuntimeNode(ServiceRuntimeNode):
         )
         self._initial_state = dict(initial_state or {})
 
-    async def on_data(self, port: str, value: Any, *, ts_ms: int | None = None) -> None:
-        if str(port) != "value":
-            return
-        print(f"[{self.node_id}] ts={ts_ms} value={value}")
+    async def on_exec(self, ctx_id: str | int, _in_port: str | None = None) -> list[str]:
+        v = await self.pull("value", ctx_id=ctx_id)
+        print(f"[{self.node_id}] ctx={ctx_id} value={v}")
+        return []
 

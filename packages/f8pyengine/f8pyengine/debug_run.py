@@ -10,10 +10,10 @@ from typing import Any
 from nats.js.api import StorageType  # type: ignore[import-not-found]
 
 from f8pysdk import F8RuntimeGraph
-from f8pysdk.runtime import ServiceBus, ServiceBusConfig, ensure_token
+from f8pysdk.runtime import ServiceApp, ServiceAppConfig, ServiceOperatorRuntimeRegistry, ensure_token
 
 from f8pyengine.engine_executor import EngineExecutor
-from f8pyengine.engine_host import EngineHost, EngineHostConfig
+from f8pyengine.engine_binder import EngineBinder
 from f8pyengine.runtime_registry import register_pyengine_runtimes
 
 
@@ -21,9 +21,9 @@ from f8pyengine.runtime_registry import register_pyengine_runtimes
 class _RunningService:
     graph_path: Path
     graph: F8RuntimeGraph
-    runtime: ServiceBus
-    host: EngineHost
+    app: ServiceApp
     executor: EngineExecutor
+    binder: EngineBinder
 
 
 def _load_graph(path: Path) -> F8RuntimeGraph:
@@ -64,34 +64,23 @@ def _rewrite_single_service_id(graph: F8RuntimeGraph, new_service_id: str) -> F8
     return g
 
 
-async def _run_one_graph(*, graph_path: Path, graph: F8RuntimeGraph, nats_url: str) -> _RunningService:
-    if not graph.services:
-        raise ValueError(f"{graph_path}: graph.services is empty")
-    if len(graph.services) != 1:
-        raise ValueError(f"{graph_path}: expected per-service graph with exactly 1 service")
-
-    service_id = ensure_token(str(graph.services[0].serviceId), label="service_id")
-
-    runtime = ServiceBus(ServiceBusConfig(service_id=service_id, nats_url=str(nats_url)))
-    executor = EngineExecutor(runtime)
-    host = EngineHost(runtime, executor, config=EngineHostConfig(service_class="f8.pyengine"))
-
-    async def _on_rungraph(g: F8RuntimeGraph) -> None:
-        await host.apply_rungraph(g)
-        await executor.apply_rungraph(g)
-
-    runtime.add_rungraph_listener(_on_rungraph)
-
-    await runtime.start()
-    await runtime.set_rungraph(graph)
-
-    return _RunningService(graph_path=graph_path, graph=graph, runtime=runtime, host=host, executor=executor)
-
-
 async def _amain(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Debug runner: load per-service F8RuntimeGraph JSON and run PyEngine.")
+    parser = argparse.ArgumentParser(
+        description=(
+            "Debug runner: load per-service F8RuntimeGraph JSON and run PyEngine with the latest SDK runtime (ServiceBus)."
+        )
+    )
     parser.add_argument("--graph", required=True, help="Path to per-service runtime graph JSON.")
     parser.add_argument("--nats-url", default="nats://127.0.0.1:4222", help="NATS server URL.")
+    parser.add_argument("--service-class", default="f8.pyengine", help="Local serviceClass filter for node instantiation.")
+    parser.add_argument(
+        "--runtime-modules",
+        default="",
+        help=(
+            "Comma-separated Python modules to import for registering additional runtime nodes "
+            "(via ServiceOperatorRuntimeRegistry.instance().register(...))."
+        ),
+    )
     parser.add_argument(
         "--service-id",
         default="",
@@ -115,7 +104,11 @@ async def _amain(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    register_pyengine_runtimes()
+    registry = ServiceOperatorRuntimeRegistry.instance()
+    register_pyengine_runtimes(registry)
+    modules = [m.strip() for m in str(args.runtime_modules or "").split(",") if m.strip()]
+    if modules:
+        registry.load_modules(modules)
 
     graph_path = Path(args.graph).expanduser().resolve()
     graph = _load_graph(graph_path)
@@ -148,28 +141,29 @@ async def _amain(argv: list[str] | None = None) -> int:
             raise ValueError(f"{graph_path}: expected per-service graph with exactly 1 service")
 
         sid = ensure_token(str(graph.services[0].serviceId), label="service_id")
+        service_class = str(args.service_class or "").strip() or "f8.pyengine"
 
-        runtime = ServiceBus(
-            ServiceBusConfig(
+        app = ServiceApp(
+            ServiceAppConfig(
                 service_id=sid,
+                service_class=service_class,
                 nats_url=str(args.nats_url),
                 kv_storage=kv_storage,
                 delete_bucket_on_start=bool(args.delete_bucket_on_start),
                 delete_bucket_on_stop=bool(args.delete_bucket_on_exit),
-            )
+            ),
+            registry=registry,
         )
-        executor = EngineExecutor(runtime)
-        host = EngineHost(runtime, executor, config=EngineHostConfig(service_class="f8.pyengine"))
+        executor = EngineExecutor(app.bus)
+        binder = EngineBinder(bus=app.bus, executor=executor, service_class=service_class)
 
-        async def _on_rungraph(gr: F8RuntimeGraph) -> None:
-            await host.apply_rungraph(gr)
-            await executor.apply_rungraph(gr)
+        await app.start()
+        await app.bus.set_rungraph(graph)
 
-        runtime.add_rungraph_listener(_on_rungraph)
-        await runtime.start()
-        await runtime.set_rungraph(graph)
+        print(f"debug_run: serviceId={sid} serviceClass={service_class} nats={str(args.nats_url).strip()}")
+        print("debug_run: running (Ctrl+C to stop)")
 
-        running = _RunningService(graph_path=graph_path, graph=graph, runtime=runtime, host=host, executor=executor)
+        running = _RunningService(graph_path=graph_path, graph=graph, app=app, executor=executor, binder=binder)
         await asyncio.Event().wait()
     finally:
         if running is not None:
@@ -178,7 +172,7 @@ async def _amain(argv: list[str] | None = None) -> int:
             except Exception:
                 pass
             try:
-                await running.runtime.stop()
+                await running.app.stop()
             except Exception:
                 pass
 
@@ -193,4 +187,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

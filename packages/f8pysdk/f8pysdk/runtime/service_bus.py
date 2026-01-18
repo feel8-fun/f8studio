@@ -66,7 +66,8 @@ class ServiceBus:
     - Watches `rungraph` (KV) which must be a `F8RuntimeGraph`.
     - Builds intra/cross routing tables for data edges.
     - Provides a shared state KV API for nodes.
-    - Push-based: triggers `ServiceRuntimeNode.on_data()` on new data events.
+    - Data edges are pull-based: consumers pull buffered inputs and may trigger
+      intra-service computation via `compute_output(...)`.
     """
 
     def __init__(self, config: ServiceBusConfig) -> None:
@@ -94,6 +95,7 @@ class ServiceBus:
 
         # Routing tables (data only).
         self._intra_data_out: dict[tuple[str, str], list[tuple[str, str]]] = {}
+        self._intra_data_in: dict[tuple[str, str], list[tuple[str, str, F8Edge]]] = {}
         self._cross_in_by_subject: dict[str, list[tuple[str, str, F8Edge]]] = {}
         self._cross_out_subjects: dict[tuple[str, str], str] = {}
         self._data_inputs: dict[tuple[str, str], _InputBuffer] = {}
@@ -134,6 +136,16 @@ class ServiceBus:
         for key in [k for k in self._data_inputs.keys() if k[0] == node_id]:
             self._data_inputs.pop(key, None)
 
+    def get_node(self, node_id: str) -> ServiceRuntimeNode | None:
+        """
+        Return the local runtime node instance if registered.
+        """
+        try:
+            node_id = ensure_token(node_id, label="node_id")
+        except Exception:
+            return None
+        return self._nodes.get(node_id)
+
     async def start(self) -> None:
         await self._transport.connect()
         if self._rungraph_watch is None:
@@ -153,6 +165,7 @@ class ServiceBus:
 
         self._cross_in_by_subject.clear()
         self._intra_data_out.clear()
+        self._intra_data_in.clear()
         self._cross_out_subjects.clear()
         self._data_inputs.clear()
 
@@ -404,6 +417,7 @@ class ServiceBus:
 
         # Intra (in-process) routing: local service -> local service.
         intra: dict[tuple[str, str], list[tuple[str, str]]] = {}
+        intra_in: dict[tuple[str, str], list[tuple[str, str, F8Edge]]] = {}
         for edge in graph.edges:
             if edge.kind != F8EdgeKindEnum.data:
                 continue
@@ -414,7 +428,11 @@ class ServiceBus:
             intra.setdefault((str(edge.fromOperatorId), str(edge.fromPort)), []).append(
                 (str(edge.toOperatorId), str(edge.toPort))
             )
+            intra_in.setdefault((str(edge.toOperatorId), str(edge.toPort)), []).append(
+                (str(edge.fromOperatorId), str(edge.fromPort), edge)
+            )
         self._intra_data_out = intra
+        self._intra_data_in = intra_in
 
         # Cross routing.
         cross_in: dict[str, list[tuple[str, str, F8Edge]]] = {}
@@ -489,7 +507,7 @@ class ServiceBus:
     ) -> Any:
         return await self._transport.subscribe(str(subject), queue=queue, cb=cb)
 
-    async def pull_data(self, node_id: str, port: str) -> Any:
+    async def pull_data(self, node_id: str, port: str, *, ctx_id: str | int | None = None) -> Any:
         """
         Pull-based access to buffered inputs.
 
@@ -502,7 +520,8 @@ class ServiceBus:
         port = ensure_token(port, label="port_id")
         buf = self._data_inputs.get((node_id, port))
         if buf is None:
-            return None
+            buf = _InputBuffer(to_node=node_id, to_port=port, edge=None)
+            self._data_inputs[(node_id, port)] = buf
         edge = buf.edge
         now_ms = _now_ms()
 
@@ -516,19 +535,69 @@ class ServiceBus:
 
         if strategy == F8EdgeStrategyEnum.queue:
             if not buf.queue:
-                return None
+                await self._ensure_input_available(node_id=node_id, port=port, ctx_id=ctx_id)
+                if not buf.queue:
+                    return None
             v, ts = buf.queue.pop(0)
             buf.last_pulled_value = v
             buf.last_pulled_ts = int(ts) if ts is not None else now_ms
             return v
 
         # latest
+        if not buf.queue and buf.last_seen_value is None:
+            await self._ensure_input_available(node_id=node_id, port=port, ctx_id=ctx_id)
         v = buf.queue[-1][0] if buf.queue else buf.last_seen_value
         buf.queue.clear()
         if v is not None:
             buf.last_pulled_value = v
             buf.last_pulled_ts = now_ms
         return v
+
+    async def _ensure_input_available(self, *, node_id: str, port: str, ctx_id: str | int | None = None) -> None:
+        """
+        Best-effort intra-service pull-triggered computation.
+
+        If (node_id, port) has no buffered samples and the rungraph defines intra data
+        edges feeding it, attempt to compute upstream outputs and buffer the results.
+        """
+        if not self._graph:
+            return
+
+        upstream = self._intra_data_in.get((str(node_id), str(port))) or []
+        if not upstream:
+            return
+
+        stack: set[tuple[str, str]] = set()
+        await self._compute_and_buffer_for_input(node_id=str(node_id), port=str(port), ctx_id=ctx_id, stack=stack)
+
+    async def _compute_and_buffer_for_input(
+        self,
+        *,
+        node_id: str,
+        port: str,
+        ctx_id: str | int | None,
+        stack: set[tuple[str, str]],
+    ) -> None:
+        key = (str(node_id), str(port))
+        if key in stack:
+            return
+        stack.add(key)
+        try:
+            for from_node, from_port, edge in list(self._intra_data_in.get(key) or []):
+                src = self._nodes.get(str(from_node))
+                if src is None:
+                    continue
+                if not hasattr(src, "compute_output"):
+                    continue
+                try:
+                    v = await src.compute_output(str(from_port), ctx_id=ctx_id)  # type: ignore[misc]
+                except Exception:
+                    continue
+                if v is None:
+                    continue
+                self._buffer_input(str(node_id), str(port), v, ts_ms=_now_ms(), edge=edge, notify=False)
+        finally:
+            stack.discard(key)
 
     async def _on_cross_data_msg(self, subject: str, payload: bytes) -> None:
         targets = self._cross_in_by_subject.get(str(subject)) or []
@@ -571,6 +640,27 @@ class ServiceBus:
             return False
 
     def _push_input(self, to_node: str, to_port: str, value: Any, *, ts_ms: int, edge: F8Edge | None = None) -> None:
+        # Data inputs are buffered. We intentionally do not invoke `node.on_data`:
+        # the system is moving to exec-driven scheduling + pull-based data reads.
+        self._buffer_input(
+            to_node=str(to_node),
+            to_port=str(to_port),
+            value=value,
+            ts_ms=int(ts_ms),
+            edge=edge,
+            notify=False,
+        )
+
+    def _buffer_input(
+        self,
+        to_node: str,
+        to_port: str,
+        value: Any,
+        *,
+        ts_ms: int,
+        edge: F8Edge | None,
+        notify: bool,
+    ) -> None:
         to_node = str(to_node)
         to_port = str(to_port)
         buf = self._data_inputs.get((to_node, to_port))
@@ -597,14 +687,7 @@ class ServiceBus:
         if len(buf.queue) > max_n:
             del buf.queue[0 : len(buf.queue) - max_n]
 
-        node = self._nodes.get(to_node)
-        if node is None:
-            return
-        try:
-            r = node.on_data(to_port, value, ts_ms=int(ts_ms))
-            if asyncio.iscoroutine(r):
-                asyncio.create_task(r, name=f"on_data:{self.service_id}:{to_node}:{to_port}")
-        except Exception:
+        if not notify:
             return
 
     # ---- cross-state ----------------------------------------------------

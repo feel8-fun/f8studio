@@ -19,12 +19,11 @@ from f8pysdk import (
     F8StateSpec,
 )
 from f8pysdk.schema_helpers import integer_schema, number_schema, string_schema
-from f8pysdk.runtime import ServiceBus, ServiceBusConfig
+from f8pysdk.runtime import ServiceApp, ServiceAppConfig, ServiceOperatorRuntimeRegistry
 
 from f8pyengine.engine_executor import EngineExecutor
-from f8pyengine.engine_host import EngineHost, EngineHostConfig
+from f8pyengine.engine_binder import EngineBinder
 from f8pyengine.runtime_registry import register_pyengine_runtimes
-from f8pyengine.service_host import ServiceHostRegistry
 
 
 def _env_or(default: str, key: str) -> str:
@@ -33,24 +32,27 @@ def _env_or(default: str, key: str) -> str:
 
 
 async def _run_service(*, service_id: str, nats_url: str) -> None:
-    register_pyengine_runtimes()
+    registry = ServiceOperatorRuntimeRegistry.instance()
+    register_pyengine_runtimes(registry)
 
-    runtime = ServiceBus(ServiceBusConfig(service_id=service_id, nats_url=nats_url))
-    executor = EngineExecutor(runtime)
-    host = EngineHost(runtime, executor, config=EngineHostConfig(service_class="f8.pyengine"))
+    service_class = "f8.pyengine"
+    app = ServiceApp(
+        ServiceAppConfig(
+            service_id=service_id,
+            service_class=service_class,
+            nats_url=nats_url,
+        ),
+        registry=registry,
+    )
+    executor = EngineExecutor(app.bus)
+    _binder = EngineBinder(bus=app.bus, executor=executor, service_class=service_class)
 
-    async def _on_rungraph(graph) -> None:
-        await host.apply_rungraph(graph)
-        await executor.apply_rungraph(graph)
-
-    runtime.add_rungraph_listener(_on_rungraph)
-
-    await runtime.start()
+    await app.start()
 
     # Optional demo: 10 fps tick drives a 1 Hz sine, printed by a sink node.
     try:
         if os.environ.get("F8_PYENGINE_DEMO", "").strip().lower() in ("1", "true", "yes", "demo_sine"):
-            await runtime.set_rungraph(_demo_sine_graph(service_id))
+            await app.bus.set_rungraph(_demo_sine_graph(service_id))
     except Exception:
         pass
 
@@ -61,7 +63,7 @@ async def _run_service(*, service_id: str, nats_url: str) -> None:
             await executor.stop_source()
         except Exception:
             pass
-        await runtime.stop()
+        await app.stop()
 
 
 def _main(argv: list[str] | None = None) -> int:
@@ -77,10 +79,9 @@ def _main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.describe:
-        describe = F8ServiceDescribe(
-            service=ServiceHostRegistry.instance().service_spec(),
-            operators=ServiceHostRegistry.instance().operator_specs(),
-        ).model_dump(mode="json")
+        registry = ServiceOperatorRuntimeRegistry.instance()
+        register_pyengine_runtimes(registry)
+        describe = registry.describe("f8.pyengine").model_dump(mode="json")
         print(json.dumps(describe, ensure_ascii=False, indent=1))
         return 0
 
@@ -127,7 +128,7 @@ def _demo_sine_graph(service_id: str) -> F8RuntimeGraph:
                 serviceClass="f8.pyengine",
                 operatorClass="f8.sine",
                 execInPorts=["exec"],
-                execOutPorts=[],
+                execOutPorts=["exec"],
                 dataOutPorts=[F8DataPortSpec(name="value", description="sine output", valueSchema=number_schema())],
                 stateFields=[
                     F8StateSpec(
@@ -151,6 +152,7 @@ def _demo_sine_graph(service_id: str) -> F8RuntimeGraph:
                 nodeId=print_id,
                 serviceClass="f8.pyengine",
                 operatorClass="f8.print",
+                execInPorts=["exec"],
                 dataInPorts=[F8DataPortSpec(name="value", description="value to print", valueSchema=number_schema())],
                 stateFields=[
                     F8StateSpec(
@@ -172,6 +174,17 @@ def _demo_sine_graph(service_id: str) -> F8RuntimeGraph:
                 fromPort="exec",
                 toServiceId=service_id,
                 toOperatorId=sine_id,
+                toPort="exec",
+                kind=F8EdgeKindEnum.exec,
+                strategy=F8EdgeStrategyEnum.latest,
+            ),
+            F8Edge(
+                edgeId=uuid.uuid4().hex,
+                fromServiceId=service_id,
+                fromOperatorId=sine_id,
+                fromPort="exec",
+                toServiceId=service_id,
+                toOperatorId=print_id,
                 toPort="exec",
                 kind=F8EdgeKindEnum.exec,
                 strategy=F8EdgeStrategyEnum.latest,
