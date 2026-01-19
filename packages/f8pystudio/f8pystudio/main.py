@@ -9,7 +9,7 @@ from .service_catalog import load_discovery_into_registries, ServiceCatalog
 
 from qtpy import QtWidgets, QtCore
 
-from .renderNodes import RenderNodeRegistry
+from .render_nodes import RenderNodeRegistry
 
 # from .deploy import deploy_to_service, export_runtime_graph
 from .service_process_manager import ServiceProcessManager, ServiceProcessConfig

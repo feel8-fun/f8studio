@@ -176,7 +176,8 @@ class RuntimeNodeRegistry:
         if not node_id:
             raise ValueError("node_id must be non-empty")
         if node is None:
-            node = F8RuntimeNode(nodeId=str(node_id), serviceClass=str(service_class), operatorClass=None)
+            # Service/container nodes use `nodeId == serviceId`.
+            node = F8RuntimeNode(nodeId=str(node_id), serviceId=str(node_id), serviceClass=str(service_class), operatorClass=None)
         factory = self._by_service_service.get(service_class)
         if factory is None:
             if service_class not in self._by_service_operator and service_class not in self._by_service_service:

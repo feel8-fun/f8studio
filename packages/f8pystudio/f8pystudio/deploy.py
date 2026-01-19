@@ -54,6 +54,7 @@ def export_runtime_graph(
     nodes: list[F8RuntimeNode] = []
     edges: list[F8Edge] = []
     node_service_ids: dict[Any, str] = {}
+    node_is_service: dict[Any, bool] = {}
 
     # Nodes.
     if include_nodes is not None:
@@ -91,6 +92,16 @@ def export_runtime_graph(
         service_class = str(getattr(spec, "serviceClass", "") or "").strip()
         operator_class = getattr(spec, "operatorClass", None)
         operator_class = str(operator_class).strip() if operator_class is not None else None
+        is_service_node = operator_class is None
+        node_is_service[n] = is_service_node
+
+        # Service/container nodes use `nodeId == serviceId`.
+        if is_service_node:
+            try:
+                node_id = ensure_token(node_service_ids[n], label="nodeId")
+            except Exception:
+                node_id = node_service_ids[n] or uuid.uuid4().hex
+            id_map[n] = node_id
 
         exec_in = list(getattr(spec, "execInPorts", None) or [])
         exec_out = list(getattr(spec, "execOutPorts", None) or [])
@@ -111,6 +122,7 @@ def export_runtime_graph(
         nodes.append(
             F8RuntimeNode(
                 nodeId=node_id,
+                serviceId=node_service_ids[n],
                 serviceClass=service_class,
                 operatorClass=operator_class,
                 execInPorts=[str(p) for p in exec_in],
@@ -166,10 +178,10 @@ def export_runtime_graph(
                     F8Edge(
                         edgeId=uuid.uuid4().hex,
                         fromServiceId=node_service_ids.get(src_node, service_id),
-                        fromOperatorId=from_id,
+                        fromOperatorId=(None if node_is_service.get(src_node, False) else from_id),
                         fromPort=_raw_port_name(out_name),
                         toServiceId=node_service_ids.get(dst_node, service_id),
-                        toOperatorId=to_id,
+                        toOperatorId=(None if node_is_service.get(dst_node, False) else to_id),
                         toPort=_raw_port_name(in_name),
                         kind=edge_kind,
                         strategy=F8EdgeStrategyEnum.latest,

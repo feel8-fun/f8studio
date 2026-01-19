@@ -653,7 +653,7 @@ components:
           type: string
         serviceId:
           type: string
-          description: Service instance id that owns this node (optional for legacy graphs).
+          description: Service instance id that owns this node. For service/container nodes, `nodeId` MUST equal `serviceId`.
         serviceClass:
           type: string
           description: Service class of the node, required for all nodes.
@@ -695,7 +695,7 @@ components:
           description: Map of state name -> value for this node's states.
           additionalProperties:
             $ref: "#/components/schemas/F8JsonValue"
-      required: [nodeId, serviceClass]
+      required: [nodeId, serviceId, serviceClass]
       additionalProperties: false
 
     F8RuntimeService:

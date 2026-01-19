@@ -44,8 +44,6 @@ class ServiceBusConfig:
     kv_storage: StorageType = StorageType.MEMORY
     delete_bucket_on_start: bool = False
     delete_bucket_on_stop: bool = False
-    service_node_id: str | None = None
-    enable_cmd: bool = True
 
 
 @dataclass
@@ -88,14 +86,9 @@ class ServiceBus:
 
     def __init__(self, config: ServiceBusConfig) -> None:
         self.service_id = ensure_token(config.service_id, label="service_id")
-        self.service_node_id = ensure_token(
-            str(getattr(config, "service_node_id", None) or self.service_id),
-            label="service_node_id",
-        )
         self._publish_all_data = bool(getattr(config, "publish_all_data", True))
         self._debug_state = _debug_state_enabled()
         self._active = True
-        self._enable_cmd = bool(getattr(config, "enable_cmd", True))
 
         bucket = kv_bucket_for_service(self.service_id)
         self._transport = NatsTransport(
@@ -166,7 +159,7 @@ class ServiceBus:
         """
         Set service active state.
 
-        - Persists `active` into KV under `nodes.<service_node_id>.state.active`
+        - Persists `active` into KV under `nodes.<service_id>.state.active`
         - Notifies lifecycle listeners (engine/executor can pause/resume)
         """
         await self._apply_active(active, persist=True, source=source, meta=meta)
@@ -200,7 +193,7 @@ class ServiceBus:
 
     async def start(self) -> None:
         await self._transport.connect()
-        if self._enable_cmd and self._micro is None:
+        if self._micro is None:
             await self._start_micro_endpoints()
         if self._rungraph_watch is None:
             self._rungraph_watch = await self._transport.kv_watch(self._rungraph_key, cb=self._on_rungraph_kv)
@@ -291,7 +284,7 @@ class ServiceBus:
         Initialize `active` from KV (best-effort).
         """
         try:
-            v = await self.get_state(self.service_node_id, "active")
+            v = await self.get_state(self.service_id, "active")
         except Exception:
             v = None
         if v is None:
@@ -316,7 +309,7 @@ class ServiceBus:
         if persist:
             try:
                 await self.set_state_with_meta(
-                    self.service_node_id,
+                    self.service_id,
                     "active",
                     bool(active),
                     source=source or "runtime",
@@ -383,7 +376,7 @@ class ServiceBus:
             req_id, _raw, args, meta = _parse_envelope(req.data)
             want_active = bool(active)
 
-            service_node = self.get_node(self.service_node_id)
+            service_node = self.get_node(self.service_id)
             if service_node is not None and isinstance(service_node, CommandableNode):
                 try:
                     await service_node.on_command("activate", {"active": want_active}, meta={"cmd": cmd, **meta})  # type: ignore[misc]
@@ -420,7 +413,7 @@ class ServiceBus:
             if not call:
                 await _respond(req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "missing call"})
                 return
-            service_node = self.get_node(self.service_node_id)
+            service_node = self.get_node(self.service_id)
             if service_node is None or not isinstance(service_node, CommandableNode):
                 await _respond(req, req_id=req_id, ok=False, error={"code": "UNKNOWN_CALL", "message": f"unknown call: {call}"})
                 return
@@ -601,7 +594,7 @@ class ServiceBus:
             )
 
         # Keep runtime lifecycle in sync with service node state (if changed externally).
-        if str(node_id) == str(self.service_node_id) and str(field) == "active":
+        if str(node_id) == str(self.service_id) and str(field) == "active":
             try:
                 await self._apply_active(bool(v), persist=False, source="kv", meta={"kvUpdate": True, **meta_dict})
             except Exception:
@@ -653,6 +646,13 @@ class ServiceBus:
             return
         try:
             graph = F8RuntimeGraph.model_validate(payload)
+        except Exception:
+            return
+        try:
+            for n in list(getattr(graph, "nodes", None) or []):
+                # Service/container nodes use `nodeId == serviceId`.
+                if getattr(n, "operatorClass", None) is None and str(getattr(n, "nodeId", "")) != str(getattr(n, "serviceId", "")):
+                    raise ValueError("invalid rungraph: service node requires nodeId == serviceId")
         except Exception:
             return
 

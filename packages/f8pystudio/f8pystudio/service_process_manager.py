@@ -60,20 +60,56 @@ class ServiceProcessManager:
 
     def stop(self, service_id: str) -> None:
         sid = str(service_id)
-        p = self._procs.get(sid)
+        p = self._procs.pop(sid, None)
         if p is None:
             return
+        t = self._threads.pop(sid, None)
+        pid = getattr(p, "pid", None)
+
+        # Best-effort graceful terminate, then ensure the whole process tree is gone.
         try:
             p.terminate()
         except Exception:
             pass
         try:
-            if p.stdout:
-                p.stdout.close()
+            p.wait(timeout=0.5)
         except Exception:
             pass
-        self._procs.pop(sid, None)
-        self._threads.pop(sid, None)
+
+        # `service.yml` launch commonly uses `uv run ...` which spawns a child Python process.
+        # On Windows, `terminate()` only kills the parent process; explicitly kill the tree.
+        if os.name == "nt" and pid:
+            try:
+                subprocess.run(
+                    ["taskkill", "/PID", str(int(pid)), "/T", "/F"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=2,
+                    check=False,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+            except Exception:
+                pass
+        else:
+            try:
+                if p.poll() is None:
+                    p.kill()
+            except Exception:
+                pass
+            try:
+                p.wait(timeout=1.0)
+            except Exception:
+                pass
+
+        # Avoid closing stdout while a reader thread is blocked in `readline()`;
+        # on Windows this can deadlock the UI thread. Let the pipe close naturally
+        # when the process exits; only close if no reader thread is alive.
+        try:
+            if t is None or not t.is_alive():
+                if p.stdout:
+                    p.stdout.close()
+        except Exception:
+            pass
 
     def start(self, cfg: ServiceProcessConfig, *, on_output: Any | None = None) -> None:
         service_class = str(cfg.service_class).strip()

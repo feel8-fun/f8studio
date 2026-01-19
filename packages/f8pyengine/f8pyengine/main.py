@@ -114,6 +114,7 @@ def _demo_sine_graph(service_id: str) -> F8RuntimeGraph:
         nodes=[
             F8RuntimeNode(
                 nodeId=tick_id,
+                serviceId=service_id,
                 serviceClass="f8.pyengine",
                 operatorClass="f8.tick",
                 execInPorts=[],
@@ -131,6 +132,7 @@ def _demo_sine_graph(service_id: str) -> F8RuntimeGraph:
             ),
             F8RuntimeNode(
                 nodeId=sine_id,
+                serviceId=service_id,
                 serviceClass="f8.pyengine",
                 operatorClass="f8.sine",
                 execInPorts=["exec"],
@@ -156,6 +158,7 @@ def _demo_sine_graph(service_id: str) -> F8RuntimeGraph:
             ),
             F8RuntimeNode(
                 nodeId=print_id,
+                serviceId=service_id,
                 serviceClass="f8.pyengine",
                 operatorClass="f8.print",
                 execInPorts=["exec"],

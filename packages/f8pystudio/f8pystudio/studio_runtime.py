@@ -7,11 +7,10 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 import nats  # type: ignore[import-not-found]
-from nats.micro import ServiceConfig, add_service  # type: ignore[import-not-found]
 from qtpy import QtCore
 
 from f8pysdk import F8Edge, F8EdgeKindEnum, F8EdgeStrategyEnum, F8RuntimeGraph, F8RuntimeNode
-from f8pysdk.nats_naming import ensure_token, kv_bucket_for_service, kv_key_rungraph, new_id, svc_endpoint_subject
+from f8pysdk.nats_naming import ensure_token, kv_bucket_for_service, kv_key_rungraph, new_id, svc_endpoint_subject, svc_micro_name
 from f8pysdk.nats_transport import NatsTransport, NatsTransportConfig
 from f8pysdk.runtime_node import RuntimeNode
 from f8pysdk.service_bus import ServiceBus, ServiceBusConfig
@@ -20,8 +19,6 @@ from .service_process_manager import ServiceProcessConfig, ServiceProcessManager
 from .service_host.service_host_registry import SERVICE_CLASS, STUDIO_SERVICE_ID
 
 
-_STUDIO_MICRO_SERVICE_NAME = "f8_pystudio"
-_STUDIO_MICRO_SERVICE_VERSION = "0.0.1"
 _MONITOR_NODE_ID = "monitor"
 
 
@@ -142,7 +139,6 @@ class StudioRuntime(QtCore.QObject):
 
         self._bus: ServiceBus | None = None
         self._nc: Any = None
-        self._micro: Any = None
         self._monitor_node: _StateMonitorNode | None = None
 
     @property
@@ -242,25 +238,17 @@ class StudioRuntime(QtCore.QObject):
     async def _start_async(self) -> None:
         nats_url = str(self._cfg.nats_url).strip() or "nats://127.0.0.1:4222"
 
-        # Singleton guard (best-effort): if any existing studio micro service responds, do not start.
+        # Singleton guard (best-effort): if any existing studio ServiceBus micro responds, do not start.
         try:
             self._nc = await nats.connect(servers=[nats_url], connect_timeout=2)
             try:
-                await self._nc.request(f"$SRV.PING.{_STUDIO_MICRO_SERVICE_NAME}", b"", timeout=0.2)
+                await self._nc.request(f"$SRV.PING.{svc_micro_name(self.studio_service_id)}", b"", timeout=0.2)
                 self.log.emit("Another PyStudio instance is already running (micro service ping responded).")
                 await self._nc.close()
                 self._nc = None
                 return
             except Exception:
                 pass
-
-            try:
-                self._micro = await add_service(
-                    self._nc,
-                    ServiceConfig(name=_STUDIO_MICRO_SERVICE_NAME, version=_STUDIO_MICRO_SERVICE_VERSION),
-                )
-            except Exception:
-                self._micro = None
         except Exception:
             self._nc = None
 
@@ -314,13 +302,6 @@ class StudioRuntime(QtCore.QObject):
         except Exception:
             pass
         self._bus = None
-
-        try:
-            if self._micro is not None:
-                await self._micro.stop()
-        except Exception:
-            pass
-        self._micro = None
 
         try:
             if self._nc is not None:

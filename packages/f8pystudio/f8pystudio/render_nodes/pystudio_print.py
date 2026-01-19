@@ -15,6 +15,7 @@ class _PrintNodeItem(F8StudioOperatorNodeItem):
         self._preview_item.setDefaultTextColor(QtGui.QColor(180, 180, 180))
         self._preview_item.setTextWidth(220)
 
+
     def post_init(self, viewer, pos=None):
         super().post_init(viewer, pos=pos)
         # Position preview text under the title area.

@@ -35,7 +35,6 @@ class ServiceHostConfig:
     """
 
     service_class: str
-    service_node_id: str | None = None
 
 
 class ServiceHost:
@@ -57,7 +56,6 @@ class ServiceHost:
         self._config = config
         self._registry = registry or RuntimeNodeRegistry.instance()
 
-        self._service_node_id = str(getattr(config, "service_node_id", "") or "").strip() or self._runtime.service_id
         self._service_node: Any | None = None
         self._operator_nodes: dict[str, Any] = {}
         self._runtime.add_rungraph_listener(self._on_rungraph)
@@ -73,9 +71,7 @@ class ServiceHost:
         service_class = str(self._config.service_class or "").strip()
         if not service_class:
             raise ValueError("ServiceHostConfig.service_class must be non-empty")
-        node_id = str(self._service_node_id or "").strip()
-        if not node_id:
-            raise ValueError("service_node_id must be non-empty")
+        node_id = str(self._runtime.service_id).strip()
         try:
             node = self._registry.create_service_node(service_class=service_class, node_id=node_id, initial_state={})
         except Exception:
@@ -114,7 +110,7 @@ class ServiceHost:
                     continue
                 if getattr(n, "operatorClass", None) is None:
                     # Service/container node snapshot (state only).
-                    if str(getattr(n, "nodeId", "")) == str(self._service_node_id):
+                    if str(getattr(n, "nodeId", "")) == str(self._runtime.service_id):
                         service_snapshot = n
                     continue
                 want_operator_nodes.append(n)
@@ -195,7 +191,7 @@ class ServiceHost:
         """
         Apply rungraph-provided `stateValues` for the service node into KV.
         """
-        node_id = str(self._service_node_id)
+        node_id = str(self._runtime.service_id)
         for k, v in self._node_initial_state(n).items():
             try:
                 existing = await self._runtime.get_state(node_id, str(k))

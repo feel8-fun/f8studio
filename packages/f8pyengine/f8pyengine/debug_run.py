@@ -53,7 +53,7 @@ def _rewrite_single_service_id(graph: F8RuntimeGraph, new_service_id: str) -> F8
     for s in g.services:
         s.serviceId = str(r(s.serviceId))
     for n in g.nodes:
-        n.serviceId = str(r(getattr(n, "serviceId", "")))
+        n.serviceId = str(r(n.serviceId))
         if str(getattr(n, "nodeId", "")) == old:
             n.nodeId = new_service_id
     for e in g.edges:
