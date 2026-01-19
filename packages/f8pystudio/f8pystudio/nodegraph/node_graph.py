@@ -20,6 +20,7 @@ from .viewer import F8StudioNodeViewer
 from .session import last_session_path
 
 from ..service_host import ServiceHostRegistry
+from ..service_host.service_host_registry import STUDIO_SERVICE_ID
 
 _BASE_OPERATOR_CLS_ = F8StudioOperatorBaseNode
 _BASE_CONTAINER_CLS_ = F8StudioContainerBaseNode
@@ -506,8 +507,8 @@ class F8StudioGraph(NodeGraph):
             return True, None
 
         if node.spec.serviceClass == _CANVAS_SERVICE_CLASS_:
-            node.svcId = None  # type: ignore[attr-defined]
-            return False, None
+            node.svcId = STUDIO_SERVICE_ID  # type: ignore[attr-defined]
+            return True, None
 
         in_scene = node.view.scene() is not None
         node_rect = _scene_rect(node) if in_scene else _rect_at_pos(node.view, pos or node.model.pos)

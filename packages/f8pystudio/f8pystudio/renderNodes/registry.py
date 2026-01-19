@@ -7,6 +7,7 @@ from NodeGraphQt import NodeObject, BaseNode
 from ..nodegraph.service_basenode import F8StudioServiceBaseNode
 from ..nodegraph.container_basenode import F8StudioContainerBaseNode
 from ..nodegraph.operator_basenode import F8StudioOperatorBaseNode
+from .pystudio_print import PyStudioPrintNode
 
 
 class RenderNodeRegistry:
@@ -24,6 +25,7 @@ class RenderNodeRegistry:
         self._renderers["default_svc"] = F8StudioServiceBaseNode
         self._renderers["default_op"] = F8StudioOperatorBaseNode
         self._renderers["default_container"] = F8StudioContainerBaseNode
+        self._renderers["pystudio_print"] = PyStudioPrintNode
 
     def register(self, renderer_key: str, renderer: type[NodeObject]) -> None:
         if renderer_key in self._renderers:

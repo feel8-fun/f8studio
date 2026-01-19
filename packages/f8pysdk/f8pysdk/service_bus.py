@@ -10,7 +10,7 @@ from typing import Any
 
 from nats.js.api import StorageType  # type: ignore[import-not-found]
 
-from .capabilities import BusAttachableNode, ComputableNode, StatefulNode
+from .capabilities import BusAttachableNode, ClosableNode, ComputableNode, StatefulNode
 from .generated import F8Edge, F8EdgeKindEnum, F8EdgeStrategyEnum, F8RuntimeGraph
 from .nats_naming import data_subject, ensure_token, kv_bucket_for_service, kv_key_node_state, kv_key_rungraph
 from .nats_transport import NatsTransport, NatsTransportConfig
@@ -108,6 +108,7 @@ class ServiceBus:
 
         self._state_cache: dict[tuple[str, str], tuple[Any, int]] = {}
         self._subs: dict[str, _Sub] = {}
+        self._raw_subs: list[Any] = []
 
         self._state_listeners: list[Callable[[str, str, Any, int, dict[str, Any]], Awaitable[None] | None]] = []
         self._rungraph_listeners: list[Callable[[F8RuntimeGraph], Awaitable[None] | None]] = []
@@ -134,9 +135,15 @@ class ServiceBus:
 
     def unregister_node(self, node_id: str) -> None:
         node_id = ensure_token(node_id, label="node_id")
-        self._nodes.pop(node_id, None)
+        node = self._nodes.pop(node_id, None)
         for key in [k for k in self._data_inputs.keys() if k[0] == node_id]:
             self._data_inputs.pop(key, None)
+        if node is not None and isinstance(node, ClosableNode):
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(node.close(), name=f"service_bus:close:{node_id}")
+            except Exception:
+                pass
 
     def get_node(self, node_id: str) -> BusAttachableNode | None:
         """
@@ -158,6 +165,13 @@ class ServiceBus:
         await self._reload_rungraph()
 
     async def stop(self) -> None:
+        for sub in list(self._raw_subs):
+            try:
+                await sub.unsubscribe()
+            except Exception:
+                pass
+        self._raw_subs.clear()
+
         for sub in list(self._subs.values()):
             try:
                 await sub.handle.unsubscribe()
@@ -218,6 +232,39 @@ class ServiceBus:
             self._local_state_watch = None
 
         await self._transport.close()
+
+    # ---- raw subscription ---------------------------------------------
+    async def subscribe_subject(
+        self,
+        subject: str,
+        *,
+        queue: str | None = None,
+        cb: Callable[[str, bytes], Awaitable[None]] | None = None,
+    ) -> Any:
+        """
+        Subscribe to an arbitrary NATS subject (not tied to rungraph routing).
+
+        Returns the subscription handle (must be unsubscribed by caller or via `unsubscribe_subject`).
+        """
+        subject = str(subject or "").strip()
+        if not subject:
+            raise ValueError("subject must be non-empty")
+        handle = await self._transport.subscribe(subject, queue=str(queue) if queue else None, cb=cb)
+        self._raw_subs.append(handle)
+        return handle
+
+    async def unsubscribe_subject(self, handle: Any) -> None:
+        if handle is None:
+            return
+        try:
+            await handle.unsubscribe()
+        except Exception:
+            return
+        try:
+            if handle in self._raw_subs:
+                self._raw_subs.remove(handle)
+        except Exception:
+            pass
 
     # ---- KV state -------------------------------------------------------
     async def set_state(self, node_id: str, field: str, value: Any, *, ts_ms: int | None = None) -> None:

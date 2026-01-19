@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,30 @@ class ServiceProcessManager:
 
     def __init__(self) -> None:
         self._procs: dict[str, subprocess.Popen[Any]] = {}  # service_id -> process
+        self._threads: dict[str, threading.Thread] = {}  # service_id -> reader thread
+
+    def _start_reader(self, *, service_id: str, proc: subprocess.Popen[Any], on_output: Any | None) -> None:
+        if on_output is None:
+            return
+
+        def _run() -> None:
+            try:
+                stream = proc.stdout
+                if stream is None:
+                    return
+                for line in iter(stream.readline, ""):
+                    if line == "" and proc.poll() is not None:
+                        break
+                    try:
+                        on_output(str(service_id), str(line))
+                    except Exception:
+                        continue
+            except Exception:
+                return
+
+        t = threading.Thread(target=_run, name=f"svc-log:{service_id}", daemon=True)
+        self._threads[service_id] = t
+        t.start()
 
     def is_running(self, service_id: str) -> bool:
         p = self._procs.get(str(service_id))
@@ -42,9 +67,15 @@ class ServiceProcessManager:
             p.terminate()
         except Exception:
             pass
+        try:
+            if p.stdout:
+                p.stdout.close()
+        except Exception:
+            pass
         self._procs.pop(sid, None)
+        self._threads.pop(sid, None)
 
-    def start(self, cfg: ServiceProcessConfig) -> None:
+    def start(self, cfg: ServiceProcessConfig, *, on_output: Any | None = None) -> None:
         service_class = str(cfg.service_class).strip()
         service_id = str(cfg.service_id).strip()
         nats_url = str(cfg.nats_url).strip()
@@ -54,6 +85,12 @@ class ServiceProcessManager:
         if entry_path is None:
             raise ValueError(f"Missing discovery entry path for serviceClass={service_class!r}")
         service_dir = Path(entry_path).resolve()
+        # Backwards-compatible: older registries stored `<dir>/service.yml` instead of `<dir>`.
+        try:
+            if service_dir.is_file() and service_dir.name.lower() == "service.yml":
+                service_dir = service_dir.parent.resolve()
+        except Exception:
+            pass
         entry = load_service_entry(service_dir)
 
         if self.is_running(service_id):
@@ -72,6 +109,9 @@ class ServiceProcessManager:
             pass
         env["F8_SERVICE_ID"] = service_id
         env["F8_NATS_URL"] = nats_url
+        # Ensure python services flush logs promptly when stdout is piped.
+        env.setdefault("PYTHONUNBUFFERED", "1")
+        env.setdefault("PYTHONIOENCODING", "utf-8")
 
         workdir = Path(getattr(launch, "workdir", "./") or "./").expanduser()
         if not workdir.is_absolute():
@@ -83,8 +123,15 @@ class ServiceProcessManager:
             cmd,
             cwd=str(workdir),
             env=env,
-            stdout=None,
-            stderr=None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
         )
         self._procs[service_id] = p
-
+        try:
+            if on_output is not None:
+                on_output(service_id, f"[proc] started pid={getattr(p, 'pid', '?')} cmd={' '.join(cmd)}\n")
+        except Exception:
+            pass
+        self._start_reader(service_id=service_id, proc=p, on_output=on_output)

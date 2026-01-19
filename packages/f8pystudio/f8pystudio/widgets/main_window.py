@@ -2,15 +2,21 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Iterable
+from typing import Any, Iterable
 
 from qtpy import QtCore, QtWidgets
+
+from f8pysdk import F8OperatorSpec
 
 from ..nodegraph import F8StudioGraph
 from ..nodegraph.session import last_session_path
 from ..nodegraph.runtime_compiler import compile_runtime_graphs_from_studio
+from ..studio_executor import StudioExecutor
+from ..studio_runtime import StudioRuntime, StudioRuntimeConfig
+from ..service_host.service_host_registry import SERVICE_CLASS as STUDIO_SERVICE_CLASS
 from .node_property_widgets import F8StudioPropertiesBinWidget
 from .palette_widget import F8StudioNodesPaletteWidget
+from .service_log_widget import ServiceLogDock
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +41,21 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         self._setup_docks()
         self._setup_menu()
 
+        self._runtime = StudioRuntime(StudioRuntimeConfig(), parent=self)
+        self._runtime.state_updated.connect(self._on_runtime_state_updated)  # type: ignore[attr-defined]
+        self._executor = StudioExecutor(studio_graph=self.studio_graph, runtime=self._runtime, parent=self)
+        self._runtime.data_updated.connect(self._executor.on_data_updated)  # type: ignore[attr-defined]
+        self._runtime.service_output.connect(self._log_dock.append)  # type: ignore[attr-defined]
+        self._runtime.log.connect(lambda s: self._log_dock.append("studio", str(s) + "\n"))  # type: ignore[attr-defined]
+        self._runtime.start()
+        self._applying_runtime_state = False
+        self.studio_graph.property_changed.connect(self._on_ui_property_changed)  # type: ignore[attr-defined]
+
+        self._refresh_timer = QtCore.QTimer(self)
+        self._refresh_timer.setInterval(100)
+        self._refresh_timer.timeout.connect(self._executor.tick)  # type: ignore[attr-defined]
+        self._refresh_timer.start()
+
         QtCore.QTimer.singleShot(0, self._auto_load_session)
         QtWidgets.QApplication.instance().aboutToQuit.connect(self._auto_save_session)  # type: ignore[attr-defined]
 
@@ -43,6 +64,9 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         prop_dock = QtWidgets.QDockWidget("Properties", self)
         prop_dock.setWidget(prop_editor)
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, prop_dock)
+
+        self._log_dock = ServiceLogDock(self)
+        self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self._log_dock)
 
         palette = F8StudioNodesPaletteWidget(node_graph=self.studio_graph)
         palette_dock = QtWidgets.QDockWidget("Nodes Palette", self)
@@ -69,8 +93,17 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         compile_action.triggered.connect(self._compile_runtime_action)  # type: ignore[attr-defined]
         menu.addAction(compile_action)
 
+        deploy_action = QtWidgets.QAction("Deploy + Run + Monitor", self)
+        deploy_action.setShortcut("F5")
+        deploy_action.triggered.connect(self._deploy_run_monitor_action)  # type: ignore[attr-defined]
+        menu.addAction(deploy_action)
+
     def closeEvent(self, event):
         self._auto_save_session()
+        try:
+            self._runtime.stop()
+        except Exception:
+            pass
         super().closeEvent(event)
 
     def _auto_load_session(self) -> None:
@@ -104,3 +137,56 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
             p = g.model_dump(mode="json", by_alias=True)
             print(f"\n--- serviceId={sid} ---")
             print(json.dumps(p, ensure_ascii=False, indent=2, default=str))
+
+    def _deploy_run_monitor_action(self) -> None:
+        compiled = compile_runtime_graphs_from_studio(self.studio_graph)
+        self._runtime.deploy_run_and_monitor(compiled)
+
+    def _on_runtime_state_updated(self, service_id: str, node_id: str, field: str, value: Any, ts_ms: Any) -> None:
+        """
+        Apply live state updates to the corresponding UI node property (best-effort).
+        """
+        try:
+            node = self.studio_graph.get_node_by_id(str(node_id))
+        except Exception:
+            node = None
+        if node is None:
+            return
+        try:
+            if field in node.model.properties or field in node.model.custom_properties:
+                self._applying_runtime_state = True
+                try:
+                    node.set_property(field, value, push_undo=False)
+                finally:
+                    self._applying_runtime_state = False
+        except Exception:
+            return
+
+    def _on_ui_property_changed(self, node: Any, name: str, value: Any) -> None:
+        """
+        Propagate UI state edits into the studio runtime (local service only for now).
+        """
+        if self._applying_runtime_state:
+            return
+        try:
+            spec = getattr(node, "spec", None)
+        except Exception:
+            spec = None
+        if not isinstance(spec, F8OperatorSpec):
+            return
+        if str(getattr(spec, "serviceClass", "")) != STUDIO_SERVICE_CLASS:
+            return
+        # Only state fields are propagated.
+        try:
+            state_names = {str(getattr(s, "name", "")) for s in (spec.stateFields or [])}
+        except Exception:
+            state_names = set()
+        if str(name) not in state_names:
+            return
+        try:
+            node_id = str(getattr(node, "id", "") or "")
+        except Exception:
+            node_id = ""
+        if not node_id:
+            return
+        self._runtime.set_local_state(node_id, str(name), value)

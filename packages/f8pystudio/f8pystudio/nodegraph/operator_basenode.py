@@ -222,6 +222,10 @@ class F8StudioOperatorNodeItem(AbstractNodeItem):
         super(F8StudioOperatorNodeItem, self).__init__(name, parent)
         self.setFlag(QtWidgets.QGraphicsItem.ItemSendsGeometryChanges, True)
         self.setFlag(QtWidgets.QGraphicsItem.ItemSendsScenePositionChanges, True)
+        # Operator nodes may be canvas-managed (no container). Containers bind by
+        # setting `view._container_item`; keep it always defined to avoid crashes
+        # during interactive moves before binding.
+        self._container_item = None
 
         pixmap = QtGui.QPixmap(ICON_NODE_BASE)
         if pixmap.size().height() > NodeEnum.ICON_SIZE.value:

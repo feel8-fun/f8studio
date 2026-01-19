@@ -17,6 +17,9 @@ from f8pysdk import (
 )
 from f8pysdk.nats_naming import ensure_token
 
+from ..service_host.service_host_registry import SERVICE_CLASS as STUDIO_SERVICE_CLASS
+from ..service_host.service_host_registry import STUDIO_SERVICE_ID
+
 
 def _port_kind(name: str) -> F8EdgeKindEnum | None:
     n = str(name or "")
@@ -74,6 +77,9 @@ def _runtime_service_id(node: Any) -> str:
     # Containers represent service instances themselves: their id is the serviceId.
     if isinstance(spec, F8ServiceSpec):
         return ensure_token(str(getattr(node, "id")), label="service_id")
+    # Studio operators belong to a fixed local service id.
+    if isinstance(spec, F8OperatorSpec) and str(getattr(spec, "serviceClass", "")) == STUDIO_SERVICE_CLASS:
+        return STUDIO_SERVICE_ID
     # Operators are bound to a container: svcId points at the container id.
     return ensure_token(str(getattr(node, "svcId")), label="service_id")
 
@@ -124,6 +130,23 @@ def compile_global_runtime_graph(
         add_runtime_service(c)
     for s in list(service_nodes or []):
         add_runtime_service(s)
+
+    # If the canvas contains studio operators, ensure the studio service instance exists.
+    try:
+        has_studio_ops = any(
+            isinstance(getattr(n, "spec", None), F8OperatorSpec)
+            and str(getattr(getattr(n, "spec", None), "serviceClass", "")) == STUDIO_SERVICE_CLASS
+            for n in operators
+        )
+    except Exception:
+        has_studio_ops = False
+    if has_studio_ops and STUDIO_SERVICE_ID not in runtime_services:
+        runtime_services[STUDIO_SERVICE_ID] = F8RuntimeService(
+            serviceId=STUDIO_SERVICE_ID,
+            serviceClass=STUDIO_SERVICE_CLASS,
+            label="PyStudio",
+            meta={"name": "PyStudio"},
+        )
 
     runtime_nodes: list[F8RuntimeNode] = []
     # Include containers too: containers are service instances and should be present as runtime nodes

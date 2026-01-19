@@ -107,7 +107,7 @@ class RuntimeNodeRegistry:
             raise ServiceNotRegistered(service_class)
         operators = list((self._operator_specs.get(service_class) or {}).values())
         # Lazy import to keep runtime module light by default.
-        from ..generated import F8ServiceDescribe  # type: ignore[import-not-found]
+        from .generated import F8ServiceDescribe  # type: ignore[import-not-found]
 
         return F8ServiceDescribe(service=service, operators=operators)
 

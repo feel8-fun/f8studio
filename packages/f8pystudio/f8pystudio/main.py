@@ -1,8 +1,9 @@
 import argparse
 import asyncio
 import json
-from f8pysdk import F8ServiceDescribe
-from .service_host import ServiceHostRegistry
+
+from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
+from .service_host.service_host_registry import SERVICE_CLASS, ServiceHostRegistry
 from .service_catalog import load_discovery_into_registries, ServiceCatalog
 
 
@@ -60,15 +61,23 @@ def _main() -> int:
     args = parser.parse_args()
 
     if args.describe:
-        describe = F8ServiceDescribe(
-            service=ServiceHostRegistry.instance().service_spec(),
-            operators=ServiceHostRegistry.instance().operator_specs(),
-        ).model_dump(mode="json")
+        # Ensure f8.pystudio specs are registered into the shared registry.
+        ServiceHostRegistry.instance()
+        describe = RuntimeNodeRegistry.instance().describe(SERVICE_CLASS).model_dump(mode="json")
 
         print(json.dumps(describe, ensure_ascii=False))
         raise SystemExit(0)
 
     ret = load_discovery_into_registries()
+    # Ensure pystudio internal nodes are available in the editor palette.
+    try:
+        sh = ServiceHostRegistry.instance()
+        sc = ServiceCatalog.instance()
+        sc.register_service(sh.service_spec())
+        for op in sh.operator_specs():
+            sc.register_operator(op)
+    except Exception:
+        pass
 
     # TODO: Generate renderer classes
     generated_node_cls = generate_node_classes()

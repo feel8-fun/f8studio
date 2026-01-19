@@ -289,7 +289,8 @@ def load_discovery_into_registries(*, roots: list[Path] | None = None, overwrite
         try:
             svc = catalog.register_service(
                 payload["service"],
-                service_entry_path=(Path(service_dir) / "service.yml").resolve(),
+                # Keep as directory path; launchers need the service root.
+                service_entry_path=Path(service_dir).resolve(),
             )
         except Exception as e:
             logger.warning(f"Failed to register service from {service_dir}: {e}")

@@ -79,3 +79,12 @@ class CommandableNode(Protocol):
     node_id: str
 
     async def on_command(self, name: str, args: dict[str, Any] | None = None, *, meta: dict[str, Any] | None = None) -> Any: ...
+
+
+@runtime_checkable
+class ClosableNode(Protocol):
+    """
+    Optional lifecycle capability for resources (subscriptions/tasks).
+    """
+
+    async def close(self) -> None: ...
