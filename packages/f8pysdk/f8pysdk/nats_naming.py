@@ -72,6 +72,33 @@ def cmd_subject(service_id: str, cmd: str) -> str:
     cmd = ensure_token(cmd, label="cmd")
     return f"svc.{service_id}.cmd.{cmd}"
 
+def cmd_channel_subject(service_id: str) -> str:
+    """
+    Reserved command channel for user-defined service commands.
+
+    The request payload should include a JSON envelope (reqId/call/args/meta).
+    """
+    service_id = ensure_token(service_id, label="service_id")
+    return f"svc.{service_id}.cmd"
+
+
+def svc_endpoint_subject(service_id: str, endpoint: str) -> str:
+    """
+    Built-in lifecycle/control endpoints (typically backed by NATS micro).
+    """
+    service_id = ensure_token(service_id, label="service_id")
+    endpoint = ensure_token(str(endpoint), label="endpoint")
+    return f"svc.{service_id}.{endpoint}"
+
+
+def svc_micro_name(service_id: str) -> str:
+    """
+    NATS micro service name for a service instance.
+
+    Micro service names cannot contain ".", so we use `svc_<serviceId>`.
+    """
+    return kv_bucket_for_service(ensure_token(service_id, label="service_id"))
+
 
 def new_id() -> str:
     """

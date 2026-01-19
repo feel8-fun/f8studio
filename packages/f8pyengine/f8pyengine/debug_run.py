@@ -159,6 +159,11 @@ async def _amain(argv: list[str] | None = None) -> int:
         executor = EngineExecutor(app.bus)
         binder = EngineBinder(bus=app.bus, executor=executor, service_class=service_class)
 
+        async def _on_lifecycle(active: bool, _meta: dict[str, object]) -> None:
+            await executor.set_active(active)
+
+        app.bus.add_lifecycle_listener(_on_lifecycle)
+
         await app.start()
         await app.bus.set_rungraph(graph)
 

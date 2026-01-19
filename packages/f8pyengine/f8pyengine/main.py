@@ -48,6 +48,11 @@ async def _run_service(*, service_id: str, nats_url: str) -> None:
     executor = EngineExecutor(app.bus)
     _binder = EngineBinder(bus=app.bus, executor=executor, service_class=service_class)
 
+    async def _on_lifecycle(active: bool, _meta: dict[str, object]) -> None:
+        await executor.set_active(active)
+
+    app.bus.add_lifecycle_listener(_on_lifecycle)
+
     await app.start()
 
     # Optional demo: 10 fps tick drives a 1 Hz sine, printed by a sink node.

@@ -11,10 +11,13 @@ from f8pysdk import (
     F8EdgeStrategyEnum,
     F8OperatorSpec,
     F8ServiceSpec,
+    F8StateAccess,
+    F8StateSpec,
     F8RuntimeGraph,
     F8RuntimeNode,
     F8RuntimeService,
 )
+from f8pysdk.schema_helpers import boolean_schema
 from f8pysdk.nats_naming import ensure_token
 
 from ..service_host.service_host_registry import SERVICE_CLASS as STUDIO_SERVICE_CLASS
@@ -182,6 +185,25 @@ def compile_global_runtime_graph(
             except Exception:
                 continue
 
+        state_fields = list(getattr(spec, "stateFields", None) or [])
+        if isinstance(spec, F8ServiceSpec):
+            # Runtime-level lifecycle state (service-scoped), persisted in KV by the runtime.
+            try:
+                has_active = any(str(getattr(sf, "name", "") or "") == "active" for sf in state_fields)
+            except Exception:
+                has_active = False
+            if not has_active:
+                state_fields.append(
+                    F8StateSpec(
+                        name="active",
+                        label="Active",
+                        description="Service lifecycle state (activate/deactivate).",
+                        valueSchema=boolean_schema(default=True),
+                        access=F8StateAccess.rw,
+                        showOnNode=True,
+                    )
+                )
+
         runtime_nodes.append(
             F8RuntimeNode(
                 nodeId=node_id,
@@ -192,7 +214,7 @@ def compile_global_runtime_graph(
                 execOutPorts=[str(p) for p in list(getattr(spec, "execOutPorts", None) or [])],
                 dataInPorts=list(getattr(spec, "dataInPorts", None) or []),
                 dataOutPorts=list(getattr(spec, "dataOutPorts", None) or []),
-                stateFields=list(getattr(spec, "stateFields", None) or []),
+                stateFields=state_fields,
                 stateValues=state_values or None,
             )
         )

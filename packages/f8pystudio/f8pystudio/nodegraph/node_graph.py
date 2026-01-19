@@ -571,7 +571,9 @@ class F8StudioGraph(NodeGraph):
         # Rebind operators based on intersecting container geometry.
         for op in operators:
             if op.spec.serviceClass == _CANVAS_SERVICE_CLASS_:
-                op.svcId = None  # type: ignore[attr-defined]
+                # Studio (editor-local) operators belong to the built-in PyStudio service.
+                # They are not bound to a container instance, but still need a stable svcId.
+                op.svcId = STUDIO_SERVICE_ID  # type: ignore[attr-defined]
                 continue
 
             container = self._container_at_node(op)

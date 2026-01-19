@@ -39,6 +39,23 @@ class NatsTransport:
     def is_connected(self) -> bool:
         return self._nc is not None
 
+    @property
+    def raw_client(self) -> Any | None:
+        """
+        Underlying nats.py client (if connected).
+        """
+        return self._nc
+
+    async def require_client(self) -> Any:
+        """
+        Return connected nats.py client (connects if needed).
+        """
+        if self._nc is None:
+            await self.connect()
+        if self._nc is None:
+            raise RuntimeError("NATS not connected")
+        return self._nc
+
     async def connect(self) -> None:
         async with self._lock:
             if self._nc is not None:
@@ -106,6 +123,23 @@ class NatsTransport:
             return
         await self._nc.publish(str(subject), bytes(payload))
 
+    async def request(self, subject: str, payload: bytes, *, timeout: float = 1.0) -> bytes | None:
+        """
+        Request/reply helper (core NATS).
+        """
+        if self._nc is None:
+            await self.connect()
+        if self._nc is None:
+            return None
+        try:
+            msg = await self._nc.request(str(subject), bytes(payload), timeout=float(timeout))
+        except Exception:
+            return None
+        try:
+            return bytes(getattr(msg, "data", b"") or b"")
+        except Exception:
+            return None
+
     async def subscribe(
         self,
         subject: str,
@@ -123,6 +157,33 @@ class NatsTransport:
                 return
             try:
                 await cb(str(getattr(msg, "subject", subject)), bytes(getattr(msg, "data", b"") or b""))
+            except Exception:
+                return
+
+        sub = await self._nc.subscribe(str(subject), queue=str(queue) if queue else None, cb=_handler)
+        self._subs.append(sub)
+        return sub
+
+    async def subscribe_msg(
+        self,
+        subject: str,
+        *,
+        queue: str | None = None,
+        cb: Callable[[Any], Awaitable[None]] | None = None,
+    ) -> Any:
+        """
+        Subscribe with raw nats.py message objects (needed for request/reply).
+        """
+        if self._nc is None:
+            await self.connect()
+        if self._nc is None:
+            raise RuntimeError("NATS not connected")
+
+        async def _handler(msg: Any) -> None:
+            if cb is None:
+                return
+            try:
+                await cb(msg)
             except Exception:
                 return
 

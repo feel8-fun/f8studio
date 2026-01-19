@@ -11,7 +11,7 @@ from nats.micro import ServiceConfig, add_service  # type: ignore[import-not-fou
 from qtpy import QtCore
 
 from f8pysdk import F8Edge, F8EdgeKindEnum, F8EdgeStrategyEnum, F8RuntimeGraph, F8RuntimeNode
-from f8pysdk.nats_naming import ensure_token, kv_bucket_for_service, kv_key_rungraph
+from f8pysdk.nats_naming import ensure_token, kv_bucket_for_service, kv_key_rungraph, new_id, svc_endpoint_subject
 from f8pysdk.nats_transport import NatsTransport, NatsTransportConfig
 from f8pysdk.runtime_node import RuntimeNode
 from f8pysdk.service_bus import ServiceBus, ServiceBusConfig
@@ -20,7 +20,7 @@ from .service_process_manager import ServiceProcessConfig, ServiceProcessManager
 from .service_host.service_host_registry import SERVICE_CLASS, STUDIO_SERVICE_ID
 
 
-_STUDIO_MICRO_SERVICE_NAME = "f8.pystudio"
+_STUDIO_MICRO_SERVICE_NAME = "f8_pystudio"
 _STUDIO_MICRO_SERVICE_VERSION = "0.0.1"
 _MONITOR_NODE_ID = "monitor"
 
@@ -137,6 +137,8 @@ class StudioRuntime(QtCore.QObject):
         self._cfg = config
         self._async = _AsyncThread()
         self._proc_mgr = ServiceProcessManager()
+        self._managed_service_ids: set[str] = set()
+        self._managed_active: bool = True
 
         self._bus: ServiceBus | None = None
         self._nc: Any = None
@@ -146,6 +148,26 @@ class StudioRuntime(QtCore.QObject):
     @property
     def studio_service_id(self) -> str:
         return ensure_token(self._cfg.studio_service_id, label="studio_service_id")
+
+    @property
+    def managed_active(self) -> bool:
+        return bool(self._managed_active)
+
+    @QtCore.Slot(bool)
+    def set_managed_active(self, active: bool) -> None:
+        """
+        Activate/deactivate all managed service instances (via command channel).
+
+        This is the lifecycle control described in `docs/design/pysdk-runtime.md`.
+        """
+        try:
+            self._managed_active = bool(active)
+        except Exception:
+            self._managed_active = True
+        try:
+            self._async.submit(self._set_managed_active_async(bool(self._managed_active)))
+        except Exception:
+            return
 
     def start(self) -> None:
         self._async.start()
@@ -175,20 +197,25 @@ class StudioRuntime(QtCore.QObject):
         and installs a monitoring graph into the studio bus.
         """
         # 1) start processes (sync)
+        managed: set[str] = set()
         for svc in list(compiled.global_graph.services or []):
             try:
                 sid = ensure_token(str(svc.serviceId), label="service_id")
                 if sid == self.studio_service_id or str(svc.serviceClass) == SERVICE_CLASS:
                     continue
+                managed.add(sid)
                 self._proc_mgr.start(
                     ServiceProcessConfig(service_class=str(svc.serviceClass), service_id=sid, nats_url=self._cfg.nats_url),
                     on_output=lambda _sid, line, _sid2=sid: self.service_output.emit(_sid2, str(line)),
                 )
             except Exception as exc:
                 self.log.emit(f"start service failed: {exc}")
+        self._managed_service_ids = managed
 
         # 2) deploy + install monitoring (async)
         self._async.submit(self._deploy_and_monitor_async(compiled))
+        # Deploy implies global active by default.
+        self.set_managed_active(True)
 
     def set_local_state(self, node_id: str, field: str, value: Any) -> None:
         """
@@ -273,6 +300,12 @@ class StudioRuntime(QtCore.QObject):
             await self._bus.start()
         except Exception as exc:
             self.log.emit(f"studio bus start failed: {exc}")
+
+        # Re-apply current desired lifecycle to any already-known managed services.
+        try:
+            await self._set_managed_active_async(bool(self._managed_active))
+        except Exception:
+            pass
 
     async def _stop_async(self) -> None:
         try:
@@ -410,3 +443,54 @@ class StudioRuntime(QtCore.QObject):
             self._async.submit(_do())
         except Exception:
             return
+
+    async def _ensure_nc(self) -> Any | None:
+        """
+        Ensure a NATS connection exists for command channel requests.
+        """
+        if self._nc is not None:
+            return self._nc
+        nats_url = str(self._cfg.nats_url).strip() or "nats://127.0.0.1:4222"
+        try:
+            self._nc = await nats.connect(servers=[nats_url], connect_timeout=2)
+        except Exception:
+            self._nc = None
+        return self._nc
+
+    async def _set_managed_active_async(self, active: bool) -> None:
+        nc = await self._ensure_nc()
+        if nc is None:
+            return
+        service_ids = sorted({sid for sid in self._managed_service_ids if sid and sid != self.studio_service_id})
+        if not service_ids:
+            return
+
+        cmd = "activate" if active else "deactivate"
+        payload = json.dumps(
+            {"reqId": new_id(), "args": {"active": bool(active)}, "meta": {"actor": "studio", "cmd": cmd}},
+            ensure_ascii=False,
+        ).encode("utf-8")
+
+        for sid in service_ids:
+            subject = svc_endpoint_subject(sid, cmd)
+            ok = False
+            for _ in range(3):
+                try:
+                    msg = await nc.request(subject, payload, timeout=0.5)
+                    data = bytes(getattr(msg, "data", b"") or b"")
+                    if data:
+                        try:
+                            resp = json.loads(data.decode("utf-8"))
+                        except Exception:
+                            resp = {}
+                        if isinstance(resp, dict) and resp.get("ok") is True:
+                            ok = True
+                            break
+                except Exception:
+                    await asyncio.sleep(0.2)
+                    continue
+            if not ok:
+                try:
+                    self.log.emit(f"lifecycle {cmd} failed serviceId={sid}")
+                except Exception:
+                    pass

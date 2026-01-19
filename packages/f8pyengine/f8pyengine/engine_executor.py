@@ -59,6 +59,7 @@ class EngineExecutor:
     def __init__(self, runtime: ServiceBus) -> None:
         self._runtime = runtime
         self._service_id = ensure_token(runtime.service_id, label="service_id")
+        self._active = True
 
         self._graph: F8RuntimeGraph | None = None
         self._nodes: dict[str, Any] = {}
@@ -69,6 +70,32 @@ class EngineExecutor:
     @property
     def service_id(self) -> str:
         return self._service_id
+
+    @property
+    def active(self) -> bool:
+        return bool(self._active)
+
+    async def set_active(self, active: bool) -> None:
+        """
+        Activate/deactivate exec processing.
+
+        When inactive:
+        - entrypoint is stopped (best-effort)
+        - new exec triggers are ignored
+        """
+        try:
+            active = bool(active)
+        except Exception:
+            active = True
+        if active == self._active:
+            return
+        self._active = active
+        if not active:
+            await self.stop_entrypoint()
+            return
+        graph = self._graph
+        if graph is not None:
+            await self._restart_entrypoint_if_needed(graph)
 
     # ---- node registry --------------------------------------------------
     def register_node(self, node: Any) -> None:
@@ -83,7 +110,8 @@ class EngineExecutor:
     async def apply_rungraph(self, graph: F8RuntimeGraph) -> None:
         self._graph = graph
         self._rebuild_exec_routes(graph)
-        await self._restart_entrypoint_if_needed(graph)
+        if self._active:
+            await self._restart_entrypoint_if_needed(graph)
 
     def _rebuild_exec_routes(self, graph: F8RuntimeGraph) -> None:
         out_map: dict[tuple[str, str], list[tuple[str, str]]] = {}
@@ -128,6 +156,8 @@ class EngineExecutor:
     # ---- source lifecycle ----------------------------------------------
     async def start_entrypoint(self, node_id: str) -> None:
         node_id = ensure_token(node_id, label="node_id")
+        if not self._active:
+            return
         node = self._nodes.get(node_id)
         if node is None:
             raise KeyError(f"entrypoint node not registered: {node_id}")
@@ -159,6 +189,8 @@ class EngineExecutor:
 
     # ---- triggering -----------------------------------------------------
     async def run_once(self, *, max_steps: int = 1024) -> None:
+        if not self._active:
+            return
         graph = self._graph
         if graph is None:
             raise RuntimeError("no graph applied")
@@ -171,6 +203,8 @@ class EngineExecutor:
         """
         Inject an exec trigger from (node_id, out_port) and propagate intra-service exec edges.
         """
+        if not self._active:
+            return
         node_id = ensure_token(node_id, label="node_id")
         out_port = str(out_port)
 

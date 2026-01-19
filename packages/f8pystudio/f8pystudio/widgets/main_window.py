@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Any, Iterable
 
-from qtpy import QtCore, QtWidgets
+from qtpy import QtCore, QtGui, QtWidgets
 
 from f8pysdk import F8OperatorSpec
 
@@ -40,6 +40,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
 
         self._setup_docks()
         self._setup_menu()
+        self._setup_toolbar()
 
         self._runtime = StudioRuntime(StudioRuntimeConfig(), parent=self)
         self._runtime.state_updated.connect(self._on_runtime_state_updated)  # type: ignore[attr-defined]
@@ -93,10 +94,49 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         compile_action.triggered.connect(self._compile_runtime_action)  # type: ignore[attr-defined]
         menu.addAction(compile_action)
 
-        deploy_action = QtWidgets.QAction("Deploy + Run + Monitor", self)
-        deploy_action.setShortcut("F5")
-        deploy_action.triggered.connect(self._deploy_run_monitor_action)  # type: ignore[attr-defined]
-        menu.addAction(deploy_action)
+        self._deploy_action = QtGui.QAction("Deploy + Run + Monitor", self)
+        self._deploy_action.setShortcut("F5")
+        self._deploy_action.triggered.connect(self._deploy_run_monitor_action)  # type: ignore[attr-defined]
+        menu.addAction(self._deploy_action)
+
+    def _setup_toolbar(self) -> None:
+        tb = self.addToolBar("Run")
+        tb.setMovable(False)
+        tb.setToolButtonStyle(QtCore.Qt.ToolButtonIconOnly)
+
+        # Icon button for Deploy + Run + Monitor (F5).
+        deploy_icon = self.style().standardIcon(QtWidgets.QStyle.SP_MediaPlay)
+        self._deploy_action.setIcon(deploy_icon)
+        self._deploy_action.setToolTip("Deploy + Run + Monitor (F5)")
+        tb.addAction(self._deploy_action)
+
+        tb.addSeparator()
+
+        # Global active/deactive toggle.
+        self._active_toggle = QtWidgets.QCheckBox("Services Active", self)
+        self._active_toggle.setChecked(True)
+        self._active_toggle.setToolTip("Activate/deactivate all managed services (lifecycle control).")
+        self._active_toggle.toggled.connect(self._set_global_active)  # type: ignore[attr-defined]
+
+        spacer = QtWidgets.QWidget(self)
+        spacer.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+        tb.addWidget(spacer)
+        tb.addWidget(self._active_toggle)
+
+    def _set_global_active(self, active: bool) -> None:
+        """
+        Global active/deactive for managed services (lifecycle control).
+        """
+        try:
+            active = bool(active)
+        except Exception:
+            active = True
+
+        try:
+            self._runtime.set_managed_active(active)
+        except Exception:
+            pass
+        # Note: studio UI ticking is independent; service lifecycle is remote.
 
     def closeEvent(self, event):
         self._auto_save_session()
@@ -139,6 +179,12 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
             print(json.dumps(p, ensure_ascii=False, indent=2, default=str))
 
     def _deploy_run_monitor_action(self) -> None:
+        # Deploy implies global active by default.
+        try:
+            if hasattr(self, "_active_toggle") and not self._active_toggle.isChecked():
+                self._active_toggle.setChecked(True)
+        except Exception:
+            pass
         compiled = compile_runtime_graphs_from_studio(self.studio_graph)
         self._runtime.deploy_run_and_monitor(compiled)
 
