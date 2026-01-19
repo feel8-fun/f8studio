@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from f8pysdk import F8RuntimeGraph
+from f8pysdk.capabilities import ExecutableNode
 from f8pysdk.nats_naming import ensure_token
 from f8pysdk.service_bus import ServiceBus
 
@@ -62,7 +63,7 @@ class EngineBinder:
             node = self.bus.get_node(node_id)
             if node is None:
                 continue
-            if not hasattr(node, "on_exec"):
+            if not isinstance(node, ExecutableNode):
                 # The rungraph declares exec ports but the runtime node does not implement exec.
                 # Keep the bus registration (state/data still work), but skip executor binding.
                 print(f"engine_binder: skip node without on_exec: {node_id}")

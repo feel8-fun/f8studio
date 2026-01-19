@@ -3,31 +3,20 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any
 
 from f8pysdk import F8EdgeKindEnum, F8RuntimeGraph
+from f8pysdk.capabilities import EntrypointNode, ExecutableNode
 from f8pysdk.nats_naming import ensure_token
 from f8pysdk.service_bus import ServiceBus
 
 
-class ExecNodeLike(Protocol):
-    node_id: str
-
-    async def on_exec(self, ctx_id: str | int, in_port: str | None = None) -> list[str]: ...
-
-
-class SourceNodeLike(ExecNodeLike, Protocol):
-    async def start_source(self, ctx: "SourceContext") -> None: ...
-
-    async def stop_source(self) -> None: ...
-
-
 @dataclass
-class SourceContext:
+class EntrypointContext:
     """
-    Engine-managed context for a source node (timer/event based).
+    Engine-managed context for an entrypoint node (timer/event based).
 
-    A source node uses this to:
+    An entrypoint node uses this to:
     - spawn cancellable tasks
     - emit exec triggers into the engine
     """
@@ -64,7 +53,7 @@ class EngineExecutor:
     Constraints:
     - Exec edges are strictly intra-process: only when `fromServiceId == toServiceId == runtime.service_id`.
     - Cross-process "triggering" must be modeled via data/state edges and handled in nodes.
-    - Exactly one source node is allowed per graph activation.
+    - Exactly one entrypoint node is allowed per graph activation.
     """
 
     def __init__(self, runtime: ServiceBus) -> None:
@@ -75,7 +64,7 @@ class EngineExecutor:
         self._nodes: dict[str, Any] = {}
 
         self._exec_out: dict[tuple[str, str], list[tuple[str, str]]] = {}
-        self._source_ctx: SourceContext | None = None
+        self._entrypoint_ctx: EntrypointContext | None = None
 
     @property
     def service_id(self) -> str:
@@ -94,7 +83,7 @@ class EngineExecutor:
     async def apply_rungraph(self, graph: F8RuntimeGraph) -> None:
         self._graph = graph
         self._rebuild_exec_routes(graph)
-        await self._restart_source_if_needed(graph)
+        await self._restart_entrypoint_if_needed(graph)
 
     def _rebuild_exec_routes(self, graph: F8RuntimeGraph) -> None:
         out_map: dict[tuple[str, str], list[tuple[str, str]]] = {}
@@ -110,8 +99,8 @@ class EngineExecutor:
             )
         self._exec_out = out_map
 
-    def _source_node_id(self, graph: F8RuntimeGraph) -> str | None:
-        source_ids: list[str] = []
+    def _entrypoint_node_id(self, graph: F8RuntimeGraph) -> str | None:
+        entrypoint_ids: list[str] = []
         for n in graph.nodes:
             try:
                 node_id = ensure_token(n.nodeId, label="nodeId")
@@ -120,49 +109,49 @@ class EngineExecutor:
             in_n = len(list(getattr(n, "execInPorts", None) or []))
             out_n = len(list(getattr(n, "execOutPorts", None) or []))
             if in_n == 0 and out_n > 0:
-                source_ids.append(node_id)
-        if not source_ids:
+                entrypoint_ids.append(node_id)
+        if not entrypoint_ids:
             return None
-        if len(source_ids) > 1:
-            raise ValueError(f"graph has multiple exec sources: {source_ids}")
-        return source_ids[0]
+        if len(entrypoint_ids) > 1:
+            raise ValueError(f"graph has multiple exec entrypoints: {entrypoint_ids}")
+        return entrypoint_ids[0]
 
-    async def _restart_source_if_needed(self, graph: F8RuntimeGraph) -> None:
-        new_source = self._source_node_id(graph)
-        cur = getattr(self._source_ctx, "node_id", None) if self._source_ctx else None
+    async def _restart_entrypoint_if_needed(self, graph: F8RuntimeGraph) -> None:
+        new_source = self._entrypoint_node_id(graph)
+        cur = getattr(self._entrypoint_ctx, "node_id", None) if self._entrypoint_ctx else None
         if new_source == cur:
             return
-        await self.stop_source()
+        await self.stop_entrypoint()
         if new_source:
-            await self.start_source(new_source)
+            await self.start_entrypoint(new_source)
 
     # ---- source lifecycle ----------------------------------------------
-    async def start_source(self, node_id: str) -> None:
+    async def start_entrypoint(self, node_id: str) -> None:
         node_id = ensure_token(node_id, label="node_id")
         node = self._nodes.get(node_id)
         if node is None:
-            raise KeyError(f"source node not registered: {node_id}")
-        if not hasattr(node, "start_source"):
+            raise KeyError(f"entrypoint node not registered: {node_id}")
+        if not isinstance(node, EntrypointNode):
             return
-        ctx = SourceContext(executor=self, node_id=node_id)
-        self._source_ctx = ctx
+        ctx = EntrypointContext(executor=self, node_id=node_id)
+        self._entrypoint_ctx = ctx
         try:
-            await node.start_source(ctx)  # type: ignore[misc]
+            await node.start_entrypoint(ctx)  # type: ignore[misc]
         except Exception:
             await ctx.cancel()
-            self._source_ctx = None
+            self._entrypoint_ctx = None
             raise
 
-    async def stop_source(self) -> None:
-        ctx = self._source_ctx
-        self._source_ctx = None
+    async def stop_entrypoint(self) -> None:
+        ctx = self._entrypoint_ctx
+        self._entrypoint_ctx = None
         if ctx is None:
             return
         try:
             node = self._nodes.get(ctx.node_id)
-            if node is not None and hasattr(node, "stop_source"):
+            if node is not None and isinstance(node, EntrypointNode):
                 try:
-                    await node.stop_source()  # type: ignore[misc]
+                    await node.stop_entrypoint()  # type: ignore[misc]
                 except Exception:
                     pass
         finally:
@@ -173,9 +162,9 @@ class EngineExecutor:
         graph = self._graph
         if graph is None:
             raise RuntimeError("no graph applied")
-        src = self._source_node_id(graph)
+        src = self._entrypoint_node_id(graph)
         if not src:
-            raise RuntimeError("graph has no exec source")
+            raise RuntimeError("graph has no exec entrypoint")
         await self.trigger_exec(src, "__source__", ctx_id=int(time.time() * 1000), max_steps=max_steps)
 
     async def trigger_exec(self, node_id: str, out_port: str, *, ctx_id: str | int, max_steps: int = 1024) -> None:
@@ -211,7 +200,7 @@ class EngineExecutor:
             node = self._nodes.get(to_node)
             if node is None:
                 continue
-            if not hasattr(node, "on_exec"):
+            if not isinstance(node, ExecutableNode):
                 continue
             try:
                 out_ports = await node.on_exec(ctx_id, str(in_port))  # type: ignore[misc]

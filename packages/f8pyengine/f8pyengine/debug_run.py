@@ -170,7 +170,7 @@ async def _amain(argv: list[str] | None = None) -> int:
     finally:
         if running is not None:
             try:
-                await running.executor.stop_source()
+                await running.executor.stop_entrypoint()
             except Exception:
                 pass
             try:

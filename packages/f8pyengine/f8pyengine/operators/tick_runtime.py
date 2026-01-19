@@ -7,14 +7,14 @@ from f8pysdk import F8RuntimeNode
 from f8pysdk.nats_naming import ensure_token
 from f8pysdk.runtime_node import OperatorNode
 
-from ..engine_executor import SourceContext
+from ..engine_executor import EntrypointContext
 
 
 class TickRuntimeNode(OperatorNode):
     """
     Source operator that periodically emits exec triggers.
 
-    The engine is responsible for calling `start_source/stop_source`.
+    The engine is responsible for calling `start_entrypoint/stop_entrypoint`.
     """
 
     def __init__(self, *, node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any] | None = None) -> None:
@@ -31,7 +31,7 @@ class TickRuntimeNode(OperatorNode):
     async def on_exec(self, _ctx_id: str | int, _in_port: str | None = None) -> list[str]:
         return list(self._exec_out_ports)
 
-    async def start_source(self, ctx: SourceContext) -> None:
+    async def start_entrypoint(self, ctx: EntrypointContext) -> None:
         self._stop.clear()
 
         async def _loop() -> None:
@@ -50,6 +50,6 @@ class TickRuntimeNode(OperatorNode):
 
         ctx.create_task(_loop(), name=f"tick:{self.node_id}")
 
-    async def stop_source(self) -> None:
+    async def stop_entrypoint(self) -> None:
         self._stop.set()
 

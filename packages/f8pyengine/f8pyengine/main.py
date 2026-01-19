@@ -61,7 +61,7 @@ async def _run_service(*, service_id: str, nats_url: str) -> None:
         await asyncio.Event().wait()
     finally:
         try:
-            await executor.stop_source()
+            await executor.stop_entrypoint()
         except Exception:
             pass
         await app.stop()
