@@ -5,11 +5,11 @@ from collections.abc import Callable
 from typing import Any
 
 from .generated import F8RuntimeNode
-from .runtime_node import OperatorNode, RuntimeNode, ServiceNode
+from .runtime_node import RuntimeNode, ServiceNode
 
 
-OperatorFactory = Callable[[str, F8RuntimeNode, dict[str, Any]], OperatorNode]
-ServiceFactory = Callable[[str, F8RuntimeNode, dict[str, Any]], ServiceNode]
+OperatorFactory = Callable[[str, F8RuntimeNode, dict[str, Any]], RuntimeNode]
+ServiceFactory = Callable[[str, F8RuntimeNode, dict[str, Any]], RuntimeNode]
 
 
 class RegistryError(Exception):
@@ -163,7 +163,7 @@ class RuntimeNodeRegistry:
         node_id: str,
         initial_state: dict[str, Any] | None = None,
         node: F8RuntimeNode | None = None,
-    ) -> ServiceNode:
+    ) -> RuntimeNode:
         """
         Create the service/container node for a service process.
 
@@ -208,11 +208,11 @@ class RuntimeNodeRegistry:
         if reg is None:
             if service_class not in self._by_service_service:
                 raise ServiceNotRegistered(service_class)
-            return OperatorNode(node_id=str(node_id))
+            return RuntimeNode(node_id=str(node_id))
 
         factory = reg.get(str(operator_class))
         if factory is None:
-            return OperatorNode(node_id=str(node_id))
+            return RuntimeNode(node_id=str(node_id))
         return factory(str(node_id), node, dict(initial_state or {}))
 
     def load_modules(self, modules: list[str]) -> None:

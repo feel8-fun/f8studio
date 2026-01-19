@@ -5,12 +5,12 @@ from typing import Any
 
 from f8pysdk import F8RuntimeNode
 from f8pysdk.nats_naming import ensure_token
-from f8pysdk.runtime_node import OperatorNode
+from f8pysdk.runtime_node import RuntimeNode
 
 from ..engine_executor import EntrypointContext
 
 
-class TickRuntimeNode(OperatorNode):
+class TickRuntimeNode(RuntimeNode):
     """
     Source operator that periodically emits exec triggers.
 

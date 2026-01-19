@@ -6,10 +6,10 @@ from typing import Any
 
 from f8pysdk import F8RuntimeNode
 from f8pysdk.nats_naming import ensure_token
-from f8pysdk.runtime_node import OperatorNode
+from f8pysdk.runtime_node import RuntimeNode
 
 
-class SineRuntimeNode(OperatorNode):
+class SineRuntimeNode(RuntimeNode):
     """
     Exec-driven sine source (not a graph source): on exec, emits a numeric sample.
     """
@@ -49,7 +49,7 @@ class SineRuntimeNode(OperatorNode):
         return amp_f * math.sin(2.0 * math.pi * hz_f * t)
 
 
-class PrintRuntimeNode(OperatorNode):
+class PrintRuntimeNode(RuntimeNode):
     """
     Prints incoming values.
 

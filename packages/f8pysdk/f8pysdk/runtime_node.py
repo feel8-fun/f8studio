@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from .capabilities import ExecutableNode
+from .capabilities import BusAttachableNode, ComputableNode, StatefulNode
 
 
 class _BusLike(Protocol):
@@ -17,12 +17,17 @@ class _BusLike(Protocol):
 
 
 @dataclass
-class RuntimeNode:
+class RuntimeNode(BusAttachableNode, StatefulNode, ComputableNode):
     """
     Base class for service runtime nodes.
 
     This is NOT a UI node. It's the runtime-side abstraction that receives
     inputs from intra/cross edges and emits outputs (fanout handled by runtime).
+
+    Capabilities:
+    - `BusAttachableNode` (attach to `ServiceBus`)
+    - `StatefulNode` (optional state callback)
+    - `ComputableNode` (optional pull-based compute)
     """
 
     node_id: str

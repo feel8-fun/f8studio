@@ -10,10 +10,10 @@ from typing import Any
 
 from nats.js.api import StorageType  # type: ignore[import-not-found]
 
+from .capabilities import BusAttachableNode, ComputableNode, StatefulNode
 from .generated import F8Edge, F8EdgeKindEnum, F8EdgeStrategyEnum, F8RuntimeGraph
 from .nats_naming import data_subject, ensure_token, kv_bucket_for_service, kv_key_node_state, kv_key_rungraph
 from .nats_transport import NatsTransport, NatsTransportConfig
-from .runtime_node import RuntimeNode
 
 
 def _now_ms() -> int:
@@ -88,7 +88,7 @@ class ServiceBus:
             )
         )
 
-        self._nodes: dict[str, RuntimeNode] = {}
+        self._nodes: dict[str, BusAttachableNode] = {}
         self._graph: F8RuntimeGraph | None = None
 
         self._rungraph_key = kv_key_rungraph()
@@ -127,7 +127,7 @@ class ServiceBus:
         self._rungraph_listeners.append(cb)
 
     # ---- lifecycle ------------------------------------------------------
-    def register_node(self, node: RuntimeNode) -> None:
+    def register_node(self, node: BusAttachableNode) -> None:
         node_id = ensure_token(node.node_id, label="node_id")
         self._nodes[node_id] = node
         node.attach(self)
@@ -138,7 +138,7 @@ class ServiceBus:
         for key in [k for k in self._data_inputs.keys() if k[0] == node_id]:
             self._data_inputs.pop(key, None)
 
-    def get_node(self, node_id: str) -> RuntimeNode | None:
+    def get_node(self, node_id: str) -> BusAttachableNode | None:
         """
         Return the local runtime node instance if registered.
         """
@@ -350,7 +350,8 @@ class ServiceBus:
         if node is None:
             return
         try:
-            await node.on_state(field, v, ts_ms=ts)
+            if isinstance(node, StatefulNode):
+                await node.on_state(field, v, ts_ms=ts)
         except Exception:
             return
 
@@ -595,7 +596,10 @@ class ServiceBus:
                 if not hasattr(src, "compute_output"):
                     continue
                 try:
-                    v = await src.compute_output(str(from_port), ctx_id=ctx_id)  # type: ignore[misc]
+                    if isinstance(src, ComputableNode):
+                        v = await src.compute_output(str(from_port), ctx_id=ctx_id)
+                    else:
+                        v = None
                 except Exception:
                     continue
                 if v is None:
@@ -784,7 +788,8 @@ class ServiceBus:
             if node is None:
                 continue
             try:
-                await node.on_state(local_field, v, ts_ms=ts)
+                if isinstance(node, StatefulNode):
+                    await node.on_state(local_field, v, ts_ms=ts)
             except Exception:
                 pass
             try:
