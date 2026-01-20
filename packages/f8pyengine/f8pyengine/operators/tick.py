@@ -3,11 +3,23 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from f8pysdk import F8RuntimeNode
+from f8pysdk import (
+    F8OperatorSchemaVersion,
+    F8OperatorSpec,
+    F8RuntimeNode,
+    F8StateAccess,
+    F8StateSpec,
+    integer_schema,
+)
 from f8pysdk.nats_naming import ensure_token
 from f8pysdk.runtime_node import RuntimeNode
+from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from f8pysdk.executors.exec_flow import EntrypointContext
+
+from ..constants import SERVICE_CLASS
+
+OPERATOR_CLASS = "f8.tick"
 
 
 class TickRuntimeNode(RuntimeNode):
@@ -52,4 +64,37 @@ class TickRuntimeNode(RuntimeNode):
 
     async def stop_entrypoint(self) -> None:
         self._stop.set()
+
+
+TickRuntimeNode.SPEC = F8OperatorSpec(
+    schemaVersion=F8OperatorSchemaVersion.f8operator_1,
+    serviceClass=SERVICE_CLASS,
+    operatorClass=OPERATOR_CLASS,
+    version="0.0.1",
+    label="Tick",
+    description="Source operator that generates periodic exec ticks.",
+    tags=["execution", "timer", "start", "clock", "entrypoint"],
+    stateFields=[
+        F8StateSpec(
+            name="tickMs",
+            label="Tick (ms)",
+            description="Interval in milliseconds for emitting exec ticks.",
+            valueSchema=integer_schema(default=100, minimum=1, maximum=50000),
+            access=F8StateAccess.rw,
+            showOnNode=True,
+        ),
+    ],
+    execOutPorts=["exec"],
+)
+
+
+def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
+    reg = registry or RuntimeNodeRegistry.instance()
+
+    def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
+        return TickRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
+
+    reg.register(SERVICE_CLASS, OPERATOR_CLASS, _factory, overwrite=True)
+    reg.register_operator_spec(TickRuntimeNode.SPEC, overwrite=True)
+    return reg
 

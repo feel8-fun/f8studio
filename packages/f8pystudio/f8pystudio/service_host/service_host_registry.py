@@ -5,7 +5,7 @@ from f8pysdk import F8StateAccess, F8StateSpec, integer_schema
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from .constants import SERVICE_CLASS, STUDIO_SERVICE_ID
-from ..runtime_nodes.print_node import register_print_node
+from ..operators.print import register_operator
 
 
 def register_pystudio_specs(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
@@ -45,38 +45,6 @@ def register_pystudio_specs(registry: RuntimeNodeRegistry | None = None) -> Runt
     )
 
     # debug
-    register_print_node(reg)
+    register_operator(reg)
 
     return reg
-
-
-class ServiceHostRegistry:
-    """Registry for service host specifications and operator specifications."""
-
-    def __init__(self):
-        self._registry = register_pystudio_specs()
-
-    @staticmethod
-    def instance() -> "ServiceHostRegistry":
-        # Singleton instance accessor.
-        if not hasattr(ServiceHostRegistry, "_instance"):
-            ServiceHostRegistry._instance = ServiceHostRegistry()
-        return ServiceHostRegistry._instance
-
-    @property
-    def serviceClass(self) -> str:
-        return SERVICE_CLASS
-
-    def service_spec(self) -> F8ServiceSpec:
-        spec = self._registry.service_spec(SERVICE_CLASS)
-        if spec is None:
-            raise KeyError(f"service spec not registered: {SERVICE_CLASS}")
-        return spec
-
-    def operator_specs(self) -> list[F8OperatorSpec]:
-        return list(self._registry.operator_specs(SERVICE_CLASS))
-
-    def register_operator(self, spec: F8OperatorSpec) -> None:
-        if self.serviceClass != spec.serviceClass:
-            raise ValueError("Cannot register operator spec for different service class.")
-        self._registry.register_operator_spec(spec, overwrite=True)

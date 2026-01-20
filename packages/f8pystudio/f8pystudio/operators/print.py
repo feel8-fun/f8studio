@@ -123,7 +123,7 @@ class PyStudioPrintRuntimeNode(RuntimeNode):
             await asyncio.sleep(max(0.02, float(throttle_ms) / 1000.0))
 
 
-def register_print_node(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
+def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
     """
     Register:
     - runtime factory (studio in-process)

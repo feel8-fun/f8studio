@@ -1,50 +1,28 @@
 from __future__ import annotations
 
-from typing import Any
-
 from f8pysdk import (
-    F8DataPortSpec,
-    F8OperatorSpec,
-    F8OperatorSchemaVersion,
-    F8RuntimeNode,
     F8ServiceSpec,
     F8ServiceSchemaVersion,
-    F8StateAccess,
-    F8StateSpec,
-    integer_schema,
-    number_schema,
 )
-from f8pysdk.runtime_node import RuntimeNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
-from .operators.signal_runtime import PrintRuntimeNode, SineRuntimeNode
-from .operators.tick_runtime import TickRuntimeNode
+from .constants import SERVICE_CLASS
+from .operators.signal import register_operators as register_signal_operators
+from .operators.tick import register_operator as register_tick_operator
 
 
-def register_pyengine_runtimes(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
+def register_pyengine_specs(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
     """
-    Register built-in f8.pyengine runtime node implementations into the shared registry.
+    Register f8.pyengine service + operator specs and runtime factories.
+
+    Specs live next to their runtime implementations (see `operators/*.py`).
     """
     reg = registry or RuntimeNodeRegistry.instance()
 
-    def _tick_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
-        return TickRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
-
-    def _sine_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
-        return SineRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
-
-    def _print_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
-        return PrintRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
-
-    reg.register("f8.pyengine", "f8.tick", _tick_factory, overwrite=True)
-    reg.register("f8.pyengine", "f8.sine", _sine_factory, overwrite=True)
-    reg.register("f8.pyengine", "f8.print", _print_factory, overwrite=True)
-
-    # Specs for discovery / `--describe`.
     reg.register_service_spec(
         F8ServiceSpec(
             schemaVersion=F8ServiceSchemaVersion.f8service_1,
-            serviceClass="f8.pyengine",
+            serviceClass=SERVICE_CLASS,
             version="0.0.1",
             label="PyEngine",
             description="Python-based execution engine for Feel8 operators.",
@@ -58,92 +36,11 @@ def register_pyengine_runtimes(registry: RuntimeNodeRegistry | None = None) -> R
         overwrite=True,
     )
 
-    reg.register_operator_spec(
-        F8OperatorSpec(
-            schemaVersion=F8OperatorSchemaVersion.f8operator_1,
-            serviceClass="f8.pyengine",
-            operatorClass="f8.tick",
-            version="0.0.1",
-            label="Tick",
-            description="Source operator that generates periodic exec ticks.",
-            tags=["execution", "timer", "start", "clock", "entrypoint"],
-            stateFields=[
-                F8StateSpec(
-                    name="tickMs",
-                    label="Tick (ms)",
-                    description="Interval in milliseconds for emitting exec ticks.",
-                    valueSchema=integer_schema(default=100, minimum=1, maximum=50000),
-                    access=F8StateAccess.rw,
-                    showOnNode=True,
-                ),
-            ],
-            execOutPorts=["exec"],
-        ),
-        overwrite=True,
-    )
-
-    reg.register_operator_spec(
-        F8OperatorSpec(
-            schemaVersion=F8OperatorSchemaVersion.f8operator_1,
-            serviceClass="f8.pyengine",
-            operatorClass="f8.sine",
-            version="0.0.1",
-            label="Sine",
-            description="Exec-driven sine generator (pull-based output).",
-            tags=["signal", "sin", "waveform", "generator", "oscillator"],
-            execInPorts=["exec"],
-            execOutPorts=["exec"],
-            dataOutPorts=[F8DataPortSpec(name="value", description="sine output", valueSchema=number_schema())],
-            stateFields=[
-                F8StateSpec(
-                    name="hz",
-                    label="Hz",
-                    description="Frequency in Hz.",
-                    valueSchema=number_schema(default=1.0, minimum=0.0, maximum=100.0),
-                    access=F8StateAccess.rw,
-                    showOnNode=True,
-                ),
-                F8StateSpec(
-                    name="amp",
-                    label="Amp",
-                    description="Amplitude.",
-                    valueSchema=number_schema(default=1.0, minimum=0.0, maximum=1000.0),
-                    access=F8StateAccess.rw,
-                    showOnNode=True,
-                ),
-                F8StateSpec(
-                    name="offset",
-                    label="Offset",
-                    description="Vertical offset.",
-                    valueSchema=number_schema(default=0.0, minimum=-1000.0, maximum=1000.0),
-                    access=F8StateAccess.rw,
-                    showOnNode=True,
-                ),
-                F8StateSpec(
-                    name="phase",
-                    label="Phase",
-                    description="Normalized phase (0.0 to 1.0).",
-                    valueSchema=number_schema(default=0.0, minimum=0, maximum=1),
-                    access=F8StateAccess.rw,
-                    showOnNode=True,
-                ),
-            ],
-        ),
-        overwrite=True,
-    )
-
-    reg.register_operator_spec(
-        F8OperatorSpec(
-            schemaVersion=F8OperatorSchemaVersion.f8operator_1,
-            serviceClass="f8.pyengine",
-            operatorClass="f8.print",
-            version="0.0.1",
-            label="Print",
-            description="Exec-driven printer (pulls `value` and prints).",
-            tags=["debug", "console", "print"],
-            execInPorts=["exec"],
-            dataInPorts=[F8DataPortSpec(name="value", description="value to print", valueSchema=number_schema())],
-        ),
-        overwrite=True,
-    )
+    register_tick_operator(reg)
+    register_signal_operators(reg)
     return reg
+
+
+def register_pyengine_runtimes(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
+    # Backwards compatible name.
+    return register_pyengine_specs(registry)

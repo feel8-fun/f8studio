@@ -16,7 +16,7 @@ from f8pysdk.service_app import ServiceApp, ServiceAppConfig
 
 from f8pysdk.executors.exec_flow import ExecFlowExecutor as EngineExecutor
 from f8pyengine.engine_binder import EngineBinder
-from f8pyengine.pyengine_node_registry import register_pyengine_runtimes
+from f8pyengine.pyengine_node_registry import register_pyengine_specs
 
 
 @dataclass(frozen=True)
@@ -107,7 +107,7 @@ async def _amain(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     registry = RuntimeNodeRegistry.instance()
-    register_pyengine_runtimes(registry)
+    register_pyengine_specs(registry)
     modules = [m.strip() for m in str(args.runtime_modules or "").split(",") if m.strip()]
     if modules:
         registry.load_modules(modules)

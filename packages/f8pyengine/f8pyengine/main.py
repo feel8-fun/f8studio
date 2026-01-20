@@ -24,7 +24,7 @@ from f8pysdk.service_app import ServiceApp, ServiceAppConfig
 
 from f8pysdk.executors.exec_flow import ExecFlowExecutor as EngineExecutor
 from f8pyengine.engine_binder import EngineBinder
-from f8pyengine.pyengine_node_registry import register_pyengine_runtimes
+from f8pyengine.pyengine_node_registry import register_pyengine_specs
 
 
 def _env_or(default: str, key: str) -> str:
@@ -34,7 +34,7 @@ def _env_or(default: str, key: str) -> str:
 
 async def _run_service(*, service_id: str, nats_url: str) -> None:
     registry = RuntimeNodeRegistry.instance()
-    register_pyengine_runtimes(registry)
+    register_pyengine_specs(registry)
 
     service_class = "f8.pyengine"
     app = ServiceApp(
@@ -86,7 +86,7 @@ def _main(argv: list[str] | None = None) -> int:
 
     if args.describe:
         registry = RuntimeNodeRegistry.instance()
-        register_pyengine_runtimes(registry)
+        register_pyengine_specs(registry)
         describe = registry.describe("f8.pyengine").model_dump(mode="json")
         print(json.dumps(describe, ensure_ascii=False, indent=1))
         return 0

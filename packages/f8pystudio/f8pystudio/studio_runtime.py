@@ -17,7 +17,7 @@ from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from f8pysdk.service_bus import ServiceBus, ServiceBusConfig
 from f8pysdk.service_host import ServiceHost, ServiceHostConfig
 from .nodegraph.runtime_compiler import CompiledRuntimeGraphs
-from .runtime_nodes.print_node import register_print_node, set_preview_sink
+from .operators.print import register_operator, set_preview_sink
 from .service_process_manager import ServiceProcessConfig, ServiceProcessManager
 from .service_host.service_host_registry import SERVICE_CLASS, STUDIO_SERVICE_ID
 
@@ -245,7 +245,7 @@ class StudioRuntime(QtCore.QObject):
 
         # Start studio bus.
         registry = RuntimeNodeRegistry.instance()
-        register_print_node(registry)
+        register_operator(registry)
         self._bus = ServiceBus(
             ServiceBusConfig(
                 service_id=self.studio_service_id,
