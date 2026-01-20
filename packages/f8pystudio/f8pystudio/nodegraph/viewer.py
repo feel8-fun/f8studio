@@ -40,7 +40,46 @@ class F8StudioNodeViewer(NodeViewer):
 
     def mousePressEvent(self, event):
         self.setFocus()
+        # Always reserve MMB for canvas pan, regardless of what's under cursor.
+        # NodeGraphQt disables MMB pan when clicking on nodes; we want consistent
+        # navigation behavior.
+        try:
+            if event.button() == QtCore.Qt.MiddleButton:
+                self.MMB_state = True
+                self._origin_pos = event.pos()
+                self._previous_pos = event.pos()
+                if self._search_widget.isVisible():
+                    self.tab_search_toggle()
+                event.accept()
+                return
+        except Exception:
+            pass
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        # Force MMB to pan only (no ALT+MMB zoom).
+        try:
+            if getattr(self, "MMB_state", False):
+                previous_pos = self.mapToScene(self._previous_pos)
+                current_pos = self.mapToScene(event.pos())
+                delta = previous_pos - current_pos
+                self._set_viewer_pan(delta.x(), delta.y())
+                self._previous_pos = event.pos()
+                QtWidgets.QGraphicsView.mouseMoveEvent(self, event)
+                return
+        except Exception:
+            pass
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        try:
+            if event.button() == QtCore.Qt.MiddleButton:
+                self.MMB_state = False
+                event.accept()
+                return
+        except Exception:
+            pass
+        super().mouseReleaseEvent(event)
 
     def _delete_selected_nodes(self) -> None:
         graph = self._f8_graph
