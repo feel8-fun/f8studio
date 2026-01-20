@@ -8,7 +8,7 @@ import os
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from f8pysdk.service_app import ServiceApp, ServiceAppConfig
 
-from f8pysdk.executors.exec_flow import ExecFlowExecutor as EngineExecutor
+from f8pysdk.executors.exec_flow import ExecFlowExecutor
 from f8pyengine.engine_binder import EngineBinder
 from f8pyengine.pyengine_node_registry import register_pyengine_specs
 
@@ -31,7 +31,7 @@ async def _run_service(*, service_id: str, nats_url: str) -> None:
         ),
         registry=registry,
     )
-    executor = EngineExecutor(app.bus)
+    executor = ExecFlowExecutor(app.bus)
     _binder = EngineBinder(bus=app.bus, executor=executor, service_class=service_class)
 
     async def _on_lifecycle(active: bool, _meta: dict[str, object]) -> None:

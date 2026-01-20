@@ -40,7 +40,7 @@ class TickRuntimeNode(RuntimeNode):
         self._exec_out_ports = list(node.execOutPorts or []) or ["exec"]
         self._stop = asyncio.Event()
 
-    async def on_exec(self, _ctx_id: str | int, _in_port: str | None = None) -> list[str]:
+    async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
         return list(self._exec_out_ports)
 
     async def start_entrypoint(self, ctx: EntrypointContext) -> None:
@@ -56,9 +56,9 @@ class TickRuntimeNode(RuntimeNode):
                 except Exception:
                     ms = 100
                 await asyncio.sleep(float(ms) / 1000.0)
-                ctx_id = int(asyncio.get_running_loop().time() * 1000)
+                exec_id = int(asyncio.get_running_loop().time() * 1000)
                 for p in list(self._exec_out_ports):
-                    await ctx.emit_exec(str(p), ctx_id=ctx_id)
+                    await ctx.emit_exec(str(p), exec_id=exec_id)
 
         ctx.create_task(_loop(), name=f"tick:{self.node_id}")
 
@@ -97,4 +97,3 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
     reg.register(SERVICE_CLASS, OPERATOR_CLASS, _factory, overwrite=True)
     reg.register_operator_spec(TickRuntimeNode.SPEC, overwrite=True)
     return reg
-

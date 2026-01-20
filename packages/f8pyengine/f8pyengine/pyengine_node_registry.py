@@ -7,6 +7,7 @@ from f8pysdk import (
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from .constants import SERVICE_CLASS
+from .operators.sequence import register_operator as register_sequence_operator
 from .operators.signal import register_operators as register_signal_operators
 from .operators.tick import register_operator as register_tick_operator
 
@@ -37,6 +38,7 @@ def register_pyengine_specs(registry: RuntimeNodeRegistry | None = None) -> Runt
     )
 
     register_tick_operator(reg)
+    register_sequence_operator(reg)
     register_signal_operators(reg)
     return reg
 

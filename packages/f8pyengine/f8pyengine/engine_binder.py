@@ -7,13 +7,13 @@ from f8pysdk.capabilities import ExecutableNode
 from f8pysdk.nats_naming import ensure_token
 from f8pysdk.service_bus import ServiceBus
 
-from f8pysdk.executors.exec_flow import ExecFlowExecutor as EngineExecutor
+from f8pysdk.executors.exec_flow import ExecFlowExecutor
 
 
 @dataclass
 class EngineBinder:
     """
-    Bind a `ServiceBus` (all nodes) to an `EngineExecutor` (exec-capable nodes only).
+    Bind a `ServiceBus` (all nodes) to an `ExecFlowExecutor` (exec-capable nodes only).
 
     Node selection rule (as requested):
     - A node is considered "exec-capable" iff it declares at least one exec port
@@ -24,7 +24,7 @@ class EngineBinder:
     """
 
     bus: ServiceBus
-    executor: EngineExecutor
+    executor: ExecFlowExecutor
     service_class: str
     _exec_node_ids: set[str] = field(default_factory=set, init=False, repr=False)
 

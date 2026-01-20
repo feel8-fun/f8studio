@@ -14,7 +14,7 @@ from f8pysdk.nats_naming import ensure_token
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from f8pysdk.service_app import ServiceApp, ServiceAppConfig
 
-from f8pysdk.executors.exec_flow import ExecFlowExecutor as EngineExecutor
+from f8pysdk.executors.exec_flow import ExecFlowExecutor
 from f8pyengine.engine_binder import EngineBinder
 from f8pyengine.pyengine_node_registry import register_pyengine_specs
 
@@ -24,7 +24,7 @@ class _RunningService:
     graph_path: Path
     graph: F8RuntimeGraph
     app: ServiceApp
-    executor: EngineExecutor
+    executor: ExecFlowExecutor
     binder: EngineBinder
 
 
@@ -156,7 +156,7 @@ async def _amain(argv: list[str] | None = None) -> int:
             ),
             registry=registry,
         )
-        executor = EngineExecutor(app.bus)
+        executor = ExecFlowExecutor(app.bus)
         binder = EngineBinder(bus=app.bus, executor=executor, service_class=service_class)
 
         async def _on_lifecycle(active: bool, _meta: dict[str, object]) -> None:

@@ -39,7 +39,7 @@ class SineRuntimeNode(RuntimeNode):
         self._initial_state = dict(initial_state or {})
         self._exec_out_ports = list(getattr(node, "execOutPorts", None) or [])
 
-    async def on_exec(self, _ctx_id: str | int, _in_port: str | None = None) -> list[str]:
+    async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
         return list(self._exec_out_ports)
 
     async def compute_output(self, port: str, ctx_id: str | int | None = None) -> Any:
@@ -94,9 +94,9 @@ class PrintRuntimeNode(RuntimeNode):
         )
         self._initial_state = dict(initial_state or {})
 
-    async def on_exec(self, ctx_id: str | int, _in_port: str | None = None) -> list[str]:
-        v = await self.pull("value", ctx_id=ctx_id)
-        print(f"[{self.node_id}] ctx={ctx_id} value={v}")
+    async def on_exec(self, exec_id: str | int, _in_port: str | None = None) -> list[str]:
+        v = await self.pull("value", ctx_id=exec_id)
+        print(f"[{self.node_id}] exec={exec_id} value={v}")
         return []
 
 
@@ -175,4 +175,3 @@ def register_operators(registry: RuntimeNodeRegistry | None = None) -> RuntimeNo
     reg.register_operator_spec(SineRuntimeNode.SPEC, overwrite=True)
     reg.register_operator_spec(PrintRuntimeNode.SPEC, overwrite=True)
     return reg
-

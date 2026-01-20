@@ -31,8 +31,13 @@ class EntrypointContext:
         task.add_done_callback(lambda t: self._tasks.discard(t))
         return task
 
-    async def emit_exec(self, out_port: str, *, ctx_id: str | int) -> None:
-        await self.executor.trigger_exec(self.node_id, out_port, ctx_id=ctx_id)
+    async def emit_exec(self, out_port: str, *, exec_id: str | int) -> None:
+        """
+        Emit an exec trigger out of this entrypoint node.
+
+        `exec_id` is a per-trigger execution id (used as an evaluation/cache key across a single propagation).
+        """
+        await self.executor.trigger_exec(self.node_id, out_port, exec_id=exec_id)
 
     async def cancel(self) -> None:
         for t in list(self._tasks):
@@ -51,20 +56,22 @@ class ExecFlowExecutor:
     In-process executor for exec edges.
 
     Constraints:
-    - Exec edges are strictly intra-process: only when `fromServiceId == toServiceId == runtime.service_id`.
+    - Exec edges are strictly intra-process: only when `fromServiceId == toServiceId == bus.service_id`.
     - Cross-process "triggering" must be modeled via data/state edges and handled in nodes.
     - Exactly one entrypoint node is allowed per graph activation.
+    - Exec ports are single-connection (UE-style): each exec in/out port can connect to at most 1 edge.
+    - Scheduling is depth-first (LIFO stack) to keep branching order predictable (e.g., Sequence).
     """
 
-    def __init__(self, runtime: ServiceBus) -> None:
-        self._runtime = runtime
-        self._service_id = ensure_token(runtime.service_id, label="service_id")
+    def __init__(self, bus: ServiceBus) -> None:
+        self._bus = bus
+        self._service_id = ensure_token(bus.service_id, label="service_id")
         self._active = True
 
         self._graph: F8RuntimeGraph | None = None
         self._nodes: dict[str, Any] = {}
 
-        self._exec_out: dict[tuple[str, str], list[tuple[str, str]]] = {}
+        self._exec_out: dict[tuple[str, str], tuple[str, str]] = {}
         self._entrypoint_ctx: EntrypointContext | None = None
 
     @property
@@ -83,10 +90,7 @@ class ExecFlowExecutor:
         - entrypoint is stopped (best-effort)
         - new exec triggers are ignored
         """
-        try:
-            active = bool(active)
-        except Exception:
-            active = True
+        active = bool(active)
         if active == self._active:
             return
         self._active = active
@@ -114,7 +118,9 @@ class ExecFlowExecutor:
             await self._restart_entrypoint_if_needed(graph)
 
     def _rebuild_exec_routes(self, graph: F8RuntimeGraph) -> None:
-        out_map: dict[tuple[str, str], list[tuple[str, str]]] = {}
+        out_map: dict[tuple[str, str], tuple[str, str]] = {}
+        in_seen: set[tuple[str, str]] = set()
+        adj: dict[str, set[str]] = {}
         for edge in graph.edges:
             if edge.kind != F8EdgeKindEnum.exec:
                 continue
@@ -122,10 +128,51 @@ class ExecFlowExecutor:
                 continue
             if not edge.fromOperatorId or not edge.toOperatorId:
                 continue
-            out_map.setdefault((str(edge.fromOperatorId), str(edge.fromPort)), []).append(
-                (str(edge.toOperatorId), str(edge.toPort))
-            )
+            from_key = (str(edge.fromOperatorId), str(edge.fromPort))
+            to_val = (str(edge.toOperatorId), str(edge.toPort))
+            to_key = (to_val[0], to_val[1])
+
+            if from_key in out_map:
+                raise ValueError(f"exec out port must be single-connected: {from_key} (edgeId={edge.edgeId})")
+            if to_key in in_seen:
+                raise ValueError(f"exec in port must be single-connected: {to_key} (edgeId={edge.edgeId})")
+
+            out_map[from_key] = to_val
+            in_seen.add(to_key)
+            adj.setdefault(from_key[0], set()).add(to_key[0])
         self._exec_out = out_map
+        self._ensure_exec_acyclic(adj)
+
+    @staticmethod
+    def _ensure_exec_acyclic(adj: dict[str, set[str]]) -> None:
+        """
+        Ensure the exec topology is acyclic (UE-style), so propagation always terminates.
+        """
+
+        visiting: set[str] = set()
+        visited: set[str] = set()
+        stack: list[str] = []
+
+        def _visit(n: str) -> None:
+            if n in visited:
+                return
+            if n in visiting:
+                try:
+                    i = stack.index(n)
+                except ValueError:
+                    i = 0
+                cycle = stack[i:] + [n]
+                raise ValueError(f"exec graph has a cycle: {' -> '.join(cycle)}")
+            visiting.add(n)
+            stack.append(n)
+            for m in sorted(adj.get(n, set())):
+                _visit(m)
+            stack.pop()
+            visiting.remove(n)
+            visited.add(n)
+
+        for n in sorted(adj.keys()):
+            _visit(n)
 
     @staticmethod
     def _entrypoint_node_id(graph: F8RuntimeGraph) -> str | None:
@@ -186,59 +233,43 @@ class ExecFlowExecutor:
             await ctx.cancel()
 
     # ---- triggering -----------------------------------------------------
-    async def run_once(self, *, max_steps: int = 1024) -> None:
-        if not self._active:
-            return
-        graph = self._graph
-        if graph is None:
-            raise RuntimeError("no graph applied")
-        src = self._entrypoint_node_id(graph)
-        if not src:
-            raise RuntimeError("graph has no exec entrypoint")
-        await self.trigger_exec(src, "__source__", ctx_id=int(time.time() * 1000), max_steps=max_steps)
-
-    async def trigger_exec(self, node_id: str, out_port: str, *, ctx_id: str | int, max_steps: int = 1024) -> None:
+    async def trigger_exec(
+        self,
+        node_id: str,
+        out_port: str,
+        *,
+        exec_id: str | int,
+    ) -> None:
         """
         Inject an exec trigger from (node_id, out_port) and propagate intra-service exec edges.
         """
+        # `exec_id` is a per-trigger execution id (used as an evaluation/cache key across a single propagation).
+
         if not self._active:
             return
         node_id = ensure_token(node_id, label="node_id")
         out_port = str(out_port)
 
-        if max_steps <= 0:
-            return
-
-        # The root trigger is a virtual exec out on the source.
-        queue: list[tuple[str, str]] = []
-        if out_port == "__source__":
-            # Use all declared exec out ports from the runtime graph, if available.
-            graph = self._graph
-            outs: list[str] = []
-            if graph is not None:
-                for n in graph.nodes:
-                    if str(getattr(n, "nodeId", "")) == node_id:
-                        outs = list(getattr(n, "execOutPorts", None) or [])
-                        break
-            for p in outs:
-                queue.extend(self._exec_out.get((node_id, str(p)), []))
-        else:
-            queue.extend(self._exec_out.get((node_id, out_port), []))
+        stack: list[tuple[str, str]] = []
+        nxt = self._exec_out.get((node_id, out_port))
+        if nxt is not None:
+            stack.append(nxt)
 
         steps = 0
-        while queue and steps < max_steps:
+        while stack:
             steps += 1
-            to_node, in_port = queue.pop(0)
+            to_node, in_port = stack.pop()
             node = self._nodes.get(to_node)
             if node is None:
                 continue
             if not isinstance(node, ExecutableNode):
                 continue
             try:
-                out_ports = await node.on_exec(ctx_id, str(in_port))  # type: ignore[misc]
+                out_ports = await node.on_exec(exec_id, str(in_port))  # type: ignore[misc]
             except Exception:
                 continue
-            for p in list(out_ports or []):
-                for nxt in self._exec_out.get((to_node, str(p)), []):
-                    queue.append(nxt)
-
+            # DFS scheduling: push in reverse so earlier ports run first.
+            for p in reversed(list(out_ports or [])):
+                nxt = self._exec_out.get((to_node, str(p)))
+                if nxt is not None:
+                    stack.append(nxt)

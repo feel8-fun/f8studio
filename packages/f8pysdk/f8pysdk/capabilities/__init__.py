@@ -26,7 +26,7 @@ class ExecutableNode(Protocol):
 
     node_id: str
 
-    async def on_exec(self, ctx_id: str | int, in_port: str | None = None) -> list[str]: ...
+    async def on_exec(self, exec_id: str | int, in_port: str | None = None) -> list[str]: ...
 
 
 @runtime_checkable
