@@ -5,10 +5,10 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from f8pysdk import F8EdgeKindEnum, F8RuntimeGraph
-from f8pysdk.capabilities import EntrypointNode, ExecutableNode
-from f8pysdk.nats_naming import ensure_token
-from f8pysdk.service_bus import ServiceBus
+from ..generated import F8EdgeKindEnum, F8RuntimeGraph
+from ..capabilities import EntrypointNode, ExecutableNode
+from ..nats_naming import ensure_token
+from ..service_bus import ServiceBus
 
 
 @dataclass
@@ -18,10 +18,10 @@ class EntrypointContext:
 
     An entrypoint node uses this to:
     - spawn cancellable tasks
-    - emit exec triggers into the engine
+    - emit exec triggers into the executor
     """
 
-    executor: "EngineExecutor"
+    executor: "ExecFlowExecutor"
     node_id: str
     _tasks: set[asyncio.Task[object]] = field(default_factory=set, init=False, repr=False)
 
@@ -46,7 +46,7 @@ class EntrypointContext:
         self._tasks.clear()
 
 
-class EngineExecutor:
+class ExecFlowExecutor:
     """
     In-process executor for exec edges.
 
@@ -127,13 +127,11 @@ class EngineExecutor:
             )
         self._exec_out = out_map
 
-    def _entrypoint_node_id(self, graph: F8RuntimeGraph) -> str | None:
+    @staticmethod
+    def _entrypoint_node_id(graph: F8RuntimeGraph) -> str | None:
         entrypoint_ids: list[str] = []
-        for n in graph.nodes:
-            try:
-                node_id = ensure_token(n.nodeId, label="nodeId")
-            except Exception:
-                continue
+        for n in list(graph.nodes or []):
+            node_id = str(getattr(n, "nodeId", "") or "")
             in_n = len(list(getattr(n, "execInPorts", None) or []))
             out_n = len(list(getattr(n, "execOutPorts", None) or []))
             if in_n == 0 and out_n > 0:
@@ -243,3 +241,4 @@ class EngineExecutor:
             for p in list(out_ports or []):
                 for nxt in self._exec_out.get((to_node, str(p)), []):
                     queue.append(nxt)
+

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from qtpy import QtWidgets
@@ -34,6 +35,8 @@ from NodeGraphQt.qgraphics.node_text_item import NodeTextItem
 from NodeGraphQt.qgraphics.port import CustomPortItem, PortItem
 
 from .port_painter import draw_exec_port, draw_square_port, EXEC_PORT_COLOR, DATA_PORT_COLOR, STATE_PORT_COLOR
+
+logger = logging.getLogger(__name__)
 
 class F8StudioOperatorBaseNode(F8StudioBaseNode):
     """
@@ -183,24 +186,132 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
         except Exception:
             pass
 
-        # Rebuild ports (best-effort; may drop connections).
+        # Sync ports from spec.
+        #
+        # Important: NodeGraphQt `delete_input/delete_output` does not clear
+        # pipes. If ports are removed while still connected, NodeGraphQt can
+        # leave "dangling" pipes in the scene, crashing during paint.
+        desired_inputs: dict[str, dict[str, Any]] = {}
+        desired_outputs: dict[str, dict[str, Any]] = {}
+
+        for p in list(getattr(self.spec, "execInPorts", None) or []):
+            desired_inputs[f"[E]{p}"] = {"color": EXEC_PORT_COLOR, "painter_func": draw_exec_port}
+        for p in list(getattr(self.spec, "execOutPorts", None) or []):
+            desired_outputs[f"{p}[E]"] = {"color": EXEC_PORT_COLOR, "painter_func": draw_exec_port}
+
+        for p in list(getattr(self.spec, "dataInPorts", None) or []):
+            try:
+                desired_inputs[f"[D]{p.name}"] = {"color": DATA_PORT_COLOR}
+            except Exception:
+                continue
+        for p in list(getattr(self.spec, "dataOutPorts", None) or []):
+            try:
+                desired_outputs[f"{p.name}[D]"] = {"color": DATA_PORT_COLOR}
+            except Exception:
+                continue
+
+        for s in list(getattr(self.spec, "stateFields", None) or []):
+            try:
+                if not getattr(s, "showOnNode", False):
+                    continue
+                name = str(getattr(s, "name", "") or "").strip()
+                if not name:
+                    continue
+                desired_inputs[f"[S]{name}"] = {"color": STATE_PORT_COLOR, "painter_func": draw_square_port}
+                desired_outputs[f"{name}[S]"] = {"color": STATE_PORT_COLOR, "painter_func": draw_square_port}
+            except Exception:
+                continue
+
+        # Remove ports that no longer exist in spec (disconnect first).
+        current_input_names = set(self.inputs().keys())
+        current_output_names = set(self.outputs().keys())
+        desired_input_names = set(desired_inputs.keys())
+        desired_output_names = set(desired_outputs.keys())
+
+        for name in sorted(current_input_names - desired_input_names):
+            try:
+                port = self.get_input(name)
+                if port is not None:
+                    try:
+                        port.clear_connections(push_undo=False, emit_signal=False)
+                    except Exception:
+                        pass
+                self.delete_input(name)
+            except Exception as e:
+                logger.warning("Failed to delete input port %r: %s", name, e)
+
+        for name in sorted(current_output_names - desired_output_names):
+            try:
+                port = self.get_output(name)
+                if port is not None:
+                    try:
+                        port.clear_connections(push_undo=False, emit_signal=False)
+                    except Exception:
+                        pass
+                self.delete_output(name)
+            except Exception as e:
+                logger.warning("Failed to delete output port %r: %s", name, e)
+
+        # Add new ports from spec.
+        current_input_names = set(self.inputs().keys())
+        current_output_names = set(self.outputs().keys())
+
+        for name in sorted(desired_input_names - current_input_names):
+            meta = desired_inputs.get(name) or {}
+            try:
+                self.add_input(name, color=meta.get("color"), painter_func=meta.get("painter_func"))
+            except Exception as e:
+                logger.warning("Failed to add input port %r: %s", name, e)
+
+        for name in sorted(desired_output_names - current_output_names):
+            meta = desired_outputs.get(name) or {}
+            try:
+                self.add_output(name, color=meta.get("color"), painter_func=meta.get("painter_func"))
+            except Exception as e:
+                logger.warning("Failed to add output port %r: %s", name, e)
+
+        # Best-effort cleanup for any orphaned port items left on the QGraphics node.
         try:
-            for port in list(self._inputs):
-                try:
-                    self.delete_input(port)
-                except Exception:
-                    pass
-            for port in list(self._outputs):
-                try:
-                    self.delete_output(port)
-                except Exception:
-                    pass
+            view = self.view
+            valid_in_views = {p.view for p in self.input_ports()}
+            valid_out_views = {p.view for p in self.output_ports()}
+
+            input_items = getattr(view, "_input_items", None)
+            if isinstance(input_items, dict):
+                for port_item in list(input_items.keys()):
+                    if port_item in valid_in_views:
+                        continue
+                    text_item = input_items.pop(port_item, None)
+                    if text_item is None:
+                        continue
+                    try:
+                        port_item.setParentItem(None)
+                        text_item.setParentItem(None)
+                        if view.scene() is not None:
+                            view.scene().removeItem(port_item)
+                            view.scene().removeItem(text_item)
+                    except Exception:
+                        pass
+
+            output_items = getattr(view, "_output_items", None)
+            if isinstance(output_items, dict):
+                for port_item in list(output_items.keys()):
+                    if port_item in valid_out_views:
+                        continue
+                    text_item = output_items.pop(port_item, None)
+                    if text_item is None:
+                        continue
+                    try:
+                        port_item.setParentItem(None)
+                        text_item.setParentItem(None)
+                        if view.scene() is not None:
+                            view.scene().removeItem(port_item)
+                            view.scene().removeItem(text_item)
+                    except Exception:
+                        pass
         except Exception:
             pass
 
-        self._build_exec_port()
-        self._build_data_port()
-        self._build_state_port()
         self._build_state_properties()
 
         try:
@@ -241,7 +352,7 @@ class F8StudioOperatorNodeItem(AbstractNodeItem):
         self._proxy_mode = False
         self._proxy_mode_threshold = 70
 
-    def post_init(self, viewer, pos=None):
+    def post_init(self, viewer=None, pos=None):
         """
         Called after node has been added into the scene.
 
@@ -1215,8 +1326,10 @@ class F8StudioOperatorNodeItem(AbstractNodeItem):
         """
         port.setParentItem(None)
         text.setParentItem(None)
-        self.scene().removeItem(port)
-        self.scene().removeItem(text)
+        scene = self.scene()
+        if scene is not None:
+            scene.removeItem(port)
+            scene.removeItem(text)
         del port
         del text
 

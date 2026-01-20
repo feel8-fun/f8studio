@@ -7,7 +7,7 @@ from f8pysdk import F8RuntimeNode
 from f8pysdk.nats_naming import ensure_token
 from f8pysdk.runtime_node import RuntimeNode
 
-from ..engine_executor import EntrypointContext
+from f8pysdk.executors.exec_flow import EntrypointContext
 
 
 class TickRuntimeNode(RuntimeNode):

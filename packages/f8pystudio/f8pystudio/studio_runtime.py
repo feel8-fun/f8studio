@@ -13,8 +13,11 @@ from f8pysdk import F8Edge, F8EdgeKindEnum, F8EdgeStrategyEnum, F8RuntimeGraph, 
 from f8pysdk.nats_naming import ensure_token, kv_bucket_for_service, kv_key_rungraph, new_id, svc_endpoint_subject, svc_micro_name
 from f8pysdk.nats_transport import NatsTransport, NatsTransportConfig
 from f8pysdk.runtime_node import RuntimeNode
+from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from f8pysdk.service_bus import ServiceBus, ServiceBusConfig
+from f8pysdk.service_host import ServiceHost, ServiceHostConfig
 from .nodegraph.runtime_compiler import CompiledRuntimeGraphs
+from .runtime_nodes.print_node import register_print_node, set_preview_sink
 from .service_process_manager import ServiceProcessConfig, ServiceProcessManager
 from .service_host.service_host_registry import SERVICE_CLASS, STUDIO_SERVICE_ID
 
@@ -96,18 +99,6 @@ class _AsyncThread:
             pass
 
 
-class _StateMonitorNode(RuntimeNode):
-    def __init__(self, *, on_state_cb: Callable[[str, Any, int | None], None]) -> None:
-        super().__init__(node_id=_MONITOR_NODE_ID)
-        self._on_state_cb = on_state_cb
-
-    async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
-        try:
-            self._on_state_cb(str(field), value, ts_ms)
-        except Exception:
-            return
-
-
 @dataclass(frozen=True)
 class StudioRuntimeConfig:
     nats_url: str = "nats://127.0.0.1:4222"
@@ -125,7 +116,7 @@ class StudioRuntime(QtCore.QObject):
 
     # Note: Qt `int` is typically 32-bit; use `object` for ts_ms (ms timestamps exceed 2^31).
     state_updated = QtCore.Signal(str, str, str, object, object)  # serviceId, nodeId, field, value, ts_ms
-    data_updated = QtCore.Signal(str, str, object, object)  # nodeId, port, value, ts_ms
+    preview_updated = QtCore.Signal(str, object, object)  # nodeId, value, ts_ms
     service_output = QtCore.Signal(str, str)  # serviceId, line
     log = QtCore.Signal(str)
 
@@ -138,8 +129,8 @@ class StudioRuntime(QtCore.QObject):
         self._managed_active: bool = True
 
         self._bus: ServiceBus | None = None
+        self._host: ServiceHost | None = None
         self._nc: Any = None
-        self._monitor_node: _StateMonitorNode | None = None
 
     @property
     def studio_service_id(self) -> str:
@@ -253,6 +244,8 @@ class StudioRuntime(QtCore.QObject):
             self._nc = None
 
         # Start studio bus.
+        registry = RuntimeNodeRegistry.instance()
+        register_print_node(registry)
         self._bus = ServiceBus(
             ServiceBusConfig(
                 service_id=self.studio_service_id,
@@ -260,6 +253,10 @@ class StudioRuntime(QtCore.QObject):
                 publish_all_data=False,
             )
         )
+        self._host = ServiceHost(self._bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=registry)
+
+        # In-process preview channel: runtime nodes can push UI-only preview updates without KV.
+        set_preview_sink(lambda node_id, value, ts_ms: self.preview_updated.emit(str(node_id), value, ts_ms))
 
         def _on_state(field: str, value: Any, ts_ms: int | None) -> None:
             decoded = _decode_remote_state_key(field)
@@ -281,8 +278,11 @@ class StudioRuntime(QtCore.QObject):
                 return
 
         self._bus.add_state_listener(_on_local_state)
-        self._monitor_node = _StateMonitorNode(on_state_cb=lambda *_: None)
-        self._bus.register_node(self._monitor_node)
+        try:
+            if self._host is not None:
+                await self._host.start()
+        except Exception:
+            pass
 
         try:
             await self._bus.start()
@@ -296,6 +296,8 @@ class StudioRuntime(QtCore.QObject):
             pass
 
     async def _stop_async(self) -> None:
+        set_preview_sink(None)
+        self._host = None
         try:
             if self._bus is not None:
                 await self._bus.stop()
@@ -398,32 +400,6 @@ class StudioRuntime(QtCore.QObject):
             await self._bus.set_rungraph(studio_graph)
         except Exception as exc:
             self.log.emit(f"install monitor graph failed: {exc}")
-
-    def request_pull(self, node_id: str, port: str) -> None:
-        """
-        Request the latest buffered data for a node input port (best-effort).
-        """
-        node_id = ensure_token(node_id, label="node_id")
-        port = str(port or "").strip()
-        if not port:
-            return
-
-        async def _do() -> None:
-            if self._bus is None:
-                return
-            try:
-                v = await self._bus.pull_data(node_id, port)
-            except Exception:
-                return
-            try:
-                self.data_updated.emit(node_id, port, v, None)
-            except Exception:
-                return
-
-        try:
-            self._async.submit(_do())
-        except Exception:
-            return
 
     async def _ensure_nc(self) -> Any | None:
         """

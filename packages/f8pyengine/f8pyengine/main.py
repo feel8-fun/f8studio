@@ -22,7 +22,7 @@ from f8pysdk.schema_helpers import integer_schema, number_schema, string_schema
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from f8pysdk.service_app import ServiceApp, ServiceAppConfig
 
-from f8pyengine.engine_executor import EngineExecutor
+from f8pysdk.executors.exec_flow import ExecFlowExecutor as EngineExecutor
 from f8pyengine.engine_binder import EngineBinder
 from f8pyengine.pyengine_node_registry import register_pyengine_runtimes
 

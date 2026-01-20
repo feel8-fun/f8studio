@@ -7,7 +7,7 @@ from f8pysdk.capabilities import ExecutableNode
 from f8pysdk.nats_naming import ensure_token
 from f8pysdk.service_bus import ServiceBus
 
-from .engine_executor import EngineExecutor
+from f8pysdk.executors.exec_flow import ExecFlowExecutor as EngineExecutor
 
 
 @dataclass

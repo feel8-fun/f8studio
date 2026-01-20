@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from f8pysdk import F8DataPortSpec, F8OperatorSchemaVersion, F8OperatorSpec, F8ServiceSchemaVersion, F8ServiceSpec
-from f8pysdk import F8StateAccess, F8StateSpec, any_schema, integer_schema
+from f8pysdk import F8OperatorSchemaVersion, F8OperatorSpec, F8ServiceSchemaVersion, F8ServiceSpec
+from f8pysdk import F8StateAccess, F8StateSpec, integer_schema
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
-
-SERVICE_CLASS = "f8.pystudio"
-STUDIO_SERVICE_ID = "studio"
+from .constants import SERVICE_CLASS, STUDIO_SERVICE_ID
+from ..runtime_nodes.print_node import register_print_node
 
 
 def register_pystudio_specs(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
@@ -46,56 +45,7 @@ def register_pystudio_specs(registry: RuntimeNodeRegistry | None = None) -> Runt
     )
 
     # debug
-    reg.register_operator_spec(
-        F8OperatorSpec(
-            schemaVersion=F8OperatorSchemaVersion.f8operator_1,
-            serviceClass=SERVICE_CLASS,
-            operatorClass="f8.example_operator",
-            version="0.0.1",
-            label="Example Operator",
-            description="An example operator for demonstration purposes.",
-            tags=["example", "demo"],
-        ),
-        overwrite=True,
-    )
-
-    reg.register_operator_spec(
-        F8OperatorSpec(
-            schemaVersion=F8OperatorSchemaVersion.f8operator_1,
-            serviceClass=SERVICE_CLASS,
-            operatorClass="f8.print_node_operator",
-            version="0.0.1",
-            label="Print Node",
-            description="Operator that displays incoming data in the editor (no state writes).",
-            tags=["print", "console"],
-            dataInPorts=[
-                F8DataPortSpec(
-                    name="inputData",
-                    description="Data input to display (preview).",
-                    valueSchema=any_schema(),
-                ),
-            ],
-            dataOutPorts=[
-                F8DataPortSpec(
-                    name="outputData",
-                    description="Pass-through output (optional).",
-                    valueSchema=any_schema(),
-                ),
-            ],
-            rendererClass="pystudio_print",
-            stateFields=[
-                F8StateSpec(
-                    name="throttleMs",
-                    label="Throttle (ms)",
-                    description="UI refresh interval in milliseconds (0 = refresh every tick).",
-                    valueSchema=integer_schema(default=100, minimum=0, maximum=60000),
-                    access=F8StateAccess.rw,
-                    showOnNode=True,
-                ),
-            ],
-        ),
-        overwrite=True,
-    )
+    register_print_node(reg)
 
     return reg
 

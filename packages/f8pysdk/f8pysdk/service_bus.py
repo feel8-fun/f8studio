@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
@@ -26,10 +25,7 @@ from .nats_naming import (
     svc_micro_name,
 )
 from .nats_transport import NatsTransport, NatsTransportConfig
-
-
-def _now_ms() -> int:
-    return int(time.time() * 1000)
+from .time_utils import now_ms as _now_ms
 
 
 def _debug_state_enabled() -> bool:
@@ -61,8 +57,6 @@ class _InputBuffer:
     last_seen_value: Any = None
     last_seen_ts: int | None = None
     last_seen_ctx_id: str | int | None = None
-    prev_seen_value: Any = None
-    prev_seen_ts: int | None = None
     last_pulled_value: Any = None
     last_pulled_ts: int | None = None
     last_pulled_ctx_id: str | int | None = None
@@ -873,7 +867,22 @@ class ServiceBus:
                     continue
                 if v is None:
                     continue
-                self._buffer_input(str(node_id), str(port), v, ts_ms=_now_ms(), edge=edge, ctx_id=ctx_id, notify=False)
+                # Treat pull-triggered computation as producing a real output sample:
+                # route it through `emit_data` so intra edges get buffered and any
+                # cross-service subscribers can also receive the computed value.
+                try:
+                    await self.emit_data(str(from_node), str(from_port), v, ts_ms=_now_ms())
+                except Exception:
+                    # Fallback: still satisfy the local pull.
+                    self._buffer_input(
+                        str(node_id),
+                        str(port),
+                        v,
+                        ts_ms=_now_ms(),
+                        edge=edge,
+                        ctx_id=ctx_id,
+                        notify=False,
+                    )
         finally:
             stack.discard(key)
 
@@ -950,8 +959,6 @@ class ServiceBus:
         if edge is not None:
             buf.edge = edge
 
-        buf.prev_seen_value = buf.last_seen_value
-        buf.prev_seen_ts = buf.last_seen_ts
         buf.last_seen_value = value
         buf.last_seen_ts = int(ts_ms)
         buf.last_seen_ctx_id = ctx_id
