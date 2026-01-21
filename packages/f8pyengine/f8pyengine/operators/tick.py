@@ -85,7 +85,7 @@ class TickRuntimeNode(RuntimeNode):
 
                     want_hires = await self.get_state("hiResTimer")
                     if want_hires is None:
-                        want_hires = self._initial_state.get("hiResTimer", True)
+                        want_hires = self._initial_state.get("hiResTimer", False)
                     want_hires_bool = False
                     if isinstance(want_hires, bool):
                         want_hires_bool = want_hires
