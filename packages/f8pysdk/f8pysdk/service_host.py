@@ -47,18 +47,18 @@ class ServiceHost:
 
     def __init__(
         self,
-        runtime: ServiceBus,
+        bus: ServiceBus,
         *,
         config: ServiceHostConfig,
         registry: RuntimeNodeRegistry | None = None,
     ) -> None:
-        self._runtime = runtime
+        self._bus = bus
         self._config = config
         self._registry = registry or RuntimeNodeRegistry.instance()
 
         self._service_node: Any | None = None
         self._operator_nodes: dict[str, Any] = {}
-        self._runtime.add_rungraph_listener(self._on_rungraph)
+        self._bus.add_rungraph_listener(self._on_rungraph)
 
     async def start(self) -> None:
         """
@@ -71,7 +71,7 @@ class ServiceHost:
         service_class = str(self._config.service_class or "").strip()
         if not service_class:
             raise ValueError("ServiceHostConfig.service_class must be non-empty")
-        node_id = str(self._runtime.service_id).strip()
+        node_id = str(self._bus.service_id).strip()
         try:
             node = self._registry.create_service_node(service_class=service_class, node_id=node_id, initial_state={})
         except Exception:
@@ -80,7 +80,7 @@ class ServiceHost:
             return
         self._service_node = node
         try:
-            self._runtime.register_node(node)
+            self._bus.register_node(node)
         except Exception:
             self._service_node = None
             return
@@ -110,7 +110,7 @@ class ServiceHost:
                     continue
                 if getattr(n, "operatorClass", None) is None:
                     # Service/container node snapshot (state only).
-                    if str(getattr(n, "nodeId", "")) == str(self._runtime.service_id):
+                    if str(getattr(n, "nodeId", "")) == str(self._bus.service_id):
                         service_snapshot = n
                     continue
                 want_operator_nodes.append(n)
@@ -123,7 +123,7 @@ class ServiceHost:
             if node_id in want_ids:
                 continue
             try:
-                self._runtime.unregister_node(node_id)
+                self._bus.unregister_node(node_id)
             except Exception:
                 pass
             self._operator_nodes.pop(node_id, None)
@@ -141,7 +141,7 @@ class ServiceHost:
                 continue
             self._operator_nodes[node_id] = node
             try:
-                self._runtime.register_node(node)
+                self._bus.register_node(node)
             except Exception:
                 self._operator_nodes.pop(node_id, None)
                 continue
@@ -171,13 +171,13 @@ class ServiceHost:
             node_id = str(n.nodeId)
             for k, v in self._node_initial_state(n).items():
                 try:
-                    existing = await self._runtime.get_state(node_id, str(k))
+                    existing = await self._bus.get_state(node_id, str(k))
                 except Exception:
                     existing = None
                 if existing is not None and existing == v:
                     continue
                 try:
-                    await self._runtime.set_state_with_meta(
+                    await self._bus.set_state_with_meta(
                         node_id,
                         str(k),
                         v,
@@ -191,16 +191,16 @@ class ServiceHost:
         """
         Apply rungraph-provided `stateValues` for the service node into KV.
         """
-        node_id = str(self._runtime.service_id)
+        node_id = str(self._bus.service_id)
         for k, v in self._node_initial_state(n).items():
             try:
-                existing = await self._runtime.get_state(node_id, str(k))
+                existing = await self._bus.get_state(node_id, str(k))
             except Exception:
                 existing = None
             if existing is not None and existing == v:
                 continue
             try:
-                await self._runtime.set_state_with_meta(
+                await self._bus.set_state_with_meta(
                     node_id,
                     str(k),
                     v,

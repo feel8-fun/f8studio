@@ -25,7 +25,7 @@ from .nats_naming import (
     svc_micro_name,
 )
 from .nats_transport import NatsTransport, NatsTransportConfig
-from .time_utils import now_ms as _now_ms
+from .time_utils import now_ms
 
 
 def _debug_state_enabled() -> bool:
@@ -472,7 +472,7 @@ class ServiceBus:
     async def set_state(self, node_id: str, field: str, value: Any, *, ts_ms: int | None = None) -> None:
         node_id = ensure_token(node_id, label="node_id")
         key = kv_key_node_state(node_id=node_id, field=str(field))
-        payload = {"value": value, "actor": self.service_id, "ts": int(ts_ms or _now_ms())}
+        payload = {"value": value, "actor": self.service_id, "ts": int(ts_ms or now_ms())}
         if self._debug_state:
             print(
                 "state_debug[%s] set_state node=%s field=%s ts=%s"
@@ -493,7 +493,7 @@ class ServiceBus:
     ) -> None:
         node_id = ensure_token(node_id, label="node_id")
         key = kv_key_node_state(node_id=node_id, field=str(field))
-        payload: dict[str, Any] = {"value": value, "actor": self.service_id, "ts": int(ts_ms or _now_ms())}
+        payload: dict[str, Any] = {"value": value, "actor": self.service_id, "ts": int(ts_ms or now_ms())}
         if source:
             payload["source"] = str(source)
         if meta:
@@ -745,7 +745,7 @@ class ServiceBus:
     async def emit_data(self, node_id: str, port: str, value: Any, *, ts_ms: int | None = None) -> None:
         node_id = ensure_token(node_id, label="node_id")
         port = ensure_token(port, label="port_id")
-        ts = int(ts_ms or _now_ms())
+        ts = int(ts_ms or now_ms())
 
         # Intra edges.
         for to_node, to_port in self._intra_data_out.get((node_id, port), []):
@@ -789,9 +789,9 @@ class ServiceBus:
             buf = _InputBuffer(to_node=node_id, to_port=port, edge=None)
             self._data_inputs[(node_id, port)] = buf
         edge = buf.edge
-        now_ms = _now_ms()
+        _now_ms = now_ms()
 
-        last_seen_ts = int(buf.last_seen_ts or now_ms)
+        last_seen_ts = int(buf.last_seen_ts or _now_ms)
         if self._is_stale(edge, last_seen_ts):
             return None
 
@@ -807,7 +807,7 @@ class ServiceBus:
                     return None
             v, ts = buf.queue.pop(0)
             buf.last_pulled_value = v
-            buf.last_pulled_ts = int(ts) if ts is not None else now_ms
+            buf.last_pulled_ts = int(ts) if ts is not None else _now_ms
             buf.last_pulled_ctx_id = ctx_id
             return v
 
@@ -818,7 +818,7 @@ class ServiceBus:
         buf.queue.clear()
         if v is not None:
             buf.last_pulled_value = v
-            buf.last_pulled_ts = now_ms
+            buf.last_pulled_ts = _now_ms
             buf.last_pulled_ctx_id = ctx_id
         return v
 
@@ -871,14 +871,14 @@ class ServiceBus:
                 # route it through `emit_data` so intra edges get buffered and any
                 # cross-service subscribers can also receive the computed value.
                 try:
-                    await self.emit_data(str(from_node), str(from_port), v, ts_ms=_now_ms())
+                    await self.emit_data(str(from_node), str(from_port), v, ts_ms=now_ms())
                 except Exception:
                     # Fallback: still satisfy the local pull.
                     self._buffer_input(
                         str(node_id),
                         str(port),
                         v,
-                        ts_ms=_now_ms(),
+                        ts_ms=now_ms(),
                         edge=edge,
                         ctx_id=ctx_id,
                         notify=False,
@@ -902,7 +902,7 @@ class ServiceBus:
         except Exception:
             value = payload
 
-        ts_i = int(ts) if ts is not None else _now_ms()
+        ts_i = int(ts) if ts is not None else now_ms()
         for to_node, to_port, edge in targets:
             try:
                 if self._is_stale(edge, ts_i):
@@ -922,7 +922,7 @@ class ServiceBus:
             t = int(timeout)
             if t <= 0:
                 return False
-            return (_now_ms() - int(ts_ms)) > t
+            return (now_ms() - int(ts_ms)) > t
         except Exception:
             return False
 
@@ -1054,10 +1054,10 @@ class ServiceBus:
             payload = {}
         if isinstance(payload, dict):
             v = payload.get("value")
-            ts = int(payload.get("ts") or _now_ms())
+            ts = int(payload.get("ts") or now_ms())
         else:
             v = payload
-            ts = _now_ms()
+            ts = now_ms()
 
         for local_node_id, local_field, _edge in targets:
             node = self._nodes.get(local_node_id)

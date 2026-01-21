@@ -5,7 +5,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..generated import F8EdgeKindEnum, F8RuntimeGraph
+from ..generated import F8EdgeKindEnum, F8RuntimeGraph, F8RuntimeNode
 from ..capabilities import EntrypointNode, ExecutableNode
 from ..nats_naming import ensure_token
 from ..service_bus import ServiceBus
@@ -178,9 +178,10 @@ class ExecFlowExecutor:
     def _entrypoint_node_id(graph: F8RuntimeGraph) -> str | None:
         entrypoint_ids: list[str] = []
         for n in list(graph.nodes or []):
-            node_id = str(getattr(n, "nodeId", "") or "")
-            in_n = len(list(getattr(n, "execInPorts", None) or []))
-            out_n = len(list(getattr(n, "execOutPorts", None) or []))
+            assert isinstance(n, F8RuntimeNode)
+            node_id = n.nodeId
+            in_n =  len(n.execInPorts)
+            out_n = len(n.execOutPorts)
             if in_n == 0 and out_n > 0:
                 entrypoint_ids.append(node_id)
         if not entrypoint_ids:
@@ -255,9 +256,7 @@ class ExecFlowExecutor:
         if nxt is not None:
             stack.append(nxt)
 
-        steps = 0
         while stack:
-            steps += 1
             to_node, in_port = stack.pop()
             node = self._nodes.get(to_node)
             if node is None:
