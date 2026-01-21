@@ -101,6 +101,16 @@ def _state_field_schema(node: Any, prop_name: str) -> Any | None:
     return None
 
 
+def _state_field_access(node: Any, prop_name: str) -> F8StateAccess | None:
+    spec = getattr(node, "spec", None)
+    fields = list(getattr(spec, "stateFields", None) or [])
+    for f in fields:
+        if str(getattr(f, "name", "") or "").strip() == prop_name:
+            a = getattr(f, "access", None)
+            return a if isinstance(a, F8StateAccess) else None
+    return None
+
+
 class _F8JsonEditorDialog(QtWidgets.QDialog):
     def __init__(self, parent=None, *, title: str, value: Any):
         super().__init__(parent)
@@ -1090,6 +1100,12 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                 if wid_type == NodePropWidgetEnum.QTEXT_EDIT.value and _is_json_state_value(node, prop_name):
                     widget = _F8JsonPropTextEdit()
                     widget.set_name(prop_name)
+                access = _state_field_access(node, prop_name)
+                if access == F8StateAccess.ro:
+                    try:
+                        widget.setDisabled(True)
+                    except Exception:
+                        pass
                 prop_window.add_widget(
                     name=prop_name, widget=widget, value=value, label=prop_name.replace("_", " "), tooltip=tooltip
                 )

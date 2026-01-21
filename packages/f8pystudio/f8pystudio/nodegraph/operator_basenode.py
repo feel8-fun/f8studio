@@ -7,14 +7,11 @@ from qtpy import QtWidgets
 
 from .node_base import F8StudioBaseNode
 
-
-# from .internal.base import F8BaseRenderNode
-# from ..nodegraph.operator_basenode import F8StudioOperatorNodeItemMixin
-from f8pysdk import F8OperatorSpec
+from f8pysdk import F8OperatorSpec, F8StateAccess
+from f8pysdk.schema_helpers import schema_default, schema_type
 
 from collections import OrderedDict
 
-from f8pysdk.schema_helpers import schema_default, schema_type
 
 from qtpy import QtCore, QtGui, QtWidgets
 
@@ -37,6 +34,7 @@ from NodeGraphQt.qgraphics.port import CustomPortItem, PortItem
 from .port_painter import draw_exec_port, draw_square_port, EXEC_PORT_COLOR, DATA_PORT_COLOR, STATE_PORT_COLOR
 
 logger = logging.getLogger(__name__)
+
 
 class F8StudioOperatorBaseNode(F8StudioBaseNode):
     """
@@ -99,17 +97,20 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
         for s in self.spec.stateFields:
             if not s.showOnNode:
                 continue
-            self.add_input(
-                f"[S]{s.name}",
-                color=STATE_PORT_COLOR,
-                painter_func=draw_square_port,
-            )
 
-            self.add_output(
-                f"{s.name}[S]",
-                color=STATE_PORT_COLOR,
-                painter_func=draw_square_port,
-            )
+            if s.access in [F8StateAccess.rw, F8StateAccess.wo]:
+                self.add_input(
+                    f"[S]{s.name}",
+                    color=STATE_PORT_COLOR,
+                    painter_func=draw_square_port,
+                )
+
+            if s.access in [F8StateAccess.rw, F8StateAccess.ro]:
+                self.add_output(
+                    f"{s.name}[S]",
+                    color=STATE_PORT_COLOR,
+                    painter_func=draw_square_port,
+                )
 
     def _build_state_properties(self) -> None:
         for s in self.spec.stateFields or []:

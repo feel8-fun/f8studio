@@ -9,7 +9,7 @@ from typing import Any, Callable
 import nats  # type: ignore[import-not-found]
 from qtpy import QtCore
 
-from f8pysdk import F8Edge, F8EdgeKindEnum, F8EdgeStrategyEnum, F8RuntimeGraph, F8RuntimeNode
+from f8pysdk import F8Edge, F8EdgeKindEnum, F8EdgeStrategyEnum, F8RuntimeGraph, F8RuntimeNode, F8StateAccess
 from f8pysdk.nats_naming import ensure_token, kv_bucket_for_service, kv_key_rungraph, new_id, svc_endpoint_subject, svc_micro_name
 from f8pysdk.nats_transport import NatsTransport, NatsTransportConfig
 from f8pysdk.runtime_node import RuntimeNode
@@ -17,7 +17,7 @@ from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from f8pysdk.service_bus import ServiceBus, ServiceBusConfig
 from f8pysdk.service_host import ServiceHost, ServiceHostConfig
 from .nodegraph.runtime_compiler import CompiledRuntimeGraphs
-from .operators.print import register_operator, set_preview_sink
+from .operators import register_operator, set_preview_sink
 from .service_process_manager import ServiceProcessConfig, ServiceProcessManager
 from .service_host.service_host_registry import SERVICE_CLASS, STUDIO_SERVICE_ID
 
@@ -325,7 +325,55 @@ class StudioRuntime(QtCore.QObject):
             try:
                 await tr.connect()
                 payload = g.model_dump(mode="json", by_alias=True)
-                await tr.kv_put(kv_key_rungraph(), json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8"))
+                # Endpoint-only mode: deploy via service endpoint (allows validation/rejection).
+                req = {"reqId": new_id(), "args": {"graph": payload}, "meta": {"source": "studio"}}
+                req_bytes = json.dumps(req, ensure_ascii=False, default=str).encode("utf-8")
+                resp_raw: bytes | None = None
+                last_exc: Exception | None = None
+                for _ in range(3):
+                    try:
+                        resp_raw = await tr.request(
+                            svc_endpoint_subject(service_id, "set_rungraph"),
+                            req_bytes,
+                            timeout=2.0,
+                            raise_on_error=True,
+                        )
+                    except Exception as exc:
+                        last_exc = exc
+                        resp_raw = None
+                    if resp_raw:
+                        break
+                    await asyncio.sleep(0.1)
+                if not resp_raw:
+                    # Distinguish "service micro not running" vs "endpoint missing" vs request error.
+                    try:
+                        ping = await tr.request(
+                            f"$SRV.PING.{svc_micro_name(service_id)}", b"", timeout=0.5, raise_on_error=True
+                        )
+                    except Exception:
+                        ping = None
+                    if ping and last_exc is not None:
+                        raise RuntimeError(
+                            f"set_rungraph request failed: {type(last_exc).__name__}: {last_exc} (bytes={len(req_bytes)})"
+                        )
+                    if ping:
+                        raise RuntimeError("set_rungraph endpoint missing (service is likely older than endpoint-only mode)")
+                    raise RuntimeError("service micro not available (service not started or not reachable)")
+                try:
+                    resp = json.loads(resp_raw.decode("utf-8"))
+                except Exception:
+                    resp = {}
+                if isinstance(resp, dict) and resp.get("ok") is True:
+                    pass
+                elif isinstance(resp, dict) and resp.get("ok") is False:
+                    msg = ""
+                    try:
+                        msg = str((resp.get("error") or {}).get("message") or "")
+                    except Exception:
+                        msg = ""
+                    raise RuntimeError(msg or "set_rungraph rejected")
+                else:
+                    raise RuntimeError("invalid set_rungraph response")
             except Exception as exc:
                 self.log.emit(f"deploy failed serviceId={service_id}: {exc}")
             finally:
@@ -355,6 +403,13 @@ class StudioRuntime(QtCore.QObject):
                 except Exception:
                     field_name = ""
                 if not field_name:
+                    continue
+                try:
+                    access = getattr(sf, "access", None)
+                except Exception:
+                    access = None
+                # Only monitor readable state (rw/ro). Write-only has no fanout by design.
+                if access not in (F8StateAccess.rw, F8StateAccess.ro):
                     continue
                 mon_edges.append(
                     F8Edge(

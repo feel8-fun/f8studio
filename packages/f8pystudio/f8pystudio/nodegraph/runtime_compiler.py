@@ -178,6 +178,13 @@ def compile_global_runtime_graph(
             name = str(getattr(f, "name", "") or "").strip()
             if not name:
                 continue
+            # Do not include read-only state values in the rungraph snapshot.
+            # These are runtime-owned and may be updated internally (eg. telemetry).
+            try:
+                if getattr(f, "access", None) == F8StateAccess.ro:
+                    continue
+            except Exception:
+                pass
             try:
                 if name not in n.model.properties and name not in n.model.custom_properties:
                     continue

@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import socket
 import struct
-from collections import deque
 from dataclasses import dataclass
 from typing import Any
 
@@ -16,6 +14,7 @@ from f8pysdk import (
     F8RuntimeNode,
     F8StateAccess,
     F8StateSpec,
+    array_schema,
     any_schema,
     boolean_schema,
     integer_schema,
@@ -36,8 +35,6 @@ class _UdpConfig:
     bind_address: str
     port: int
     max_queue: int
-    buffer_size: int
-    emit_buffer_on_rx: bool
     reuse_address: bool
 
 
@@ -64,11 +61,13 @@ class _UdpProtocol(asyncio.DatagramProtocol):
 
 class UdpSkeletonRuntimeNode(RuntimeNode):
     """
-    UDP skeleton receiver (poll-driven).
+    UDP skeleton receiver.
 
     - Starts a UDP listener (bindAddress/port)
     - Decodes incoming packets (skeleton binary -> dict, or JSON/utf-8, otherwise base64)
-    - Stores latest payload and emits it onto data outputs
+    - Maintains a per-model table (key -> latest skeleton + rxTsMs)
+    - Removes stale models older than `cleanupAfterMs`
+    - Emits `skeletons` (all latest), `selectedSkeleton`, and `availableKeys`
     - Passes exec through so you can place it in an exec chain (tick -> udp -> ...)
     """
 
@@ -83,7 +82,7 @@ class UdpSkeletonRuntimeNode(RuntimeNode):
         self._exec_out_ports = list(getattr(node, "execOutPorts", None) or []) or ["exec"]
 
         self._lock = asyncio.Lock()
-        self._buf_lock = asyncio.Lock()
+        self._models_lock = asyncio.Lock()
         self._cfg: _UdpConfig | None = None
         self._transport: asyncio.DatagramTransport | None = None
         self._queue: asyncio.Queue[tuple[int, bytes, tuple[str, int]]] | None = None
@@ -91,38 +90,55 @@ class UdpSkeletonRuntimeNode(RuntimeNode):
         self._drain_task: asyncio.Task[object] | None = None
 
         self._packet_count = 0
-        self._buffer: deque[dict[str, Any]] = deque(maxlen=512)
-        self._last_payload: Any = None
-        self._last_filtered_payload: Any = None
-        self._last_source: dict[str, Any] | None = None
-        self._last_rx_ts_ms: int | None = None
         self._last_error: str | None = None
-        self._filter_names: set[str] = self._parse_filter_names(self._initial_state.get("filterModelNames", ""))
+
+        self._cleanup_after_ms = self._parse_int(self._initial_state.get("cleanupAfterMs", 10000), default=10000)
+        self._selected_key = str(self._initial_state.get("selectedKey", "") or "")
+
+        # key -> {"rxTsMs": int, "payload": Any}
+        self._skeletons_by_key: dict[str, dict[str, Any]] = {}
+        self._skeletons_version = 0
+        self._last_emitted_version = -1
+        self._last_emitted_keys: list[str] = []
+        self._last_emitted_selected: tuple[str, int] | None = None  # (key, rxTsMs)
 
     async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
         await self._ensure_receiver()
-        await self._emit_snapshot()
+        await self._cleanup_stale()
+        await self._emit_updates(force=True)
         return list(self._exec_out_ports)
 
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
-        if str(field) in ("bindAddress", "port", "maxQueue", "bufferSize", "emitBufferOnRx", "reuseAddress"):
+        f = str(field)
+        if f in ("bindAddress", "port", "maxQueue", "reuseAddress"):
             await self._ensure_receiver(force_restart=True)
             return
-        if str(field) in ("filterModelNames",):
-            self._filter_names = self._parse_filter_names(value)
-            await self._emit_snapshot()
+        if f == "cleanupAfterMs":
+            self._cleanup_after_ms = self._parse_int(value, default=self._cleanup_after_ms)
+            await self._cleanup_stale()
+            await self._emit_updates(force=True)
+            return
+        if f == "selectedKey":
+            self._selected_key = str(value or "")
+            await self._emit_updates(force=True)
+            return
 
     async def close(self) -> None:
         await self._stop_receiver()
 
-    def _desired_cfg(self) -> _UdpConfig | None:
-        bind_address = self._initial_state.get("bindAddress", "0.0.0.0")
-        port = self._initial_state.get("port", 39540)
-        max_queue = self._initial_state.get("maxQueue", 512)
-
-        # Best-effort pull current state (may be None if bus isn't attached yet).
-        # This method is only called from async sites that can await; values are resolved there.
-        return _UdpConfig(bind_address=str(bind_address), port=int(port), max_queue=int(max_queue))
+    @staticmethod
+    def _parse_int(value: Any, *, default: int) -> int:
+        if value is None:
+            return int(default)
+        if isinstance(value, bool):
+            return int(default)
+        try:
+            return int(value)
+        except Exception:
+            try:
+                return int(float(value))
+            except Exception:
+                return int(default)
 
     async def _read_cfg_from_state(self) -> _UdpConfig | None:
         bind_address = await self.get_state("bindAddress")
@@ -134,14 +150,6 @@ class UdpSkeletonRuntimeNode(RuntimeNode):
         max_queue = await self.get_state("maxQueue")
         if max_queue is None:
             max_queue = self._initial_state.get("maxQueue", 512)
-
-        buffer_size = await self.get_state("bufferSize")
-        if buffer_size is None:
-            buffer_size = self._initial_state.get("bufferSize", 512)
-
-        emit_buffer_on_rx = await self.get_state("emitBufferOnRx")
-        if emit_buffer_on_rx is None:
-            emit_buffer_on_rx = self._initial_state.get("emitBufferOnRx", False)
 
         reuse_address = await self.get_state("reuseAddress")
         if reuse_address is None:
@@ -163,19 +171,6 @@ class UdpSkeletonRuntimeNode(RuntimeNode):
             self._last_error = f"Invalid port: {port_i}"
             return None
         max_q = max(1, min(4096, max_q))
-        try:
-            buf_n = int(buffer_size)
-        except Exception:
-            buf_n = 512
-        buf_n = max(1, min(4096, buf_n))
-
-        emit_buf = False
-        if isinstance(emit_buffer_on_rx, bool):
-            emit_buf = emit_buffer_on_rx
-        elif isinstance(emit_buffer_on_rx, (int, float)):
-            emit_buf = bool(emit_buffer_on_rx)
-        else:
-            emit_buf = str(emit_buffer_on_rx).strip().lower() in ("1", "true", "yes", "on")
 
         reuse_addr = False
         if isinstance(reuse_address, bool):
@@ -189,8 +184,6 @@ class UdpSkeletonRuntimeNode(RuntimeNode):
             bind_address=bind_address_s,
             port=port_i,
             max_queue=max_q,
-            buffer_size=buf_n,
-            emit_buffer_on_rx=emit_buf,
             reuse_address=reuse_addr,
         )
 
@@ -199,7 +192,6 @@ class UdpSkeletonRuntimeNode(RuntimeNode):
         async with self._lock:
             if cfg is None:
                 await self._stop_receiver()
-                await self._emit_status()
                 return
             if not force_restart and self._cfg == cfg and self._transport is not None:
                 return
@@ -211,9 +203,6 @@ class UdpSkeletonRuntimeNode(RuntimeNode):
         self._cfg = cfg
         self._dropped_ref[0] = 0
         self._queue = asyncio.Queue(maxsize=int(cfg.max_queue))
-        async with self._buf_lock:
-            self._buffer = deque(maxlen=int(cfg.buffer_size))
-            self._last_filtered_payload = None
 
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -244,11 +233,9 @@ class UdpSkeletonRuntimeNode(RuntimeNode):
             self._transport = None
             self._queue = None
             self._last_error = f"{type(exc).__name__}: {exc}"
-            await self._emit_status()
             return
 
         self._drain_task = asyncio.create_task(self._drain_loop(), name=f"udp_skeleton:{self.node_id}")
-        await self._emit_status()
 
     async def _stop_receiver(self) -> None:
         t = self._drain_task
@@ -275,76 +262,23 @@ class UdpSkeletonRuntimeNode(RuntimeNode):
         while True:
             rx_ts_ms, raw, addr = await q.get()
             self._packet_count += 1
-            self._last_rx_ts_ms = int(rx_ts_ms)
-            self._last_source = {"host": addr[0], "port": addr[1]}
             payload = self._decode_payload(raw)
-            self._last_payload = payload
-
-            raw_b64 = base64.b64encode(raw).decode("ascii") if raw else ""
             model_name = self._extract_model_name(payload)
+            key = str(model_name or "").strip()
+            if not key:
+                key = f"{addr[0]}:{addr[1]}"
+
             entry = {
                 "rxTsMs": int(rx_ts_ms),
-                "source": {"host": addr[0], "port": addr[1]},
-                "modelName": model_name,
                 "payload": payload,
-                "rawBase64": raw_b64,
             }
-            async with self._buf_lock:
-                self._buffer.append(entry)
-            await self._emit_payload(raw, payload=payload, model_name=model_name)
-            if not self._filter_names or (model_name is not None and model_name.strip().lower() in self._filter_names):
-                self._last_filtered_payload = payload
-                await self.emit("filteredPayload", payload)
-            if bool(getattr(self._cfg, "emit_buffer_on_rx", False)):
-                await self._emit_snapshot()
 
-    async def _emit_payload(self, raw: bytes, *, payload: Any, model_name: str | None) -> None:
-        raw_b64 = base64.b64encode(raw).decode("ascii") if raw else ""
-        await self.emit("payload", payload)
-        await self.emit("modelName", str(model_name or ""))
-        await self.emit("source", self._last_source)
-        await self.emit("rxTsMs", int(self._last_rx_ts_ms or now_ms()))
-        await self.emit("rawBase64", raw_b64)
-        await self._emit_status()
+            async with self._models_lock:
+                self._skeletons_by_key[key] = entry
+                self._skeletons_version += 1
 
-    async def _emit_snapshot(self) -> None:
-        cfg = self._cfg
-        async with self._buf_lock:
-            items = list(self._buffer)
-        names = set(self._filter_names or set())
-        filtered = items
-        if names:
-            filtered = [x for x in items if str(x.get("modelName") or "").strip().lower() in names]
-        latest_filtered_payload: Any = filtered[-1]["payload"] if filtered else None
-        self._last_filtered_payload = latest_filtered_payload
-        available = sorted(
-            {str(x.get("modelName") or "").strip() for x in items if str(x.get("modelName") or "").strip()}
-        )
-
-        await self.emit("buffer", items)
-        await self.emit("filteredBuffer", filtered)
-        await self.emit("filteredPayload", latest_filtered_payload)
-        await self.emit("availableModels", available)
-
-        if cfg is not None:
-            await self.emit("bindAddress", str(cfg.bind_address))
-            await self.emit("port", int(cfg.port))
-
-    async def _emit_status(self) -> None:
-        queue_len = self._queue.qsize() if self._queue is not None else 0
-        await self.emit("packetCount", int(self._packet_count))
-        await self.emit("droppedCount", int(self._dropped_ref[0]))
-        await self.emit("queueLen", int(queue_len))
-        await self.emit("error", str(self._last_error or ""))
-
-    @staticmethod
-    def _parse_filter_names(raw: Any) -> set[str]:
-        try:
-            s = str(raw or "")
-        except Exception:
-            s = ""
-        parts = [p.strip() for p in s.replace(";", ",").split(",")]
-        return {p.lower() for p in parts if p}
+            await self._cleanup_stale(now_ts_ms=int(rx_ts_ms))
+            await self._emit_updates()
 
     @staticmethod
     def _extract_model_name(payload: Any) -> str | None:
@@ -370,7 +304,7 @@ class UdpSkeletonRuntimeNode(RuntimeNode):
         try:
             text = raw.decode("utf-8")
         except UnicodeDecodeError:
-            return {"rawBase64": base64.b64encode(raw).decode("ascii")}
+            return {"rawBytesLen": len(raw)}
         if not text:
             return ""
         try:
@@ -420,6 +354,68 @@ class UdpSkeletonRuntimeNode(RuntimeNode):
         except (struct.error, UnicodeDecodeError, ValueError):
             return None
 
+    async def _cleanup_stale(self, *, now_ts_ms: int | None = None) -> None:
+        ttl_ms = int(self._cleanup_after_ms)
+        if ttl_ms <= 0:
+            return
+        if now_ts_ms is None:
+            now_ts_ms = int(now_ms())
+
+        cutoff = int(now_ts_ms) - ttl_ms
+        removed = False
+        async with self._models_lock:
+            for k, v in list(self._skeletons_by_key.items()):
+                try:
+                    rx = int(v.get("rxTsMs") or 0)
+                except Exception:
+                    rx = 0
+                if rx and rx < cutoff:
+                    self._skeletons_by_key.pop(k, None)
+                    removed = True
+            if removed:
+                self._skeletons_version += 1
+
+        if removed:
+            await self._emit_updates(force=True)
+
+    async def _emit_updates(self, *, force: bool = False) -> None:
+        async with self._models_lock:
+            version = int(self._skeletons_version)
+            keys = sorted(self._skeletons_by_key.keys())
+            skeletons = [self._skeletons_by_key[k].get("payload") for k in keys]
+
+            selected_key = str(self._selected_key or "").strip()
+            selected = self._skeletons_by_key.get(selected_key) if selected_key else None
+
+        if keys != self._last_emitted_keys:
+            self._last_emitted_keys = list(keys)
+            await self.set_state("availableKeys", list(keys))
+
+        if force or version != self._last_emitted_version:
+            self._last_emitted_version = int(version)
+            await self.emit("skeletons", skeletons)
+
+        if not selected_key:
+            if force or self._last_emitted_selected is not None:
+                self._last_emitted_selected = None
+                await self.emit("selectedSkeleton", None)
+            return
+
+        if selected is None:
+            if force or self._last_emitted_selected is not None:
+                self._last_emitted_selected = None
+                await self.emit("selectedSkeleton", None)
+            return
+
+        try:
+            rx_ts = int(selected.get("rxTsMs") or 0)
+        except Exception:
+            rx_ts = 0
+        marker = (selected_key, rx_ts)
+        if force or marker != self._last_emitted_selected:
+            self._last_emitted_selected = marker
+            await self.emit("selectedSkeleton", selected.get("payload"))
+
 
 UdpSkeletonRuntimeNode.SPEC = F8OperatorSpec(
     schemaVersion=F8OperatorSchemaVersion.f8operator_1,
@@ -427,26 +423,19 @@ UdpSkeletonRuntimeNode.SPEC = F8OperatorSpec(
     operatorClass=OPERATOR_CLASS,
     version="0.0.1",
     label="UDP Skeleton",
-    description="Receives UDP packets and decodes Feel8 skeleton payloads (or JSON/utf-8).",
+    description="Receives UDP packets and keeps latest skeleton per model key, with TTL cleanup and selection.",
     tags=["io", "udp", "network", "skeleton", "mocap"],
     execInPorts=["exec"],
     execOutPorts=["exec"],
     dataOutPorts=[
-        F8DataPortSpec(name="payload", description="Decoded payload (skeleton dict / JSON / text).", valueSchema=any_schema()),
-        F8DataPortSpec(name="modelName", description="Extracted model/person name (if available).", valueSchema=string_schema(default="")),
-        F8DataPortSpec(name="source", description="Sender address info.", valueSchema=any_schema()),
-        F8DataPortSpec(name="rxTsMs", description="Receive timestamp (ms).", valueSchema=integer_schema(default=0, minimum=0)),
-        F8DataPortSpec(name="rawBase64", description="Raw UDP payload (base64).", valueSchema=string_schema(default="")),
-        F8DataPortSpec(name="buffer", description="Recent packet buffer (list of dicts).", valueSchema=any_schema()),
-        F8DataPortSpec(name="filteredBuffer", description="Filtered buffer by model name.", valueSchema=any_schema()),
-        F8DataPortSpec(name="filteredPayload", description="Latest payload matching filter.", valueSchema=any_schema()),
-        F8DataPortSpec(name="availableModels", description="Unique model/person names in buffer.", valueSchema=any_schema()),
-        F8DataPortSpec(name="bindAddress", description="Current bind address (echo).", valueSchema=string_schema(default="0.0.0.0")),
-        F8DataPortSpec(name="port", description="Current bound port (echo).", valueSchema=integer_schema(default=0, minimum=0)),
-        F8DataPortSpec(name="packetCount", description="Total received packets.", valueSchema=integer_schema(default=0, minimum=0)),
-        F8DataPortSpec(name="droppedCount", description="Dropped packets due to full queue.", valueSchema=integer_schema(default=0, minimum=0)),
-        F8DataPortSpec(name="queueLen", description="Current receive queue length.", valueSchema=integer_schema(default=0, minimum=0)),
-        F8DataPortSpec(name="error", description="Last bind/receive error (if any).", valueSchema=string_schema(default="")),
+        F8DataPortSpec(
+            name="skeletons", description="List of latest payloads (ordered by key).", valueSchema=any_schema()
+        ),
+        F8DataPortSpec(
+            name="selectedSkeleton",
+            description="Latest payload matching `selectedKey` (or None).",
+            valueSchema=any_schema(),
+        ),
     ],
     stateFields=[
         F8StateSpec(
@@ -474,35 +463,35 @@ UdpSkeletonRuntimeNode.SPEC = F8OperatorSpec(
             showOnNode=True,
         ),
         F8StateSpec(
-            name="bufferSize",
-            label="Buffer Size",
-            description="How many recent packets to keep for `buffer` (1..4096).",
-            valueSchema=integer_schema(default=512, minimum=1, maximum=4096),
-            access=F8StateAccess.rw,
-            showOnNode=True,
-        ),
-        F8StateSpec(
-            name="filterModelNames",
-            label="Filter Model Names",
-            description="Comma-separated model/person names to filter (empty means all).",
-            valueSchema=string_schema(default=""),
-            access=F8StateAccess.rw,
-            showOnNode=True,
-        ),
-        F8StateSpec(
-            name="emitBufferOnRx",
-            label="Emit Buffer On Receive",
-            description="If enabled, also emits buffer snapshots on every received packet (can be heavy).",
-            valueSchema=boolean_schema(default=False),
-            access=F8StateAccess.rw,
-            showOnNode=True,
-        ),
-        F8StateSpec(
             name="reuseAddress",
             label="Reuse Address",
             description="Best-effort: allow multiple listeners on same (address, port) if OS supports.",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
+            showOnNode=True,
+        ),
+        F8StateSpec(
+            name="cleanupAfterMs",
+            label="Cleanup After (ms)",
+            description="Remove models that haven't updated for this many ms (<=0 disables cleanup).",
+            valueSchema=integer_schema(default=10000, minimum=0, maximum=60_000_000),
+            access=F8StateAccess.wo,
+            showOnNode=True,
+        ),
+        F8StateSpec(
+            name="selectedKey",
+            label="Selected Key",
+            description="If set and matches an available key, outputs `selectedSkeleton`; otherwise None.",
+            valueSchema=string_schema(default=""),
+            access=F8StateAccess.wo,
+            showOnNode=True,
+        ),
+        F8StateSpec(
+            name="availableKeys",
+            label="Available Keys",
+            description="Read-only list of current keys (updated only on changes).",
+            valueSchema=array_schema(items=string_schema()),
+            access=F8StateAccess.ro,
             showOnNode=True,
         ),
     ],

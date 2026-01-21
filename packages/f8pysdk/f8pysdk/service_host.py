@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .generated import F8JsonValue, F8RuntimeGraph, F8RuntimeNode
+from .generated import F8JsonValue, F8RuntimeGraph, F8RuntimeNode, F8StateAccess
 from .runtime_node_registry import RuntimeNodeRegistry
 from .service_bus import ServiceBus
 
@@ -169,7 +169,17 @@ class ServiceHost:
         """
         for n in nodes:
             node_id = str(n.nodeId)
+            try:
+                access_by_name = {str(sf.name): sf.access for sf in list(getattr(n, "stateFields", None) or [])}
+            except Exception:
+                access_by_name = {}
             for k, v in self._node_initial_state(n).items():
+                # Never seed/overwrite read-only state from rungraph; it is runtime-owned.
+                try:
+                    if access_by_name.get(str(k)) == F8StateAccess.ro:
+                        continue
+                except Exception:
+                    pass
                 try:
                     existing = await self._bus.get_state(node_id, str(k))
                 except Exception:
@@ -192,7 +202,17 @@ class ServiceHost:
         Apply rungraph-provided `stateValues` for the service node into KV.
         """
         node_id = str(self._bus.service_id)
+        try:
+            access_by_name = {str(sf.name): sf.access for sf in list(getattr(n, "stateFields", None) or [])}
+        except Exception:
+            access_by_name = {}
         for k, v in self._node_initial_state(n).items():
+            # Never seed/overwrite read-only state from rungraph; it is runtime-owned.
+            try:
+                if access_by_name.get(str(k)) == F8StateAccess.ro:
+                    continue
+            except Exception:
+                pass
             try:
                 existing = await self._bus.get_state(node_id, str(k))
             except Exception:

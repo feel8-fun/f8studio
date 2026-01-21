@@ -123,7 +123,9 @@ class NatsTransport:
             return
         await self._nc.publish(str(subject), bytes(payload))
 
-    async def request(self, subject: str, payload: bytes, *, timeout: float = 1.0) -> bytes | None:
+    async def request(
+        self, subject: str, payload: bytes, *, timeout: float = 1.0, raise_on_error: bool = False
+    ) -> bytes | None:
         """
         Request/reply helper (core NATS).
         """
@@ -134,6 +136,8 @@ class NatsTransport:
         try:
             msg = await self._nc.request(str(subject), bytes(payload), timeout=float(timeout))
         except Exception:
+            if raise_on_error:
+                raise
             return None
         try:
             return bytes(getattr(msg, "data", b"") or b"")

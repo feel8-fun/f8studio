@@ -5,8 +5,8 @@ import time
 import uuid
 from typing import Any
 
-from f8pysdk import F8Edge, F8EdgeKindEnum, F8EdgeStrategyEnum, F8RuntimeGraph, F8RuntimeNode
-from f8pysdk.nats_naming import ensure_token, kv_bucket_for_service, kv_key_rungraph
+from f8pysdk import F8Edge, F8EdgeKindEnum, F8EdgeStrategyEnum, F8RuntimeGraph, F8RuntimeNode, F8StateAccess
+from f8pysdk.nats_naming import ensure_token, kv_bucket_for_service, kv_key_rungraph, new_id, svc_endpoint_subject, svc_micro_name
 from f8pysdk.nats_transport import NatsTransport, NatsTransportConfig
 
 
@@ -114,6 +114,12 @@ def export_runtime_graph(
             name = str(getattr(f, "name", "") or "").strip()
             if not name:
                 continue
+            # Do not include read-only state values in the rungraph snapshot.
+            try:
+                if getattr(f, "access", None) == F8StateAccess.ro:
+                    continue
+            except Exception:
+                pass
             try:
                 state_values[name] = n.get_property(name)
             except Exception:
@@ -199,7 +205,52 @@ async def deploy_to_service(*, service_id: str, nats_url: str, graph: F8RuntimeG
     tr = NatsTransport(NatsTransportConfig(url=str(nats_url).strip(), kv_bucket=bucket))
     await tr.connect()
     try:
-        payload = json.dumps(graph.model_dump(mode="json", by_alias=True), ensure_ascii=False, default=str).encode("utf-8")
-        await tr.kv_put(key, payload)
+        graph_payload = graph.model_dump(mode="json", by_alias=True)
+        payload = json.dumps(graph_payload, ensure_ascii=False, default=str).encode("utf-8")
+        # Endpoint-only mode: deploy via service endpoint (allows validation/rejection).
+        req = {"reqId": new_id(), "args": {"graph": graph_payload}, "meta": {"source": "deploy"}}
+        req_bytes = json.dumps(req, ensure_ascii=False, default=str).encode("utf-8")
+        resp_raw: bytes | None = None
+        last_exc: Exception | None = None
+        for _ in range(3):
+            try:
+                resp_raw = await tr.request(
+                    svc_endpoint_subject(service_id, "set_rungraph"),
+                    req_bytes,
+                    timeout=2.0,
+                    raise_on_error=True,
+                )
+            except Exception as exc:
+                last_exc = exc
+                resp_raw = None
+            if resp_raw:
+                break
+            await asyncio.sleep(0.1)
+        if not resp_raw:
+            try:
+                ping = await tr.request(f"$SRV.PING.{svc_micro_name(service_id)}", b"", timeout=0.5, raise_on_error=True)
+            except Exception:
+                ping = None
+            if ping and last_exc is not None:
+                raise RuntimeError(
+                    f"set_rungraph request failed: {type(last_exc).__name__}: {last_exc} (bytes={len(req_bytes)})"
+                )
+            if ping:
+                raise RuntimeError("set_rungraph endpoint missing (service is likely older than endpoint-only mode)")
+            raise RuntimeError("service micro not available (service not started or not reachable)")
+        try:
+            resp = json.loads(resp_raw.decode("utf-8"))
+        except Exception:
+            resp = {}
+        if isinstance(resp, dict) and resp.get("ok") is True:
+            return
+        if isinstance(resp, dict) and resp.get("ok") is False:
+            msg = ""
+            try:
+                msg = str((resp.get("error") or {}).get("message") or "")
+            except Exception:
+                msg = ""
+            raise RuntimeError(msg or "set_rungraph rejected")
+        raise RuntimeError("invalid set_rungraph response")
     finally:
         await tr.close()

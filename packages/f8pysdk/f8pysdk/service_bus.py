@@ -12,7 +12,7 @@ from nats.micro import ServiceConfig, add_service  # type: ignore[import-not-fou
 from nats.micro.service import EndpointConfig  # type: ignore[import-not-found]
 
 from .capabilities import BusAttachableNode, ClosableNode, CommandableNode, ComputableNode, StatefulNode
-from .generated import F8Edge, F8EdgeKindEnum, F8EdgeStrategyEnum, F8RuntimeGraph
+from .generated import F8Edge, F8EdgeKindEnum, F8EdgeStrategyEnum, F8RuntimeGraph, F8StateAccess
 from .nats_naming import (
     cmd_channel_subject,
     data_subject,
@@ -71,7 +71,7 @@ class ServiceBus:
     Service bus (clean, protocol-first).
 
     - Shared NATS connection (pub/sub + JetStream KV).
-    - Watches `rungraph` (KV) which must be a `F8RuntimeGraph`.
+    - Loads `rungraph` (KV) on start; updates are applied via micro endpoints.
     - Builds intra/cross routing tables for data edges.
     - Provides a shared state KV API for nodes.
     - Data edges are pull-based: consumers pull buffered inputs and may trigger
@@ -99,8 +99,6 @@ class ServiceBus:
         self._graph: F8RuntimeGraph | None = None
 
         self._rungraph_key = kv_key_rungraph()
-        self._rungraph_watch: Any | None = None
-        self._local_state_watch: Any | None = None
         self._micro: Any | None = None
 
         # Routing tables (data only).
@@ -115,12 +113,14 @@ class ServiceBus:
         self._remote_state_watches: dict[tuple[str, str], Any] = {}
 
         self._state_cache: dict[tuple[str, str], tuple[Any, int]] = {}
+        self._state_access_by_node_field: dict[tuple[str, str], F8StateAccess] = {}
         self._subs: dict[str, _Sub] = {}
         self._raw_subs: list[Any] = []
 
         self._state_listeners: list[Callable[[str, str, Any, int, dict[str, Any]], Awaitable[None] | None]] = []
         self._rungraph_listeners: list[Callable[[F8RuntimeGraph], Awaitable[None] | None]] = []
         self._lifecycle_listeners: list[Callable[[bool, dict[str, Any]], Awaitable[None] | None]] = []
+        self._rungraph_validators: list[Callable[[F8RuntimeGraph], Awaitable[None] | None]] = []
 
     def add_state_listener(self, cb: Callable[[str, str, Any, int, dict[str, Any]], Awaitable[None] | None]) -> None:
         """
@@ -135,6 +135,14 @@ class ServiceBus:
         Listen to rungraph updates (after `F8RuntimeGraph` validation).
         """
         self._rungraph_listeners.append(cb)
+
+    def add_rungraph_validator(self, cb: Callable[[F8RuntimeGraph], Awaitable[None] | None]) -> None:
+        """
+        Register a validator that can reject illegal rungraphs.
+
+        Validator may raise to reject; async validators are supported.
+        """
+        self._rungraph_validators.append(cb)
 
     def add_lifecycle_listener(self, cb: Callable[[bool, dict[str, Any]], Awaitable[None] | None]) -> None:
         """
@@ -189,11 +197,6 @@ class ServiceBus:
         await self._transport.connect()
         if self._micro is None:
             await self._start_micro_endpoints()
-        if self._rungraph_watch is None:
-            self._rungraph_watch = await self._transport.kv_watch(self._rungraph_key, cb=self._on_rungraph_kv)
-        if self._local_state_watch is None:
-            pattern = "nodes.>"
-            self._local_state_watch = await self._transport.kv_watch(pattern, cb=self._on_local_state_kv)
         await self._load_active_from_kv()
         await self._reload_rungraph()
 
@@ -242,34 +245,6 @@ class ServiceBus:
         self._remote_state_watches.clear()
 
         self._state_cache.clear()
-
-        try:
-            if self._rungraph_watch is not None:
-                watcher, task = self._rungraph_watch
-                try:
-                    task.cancel()
-                except Exception:
-                    pass
-                try:
-                    await watcher.stop()
-                except Exception:
-                    pass
-        finally:
-            self._rungraph_watch = None
-
-        try:
-            if self._local_state_watch is not None:
-                watcher, task = self._local_state_watch
-                try:
-                    task.cancel()
-                except Exception:
-                    pass
-                try:
-                    await watcher.stop()
-                except Exception:
-                    pass
-        finally:
-            self._local_state_watch = None
 
         await self._transport.close()
 
@@ -418,6 +393,77 @@ class ServiceBus:
                 return
             await _respond(req, req_id=req_id, ok=True, result=out)
 
+        async def _set_state(req: Any) -> None:
+            req_id, raw, args, meta = _parse_envelope(req.data)
+            node_id = args.get("nodeId") or raw.get("nodeId")
+            field = args.get("field") or raw.get("field")
+            value = args.get("value") if "value" in args else raw.get("value")
+            if node_id is None or field is None:
+                await _respond(req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "missing nodeId/field"})
+                return
+            node_id_s = str(node_id).strip()
+            field_s = str(field).strip()
+            if not node_id_s or not field_s:
+                await _respond(req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "empty nodeId/field"})
+                return
+
+            try:
+                node_id_s = ensure_token(node_id_s, label="node_id")
+            except Exception:
+                await _respond(req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "invalid nodeId"})
+                return
+
+            access = self._state_access_by_node_field.get((node_id_s, field_s))
+            if access is None:
+                await _respond(req, req_id=req_id, ok=False, error={"code": "UNKNOWN_FIELD", "message": f"unknown state field: {field_s}"})
+                return
+            if access not in (F8StateAccess.rw, F8StateAccess.wo):
+                await _respond(req, req_id=req_id, ok=False, error={"code": "FORBIDDEN", "message": f"state field not writable: {field_s} ({access.value})"})
+                return
+
+            source = str(meta.get("source") or "endpoint")
+            user_meta = dict(meta)
+            user_meta.pop("source", None)
+            try:
+                await self.set_state_with_meta(node_id_s, field_s, value, source=source, meta={"via": "endpoint", **user_meta})
+            except Exception as exc:
+                await _respond(req, req_id=req_id, ok=False, error={"code": "INTERNAL", "message": str(exc)})
+                return
+            await _respond(req, req_id=req_id, ok=True, result={"nodeId": node_id_s, "field": field_s})
+
+        async def _set_rungraph(req: Any) -> None:
+            req_id, raw, args, meta = _parse_envelope(req.data)
+            graph_obj = args.get("graph") if isinstance(args.get("graph"), dict) else raw.get("graph")
+            if graph_obj is None and isinstance(raw, dict):
+                # Allow passing the graph as the top-level request body (non-enveloped).
+                graph_obj = raw if "nodes" in raw and "edges" in raw else None
+            if not isinstance(graph_obj, dict):
+                await _respond(req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "missing graph"})
+                return
+
+            # Validate before persisting/applying.
+            try:
+                graph = F8RuntimeGraph.model_validate(graph_obj)
+            except Exception as exc:
+                await _respond(req, req_id=req_id, ok=False, error={"code": "INVALID_RUNGRAPH", "message": str(exc)})
+                return
+            try:
+                await self._validate_rungraph_or_raise(graph)
+            except Exception as exc:
+                await _respond(req, req_id=req_id, ok=False, error={"code": "FORBIDDEN_RUNGRAPH", "message": str(exc)})
+                return
+
+            try:
+                payload = graph.model_dump(mode="json", by_alias=True)
+                raw_bytes = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+                await self._transport.kv_put(self._rungraph_key, raw_bytes)
+                # Endpoint mode: apply immediately (no KV watch).
+                await self._apply_rungraph_bytes(raw_bytes)
+            except Exception as exc:
+                await _respond(req, req_id=req_id, ok=False, error={"code": "INTERNAL", "message": str(exc)})
+                return
+            await _respond(req, req_id=req_id, ok=True, result={"graphId": str(getattr(graph, "graphId", "") or "")})
+
         sid = self.service_id
         await self._micro.add_endpoint(
             EndpointConfig(name="activate", subject=svc_endpoint_subject(sid, "activate"), handler=_activate, metadata={"builtin": "true"})
@@ -433,6 +479,12 @@ class ServiceBus:
         )
         await self._micro.add_endpoint(
             EndpointConfig(name="cmd", subject=cmd_channel_subject(sid), handler=_cmd, metadata={"builtin": "false"})
+        )
+        await self._micro.add_endpoint(
+            EndpointConfig(name="set_state", subject=svc_endpoint_subject(sid, "set_state"), handler=_set_state, metadata={"builtin": "true"})
+        )
+        await self._micro.add_endpoint(
+            EndpointConfig(name="set_rungraph", subject=svc_endpoint_subject(sid, "set_rungraph"), handler=_set_rungraph, metadata={"builtin": "true"})
         )
 
     # ---- raw subscription ---------------------------------------------
@@ -471,15 +523,44 @@ class ServiceBus:
     # ---- KV state -------------------------------------------------------
     async def set_state(self, node_id: str, field: str, value: Any, *, ts_ms: int | None = None) -> None:
         node_id = ensure_token(node_id, label="node_id")
-        key = kv_key_node_state(node_id=node_id, field=str(field))
+        field = str(field)
+        key = kv_key_node_state(node_id=node_id, field=field)
         payload = {"value": value, "actor": self.service_id, "ts": int(ts_ms or now_ms())}
         if self._debug_state:
             print(
                 "state_debug[%s] set_state node=%s field=%s ts=%s"
-                % (self.service_id, node_id, str(field), str(payload.get("ts")))
+                % (self.service_id, node_id, field, str(payload.get("ts")))
             )
         await self._transport.kv_put(key, json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8"))
-        self._state_cache[(node_id, str(field))] = (value, int(payload["ts"]))
+        self._state_cache[(node_id, field)] = (value, int(payload["ts"]))
+        # Local writes (actor == self.service_id) do not round-trip through the KV watcher.
+        # Apply to listeners and the node callback immediately.
+        await self._dispatch_local_state_update(node_id, field, value, int(payload["ts"]), dict(payload))
+
+    async def apply_state_local(
+        self,
+        node_id: str,
+        field: str,
+        value: Any,
+        *,
+        ts_ms: int | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> None:
+        """
+        Apply a state update locally (cache + listeners + node callback) without writing to KV.
+
+        This is useful for endpoint-only / fan-in paths where we want UI updates but do not
+        want to persist synthetic state fields (eg. monitor fan-in keys) to the local bucket.
+        """
+        node_id = ensure_token(node_id, label="node_id")
+        field = str(field)
+        ts = int(ts_ms or now_ms())
+        self._state_cache[(node_id, field)] = (value, ts)
+        meta_dict = dict(meta or {})
+        meta_dict.setdefault("actor", self.service_id)
+        meta_dict.setdefault("ts", ts)
+        meta_dict.setdefault("value", value)
+        await self._dispatch_local_state_update(node_id, field, value, ts, meta_dict)
 
     async def set_state_with_meta(
         self,
@@ -492,7 +573,8 @@ class ServiceBus:
         meta: dict[str, Any] | None = None,
     ) -> None:
         node_id = ensure_token(node_id, label="node_id")
-        key = kv_key_node_state(node_id=node_id, field=str(field))
+        field = str(field)
+        key = kv_key_node_state(node_id=node_id, field=field)
         payload: dict[str, Any] = {"value": value, "actor": self.service_id, "ts": int(ts_ms or now_ms())}
         if source:
             payload["source"] = str(source)
@@ -501,10 +583,38 @@ class ServiceBus:
         if self._debug_state:
             print(
                 "state_debug[%s] set_state_with_meta node=%s field=%s ts=%s source=%s meta=%s"
-                % (self.service_id, node_id, str(field), str(payload.get("ts")), str(source or ""), str(meta or ""))
+                % (self.service_id, node_id, field, str(payload.get("ts")), str(source or ""), str(meta or ""))
             )
         await self._transport.kv_put(key, json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8"))
-        self._state_cache[(node_id, str(field))] = (value, int(payload["ts"]))
+        self._state_cache[(node_id, field)] = (value, int(payload["ts"]))
+        # Local writes (actor == self.service_id) do not round-trip through the KV watcher.
+        # Apply to listeners and the node callback immediately.
+        await self._dispatch_local_state_update(node_id, field, value, int(payload["ts"]), dict(payload))
+
+    async def _dispatch_local_state_update(
+        self, node_id: str, field: str, value: Any, ts_ms: int, meta_dict: dict[str, Any]
+    ) -> None:
+        """
+        Apply a local (in-process) state update to listeners and to the node's `on_state`.
+
+        This is used for local writes where KV watcher callbacks are skipped (self-echo).
+        """
+        for cb in list(self._state_listeners):
+            try:
+                r = cb(node_id, field, value, ts_ms, meta_dict)
+                if asyncio.iscoroutine(r):
+                    await r
+            except Exception:
+                continue
+
+        node = self._nodes.get(node_id)
+        if node is None:
+            return
+        try:
+            if isinstance(node, StatefulNode):
+                await node.on_state(field, value, ts_ms=ts_ms)
+        except Exception:
+            return
 
     async def get_state(self, node_id: str, field: str) -> Any:
         node_id = ensure_token(node_id, label="node_id")
@@ -548,9 +658,11 @@ class ServiceBus:
         except Exception:
             payload = {}
         meta_dict: dict[str, Any] = {}
+        actor = ""
         if isinstance(payload, dict):
             meta_dict = dict(payload)
             v = payload.get("value")
+            actor = str(payload.get("actor") or "")
             ts_raw = payload.get("ts")
             try:
                 ts = int(ts_raw) if ts_raw is not None else 0
@@ -559,19 +671,27 @@ class ServiceBus:
         else:
             v = payload
             ts = 0
+
+        # Enforce read-only state: ignore external writes to RO fields.
+        if actor and actor != self.service_id:
+            access = self._state_access_by_node_field.get((node_id, field))
+            if access == F8StateAccess.ro:
+                if self._debug_state:
+                    print(
+                        "state_debug[%s] kv_update drop_ro node=%s field=%s ts=%s actor=%s"
+                        % (self.service_id, node_id, field, str(ts), actor)
+                    )
+                return
         cached = self._state_cache.get((node_id, field))
         if cached is not None and ts <= int(cached[1]):
             if self._debug_state:
-                actor = ""
-                if isinstance(payload, dict):
-                    actor = str(payload.get("actor") or "")
                 print(
                     "state_debug[%s] kv_update drop node=%s field=%s ts=%s cached_ts=%s actor=%s"
                     % (self.service_id, node_id, field, str(ts), str(cached[1]), actor)
                 )
             return
         self._state_cache[(node_id, field)] = (v, ts)
-        if isinstance(payload, dict) and str(payload.get("actor") or "") == self.service_id:
+        if actor and actor == self.service_id:
             if self._debug_state:
                 print(
                     "state_debug[%s] kv_update self node=%s field=%s ts=%s"
@@ -579,9 +699,6 @@ class ServiceBus:
                 )
             return
         if self._debug_state:
-            actor = ""
-            if isinstance(payload, dict):
-                actor = str(payload.get("actor") or "")
             print(
                 "state_debug[%s] kv_update apply node=%s field=%s ts=%s actor=%s"
                 % (self.service_id, node_id, field, str(ts), actor)
@@ -617,9 +734,10 @@ class ServiceBus:
         Publish a full rungraph snapshot for this service.
         """
         payload = graph.model_dump(mode="json", by_alias=True)
-        await self._transport.kv_put(
-            self._rungraph_key, json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
-        )
+        raw = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+        await self._transport.kv_put(self._rungraph_key, raw)
+        # Endpoint-only mode: apply immediately (no KV watch).
+        await self._apply_rungraph_bytes(raw)
 
     async def _on_rungraph_kv(self, key: str, value: bytes) -> None:
         if str(key) != self._rungraph_key:
@@ -643,6 +761,10 @@ class ServiceBus:
         except Exception:
             return
         try:
+            await self._validate_rungraph_or_raise(graph)
+        except Exception:
+            return
+        try:
             for n in list(getattr(graph, "nodes", None) or []):
                 # Service/container nodes use `nodeId == serviceId`.
                 if getattr(n, "operatorClass", None) is None and str(getattr(n, "nodeId", "")) != str(getattr(n, "serviceId", "")):
@@ -651,6 +773,24 @@ class ServiceBus:
             return
 
         self._graph = graph
+        # Cache local node state access for enforcement and filtering.
+        self._state_access_by_node_field.clear()
+        try:
+            for n in list(getattr(graph, "nodes", None) or []):
+                if str(getattr(n, "serviceId", "") or "") != self.service_id:
+                    continue
+                node_id = str(getattr(n, "nodeId", "") or "")
+                if not node_id:
+                    continue
+                for sf in list(getattr(n, "stateFields", None) or []):
+                    name = str(getattr(sf, "name", "") or "").strip()
+                    if not name:
+                        continue
+                    access = getattr(sf, "access", None)
+                    if isinstance(access, F8StateAccess):
+                        self._state_access_by_node_field[(node_id, name)] = access
+        except Exception:
+            self._state_access_by_node_field.clear()
         if self._debug_state:
             try:
                 node_count = len(list(graph.nodes or []))
@@ -673,6 +813,77 @@ class ServiceBus:
                     await r
             except Exception:
                 continue
+
+    async def _validate_rungraph_or_raise(self, graph: F8RuntimeGraph) -> None:
+        """
+        Validate the rungraph before applying it.
+
+        Raises to reject illegal graphs.
+        """
+        # Build access map from the candidate graph (do not rely on currently-applied graph).
+        access_map: dict[tuple[str, str], F8StateAccess] = {}
+        for n in list(getattr(graph, "nodes", None) or []):
+            if str(getattr(n, "serviceId", "")) != self.service_id:
+                continue
+            node_id = str(getattr(n, "nodeId", "") or "")
+            if not node_id:
+                continue
+            for sf in list(getattr(n, "stateFields", None) or []):
+                name = str(getattr(sf, "name", "") or "").strip()
+                if not name:
+                    continue
+                a = getattr(sf, "access", None)
+                if isinstance(a, F8StateAccess):
+                    access_map[(node_id, name)] = a
+
+        # Basic local invariants.
+        for n in list(getattr(graph, "nodes", None) or []):
+            if str(getattr(n, "serviceId", "")) != self.service_id:
+                continue
+            node_id = str(getattr(n, "nodeId", "") or "")
+            if not node_id:
+                raise ValueError("missing nodeId")
+            access_by_name: dict[str, F8StateAccess] = {}
+            for sf in list(getattr(n, "stateFields", None) or []):
+                name = str(getattr(sf, "name", "") or "").strip()
+                if not name:
+                    continue
+                a = getattr(sf, "access", None)
+                if isinstance(a, F8StateAccess):
+                    access_by_name[name] = a
+
+            values = getattr(n, "stateValues", None) or {}
+            if isinstance(values, dict):
+                for k in list(values.keys()):
+                    key = str(k)
+                    a = access_by_name.get(key)
+                    if a is None:
+                        raise ValueError(f"unknown state value: {node_id}.{key}")
+                    if a == F8StateAccess.ro:
+                        raise ValueError(f"read-only state cannot be set by rungraph: {node_id}.{key}")
+
+        # Cross-state edges must not target read-only/init fields.
+        for e in list(getattr(graph, "edges", None) or []):
+            if getattr(e, "kind", None) != F8EdgeKindEnum.state:
+                continue
+            if str(getattr(e, "toServiceId", "")) != self.service_id:
+                continue
+            to_node = str(getattr(e, "toOperatorId", "") or "")
+            to_field = str(getattr(e, "toPort", "") or "")
+            if not to_node or not to_field:
+                continue
+            a = access_map.get((to_node, to_field))
+            if a in (F8StateAccess.ro, F8StateAccess.init):
+                raise ValueError(f"state edge targets non-writable field: {to_node}.{to_field} ({a.value})")
+
+        # Custom validators (service-specific).
+        for cb in list(self._rungraph_validators):
+            try:
+                r = cb(graph)
+                if asyncio.iscoroutine(r):
+                    await r
+            except Exception as exc:
+                raise ValueError(str(exc)) from exc
 
     async def _rebuild_routes(self) -> None:
         graph = self._graph
@@ -1060,16 +1271,24 @@ class ServiceBus:
             ts = now_ms()
 
         for local_node_id, local_field, _edge in targets:
-            node = self._nodes.get(local_node_id)
-            if node is None:
+            access = self._state_access_by_node_field.get((str(local_node_id), str(local_field)))
+            if access in (F8StateAccess.ro, F8StateAccess.init):
                 continue
+            node = self._nodes.get(local_node_id)
+            if node is not None:
+                try:
+                    if isinstance(node, StatefulNode):
+                        await node.on_state(local_field, v, ts_ms=ts)
+                except Exception:
+                    pass
             try:
-                if isinstance(node, StatefulNode):
-                    await node.on_state(local_field, v, ts_ms=ts)
-            except Exception:
-                pass
-            try:
-                await self.set_state(local_node_id, local_field, v, ts_ms=ts)
+                await self.apply_state_local(
+                    local_node_id,
+                    local_field,
+                    v,
+                    ts_ms=ts,
+                    meta={"source": "cross_state", "peerServiceId": peer_service_id, **(payload if isinstance(payload, dict) else {})},
+                )
             except Exception:
                 pass
 

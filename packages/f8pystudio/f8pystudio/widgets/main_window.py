@@ -55,6 +55,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
 
     def _setup_docks(self) -> None:
         prop_editor = F8StudioPropertiesBinWidget(node_graph=self.studio_graph)
+        self._prop_editor = prop_editor
         prop_dock = QtWidgets.QDockWidget("Properties", self)
         prop_dock.setWidget(prop_editor)
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, prop_dock)
@@ -196,6 +197,25 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
                 self._applying_runtime_state = True
                 try:
                     node.set_property(field, value, push_undo=False)
+                    # If this node is currently shown in the Properties dock, also refresh the widget value.
+                    try:
+                        prop_editor = getattr(self, "_prop_editor", None)
+                        editor = prop_editor.get_property_editor_widget(node) if prop_editor is not None else None
+                        w = editor.get_widget(field) if editor is not None else None
+                        if w is not None and hasattr(w, "set_value"):
+                            try:
+                                w.blockSignals(True)
+                            except Exception:
+                                pass
+                            try:
+                                w.set_value(value)
+                            finally:
+                                try:
+                                    w.blockSignals(False)
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
                 finally:
                     self._applying_runtime_state = False
         except Exception:
