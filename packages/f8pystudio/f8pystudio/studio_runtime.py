@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -16,6 +17,7 @@ from f8pysdk.runtime_node import RuntimeNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from f8pysdk.service_bus import ServiceBus, ServiceBusConfig
 from f8pysdk.service_host import ServiceHost, ServiceHostConfig
+from f8pysdk.service_ready import wait_service_ready
 from .nodegraph.runtime_compiler import CompiledRuntimeGraphs
 from .operators import register_operator, set_preview_sink
 from .service_process_manager import ServiceProcessConfig, ServiceProcessManager
@@ -324,41 +326,22 @@ class StudioRuntime(QtCore.QObject):
             tr = NatsTransport(NatsTransportConfig(url=nats_url, kv_bucket=bucket))
             try:
                 await tr.connect()
+                try:
+                    await wait_service_ready(tr, timeout_s=6.0, min_ts_ms=int(time.time() * 1000))
+                except Exception as exc:
+                    raise RuntimeError(f"service not ready: {exc}")
                 payload = g.model_dump(mode="json", by_alias=True)
                 # Endpoint-only mode: deploy via service endpoint (allows validation/rejection).
                 req = {"reqId": new_id(), "args": {"graph": payload}, "meta": {"source": "studio"}}
                 req_bytes = json.dumps(req, ensure_ascii=False, default=str).encode("utf-8")
-                resp_raw: bytes | None = None
-                last_exc: Exception | None = None
-                for _ in range(3):
-                    try:
-                        resp_raw = await tr.request(
-                            svc_endpoint_subject(service_id, "set_rungraph"),
-                            req_bytes,
-                            timeout=2.0,
-                            raise_on_error=True,
-                        )
-                    except Exception as exc:
-                        last_exc = exc
-                        resp_raw = None
-                    if resp_raw:
-                        break
-                    await asyncio.sleep(0.1)
+                resp_raw = await tr.request(
+                    svc_endpoint_subject(service_id, "set_rungraph"),
+                    req_bytes,
+                    timeout=2.0,
+                    raise_on_error=True,
+                )
                 if not resp_raw:
-                    # Distinguish "service micro not running" vs "endpoint missing" vs request error.
-                    try:
-                        ping = await tr.request(
-                            f"$SRV.PING.{svc_micro_name(service_id)}", b"", timeout=0.5, raise_on_error=True
-                        )
-                    except Exception:
-                        ping = None
-                    if ping and last_exc is not None:
-                        raise RuntimeError(
-                            f"set_rungraph request failed: {type(last_exc).__name__}: {last_exc} (bytes={len(req_bytes)})"
-                        )
-                    if ping:
-                        raise RuntimeError("set_rungraph endpoint missing (service is likely older than endpoint-only mode)")
-                    raise RuntimeError("service micro not available (service not started or not reachable)")
+                    raise RuntimeError("set_rungraph request failed: empty response")
                 try:
                     resp = json.loads(resp_raw.decode("utf-8"))
                 except Exception:

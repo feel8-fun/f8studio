@@ -17,6 +17,7 @@ from .nats_naming import (
     cmd_channel_subject,
     data_subject,
     ensure_token,
+    kv_key_ready,
     kv_bucket_for_service,
     kv_key_node_state,
     kv_key_rungraph,
@@ -99,6 +100,7 @@ class ServiceBus:
         self._graph: F8RuntimeGraph | None = None
 
         self._rungraph_key = kv_key_rungraph()
+        self._ready_key = kv_key_ready()
         self._micro: Any | None = None
 
         # Routing tables (data only).
@@ -195,12 +197,19 @@ class ServiceBus:
 
     async def start(self) -> None:
         await self._transport.connect()
+        # Clear any stale ready flag from a previous run as early as possible.
+        await self._announce_ready(False, reason="starting")
         if self._micro is None:
             await self._start_micro_endpoints()
         await self._load_active_from_kv()
         await self._reload_rungraph()
+        await self._announce_ready(True, reason="start")
 
     async def stop(self) -> None:
+        try:
+            await self._announce_ready(False, reason="stop")
+        except Exception:
+            pass
         try:
             if self._micro is not None:
                 await self._micro.stop()
@@ -247,6 +256,19 @@ class ServiceBus:
         self._state_cache.clear()
 
         await self._transport.close()
+
+    async def _announce_ready(self, ready: bool, *, reason: str) -> None:
+        payload = {
+            "serviceId": self.service_id,
+            "ready": bool(ready),
+            "reason": str(reason or ""),
+            "ts": int(now_ms()),
+        }
+        raw = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+        try:
+            await self._transport.kv_put(self._ready_key, raw)
+        except Exception:
+            pass
 
     async def _load_active_from_kv(self) -> None:
         """

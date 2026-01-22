@@ -27,6 +27,14 @@ def kv_bucket_for_service(service_id: str) -> str:
 def kv_key_rungraph() -> str:
     return "rungraph"
 
+def kv_key_ready() -> str:
+    """
+    Service readiness key in the per-service KV bucket.
+
+    Payload is JSON bytes written by the service runtime.
+    """
+    return "ready"
+
 
 def kv_key_node_state(*, node_id: str, field: str) -> str:
     node_id = ensure_token(node_id, label="node_id")

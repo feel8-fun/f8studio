@@ -58,7 +58,7 @@ class ServiceHost:
 
         self._service_node: Any | None = None
         self._operator_nodes: dict[str, Any] = {}
-        self._bus.add_rungraph_listener(self._on_rungraph)
+        self._bus.add_rungraph_listener(self.apply_rungraph)
 
     async def start(self) -> None:
         """
@@ -85,12 +85,6 @@ class ServiceHost:
             self._service_node = None
             return
 
-    async def _on_rungraph(self, graph: F8RuntimeGraph) -> None:
-        try:
-            await self.apply_rungraph(graph)
-        except Exception:
-            return
-
     async def apply_rungraph(self, graph: F8RuntimeGraph) -> None:
         """
         Register/unregister local runtime nodes based on the latest rungraph snapshot.
@@ -108,9 +102,9 @@ class ServiceHost:
             try:
                 if service_class and str(n.serviceClass) != service_class:
                     continue
-                if getattr(n, "operatorClass", None) is None:
+                if n.operatorClass is None:
                     # Service/container node snapshot (state only).
-                    if str(getattr(n, "nodeId", "")) == str(self._bus.service_id):
+                    if n.nodeId == str(self._bus.service_id):
                         service_snapshot = n
                     continue
                 want_operator_nodes.append(n)
@@ -203,16 +197,17 @@ class ServiceHost:
         """
         node_id = str(self._bus.service_id)
         try:
-            access_by_name = {str(sf.name): sf.access for sf in list(getattr(n, "stateFields", None) or [])}
+            access_by_name = {str(sf.name): sf.access for sf in list(n.stateFields or [])}
         except Exception:
             access_by_name = {}
         for k, v in self._node_initial_state(n).items():
             # Never seed/overwrite read-only state from rungraph; it is runtime-owned.
-            try:
-                if access_by_name.get(str(k)) == F8StateAccess.ro:
-                    continue
-            except Exception:
-                pass
+            if k not in access_by_name:
+                continue
+            
+            if access_by_name[k] == F8StateAccess.ro:
+                continue
+            
             try:
                 existing = await self._bus.get_state(node_id, str(k))
             except Exception:
