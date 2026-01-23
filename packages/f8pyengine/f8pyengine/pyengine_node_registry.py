@@ -9,7 +9,8 @@ from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from .constants import SERVICE_CLASS
 from .operators.serial_out import register_operator as register_serial_out_operator
 from .operators.sequence import register_operator as register_sequence_operator
-from .operators.signal import register_operators as register_signal_operators
+from .operators.signal import register_operator as register_signal_operator
+from .operators.print import register_operator as register_print_operator
 from .operators.tick import register_operator as register_tick_operator
 from .operators.udp_skeleton import register_operator as register_udp_skeleton_operator
 
@@ -41,7 +42,8 @@ def register_pyengine_specs(registry: RuntimeNodeRegistry | None = None) -> Runt
 
     register_tick_operator(reg)
     register_sequence_operator(reg)
-    register_signal_operators(reg)
+    register_signal_operator(reg)
+    register_print_operator(reg)
     register_udp_skeleton_operator(reg)
     register_serial_out_operator(reg)
     return reg

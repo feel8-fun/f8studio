@@ -21,7 +21,7 @@ from ..constants import SERVICE_CLASS
 
 
 SINE_OPERATOR_CLASS = "f8.sine"
-PRINT_OPERATOR_CLASS = "f8.print"
+TEMPEST_STROKE_OPERATOR_CLASS = "f8.tempest"
 
 
 class SineRuntimeNode(RuntimeNode):
@@ -78,28 +78,6 @@ class SineRuntimeNode(RuntimeNode):
         return offset_f + amp_f * math.sin(2.0 * math.pi * hz_f * t + (2.0 * math.pi * phase_f))
 
 
-class PrintRuntimeNode(RuntimeNode):
-    """
-    Prints incoming values.
-
-    For the demo flow, printing happens on data arrival (no exec required).
-    """
-
-    def __init__(self, *, node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any] | None = None) -> None:
-        super().__init__(
-            node_id=ensure_token(node_id, label="node_id"),
-            data_in_ports=[p.name for p in (node.dataInPorts or [])],
-            data_out_ports=[p.name for p in (node.dataOutPorts or [])],
-            state_fields=[s.name for s in (node.stateFields or [])],
-        )
-        self._initial_state = dict(initial_state or {})
-
-    async def on_exec(self, exec_id: str | int, _in_port: str | None = None) -> list[str]:
-        v = await self.pull("value", ctx_id=exec_id)
-        print(f"[{self.node_id}] exec={exec_id} value={v}")
-        return []
-
-
 SineRuntimeNode.SPEC = F8OperatorSpec(
     schemaVersion=F8OperatorSchemaVersion.f8operator_1,
     serviceClass=SERVICE_CLASS,
@@ -147,31 +125,14 @@ SineRuntimeNode.SPEC = F8OperatorSpec(
     ],
 )
 
-PrintRuntimeNode.SPEC = F8OperatorSpec(
-    schemaVersion=F8OperatorSchemaVersion.f8operator_1,
-    serviceClass=SERVICE_CLASS,
-    operatorClass=PRINT_OPERATOR_CLASS,
-    version="0.0.1",
-    label="Print",
-    description="Exec-driven printer (pulls `value` and prints).",
-    tags=["debug", "console", "print"],
-    execInPorts=["exec"],
-    dataInPorts=[F8DataPortSpec(name="value", description="value to print", valueSchema=number_schema())],
-)
 
-
-def register_operators(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
+def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
     reg = registry or RuntimeNodeRegistry.instance()
 
     def _sine_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
         return SineRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
 
-    def _print_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
-        return PrintRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
-
     reg.register(SERVICE_CLASS, SINE_OPERATOR_CLASS, _sine_factory, overwrite=True)
-    reg.register(SERVICE_CLASS, PRINT_OPERATOR_CLASS, _print_factory, overwrite=True)
 
     reg.register_operator_spec(SineRuntimeNode.SPEC, overwrite=True)
-    reg.register_operator_spec(PrintRuntimeNode.SPEC, overwrite=True)
     return reg

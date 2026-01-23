@@ -236,7 +236,7 @@ SerialOutRuntimeNode.SPEC = F8OperatorSpec(
             name="port",
             label="Port",
             description="Serial port name (e.g., COM3).",
-            valueSchema=string_schema(default="COM3"),
+            valueSchema=string_schema(default="COM4"),
             access=F8StateAccess.rw,
             showOnNode=True,
         ),
@@ -245,8 +245,8 @@ SerialOutRuntimeNode.SPEC = F8OperatorSpec(
             label="Baudrate",
             description="Serial baud rate.",
             valueSchema=integer_schema(default=115200, minimum=300, maximum=4000000),
-            access=F8StateAccess.rw,
-            showOnNode=True,
+            access=F8StateAccess.wo,
+            showOnNode=False,
         ),
         F8StateSpec(
             name="encoding",
@@ -254,7 +254,7 @@ SerialOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Text encoding used when value is not bytes.",
             valueSchema=string_schema(default="utf-8"),
             access=F8StateAccess.rw,
-            showOnNode=True,
+            showOnNode=False,
         ),
         F8StateSpec(
             name="newline",
@@ -262,7 +262,7 @@ SerialOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Suffix appended after each write (use empty string to disable).",
             valueSchema=string_schema(default="\\n"),
             access=F8StateAccess.rw,
-            showOnNode=True,
+            showOnNode=False,
         ),
     ],
 )

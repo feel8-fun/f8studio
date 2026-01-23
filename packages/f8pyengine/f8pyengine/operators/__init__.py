@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from .signal import PrintRuntimeNode, SineRuntimeNode
+from .signal import SineRuntimeNode
+from .print import PrintRuntimeNode
 from .serial_out import SerialOutRuntimeNode
 from .tick import TickRuntimeNode
 from .udp_skeleton import UdpSkeletonRuntimeNode
