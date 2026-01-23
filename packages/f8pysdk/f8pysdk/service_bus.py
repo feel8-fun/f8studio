@@ -510,6 +510,9 @@ class ServiceBus:
 
             try:
                 payload = graph.model_dump(mode="json", by_alias=True)
+                meta_payload = dict(payload.get("meta") or {})
+                meta_payload["ts"] = int(now_ms())
+                payload["meta"] = meta_payload
                 raw_bytes = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
                 await self._transport.kv_put(self._rungraph_key, raw_bytes)
                 # Endpoint mode: apply immediately (no KV watch).
@@ -829,6 +832,9 @@ class ServiceBus:
         Publish a full rungraph snapshot for this service.
         """
         payload = graph.model_dump(mode="json", by_alias=True)
+        meta = dict(payload.get("meta") or {})
+        meta["ts"] = int(now_ms())
+        payload["meta"] = meta
         raw = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
         await self._transport.kv_put(self._rungraph_key, raw)
         # Endpoint-only mode: apply immediately (no KV watch).

@@ -25,6 +25,19 @@ def _unwrap_json_value(v: Any) -> Any:
     return v
 
 
+def _rungraph_ts(graph: F8RuntimeGraph) -> int:
+    meta = getattr(graph, "meta", None)
+    if isinstance(meta, dict):
+        try:
+            return int(meta.get("ts") or 0)
+        except Exception:
+            return 0
+    try:
+        return int(getattr(meta, "ts", 0) or 0)
+    except Exception:
+        return 0
+
+
 @dataclass(frozen=True)
 class ServiceHostConfig:
     """
@@ -140,9 +153,11 @@ class ServiceHost:
                 self._operator_nodes.pop(node_id, None)
                 continue
 
+        rungraph_ts = _rungraph_ts(graph)
+
         if service_snapshot is not None:
-            await self._seed_service_state_defaults(service_snapshot)
-        await self._seed_state_defaults(want_operator_nodes)
+            await self._seed_service_state_defaults(service_snapshot, rungraph_ts=rungraph_ts)
+        await self._seed_state_defaults(want_operator_nodes, rungraph_ts=rungraph_ts)
 
     @staticmethod
     def _node_initial_state(n: F8RuntimeNode) -> dict[str, Any]:
@@ -154,13 +169,13 @@ class ServiceHost:
             out[str(k)] = _unwrap_json_value(v)
         return out
 
-    async def _seed_state_defaults(self, nodes: list[F8RuntimeNode]) -> None:
+    async def _seed_state_defaults(self, nodes: list[F8RuntimeNode], *, rungraph_ts: int = 0) -> None:
         """
         Seed rungraph-provided initial state values into KV.
 
-        If KV already has a value (even if different), prefer the KV value and
-        do not overwrite. This avoids "stale" rungraph snapshots clobbering
-        newer state edits.
+        If KV already has a value with a newer/equal timestamp than the rungraph
+        snapshot, prefer the KV value. Otherwise, allow the rungraph snapshot to
+        overwrite older KV state.
         """
         for n in nodes:
             node_id = str(n.nodeId)
@@ -175,24 +190,36 @@ class ServiceHost:
                         continue
                 except Exception:
                     pass
+                existing_ts = None
+                existing_value = None
                 try:
-                    found, _, _ = await self._bus.get_state_with_ts(node_id, str(k))
+                    found, existing_value, existing_ts = await self._bus.get_state_with_ts(node_id, str(k))
                 except Exception:
                     found = False
                 if found:
-                    continue
+                    try:
+                        if existing_value == v:
+                            continue
+                    except Exception:
+                        pass
+                    try:
+                        if int(existing_ts or 0) >= int(rungraph_ts or 0):
+                            continue
+                    except Exception:
+                        continue
                 try:
                     await self._bus.set_state_with_meta(
                         node_id,
                         str(k),
                         v,
+                        ts_ms=(int(rungraph_ts) if rungraph_ts > 0 else None),
                         source="rungraph",
                         meta={"rungraphReconcile": True},
                     )
                 except Exception:
                     continue
 
-    async def _seed_service_state_defaults(self, n: F8RuntimeNode) -> None:
+    async def _seed_service_state_defaults(self, n: F8RuntimeNode, *, rungraph_ts: int = 0) -> None:
         """
         Apply rungraph-provided `stateValues` for the service node into KV.
         """
@@ -209,17 +236,29 @@ class ServiceHost:
             if access_by_name[k] == F8StateAccess.ro:
                 continue
             
+            existing_ts = None
+            existing_value = None
             try:
-                found, _, _ = await self._bus.get_state_with_ts(node_id, str(k))
+                found, existing_value, existing_ts = await self._bus.get_state_with_ts(node_id, str(k))
             except Exception:
                 found = False
             if found:
-                continue
+                try:
+                    if existing_value == v:
+                        continue
+                except Exception:
+                    pass
+                try:
+                    if int(existing_ts or 0) >= int(rungraph_ts or 0):
+                        continue
+                except Exception:
+                    continue
             try:
                 await self._bus.set_state_with_meta(
                     node_id,
                     str(k),
                     v,
+                    ts_ms=(int(rungraph_ts) if rungraph_ts > 0 else None),
                     source="rungraph",
                     meta={"rungraphReconcile": True, "serviceNode": True},
                 )

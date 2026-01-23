@@ -312,6 +312,10 @@ class PyStudioServiceBridge(QtCore.QObject):
                 except Exception as exc:
                     raise RuntimeError(f"service not ready: {exc}")
                 payload = g.model_dump(mode="json", by_alias=True)
+                meta = dict(payload.get("meta") or {})
+                if not str(meta.get("source") or "").strip():
+                    meta["source"] = "studio"
+                payload["meta"] = meta
                 # Endpoint-only mode: deploy via service endpoint (allows validation/rejection).
                 req = {"reqId": new_id(), "args": {"graph": payload}, "meta": {"source": "studio"}}
                 req_bytes = json.dumps(req, ensure_ascii=False, default=str).encode("utf-8")
@@ -402,6 +406,7 @@ class PyStudioServiceBridge(QtCore.QObject):
         studio_graph = F8RuntimeGraph(
             graphId=str(getattr(compiled.global_graph, "graphId", "") or "studio_monitor"),
             revision=str(getattr(compiled.global_graph, "revision", "") or "1"),
+            meta={"source": "studio"},
             services=[],
             nodes=[
                 *base_nodes,

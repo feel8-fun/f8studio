@@ -726,6 +726,8 @@ components:
       type: object
       description: Compiled graph artifact deployed to engines.
       properties:
+        meta:
+          $ref: "#/components/schemas/F8RuntimeGraphMeta"
         graphId:
           type: string
         revision:
@@ -749,3 +751,17 @@ components:
           default: []
       required: [graphId, revision]
       additionalProperties: false
+
+    F8RuntimeGraphMeta:
+      title: F8RuntimeGraphMeta
+      type: object
+      description: Metadata for a rungraph snapshot.
+      properties:
+        ts:
+          type: integer
+          format: int64
+          description: Unix timestamp (ms) when the rungraph snapshot was generated.
+        source:
+          type: string
+          description: Optional origin label for this rungraph snapshot.
+      additionalProperties: true
