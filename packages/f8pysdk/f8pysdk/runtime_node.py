@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Protocol
+from collections.abc import Awaitable, Callable
 
 from .capabilities import BusAttachableNode, ComputableNode, StatefulNode
 
@@ -14,6 +15,11 @@ class _BusLike(Protocol):
     async def set_state(self, node_id: str, field: str, value: Any, *, ts_ms: int | None = None) -> None: ...
 
     async def get_state(self, node_id: str, field: str) -> Any: ...
+
+    @property
+    def active(self) -> bool: ...
+
+    def add_lifecycle_listener(self, cb: Callable[[bool, dict[str, Any]], Awaitable[None] | None]) -> None: ...
 
 
 @dataclass

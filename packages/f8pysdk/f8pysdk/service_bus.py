@@ -976,6 +976,8 @@ class ServiceBus:
 
     # ---- data routing ---------------------------------------------------
     async def emit_data(self, node_id: str, port: str, value: Any, *, ts_ms: int | None = None) -> None:
+        if not self._active:
+            return
         node_id = ensure_token(node_id, label="node_id")
         port = ensure_token(port, label="port_id")
         ts = int(ts_ms or now_ms())
@@ -995,6 +997,8 @@ class ServiceBus:
         await self._transport.publish(subject, payload)
 
     async def publish(self, subject: str, payload: bytes) -> None:
+        if not self._active:
+            return
         await self._transport.publish(str(subject), bytes(payload))
 
     async def subscribe(
@@ -1015,6 +1019,8 @@ class ServiceBus:
         - `queue`: pop the oldest buffered item (FIFO).
         - `timeoutMs`: if newest sample is stale, return None.
         """
+        if not self._active:
+            return None
         node_id = ensure_token(node_id, label="node_id")
         port = ensure_token(port, label="port_id")
         buf = self._data_inputs.get((node_id, port))
@@ -1120,6 +1126,8 @@ class ServiceBus:
             stack.discard(key)
 
     async def _on_cross_data_msg(self, subject: str, payload: bytes) -> None:
+        if not self._active:
+            return
         targets = self._cross_in_by_subject.get(str(subject)) or []
         if not targets:
             return

@@ -5,10 +5,11 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..generated import F8EdgeKindEnum, F8RuntimeGraph, F8RuntimeNode
-from ..capabilities import EntrypointNode, ExecutableNode
+from ..generated import F8EdgeDirection, F8EdgeKindEnum, F8RuntimeGraph, F8RuntimeNode
+from ..capabilities import ComputableNode, EntrypointNode, ExecutableNode
 from ..nats_naming import ensure_token
 from ..service_bus import ServiceBus
+from ..time_utils import now_ms
 
 
 @dataclass
@@ -73,6 +74,7 @@ class ExecFlowExecutor:
 
         self._exec_out: dict[tuple[str, str], tuple[str, str]] = {}
         self._entrypoint_ctx: EntrypointContext | None = None
+        self._half_out_ports: dict[str, set[str]] = {}
 
     @property
     def service_id(self) -> str:
@@ -114,8 +116,47 @@ class ExecFlowExecutor:
     async def apply_rungraph(self, graph: F8RuntimeGraph) -> None:
         self._graph = graph
         self._rebuild_exec_routes(graph)
+        self._rebuild_half_out_ports(graph)
         if self._active:
             await self._restart_entrypoint_if_needed(graph)
+
+    def _rebuild_half_out_ports(self, graph: F8RuntimeGraph) -> None:
+        out: dict[str, set[str]] = {}
+        for edge in list(getattr(graph, "edges", None) or []):
+            if edge.kind != F8EdgeKindEnum.data:
+                continue
+            if getattr(edge, "direction", None) != F8EdgeDirection.out:
+                continue
+            if str(edge.fromServiceId) != self._service_id:
+                continue
+            if not edge.fromOperatorId:
+                continue
+            out.setdefault(str(edge.fromOperatorId), set()).add(str(edge.fromPort))
+        self._half_out_ports = out
+
+    async def _emit_half_edge_outputs(self, node_id: str, *, exec_id: str | int) -> None:
+        if not self._active:
+            return
+        if not self._bus.active:
+            return
+        ports = self._half_out_ports.get(str(node_id)) or set()
+        if not ports:
+            return
+        node = self._nodes.get(str(node_id))
+        if node is None or not isinstance(node, ComputableNode):
+            return
+
+        for port in sorted(ports):
+            try:
+                v = await node.compute_output(str(port), ctx_id=exec_id)  # type: ignore[misc]
+            except Exception:
+                continue
+            if v is None:
+                continue
+            try:
+                await self._bus.emit_data(str(node_id), str(port), v, ts_ms=now_ms())
+            except Exception:
+                continue
 
     def _rebuild_exec_routes(self, graph: F8RuntimeGraph) -> None:
         out_map: dict[tuple[str, str], tuple[str, str]] = {}
@@ -267,6 +308,11 @@ class ExecFlowExecutor:
                 out_ports = await node.on_exec(exec_id, str(in_port))  # type: ignore[misc]
             except Exception:
                 continue
+
+            # Tick-driven cross-service publishing for outgoing half-edges (direction=out).
+            # This bridges pull-based compute into NATS data subjects so remote services can subscribe.
+            await self._emit_half_edge_outputs(to_node, exec_id=exec_id)
+
             # DFS scheduling: push in reverse so earlier ports run first.
             for p in reversed(list(out_ports or [])):
                 nxt = self._exec_out.get((to_node, str(p)))

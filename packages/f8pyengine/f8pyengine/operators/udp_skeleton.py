@@ -5,7 +5,7 @@ import json
 import socket
 import struct
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from f8pysdk import (
     F8DataPortSpec,
@@ -101,17 +101,80 @@ class UdpSkeletonRuntimeNode(RuntimeNode):
         self._last_emitted_version = -1
         self._last_emitted_keys: list[str] = []
         self._last_emitted_selected: tuple[str, int] | None = None  # (key, rxTsMs)
+        self._lifecycle_hooked = False
+
+    def attach(self, bus: Any) -> None:
+        super().attach(bus)
+        if self._lifecycle_hooked:
+            return
+        self._lifecycle_hooked = True
+
+        # Pause/resume UDP IO with service lifecycle.
+        bus_like = cast(Any, bus)
+
+        async def _on_active(active: bool, _meta: dict[str, Any]) -> None:
+            if bool(active):
+                await self._ensure_receiver()
+            else:
+                await self._stop_receiver()
+
+        try:
+            bus_like.add_lifecycle_listener(_on_active)
+        except Exception:
+            pass
+
+        # Apply current active state immediately (best-effort).
+        try:
+            if not bool(bus_like.active):
+                loop = asyncio.get_running_loop()
+                loop.create_task(self._stop_receiver(), name=f"udp_skeleton:deactivate:{self.node_id}")
+        except Exception:
+            pass
+
+    def _bus_active(self) -> bool:
+        bus = self._bus
+        if bus is None:
+            return True
+        try:
+            return bool(bus.active)
+        except Exception:
+            return True
 
     async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
+        if not self._bus_active():
+            await self._stop_receiver()
+            return list(self._exec_out_ports)
         await self._ensure_receiver()
         await self._cleanup_stale()
         await self._emit_updates(force=True)
         return list(self._exec_out_ports)
 
+    async def compute_output(self, port: str, ctx_id: str | int | None = None) -> Any:
+        if not self._bus_active():
+            await self._stop_receiver()
+            return None
+        p = str(port or "").strip()
+        if p not in ("skeletons", "selectedSkeleton"):
+            return None
+
+        await self._ensure_receiver()
+        await self._cleanup_stale()
+
+        async with self._models_lock:
+            keys = sorted(self._skeletons_by_key.keys())
+            if p == "skeletons":
+                return [self._skeletons_by_key[k].get("payload") for k in keys]
+            selected_key = str(self._selected_key or "").strip()
+            selected = self._skeletons_by_key.get(selected_key) if selected_key else None
+            return None if selected is None else selected.get("payload")
+
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
         f = str(field)
         if f in ("bindAddress", "port", "maxQueue", "reuseAddress"):
-            await self._ensure_receiver(force_restart=True)
+            if self._bus_active():
+                await self._ensure_receiver(force_restart=True)
+            else:
+                await self._stop_receiver()
             return
         if f == "cleanupAfterMs":
             self._cleanup_after_ms = self._parse_int(value, default=self._cleanup_after_ms)
@@ -188,6 +251,9 @@ class UdpSkeletonRuntimeNode(RuntimeNode):
         )
 
     async def _ensure_receiver(self, *, force_restart: bool = False) -> None:
+        if not self._bus_active():
+            await self._stop_receiver()
+            return
         cfg = await self._read_cfg_from_state()
         async with self._lock:
             if cfg is None:
@@ -261,6 +327,8 @@ class UdpSkeletonRuntimeNode(RuntimeNode):
         q = self._queue
         while True:
             rx_ts_ms, raw, addr = await q.get()
+            if not self._bus_active():
+                continue
             self._packet_count += 1
             payload = self._decode_payload(raw)
             model_name = self._extract_model_name(payload)
@@ -277,8 +345,8 @@ class UdpSkeletonRuntimeNode(RuntimeNode):
                 self._skeletons_by_key[key] = entry
                 self._skeletons_version += 1
 
-            await self._cleanup_stale(now_ts_ms=int(rx_ts_ms))
-            await self._emit_updates()
+            # Do not emit on packet arrival: keep this node tick/pull-driven.
+            # Cleanup/emission happens in `on_exec` / `compute_output`.
 
     @staticmethod
     def _extract_model_name(payload: Any) -> str | None:
