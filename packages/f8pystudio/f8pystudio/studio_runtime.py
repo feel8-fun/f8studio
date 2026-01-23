@@ -327,7 +327,7 @@ class StudioRuntime(QtCore.QObject):
             try:
                 await tr.connect()
                 try:
-                    await wait_service_ready(tr, timeout_s=6.0, min_ts_ms=int(time.time() * 1000))
+                    await wait_service_ready(tr, timeout_s=6.0)
                 except Exception as exc:
                     raise RuntimeError(f"service not ready: {exc}")
                 payload = g.model_dump(mode="json", by_alias=True)

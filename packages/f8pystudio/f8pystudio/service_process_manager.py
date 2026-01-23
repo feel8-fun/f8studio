@@ -16,6 +16,7 @@ class ServiceProcessConfig:
     service_class: str
     service_id: str
     nats_url: str = "nats://127.0.0.1:4222"
+    purge_kv_bucket_on_start: bool = True
 
 
 class ServiceProcessManager:
@@ -131,6 +132,26 @@ class ServiceProcessManager:
 
         if self.is_running(service_id):
             return
+
+        # Studio has "root" permissions; clear the service KV bucket before starting a new process
+        # to avoid stale `ready=true` from a previous run.
+        if cfg.purge_kv_bucket_on_start:
+            try:
+                from f8pysdk.nats_naming import kv_bucket_for_service
+                from f8pysdk.nats_transport import reset_kv_bucket_sync
+
+                reset_kv_bucket_sync(url=nats_url, kv_bucket=kv_bucket_for_service(service_id), timeout_s=2.5)
+                try:
+                    if on_output is not None:
+                        on_output(service_id, "[kv] purged bucket on start\n")
+                except Exception:
+                    pass
+            except Exception as exc:
+                try:
+                    if on_output is not None:
+                        on_output(service_id, f"[kv] purge bucket failed (ignored): {exc}\n")
+                except Exception:
+                    pass
 
         launch = entry.launch
         cmd = [str(launch.command), *[str(a) for a in (launch.args or [])]]

@@ -299,3 +299,42 @@ class NatsTransport:
 
         task = asyncio.create_task(_pump(), name=f"kv_watch:{bucket}:{key_pattern}")
         return (watcher, task)
+
+
+async def reset_kv_bucket(
+    *,
+    url: str,
+    kv_bucket: str,
+    kv_storage: StorageType = StorageType.MEMORY,
+    timeout_s: float = 2.5,
+) -> None:
+    """
+    Delete and recreate a JetStream KV bucket (best-effort).
+
+    Used by Studio to clear stale runtime state (eg. `ready=true`) before starting a new service process.
+    """
+    tr = NatsTransport(
+        NatsTransportConfig(
+            url=str(url).strip(),
+            kv_bucket=str(kv_bucket).strip(),
+            kv_storage=kv_storage,
+            delete_bucket_on_connect=True,
+        )
+    )
+    await asyncio.wait_for(tr.connect(), timeout=float(timeout_s))
+    await tr.close()
+
+
+def reset_kv_bucket_sync(
+    *,
+    url: str,
+    kv_bucket: str,
+    kv_storage: StorageType = StorageType.MEMORY,
+    timeout_s: float = 2.5,
+) -> None:
+    """
+    Synchronous wrapper for `reset_kv_bucket` (for non-async entrypoints).
+    """
+    asyncio.run(
+        reset_kv_bucket(url=url, kv_bucket=kv_bucket, kv_storage=kv_storage, timeout_s=float(timeout_s))
+    )

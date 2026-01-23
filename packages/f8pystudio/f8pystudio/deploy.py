@@ -206,7 +206,7 @@ async def deploy_to_service(*, service_id: str, nats_url: str, graph: F8RuntimeG
     tr = NatsTransport(NatsTransportConfig(url=str(nats_url).strip(), kv_bucket=bucket))
     await tr.connect()
     try:
-        await wait_service_ready(tr, timeout_s=6.0, min_ts_ms=int(time.time() * 1000))
+        await wait_service_ready(tr, timeout_s=6.0)
         graph_payload = graph.model_dump(mode="json", by_alias=True)
         payload = json.dumps(graph_payload, ensure_ascii=False, default=str).encode("utf-8")
         # Endpoint-only mode: deploy via service endpoint (allows validation/rejection).
