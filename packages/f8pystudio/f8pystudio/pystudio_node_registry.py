@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from f8pysdk import F8OperatorSchemaVersion, F8OperatorSpec, F8ServiceSchemaVersion, F8ServiceSpec
+from f8pysdk import F8ServiceSchemaVersion, F8ServiceSpec
 from f8pysdk import F8StateAccess, F8StateSpec, integer_schema
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from .constants import SERVICE_CLASS, STUDIO_SERVICE_ID
-from ..operators.print import register_operator
+from .operators.print import register_operator
 
 
 def register_pystudio_specs(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:

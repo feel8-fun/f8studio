@@ -19,7 +19,7 @@ from f8pysdk.service_ready import wait_service_ready
 from .nodegraph.runtime_compiler import CompiledRuntimeGraphs
 from .pystudio_service import PyStudioService, PyStudioServiceConfig
 from .service_process_manager import ServiceProcessConfig, ServiceProcessManager
-from .service_host.service_host_registry import SERVICE_CLASS, STUDIO_SERVICE_ID
+from .pystudio_node_registry import SERVICE_CLASS, STUDIO_SERVICE_ID
 
 
 _MONITOR_NODE_ID = "monitor"

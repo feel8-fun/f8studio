@@ -18,7 +18,7 @@ from f8pysdk.nats_naming import ensure_token
 from f8pysdk.runtime_node import RuntimeNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
-from ..service_host.constants import SERVICE_CLASS
+from ..constants import SERVICE_CLASS
 
 
 OPERATOR_CLASS = "f8.print"

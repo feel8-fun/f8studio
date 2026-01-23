@@ -8,7 +8,7 @@ from qtpy import QtWidgets
 
 from .render_nodes import RenderNodeRegistry
 from .service_catalog import ServiceCatalog, load_discovery_into_registries
-from .service_host.service_host_registry import SERVICE_CLASS, register_pystudio_specs
+from .pystudio_node_registry import SERVICE_CLASS, register_pystudio_specs
 from .widgets.main_window import F8StudioMainWin
 
 
@@ -69,4 +69,3 @@ class PyStudioProgram:
 
     def describe_json_text(self) -> str:
         return json.dumps(self.describe_json(), ensure_ascii=False)
-

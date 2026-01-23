@@ -19,8 +19,8 @@ from .operator_basenode import F8StudioOperatorBaseNode
 from .viewer import F8StudioNodeViewer
 from .session import last_session_path
 
-from ..service_host.constants import SERVICE_CLASS as _CANVAS_SERVICE_CLASS_
-from ..service_host.constants import STUDIO_SERVICE_ID
+from ..constants import SERVICE_CLASS as _CANVAS_SERVICE_CLASS_
+from ..constants import STUDIO_SERVICE_ID
 
 _BASE_OPERATOR_CLS_ = F8StudioOperatorBaseNode
 _BASE_CONTAINER_CLS_ = F8StudioContainerBaseNode

@@ -47,8 +47,3 @@ def register_pyengine_specs(registry: RuntimeNodeRegistry | None = None) -> Runt
     register_udp_skeleton_operator(reg)
     register_serial_out_operator(reg)
     return reg
-
-
-def register_pyengine_runtimes(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
-    # Backwards compatible name.
-    return register_pyengine_specs(registry)

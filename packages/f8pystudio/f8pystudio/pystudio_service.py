@@ -7,7 +7,7 @@ from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from f8pysdk.service_runtime import ServiceRuntime, ServiceRuntimeConfig
 
 from .operators import register_operator, set_preview_sink
-from .service_host.service_host_registry import SERVICE_CLASS, STUDIO_SERVICE_ID
+from .pystudio_node_registry import SERVICE_CLASS, STUDIO_SERVICE_ID
 
 
 @dataclass(frozen=True)
@@ -85,4 +85,3 @@ class PyStudioService:
         if rt is None:
             return
         await rt.stop()
-

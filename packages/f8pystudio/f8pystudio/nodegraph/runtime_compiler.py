@@ -20,8 +20,8 @@ from f8pysdk import (
 from f8pysdk.schema_helpers import boolean_schema
 from f8pysdk.nats_naming import ensure_token
 
-from ..service_host.service_host_registry import SERVICE_CLASS as STUDIO_SERVICE_CLASS
-from ..service_host.service_host_registry import STUDIO_SERVICE_ID
+from ..pystudio_node_registry import SERVICE_CLASS as STUDIO_SERVICE_CLASS
+from ..pystudio_node_registry import STUDIO_SERVICE_ID
 
 
 def _port_kind(name: str) -> F8EdgeKindEnum | None:

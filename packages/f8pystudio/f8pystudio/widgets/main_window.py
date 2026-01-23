@@ -12,7 +12,7 @@ from ..nodegraph import F8StudioGraph
 from ..nodegraph.session import last_session_path
 from ..nodegraph.runtime_compiler import compile_runtime_graphs_from_studio
 from ..pystudio_service_bridge import PyStudioServiceBridge, PyStudioServiceBridgeConfig
-from ..service_host.service_host_registry import SERVICE_CLASS as STUDIO_SERVICE_CLASS
+from ..pystudio_node_registry import SERVICE_CLASS as STUDIO_SERVICE_CLASS
 from .node_property_widgets import F8StudioPropertiesBinWidget
 from .palette_widget import F8StudioNodesPaletteWidget
 from .service_log_widget import ServiceLogDock
