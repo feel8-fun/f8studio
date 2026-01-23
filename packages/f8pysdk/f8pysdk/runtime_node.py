@@ -5,12 +5,21 @@ from typing import Any, Protocol
 from collections.abc import Awaitable, Callable
 
 from .capabilities import BusAttachableNode, ComputableNode, StatefulNode
+from .time_utils import now_ms
 
 
 class _BusLike(Protocol):
     async def emit_data(self, node_id: str, port: str, value: Any, *, ts_ms: int | None = None) -> None: ...
 
     async def pull_data(self, node_id: str, port: str, *, ctx_id: str | int | None = None) -> Any: ...
+
+    async def pull_data_with_ts(
+        self, node_id: str, port: str, *, ctx_id: str | int | None = None
+    ) -> tuple[Any, int | None]: ...
+
+    async def pull_buffered_data(
+        self, node_id: str, port: str, *, max_items: int | None = None
+    ) -> list[tuple[Any, int]]: ...
 
     async def set_state(self, node_id: str, field: str, value: Any, *, ts_ms: int | None = None) -> None: ...
 
@@ -54,6 +63,12 @@ class RuntimeNode(BusAttachableNode, StatefulNode, ComputableNode):
         """
         return
 
+    async def on_data(self, port: str, value: Any, *, ts_ms: int | None = None) -> None:
+        """
+        Push-based data callback (optional).
+        """
+        return
+
     async def compute_output(self, port: str, ctx_id: str | int | None = None) -> Any:
         """
         Pull-based output computation hook (optional).
@@ -77,6 +92,28 @@ class RuntimeNode(BusAttachableNode, StatefulNode, ComputableNode):
         if self._bus is None:
             return None
         return await self._bus.pull_data(self.node_id, port, ctx_id=ctx_id)
+
+    async def pull_with_ts(self, port: str, *, ctx_id: str | int | None = None) -> tuple[Any, int | None]:
+        if self._bus is None:
+            return None, None
+        pull_fn = getattr(self._bus, "pull_data_with_ts", None)
+        if callable(pull_fn):
+            return await pull_fn(self.node_id, port, ctx_id=ctx_id)
+        value = await self.pull(port, ctx_id=ctx_id)
+        if value is None:
+            return None, None
+        return value, int(now_ms())
+
+    async def pull_buffered(self, port: str, *, max_items: int | None = None) -> list[tuple[Any, int]]:
+        if self._bus is None:
+            return []
+        pull_fn = getattr(self._bus, "pull_buffered_data", None)
+        if callable(pull_fn):
+            return await pull_fn(self.node_id, port, max_items=max_items)
+        value, ts_ms = await self.pull_with_ts(port)
+        if value is None or ts_ms is None:
+            return []
+        return [(value, int(ts_ms))]
 
     async def set_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
         if self._bus is None:

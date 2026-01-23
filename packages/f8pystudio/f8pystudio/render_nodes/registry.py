@@ -8,6 +8,7 @@ from ..nodegraph.service_basenode import F8StudioServiceBaseNode
 from ..nodegraph.container_basenode import F8StudioContainerBaseNode
 from ..nodegraph.operator_basenode import F8StudioOperatorBaseNode
 from .pystudio_print import PyStudioPrintNode
+from .pystudio_timeseries import PyStudioTimeSeriesNode
 
 
 class RenderNodeRegistry:
@@ -26,6 +27,7 @@ class RenderNodeRegistry:
         self._renderers["default_op"] = F8StudioOperatorBaseNode
         self._renderers["default_container"] = F8StudioContainerBaseNode
         self._renderers["pystudio_print"] = PyStudioPrintNode
+        self._renderers["pystudio_timeseries"] = PyStudioTimeSeriesNode
 
     def register(self, renderer_key: str, renderer: type[NodeObject]) -> None:
         if renderer_key in self._renderers:

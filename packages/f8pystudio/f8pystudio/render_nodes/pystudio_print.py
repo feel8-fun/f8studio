@@ -4,7 +4,7 @@ import json
 from typing import Any
 
 from qtpy import QtCore, QtGui, QtWidgets
-from NodeGraphQt.widgets.node_widgets import NodeBaseWidget
+from NodeGraphQt.nodes.base_node import NodeBaseWidget
 
 from ..nodegraph.operator_basenode import F8StudioOperatorBaseNode
 

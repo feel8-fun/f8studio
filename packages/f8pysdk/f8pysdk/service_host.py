@@ -156,10 +156,11 @@ class ServiceHost:
 
     async def _seed_state_defaults(self, nodes: list[F8RuntimeNode]) -> None:
         """
-        Reconcile rungraph-provided initial state values into KV.
+        Seed rungraph-provided initial state values into KV.
 
-        If KV already has a value and differs, prefer the rungraph value and write it back
-        with a fresh timestamp (current time).
+        If KV already has a value (even if different), prefer the KV value and
+        do not overwrite. This avoids "stale" rungraph snapshots clobbering
+        newer state edits.
         """
         for n in nodes:
             node_id = str(n.nodeId)
@@ -175,10 +176,10 @@ class ServiceHost:
                 except Exception:
                     pass
                 try:
-                    existing = await self._bus.get_state(node_id, str(k))
+                    found, _, _ = await self._bus.get_state_with_ts(node_id, str(k))
                 except Exception:
-                    existing = None
-                if existing is not None and existing == v:
+                    found = False
+                if found:
                     continue
                 try:
                     await self._bus.set_state_with_meta(
@@ -209,10 +210,10 @@ class ServiceHost:
                 continue
             
             try:
-                existing = await self._bus.get_state(node_id, str(k))
+                found, _, _ = await self._bus.get_state_with_ts(node_id, str(k))
             except Exception:
-                existing = None
-            if existing is not None and existing == v:
+                found = False
+            if found:
                 continue
             try:
                 await self._bus.set_state_with_meta(

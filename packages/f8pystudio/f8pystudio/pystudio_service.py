@@ -7,6 +7,7 @@ from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from f8pysdk.service_runtime import ServiceRuntime, ServiceRuntimeConfig
 
 from .operators import register_operator, set_preview_sink
+from .ui_bus import set_ui_command_sink, UiCommand
 from .pystudio_node_registry import SERVICE_CLASS, STUDIO_SERVICE_ID
 
 
@@ -51,6 +52,7 @@ class PyStudioService:
         self,
         *,
         on_preview: Callable[[str, Any, int | None], None] | None,
+        on_ui_command: Callable[[UiCommand], None] | None,
         on_local_state: Callable[[str, str, Any, int, dict[str, Any]], Any] | None,
     ) -> None:
         # Register studio operators into the shared registry.
@@ -61,6 +63,7 @@ class PyStudioService:
             service_class=SERVICE_CLASS,
             nats_url=str(self._cfg.nats_url),
             publish_all_data=False,
+            data_delivery="push",
         )
         self.runtime = ServiceRuntime(cfg, registry=self._registry)
 
@@ -69,6 +72,11 @@ class PyStudioService:
             set_preview_sink(lambda node_id, value, ts_ms: on_preview(str(node_id), value, ts_ms))
         else:
             set_preview_sink(None)
+
+        if on_ui_command is not None:
+            set_ui_command_sink(on_ui_command)
+        else:
+            set_ui_command_sink(None)
 
         if on_local_state is not None:
             try:
@@ -80,6 +88,7 @@ class PyStudioService:
 
     async def stop(self) -> None:
         set_preview_sink(None)
+        set_ui_command_sink(None)
         rt = self.runtime
         self.runtime = None
         if rt is None:

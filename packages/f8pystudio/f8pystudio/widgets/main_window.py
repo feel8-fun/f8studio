@@ -44,6 +44,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         self._bridge = PyStudioServiceBridge(PyStudioServiceBridgeConfig(), parent=self)
         self._bridge.state_updated.connect(self._on_runtime_state_updated)  # type: ignore[attr-defined]
         self._bridge.preview_updated.connect(self._on_preview_updated)  # type: ignore[attr-defined]
+        self._bridge.ui_command.connect(self._on_ui_command)  # type: ignore[attr-defined]
         self._bridge.service_output.connect(self._log_dock.append)  # type: ignore[attr-defined]
         self._bridge.log.connect(lambda s: self._log_dock.append("studio", str(s) + "\n"))  # type: ignore[attr-defined]
         self._bridge.start()
@@ -231,6 +232,25 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         try:
             if hasattr(node, "set_preview"):
                 node.set_preview(value)
+        except Exception:
+            return
+
+    def _on_ui_command(self, cmd: Any) -> None:
+        try:
+            node_id = getattr(cmd, "node_id", None)
+        except Exception:
+            node_id = None
+        if not node_id:
+            return
+        try:
+            node = self.studio_graph.get_node_by_id(str(node_id))
+        except Exception:
+            node = None
+        if node is None:
+            return
+        try:
+            if hasattr(node, "apply_ui_command"):
+                node.apply_ui_command(cmd)
         except Exception:
             return
 

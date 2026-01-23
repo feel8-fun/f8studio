@@ -35,6 +35,7 @@ class ServiceRuntimeConfig:
         kv_storage: StorageType = StorageType.MEMORY,
         delete_bucket_on_start: bool = False,
         delete_bucket_on_stop: bool = False,
+        data_delivery: str = "pull",
         registry_modules: list[str] | tuple[str, ...] | None = None,
     ) -> "ServiceRuntimeConfig":
         bus = ServiceBusConfig(
@@ -44,6 +45,7 @@ class ServiceRuntimeConfig:
             kv_storage=kv_storage,
             delete_bucket_on_start=bool(delete_bucket_on_start),
             delete_bucket_on_stop=bool(delete_bucket_on_stop),
+            data_delivery=str(data_delivery or "pull"),
         )
         host = ServiceHostConfig(service_class=str(service_class))
         modules = tuple(str(m).strip() for m in (registry_modules or ()) if str(m).strip())

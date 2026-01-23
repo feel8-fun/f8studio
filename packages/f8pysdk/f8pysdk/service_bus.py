@@ -41,6 +41,7 @@ class ServiceBusConfig:
     kv_storage: StorageType = StorageType.MEMORY
     delete_bucket_on_start: bool = False
     delete_bucket_on_stop: bool = False
+    data_delivery: str = "pull"
 
 
 @dataclass
@@ -84,6 +85,7 @@ class ServiceBus:
         self._publish_all_data = bool(getattr(config, "publish_all_data", True))
         self._debug_state = _debug_state_enabled()
         self._active = True
+        self._data_delivery = str(getattr(config, "data_delivery", "pull") or "pull").strip().lower()
 
         bucket = kv_bucket_for_service(self.service_id)
         self._transport = NatsTransport(
@@ -123,6 +125,7 @@ class ServiceBus:
         self._rungraph_listeners: list[Callable[[F8RuntimeGraph], Awaitable[None] | None]] = []
         self._lifecycle_listeners: list[Callable[[bool, dict[str, Any]], Awaitable[None] | None]] = []
         self._rungraph_validators: list[Callable[[F8RuntimeGraph], Awaitable[None] | None]] = []
+        self._data_listeners: dict[tuple[str, str], list[Callable[[str, str, Any, int], Awaitable[None] | None]]] = {}
 
     def add_state_listener(self, cb: Callable[[str, str, Any, int, dict[str, Any]], Awaitable[None] | None]) -> None:
         """
@@ -153,6 +156,35 @@ class ServiceBus:
         Callback signature: (active, meta_dict)
         """
         self._lifecycle_listeners.append(cb)
+
+    def add_data_listener(
+        self, node_id: str, port: str, cb: Callable[[str, str, Any, int], Awaitable[None] | None]
+    ) -> None:
+        """
+        Listen to buffered input updates for a given (node_id, port).
+
+        Callback signature: (node_id, port, value, ts_ms)
+        """
+        node_id = ensure_token(node_id, label="node_id")
+        port = ensure_token(port, label="port_id")
+        key = (node_id, port)
+        self._data_listeners.setdefault(key, []).append(cb)
+
+    def remove_data_listener(
+        self, node_id: str, port: str, cb: Callable[[str, str, Any, int], Awaitable[None] | None]
+    ) -> None:
+        node_id = ensure_token(node_id, label="node_id")
+        port = ensure_token(port, label="port_id")
+        key = (node_id, port)
+        reg = self._data_listeners.get(key)
+        if not reg:
+            return
+        try:
+            reg.remove(cb)
+        except ValueError:
+            return
+        if not reg:
+            self._data_listeners.pop(key, None)
 
     # ---- lifecycle ------------------------------------------------------
     @property
@@ -256,6 +288,7 @@ class ServiceBus:
         self._state_cache.clear()
 
         await self._transport.close()
+        self._data_listeners.clear()
 
     async def _announce_ready(self, ready: bool, *, reason: str) -> None:
         payload = {
@@ -670,6 +703,46 @@ class ServiceBus:
         self._state_cache[(node_id, field)] = (payload, 0)
         return payload
 
+    async def get_state_with_ts(self, node_id: str, field: str) -> tuple[bool, Any, int | None]:
+        """
+        Return (found, value, ts_ms) for a state key.
+
+        Unlike `get_state`, this can distinguish between "missing" and a stored
+        `None` value because the KV entry payload always includes metadata.
+        """
+        node_id = ensure_token(node_id, label="node_id")
+        field = str(field)
+        cached = self._state_cache.get((node_id, field))
+        if cached is not None:
+            return True, cached[0], cached[1]
+        key = kv_key_node_state(node_id=node_id, field=field)
+        raw = await self._transport.kv_get(key)
+        if not raw:
+            if self._debug_state:
+                print("state_debug[%s] get_state_with_ts miss node=%s field=%s" % (self.service_id, node_id, field))
+            return False, None, None
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except Exception:
+            self._state_cache[(node_id, field)] = (raw, 0)
+            return True, raw, 0
+        if isinstance(payload, dict) and "value" in payload:
+            v = payload.get("value")
+            ts_raw = payload.get("ts")
+            try:
+                ts = int(ts_raw) if ts_raw is not None else 0
+            except Exception:
+                ts = 0
+            self._state_cache[(node_id, field)] = (v, ts)
+            if self._debug_state:
+                print(
+                    "state_debug[%s] get_state_with_ts kv node=%s field=%s ts=%s"
+                    % (self.service_id, node_id, field, str(ts))
+                )
+            return True, v, ts
+        self._state_cache[(node_id, field)] = (payload, 0)
+        return True, payload, 0
+
     async def _on_local_state_kv(self, key: str, value: bytes) -> None:
         parsed = self._parse_state_key(key)
         if not parsed:
@@ -1061,6 +1134,89 @@ class ServiceBus:
             buf.last_pulled_ctx_id = ctx_id
         return v
 
+    async def pull_data_with_ts(self, node_id: str, port: str, *, ctx_id: str | int | None = None) -> tuple[Any, int | None]:
+        """
+        Pull-based access to buffered inputs with timestamps.
+        """
+        if not self._active:
+            return None, None
+        node_id = ensure_token(node_id, label="node_id")
+        port = ensure_token(port, label="port_id")
+        buf = self._data_inputs.get((node_id, port))
+        if buf is None:
+            buf = _InputBuffer(to_node=node_id, to_port=port, edge=None)
+            self._data_inputs[(node_id, port)] = buf
+        edge = buf.edge
+        _now_ms = now_ms()
+
+        last_seen_ts = int(buf.last_seen_ts or _now_ms)
+        if self._is_stale(edge, last_seen_ts):
+            return None, None
+
+        strategy = getattr(edge, "strategy", None) if edge is not None else None
+        if not isinstance(strategy, F8EdgeStrategyEnum):
+            strategy = F8EdgeStrategyEnum.latest
+
+        if strategy == F8EdgeStrategyEnum.queue:
+            if not buf.queue:
+                if ctx_id is None or buf.last_seen_ctx_id != ctx_id:
+                    await self._ensure_input_available(node_id=node_id, port=port, ctx_id=ctx_id)
+                if not buf.queue:
+                    return None, None
+            v, ts = buf.queue.pop(0)
+            buf.last_pulled_value = v
+            buf.last_pulled_ts = int(ts) if ts is not None else _now_ms
+            buf.last_pulled_ctx_id = ctx_id
+            return v, int(ts) if ts is not None else None
+
+        if not buf.queue and (ctx_id is None or buf.last_seen_ctx_id != ctx_id):
+            await self._ensure_input_available(node_id=node_id, port=port, ctx_id=ctx_id)
+        if buf.queue:
+            v, ts = buf.queue[-1]
+            buf.queue.clear()
+            if v is not None:
+                buf.last_pulled_value = v
+                buf.last_pulled_ts = int(ts) if ts is not None else _now_ms
+                buf.last_pulled_ctx_id = ctx_id
+            return v, int(ts) if ts is not None else None
+        v = buf.last_seen_value
+        ts = buf.last_seen_ts
+        if v is None:
+            return None, None
+        buf.last_pulled_value = v
+        buf.last_pulled_ts = int(ts) if ts is not None else _now_ms
+        buf.last_pulled_ctx_id = ctx_id
+        return v, int(ts) if ts is not None else None
+
+    async def pull_buffered_data(
+        self,
+        node_id: str,
+        port: str,
+        *,
+        max_items: int | None = None,
+    ) -> list[tuple[Any, int]]:
+        """
+        Drain buffered inputs without triggering upstream computation.
+        """
+        if not self._active:
+            return []
+        node_id = ensure_token(node_id, label="node_id")
+        port = ensure_token(port, label="port_id")
+        buf = self._data_inputs.get((node_id, port))
+        if buf is None or not buf.queue:
+            return []
+        take_n = len(buf.queue) if max_items is None else max(0, min(int(max_items), len(buf.queue)))
+        if take_n <= 0:
+            return []
+        items = list(buf.queue[:take_n])
+        del buf.queue[:take_n]
+        if items:
+            last_value, last_ts = items[-1]
+            buf.last_pulled_value = last_value
+            buf.last_pulled_ts = int(last_ts) if last_ts is not None else int(now_ms())
+            buf.last_pulled_ctx_id = None
+        return [(v, int(ts) if ts is not None else int(now_ms())) for (v, ts) in items]
+
     async def _ensure_input_available(self, *, node_id: str, port: str, ctx_id: str | int | None = None) -> None:
         """
         Best-effort intra-service pull-triggered computation.
@@ -1169,7 +1325,7 @@ class ServiceBus:
 
     def _push_input(self, to_node: str, to_port: str, value: Any, *, ts_ms: int, edge: F8Edge | None = None) -> None:
         # Data inputs are buffered. We intentionally do not invoke `node.on_data`:
-        # the system is moving to exec-driven scheduling + pull-based data reads.
+        # the system can be configured for pull-based or push-based data delivery.
         self._buffer_input(
             to_node=str(to_node),
             to_port=str(to_port),
@@ -1179,6 +1335,18 @@ class ServiceBus:
             ctx_id=None,
             notify=False,
         )
+        if self._data_delivery in ("push", "both"):
+            node = self._nodes.get(str(to_node))
+            if node is not None:
+                try:
+                    if hasattr(node, "on_data"):
+                        loop = asyncio.get_running_loop()
+                        loop.create_task(
+                            node.on_data(str(to_port), value, ts_ms=int(ts_ms)),  # type: ignore[misc]
+                            name=f"service_bus:on_data:{to_node}:{to_port}",
+                        )
+                except Exception:
+                    pass
 
     def _buffer_input(
         self,
@@ -1216,8 +1384,16 @@ class ServiceBus:
         if len(buf.queue) > max_n:
             del buf.queue[0 : len(buf.queue) - max_n]
 
-        if not notify:
+        listeners = self._data_listeners.get((to_node, to_port))
+        if not listeners:
             return
+        for cb in list(listeners):
+            try:
+                r = cb(to_node, to_port, value, int(ts_ms))
+                if asyncio.iscoroutine(r):
+                    asyncio.create_task(r, name=f"service_bus:data_listener:{to_node}:{to_port}")
+            except Exception:
+                continue
 
     # ---- cross-state ----------------------------------------------------
     async def _sync_cross_state_watches(self, graph: F8RuntimeGraph) -> None:
