@@ -11,7 +11,7 @@ from f8pysdk import F8OperatorSpec
 from ..nodegraph import F8StudioGraph
 from ..nodegraph.session import last_session_path
 from ..nodegraph.runtime_compiler import compile_runtime_graphs_from_studio
-from ..studio_runtime import StudioRuntime, StudioRuntimeConfig
+from ..pystudio_service_bridge import PyStudioServiceBridge, PyStudioServiceBridgeConfig
 from ..service_host.service_host_registry import SERVICE_CLASS as STUDIO_SERVICE_CLASS
 from .node_property_widgets import F8StudioPropertiesBinWidget
 from .palette_widget import F8StudioNodesPaletteWidget
@@ -41,12 +41,12 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         self._setup_menu()
         self._setup_toolbar()
 
-        self._runtime = StudioRuntime(StudioRuntimeConfig(), parent=self)
-        self._runtime.state_updated.connect(self._on_runtime_state_updated)  # type: ignore[attr-defined]
-        self._runtime.preview_updated.connect(self._on_preview_updated)  # type: ignore[attr-defined]
-        self._runtime.service_output.connect(self._log_dock.append)  # type: ignore[attr-defined]
-        self._runtime.log.connect(lambda s: self._log_dock.append("studio", str(s) + "\n"))  # type: ignore[attr-defined]
-        self._runtime.start()
+        self._bridge = PyStudioServiceBridge(PyStudioServiceBridgeConfig(), parent=self)
+        self._bridge.state_updated.connect(self._on_runtime_state_updated)  # type: ignore[attr-defined]
+        self._bridge.preview_updated.connect(self._on_preview_updated)  # type: ignore[attr-defined]
+        self._bridge.service_output.connect(self._log_dock.append)  # type: ignore[attr-defined]
+        self._bridge.log.connect(lambda s: self._log_dock.append("studio", str(s) + "\n"))  # type: ignore[attr-defined]
+        self._bridge.start()
         self._applying_runtime_state = False
         self.studio_graph.property_changed.connect(self._on_ui_property_changed)  # type: ignore[attr-defined]
 
@@ -127,7 +127,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
             active = True
 
         try:
-            self._runtime.set_managed_active(active)
+            self._bridge.set_managed_active(active)
         except Exception:
             pass
         # Note: studio UI ticking is independent; service lifecycle is remote.
@@ -135,7 +135,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
     def closeEvent(self, event):
         self._auto_save_session()
         try:
-            self._runtime.stop()
+            self._bridge.stop()
         except Exception:
             pass
         super().closeEvent(event)
@@ -180,7 +180,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         except Exception:
             pass
         compiled = compile_runtime_graphs_from_studio(self.studio_graph)
-        self._runtime.deploy_run_and_monitor(compiled)
+        self._bridge.deploy_run_and_monitor(compiled)
 
     def _on_runtime_state_updated(self, service_id: str, node_id: str, field: str, value: Any, ts_ms: Any) -> None:
         """
@@ -261,4 +261,4 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
             node_id = ""
         if not node_id:
             return
-        self._runtime.set_local_state(node_id, str(name), value)
+        self._bridge.set_local_state(node_id, str(name), value)

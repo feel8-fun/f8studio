@@ -15,11 +15,9 @@ from f8pysdk.nats_naming import ensure_token, kv_bucket_for_service, kv_key_rung
 from f8pysdk.nats_transport import NatsTransport, NatsTransportConfig
 from f8pysdk.runtime_node import RuntimeNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
-from f8pysdk.service_bus import ServiceBus, ServiceBusConfig
-from f8pysdk.service_host import ServiceHost, ServiceHostConfig
 from f8pysdk.service_ready import wait_service_ready
 from .nodegraph.runtime_compiler import CompiledRuntimeGraphs
-from .operators import register_operator, set_preview_sink
+from .pystudio_service import PyStudioService, PyStudioServiceConfig
 from .service_process_manager import ServiceProcessConfig, ServiceProcessManager
 from .service_host.service_host_registry import SERVICE_CLASS, STUDIO_SERVICE_ID
 
@@ -102,12 +100,12 @@ class _AsyncThread:
 
 
 @dataclass(frozen=True)
-class StudioRuntimeConfig:
+class PyStudioServiceBridgeConfig:
     nats_url: str = "nats://127.0.0.1:4222"
     studio_service_id: str = STUDIO_SERVICE_ID
 
 
-class StudioRuntime(QtCore.QObject):
+class PyStudioServiceBridge(QtCore.QObject):
     """
     Orchestrate:
     - singleton studio presence (NATS micro ping/info)
@@ -122,7 +120,7 @@ class StudioRuntime(QtCore.QObject):
     service_output = QtCore.Signal(str, str)  # serviceId, line
     log = QtCore.Signal(str)
 
-    def __init__(self, config: StudioRuntimeConfig, parent: QtCore.QObject | None = None) -> None:
+    def __init__(self, config: PyStudioServiceBridgeConfig, parent: QtCore.QObject | None = None) -> None:
         super().__init__(parent)
         self._cfg = config
         self._async = _AsyncThread()
@@ -130,8 +128,7 @@ class StudioRuntime(QtCore.QObject):
         self._managed_service_ids: set[str] = set()
         self._managed_active: bool = True
 
-        self._bus: ServiceBus | None = None
-        self._host: ServiceHost | None = None
+        self._svc: PyStudioService | None = None
         self._nc: Any = None
 
     @property
@@ -216,10 +213,10 @@ class StudioRuntime(QtCore.QObject):
             return
 
         async def _do() -> None:
-            if self._bus is None:
+            if self._svc is None or self._svc.bus is None:
                 return
             try:
-                await self._bus.set_state(node_id, field, value)
+                await self._svc.bus.set_state(node_id, field, value)
             except Exception:
                 return
 
@@ -245,21 +242,6 @@ class StudioRuntime(QtCore.QObject):
         except Exception:
             self._nc = None
 
-        # Start studio bus.
-        registry = RuntimeNodeRegistry.instance()
-        register_operator(registry)
-        self._bus = ServiceBus(
-            ServiceBusConfig(
-                service_id=self.studio_service_id,
-                nats_url=nats_url,
-                publish_all_data=False,
-            )
-        )
-        self._host = ServiceHost(self._bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=registry)
-
-        # In-process preview channel: runtime nodes can push UI-only preview updates without KV.
-        set_preview_sink(lambda node_id, value, ts_ms: self.preview_updated.emit(str(node_id), value, ts_ms))
-
         def _on_state(field: str, value: Any, ts_ms: int | None) -> None:
             decoded = _decode_remote_state_key(field)
             if decoded is None:
@@ -279,17 +261,16 @@ class StudioRuntime(QtCore.QObject):
             except Exception:
                 return
 
-        self._bus.add_state_listener(_on_local_state)
         try:
-            if self._host is not None:
-                await self._host.start()
-        except Exception:
-            pass
-
-        try:
-            await self._bus.start()
+            cfg = PyStudioServiceConfig(nats_url=nats_url, studio_service_id=self.studio_service_id)
+            self._svc = PyStudioService(cfg, registry=RuntimeNodeRegistry.instance())
+            await self._svc.start(
+                on_preview=lambda node_id, value, ts_ms: self.preview_updated.emit(str(node_id), value, ts_ms),
+                on_local_state=_on_local_state,
+            )
         except Exception as exc:
-            self.log.emit(f"studio bus start failed: {exc}")
+            self.log.emit(f"studio runtime start failed: {exc}")
+            self._svc = None
 
         # Re-apply current desired lifecycle to any already-known managed services.
         try:
@@ -298,14 +279,12 @@ class StudioRuntime(QtCore.QObject):
             pass
 
     async def _stop_async(self) -> None:
-        set_preview_sink(None)
-        self._host = None
         try:
-            if self._bus is not None:
-                await self._bus.stop()
+            if self._svc is not None:
+                await self._svc.stop()
         except Exception:
             pass
-        self._bus = None
+        self._svc = None
 
         try:
             if self._nc is not None:
@@ -366,7 +345,7 @@ class StudioRuntime(QtCore.QObject):
                     pass
 
         # Install monitoring graph into studio serviceId.
-        if self._bus is None:
+        if self._svc is None or self._svc.bus is None:
             return
 
         mon_edges: list[F8Edge] = []
@@ -435,7 +414,7 @@ class StudioRuntime(QtCore.QObject):
         )
 
         try:
-            await self._bus.set_rungraph(studio_graph)
+            await self._svc.bus.set_rungraph(studio_graph)
         except Exception as exc:
             self.log.emit(f"install monitor graph failed: {exc}")
 
