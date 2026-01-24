@@ -148,6 +148,26 @@ class ServiceBus:
         self._rungraph_validators: list[Callable[[F8RuntimeGraph], Awaitable[None] | None]] = []
         self._data_listeners: dict[tuple[str, str], list[Callable[[str, str, Any, int], Awaitable[None] | None]]] = {}
 
+    @staticmethod
+    def _coerce_data_delivery(value: Any) -> DataDeliveryMode | None:
+        s = str(value or "").strip().lower()
+        if s in ("pull", "push", "both"):
+            return cast(DataDeliveryMode, s)
+        return None
+
+    def _apply_data_delivery(self, value: Any, *, source: str) -> None:
+        mode = self._coerce_data_delivery(value)
+        if mode is None:
+            return
+        if mode == self._data_delivery:
+            return
+        self._data_delivery = mode
+        if self._debug_state:
+            try:
+                print(f"state_debug[{self.service_id}] data_delivery={mode} source={source}")
+            except Exception:
+                pass
+
     def add_state_listener(self, cb: Callable[[str, str, Any, int, dict[str, Any]], Awaitable[None] | None]) -> None:
         """
         Listen to local KV state updates for this service.
@@ -303,8 +323,21 @@ class ServiceBus:
         if self._micro is None:
             await self._start_micro_endpoints()
         await self._load_active_from_kv()
+        await self._load_data_delivery_from_kv()
         await self._reload_rungraph()
         await self._announce_ready(True, reason="start")
+
+    async def _load_data_delivery_from_kv(self) -> None:
+        key = kv_key_node_state(node_id=self.service_id, field="dataDelivery")
+        raw = await self._transport.kv_get(key)
+        if not raw:
+            return
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except Exception:
+            return
+        if isinstance(payload, dict) and "value" in payload:
+            self._apply_data_delivery(payload.get("value"), source="kv")
 
     async def stop(self) -> None:
         try:
@@ -836,6 +869,10 @@ class ServiceBus:
                     await r
             except Exception:
                 continue
+
+        # Service-scoped toggles.
+        if str(node_id) == self.service_id and str(field) == "dataDelivery":
+            self._apply_data_delivery(value, source=str(meta_dict.get("source") or "state"))
 
         node = self._nodes.get(node_id)
         if node is None:

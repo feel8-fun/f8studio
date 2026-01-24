@@ -138,7 +138,21 @@ class ServiceHost:
         for n in want_operator_nodes:
             node_id = str(n.nodeId)
             if node_id in self._operator_nodes:
-                continue
+                # If the node definition changed (ports/state), re-create the runtime node so
+                # the local instance matches the rungraph snapshot. Otherwise, edited ports
+                # may show in UI but not work at runtime.
+                try:
+                    existing = self._operator_nodes.get(node_id)
+                    if existing is not None and self._needs_recreate(existing, n):
+                        try:
+                            self._bus.unregister_node(node_id)
+                        except Exception:
+                            pass
+                        self._operator_nodes.pop(node_id, None)
+                    else:
+                        continue
+                except Exception:
+                    continue
             initial_state = self._node_initial_state(n)
             try:
                 node = self._registry.create(node_id=node_id, node=n, initial_state=initial_state)
@@ -158,6 +172,53 @@ class ServiceHost:
         if service_snapshot is not None:
             await self._seed_service_state_defaults(service_snapshot, rungraph_ts=rungraph_ts)
         await self._seed_state_defaults(want_operator_nodes, rungraph_ts=rungraph_ts)
+
+    @staticmethod
+    def _needs_recreate(node: Any, snapshot: F8RuntimeNode) -> bool:
+        """
+        Return True if the local runtime node should be re-created for the given snapshot.
+
+        Nodes are cached by nodeId; without this check, editing ports in Studio can
+        yield a rungraph that routes to ports the old instance doesn't expose.
+        """
+        try:
+            desired_in = [str(p.name) for p in list(getattr(snapshot, "dataInPorts", None) or [])]
+        except Exception:
+            desired_in = []
+        try:
+            desired_out = [str(p.name) for p in list(getattr(snapshot, "dataOutPorts", None) or [])]
+        except Exception:
+            desired_out = []
+        try:
+            desired_state = [str(sf.name) for sf in list(getattr(snapshot, "stateFields", None) or [])]
+        except Exception:
+            desired_state = []
+        try:
+            current_in = [str(x) for x in list(getattr(node, "data_in_ports", None) or [])]
+        except Exception:
+            current_in = []
+        try:
+            current_out = [str(x) for x in list(getattr(node, "data_out_ports", None) or [])]
+        except Exception:
+            current_out = []
+        try:
+            current_state = [str(x) for x in list(getattr(node, "state_fields", None) or [])]
+        except Exception:
+            current_state = []
+
+        if current_in != desired_in or current_out != desired_out or current_state != desired_state:
+            return True
+
+        # Best-effort exec port change detection (common pattern in runtime nodes).
+        desired_exec_out = list(getattr(snapshot, "execOutPorts", None) or [])
+        try:
+            cur_exec_out = list(getattr(node, "_exec_out_ports", None) or [])
+        except Exception:
+            cur_exec_out = []
+        if cur_exec_out and [str(x) for x in cur_exec_out] != [str(x) for x in desired_exec_out]:
+            return True
+
+        return False
 
     @staticmethod
     def _node_initial_state(n: F8RuntimeNode) -> dict[str, Any]:

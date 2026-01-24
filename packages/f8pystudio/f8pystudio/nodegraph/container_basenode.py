@@ -6,10 +6,12 @@ from typing import Any
 from qtpy import QtCore, QtGui, QtWidgets
 
 from NodeGraphQt.constants import Z_VAL_BACKDROP, NodeEnum
+from NodeGraphQt.constants import NodePropWidgetEnum
 from NodeGraphQt.qgraphics.node_abstract import AbstractNodeItem
 from NodeGraphQt.qgraphics.node_backdrop import BackdropSizer
 
 from f8pysdk import F8ServiceSpec
+from f8pysdk.schema_helpers import schema_default, schema_type
 from .node_base import F8StudioBaseNode
 
 
@@ -34,6 +36,62 @@ class F8StudioContainerBaseNode(F8StudioBaseNode):
 
         self.model.color = (5, 129, 138, 50)
         self._child_nodes = []
+        self._build_state_properties()
+
+    def sync_from_spec(self) -> None:
+        self._build_state_properties()
+
+    def _build_state_properties(self) -> None:
+        for s in self.effective_state_fields() or []:
+            name = str(getattr(s, "name", "") or "").strip()
+            if not name:
+                continue
+            try:
+                if self.has_property(name):  # type: ignore[attr-defined]
+                    continue
+            except Exception:
+                pass
+            try:
+                default_value = schema_default(s.valueSchema)
+            except Exception:
+                default_value = None
+            widget_type, items, prop_range = self._state_widget_for_schema(getattr(s, "valueSchema", None))
+            tooltip = str(getattr(s, "description", "") or "").strip() or None
+            try:
+                self.create_property(
+                    name,
+                    default_value,
+                    items=items,
+                    range=prop_range,
+                    widget_type=widget_type,
+                    widget_tooltip=tooltip,
+                    tab="State",
+                )
+            except Exception:
+                continue
+
+    @staticmethod
+    def _state_widget_for_schema(value_schema) -> tuple[int, list[str] | None, tuple[float, float] | None]:
+        if value_schema is None:
+            return NodePropWidgetEnum.QTEXT_EDIT.value, None, None
+        try:
+            t = schema_type(value_schema)
+        except Exception:
+            t = ""
+
+        try:
+            enum_items = list(getattr(getattr(value_schema, "root", None), "enum", None) or [])
+        except Exception:
+            enum_items = []
+        if enum_items:
+            return NodePropWidgetEnum.QCOMBO_BOX.value, [str(x) for x in enum_items], None
+
+        if t == "boolean":
+            return NodePropWidgetEnum.QCHECK_BOX.value, None, None
+        if t in ("integer", "number", "string"):
+            return NodePropWidgetEnum.QLINE_EDIT.value, None, None
+
+        return NodePropWidgetEnum.QTEXT_EDIT.value, None, None
 
     def add_child(self, node: F8StudioBaseNode) -> None:
         if node in self._child_nodes:

@@ -76,6 +76,24 @@ class PyEngineService(ServiceCliTemplate):
         if executor is None:
             return
 
+        # If the current entrypoint node instance is being hot-replaced (same nodeId, new object),
+        # stop it first so `apply_rungraph()` can restart it cleanly.
+        try:
+            entry_id = executor.current_entrypoint_node_id()
+        except Exception:
+            entry_id = None
+        if entry_id and entry_id in want:
+            try:
+                current_obj = executor.get_registered_node(entry_id)
+                new_obj = runtime.bus.get_node(entry_id)
+                if current_obj is not None and new_obj is not None and current_obj is not new_obj:
+                    try:
+                        await executor.stop_entrypoint()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
         for node_id in sorted(self._exec_node_ids - want):
             try:
                 executor.unregister_node(node_id)
@@ -83,7 +101,9 @@ class PyEngineService(ServiceCliTemplate):
                 pass
             self._exec_node_ids.discard(node_id)
 
-        for node_id in sorted(want - self._exec_node_ids):
+        # Always (re-)register nodes in `want` so hot-recreated runtime node instances
+        # are picked up by the executor without requiring a nodeId change.
+        for node_id in sorted(want):
             node = runtime.bus.get_node(node_id)
             if node is None:
                 continue

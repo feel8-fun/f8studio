@@ -112,6 +112,16 @@ class ExecFlowExecutor:
         node_id = ensure_token(node_id, label="node_id")
         self._nodes.pop(node_id, None)
 
+    def get_registered_node(self, node_id: str) -> Any | None:
+        try:
+            node_id = ensure_token(node_id, label="node_id")
+        except Exception:
+            return None
+        return self._nodes.get(node_id)
+
+    def current_entrypoint_node_id(self) -> str | None:
+        return getattr(self._entrypoint_ctx, "node_id", None) if self._entrypoint_ctx else None
+
     # ---- rungraph -------------------------------------------------------
     async def apply_rungraph(self, graph: F8RuntimeGraph) -> None:
         self._graph = graph

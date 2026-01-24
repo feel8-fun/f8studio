@@ -139,6 +139,89 @@ class _F8JsonEditorDialog(QtWidgets.QDialog):
         return json.loads(text)
 
 
+class _F8CodeEditorDialog(QtWidgets.QDialog):
+    def __init__(self, parent=None, *, title: str, code: str):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+
+        self._edit = QtWidgets.QPlainTextEdit()
+        self._edit.setTabStopDistance(4 * self.fontMetrics().horizontalAdvance(" "))
+        try:
+            font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
+            self._edit.setFont(font)
+        except Exception:
+            pass
+        self._edit.setPlainText(str(code or ""))
+
+        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Save | QtWidgets.QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(self._edit, 1)
+        layout.addWidget(buttons)
+
+        self.resize(900, 650)
+
+    def code(self) -> str:
+        return str(self._edit.toPlainText() or "")
+
+
+class _F8CodePropWidget(QtWidgets.QWidget):
+    """
+    Read-only preview with an "Edit…" button that opens a code editor dialog.
+    """
+
+    value_changed = QtCore.Signal(str, object)
+
+    def __init__(self, parent=None, *, title: str = "Edit Code"):
+        super().__init__(parent)
+        self._name = ""
+        self._value = ""
+        self._title = str(title or "Edit Code")
+
+        self._preview = QtWidgets.QLineEdit()
+        self._preview.setReadOnly(True)
+        self._preview.setClearButtonEnabled(False)
+
+        self._btn = QtWidgets.QPushButton("Edit…")
+        self._btn.clicked.connect(self._on_edit_clicked)
+
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        layout.addWidget(self._preview, 1)
+        layout.addWidget(self._btn, 0)
+
+    def set_name(self, name: str) -> None:
+        self._name = str(name or "")
+
+    def get_name(self) -> str:
+        return self._name
+
+    def get_value(self) -> str:
+        return str(self._value or "")
+
+    def set_value(self, value: Any) -> None:
+        self._value = str(value or "")
+        lines = self._value.splitlines()
+        n = len(lines)
+        preview = f"{n} line" if n == 1 else f"{n} lines"
+        if lines:
+            head = lines[0].strip()
+            if head:
+                preview = f"{preview} — {head[:80]}"
+        self._preview.setText(preview)
+
+    def _on_edit_clicked(self) -> None:
+        dlg = _F8CodeEditorDialog(self, title=self._title, code=self.get_value())
+        if dlg.exec() != QtWidgets.QDialog.Accepted:
+            return
+        code = dlg.code()
+        self.set_value(code)
+        self.value_changed.emit(self.get_name(), code)
+
+
 class _F8JsonPropTextEdit(QtWidgets.QTextEdit):
     """
     QTextEdit property widget that round-trips JSON values as python objects.
@@ -510,24 +593,6 @@ class _F8EditDataPortDialog(QtWidgets.QDialog):
 
         schema_btn = QtWidgets.QPushButton("Edit Schema…")
         schema_btn.clicked.connect(self._edit_schema)
-
-        if ui_only:
-            try:
-                self._name.setReadOnly(True)
-            except Exception:
-                pass
-            try:
-                self._access.setEnabled(False)
-            except Exception:
-                pass
-            try:
-                self._required.setEnabled(False)
-            except Exception:
-                pass
-            try:
-                schema_btn.setEnabled(False)
-            except Exception:
-                pass
 
         form = QtWidgets.QFormLayout()
         form.addRow("Name", self._name)
@@ -1204,6 +1269,19 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                 if wid_type == NodePropWidgetEnum.QTEXT_EDIT.value and _is_json_state_value(node, prop_name):
                     widget = _F8JsonPropTextEdit()
                     widget.set_name(prop_name)
+
+                # Python script operator: replace `code` editor with a dialog-backed widget.
+                try:
+                    spec = getattr(node, "spec", None)
+                    if (
+                        isinstance(spec, F8OperatorSpec)
+                        and str(getattr(spec, "operatorClass", "") or "") == "f8.python_script"
+                        and str(prop_name) == "code"
+                    ):
+                        widget = _F8CodePropWidget(title=f"{node.name()} — Code")
+                        widget.set_name(prop_name)
+                except Exception:
+                    pass
                 access = _state_field_access(node, prop_name)
                 if access == F8StateAccess.ro:
                     try:
