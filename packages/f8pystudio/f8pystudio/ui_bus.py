@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Protocol, runtime_checkable
 
 
 @dataclass(frozen=True)
@@ -13,6 +13,11 @@ class UiCommand:
 
 
 _ui_sink: Callable[[UiCommand], None] | None = None
+
+
+@runtime_checkable
+class UiCommandApplier(Protocol):
+    def apply_ui_command(self, cmd: UiCommand) -> None: ...
 
 
 def set_ui_command_sink(sink: Callable[[UiCommand], None] | None) -> None:

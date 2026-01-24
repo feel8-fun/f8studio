@@ -1,5 +1,5 @@
 from .monitor_state import MonitorStateRuntimeNode, register_operator as register_monitor_state
-from .print import PyStudioPrintRuntimeNode, register_operator as register_print, set_preview_sink
+from .print import PyStudioPrintRuntimeNode, register_operator as register_print
 from .timeseries import PyStudioTimeSeriesRuntimeNode, register_operator as register_timeseries
 
 __all__ = [
@@ -7,7 +7,6 @@ __all__ = [
     "MonitorStateRuntimeNode",
     "PyStudioTimeSeriesRuntimeNode",
     "register_operator",
-    "set_preview_sink",
 ]
 
 

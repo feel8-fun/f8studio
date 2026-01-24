@@ -13,6 +13,7 @@ from ..nodegraph.session import last_session_path
 from ..nodegraph.runtime_compiler import compile_runtime_graphs_from_studio
 from ..pystudio_service_bridge import PyStudioServiceBridge, PyStudioServiceBridgeConfig
 from ..pystudio_node_registry import SERVICE_CLASS as STUDIO_SERVICE_CLASS
+from ..ui_bus import UiCommandApplier
 from .node_property_widgets import F8StudioPropertiesBinWidget
 from .palette_widget import F8StudioNodesPaletteWidget
 from .service_log_widget import ServiceLogDock
@@ -42,7 +43,6 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         self._setup_toolbar()
 
         self._bridge = PyStudioServiceBridge(PyStudioServiceBridgeConfig(), parent=self)
-        self._bridge.preview_updated.connect(self._on_preview_updated)  # type: ignore[attr-defined]
         self._bridge.ui_command.connect(self._on_ui_command)  # type: ignore[attr-defined]
         self._bridge.service_output.connect(self._log_dock.append)  # type: ignore[attr-defined]
         self._bridge.log.connect(lambda s: self._log_dock.append("studio", str(s) + "\n"))  # type: ignore[attr-defined]
@@ -221,24 +221,12 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         except Exception:
             return
 
-    def _on_preview_updated(self, node_id: str, value: Any, _ts_ms: Any) -> None:
-        try:
-            node = self.studio_graph.get_node_by_id(str(node_id))
-        except Exception:
-            node = None
-        if node is None:
-            return
-        try:
-            if hasattr(node, "set_preview"):
-                node.set_preview(value)
-        except Exception:
-            return
-
     def _on_ui_command(self, cmd: Any) -> None:
         try:
             command = getattr(cmd, "command", None)
         except Exception:
             command = None
+            
         if str(command) == "state.update":
             try:
                 payload = getattr(cmd, "payload", None) or {}
@@ -252,6 +240,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
             if node_id and field:
                 self._on_runtime_state_updated(service_id, node_id, field, value, ts_ms)
             return
+        
         try:
             node_id = getattr(cmd, "node_id", None)
         except Exception:
@@ -265,7 +254,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         if node is None:
             return
         try:
-            if hasattr(node, "apply_ui_command"):
+            if isinstance(node, UiCommandApplier):
                 node.apply_ui_command(cmd)
         except Exception:
             return

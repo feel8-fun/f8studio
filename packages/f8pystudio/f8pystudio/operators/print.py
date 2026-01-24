@@ -19,24 +19,10 @@ from f8pysdk.runtime_node import RuntimeNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from ..constants import SERVICE_CLASS
-
+from ..ui_bus import emit_ui_command
 
 OPERATOR_CLASS = "f8.print"
 RENDERER_CLASS = "pystudio_print"
-
-
-_preview_sink: Any | None = None
-
-
-def set_preview_sink(sink: Any | None) -> None:
-    """
-    Set an in-process sink for preview updates: (node_id, value, ts_ms) -> None.
-
-    This avoids writing preview values into KV, which would be noisy and unnecessary
-    for a UI-only concern.
-    """
-    global _preview_sink
-    _preview_sink = sink
 
 
 class PyStudioPrintRuntimeNode(RuntimeNode):
@@ -44,7 +30,7 @@ class PyStudioPrintRuntimeNode(RuntimeNode):
     Studio-side runtime node for `f8.print`.
 
     This node runs inside the Studio process (`serviceId=studio`) and periodically
-    pulls its `inputData` buffer, then sends preview updates to an in-process sink.
+    pulls its `inputData` buffer, then emits UI commands for preview updates.
     """
 
     def __init__(self, *, node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any] | None = None) -> None:
@@ -113,12 +99,7 @@ class PyStudioPrintRuntimeNode(RuntimeNode):
                     ts_ms = int(time.time() * 1000)
                     self._last_preview_value = v
                     self._last_preview_ts = ts_ms
-                    sink = _preview_sink
-                    if sink is not None:
-                        try:
-                            sink(self.node_id, v, ts_ms)
-                        except Exception:
-                            pass
+                    emit_ui_command(self.node_id, "preview.update", {"value": v}, ts_ms=ts_ms)
 
             await asyncio.sleep(max(0.02, float(throttle_ms) / 1000.0))
 
@@ -169,3 +150,4 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
     )
 
     return reg
+

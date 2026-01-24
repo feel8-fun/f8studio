@@ -6,7 +6,7 @@ from typing import Any, Callable
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from f8pysdk.service_runtime import ServiceRuntime, ServiceRuntimeConfig
 
-from .operators import register_operator, set_preview_sink
+from .operators import register_operator
 from .ui_bus import set_ui_command_sink, UiCommand
 from .pystudio_node_registry import SERVICE_CLASS, STUDIO_SERVICE_ID
 
@@ -51,7 +51,6 @@ class PyStudioService:
     async def start(
         self,
         *,
-        on_preview: Callable[[str, Any, int | None], None] | None,
         on_ui_command: Callable[[UiCommand], None] | None,
     ) -> None:
         # Register studio operators into the shared registry.
@@ -66,12 +65,6 @@ class PyStudioService:
         )
         self.runtime = ServiceRuntime(cfg, registry=self._registry)
 
-        # In-process preview channel: runtime nodes can push UI-only preview updates without KV.
-        if on_preview is not None:
-            set_preview_sink(lambda node_id, value, ts_ms: on_preview(str(node_id), value, ts_ms))
-        else:
-            set_preview_sink(None)
-
         if on_ui_command is not None:
             set_ui_command_sink(on_ui_command)
         else:
@@ -80,7 +73,6 @@ class PyStudioService:
         await self.runtime.start()
 
     async def stop(self) -> None:
-        set_preview_sink(None)
         set_ui_command_sink(None)
         rt = self.runtime
         self.runtime = None

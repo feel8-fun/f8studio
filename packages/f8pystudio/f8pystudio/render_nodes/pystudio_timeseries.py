@@ -8,10 +8,7 @@ from NodeGraphQt.nodes.base_node import NodeBaseWidget
 
 from ..nodegraph.operator_basenode import F8StudioOperatorBaseNode
 
-try:  # pragma: no cover - optional dependency
-    import pyqtgraph as pg  # type: ignore[import-not-found]
-except Exception:  # pragma: no cover
-    pg = None
+import pyqtgraph as pg  # type: ignore[import-not-found]
 
 
 class _TimeSeriesPane(QtWidgets.QWidget):

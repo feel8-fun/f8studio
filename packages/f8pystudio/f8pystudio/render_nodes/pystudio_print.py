@@ -276,3 +276,13 @@ class PyStudioPrintNode(F8StudioOperatorBaseNode):
                 w.set_preview_text(txt)
         except Exception:
             return
+
+    def apply_ui_command(self, cmd: Any) -> None:
+        try:
+            if str(getattr(cmd, "command", "")) != "preview.update":
+                return
+            payload = getattr(cmd, "payload", {}) or {}
+            value = payload.get("value")
+        except Exception:
+            return
+        self.set_preview(value)

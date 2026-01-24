@@ -102,7 +102,6 @@ class PyStudioServiceBridge(QtCore.QObject):
     """
 
     # Note: Qt `int` is typically 32-bit; use `object` for ts_ms (ms timestamps exceed 2^31).
-    preview_updated = QtCore.Signal(str, object, object)  # nodeId, value, ts_ms
     ui_command = QtCore.Signal(object)  # UiCommand
     service_output = QtCore.Signal(str, str)  # serviceId, line
     log = QtCore.Signal(str)
@@ -233,7 +232,6 @@ class PyStudioServiceBridge(QtCore.QObject):
             cfg = PyStudioServiceConfig(nats_url=nats_url, studio_service_id=self.studio_service_id)
             self._svc = PyStudioService(cfg, registry=RuntimeNodeRegistry.instance())
             await self._svc.start(
-                on_preview=lambda node_id, value, ts_ms: self.preview_updated.emit(str(node_id), value, ts_ms),
                 on_ui_command=lambda cmd: self.ui_command.emit(cmd),
             )
         except Exception as exc:
