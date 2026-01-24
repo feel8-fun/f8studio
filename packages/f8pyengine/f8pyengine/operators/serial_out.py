@@ -30,8 +30,6 @@ OPERATOR_CLASS = "f8.serial_out"
 class _SerialConfig:
     port: str
     baudrate: int
-    encoding: str
-    newline: str
     enabled: bool
 
 
@@ -64,6 +62,7 @@ class SerialOutRuntimeNode(RuntimeNode):
         if value is None:
             await self._emit_status(written_bytes=0)
             return []
+        print("SerialOutRuntimeNode.on_exec: value =", value)
         data = self._to_bytes(value)
         if not data:
             await self._emit_status(written_bytes=0)
@@ -73,7 +72,7 @@ class SerialOutRuntimeNode(RuntimeNode):
         return []
 
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
-        if str(field) in ("port", "baudrate", "encoding", "newline", "enabled"):
+        if str(field) in ("port", "baudrate", "enabled"):
             await self._ensure_serial(force_restart=True)
 
     async def close(self) -> None:
@@ -86,12 +85,6 @@ class SerialOutRuntimeNode(RuntimeNode):
         baudrate = await self.get_state("baudrate")
         if baudrate is None:
             baudrate = self._initial_state.get("baudrate", 115200)
-        encoding = await self.get_state("encoding")
-        if encoding is None:
-            encoding = self._initial_state.get("encoding", "utf-8")
-        newline = await self.get_state("newline")
-        if newline is None:
-            newline = self._initial_state.get("newline", "\\n")
         enabled = await self.get_state("enabled")
         if enabled is None:
             enabled = self._initial_state.get("enabled", True)
@@ -104,8 +97,6 @@ class SerialOutRuntimeNode(RuntimeNode):
         except Exception:
             baud_i = 115200
         baud_i = max(300, min(4000000, baud_i))
-        encoding_s = str(encoding).strip() or "utf-8"
-        newline_s = str(newline)
 
         enabled_b = False
         if isinstance(enabled, bool):
@@ -118,8 +109,6 @@ class SerialOutRuntimeNode(RuntimeNode):
         return _SerialConfig(
             port=port_s,
             baudrate=baud_i,
-            encoding=encoding_s,
-            newline=newline_s,
             enabled=enabled_b,
         )
 
@@ -151,7 +140,8 @@ class SerialOutRuntimeNode(RuntimeNode):
                 port=cfg.port,
                 baudrate=int(cfg.baudrate),
                 timeout=0,
-                write_timeout=0,
+                # Use a small write timeout (blocking) to avoid non-blocking partial writes on some platforms/drivers.
+                write_timeout=0.1,
             )
             self._last_error = None
         except Exception as exc:
@@ -179,6 +169,10 @@ class SerialOutRuntimeNode(RuntimeNode):
                 return 0
             try:
                 n = await asyncio.to_thread(s.write, data)
+                try:
+                    await asyncio.to_thread(s.flush)
+                except Exception:
+                    pass
                 return int(n or 0)
             except Exception as exc:
                 self._last_error = f"{type(exc).__name__}: {exc}"
@@ -190,22 +184,37 @@ class SerialOutRuntimeNode(RuntimeNode):
         await self.emit("error", str(self._last_error or ""))
 
     def _to_bytes(self, value: Any) -> bytes:
-        cfg = self._cfg or _SerialConfig(port="COM3", baudrate=115200, encoding="utf-8", newline="\n", enabled=True)
+        # TCode devices expect ASCII. Keep encoding fixed to remove extra UI/edge cases.
         if isinstance(value, (bytes, bytearray, memoryview)):
             return bytes(value)
+
+        # Common interop case: upstream may send a dict envelope; unwrap if possible.
+        if isinstance(value, dict):
+            if "tcode" in value:
+                value = value.get("tcode")
+            elif "value" in value:
+                value = value.get("value")
         if isinstance(value, str):
             s = value
+            # If we received a JSON-encoded string (e.g. "\"L09999I020\""),
+            # unwrap it so devices don't see surrounding quotes/escapes.
+            ss = s.strip()
+            if len(ss) >= 2 and ss[0] == '"' and ss[-1] == '"':
+                try:
+                    decoded = json.loads(ss)
+                    if isinstance(decoded, str):
+                        s = decoded
+                except Exception:
+                    pass
         else:
             try:
                 s = json.dumps(value, ensure_ascii=False, default=str)
             except Exception:
                 s = str(value)
-        if cfg.newline:
-            s = s + cfg.newline
         try:
-            return s.encode(cfg.encoding, errors="replace")
+            return s.encode("ascii", errors="replace")
         except Exception:
-            return s.encode("utf-8", errors="replace")
+            return s.encode("ascii", errors="replace")
 
 
 SerialOutRuntimeNode.SPEC = F8OperatorSpec(
@@ -248,19 +257,21 @@ SerialOutRuntimeNode.SPEC = F8OperatorSpec(
             access=F8StateAccess.wo,
             showOnNode=False,
         ),
+        # Back-compat for saved sessions: these fields used to exist and may appear
+        # in serialized node properties. They are intentionally ignored by runtime.
         F8StateSpec(
             name="encoding",
-            label="Encoding",
-            description="Text encoding used when value is not bytes.",
-            valueSchema=string_schema(default="utf-8"),
+            label="Encoding (deprecated)",
+            description="Deprecated. Serial Out always encodes as ASCII for TCode devices.",
+            valueSchema=string_schema(default="ascii"),
             access=F8StateAccess.rw,
             showOnNode=False,
         ),
         F8StateSpec(
             name="newline",
-            label="Newline",
-            description="Suffix appended after each write (use empty string to disable).",
-            valueSchema=string_schema(default="\\n"),
+            label="Newline (deprecated)",
+            description="Deprecated. Provide newline in the input payload if needed.",
+            valueSchema=string_schema(default=""),
             access=F8StateAccess.rw,
             showOnNode=False,
         ),

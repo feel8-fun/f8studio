@@ -159,7 +159,7 @@ TickRuntimeNode.SPEC = F8OperatorSpec(
             description="Interval in milliseconds for emitting exec ticks.",
             valueSchema=integer_schema(default=100, minimum=1, maximum=50000),
             access=F8StateAccess.rw,
-            showOnNode=False,
+            showOnNode=True,
         ),
         F8StateSpec(
             name="hiResTimer",

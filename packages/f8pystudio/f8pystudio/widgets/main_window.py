@@ -27,7 +27,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
     def __init__(self, node_classes: Iterable[type], parent=None):
         super().__init__(parent)
         self.setWindowTitle("F8PyStudio")
-        self.resize(1200, 800)
+        self.resize(1920, 980)
 
         self._session_file = last_session_path()
 
