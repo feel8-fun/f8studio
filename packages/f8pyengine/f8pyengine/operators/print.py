@@ -11,7 +11,8 @@ from f8pysdk import (
     F8RuntimeNode,
     F8StateAccess,
     F8StateSpec,
-    number_schema,
+    any_schema,
+    boolean_schema,
 )
 from f8pysdk.nats_naming import ensure_token
 from f8pysdk.runtime_node import RuntimeNode
@@ -36,10 +37,38 @@ class PrintRuntimeNode(RuntimeNode):
             data_out_ports=[p.name for p in (node.dataOutPorts or [])],
             state_fields=[s.name for s in (node.stateFields or [])],
         )
-        self._initial_state = dict(initial_state or {})
+        self._strip = self._coerce_bool((initial_state or {}).get("strip"), default=True)
+
+    @staticmethod
+    def _coerce_bool(value: Any, *, default: bool) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return default
+        if isinstance(value, (int, float)):
+            return bool(value)
+        s = str(value).strip().lower()
+        if s in ("1", "true", "yes", "on"):
+            return True
+        if s in ("0", "false", "no", "off", ""):
+            return False
+        return default
+
+    async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
+        if str(field) == "strip":
+            self._strip = self._coerce_bool(value, default=self._strip)
+            return
 
     async def on_exec(self, exec_id: str | int, _in_port: str | None = None) -> list[str]:
         v = await self.pull("value", ctx_id=exec_id)
+        if self._strip:
+            if isinstance(v, (bytes, bytearray)):
+                try:
+                    v = bytes(v).decode("utf-8", errors="replace")
+                except Exception:
+                    pass
+            if isinstance(v, str):
+                v = v.strip()
         print(f"[{self.node_id}] exec={exec_id} value={v}")
         return []
 
@@ -53,7 +82,17 @@ PrintRuntimeNode.SPEC = F8OperatorSpec(
     description="Exec-driven printer (pulls `value` and prints).",
     tags=["debug", "console", "print"],
     execInPorts=["exec"],
-    dataInPorts=[F8DataPortSpec(name="value", description="value to print", valueSchema=number_schema())],
+    dataInPorts=[F8DataPortSpec(name="value", description="value to print", valueSchema=any_schema())],
+    stateFields=[
+        F8StateSpec(
+            name="strip",
+            label="Strip",
+            description="If true, strip whitespace/newlines from the start/end of string values before printing.",
+            valueSchema=boolean_schema(default=True),
+            access=F8StateAccess.wo,
+            showOnNode=False,
+        ),
+    ],
 )
 
 
