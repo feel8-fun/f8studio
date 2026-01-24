@@ -94,6 +94,20 @@ class TCodeRuntimeNode(RuntimeNode):
             return ""
         return " ".join(commands) + "\n"
 
+    async def validate_state(
+        self, field: str, value: Any, *, ts_ms: int | None = None, meta: dict[str, Any] | None = None
+    ) -> Any:
+        name = str(field or "").strip()
+        if name != "intervalMs":
+            return value
+        numeric = _coerce_number(value)
+        if numeric is None:
+            raise ValueError("intervalMs must be a number")
+        interval_i = max(1, _js_round(float(numeric)))
+        if interval_i > 50000:
+            raise ValueError("intervalMs must be <= 50000")
+        return interval_i
+
 
 TCodeRuntimeNode.SPEC = F8OperatorSpec(
     schemaVersion=F8OperatorSchemaVersion.f8operator_1,

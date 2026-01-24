@@ -541,19 +541,20 @@ class ServiceBus:
                 await _respond(req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "invalid nodeId"})
                 return
 
-            access = self._state_access_by_node_field.get((node_id_s, field_s))
-            if access is None:
-                await _respond(req, req_id=req_id, ok=False, error={"code": "UNKNOWN_FIELD", "message": f"unknown state field: {field_s}"})
-                return
-            if access not in (F8StateAccess.rw, F8StateAccess.wo):
-                await _respond(req, req_id=req_id, ok=False, error={"code": "FORBIDDEN", "message": f"state field not writable: {field_s} ({access.value})"})
-                return
-
             source = str(meta.get("source") or "endpoint")
             user_meta = dict(meta)
             user_meta.pop("source", None)
             try:
                 await self.set_state_with_meta(node_id_s, field_s, value, source=source, meta={"via": "endpoint", **user_meta})
+            except ValueError as exc:
+                msg = str(exc)
+                code = "INVALID_VALUE"
+                if msg.startswith("unknown state field:"):
+                    code = "UNKNOWN_FIELD"
+                elif msg.startswith("state field not writable:"):
+                    code = "FORBIDDEN"
+                await _respond(req, req_id=req_id, ok=False, error={"code": code, "message": msg})
+                return
             except Exception as exc:
                 await _respond(req, req_id=req_id, ok=False, error={"code": "INTERNAL", "message": str(exc)})
                 return
@@ -655,8 +656,13 @@ class ServiceBus:
     async def set_state(self, node_id: str, field: str, value: Any, *, ts_ms: int | None = None) -> None:
         node_id = ensure_token(node_id, label="node_id")
         field = str(field)
+        ts = int(ts_ms or now_ms())
+        value = await self._validate_state_write(
+            node_id=node_id, field=field, value=value, ts_ms=ts, meta={"source": "set_state"}
+        )
+        value = self._coerce_state_value(value)
         key = kv_key_node_state(node_id=node_id, field=field)
-        payload = {"value": value, "actor": self.service_id, "ts": int(ts_ms or now_ms())}
+        payload = {"value": value, "actor": self.service_id, "ts": ts}
         if self._debug_state:
             print(
                 "state_debug[%s] set_state node=%s field=%s ts=%s"
@@ -710,7 +716,20 @@ class ServiceBus:
         if source:
             payload["source"] = str(source)
         if meta:
-            payload.update(meta)
+            # Prevent callers from overriding canonical fields.
+            for k, v in dict(meta).items():
+                if k in ("value", "actor", "ts", "source"):
+                    continue
+                payload[k] = v
+        payload["value"] = await self._validate_state_write(
+            node_id=node_id,
+            field=field,
+            value=payload.get("value"),
+            ts_ms=int(payload.get("ts") or now_ms()),
+            meta=dict(payload),
+        )
+        value = self._coerce_state_value(payload.get("value"))
+        payload["value"] = value
         if self._debug_state:
             print(
                 "state_debug[%s] set_state_with_meta node=%s field=%s ts=%s source=%s meta=%s"
@@ -721,6 +740,86 @@ class ServiceBus:
         # Local writes (actor == self.service_id) do not round-trip through the KV watcher.
         # Apply to listeners and the node callback immediately.
         await self._dispatch_local_state_update(node_id, field, value, int(payload["ts"]), dict(payload))
+
+    async def _validate_state_write(
+        self, *, node_id: str, field: str, value: Any, ts_ms: int, meta: dict[str, Any] | None
+    ) -> Any:
+        """
+        Centralized state validation hook.
+
+        If a node implements `validate_state(field, value, ts_ms=..., meta=...)`, it may:
+        - return a (possibly transformed) value to accept
+        - raise ValueError to reject
+        """
+        node = self._nodes.get(str(node_id))
+        cb = getattr(node, "validate_state", None) if node is not None else None
+        allow_unknown = bool(getattr(node, "allow_unknown_state_fields", False)) if node is not None else False
+
+        access = self._state_access_by_node_field.get((str(node_id), str(field)))
+        # If we have an applied graph, unknown fields are rejected by default.
+        # Nodes may opt into dynamic fields (eg. monitor) via `allow_unknown_state_fields=True`.
+        if self._graph is not None and access is None and not allow_unknown:
+            raise ValueError(f"unknown state field: {node_id}.{field}")
+
+        # Enforce write access when known.
+        if access is not None and access not in (F8StateAccess.rw, F8StateAccess.wo):
+            raise ValueError(f"state field not writable: {node_id}.{field} ({access.value})")
+
+        if node is None:
+            return value
+        if not callable(cb):
+            return value
+        try:
+            r = cb(str(field), value, ts_ms=int(ts_ms), meta=dict(meta or {}))
+            if asyncio.iscoroutine(r):
+                return await r
+            return r
+        except ValueError:
+            raise
+        except Exception as exc:
+            raise ValueError(str(exc)) from exc
+
+    @staticmethod
+    def _coerce_state_value(value: Any) -> Any:
+        """
+        Best-effort conversion of state values into JSON-friendly primitives.
+
+        This prevents accidental persistence of pydantic RootModel/BaseModel objects
+        as strings like "root=0.5", which then breaks runtime numeric coercion.
+        """
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, (list, tuple)):
+            return [ServiceBus._coerce_state_value(v) for v in value]
+        if isinstance(value, dict):
+            return {str(k): ServiceBus._coerce_state_value(v) for k, v in value.items()}
+
+        # Enum-like objects.
+        try:
+            import enum
+
+            if isinstance(value, enum.Enum):
+                return ServiceBus._coerce_state_value(value.value)
+        except Exception:
+            pass
+
+        # Pydantic v2 models/root models.
+        try:
+            model_dump = getattr(value, "model_dump", None)
+            if callable(model_dump):
+                dumped = model_dump(mode="json")
+                return ServiceBus._coerce_state_value(dumped)
+        except Exception:
+            pass
+
+        # Generic RootModel-like `root` attribute.
+        try:
+            if hasattr(value, "root"):
+                return ServiceBus._coerce_state_value(getattr(value, "root"))
+        except Exception:
+            pass
+
+        return value
 
     async def _dispatch_local_state_update(
         self, node_id: str, field: str, value: Any, ts_ms: int, meta_dict: dict[str, Any]
@@ -753,6 +852,8 @@ class ServiceBus:
     async def _fanout_state_edges(
         self, *, node_id: str, field: str, value: Any, ts_ms: int, meta_dict: dict[str, Any]
     ) -> None:
+        if bool(meta_dict.get("_noStateFanout")):
+            return
         targets = self._intra_state_out.get((str(node_id), str(field))) or []
         if not targets:
             return
@@ -765,18 +866,102 @@ class ServiceBus:
         for to_node, to_field, _edge in list(targets):
             if str(to_node) == str(node_id) and str(to_field) == str(field):
                 continue
+            access = self._state_access_by_node_field.get((str(to_node), str(to_field)))
+            if access not in (F8StateAccess.rw, F8StateAccess.wo):
+                continue
             try:
-                await self.apply_state_local(
+                await self.set_state_with_meta(
                     str(to_node),
                     str(to_field),
                     value,
                     ts_ms=ts_ms,
-                    meta={
-                        "source": "state_edge",
-                        "fromNodeId": str(node_id),
-                        "fromField": str(field),
-                        "_fanoutHops": hops + 1,
-                    },
+                    source="state_edge",
+                    meta={"fromNodeId": str(node_id), "fromField": str(field), "_fanoutHops": hops + 1},
+                )
+            except Exception:
+                continue
+
+    async def _apply_rungraph_state_values(self, graph: F8RuntimeGraph) -> None:
+        """
+        Materialize per-node `stateValues` into KV (and dispatch locally).
+
+        The studio compiler stores UI property values into `stateValues` so
+        runtimes can start with the same configuration. We write them into KV
+        so:
+          - downstream nodes (and UIs) can observe state immediately
+          - intra-service state edges can fanout correctly
+        """
+        for n in list(getattr(graph, "nodes", None) or []):
+            if str(getattr(n, "serviceId", "")) != self.service_id:
+                continue
+            node_id = str(getattr(n, "nodeId", "") or "").strip()
+            if not node_id:
+                continue
+            values = getattr(n, "stateValues", None) or {}
+            if not isinstance(values, dict) or not values:
+                continue
+            for k, v in list(values.items()):
+                field = str(k or "").strip()
+                if not field:
+                    continue
+                access = self._state_access_by_node_field.get((node_id, field))
+                if access not in (F8StateAccess.rw, F8StateAccess.wo):
+                    continue
+                try:
+                    await self.set_state_with_meta(
+                        node_id,
+                        field,
+                        v,
+                        source="rungraph",
+                        meta={"via": "rungraph", "_noStateFanout": True},
+                    )
+                except Exception:
+                    continue
+
+    async def _initial_sync_intra_state_edges(self, graph: F8RuntimeGraph) -> None:
+        """
+        Best-effort initial sync for intra-service state edges.
+
+        If a state edge is added but the upstream value does not change after
+        deploy, we still want the downstream field to receive the current value.
+        """
+        for edge in list(getattr(graph, "edges", None) or []):
+            if getattr(edge, "kind", None) != F8EdgeKindEnum.state:
+                continue
+            if str(getattr(edge, "fromServiceId", "")) != self.service_id or str(getattr(edge, "toServiceId", "")) != self.service_id:
+                continue
+            if not edge.fromOperatorId or not edge.toOperatorId:
+                continue
+            from_node = str(edge.fromOperatorId)
+            from_field = str(edge.fromPort)
+            to_node = str(edge.toOperatorId)
+            to_field = str(edge.toPort)
+            access = self._state_access_by_node_field.get((to_node, to_field))
+            if access not in (F8StateAccess.rw, F8StateAccess.wo):
+                continue
+            try:
+                found_from, v_from, _ts_from = await self.get_state_with_ts(from_node, from_field)
+            except Exception:
+                continue
+            if not found_from:
+                continue
+            try:
+                found_to, v_to, _ts_to = await self.get_state_with_ts(to_node, to_field)
+            except Exception:
+                found_to, v_to = False, None
+            # A state edge means "downstream follows upstream". Even if the
+            # downstream has a local/default value, we still apply the upstream
+            # value once on deploy so the edge has an effect without requiring
+            # a subsequent upstream change.
+            if found_to and v_to == v_from:
+                continue
+            try:
+                await self.set_state_with_meta(
+                    to_node,
+                    to_field,
+                    v_from,
+                    source="state_edge_init",
+                    meta={"fromNodeId": from_node, "fromField": from_field, "_fanoutHops": 1},
                 )
             except Exception:
                 continue
@@ -1013,6 +1198,8 @@ class ServiceBus:
                 % (self.service_id, graph_id, str(node_count), str(edge_count))
             )
         await self._rebuild_routes()
+        await self._apply_rungraph_state_values(graph)
+        await self._initial_sync_intra_state_edges(graph)
 
         for cb in list(self._rungraph_listeners):
             try:
@@ -1497,6 +1684,14 @@ class ServiceBus:
                 await self._on_remote_state_kv(_peer, key, val)
 
             self._remote_state_watches[k] = await self._transport.kv_watch_in_bucket(bucket, remote_key, cb=_cb)
+            # Initial sync: fetch current value once so edges work even if the upstream
+            # doesn't change after deploy.
+            try:
+                raw = await self._transport.kv_get_in_bucket(bucket, remote_key)
+                if raw:
+                    await self._on_remote_state_kv(peer, remote_key, raw)
+            except Exception:
+                pass
 
     async def _on_remote_state_kv(self, peer_service_id: str, key: str, value: bytes) -> None:
         parsed = self._parse_state_key(key)
@@ -1523,13 +1718,53 @@ class ServiceBus:
             if access in (F8StateAccess.ro, F8StateAccess.init):
                 continue
             try:
-                await self.apply_state_local(
-                    local_node_id,
-                    local_field,
-                    v,
-                    ts_ms=ts,
-                    meta={"source": "cross_state", "peerServiceId": peer_service_id, **(payload if isinstance(payload, dict) else {})},
+                meta_in = payload if isinstance(payload, dict) else {}
+                try:
+                    hops = int(meta_in.get("_fanoutHops") or 0) + 1
+                except Exception:
+                    hops = 1
+                if hops >= 8:
+                    continue
+
+                # Do not overwrite a newer local value.
+                try:
+                    found_local, _v_local, ts_local = await self.get_state_with_ts(str(local_node_id), str(local_field))
+                    if found_local and ts_local is not None and int(ts_local) > int(ts):
+                        continue
+                except Exception:
+                    pass
+
+                meta_out = {
+                    "peerServiceId": str(peer_service_id),
+                    "remoteKey": str(key),
+                    "_fanoutHops": hops,
+                    **{k: vv for k, vv in dict(meta_in).items() if k not in ("value", "actor", "ts", "source")},
+                }
+                v2 = await self._validate_state_write(
+                    node_id=str(local_node_id),
+                    field=str(local_field),
+                    value=v,
+                    ts_ms=int(ts),
+                    meta={"source": "cross_state", **meta_out},
                 )
+                v2 = self._coerce_state_value(v2)
+                if access is None:
+                    await self.apply_state_local(
+                        str(local_node_id),
+                        str(local_field),
+                        v2,
+                        ts_ms=ts,
+                        meta={"source": "cross_state", **meta_out},
+                    )
+                else:
+                    await self.set_state_with_meta(
+                        str(local_node_id),
+                        str(local_field),
+                        v2,
+                        ts_ms=ts,
+                        source="cross_state",
+                        meta=meta_out,
+                    )
             except Exception:
                 pass
 

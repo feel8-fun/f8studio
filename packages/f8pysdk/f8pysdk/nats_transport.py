@@ -300,6 +300,25 @@ class NatsTransport:
         task = asyncio.create_task(_pump(), name=f"kv_watch:{bucket}:{key_pattern}")
         return (watcher, task)
 
+    async def kv_get_in_bucket(self, bucket: str, key: str) -> bytes | None:
+        """
+        Read a KV entry from an explicit bucket (returns raw bytes or None).
+        """
+        try:
+            kv = await self.kv_store(str(bucket))
+        except Exception:
+            return None
+        try:
+            entry = await kv.get(str(key))
+        except Exception:
+            return None
+        if entry is None:
+            return None
+        try:
+            return bytes(getattr(entry, "value", b"") or b"")
+        except Exception:
+            return None
+
 
 async def reset_kv_bucket(
     *,

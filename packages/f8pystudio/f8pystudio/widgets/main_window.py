@@ -6,7 +6,7 @@ from typing import Any, Iterable
 
 from qtpy import QtCore, QtGui, QtWidgets
 
-from f8pysdk import F8OperatorSpec
+from f8pysdk import F8OperatorSpec, F8ServiceSpec
 
 from ..nodegraph import F8StudioGraph
 from ..nodegraph.session import last_session_path
@@ -261,7 +261,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
 
     def _on_ui_property_changed(self, node: Any, name: str, value: Any) -> None:
         """
-        Propagate UI state edits into the studio runtime (local service only for now).
+        Propagate UI state edits into the corresponding runtime.
         """
         if self._applying_runtime_state:
             return
@@ -269,10 +269,9 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
             spec = getattr(node, "spec", None)
         except Exception:
             spec = None
-        if not isinstance(spec, F8OperatorSpec):
+        if not isinstance(spec, (F8OperatorSpec, F8ServiceSpec)):
             return
-        if str(getattr(spec, "serviceClass", "")) != STUDIO_SERVICE_CLASS:
-            return
+        service_class = str(getattr(spec, "serviceClass", "") or "")
         # Only state fields are propagated.
         try:
             state_names = {str(getattr(s, "name", "")) for s in (spec.stateFields or [])}
@@ -286,4 +285,19 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
             node_id = ""
         if not node_id:
             return
-        self._bridge.set_local_state(node_id, str(name), value)
+        if service_class == STUDIO_SERVICE_CLASS:
+            self._bridge.set_local_state(node_id, str(name), value)
+            return
+
+        # Non-studio services: push state to the runtime via `set_state` endpoint.
+        # Service nodes represent service instances themselves: node_id == service_id.
+        if isinstance(spec, F8ServiceSpec):
+            service_id = node_id
+        else:
+            try:
+                service_id = str(getattr(node, "svcId", "") or "")
+            except Exception:
+                service_id = ""
+        if not service_id:
+            return
+        self._bridge.set_remote_state(service_id, node_id, str(name), value)

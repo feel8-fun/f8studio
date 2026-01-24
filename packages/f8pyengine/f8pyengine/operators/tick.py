@@ -47,6 +47,31 @@ class TickRuntimeNode(RuntimeNode):
     async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
         return list(self._exec_out_ports)
 
+    async def validate_state(self, field: str, value: Any, *, ts_ms: int | None = None, meta: dict[str, Any] | None = None) -> Any:
+        name = str(field or "").strip()
+        if name == "tickMs":
+            try:
+                ms = int(value)
+            except Exception:
+                raise ValueError("tickMs must be an integer") from None
+            if ms < 1:
+                raise ValueError("tickMs must be >= 1")
+            if ms > 50000:
+                raise ValueError("tickMs must be <= 50000")
+            return ms
+        if name == "hiResTimer":
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, (int, float)):
+                return bool(value)
+            s = str(value or "").strip().lower()
+            if s in ("1", "true", "yes", "on"):
+                return True
+            if s in ("0", "false", "no", "off", ""):
+                return False
+            raise ValueError("hiResTimer must be a boolean")
+        return value
+
     def _apply_windows_timer_resolution(self, enabled: bool) -> None:
         """
         Best-effort: request 1ms timer resolution on Windows to reduce sleep jitter.

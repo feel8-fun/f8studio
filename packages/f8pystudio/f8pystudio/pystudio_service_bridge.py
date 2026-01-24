@@ -211,6 +211,87 @@ class PyStudioServiceBridge(QtCore.QObject):
         except Exception:
             return
 
+    def set_remote_state(self, service_id: str, node_id: str, field: str, value: Any) -> None:
+        """
+        Set state in a managed remote service via its `set_state` endpoint (best-effort).
+
+        This is used to propagate UI property edits into the runtime so the
+        running node behavior matches the values shown in Node Properties.
+        """
+        try:
+            service_id = ensure_token(str(service_id), label="service_id")
+            node_id = ensure_token(str(node_id), label="node_id")
+        except Exception:
+            return
+        field = str(field or "").strip()
+        if not field:
+            return
+
+        def _coerce_json_value(v: Any) -> Any:
+            if v is None or isinstance(v, (str, int, float, bool)):
+                return v
+            if isinstance(v, (list, tuple)):
+                return [_coerce_json_value(x) for x in v]
+            if isinstance(v, dict):
+                return {str(k): _coerce_json_value(x) for k, x in v.items()}
+            try:
+                model_dump = getattr(v, "model_dump", None)
+                if callable(model_dump):
+                    return _coerce_json_value(model_dump(mode="json"))
+            except Exception:
+                pass
+            try:
+                if hasattr(v, "root"):
+                    return _coerce_json_value(getattr(v, "root"))
+            except Exception:
+                pass
+            return v
+
+        value_json = _coerce_json_value(value)
+
+        async def _do() -> None:
+            nc = await self._ensure_nc()
+            if nc is None:
+                return
+            subject = svc_endpoint_subject(service_id, "set_state")
+            payload = json.dumps(
+                {
+                    "reqId": new_id(),
+                    "args": {"nodeId": node_id, "field": field, "value": value_json},
+                    "meta": {"actor": "studio", "source": "ui"},
+                },
+                ensure_ascii=False,
+                default=str,
+            ).encode("utf-8")
+            for _ in range(3):
+                try:
+                    msg = await nc.request(subject, payload, timeout=0.5)
+                    raw = bytes(getattr(msg, "data", b"") or b"")
+                    if not raw:
+                        continue
+                    try:
+                        resp = json.loads(raw.decode("utf-8"))
+                    except Exception:
+                        resp = {}
+                    if isinstance(resp, dict) and resp.get("ok") is True:
+                        return
+                    # Validation errors are expected; surface them.
+                    if isinstance(resp, dict) and resp.get("ok") is False:
+                        err = resp.get("error") if isinstance(resp.get("error"), dict) else {}
+                        code = str(err.get("code") or "")
+                        msg_s = str(err.get("message") or "")
+                        if code or msg_s:
+                            self.log.emit(f"set_state rejected serviceId={service_id} nodeId={node_id} field={field} code={code} msg={msg_s}")
+                        return
+                except Exception:
+                    await asyncio.sleep(0.1)
+                    continue
+
+        try:
+            self._async.submit(_do())
+        except Exception:
+            return
+
     async def _start_async(self) -> None:
         nats_url = str(self._cfg.nats_url).strip() or "nats://127.0.0.1:4222"
 

@@ -41,6 +41,8 @@ class MonitorStateRuntimeNode(RuntimeNode):
             ts_ms=ts_ms,
         )
 
+    allow_unknown_state_fields = True
+
     @staticmethod
     def _decode_remote_state_key(encoded: str) -> tuple[str, str, str] | None:
         try:
