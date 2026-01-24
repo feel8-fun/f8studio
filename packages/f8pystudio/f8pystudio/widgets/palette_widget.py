@@ -9,6 +9,21 @@ class F8StudioNodesPaletteWidget(NodesPaletteWidget):
     def __init__(self, parent=None, node_graph=None):
         super().__init__(parent, node_graph)
 
+    @staticmethod
+    def _is_hidden_node(node_cls) -> bool:
+        """
+        Hide nodes from the palette while keeping them registered.
+        """
+        try:
+            spec = getattr(node_cls, "SPEC_TEMPLATE", None)
+            tags = getattr(spec, "tags", None) if spec is not None else None
+            if isinstance(tags, (list, tuple, set)):
+                if any(str(t).strip().lower() == "__hidden__" for t in tags):
+                    return True
+        except Exception:
+            pass
+        return False
+
     def _on_nodes_registered(self, nodes):
         """
         Slot function when a new node has been registered into the node graph.
@@ -18,6 +33,11 @@ class F8StudioNodesPaletteWidget(NodesPaletteWidget):
         """
         node_types = defaultdict(list)
         for node in nodes:
+            try:
+                if self._is_hidden_node(node):
+                    continue
+            except Exception:
+                pass
             name = node.NODE_NAME
             nid = node.type_
             category = node.__identifier__
@@ -40,6 +60,8 @@ class F8StudioNodesPaletteWidget(NodesPaletteWidget):
         """
         node_types = defaultdict(list)
         for nid, node_cls in self._factory.nodes.items():
+            if self._is_hidden_node(node_cls):
+                continue
             category = node_cls.__identifier__
             node_types[category].append((nid, node_cls.NODE_NAME))
 
@@ -58,9 +80,11 @@ class F8StudioNodesPaletteWidget(NodesPaletteWidget):
         node_types = defaultdict(list)
 
         for nid, node_cls in self._factory.nodes.items():
+            if self._is_hidden_node(node_cls):
+                continue
             category = node_cls.__identifier__
             node_types[category].append((nid, node_cls.NODE_NAME))
-            
+             
         for category, nodes_list in node_types.items():
             grid_view = self._category_tabs.get(category)
             if not grid_view:

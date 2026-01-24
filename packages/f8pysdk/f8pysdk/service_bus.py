@@ -130,6 +130,9 @@ class ServiceBus:
         self._cross_out_subjects: dict[tuple[str, str], str] = {}
         self._data_inputs: dict[tuple[str, str], _InputBuffer] = {}
 
+        # Intra-service state fanout (state edges within the same service).
+        self._intra_state_out: dict[tuple[str, str], list[tuple[str, str, F8Edge]]] = {}
+
         # Cross-state binding (remote KV -> local node.on_state + local KV mirror).
         self._cross_state_in_by_key: dict[tuple[str, str], list[tuple[str, str, F8Edge]]] = {}
         self._remote_state_watches: dict[tuple[str, str], Any] = {}
@@ -744,6 +747,40 @@ class ServiceBus:
         except Exception:
             return
 
+        # Intra-service state fanout via state edges (local -> local).
+        await self._fanout_state_edges(node_id=node_id, field=field, value=value, ts_ms=ts_ms, meta_dict=meta_dict)
+
+    async def _fanout_state_edges(
+        self, *, node_id: str, field: str, value: Any, ts_ms: int, meta_dict: dict[str, Any]
+    ) -> None:
+        targets = self._intra_state_out.get((str(node_id), str(field))) or []
+        if not targets:
+            return
+        try:
+            hops = int(meta_dict.get("_fanoutHops") or 0)
+        except Exception:
+            hops = 0
+        if hops >= 8:
+            return
+        for to_node, to_field, _edge in list(targets):
+            if str(to_node) == str(node_id) and str(to_field) == str(field):
+                continue
+            try:
+                await self.apply_state_local(
+                    str(to_node),
+                    str(to_field),
+                    value,
+                    ts_ms=ts_ms,
+                    meta={
+                        "source": "state_edge",
+                        "fromNodeId": str(node_id),
+                        "fromField": str(field),
+                        "_fanoutHops": hops + 1,
+                    },
+                )
+            except Exception:
+                continue
+
     async def get_state(self, node_id: str, field: str) -> Any:
         node_id = ensure_token(node_id, label="node_id")
         field = str(field)
@@ -1062,6 +1099,7 @@ class ServiceBus:
             return
 
         self._data_inputs.clear()
+        self._intra_state_out.clear()
 
         # Intra (in-process) routing: local service -> local service.
         intra: dict[tuple[str, str], list[tuple[str, str]]] = {}
@@ -1081,6 +1119,20 @@ class ServiceBus:
             )
         self._intra_data_out = intra
         self._intra_data_in = intra_in
+
+        # Intra-service state fanout: local state edges (used for monitoring/fan-in).
+        intra_state_out: dict[tuple[str, str], list[tuple[str, str, F8Edge]]] = {}
+        for edge in graph.edges:
+            if edge.kind != F8EdgeKindEnum.state:
+                continue
+            if str(edge.fromServiceId) != self.service_id or str(edge.toServiceId) != self.service_id:
+                continue
+            if not edge.fromOperatorId or not edge.toOperatorId:
+                continue
+            intra_state_out.setdefault((str(edge.fromOperatorId), str(edge.fromPort)), []).append(
+                (str(edge.toOperatorId), str(edge.toPort), edge)
+            )
+        self._intra_state_out = intra_state_out
 
         # Cross routing.
         cross_in: dict[str, list[tuple[str, str, F8Edge]]] = {}
@@ -1470,13 +1522,6 @@ class ServiceBus:
             access = self._state_access_by_node_field.get((str(local_node_id), str(local_field)))
             if access in (F8StateAccess.ro, F8StateAccess.init):
                 continue
-            node = self._nodes.get(local_node_id)
-            if node is not None:
-                try:
-                    if isinstance(node, StatefulNode):
-                        await node.on_state(local_field, v, ts_ms=ts)
-                except Exception:
-                    pass
             try:
                 await self.apply_state_local(
                     local_node_id,

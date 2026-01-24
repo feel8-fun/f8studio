@@ -30,19 +30,6 @@ def _encode_remote_state_key(*, service_id: str, node_id: str, field: str) -> st
     return f"{service_id}|{node_id}|{field}"
 
 
-def _decode_remote_state_key(encoded: str) -> tuple[str, str, str] | None:
-    try:
-        sid, nid, field = str(encoded).split("|", 2)
-    except Exception:
-        return None
-    sid = sid.strip()
-    nid = nid.strip()
-    field = field.strip()
-    if not sid or not nid or not field:
-        return None
-    return sid, nid, field
-
-
 class _AsyncThread:
     def __init__(self) -> None:
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -115,7 +102,6 @@ class PyStudioServiceBridge(QtCore.QObject):
     """
 
     # Note: Qt `int` is typically 32-bit; use `object` for ts_ms (ms timestamps exceed 2^31).
-    state_updated = QtCore.Signal(str, str, str, object, object)  # serviceId, nodeId, field, value, ts_ms
     preview_updated = QtCore.Signal(str, object, object)  # nodeId, value, ts_ms
     ui_command = QtCore.Signal(object)  # UiCommand
     service_output = QtCore.Signal(str, str)  # serviceId, line
@@ -243,32 +229,12 @@ class PyStudioServiceBridge(QtCore.QObject):
         except Exception:
             self._nc = None
 
-        def _on_state(field: str, value: Any, ts_ms: int | None) -> None:
-            decoded = _decode_remote_state_key(field)
-            if decoded is None:
-                return
-            sid, nid, f = decoded
-            try:
-                self.state_updated.emit(str(sid), str(nid), str(f), value, ts_ms)
-            except Exception:
-                return
-
-        async def _on_local_state(node_id: str, field: str, value: Any, ts: int, _meta: dict[str, Any]) -> None:
-            if str(node_id) == _MONITOR_NODE_ID:
-                _on_state(field, value, ts)
-                return
-            try:
-                self.state_updated.emit(self.studio_service_id, str(node_id), str(field), value, ts)
-            except Exception:
-                return
-
         try:
             cfg = PyStudioServiceConfig(nats_url=nats_url, studio_service_id=self.studio_service_id)
             self._svc = PyStudioService(cfg, registry=RuntimeNodeRegistry.instance())
             await self._svc.start(
                 on_preview=lambda node_id, value, ts_ms: self.preview_updated.emit(str(node_id), value, ts_ms),
                 on_ui_command=lambda cmd: self.ui_command.emit(cmd),
-                on_local_state=_on_local_state,
             )
         except Exception as exc:
             self.log.emit(f"studio runtime start failed: {exc}")

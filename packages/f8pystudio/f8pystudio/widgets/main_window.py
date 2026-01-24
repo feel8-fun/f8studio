@@ -42,7 +42,6 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         self._setup_toolbar()
 
         self._bridge = PyStudioServiceBridge(PyStudioServiceBridgeConfig(), parent=self)
-        self._bridge.state_updated.connect(self._on_runtime_state_updated)  # type: ignore[attr-defined]
         self._bridge.preview_updated.connect(self._on_preview_updated)  # type: ignore[attr-defined]
         self._bridge.ui_command.connect(self._on_ui_command)  # type: ignore[attr-defined]
         self._bridge.service_output.connect(self._log_dock.append)  # type: ignore[attr-defined]
@@ -236,6 +235,23 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
             return
 
     def _on_ui_command(self, cmd: Any) -> None:
+        try:
+            command = getattr(cmd, "command", None)
+        except Exception:
+            command = None
+        if str(command) == "state.update":
+            try:
+                payload = getattr(cmd, "payload", None) or {}
+                field = str(payload.get("field") or "")
+                value = payload.get("value")
+                ts_ms = getattr(cmd, "ts_ms", None)
+                service_id = str(payload.get("serviceId") or "")
+                node_id = str(getattr(cmd, "node_id", "") or "")
+            except Exception:
+                return
+            if node_id and field:
+                self._on_runtime_state_updated(service_id, node_id, field, value, ts_ms)
+            return
         try:
             node_id = getattr(cmd, "node_id", None)
         except Exception:

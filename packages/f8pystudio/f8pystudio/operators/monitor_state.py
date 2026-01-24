@@ -8,6 +8,7 @@ from f8pysdk.runtime_node import RuntimeNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from ..constants import SERVICE_CLASS
+from ..ui_bus import emit_ui_command
 
 OPERATOR_CLASS = "f8.monitor_state"
 
@@ -28,6 +29,31 @@ class MonitorStateRuntimeNode(RuntimeNode):
             state_fields=[s.name for s in (node.stateFields or [])],
         )
 
+    async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
+        decoded = self._decode_remote_state_key(str(field))
+        if decoded is None:
+            return
+        service_id, node_id, state_field = decoded
+        emit_ui_command(
+            node_id=node_id,
+            command="state.update",
+            payload={"serviceId": service_id, "field": state_field, "value": value},
+            ts_ms=ts_ms,
+        )
+
+    @staticmethod
+    def _decode_remote_state_key(encoded: str) -> tuple[str, str, str] | None:
+        try:
+            sid, nid, f = str(encoded).split("|", 2)
+        except Exception:
+            return None
+        sid = sid.strip()
+        nid = nid.strip()
+        f = f.strip()
+        if not sid or not nid or not f:
+            return None
+        return sid, nid, f
+
 
 def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
     reg = registry or RuntimeNodeRegistry.instance()
@@ -44,7 +70,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
             version="0.0.1",
             label="Monitor State (internal)",
             description="Internal node used by Studio to monitor remote state via cross-state edges.",
-            tags=["internal", "monitor", "state"],
+            tags=["__hidden__", "monitor", "state"],
         ),
         overwrite=True,
     )
