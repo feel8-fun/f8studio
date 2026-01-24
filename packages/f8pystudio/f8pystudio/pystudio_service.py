@@ -5,6 +5,7 @@ from typing import Any, Callable
 
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from f8pysdk.service_runtime import ServiceRuntime, ServiceRuntimeConfig
+from f8pysdk.capabilities import StateListenerBus
 
 from .operators import register_operator, set_preview_sink
 from .ui_bus import set_ui_command_sink, UiCommand
@@ -37,6 +38,7 @@ class PyStudioService:
         self._cfg = config
         self._registry = registry or RuntimeNodeRegistry.instance()
         self.runtime: ServiceRuntime | None = None
+        self._on_local_state: Callable[[str, str, Any, int, dict[str, Any]], Any] | None = None
 
     @property
     def studio_service_id(self) -> str:
@@ -79,10 +81,13 @@ class PyStudioService:
             set_ui_command_sink(None)
 
         if on_local_state is not None:
+            self._on_local_state = on_local_state
             try:
                 self.runtime.bus.add_state_listener(on_local_state)
             except Exception:
                 pass
+        else:
+            self._on_local_state = None
 
         await self.runtime.start()
 
@@ -93,4 +98,11 @@ class PyStudioService:
         self.runtime = None
         if rt is None:
             return
+        cb = self._on_local_state
+        self._on_local_state = None
+        if cb is not None and isinstance(rt.bus, StateListenerBus):
+            try:
+                rt.bus.remove_state_listener(cb)
+            except Exception:
+                pass
         await rt.stop()

@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal, TypeAlias, cast
 
 from nats.js.api import StorageType  # type: ignore[import-not-found]
 from nats.micro import ServiceConfig, add_service  # type: ignore[import-not-found]
 from nats.micro.service import EndpointConfig  # type: ignore[import-not-found]
 
-from .capabilities import BusAttachableNode, ClosableNode, CommandableNode, ComputableNode, StatefulNode
+from .capabilities import BusAttachableNode, ClosableNode, CommandableNode, ComputableNode, DataReceivableNode, StatefulNode
 from .generated import F8Edge, F8EdgeKindEnum, F8EdgeStrategyEnum, F8RuntimeGraph, F8StateAccess
 from .nats_naming import (
     cmd_channel_subject,
@@ -29,8 +30,17 @@ from .nats_transport import NatsTransport, NatsTransportConfig
 from .time_utils import now_ms
 
 
+log = logging.getLogger(__name__)
+
+DataDeliveryMode: TypeAlias = Literal["pull", "push", "both"]
+
+
 def _debug_state_enabled() -> bool:
     return str(os.getenv("F8_STATE_DEBUG", "")).lower() in ("1", "true", "yes", "on")
+
+
+def _debug_listener_enabled() -> bool:
+    return str(os.getenv("F8_LISTENER_DEBUG", "")).lower() in ("1", "true", "yes", "on")
 
 
 @dataclass(frozen=True)
@@ -41,7 +51,7 @@ class ServiceBusConfig:
     kv_storage: StorageType = StorageType.MEMORY
     delete_bucket_on_start: bool = False
     delete_bucket_on_stop: bool = False
-    data_delivery: str = "pull"
+    data_delivery: DataDeliveryMode = "pull"
 
 
 @dataclass
@@ -85,7 +95,15 @@ class ServiceBus:
         self._publish_all_data = bool(getattr(config, "publish_all_data", True))
         self._debug_state = _debug_state_enabled()
         self._active = True
-        self._data_delivery = str(getattr(config, "data_delivery", "pull") or "pull").strip().lower()
+        data_delivery = str(getattr(config, "data_delivery", "pull") or "pull").strip().lower()
+        if data_delivery not in ("pull", "push", "both"):
+            if self._debug_state or log.isEnabledFor(logging.WARNING):
+                try:
+                    log.warning("Invalid data_delivery=%r; defaulting to 'pull'", data_delivery)
+                except Exception:
+                    pass
+            data_delivery = "pull"
+        self._data_delivery = cast(DataDeliveryMode, data_delivery)
 
         bucket = kv_bucket_for_service(self.service_id)
         self._transport = NatsTransport(
@@ -134,12 +152,36 @@ class ServiceBus:
         Callback signature: (node_id, field, value, ts_ms, meta_dict)
         """
         self._state_listeners.append(cb)
+        if _debug_listener_enabled():
+            try:
+                log.info("state_listener:add total=%d", len(self._state_listeners))
+            except Exception:
+                pass
+
+    def remove_state_listener(self, cb: Callable[[str, str, Any, int, dict[str, Any]], Awaitable[None] | None]) -> None:
+        reg = self._state_listeners
+        try:
+            reg.remove(cb)
+        except ValueError:
+            return
+        if _debug_listener_enabled():
+            try:
+                log.info("state_listener:remove total=%d", len(self._state_listeners))
+            except Exception:
+                pass
 
     def add_rungraph_listener(self, cb: Callable[[F8RuntimeGraph], Awaitable[None] | None]) -> None:
         """
         Listen to rungraph updates (after `F8RuntimeGraph` validation).
         """
         self._rungraph_listeners.append(cb)
+
+    def remove_rungraph_listener(self, cb: Callable[[F8RuntimeGraph], Awaitable[None] | None]) -> None:
+        reg = self._rungraph_listeners
+        try:
+            reg.remove(cb)
+        except ValueError:
+            return
 
     def add_rungraph_validator(self, cb: Callable[[F8RuntimeGraph], Awaitable[None] | None]) -> None:
         """
@@ -157,6 +199,13 @@ class ServiceBus:
         """
         self._lifecycle_listeners.append(cb)
 
+    def remove_lifecycle_listener(self, cb: Callable[[bool, dict[str, Any]], Awaitable[None] | None]) -> None:
+        reg = self._lifecycle_listeners
+        try:
+            reg.remove(cb)
+        except ValueError:
+            return
+
     def add_data_listener(
         self, node_id: str, port: str, cb: Callable[[str, str, Any, int], Awaitable[None] | None]
     ) -> None:
@@ -169,6 +218,11 @@ class ServiceBus:
         port = ensure_token(port, label="port_id")
         key = (node_id, port)
         self._data_listeners.setdefault(key, []).append(cb)
+        if _debug_listener_enabled():
+            try:
+                log.info("data_listener:add key=%s total_keys=%d", key, len(self._data_listeners))
+            except Exception:
+                pass
 
     def remove_data_listener(
         self, node_id: str, port: str, cb: Callable[[str, str, Any, int], Awaitable[None] | None]
@@ -210,6 +264,18 @@ class ServiceBus:
         node = self._nodes.pop(node_id, None)
         for key in [k for k in self._data_inputs.keys() if k[0] == node_id]:
             self._data_inputs.pop(key, None)
+        removed = 0
+        for key in [k for k in self._data_listeners.keys() if k[0] == node_id]:
+            try:
+                self._data_listeners.pop(key, None)
+                removed += 1
+            except Exception:
+                continue
+        if removed and _debug_listener_enabled():
+            try:
+                log.info("data_listener:cleared node_id=%s removed_keys=%d", node_id, removed)
+            except Exception:
+                pass
         if node is not None and isinstance(node, ClosableNode):
             try:
                 loop = asyncio.get_running_loop()
@@ -289,6 +355,10 @@ class ServiceBus:
 
         await self._transport.close()
         self._data_listeners.clear()
+        self._state_listeners.clear()
+        self._rungraph_listeners.clear()
+        self._lifecycle_listeners.clear()
+        self._rungraph_validators.clear()
 
     async def _announce_ready(self, ready: bool, *, reason: str) -> None:
         payload = {
@@ -1140,89 +1210,6 @@ class ServiceBus:
             buf.last_pulled_ctx_id = ctx_id
         return v
 
-    async def pull_data_with_ts(self, node_id: str, port: str, *, ctx_id: str | int | None = None) -> tuple[Any, int | None]:
-        """
-        Pull-based access to buffered inputs with timestamps.
-        """
-        if not self._active:
-            return None, None
-        node_id = ensure_token(node_id, label="node_id")
-        port = ensure_token(port, label="port_id")
-        buf = self._data_inputs.get((node_id, port))
-        if buf is None:
-            buf = _InputBuffer(to_node=node_id, to_port=port, edge=None)
-            self._data_inputs[(node_id, port)] = buf
-        edge = buf.edge
-        _now_ms = now_ms()
-
-        last_seen_ts = int(buf.last_seen_ts or _now_ms)
-        if self._is_stale(edge, last_seen_ts):
-            return None, None
-
-        strategy = getattr(edge, "strategy", None) if edge is not None else None
-        if not isinstance(strategy, F8EdgeStrategyEnum):
-            strategy = F8EdgeStrategyEnum.latest
-
-        if strategy == F8EdgeStrategyEnum.queue:
-            if not buf.queue:
-                if ctx_id is None or buf.last_seen_ctx_id != ctx_id:
-                    await self._ensure_input_available(node_id=node_id, port=port, ctx_id=ctx_id)
-                if not buf.queue:
-                    return None, None
-            v, ts = buf.queue.pop(0)
-            buf.last_pulled_value = v
-            buf.last_pulled_ts = int(ts) if ts is not None else _now_ms
-            buf.last_pulled_ctx_id = ctx_id
-            return v, int(ts) if ts is not None else None
-
-        if not buf.queue and (ctx_id is None or buf.last_seen_ctx_id != ctx_id):
-            await self._ensure_input_available(node_id=node_id, port=port, ctx_id=ctx_id)
-        if buf.queue:
-            v, ts = buf.queue[-1]
-            buf.queue.clear()
-            if v is not None:
-                buf.last_pulled_value = v
-                buf.last_pulled_ts = int(ts) if ts is not None else _now_ms
-                buf.last_pulled_ctx_id = ctx_id
-            return v, int(ts) if ts is not None else None
-        v = buf.last_seen_value
-        ts = buf.last_seen_ts
-        if v is None:
-            return None, None
-        buf.last_pulled_value = v
-        buf.last_pulled_ts = int(ts) if ts is not None else _now_ms
-        buf.last_pulled_ctx_id = ctx_id
-        return v, int(ts) if ts is not None else None
-
-    async def pull_buffered_data(
-        self,
-        node_id: str,
-        port: str,
-        *,
-        max_items: int | None = None,
-    ) -> list[tuple[Any, int]]:
-        """
-        Drain buffered inputs without triggering upstream computation.
-        """
-        if not self._active:
-            return []
-        node_id = ensure_token(node_id, label="node_id")
-        port = ensure_token(port, label="port_id")
-        buf = self._data_inputs.get((node_id, port))
-        if buf is None or not buf.queue:
-            return []
-        take_n = len(buf.queue) if max_items is None else max(0, min(int(max_items), len(buf.queue)))
-        if take_n <= 0:
-            return []
-        items = list(buf.queue[:take_n])
-        del buf.queue[:take_n]
-        if items:
-            last_value, last_ts = items[-1]
-            buf.last_pulled_value = last_value
-            buf.last_pulled_ts = int(last_ts) if last_ts is not None else int(now_ms())
-            buf.last_pulled_ctx_id = None
-        return [(v, int(ts) if ts is not None else int(now_ms())) for (v, ts) in items]
-
     async def _ensure_input_available(self, *, node_id: str, port: str, ctx_id: str | int | None = None) -> None:
         """
         Best-effort intra-service pull-triggered computation.
@@ -1282,7 +1269,6 @@ class ServiceBus:
                         ts_ms=now_ms(),
                         edge=edge,
                         ctx_id=ctx_id,
-                        notify=False,
                     )
         finally:
             stack.discard(key)
@@ -1339,13 +1325,12 @@ class ServiceBus:
             ts_ms=int(ts_ms),
             edge=edge,
             ctx_id=None,
-            notify=False,
         )
         if self._data_delivery in ("push", "both"):
             node = self._nodes.get(str(to_node))
             if node is not None:
                 try:
-                    if hasattr(node, "on_data"):
+                    if isinstance(node, DataReceivableNode):
                         loop = asyncio.get_running_loop()
                         loop.create_task(
                             node.on_data(str(to_port), value, ts_ms=int(ts_ms)),  # type: ignore[misc]
@@ -1363,7 +1348,6 @@ class ServiceBus:
         ts_ms: int,
         edge: F8Edge | None,
         ctx_id: str | int | None,
-        notify: bool,
     ) -> None:
         to_node = str(to_node)
         to_port = str(to_port)

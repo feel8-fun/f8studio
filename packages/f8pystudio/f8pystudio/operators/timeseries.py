@@ -42,45 +42,27 @@ class PyStudioTimeSeriesRuntimeNode(RuntimeNode):
             state_fields=[s.name for s in (node.stateFields or [])],
         )
         self._initial_state = dict(initial_state or {})
-        self._task: asyncio.Task[object] | None = None
+        self._refresh_task: asyncio.Task[object] | None = None
+        self._config_loaded = False
         self._points: list[tuple[int, float]] = []
-        self._data_event: asyncio.Event | None = None
         self._last_refresh_ms: int | None = None
         self._dirty: bool = False
+        self._throttle_ms: int = 100
         self._window_ms: int = 10000
         self._buffer_limit: int = 200
+        self._scheduled_refresh_ms: int | None = None
 
     def attach(self, bus: Any) -> None:
         super().attach(bus)
-        if self._task is not None:
-            return
-        try:
-            loop = asyncio.get_running_loop()
-        except Exception:
-            return
-        self._data_event = asyncio.Event()
-        add_listener = getattr(bus, "add_data_listener", None)
-        if callable(add_listener):
-            try:
-                add_listener(self.node_id, "value", self._on_data)
-            except Exception:
-                pass
-        self._task = loop.create_task(self._run(), name=f"pystudio:timeseries:{self.node_id}")
+        return
 
     async def close(self) -> None:
-        bus = self._bus
-        if bus is not None:
-            remove_listener = getattr(bus, "remove_data_listener", None)
-            if callable(remove_listener):
-                try:
-                    remove_listener(self.node_id, "value", self._on_data)
-                except Exception:
-                    pass
-        t = self._task
-        self._task = None
-        if t is None:
-            return
         try:
+            t = self._refresh_task
+            self._refresh_task = None
+            self._scheduled_refresh_ms = None
+            if t is None:
+                return
             t.cancel()
         except Exception:
             pass
@@ -89,7 +71,10 @@ class PyStudioTimeSeriesRuntimeNode(RuntimeNode):
         except Exception:
             pass
 
-    async def _on_data(self, _node_id: str, _port: str, value: Any, ts_ms: int) -> None:
+    async def on_data(self, port: str, value: Any, *, ts_ms: int | None = None) -> None:
+        if str(port) != "value":
+            return
+        await self._ensure_config_loaded()
         try:
             val = float(value)
         except Exception:
@@ -98,50 +83,76 @@ class PyStudioTimeSeriesRuntimeNode(RuntimeNode):
         self._points.append((ts, val))
         self._dirty = True
         self._prune_points(window_ms=self._window_ms, buffer_limit=self._buffer_limit, now_ms=ts)
-        ev = self._data_event
-        if ev is not None:
-            ev.set()
+        await self._schedule_refresh(now_ms=ts)
 
-    async def _run(self) -> None:
-        while True:
-            ev = self._data_event
-            if ev is None:
-                await asyncio.sleep(0.05)
-                continue
-            await ev.wait()
-            ev.clear()
+    async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
+        f = str(field or "").strip()
+        if f == "throttleMs":
+            self._throttle_ms = await self._get_int_state("throttleMs", default=100, minimum=0, maximum=60000)
+        elif f == "windowMs":
+            self._window_ms = await self._get_int_state("windowMs", default=10000, minimum=100, maximum=600000)
+        elif f == "bufferLimit":
+            self._buffer_limit = await self._get_int_state("bufferLimit", default=200, minimum=10, maximum=5000)
+        else:
+            return
+        await self._schedule_refresh(now_ms=int(ts_ms) if ts_ms is not None else int(time.time() * 1000))
 
-            throttle_ms = await self._get_int_state("throttleMs", default=100, minimum=0, maximum=60000)
-            window_ms = await self._get_int_state("windowMs", default=10000, minimum=100, maximum=600000)
-            buffer_limit = await self._get_int_state("bufferLimit", default=200, minimum=10, maximum=5000)
-            self._window_ms = int(window_ms)
-            self._buffer_limit = int(buffer_limit)
+    async def _ensure_config_loaded(self) -> None:
+        if self._config_loaded:
+            return
+        self._throttle_ms = await self._get_int_state("throttleMs", default=100, minimum=0, maximum=60000)
+        self._window_ms = await self._get_int_state("windowMs", default=10000, minimum=100, maximum=600000)
+        self._buffer_limit = await self._get_int_state("bufferLimit", default=200, minimum=10, maximum=5000)
+        self._config_loaded = True
 
-            now_ms = int(time.time() * 1000)
-            last_refresh = self._last_refresh_ms or 0
-            if throttle_ms > 0 and last_refresh > 0:
-                wait_ms = max(0, (last_refresh + int(throttle_ms)) - now_ms)
-                if wait_ms > 0:
-                    await asyncio.sleep(float(wait_ms) / 1000.0)
+    async def _schedule_refresh(self, *, now_ms: int) -> None:
+        throttle_ms = max(0, int(self._throttle_ms))
+        last_refresh = int(self._last_refresh_ms or 0)
+        if throttle_ms <= 0 or last_refresh <= 0:
+            await self._flush(now_ms=now_ms)
+            return
 
-            changed = False
-            now_ms = int(time.time() * 1000)
+        target_ms = last_refresh + throttle_ms
+        if int(now_ms) >= int(target_ms):
+            await self._flush(now_ms=now_ms)
+            return
 
-            if self._prune_points(window_ms=window_ms, buffer_limit=buffer_limit, now_ms=now_ms):
-                changed = True
-            if self._dirty:
-                changed = True
+        if self._refresh_task is not None and not self._refresh_task.done():
+            return
 
-            if changed or self._points:
-                emit_ui_command(
-                    self.node_id,
-                    "timeseries.set",
-                    {"points": list(self._points), "windowMs": int(window_ms)},
-                    ts_ms=now_ms,
-                )
+        delay_ms = max(0, int(target_ms) - int(now_ms))
+        self._scheduled_refresh_ms = int(target_ms)
+        try:
+            loop = asyncio.get_running_loop()
+        except Exception:
+            return
+        self._refresh_task = loop.create_task(self._flush_after(delay_ms), name=f"pystudio:timeseries:flush:{self.node_id}")
 
-            self._last_refresh_ms = int(now_ms)
-            self._dirty = False
+    async def _flush_after(self, delay_ms: int) -> None:
+        try:
+            await asyncio.sleep(float(max(0, int(delay_ms))) / 1000.0)
+        except Exception:
+            return
+        await self._flush(now_ms=int(time.time() * 1000))
+
+    async def _flush(self, *, now_ms: int) -> None:
+        self._scheduled_refresh_ms = None
+        changed = False
+        if self._prune_points(window_ms=self._window_ms, buffer_limit=self._buffer_limit, now_ms=int(now_ms)):
+            changed = True
+        if self._dirty:
+            changed = True
+
+        if changed or self._points:
+            emit_ui_command(
+                self.node_id,
+                "timeseries.set",
+                {"points": list(self._points), "windowMs": int(self._window_ms)},
+                ts_ms=int(now_ms),
+            )
+
+        self._last_refresh_ms = int(now_ms)
+        self._dirty = False
 
     async def _get_int_state(self, name: str, *, default: int, minimum: int, maximum: int) -> int:
         v = None
@@ -203,6 +214,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
                 ),
             ],
             dataOutPorts=[],
+            editableDataInPorts=True,
             rendererClass=RENDERER_CLASS,
             stateFields=[
                 F8StateSpec(

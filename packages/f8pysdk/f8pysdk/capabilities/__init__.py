@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable, TYPE_CHECKING
+from collections.abc import Awaitable, Callable
+
+if TYPE_CHECKING:
+    from ..generated import F8RuntimeGraph
 
 
 @runtime_checkable
@@ -56,6 +60,19 @@ class StatefulNode(Protocol):
 
 
 @runtime_checkable
+class DataReceivableNode(Protocol):
+    """
+    Push-based data callback capability.
+
+    Nodes can opt-in to receiving data inputs via `ServiceBus` push delivery.
+    """
+
+    node_id: str
+
+    async def on_data(self, port: str, value: Any, *, ts_ms: int | None = None) -> None: ...
+
+
+@runtime_checkable
 class ComputableNode(Protocol):
     """
     Pull-based computation capability.
@@ -88,3 +105,98 @@ class ClosableNode(Protocol):
     """
 
     async def close(self) -> None: ...
+
+
+@runtime_checkable
+class DataListenerBus(Protocol):
+    """
+    Data listener registration capability (bus-side).
+
+    Consumers (e.g. UI tools) can subscribe to buffered input updates for a given (node_id, port).
+    """
+
+    def add_data_listener(self, node_id: str, port: str, cb: Callable[[str, str, Any, int], Awaitable[None] | None]) -> None: ...
+
+    def remove_data_listener(self, node_id: str, port: str, cb: Callable[[str, str, Any, int], Awaitable[None] | None]) -> None: ...
+
+
+@runtime_checkable
+class StateListenerBus(Protocol):
+    """
+    State listener registration capability (bus-side).
+
+    Consumers can subscribe to local KV state updates.
+    """
+
+    def add_state_listener(
+        self, cb: Callable[[str, str, Any, int, dict[str, Any]], Awaitable[None] | None]
+    ) -> None: ...
+
+    def remove_state_listener(
+        self, cb: Callable[[str, str, Any, int, dict[str, Any]], Awaitable[None] | None]
+    ) -> None: ...
+
+
+@runtime_checkable
+class RungraphListenerBus(Protocol):
+    """
+    Rungraph listener registration capability (bus-side).
+
+    Consumers can subscribe to validated rungraph updates.
+    """
+
+    def add_rungraph_listener(self, cb: Callable[["F8RuntimeGraph"], Awaitable[None] | None]) -> None: ...
+
+    def remove_rungraph_listener(self, cb: Callable[["F8RuntimeGraph"], Awaitable[None] | None]) -> None: ...
+
+
+@runtime_checkable
+class LifecycleListenerBus(Protocol):
+    """
+    Lifecycle listener registration capability (bus-side).
+
+    Consumers can subscribe to activate/deactivate transitions.
+    """
+
+    def add_lifecycle_listener(self, cb: Callable[[bool, dict[str, Any]], Awaitable[None] | None]) -> None: ...
+
+    def remove_lifecycle_listener(self, cb: Callable[[bool, dict[str, Any]], Awaitable[None] | None]) -> None: ...
+
+
+@runtime_checkable
+class BusActive(Protocol):
+    """
+    Exposes current bus active state.
+    """
+
+    @property
+    def active(self) -> bool: ...
+
+
+@runtime_checkable
+class DataIOBus(Protocol):
+    """
+    Data input/output operations against the bus.
+    """
+
+    async def emit_data(self, node_id: str, port: str, value: Any, *, ts_ms: int | None = None) -> None: ...
+
+    async def pull_data(self, node_id: str, port: str, *, ctx_id: str | int | None = None) -> Any: ...
+
+
+@runtime_checkable
+class StateIOBus(Protocol):
+    """
+    State read/write operations against the bus.
+    """
+
+    async def set_state(self, node_id: str, field: str, value: Any, *, ts_ms: int | None = None) -> None: ...
+
+    async def get_state(self, node_id: str, field: str) -> Any: ...
+
+
+@runtime_checkable
+class NodeBus(StateIOBus, DataIOBus, LifecycleListenerBus, BusActive, Protocol):
+    """
+    Composition of bus capabilities used by `RuntimeNode`.
+    """

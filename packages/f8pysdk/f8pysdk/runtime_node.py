@@ -1,38 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Protocol
-from collections.abc import Awaitable, Callable
+from typing import Any, cast
 
-from .capabilities import BusAttachableNode, ComputableNode, StatefulNode
-from .time_utils import now_ms
-
-
-class _BusLike(Protocol):
-    async def emit_data(self, node_id: str, port: str, value: Any, *, ts_ms: int | None = None) -> None: ...
-
-    async def pull_data(self, node_id: str, port: str, *, ctx_id: str | int | None = None) -> Any: ...
-
-    async def pull_data_with_ts(
-        self, node_id: str, port: str, *, ctx_id: str | int | None = None
-    ) -> tuple[Any, int | None]: ...
-
-    async def pull_buffered_data(
-        self, node_id: str, port: str, *, max_items: int | None = None
-    ) -> list[tuple[Any, int]]: ...
-
-    async def set_state(self, node_id: str, field: str, value: Any, *, ts_ms: int | None = None) -> None: ...
-
-    async def get_state(self, node_id: str, field: str) -> Any: ...
-
-    @property
-    def active(self) -> bool: ...
-
-    def add_lifecycle_listener(self, cb: Callable[[bool, dict[str, Any]], Awaitable[None] | None]) -> None: ...
+from .capabilities import BusAttachableNode, ComputableNode, DataReceivableNode, NodeBus, StatefulNode
 
 
 @dataclass
-class RuntimeNode(BusAttachableNode, StatefulNode, ComputableNode):
+class RuntimeNode(BusAttachableNode, StatefulNode, DataReceivableNode, ComputableNode):
     """
     Base class for service runtime nodes.
 
@@ -50,11 +25,11 @@ class RuntimeNode(BusAttachableNode, StatefulNode, ComputableNode):
     data_out_ports: list[str] = field(default_factory=list)
     state_fields: list[str] = field(default_factory=list)
 
-    _bus: _BusLike | None = field(default=None, init=False, repr=False)
+    _bus: NodeBus | None = field(default=None, init=False, repr=False)
 
     # ---- lifecycle ------------------------------------------------------
-    def attach(self, bus: _BusLike) -> None:
-        self._bus = bus
+    def attach(self, bus: Any) -> None:
+        self._bus = cast(NodeBus, bus)
 
     # ---- inbound --------------------------------------------------------
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
@@ -92,28 +67,6 @@ class RuntimeNode(BusAttachableNode, StatefulNode, ComputableNode):
         if self._bus is None:
             return None
         return await self._bus.pull_data(self.node_id, port, ctx_id=ctx_id)
-
-    async def pull_with_ts(self, port: str, *, ctx_id: str | int | None = None) -> tuple[Any, int | None]:
-        if self._bus is None:
-            return None, None
-        pull_fn = getattr(self._bus, "pull_data_with_ts", None)
-        if callable(pull_fn):
-            return await pull_fn(self.node_id, port, ctx_id=ctx_id)
-        value = await self.pull(port, ctx_id=ctx_id)
-        if value is None:
-            return None, None
-        return value, int(now_ms())
-
-    async def pull_buffered(self, port: str, *, max_items: int | None = None) -> list[tuple[Any, int]]:
-        if self._bus is None:
-            return []
-        pull_fn = getattr(self._bus, "pull_buffered_data", None)
-        if callable(pull_fn):
-            return await pull_fn(self.node_id, port, max_items=max_items)
-        value, ts_ms = await self.pull_with_ts(port)
-        if value is None or ts_ms is None:
-            return []
-        return [(value, int(ts_ms))]
 
     async def set_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
         if self._bus is None:

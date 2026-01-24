@@ -5,7 +5,7 @@ import json
 import socket
 import struct
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 from f8pysdk import (
     F8DataPortSpec,
@@ -20,6 +20,7 @@ from f8pysdk import (
     integer_schema,
     string_schema,
 )
+from f8pysdk.capabilities import LifecycleListenerBus, NodeBus
 from f8pysdk.nats_naming import ensure_token
 from f8pysdk.runtime_node import RuntimeNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
@@ -110,7 +111,7 @@ class UdpSkeletonRuntimeNode(RuntimeNode):
         self._lifecycle_hooked = True
 
         # Pause/resume UDP IO with service lifecycle.
-        bus_like = cast(Any, bus)
+        bus_like = bus if isinstance(bus, NodeBus) else None
 
         async def _on_active(active: bool, _meta: dict[str, Any]) -> None:
             if bool(active):
@@ -118,18 +119,20 @@ class UdpSkeletonRuntimeNode(RuntimeNode):
             else:
                 await self._stop_receiver()
 
-        try:
-            bus_like.add_lifecycle_listener(_on_active)
-        except Exception:
-            pass
+        if isinstance(bus, LifecycleListenerBus):
+            try:
+                bus.add_lifecycle_listener(_on_active)
+            except Exception:
+                pass
 
         # Apply current active state immediately (best-effort).
-        try:
-            if not bool(bus_like.active):
-                loop = asyncio.get_running_loop()
-                loop.create_task(self._stop_receiver(), name=f"udp_skeleton:deactivate:{self.node_id}")
-        except Exception:
-            pass
+        if bus_like is not None:
+            try:
+                if not bool(bus_like.active):
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(self._stop_receiver(), name=f"udp_skeleton:deactivate:{self.node_id}")
+            except Exception:
+                pass
 
     def _bus_active(self) -> bool:
         bus = self._bus
