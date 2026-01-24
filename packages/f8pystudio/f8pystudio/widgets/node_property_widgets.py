@@ -374,17 +374,17 @@ class _F8SpecListSection(QtWidgets.QWidget):
         f.setBold(True)
         header_label.setFont(f)
 
-        add_btn = QtWidgets.QToolButton()
-        add_btn.setAutoRaise(True)
-        add_btn.setToolTip("Add")
-        add_btn.setIcon(_icon_from_style(add_btn, QtWidgets.QStyle.SP_FileDialogNewFolder, "list-add"))
-        add_btn.clicked.connect(self.add_clicked.emit)
+        self._add_btn = QtWidgets.QToolButton()
+        self._add_btn.setAutoRaise(True)
+        self._add_btn.setToolTip("Add")
+        self._add_btn.setIcon(_icon_from_style(self._add_btn, QtWidgets.QStyle.SP_FileDialogNewFolder, "list-add"))
+        self._add_btn.clicked.connect(self.add_clicked.emit)
 
         header = QtWidgets.QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
         header.addWidget(header_label)
         header.addStretch(1)
-        header.addWidget(add_btn)
+        header.addWidget(self._add_btn)
 
         self._list_layout = QtWidgets.QVBoxLayout()
         self._list_layout.setContentsMargins(0, 0, 0, 0)
@@ -397,6 +397,12 @@ class _F8SpecListSection(QtWidgets.QWidget):
         outer.addLayout(self._list_layout)
 
         self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Maximum)
+
+    def set_add_visible(self, visible: bool) -> None:
+        try:
+            self._add_btn.setVisible(bool(visible))
+        except Exception:
+            pass
 
     def clear(self) -> None:
         while self._list_layout.count():
@@ -430,24 +436,34 @@ class _F8SpecNameRow(QtWidgets.QWidget):
         self.name_edit.setClearButtonEnabled(True)
         self.name_edit.editingFinished.connect(self._emit_commit)
 
-        edit_btn = QtWidgets.QToolButton()
-        edit_btn.setAutoRaise(True)
-        edit_btn.setToolTip("Edit")
-        edit_btn.setIcon(_icon_from_style(edit_btn, QtWidgets.QStyle.SP_FileDialogDetailedView, "document-edit"))
-        edit_btn.clicked.connect(self.edit_clicked.emit)
+        self.edit_btn = QtWidgets.QToolButton()
+        self.edit_btn.setAutoRaise(True)
+        self.edit_btn.setToolTip("Edit")
+        self.edit_btn.setIcon(_icon_from_style(self.edit_btn, QtWidgets.QStyle.SP_FileDialogDetailedView, "document-edit"))
+        self.edit_btn.clicked.connect(self.edit_clicked.emit)
 
-        del_btn = QtWidgets.QToolButton()
-        del_btn.setAutoRaise(True)
-        del_btn.setToolTip("Delete")
-        del_btn.setIcon(_icon_from_style(del_btn, QtWidgets.QStyle.SP_TrashIcon, "edit-delete"))
-        del_btn.clicked.connect(self.delete_clicked.emit)
+        self.del_btn = QtWidgets.QToolButton()
+        self.del_btn.setAutoRaise(True)
+        self.del_btn.setToolTip("Delete")
+        self.del_btn.setIcon(_icon_from_style(self.del_btn, QtWidgets.QStyle.SP_TrashIcon, "edit-delete"))
+        self.del_btn.clicked.connect(self.delete_clicked.emit)
 
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
         layout.addWidget(self.name_edit, 1)
-        layout.addWidget(edit_btn)
-        layout.addWidget(del_btn)
+        layout.addWidget(self.edit_btn)
+        layout.addWidget(self.del_btn)
+
+    def set_row_editable(self, *, allow_rename: bool, allow_delete: bool) -> None:
+        try:
+            self.name_edit.setReadOnly(not bool(allow_rename))
+        except Exception:
+            pass
+        try:
+            self.del_btn.setVisible(bool(allow_delete))
+        except Exception:
+            pass
 
     def _emit_commit(self) -> None:
         self.name_committed.emit(str(self.name_edit.text() or "").strip())
@@ -495,6 +511,24 @@ class _F8EditDataPortDialog(QtWidgets.QDialog):
         schema_btn = QtWidgets.QPushButton("Edit Schema…")
         schema_btn.clicked.connect(self._edit_schema)
 
+        if ui_only:
+            try:
+                self._name.setReadOnly(True)
+            except Exception:
+                pass
+            try:
+                self._access.setEnabled(False)
+            except Exception:
+                pass
+            try:
+                self._required.setEnabled(False)
+            except Exception:
+                pass
+            try:
+                schema_btn.setEnabled(False)
+            except Exception:
+                pass
+
         form = QtWidgets.QFormLayout()
         form.addRow("Name", self._name)
         form.addRow("Required", self._required)
@@ -537,7 +571,7 @@ class _F8EditDataPortDialog(QtWidgets.QDialog):
 
 
 class _F8EditStateFieldDialog(QtWidgets.QDialog):
-    def __init__(self, parent=None, *, title: str, field: F8StateSpec):
+    def __init__(self, parent=None, *, title: str, field: F8StateSpec, ui_only: bool = False):
         super().__init__(parent)
         self.setWindowTitle(title)
         self._schema = getattr(field, "valueSchema", None) or _schema_from_json_obj({"type": "any"})
@@ -669,7 +703,16 @@ class _F8SpecStateFieldEditor(QtWidgets.QWidget):
         spec = getattr(self._node, "spec", None)
         if spec is None:
             return
-        for f in list(getattr(spec, "stateFields", None) or []):
+
+        editable = bool(getattr(spec, "editableStateFields", False))
+        self._sec.set_add_visible(editable)
+
+        try:
+            fields = list(getattr(self._node, "effective_state_fields")() or [])
+        except Exception:
+            fields = list(getattr(spec, "stateFields", None) or [])
+
+        for f in fields:
             self._sec.add_row(self._make_row(f))
 
     def _make_row(self, field: F8StateSpec) -> _F8SpecNameRow:
@@ -680,6 +723,11 @@ class _F8SpecStateFieldEditor(QtWidgets.QWidget):
         row.delete_clicked.connect(lambda: self._delete_row(row))
         row.name_committed.connect(lambda v: self._rename_field(row, v))
         row.setToolTip(self._field_tooltip(field))
+        try:
+            editable = bool(getattr(getattr(self._node, "spec", None), "editableStateFields", False))
+            row.set_row_editable(allow_rename=editable, allow_delete=editable)
+        except Exception:
+            pass
         return row
 
     def _field_tooltip(self, field: F8StateSpec) -> str:
@@ -701,7 +749,8 @@ class _F8SpecStateFieldEditor(QtWidgets.QWidget):
                 valueSchema=_schema_from_json_obj({"type": "any"}),
                 access=F8StateAccess.rw,
             )
-        dlg = _F8EditStateFieldDialog(self, title="Edit state field", field=field)
+        editable = bool(getattr(getattr(self._node, "spec", None), "editableStateFields", False))
+        dlg = _F8EditStateFieldDialog(self, title="Edit state field", field=field, ui_only=not editable)
         if dlg.exec_() != QtWidgets.QDialog.Accepted:
             return
         new_field = dlg.field()
@@ -711,6 +760,9 @@ class _F8SpecStateFieldEditor(QtWidgets.QWidget):
         self._commit()
 
     def _rename_field(self, row: _F8SpecNameRow, name: str) -> None:
+        editable = bool(getattr(getattr(self._node, "spec", None), "editableStateFields", False))
+        if not editable:
+            return
         field = row.property("_field")
         if not isinstance(field, F8StateSpec):
             field = F8StateSpec(name=name, valueSchema=_schema_from_json_obj({"type": "any"}), access=F8StateAccess.rw)
@@ -722,11 +774,17 @@ class _F8SpecStateFieldEditor(QtWidgets.QWidget):
         self._commit()
 
     def _delete_row(self, row: QtWidgets.QWidget) -> None:
+        editable = bool(getattr(getattr(self._node, "spec", None), "editableStateFields", False))
+        if not editable:
+            return
         row.setParent(None)
         row.deleteLater()
         self._commit()
 
     def _add_field(self) -> None:
+        editable = bool(getattr(getattr(self._node, "spec", None), "editableStateFields", False))
+        if not editable:
+            return
         field = F8StateSpec(name="", valueSchema=_schema_from_json_obj({"type": "any"}), access=F8StateAccess.rw)
         row = self._make_row(field)
         self._sec.add_row(row)
@@ -736,17 +794,63 @@ class _F8SpecStateFieldEditor(QtWidgets.QWidget):
         spec = getattr(self._node, "spec", None)
         if spec is None:
             return
-        fields: list[F8StateSpec] = []
-        for r in self._sec.rows():
-            f = r.property("_field")
-            if isinstance(f, F8StateSpec) and str(getattr(f, "name", "") or "").strip():
-                fields.append(f)
-        try:
-            spec.stateFields = fields
-        except Exception:
-            spec2 = spec.model_copy(deep=True)
-            spec2.stateFields = fields
-            self._node.spec = spec2
+
+        editable = bool(getattr(spec, "editableStateFields", False))
+        if editable:
+            fields: list[F8StateSpec] = []
+            for r in self._sec.rows():
+                f = r.property("_field")
+                if isinstance(f, F8StateSpec) and str(getattr(f, "name", "") or "").strip():
+                    fields.append(f)
+            try:
+                spec.stateFields = fields
+            except Exception:
+                spec2 = spec.model_copy(deep=True)
+                spec2.stateFields = fields
+                self._node.spec = spec2
+        else:
+            base_fields = {
+                str(getattr(f, "name", "") or "").strip(): f for f in list(getattr(spec, "stateFields", None) or [])
+            }
+            edited_fields: dict[str, F8StateSpec] = {}
+            for r in self._sec.rows():
+                f = r.property("_field")
+                if isinstance(f, F8StateSpec):
+                    n = str(getattr(f, "name", "") or "").strip()
+                    if n:
+                        edited_fields[n] = f
+
+            allowed_keys = ("showOnNode", "uiControl", "uiLanguage", "label", "description")
+            new_state_over: dict[str, dict[str, object]] = {}
+            for name, base in base_fields.items():
+                edited = edited_fields.get(name) or base
+                patch: dict[str, object] = {}
+                for k in allowed_keys:
+                    try:
+                        bv = getattr(base, k, None)
+                        ev = getattr(edited, k, None)
+                    except Exception:
+                        continue
+                    if ev != bv:
+                        patch[k] = ev
+                if patch:
+                    new_state_over[name] = patch
+
+            current_ui: dict[str, object]
+            try:
+                current_ui = dict(getattr(self._node, "ui_overrides")() or {})
+            except Exception:
+                current_ui = {}
+
+            if new_state_over:
+                current_ui["stateFields"] = new_state_over
+            else:
+                current_ui.pop("stateFields", None)
+
+            try:
+                getattr(self._node, "set_ui_overrides")(current_ui, rebuild=True)
+            except Exception:
+                pass
 
         if self._on_apply:
             self._on_apply()

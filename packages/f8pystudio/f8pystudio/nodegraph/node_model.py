@@ -14,11 +14,13 @@ class F8StudioNodeModel(NodeModel):
 
     f8_spec: F8OperatorSpec | F8ServiceSpec | None
     f8_sys: dict[str, object]
+    f8_ui: dict[str, object]
 
     def __init__(self):
         super().__init__()
         self.f8_spec = None
         self.f8_sys = {}
+        self.f8_ui = {}
 
     @staticmethod
     def _coerce_spec(value: object) -> F8OperatorSpec | F8ServiceSpec | None:
@@ -36,6 +38,14 @@ class F8StudioNodeModel(NodeModel):
         if name == "f8_spec":
             self.f8_spec = self._coerce_spec(value)
             return
+        if name == "f8_ui":
+            if isinstance(value, dict):
+                self.f8_ui = value
+            elif value is None:
+                self.f8_ui = {}
+            else:
+                raise TypeError(f"Unsupported `f8_ui` type: {type(value)!r}")
+            return
         return super().set_property(name, value)
 
     @property
@@ -51,6 +61,9 @@ class F8StudioNodeModel(NodeModel):
         spec = node_dict.get("f8_spec")
         if isinstance(spec, (F8OperatorSpec, F8ServiceSpec)):
             node_dict["f8_spec"] = spec.model_dump(mode="json")
+
+        if isinstance(getattr(self, "f8_ui", None), dict) and self.f8_ui:
+            node_dict["f8_ui"] = self.f8_ui
 
         return {node_id: node_dict}
 

@@ -131,6 +131,30 @@ class F8StudioGraph(NodeGraph):
             if spec is None:
                 port_sets[str(node_id)] = None
                 continue
+
+            # Apply UI overrides (eg. showOnNode) so we can strip connections
+            # referencing ports that will not be created.
+            state_fields = list(getattr(spec, "stateFields", None) or [])
+            ui = node_data.get("f8_ui")
+            state_ui = None
+            if isinstance(ui, dict):
+                state_ui = ui.get("stateFields")
+            if isinstance(state_ui, dict) and state_ui and state_fields:
+                allowed_keys = {"showOnNode", "uiControl", "uiLanguage", "label", "description"}
+                patched = []
+                for f in state_fields:
+                    name = str(getattr(f, "name", "") or "").strip()
+                    ov = state_ui.get(name) if name else None
+                    if not isinstance(ov, dict) or not ov:
+                        patched.append(f)
+                        continue
+                    patch = {k: ov.get(k) for k in allowed_keys if k in ov}
+                    try:
+                        patched.append(f.model_copy(update=patch))
+                    except Exception:
+                        patched.append(f)
+                state_fields = patched
+
             ports: set[str] = set()
             for p in list(getattr(spec, "execInPorts", None) or []):
                 ports.add(f"[E]{p}")
@@ -146,7 +170,7 @@ class F8StudioGraph(NodeGraph):
                     ports.add(f"{p.name}[D]")
                 except Exception:
                     continue
-            for s in list(getattr(spec, "stateFields", None) or []):
+            for s in state_fields:
                 try:
                     if not getattr(s, "showOnNode", False):
                         continue

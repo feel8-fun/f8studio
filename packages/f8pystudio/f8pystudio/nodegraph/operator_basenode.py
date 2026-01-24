@@ -94,7 +94,7 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
 
     def _build_state_port(self):
 
-        for s in self.spec.stateFields:
+        for s in self.effective_state_fields():
             if not s.showOnNode:
                 continue
 
@@ -113,7 +113,7 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
                 )
 
     def _build_state_properties(self) -> None:
-        for s in self.spec.stateFields or []:
+        for s in self.effective_state_fields() or []:
             name = str(getattr(s, "name", "") or "").strip()
             if not name:
                 continue
@@ -211,7 +211,7 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
             except Exception:
                 continue
 
-        for s in list(getattr(self.spec, "stateFields", None) or []):
+        for s in list(self.effective_state_fields() or []):
             try:
                 if not getattr(s, "showOnNode", False):
                     continue
