@@ -1,0 +1,9 @@
+schemaVersion: f8serviceEntry/1
+serviceClass: f8.implayer
+label: IM Player
+version: 0.0.1
+launch:
+  command: powershell.exe
+  args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/run_implayer.ps1"]
+  env: {}
+  workdir: "../../../"

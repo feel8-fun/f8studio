@@ -4,12 +4,12 @@ from conan.tools.files import copy, rmdir
 import os
 
 
-class F8Studio(ConanFile):
+class F8Build(ConanFile):
     # Basic metadata (assumed; adjust if you have canonical values)
-    name = "f8studio"
+    name = "f8Build"
     version = "0.1.0"
     license = "MIT"
-    url = "https://github.com/feel8-fun/f8studio"
+    url = "https://github.com/feel8-fun/f8build"
     description = "Flow-based task engine"
     topics = ("ipc", "shared-memory", "synchronization")
     package_type = "library"
@@ -44,7 +44,7 @@ class F8Studio(ConanFile):
                 del self.options.fPIC
             except Exception:
                 pass
-        
+
         self.options["sol2"].with_lua = "luajit"
 
     def configure(self):

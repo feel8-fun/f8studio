@@ -64,3 +64,5 @@ CTestTestfile.cmake
 # Ignore generated code folders
 **/generated/*
 !**/.gitkeep
+
+**/ignore/*
