@@ -5,7 +5,6 @@
 #include <string>
 #include <vector>
 
-#define SDL_MAIN_HANDLED 1
 #include <SDL3/SDL.h>
 
 namespace f8::implayer {

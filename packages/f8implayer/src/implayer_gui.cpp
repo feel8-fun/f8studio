@@ -15,7 +15,8 @@ namespace f8::implayer {
 namespace {
 
 std::string format_time(double seconds) {
-  if (!(seconds >= 0.0)) seconds = 0.0;
+  if (!(seconds >= 0.0))
+    seconds = 0.0;
   const auto s = static_cast<long long>(seconds + 0.5);
   const auto hh = s / 3600;
   const auto mm = (s / 60) % 60;
@@ -31,13 +32,19 @@ std::string format_time(double seconds) {
 
 }  // namespace
 
-ImPlayerGui::ImPlayerGui() { url_buf_.fill(0); }
+ImPlayerGui::ImPlayerGui() {
+  url_buf_.fill(0);
+}
 
-ImPlayerGui::~ImPlayerGui() { stop(); }
+ImPlayerGui::~ImPlayerGui() {
+  stop();
+}
 
 bool ImPlayerGui::start(SDL_Window* window, SDL_GLContext gl_context) {
-  if (started_) return true;
-  if (!window || !gl_context) return false;
+  if (started_)
+    return true;
+  if (!window || !gl_context)
+    return false;
 
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
@@ -61,7 +68,8 @@ bool ImPlayerGui::start(SDL_Window* window, SDL_GLContext gl_context) {
 }
 
 void ImPlayerGui::stop() {
-  if (!started_) return;
+  if (!started_)
+    return;
   ImGui_ImplOpenGL3_Shutdown();
   ImGui_ImplSDL3_Shutdown();
   ImGui::DestroyContext();
@@ -69,14 +77,16 @@ void ImPlayerGui::stop() {
 }
 
 void ImPlayerGui::processEvent(SDL_Event* ev) {
-  if (!started_ || !ev) return;
+  if (!started_ || !ev)
+    return;
   ImGui_ImplSDL3_ProcessEvent(ev);
   dirty_ = true;
 }
 
 void ImPlayerGui::renderOverlay(const MpvPlayer& player, const Callbacks& cb, const std::string& last_error,
                                 const std::vector<std::string>& playlist, int playlist_index, bool playing) {
-  if (!started_) return;
+  if (!started_)
+    return;
 
   ImGui_ImplOpenGL3_NewFrame();
   ImGui_ImplSDL3_NewFrame();
@@ -102,7 +112,8 @@ void ImPlayerGui::renderOverlay(const MpvPlayer& player, const Callbacks& cb, co
     seek_pos_ = static_cast<float>(pos);
   }
 
-  const bool show_controls = seeking_ || mouse_in_controls_region || (!playing) || ((now_s - last_interaction_time_s_) <= 1.25);
+  const bool show_controls =
+      seeking_ || mouse_in_controls_region || (!playing) || ((now_s - last_interaction_time_s_) <= 1.25);
 
   if (show_controls) {
     const float w = std::min(820.0f, vsize.x - 24.0f);
@@ -110,30 +121,36 @@ void ImPlayerGui::renderOverlay(const MpvPlayer& player, const Callbacks& cb, co
     ImGui::SetNextWindowPos(ImVec2(vpos.x + (vsize.x - w) * 0.5f, vpos.y + vsize.y - 120.0f), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(w, 0), ImGuiCond_Always);
 
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
-                             ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_AlwaysAutoResize;
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                             ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
+                             ImGuiWindowFlags_AlwaysAutoResize;
     if (ImGui::Begin("##implayer_controls", nullptr, flags)) {
       if (ImGui::Button(playing ? "Pause" : "Play")) {
         if (playing) {
-          if (cb.pause) cb.pause();
+          if (cb.pause)
+            cb.pause();
         } else {
-          if (cb.play) cb.play();
+          if (cb.play)
+            cb.play();
         }
         dirty_ = true;
       }
       ImGui::SameLine();
       if (ImGui::Button("Stop")) {
-        if (cb.stop) cb.stop();
+        if (cb.stop)
+          cb.stop();
         dirty_ = true;
       }
       ImGui::SameLine();
       if (ImGui::Button("Prev")) {
-        if (cb.playlist_prev) cb.playlist_prev();
+        if (cb.playlist_prev)
+          cb.playlist_prev();
         dirty_ = true;
       }
       ImGui::SameLine();
       if (ImGui::Button("Next")) {
-        if (cb.playlist_next) cb.playlist_next();
+        if (cb.playlist_next)
+          cb.playlist_next();
         dirty_ = true;
       }
       ImGui::SameLine();
@@ -155,7 +172,8 @@ void ImPlayerGui::renderOverlay(const MpvPlayer& player, const Callbacks& cb, co
       if (ImGui::SliderFloat("##seek", &seek_pos_, 0.0f, seek_max, "", ImGuiSliderFlags_AlwaysClamp)) {
         dirty_ = true;
       }
-      if (ImGui::IsItemActive()) seeking_ = true;
+      if (ImGui::IsItemActive())
+        seeking_ = true;
       if (ImGui::IsItemDeactivatedAfterEdit()) {
         seeking_ = false;
         if (cb.seek) {
@@ -169,7 +187,8 @@ void ImPlayerGui::renderOverlay(const MpvPlayer& player, const Callbacks& cb, co
 
       ImGui::SetNextItemWidth(150);
       if (ImGui::SliderFloat("##volume", &volume01_, 0.0f, 1.0f, "vol=%.2f")) {
-        if (cb.set_volume) cb.set_volume(static_cast<double>(volume01_));
+        if (cb.set_volume)
+          cb.set_volume(static_cast<double>(volume01_));
         dirty_ = true;
       }
 
@@ -182,12 +201,14 @@ void ImPlayerGui::renderOverlay(const MpvPlayer& player, const Callbacks& cb, co
         ImGui::TextUnformatted("URL / filepath:");
         ImGui::SetNextItemWidth(520);
         if (ImGui::InputText("##url", url_buf_.data(), url_buf_.size(), ImGuiInputTextFlags_EnterReturnsTrue)) {
-          if (cb.open) cb.open(std::string(url_buf_.data()));
+          if (cb.open)
+            cb.open(std::string(url_buf_.data()));
           ImGui::CloseCurrentPopup();
           dirty_ = true;
         }
         if (ImGui::Button("Open now")) {
-          if (cb.open) cb.open(std::string(url_buf_.data()));
+          if (cb.open)
+            cb.open(std::string(url_buf_.data()));
           ImGui::CloseCurrentPopup();
           dirty_ = true;
         }
@@ -215,7 +236,8 @@ void ImPlayerGui::renderOverlay(const MpvPlayer& player, const Callbacks& cb, co
         const bool selected = (i == playlist_index);
         std::string label = selected ? ("> " + playlist[i]) : playlist[i];
         if (ImGui::Selectable(label.c_str(), selected)) {
-          if (cb.playlist_select) cb.playlist_select(i);
+          if (cb.playlist_select)
+            cb.playlist_select(i);
           dirty_ = true;
         }
       }

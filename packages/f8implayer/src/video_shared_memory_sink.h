@@ -35,6 +35,9 @@ class VideoSharedMemorySink {
   std::size_t slot_payload_capacity_ = 0;
 
   std::string frame_event_name_;
+#if defined(_WIN32)
+  void* frame_event_ = nullptr;
+#endif
 
   unsigned width_ = 0;
   unsigned height_ = 0;
@@ -43,4 +46,3 @@ class VideoSharedMemorySink {
 };
 
 }  // namespace f8::implayer
-

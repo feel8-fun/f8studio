@@ -33,8 +33,7 @@ if ($explicitExe) {
   $exeItems += Get-Item $explicitExe
 } else {
   $common = @(
-    (Join-Path $root "build\\bin\\f8implayer_service.exe"),
-    (Join-Path $root "build\\build\\bin\\f8implayer_service.exe")
+    (Join-Path $root "build\\bin\\f8implayer_service.exe")
   )
 
   foreach ($p in $common) {

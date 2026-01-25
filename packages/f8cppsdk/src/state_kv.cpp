@@ -46,4 +46,3 @@ bool kv_set_node_state(KvStore& kv, const std::string& service_id, const std::st
 }
 
 }  // namespace f8::cppsdk
-

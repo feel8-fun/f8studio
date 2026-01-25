@@ -13,12 +13,14 @@ namespace f8::implayer {
 
 namespace {
 
-void aspect_fit_rect(unsigned src_w, unsigned src_h, unsigned dst_w, unsigned dst_h, int& x0, int& y0, int& x1, int& y1) {
+void aspect_fit_rect(unsigned src_w, unsigned src_h, unsigned dst_w, unsigned dst_h, int& x0, int& y0, int& x1,
+                     int& y1) {
   x0 = 0;
   y0 = 0;
   x1 = static_cast<int>(dst_w);
   y1 = static_cast<int>(dst_h);
-  if (src_w == 0 || src_h == 0 || dst_w == 0 || dst_h == 0) return;
+  if (src_w == 0 || src_h == 0 || dst_w == 0 || dst_h == 0)
+    return;
 
   const double src_aspect = static_cast<double>(src_w) / static_cast<double>(src_h);
   const double dst_aspect = static_cast<double>(dst_w) / static_cast<double>(dst_h);
@@ -39,10 +41,13 @@ void aspect_fit_rect(unsigned src_w, unsigned src_h, unsigned dst_w, unsigned ds
 
 SdlVideoWindow::SdlVideoWindow(Config cfg) : cfg_(std::move(cfg)) {}
 
-SdlVideoWindow::~SdlVideoWindow() { stop(); }
+SdlVideoWindow::~SdlVideoWindow() {
+  stop();
+}
 
 bool SdlVideoWindow::start() {
-  if (started_) return true;
+  if (started_)
+    return true;
 
   if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
     spdlog::error("SDL_Init failed: {}", SDL_GetError());
@@ -55,7 +60,8 @@ bool SdlVideoWindow::start() {
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 
   SDL_WindowFlags flags = SDL_WINDOW_OPENGL;
-  if (cfg_.resizable) flags = static_cast<SDL_WindowFlags>(flags | SDL_WINDOW_RESIZABLE);
+  if (cfg_.resizable)
+    flags = static_cast<SDL_WindowFlags>(flags | SDL_WINDOW_RESIZABLE);
 
   window_ = SDL_CreateWindow(cfg_.title.c_str(), cfg_.width, cfg_.height, flags);
   if (!window_) {
@@ -99,7 +105,8 @@ bool SdlVideoWindow::start() {
 
 void SdlVideoWindow::stop() {
   if (!window_ && !gl_context_) {
-    if (started_) SDL_Quit();
+    if (started_)
+      SDL_Quit();
     started_ = false;
     return;
   }
@@ -120,40 +127,54 @@ void SdlVideoWindow::stop() {
 }
 
 bool SdlVideoWindow::pumpEvents(const EventCallback& on_event) {
-  if (!started_ || !window_) return false;
+  if (!started_ || !window_)
+    return false;
   SDL_Event ev;
   while (SDL_PollEvent(&ev)) {
-    if (on_event) on_event(ev);
-    switch (ev.type) {
-      case SDL_EVENT_QUIT:
-        wants_close_ = true;
-        break;
-      case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
-        wants_close_ = true;
-        break;
-      case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
-      case SDL_EVENT_WINDOW_RESIZED:
-      case SDL_EVENT_WINDOW_EXPOSED:
-        needs_redraw_ = true;
-        break;
-      default:
-        break;
-    }
+    if (on_event)
+      on_event(ev);
+    processEvent(ev);
   }
 
-  if (wants_close_) return false;
-  if (needs_redraw_) updateDrawableSize();
+  if (wants_close_)
+    return false;
+  if (needs_redraw_)
+    updateDrawableSize();
   return true;
 }
 
+void SdlVideoWindow::processEvent(const SDL_Event& ev) {
+  switch (ev.type) {
+    case SDL_EVENT_QUIT:
+      wants_close_ = true;
+      break;
+    case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+      wants_close_ = true;
+      break;
+    case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+    case SDL_EVENT_WINDOW_RESIZED:
+    case SDL_EVENT_WINDOW_EXPOSED:
+      needs_redraw_ = true;
+      break;
+    default:
+      break;
+  }
+
+  if (needs_redraw_)
+    updateDrawableSize();
+}
+
 bool SdlVideoWindow::makeCurrent() {
-  if (!started_ || !window_ || !gl_context_) return false;
+  if (!started_ || !window_ || !gl_context_)
+    return false;
   return SDL_GL_MakeCurrent(window_, gl_context_);
 }
 
 void SdlVideoWindow::present(const MpvPlayer& player, const OverlayCallback& overlay, const ViewTransform& view) {
-  if (!started_ || !window_) return;
-  if (!makeCurrent()) return;
+  if (!started_ || !window_)
+    return;
+  if (!makeCurrent())
+    return;
 
   updateDrawableSize();
   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
@@ -183,20 +204,21 @@ void SdlVideoWindow::present(const MpvPlayer& player, const OverlayCallback& ove
 
     glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(src_fbo));
     glReadBuffer(GL_COLOR_ATTACHMENT0);
-    glBlitFramebuffer(0, 0, static_cast<GLint>(src_w), static_cast<GLint>(src_h),
-                      static_cast<GLint>(std::lround(dx0)), static_cast<GLint>(std::lround(dy0)),
-                      static_cast<GLint>(std::lround(dx1)), static_cast<GLint>(std::lround(dy1)), GL_COLOR_BUFFER_BIT,
-                      GL_LINEAR);
+    glBlitFramebuffer(0, 0, static_cast<GLint>(src_w), static_cast<GLint>(src_h), static_cast<GLint>(std::lround(dx0)),
+                      static_cast<GLint>(std::lround(dy0)), static_cast<GLint>(std::lround(dx1)),
+                      static_cast<GLint>(std::lround(dy1)), GL_COLOR_BUFFER_BIT, GL_LINEAR);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
   }
 
-  if (overlay) overlay();
+  if (overlay)
+    overlay();
   SDL_GL_SwapWindow(window_);
   needs_redraw_ = false;
 }
 
 void SdlVideoWindow::updateDrawableSize() {
-  if (!window_) return;
+  if (!window_)
+    return;
   int w = 0;
   int h = 0;
   if (!SDL_GetWindowSizeInPixels(window_, &w, &h)) {

@@ -1,0 +1,9 @@
+schemaVersion: f8serviceEntry/1
+serviceClass: f8.webrtc.gateway
+label: WebRTC Gateway
+version: 0.0.1
+launch:
+  command: powershell.exe
+  args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/run_webrtc_gateway.ps1"]
+  env: {}
+  workdir: "../../../"

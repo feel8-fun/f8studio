@@ -3,7 +3,6 @@
 #include <atomic>
 #include <mutex>
 
-#define SDL_MAIN_HANDLED 1
 #include <SDL3/SDL.h>
 #include <glad/glad.h>
 #include <spdlog/spdlog.h>

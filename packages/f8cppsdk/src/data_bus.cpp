@@ -22,4 +22,3 @@ bool publish_data(NatsClient& nats, const std::string& from_service_id, const st
 }
 
 }  // namespace f8::cppsdk
-

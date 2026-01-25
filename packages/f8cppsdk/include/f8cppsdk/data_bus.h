@@ -15,4 +15,3 @@ bool publish_data(NatsClient& nats, const std::string& from_service_id, const st
                   const std::string& port_id, const nlohmann::json& value, std::int64_t ts_ms = 0);
 
 }  // namespace f8::cppsdk
-

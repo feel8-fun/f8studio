@@ -1,9 +1,8 @@
 #pragma once
 
-#include <string>
 #include <functional>
+#include <string>
 
-#define SDL_MAIN_HANDLED 1
 #include <SDL3/SDL.h>
 
 namespace f8::implayer {
@@ -33,6 +32,9 @@ class SdlVideoWindow {
   using EventCallback = std::function<void(const SDL_Event&)>;
   bool pumpEvents(const EventCallback& on_event = {});
 
+  // When using SDL_MAIN_USE_CALLBACKS, feed events here from SDL_AppEvent.
+  void processEvent(const SDL_Event& ev);
+
   bool makeCurrent();
 
   // Present the latest mpv frame (blits the player's framebuffer into the window).
@@ -44,7 +46,8 @@ class SdlVideoWindow {
   };
 
   using OverlayCallback = std::function<void()>;
-  void present(const MpvPlayer& player, const OverlayCallback& overlay = {}, const ViewTransform& view = ViewTransform{});
+  void present(const MpvPlayer& player, const OverlayCallback& overlay = {},
+               const ViewTransform& view = ViewTransform{});
 
   bool wantsClose() const { return wants_close_; }
   bool needsRedraw() const { return needs_redraw_; }

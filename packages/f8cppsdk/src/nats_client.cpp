@@ -24,14 +24,15 @@ void on_msg(natsConnection*, natsSubscription*, natsMsg* msg, void* closure) {
     if (c->cb) {
       c->cb(msg);
     }
-  } catch (...) {
-  }
+  } catch (...) {}
   natsMsg_Destroy(msg);
 }
 
 }  // namespace
 
-NatsSubscription::~NatsSubscription() { unsubscribe(); }
+NatsSubscription::~NatsSubscription() {
+  unsubscribe();
+}
 
 NatsSubscription::NatsSubscription(NatsSubscription&& other) noexcept {
   sub_ = other.sub_;
@@ -59,7 +60,9 @@ void NatsSubscription::unsubscribe() {
   sub_ = nullptr;
 }
 
-NatsClient::~NatsClient() { close(); }
+NatsClient::~NatsClient() {
+  close();
+}
 
 bool NatsClient::connect(const std::string& url) {
   close();
@@ -91,7 +94,9 @@ void NatsClient::close() {
   }
 }
 
-bool NatsClient::is_connected() const { return nc_ != nullptr && !natsConnection_IsClosed(nc_); }
+bool NatsClient::is_connected() const {
+  return nc_ != nullptr && !natsConnection_IsClosed(nc_);
+}
 
 bool NatsClient::publish(const std::string& subject, const std::vector<std::uint8_t>& payload) {
   return publish(subject, payload.data(), payload.size());
@@ -112,8 +117,8 @@ std::optional<std::vector<std::uint8_t>> NatsClient::request(const std::string& 
     return std::nullopt;
   }
   natsMsg* reply = nullptr;
-  const natsStatus s =
-      natsConnection_Request(&reply, nc_, subject.c_str(), payload.data(), static_cast<int>(payload.size()), timeout_ms);
+  const natsStatus s = natsConnection_Request(&reply, nc_, subject.c_str(), payload.data(),
+                                              static_cast<int>(payload.size()), timeout_ms);
   if (s != NATS_OK || reply == nullptr) {
     if (reply != nullptr) {
       natsMsg_Destroy(reply);

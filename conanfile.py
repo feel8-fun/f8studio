@@ -77,6 +77,7 @@ class F8Build(ConanFile):
         # Python plugin
         self.requires("pybind11/3.0.1")
         # Lua plugin
+        self.requires("luajit/2.1.0-beta3")
         self.requires("sol2/3.5.0")
         # AngelScript plugin
         self.requires("angelscript/2.38.0")
@@ -94,6 +95,13 @@ class F8Build(ConanFile):
         self.requires("opengl/system")
         self.requires("imgui/1.92.4")
         self.requires("pulseaudio/17.0", override=True)
+
+        # WebRTC gateway (localhost signaling)
+        self.requires("websocketpp/0.8.2")
+
+        # WebRTC
+        self.requires("gstreamer/1.24.7")
+        self.requires("libdatachannel/0.24.0")
 
         if self.options.with_tests:
             self.requires("gtest/1.17.0")

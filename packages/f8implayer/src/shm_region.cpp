@@ -14,18 +14,22 @@
 
 namespace f8::implayer {
 
-ShmRegion::~ShmRegion() { close(); }
+ShmRegion::~ShmRegion() {
+  close();
+}
 
 bool ShmRegion::open_or_create(const std::string& name, std::size_t bytes) {
   close();
-  if (name.empty() || bytes == 0) return false;
+  if (name.empty() || bytes == 0)
+    return false;
   name_ = name;
   size_ = bytes;
 
 #if defined(_WIN32)
   const std::wstring wname(name.begin(), name.end());
-  HANDLE hMap = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, static_cast<DWORD>((bytes >> 32) & 0xFFFFFFFF),
-                                   static_cast<DWORD>(bytes & 0xFFFFFFFF), wname.c_str());
+  HANDLE hMap =
+      CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, static_cast<DWORD>((bytes >> 32) & 0xFFFFFFFF),
+                         static_cast<DWORD>(bytes & 0xFFFFFFFF), wname.c_str());
   if (!hMap) {
     spdlog::error("CreateFileMapping failed name={} err={}", name, GetLastError());
     return false;
@@ -41,7 +45,8 @@ bool ShmRegion::open_or_create(const std::string& name, std::size_t bytes) {
   return true;
 #else
   std::string shm_name = name;
-  if (!shm_name.empty() && shm_name[0] != '/') shm_name = "/" + shm_name;
+  if (!shm_name.empty() && shm_name[0] != '/')
+    shm_name = "/" + shm_name;
   int fd = shm_open(shm_name.c_str(), O_CREAT | O_RDWR, 0666);
   if (fd < 0) {
     spdlog::error("shm_open failed name={}", shm_name);
@@ -89,4 +94,3 @@ void ShmRegion::close() {
 }
 
 }  // namespace f8::implayer
-

@@ -94,7 +94,8 @@ std::optional<std::vector<std::uint8_t>> KvStore::get(const std::string& key) co
   kvEntry* e = nullptr;
   const natsStatus s = kvStore_Get(&e, kv_, key.c_str());
   if (s != NATS_OK || e == nullptr) {
-    if (e) kvEntry_Destroy(e);
+    if (e)
+      kvEntry_Destroy(e);
     return std::nullopt;
   }
   const void* data = kvEntry_Value(e);
@@ -132,15 +133,18 @@ bool KvStore::watch(const std::string& key_pattern, WatchCallback cb, bool inclu
       kvEntry* e = nullptr;
       const natsStatus s2 = kvWatcher_Next(&e, watcher_, 500);
       if (stop_.load(std::memory_order_acquire)) {
-        if (e) kvEntry_Destroy(e);
+        if (e)
+          kvEntry_Destroy(e);
         break;
       }
       if (s2 == NATS_TIMEOUT) {
-        if (e) kvEntry_Destroy(e);
+        if (e)
+          kvEntry_Destroy(e);
         continue;
       }
       if (s2 != NATS_OK) {
-        if (e) kvEntry_Destroy(e);
+        if (e)
+          kvEntry_Destroy(e);
         continue;
       }
       if (e == nullptr) {
@@ -157,8 +161,7 @@ bool KvStore::watch(const std::string& key_pattern, WatchCallback cb, bool inclu
         }
         try {
           cb(std::string(key), bytes);
-        } catch (...) {
-        }
+        } catch (...) {}
       }
       kvEntry_Destroy(e);
     }

@@ -7,7 +7,8 @@
 namespace f8::cppsdk {
 
 std::string ensure_token(std::string value, const char* label) {
-  value.erase(value.begin(), std::find_if(value.begin(), value.end(), [](unsigned char ch) { return !std::isspace(ch); }));
+  value.erase(value.begin(),
+              std::find_if(value.begin(), value.end(), [](unsigned char ch) { return !std::isspace(ch); }));
   value.erase(std::find_if(value.rbegin(), value.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(),
               value.end());
   if (value.empty()) {
@@ -28,8 +29,12 @@ std::string svc_micro_name(const std::string& service_id) {
   return std::string("svc_") + ensure_token(service_id, "service_id");
 }
 
-std::string kv_key_rungraph() { return "rungraph"; }
-std::string kv_key_ready() { return "ready"; }
+std::string kv_key_rungraph() {
+  return "rungraph";
+}
+std::string kv_key_ready() {
+  return "ready";
+}
 
 std::string kv_key_node_state(const std::string& node_id, const std::string& field) {
   const auto nid = ensure_token(node_id, "node_id");
@@ -42,9 +47,10 @@ std::string kv_key_node_state(const std::string& node_id, const std::string& fie
   return "nodes." + nid + ".state." + f;
 }
 
-std::string data_subject(const std::string& from_service_id, const std::string& from_node_id, const std::string& port_id) {
-  return "svc." + ensure_token(from_service_id, "from_service_id") + ".nodes." + ensure_token(from_node_id, "from_node_id") +
-         ".data." + ensure_token(port_id, "port_id");
+std::string data_subject(const std::string& from_service_id, const std::string& from_node_id,
+                         const std::string& port_id) {
+  return "svc." + ensure_token(from_service_id, "from_service_id") + ".nodes." +
+         ensure_token(from_node_id, "from_node_id") + ".data." + ensure_token(port_id, "port_id");
 }
 
 std::string cmd_channel_subject(const std::string& service_id) {

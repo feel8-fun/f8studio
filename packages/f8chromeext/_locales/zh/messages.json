@@ -1,0 +1,122 @@
+{
+  "extension_name": {
+    "message": "Feel The Dance（Feel8.Fun）"
+  },
+  "extension_description": {
+    "message": "检测页面上的视频，在弹窗中高亮并一键推送，通过 WebRTC 将画面镜像到 Feel 标签页，不上传浏览数据。"
+  },
+  "context_menu_open_studio": {
+    "message": "打开 Feel8 Studio"
+  },
+  "context_menu_no_tab": {
+    "message": "没有已注册的 Feel 标签页"
+  },
+  "context_menu_group_title": {
+    "message": "推流目标"
+  },
+  "context_menu_group_title_with_target": {
+    "message": "推流目标：$1"
+  },
+  "context_menu_tab_fallback": {
+    "message": "标签页 $1"
+  },
+  "tab_registry_default_title": {
+    "message": "Feel 播放器"
+  },
+  "popup_title": {
+    "message": "Feel Bridge"
+  },
+  "popup_subtitle": {
+    "message": "在此页面选择一个视频，通过 WebRTC 推流。"
+  },
+  "popup_button_stream": {
+    "message": "推流"
+  },
+  "popup_status_detecting": {
+    "message": "正在检测视频…"
+  },
+  "popup_status_no_videos": {
+    "message": "此页面没有可播放的视频。"
+  },
+  "popup_status_no_active_tab": {
+    "message": "无法获取当前标签页。"
+  },
+  "popup_status_connecting": {
+    "message": "正在连接…"
+  },
+  "popup_status_streaming": {
+    "message": "正在推流到 $1"
+  },
+  "popup_status_failed": {
+    "message": "失败：$1"
+  },
+  "popup_status_error": {
+    "message": "错误：$1"
+  },
+  "popup_status_unknown_error": {
+    "message": "未知错误"
+  },
+  "popup_target_fallback": {
+    "message": "Feel 标签页"
+  },
+  "popup_target_gateway": {
+    "message": "WebRTC 网关"
+  },
+  "popup_videos_inline_source": {
+    "message": "（内联资源）"
+  },
+  "popup_videos_unknown_size": {
+    "message": "未知分辨率"
+  },
+  "popup_videos_unknown_duration": {
+    "message": "未知时长"
+  },
+  "popup_videos_live": {
+    "message": "直播 / 流媒体"
+  },
+  "popup_videos_index_label": {
+    "message": "视频 $1"
+  },
+  "popup_videos_duration_seconds": {
+    "message": "$1 秒"
+  },
+  "errors_feel_tab_cannot_source": {
+    "message": "Feel 标签页无法作为信号源。"
+  },
+  "errors_highlight_not_allowed": {
+    "message": "无法在 Feel 标签页内高亮视频。"
+  },
+  "errors_feel_tab_required": {
+    "message": "没有找到 Feel 标签页，请打开 $1。"
+  },
+  "errors_video_not_found": {
+    "message": "找不到视频元素，请刷新页面后重试。"
+  },
+  "errors_video_uncapturable": {
+    "message": "无法捕获此视频，请尝试其他来源。"
+  },
+  "errors_open_feel_tab_failed": {
+    "message": "无法自动打开 Feel The Dance 标签页。"
+  },
+  "errors_feel_tab_loading": {
+    "message": "Feel The Dance 标签页仍在加载，请手动打开 $1。"
+  },
+  "errors_missing_tab_context": {
+    "message": "缺少标签页上下文。"
+  },
+  "errors_missing_target_tab": {
+    "message": "缺少 WebRTC 推流的目标标签页。"
+  },
+  "errors_no_pending_session": {
+    "message": "没有可用的会话来接收应答。"
+  },
+  "errors_invalid_ice_payload": {
+    "message": "无效的 ICE 负载。"
+  },
+  "errors_no_active_session": {
+    "message": "未找到可以交换 ICE 的会话。"
+  },
+  "errors_gateway_unavailable": {
+    "message": "WebRTC 网关无法连接：$1，请先启动 f8webrtc_gateway_service。"
+  }
+}

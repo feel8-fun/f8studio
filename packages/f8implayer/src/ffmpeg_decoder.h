@@ -56,4 +56,3 @@ class FfmpegDecoder {
 };
 
 }  // namespace f8::implayer
-

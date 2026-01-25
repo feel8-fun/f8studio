@@ -22,7 +22,8 @@ namespace f8::implayer {
 namespace {
 
 double to_seconds(int64_t pts, AVRational time_base) {
-  if (pts == AV_NOPTS_VALUE) return 0.0;
+  if (pts == AV_NOPTS_VALUE)
+    return 0.0;
   return static_cast<double>(pts) * av_q2d(time_base);
 }
 
@@ -33,14 +34,16 @@ std::int64_t now_ms() {
 
 }  // namespace
 
-FfmpegDecoder::FfmpegDecoder(Config cfg, std::shared_ptr<VideoSharedMemorySink> sink) : cfg_(cfg), sink_(std::move(sink)) {
+FfmpegDecoder::FfmpegDecoder(Config cfg, std::shared_ptr<VideoSharedMemorySink> sink)
+    : cfg_(cfg), sink_(std::move(sink)) {
   thread_ = std::thread(&FfmpegDecoder::worker, this);
 }
 
 FfmpegDecoder::~FfmpegDecoder() {
   stop_.store(true, std::memory_order_release);
   playing_.store(false, std::memory_order_release);
-  if (thread_.joinable()) thread_.join();
+  if (thread_.joinable())
+    thread_.join();
 }
 
 std::string FfmpegDecoder::url() const {
@@ -82,12 +85,19 @@ void FfmpegDecoder::close() {
   reopen_.store(true, std::memory_order_release);
 }
 
-void FfmpegDecoder::play() { playing_.store(true, std::memory_order_release); }
-void FfmpegDecoder::pause() { playing_.store(false, std::memory_order_release); }
-void FfmpegDecoder::stop() { close(); }
+void FfmpegDecoder::play() {
+  playing_.store(true, std::memory_order_release);
+}
+void FfmpegDecoder::pause() {
+  playing_.store(false, std::memory_order_release);
+}
+void FfmpegDecoder::stop() {
+  close();
+}
 
 bool FfmpegDecoder::seek(double position_seconds, std::string& err) {
-  if (position_seconds < 0.0) position_seconds = 0.0;
+  if (position_seconds < 0.0)
+    position_seconds = 0.0;
   if (url().empty()) {
     err = "no media open";
     return false;
@@ -305,10 +315,12 @@ void FfmpegDecoder::worker() {
   }
 
   cleanup();
-  if (pkt) av_packet_free(&pkt);
-  if (frame) av_frame_free(&frame);
-  if (bgra) av_frame_free(&bgra);
+  if (pkt)
+    av_packet_free(&pkt);
+  if (frame)
+    av_frame_free(&frame);
+  if (bgra)
+    av_frame_free(&bgra);
 }
 
 }  // namespace f8::implayer
-

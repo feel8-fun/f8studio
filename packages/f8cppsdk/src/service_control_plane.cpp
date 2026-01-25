@@ -2,8 +2,8 @@
 
 #include <nats/nats.h>
 
-#include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
+#include <nlohmann/json.hpp>
 
 #include "f8cppsdk/f8_naming.h"
 #include "f8cppsdk/kv_store.h"
@@ -66,7 +66,9 @@ ServiceControlPlaneServer::ServiceControlPlaneServer(Config cfg, NatsClient* cli
                                                      ServiceControlHandler* handler)
     : cfg_(std::move(cfg)), client_(client), kv_(kv), handler_(handler) {}
 
-ServiceControlPlaneServer::~ServiceControlPlaneServer() { stop(); }
+ServiceControlPlaneServer::~ServiceControlPlaneServer() {
+  stop();
+}
 
 bool ServiceControlPlaneServer::start() {
   if (client_ == nullptr || kv_ == nullptr || handler_ == nullptr) {
@@ -107,7 +109,8 @@ bool ServiceControlPlaneServer::start() {
     microError* e = microService_AddEndpoint(micro_, &ec);
     if (e != nullptr) {
       char buf[256] = {};
-      spdlog::error("microService_AddEndpoint failed ep={} subject={} err={}", name, subject, microError_String(e, buf, sizeof(buf)));
+      spdlog::error("microService_AddEndpoint failed ep={} subject={} err={}", name, subject,
+                    microError_String(e, buf, sizeof(buf)));
       microError_Destroy(e);
       return false;
     }
@@ -117,8 +120,7 @@ bool ServiceControlPlaneServer::start() {
   const bool ok = add_ep("activate", svc_endpoint_subject(sid, "activate")) &&
                   add_ep("deactivate", svc_endpoint_subject(sid, "deactivate")) &&
                   add_ep("set_active", svc_endpoint_subject(sid, "set_active")) &&
-                  add_ep("status", svc_endpoint_subject(sid, "status")) &&
-                  add_ep("cmd", cmd_channel_subject(sid)) &&
+                  add_ep("status", svc_endpoint_subject(sid, "status")) && add_ep("cmd", cmd_channel_subject(sid)) &&
                   add_ep("set_state", svc_endpoint_subject(sid, "set_state")) &&
                   add_ep("set_rungraph", svc_endpoint_subject(sid, "set_rungraph"));
   if (!ok) {
@@ -154,7 +156,7 @@ microError* ServiceControlPlaneServer::on_micro_request(microRequest* req) {
 }
 
 void ServiceControlPlaneServer::respond(microRequest* req, const std::string& req_id, bool ok, const json& result,
-                                       const std::string& err_code, const std::string& err_message) {
+                                        const std::string& err_code, const std::string& err_message) {
   if (req == nullptr) {
     return;
   }
@@ -219,14 +221,21 @@ void ServiceControlPlaneServer::handle_request(microRequest* msg, const std::str
     if (endpoint == "set_state") {
       std::string node_id_s;
       std::string field_s;
-      if (env.args.contains("nodeId") && env.args["nodeId"].is_string()) node_id_s = env.args["nodeId"].get<std::string>();
-      if (node_id_s.empty() && env.raw.contains("nodeId") && env.raw["nodeId"].is_string()) node_id_s = env.raw["nodeId"].get<std::string>();
-      if (env.args.contains("field") && env.args["field"].is_string()) field_s = env.args["field"].get<std::string>();
-      if (field_s.empty() && env.raw.contains("field") && env.raw["field"].is_string()) field_s = env.raw["field"].get<std::string>();
+      if (env.args.contains("nodeId") && env.args["nodeId"].is_string())
+        node_id_s = env.args["nodeId"].get<std::string>();
+      if (node_id_s.empty() && env.raw.contains("nodeId") && env.raw["nodeId"].is_string())
+        node_id_s = env.raw["nodeId"].get<std::string>();
+      if (env.args.contains("field") && env.args["field"].is_string())
+        field_s = env.args["field"].get<std::string>();
+      if (field_s.empty() && env.raw.contains("field") && env.raw["field"].is_string())
+        field_s = env.raw["field"].get<std::string>();
       json value;
-      if (env.args.contains("value")) value = env.args["value"];
-      else if (env.raw.contains("value")) value = env.raw["value"];
-      else value = json(nullptr);
+      if (env.args.contains("value"))
+        value = env.args["value"];
+      else if (env.raw.contains("value"))
+        value = env.raw["value"];
+      else
+        value = json(nullptr);
       if (node_id_s.empty() || field_s.empty()) {
         respond(msg, env.req_id, false, json(nullptr), "INVALID_ARGS", "missing nodeId/field");
         return;
@@ -242,9 +251,12 @@ void ServiceControlPlaneServer::handle_request(microRequest* msg, const std::str
     }
     if (endpoint == "set_rungraph") {
       json graph_obj;
-      if (env.args.contains("graph") && env.args["graph"].is_object()) graph_obj = env.args["graph"];
-      else if (env.raw.contains("graph") && env.raw["graph"].is_object()) graph_obj = env.raw["graph"];
-      else if (env.raw.is_object() && env.raw.contains("nodes") && env.raw.contains("edges")) graph_obj = env.raw;
+      if (env.args.contains("graph") && env.args["graph"].is_object())
+        graph_obj = env.args["graph"];
+      else if (env.raw.contains("graph") && env.raw["graph"].is_object())
+        graph_obj = env.raw["graph"];
+      else if (env.raw.is_object() && env.raw.contains("nodes") && env.raw.contains("edges"))
+        graph_obj = env.raw;
       else {
         respond(msg, env.req_id, false, json(nullptr), "INVALID_ARGS", "missing graph");
         return;
@@ -256,7 +268,8 @@ void ServiceControlPlaneServer::handle_request(microRequest* msg, const std::str
       }
       // Persist to KV (mirror python behavior of adding meta.ts).
       json persisted = graph_obj;
-      if (!persisted.contains("meta") || !persisted["meta"].is_object()) persisted["meta"] = json::object();
+      if (!persisted.contains("meta") || !persisted["meta"].is_object())
+        persisted["meta"] = json::object();
       persisted["meta"]["ts"] = now_ms();
       const auto bytes = persisted.dump();
       kv_->put(kv_key_rungraph(), bytes.data(), bytes.size());
@@ -266,7 +279,8 @@ void ServiceControlPlaneServer::handle_request(microRequest* msg, const std::str
     }
     if (endpoint == "cmd") {
       std::string call;
-      if (env.raw.contains("call") && env.raw["call"].is_string()) call = env.raw["call"].get<std::string>();
+      if (env.raw.contains("call") && env.raw["call"].is_string())
+        call = env.raw["call"].get<std::string>();
       if (call.empty()) {
         respond(msg, env.req_id, false, json(nullptr), "INVALID_ARGS", "missing call");
         return;

@@ -8,15 +8,15 @@
 #include <utility>
 #include <vector>
 
-#include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
+#include <nlohmann/json.hpp>
 
 #include "f8cppsdk/data_bus.h"
 #include "f8cppsdk/f8_naming.h"
 #include "f8cppsdk/state_kv.h"
 #include "f8cppsdk/time_utils.h"
-#include "mpv_player.h"
 #include "implayer_gui.h"
+#include "mpv_player.h"
 #include "sdl_video_window.h"
 #include "video_shared_memory_sink.h"
 
@@ -26,15 +26,24 @@ using json = nlohmann::json;
 
 namespace {
 
-json schema_string() { return json{{"type", "string"}}; }
-json schema_number() { return json{{"type", "number"}}; }
-json schema_integer() { return json{{"type", "integer"}}; }
-json schema_boolean() { return json{{"type", "boolean"}}; }
+json schema_string() {
+  return json{{"type", "string"}};
+}
+json schema_number() {
+  return json{{"type", "number"}};
+}
+json schema_integer() {
+  return json{{"type", "integer"}};
+}
+json schema_boolean() {
+  return json{{"type", "boolean"}};
+}
 json schema_object(const json& props, const json& required = json::array()) {
   json obj;
   obj["type"] = "object";
   obj["properties"] = props;
-  if (required.is_array()) obj["required"] = required;
+  if (required.is_array())
+    obj["required"] = required;
   obj["additionalProperties"] = false;
   return obj;
 }
@@ -45,13 +54,18 @@ json state_field(std::string name, const json& value_schema, std::string access,
   sf["name"] = std::move(name);
   sf["valueSchema"] = value_schema;
   sf["access"] = std::move(access);
-  if (!label.empty()) sf["label"] = std::move(label);
-  if (!description.empty()) sf["description"] = std::move(description);
-  if (show_on_node) sf["showOnNode"] = true;
+  if (!label.empty())
+    sf["label"] = std::move(label);
+  if (!description.empty())
+    sf["description"] = std::move(description);
+  if (show_on_node)
+    sf["showOnNode"] = true;
   return sf;
 }
 
-std::string default_video_shm_name(const std::string& service_id) { return "shm." + service_id + ".video"; }
+std::string default_video_shm_name(const std::string& service_id) {
+  return "shm." + service_id + ".video";
+}
 
 std::string new_video_id() {
   static std::atomic<std::uint64_t> g_seq{0};
@@ -61,9 +75,13 @@ std::string new_video_id() {
 }
 
 std::string trim_copy(std::string s) {
-  auto is_ws = [](unsigned char ch) { return std::isspace(ch) != 0; };
-  while (!s.empty() && is_ws(static_cast<unsigned char>(s.front()))) s.erase(s.begin());
-  while (!s.empty() && is_ws(static_cast<unsigned char>(s.back()))) s.pop_back();
+  auto is_ws = [](unsigned char ch) {
+    return std::isspace(ch) != 0;
+  };
+  while (!s.empty() && is_ws(static_cast<unsigned char>(s.front())))
+    s.erase(s.begin());
+  while (!s.empty() && is_ws(static_cast<unsigned char>(s.back())))
+    s.pop_back();
   return s;
 }
 
@@ -72,17 +90,20 @@ std::vector<std::string> split_drop_payload(const std::string& raw) {
   std::string cur;
   cur.reserve(raw.size());
   for (char ch : raw) {
-    if (ch == '\r') continue;
+    if (ch == '\r')
+      continue;
     if (ch == '\n') {
       auto t = trim_copy(cur);
-      if (!t.empty()) out.emplace_back(std::move(t));
+      if (!t.empty())
+        out.emplace_back(std::move(t));
       cur.clear();
       continue;
     }
     cur.push_back(ch);
   }
   auto t = trim_copy(cur);
-  if (!t.empty()) out.emplace_back(std::move(t));
+  if (!t.empty())
+    out.emplace_back(std::move(t));
   return out;
 }
 
@@ -90,10 +111,13 @@ std::vector<std::string> split_drop_payload(const std::string& raw) {
 
 ImPlayerService::ImPlayerService(Config cfg) : cfg_(std::move(cfg)) {}
 
-ImPlayerService::~ImPlayerService() { stop(); }
+ImPlayerService::~ImPlayerService() {
+  stop();
+}
 
 bool ImPlayerService::start() {
-  if (running_.load(std::memory_order_acquire)) return true;
+  if (running_.load(std::memory_order_acquire))
+    return true;
 
   try {
     cfg_.service_id = f8::cppsdk::ensure_token(cfg_.service_id, "service_id");
@@ -105,13 +129,15 @@ bool ImPlayerService::start() {
     return false;
   }
 
-  if (!nats_.connect(cfg_.nats_url)) return false;
+  if (!nats_.connect(cfg_.nats_url))
+    return false;
 
   f8::cppsdk::KvConfig kvc;
   kvc.bucket = f8::cppsdk::kv_bucket_for_service(cfg_.service_id);
   kvc.history = 1;
   kvc.memory_storage = true;
-  if (!kv_.open_or_create(nats_.jetstream(), kvc)) return false;
+  if (!kv_.open_or_create(nats_.jetstream(), kvc))
+    return false;
 
   ctrl_ = std::make_unique<f8::cppsdk::ServiceControlPlaneServer>(
       f8::cppsdk::ServiceControlPlaneServer::Config{cfg_.service_id, cfg_.nats_url}, &nats_, &kv_, this);
@@ -202,18 +228,22 @@ bool ImPlayerService::start() {
 }
 
 void ImPlayerService::stop() {
-  if (!running_.exchange(false, std::memory_order_acq_rel)) return;
+  if (!running_.exchange(false, std::memory_order_acq_rel))
+    return;
   stop_requested_.store(true, std::memory_order_release);
 
   try {
-    if (ctrl_) ctrl_->stop();
-  } catch (...) {
-  }
+    if (ctrl_)
+      ctrl_->stop();
+  } catch (...) {}
   ctrl_.reset();
 
-  if (window_) window_->makeCurrent();
-  if (player_) player_->shutdownGl();
-  if (gui_) gui_->stop();
+  if (window_)
+    window_->makeCurrent();
+  if (player_)
+    player_->shutdownGl();
+  if (gui_)
+    gui_->stop();
   gui_.reset();
   player_.reset();
   window_.reset();
@@ -224,182 +254,92 @@ void ImPlayerService::stop() {
 }
 
 void ImPlayerService::tick() {
-  if (!running_.load(std::memory_order_acquire)) return;
+  if (!running_.load(std::memory_order_acquire))
+    return;
 
   if (media_finished_.exchange(false, std::memory_order_acq_rel)) {
     playlist_next();
   }
 
-  if (window_) {
-    auto on_ev = [this](const SDL_Event& ev) {
-      SDL_Event copy = ev;
-      if (gui_) gui_->processEvent(&copy);
-      if (ev.type == SDL_EVENT_DROP_FILE || ev.type == SDL_EVENT_DROP_TEXT) {
-        if (ev.drop.data) {
-          const auto items = split_drop_payload(std::string(ev.drop.data));
-          playlist_add(items, true);
-        }
-        return;
-      }
-      if (ev.type == SDL_EVENT_MOUSE_WHEEL) {
-        const float zoom_step = 1.05f;
-        if (ev.wheel.y > 0) {
-          view_zoom_ *= zoom_step;
-        } else if (ev.wheel.y < 0) {
-          view_zoom_ /= zoom_step;
-        }
-        view_zoom_ = std::clamp(view_zoom_, 0.1f, 10.0f);
-        return;
-      }
-      if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-        if (ev.button.button == SDL_BUTTON_MIDDLE) {
-          int win_w = 0, win_h = 0;
-          int px_w = 0, px_h = 0;
-          SDL_GetWindowSize(window_->sdlWindow(), &win_w, &win_h);
-          SDL_GetWindowSizeInPixels(window_->sdlWindow(), &px_w, &px_h);
-          const float sx = (win_w > 0 && px_w > 0) ? static_cast<float>(px_w) / static_cast<float>(win_w) : 1.0f;
-          const float sy = (win_h > 0 && px_h > 0) ? static_cast<float>(px_h) / static_cast<float>(win_h) : 1.0f;
-
-          view_panning_ = true;
-          view_pan_anchor_x_ = static_cast<float>(ev.button.x) * sx;
-          view_pan_anchor_y_ = static_cast<float>(ev.button.y) * sy;
-          view_pan_start_x_ = view_pan_x_;
-          view_pan_start_y_ = view_pan_y_;
-        }
-        return;
-      }
-      if (ev.type == SDL_EVENT_MOUSE_BUTTON_UP) {
-        if (ev.button.button == SDL_BUTTON_MIDDLE) {
-          view_panning_ = false;
-        }
-        return;
-      }
-      if (ev.type == SDL_EVENT_MOUSE_MOTION) {
-        if (view_panning_) {
-          int win_w = 0, win_h = 0;
-          int px_w = 0, px_h = 0;
-          SDL_GetWindowSize(window_->sdlWindow(), &win_w, &win_h);
-          SDL_GetWindowSizeInPixels(window_->sdlWindow(), &px_w, &px_h);
-          const float sx = (win_w > 0 && px_w > 0) ? static_cast<float>(px_w) / static_cast<float>(win_w) : 1.0f;
-          const float sy = (win_h > 0 && px_h > 0) ? static_cast<float>(px_h) / static_cast<float>(win_h) : 1.0f;
-
-          const float mx = static_cast<float>(ev.motion.x) * sx;
-          const float my = static_cast<float>(ev.motion.y) * sy;
-          view_pan_x_ = view_pan_start_x_ + (mx - view_pan_anchor_x_);
-          // SDL y+ goes down, OpenGL framebuffer y+ goes up.
-          view_pan_y_ = view_pan_start_y_ - (my - view_pan_anchor_y_);
-        }
-        return;
-      }
-
-      if (ev.type == SDL_EVENT_KEY_DOWN) {
-        if (!player_) return;
-        const SDL_Keycode key = ev.key.key;
-        if (key == SDLK_SPACE) {
-          // Toggle pause by reading pause property is expensive; just call play() then pause() based on last playing_.
-          if (playing_.load(std::memory_order_relaxed))
-            player_->pause();
-          else
-            (void)player_->play();
-        } else if (key == SDLK_LEFT) {
-          const double p = position_seconds_.load(std::memory_order_relaxed);
-          player_->seek(std::max(0.0, p - 5.0));
-        } else if (key == SDLK_RIGHT) {
-          const double p = position_seconds_.load(std::memory_order_relaxed);
-          player_->seek(p + 5.0);
-        } else if (key == SDLK_UP) {
-          double v = 1.0;
-          {
-            std::lock_guard<std::mutex> lock(state_mu_);
-            v = volume_;
-            const double nv = v + 0.05;
-            volume_ = nv < 0.0 ? 0.0 : (nv > 1.0 ? 1.0 : nv);
-            v = volume_;
-          }
-          player_->setVolume(v);
-        } else if (key == SDLK_DOWN) {
-          double v = 1.0;
-          {
-            std::lock_guard<std::mutex> lock(state_mu_);
-            v = volume_;
-            const double nv = v - 0.05;
-            volume_ = nv < 0.0 ? 0.0 : (nv > 1.0 ? 1.0 : nv);
-            v = volume_;
-          }
-          player_->setVolume(v);
-        }
-      } else if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev.type == SDL_EVENT_MOUSE_WHEEL ||
-                 ev.type == SDL_EVENT_MOUSE_MOTION) {
-        // keep for future
-      }
-    };
-
-    if (!window_->pumpEvents(on_ev)) {
-      stop_requested_.store(true, std::memory_order_release);
-      return;
-    }
+  if (window_ && window_->wantsClose()) {
+    stop_requested_.store(true, std::memory_order_release);
+    return;
   }
+
   if (player_ && window_) {
-    const unsigned vw = player_->videoWidth();
-    const unsigned vh = player_->videoHeight();
-    if (vw != 0 && vh != 0 && (vw != view_last_video_w_ || vh != view_last_video_h_)) {
-      view_last_video_w_ = vw;
-      view_last_video_h_ = vh;
-      view_zoom_ = 1.0f;
-      view_pan_x_ = 0.0f;
-      view_pan_y_ = 0.0f;
-      view_panning_ = false;
-    }
-
-    const bool updated = player_->renderVideoFrame();
-    if (updated || window_->needsRedraw() || (gui_ && gui_->wantsRepaint())) {
-      ImPlayerGui::Callbacks cb;
-      cb.open = [this](const std::string& url) {
-        std::string err;
-        (void)open_media_internal(url, false, err);
-      };
-      cb.play = [this]() {
-        std::string err;
-        (void)cmd_play(err);
-      };
-      cb.pause = [this]() {
-        std::string err;
-        (void)cmd_pause(err);
-      };
-      cb.stop = [this]() {
-        std::string err;
-        (void)cmd_stop(err);
-      };
-      cb.seek = [this](double pos) {
-        std::string err;
-        (void)cmd_seek(json{{"position", pos}}, err);
-      };
-      cb.set_volume = [this](double vol) {
-        std::string err;
-        (void)cmd_set_volume(json{{"volume", vol}}, err);
-      };
-      cb.playlist_select = [this](int index) { playlist_play_index(index); };
-      cb.playlist_next = [this]() { playlist_next(); };
-      cb.playlist_prev = [this]() { playlist_prev(); };
-
-      std::string err;
-      std::vector<std::string> playlist_snapshot;
-      int playlist_index_snapshot = -1;
-      {
-        std::lock_guard<std::mutex> lock(state_mu_);
-        err = last_error_;
-        playlist_snapshot = playlist_;
-        playlist_index_snapshot = playlist_index_;
+    std::unique_lock<std::mutex> render_lock(render_mu_, std::try_to_lock);
+    if (render_lock.owns_lock()) {
+      (void)window_->makeCurrent();
+      const unsigned vw = player_->videoWidth();
+      const unsigned vh = player_->videoHeight();
+      if (vw != 0 && vh != 0 && (vw != view_last_video_w_ || vh != view_last_video_h_)) {
+        view_last_video_w_ = vw;
+        view_last_video_h_ = vh;
+        view_zoom_ = 1.0f;
+        view_pan_x_ = 0.0f;
+        view_pan_y_ = 0.0f;
+        view_panning_ = false;
       }
 
-      const SdlVideoWindow::ViewTransform view{view_zoom_, view_pan_x_, view_pan_y_};
-      const bool playing = playing_.load(std::memory_order_relaxed);
-      window_->present(*player_, [this, &cb, &err, &playlist_snapshot, playlist_index_snapshot, playing]() {
-        if (gui_ && player_) {
-          gui_->renderOverlay(*player_, cb, err, playlist_snapshot, playlist_index_snapshot, playing);
-          gui_->clearRepaintFlag();
+      const bool updated = player_->renderVideoFrame();
+      if (updated || window_->needsRedraw() || (gui_ && gui_->wantsRepaint())) {
+        ImPlayerGui::Callbacks cb;
+        cb.open = [this](const std::string& url) {
+          std::string err;
+          (void)open_media_internal(url, false, err);
+        };
+        cb.play = [this]() {
+          std::string err;
+          (void)cmd_play(err);
+        };
+        cb.pause = [this]() {
+          std::string err;
+          (void)cmd_pause(err);
+        };
+        cb.stop = [this]() {
+          std::string err;
+          (void)cmd_stop(err);
+        };
+        cb.seek = [this](double pos) {
+          std::string err;
+          (void)cmd_seek(json{{"position", pos}}, err);
+        };
+        cb.set_volume = [this](double vol) {
+          std::string err;
+          (void)cmd_set_volume(json{{"volume", vol}}, err);
+        };
+        cb.playlist_select = [this](int index) {
+          playlist_play_index(index);
+        };
+        cb.playlist_next = [this]() {
+          playlist_next();
+        };
+        cb.playlist_prev = [this]() {
+          playlist_prev();
+        };
+
+        std::string err;
+        std::vector<std::string> playlist_snapshot;
+        int playlist_index_snapshot = -1;
+        {
+          std::lock_guard<std::mutex> lock(state_mu_);
+          err = last_error_;
+          playlist_snapshot = playlist_;
+          playlist_index_snapshot = playlist_index_;
         }
-      }, view);
+
+        const SdlVideoWindow::ViewTransform view{view_zoom_, view_pan_x_, view_pan_y_};
+        const bool playing = playing_.load(std::memory_order_relaxed);
+        window_->present(
+            *player_,
+            [this, &cb, &err, &playlist_snapshot, playlist_index_snapshot, playing]() {
+              if (gui_ && player_) {
+                gui_->renderOverlay(*player_, cb, err, playlist_snapshot, playlist_index_snapshot, playing);
+                gui_->clearRepaintFlag();
+              }
+            },
+            view);
+      }
     }
   }
 
@@ -439,6 +379,118 @@ void ImPlayerService::tick() {
   }
 }
 
+void ImPlayerService::processSdlEvent(const SDL_Event& ev) {
+  if (!running_.load(std::memory_order_acquire))
+    return;
+
+  if (window_)
+    window_->processEvent(ev);
+
+  SDL_Event copy = ev;
+  if (gui_)
+    gui_->processEvent(&copy);
+
+  if (ev.type == SDL_EVENT_DROP_FILE || ev.type == SDL_EVENT_DROP_TEXT) {
+    if (ev.drop.data) {
+      const auto items = split_drop_payload(std::string(ev.drop.data));
+      playlist_add(items, true);
+    }
+    return;
+  }
+
+  if (ev.type == SDL_EVENT_MOUSE_WHEEL) {
+    const float zoom_step = 1.05f;
+    if (ev.wheel.y > 0) {
+      view_zoom_ *= zoom_step;
+    } else if (ev.wheel.y < 0) {
+      view_zoom_ /= zoom_step;
+    }
+    view_zoom_ = std::clamp(view_zoom_, 0.1f, 10.0f);
+    return;
+  }
+
+  if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+    if (ev.button.button == SDL_BUTTON_MIDDLE) {
+      int win_w = 0, win_h = 0;
+      int px_w = 0, px_h = 0;
+      SDL_GetWindowSize(window_->sdlWindow(), &win_w, &win_h);
+      SDL_GetWindowSizeInPixels(window_->sdlWindow(), &px_w, &px_h);
+      const float sx = (win_w > 0 && px_w > 0) ? static_cast<float>(px_w) / static_cast<float>(win_w) : 1.0f;
+      const float sy = (win_h > 0 && px_h > 0) ? static_cast<float>(px_h) / static_cast<float>(win_h) : 1.0f;
+
+      view_panning_ = true;
+      view_pan_anchor_x_ = static_cast<float>(ev.button.x) * sx;
+      view_pan_anchor_y_ = static_cast<float>(ev.button.y) * sy;
+      view_pan_start_x_ = view_pan_x_;
+      view_pan_start_y_ = view_pan_y_;
+    }
+    return;
+  }
+
+  if (ev.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+    if (ev.button.button == SDL_BUTTON_MIDDLE) {
+      view_panning_ = false;
+    }
+    return;
+  }
+
+  if (ev.type == SDL_EVENT_MOUSE_MOTION) {
+    if (view_panning_) {
+      int win_w = 0, win_h = 0;
+      int px_w = 0, px_h = 0;
+      SDL_GetWindowSize(window_->sdlWindow(), &win_w, &win_h);
+      SDL_GetWindowSizeInPixels(window_->sdlWindow(), &px_w, &px_h);
+      const float sx = (win_w > 0 && px_w > 0) ? static_cast<float>(px_w) / static_cast<float>(win_w) : 1.0f;
+      const float sy = (win_h > 0 && px_h > 0) ? static_cast<float>(px_h) / static_cast<float>(win_h) : 1.0f;
+
+      const float mx = static_cast<float>(ev.motion.x) * sx;
+      const float my = static_cast<float>(ev.motion.y) * sy;
+      view_pan_x_ = view_pan_start_x_ + (mx - view_pan_anchor_x_);
+      // SDL y+ goes down, OpenGL framebuffer y+ goes up.
+      view_pan_y_ = view_pan_start_y_ - (my - view_pan_anchor_y_);
+    }
+    return;
+  }
+
+  if (ev.type == SDL_EVENT_KEY_DOWN) {
+    if (!player_)
+      return;
+    const SDL_Keycode key = ev.key.key;
+    if (key == SDLK_SPACE) {
+      if (playing_.load(std::memory_order_relaxed))
+        player_->pause();
+      else
+        (void)player_->play();
+    } else if (key == SDLK_LEFT) {
+      const double p = position_seconds_.load(std::memory_order_relaxed);
+      player_->seek(std::max(0.0, p - 5.0));
+    } else if (key == SDLK_RIGHT) {
+      const double p = position_seconds_.load(std::memory_order_relaxed);
+      player_->seek(p + 5.0);
+    } else if (key == SDLK_UP) {
+      double v = 1.0;
+      {
+        std::lock_guard<std::mutex> lock(state_mu_);
+        v = volume_;
+        const double nv = v + 0.05;
+        volume_ = nv < 0.0 ? 0.0 : (nv > 1.0 ? 1.0 : nv);
+        v = volume_;
+      }
+      player_->setVolume(v);
+    } else if (key == SDLK_DOWN) {
+      double v = 1.0;
+      {
+        std::lock_guard<std::mutex> lock(state_mu_);
+        v = volume_;
+        const double nv = v - 0.05;
+        volume_ = nv < 0.0 ? 0.0 : (nv > 1.0 ? 1.0 : nv);
+        v = volume_;
+      }
+      player_->setVolume(v);
+    }
+  }
+}
+
 void ImPlayerService::set_active_local(bool active, const nlohmann::json& meta) {
   active_.store(active, std::memory_order_release);
   {
@@ -460,12 +512,18 @@ void ImPlayerService::set_active_local(bool active, const nlohmann::json& meta) 
   }
 }
 
-void ImPlayerService::on_activate(const nlohmann::json& meta) { set_active_local(true, meta); }
-void ImPlayerService::on_deactivate(const nlohmann::json& meta) { set_active_local(false, meta); }
-void ImPlayerService::on_set_active(bool active, const nlohmann::json& meta) { set_active_local(active, meta); }
+void ImPlayerService::on_activate(const nlohmann::json& meta) {
+  set_active_local(true, meta);
+}
+void ImPlayerService::on_deactivate(const nlohmann::json& meta) {
+  set_active_local(false, meta);
+}
+void ImPlayerService::on_set_active(bool active, const nlohmann::json& meta) {
+  set_active_local(active, meta);
+}
 
 bool ImPlayerService::on_set_state(const std::string& node_id, const std::string& field, const nlohmann::json& value,
-                                  const nlohmann::json& meta, std::string& error_code, std::string& error_message) {
+                                   const nlohmann::json& meta, std::string& error_code, std::string& error_message) {
   if (node_id != cfg_.service_id) {
     error_code = "INVALID_ARGS";
     error_message = "nodeId must equal serviceId for service node state";
@@ -499,9 +557,12 @@ bool ImPlayerService::on_set_state(const std::string& node_id, const std::string
         err = "value must be >= 0";
         ok = false;
       } else {
-        if (f == "videoShmMaxWidth") cfg_.video_shm_max_width = static_cast<std::uint32_t>(v);
-        if (f == "videoShmMaxHeight") cfg_.video_shm_max_height = static_cast<std::uint32_t>(v);
-        if (player_) player_->setVideoShmMaxSize(cfg_.video_shm_max_width, cfg_.video_shm_max_height);
+        if (f == "videoShmMaxWidth")
+          cfg_.video_shm_max_width = static_cast<std::uint32_t>(v);
+        if (f == "videoShmMaxHeight")
+          cfg_.video_shm_max_height = static_cast<std::uint32_t>(v);
+        if (player_)
+          player_->setVideoShmMaxSize(cfg_.video_shm_max_width, cfg_.video_shm_max_height);
         ok = true;
       }
     }
@@ -516,7 +577,8 @@ bool ImPlayerService::on_set_state(const std::string& node_id, const std::string
         ok = false;
       } else {
         cfg_.video_shm_max_fps = fps;
-        if (player_) player_->setVideoShmMaxFps(cfg_.video_shm_max_fps);
+        if (player_)
+          player_->setVideoShmMaxFps(cfg_.video_shm_max_fps);
         ok = true;
       }
     }
@@ -562,8 +624,8 @@ bool ImPlayerService::on_set_state(const std::string& node_id, const std::string
   return true;
 }
 
-bool ImPlayerService::on_set_rungraph(const nlohmann::json& graph_obj, const nlohmann::json& meta, std::string& error_code,
-                                      std::string& error_message) {
+bool ImPlayerService::on_set_rungraph(const nlohmann::json& graph_obj, const nlohmann::json& meta,
+                                      std::string& error_code, std::string& error_message) {
   // Apply rungraph-provided service node `stateValues` (studio node properties).
   //
   // Studio deploys graphs via the `set_rungraph` endpoint; for python runtimes, the ServiceHost reconciles
@@ -579,42 +641,48 @@ bool ImPlayerService::on_set_rungraph(const nlohmann::json& graph_obj, const nlo
     const auto nodes = graph_obj["nodes"];
     nlohmann::json service_node;
     for (const auto& n : nodes) {
-      if (!n.is_object()) continue;
+      if (!n.is_object())
+        continue;
       const std::string nid = n.value("nodeId", "");
-      if (nid != cfg_.service_id) continue;
+      if (nid != cfg_.service_id)
+        continue;
 
       // Service node snapshot has no operatorClass.
       bool is_service_snapshot = true;
       if (n.contains("operatorClass") && !n["operatorClass"].is_null()) {
         try {
           const std::string oc = n["operatorClass"].is_string() ? n["operatorClass"].get<std::string>() : "";
-          if (!oc.empty()) is_service_snapshot = false;
-        } catch (...) {
-        }
+          if (!oc.empty())
+            is_service_snapshot = false;
+        } catch (...) {}
       }
-      if (!is_service_snapshot) continue;
+      if (!is_service_snapshot)
+        continue;
 
       service_node = n;
       break;
     }
 
-    if (!service_node.is_object() || !service_node.contains("stateValues") || !service_node["stateValues"].is_object()) {
+    if (!service_node.is_object() || !service_node.contains("stateValues") ||
+        !service_node["stateValues"].is_object()) {
       return true;
     }
 
     nlohmann::json meta2 = meta;
-    if (!meta2.is_object()) meta2 = nlohmann::json::object();
+    if (!meta2.is_object())
+      meta2 = nlohmann::json::object();
     meta2["via"] = "rungraph";
     meta2["graphId"] = graph_obj.value("graphId", "");
 
     const auto& values = service_node["stateValues"];
     for (auto it = values.begin(); it != values.end(); ++it) {
       const std::string field = it.key();
-      if (field.empty()) continue;
+      if (field.empty())
+        continue;
 
       // Only apply writable fields from rungraph (never seed runtime-owned ro fields).
-      if (field != "active" && field != "mediaUrl" && field != "volume" && field != "videoShmMaxWidth" && field != "videoShmMaxHeight" &&
-          field != "videoShmMaxFps") {
+      if (field != "active" && field != "mediaUrl" && field != "volume" && field != "videoShmMaxWidth" &&
+          field != "videoShmMaxHeight" && field != "videoShmMaxFps") {
         continue;
       }
 
@@ -639,12 +707,18 @@ bool ImPlayerService::on_command(const std::string& call, const nlohmann::json& 
   std::string err;
   bool ok = false;
 
-  if (call == "open") ok = cmd_open(args, err);
-  else if (call == "play") ok = cmd_play(err);
-  else if (call == "pause") ok = cmd_pause(err);
-  else if (call == "stop") ok = cmd_stop(err);
-  else if (call == "seek") ok = cmd_seek(args, err);
-  else if (call == "setVolume") ok = cmd_set_volume(args, err);
+  if (call == "open")
+    ok = cmd_open(args, err);
+  else if (call == "play")
+    ok = cmd_play(err);
+  else if (call == "pause")
+    ok = cmd_pause(err);
+  else if (call == "stop")
+    ok = cmd_stop(err);
+  else if (call == "seek")
+    ok = cmd_seek(args, err);
+  else if (call == "setVolume")
+    ok = cmd_set_volume(args, err);
   else {
     error_code = "UNKNOWN_CALL";
     error_message = "unknown call: " + call;
@@ -663,16 +737,19 @@ bool ImPlayerService::on_command(const std::string& call, const nlohmann::json& 
 }
 
 void ImPlayerService::playlist_add(const std::vector<std::string>& items, bool play_if_idle) {
-  if (items.empty()) return;
+  if (items.empty())
+    return;
 
   std::string url_to_open;
   {
     std::lock_guard<std::mutex> lock(state_mu_);
     const bool empty_before = playlist_.empty();
     for (const auto& s : items) {
-      if (!s.empty()) playlist_.push_back(s);
+      if (!s.empty())
+        playlist_.push_back(s);
     }
-    if (playlist_.empty()) return;
+    if (playlist_.empty())
+      return;
     if (empty_before) {
       playlist_index_ = 0;
       url_to_open = playlist_[0];
@@ -695,7 +772,8 @@ void ImPlayerService::playlist_play_index(int index) {
   std::string url;
   {
     std::lock_guard<std::mutex> lock(state_mu_);
-    if (index < 0 || index >= static_cast<int>(playlist_.size())) return;
+    if (index < 0 || index >= static_cast<int>(playlist_.size()))
+      return;
     playlist_index_ = index;
     url = playlist_[static_cast<std::size_t>(playlist_index_)];
   }
@@ -707,10 +785,13 @@ void ImPlayerService::playlist_next() {
   std::string url;
   {
     std::lock_guard<std::mutex> lock(state_mu_);
-    if (playlist_.empty()) return;
-    if (playlist_index_ < 0) playlist_index_ = 0;
+    if (playlist_.empty())
+      return;
+    if (playlist_index_ < 0)
+      playlist_index_ = 0;
     const int next = playlist_index_ + 1;
-    if (next >= static_cast<int>(playlist_.size())) return;
+    if (next >= static_cast<int>(playlist_.size()))
+      return;
     playlist_index_ = next;
     url = playlist_[static_cast<std::size_t>(playlist_index_)];
   }
@@ -722,8 +803,10 @@ void ImPlayerService::playlist_prev() {
   std::string url;
   {
     std::lock_guard<std::mutex> lock(state_mu_);
-    if (playlist_.empty()) return;
-    if (playlist_index_ <= 0) return;
+    if (playlist_.empty())
+      return;
+    if (playlist_index_ <= 0)
+      return;
     playlist_index_ -= 1;
     url = playlist_[static_cast<std::size_t>(playlist_index_)];
   }
@@ -795,8 +878,10 @@ bool ImPlayerService::open_media_internal(const std::string& url, bool keep_play
 bool ImPlayerService::cmd_open(const nlohmann::json& args, std::string& err) {
   std::string url;
   if (args.is_object()) {
-    if (args.contains("url") && args["url"].is_string()) url = args["url"].get<std::string>();
-    if (url.empty() && args.contains("mediaUrl") && args["mediaUrl"].is_string()) url = args["mediaUrl"].get<std::string>();
+    if (args.contains("url") && args["url"].is_string())
+      url = args["url"].get<std::string>();
+    if (url.empty() && args.contains("mediaUrl") && args["mediaUrl"].is_string())
+      url = args["mediaUrl"].get<std::string>();
   }
   return open_media_internal(url, false, err);
 }
@@ -842,8 +927,7 @@ bool ImPlayerService::cmd_seek(const nlohmann::json& args, std::string& err) {
       try {
         pos = std::stod(args["position"].get<std::string>());
         ok = true;
-      } catch (...) {
-      }
+      } catch (...) {}
     }
   }
   if (!ok) {
@@ -865,8 +949,7 @@ bool ImPlayerService::cmd_set_volume(const nlohmann::json& args, std::string& er
       try {
         vol = std::stod(args["volume"].get<std::string>());
         ok = true;
-      } catch (...) {
-      }
+      } catch (...) {}
     }
   }
   if (!ok) {
@@ -878,12 +961,14 @@ bool ImPlayerService::cmd_set_volume(const nlohmann::json& args, std::string& er
     std::lock_guard<std::mutex> lock(state_mu_);
     volume_ = vol;
   }
-  if (player_) player_->setVolume(vol);
+  if (player_)
+    player_->setVolume(vol);
   return true;
 }
 
 void ImPlayerService::publish_static_state() {
-  if (!shm_) return;
+  if (!shm_)
+    return;
   const json meta = json{{"via", "startup"}};
 
   std::vector<std::pair<std::string, json>> updates;
@@ -891,7 +976,8 @@ void ImPlayerService::publish_static_state() {
     std::lock_guard<std::mutex> lock(state_mu_);
     auto want = [&](const std::string& field, const json& v) {
       auto it = published_state_.find(field);
-      if (it != published_state_.end() && it->second == v) return;
+      if (it != published_state_.end() && it->second == v)
+        return;
       published_state_[field] = v;
       updates.emplace_back(field, v);
     };
@@ -923,7 +1009,8 @@ void ImPlayerService::publish_dynamic_state() {
 
     auto want = [&](const std::string& field, const json& v) {
       auto it = published_state_.find(field);
-      if (it != published_state_.end() && it->second == v) return;
+      if (it != published_state_.end() && it->second == v)
+        return;
       published_state_[field] = v;
       updates.emplace_back(field, v);
     };
@@ -972,17 +1059,16 @@ json ImPlayerService::describe() {
 
   service["dataOutPorts"] = json::array({
       json{{"name", "media"},
-           {"valueSchema",
-            schema_object(json{{"videoId", schema_string()}, {"url", schema_string()}}, json::array({"videoId", "url"}))},
+           {"valueSchema", schema_object(json{{"videoId", schema_string()}, {"url", schema_string()}},
+                                         json::array({"videoId", "url"}))},
            {"description", "Emitted when a new media is opened (videoId + url)."},
            {"required", false}},
       json{{"name", "playback"},
-           {"valueSchema",
-            schema_object(json{{"videoId", schema_string()},
-                               {"position", schema_number()},
-                               {"duration", schema_number()},
-                               {"playing", schema_boolean()}},
-                          json::array({"videoId", "position"}))},
+           {"valueSchema", schema_object(json{{"videoId", schema_string()},
+                                              {"position", schema_number()},
+                                              {"duration", schema_number()},
+                                              {"playing", schema_boolean()}},
+                                         json::array({"videoId", "position"}))},
            {"description", "Playback telemetry stream (position/duration/playing)."},
            {"required", false}},
       json{{"name", "frameId"},
@@ -991,12 +1077,18 @@ json ImPlayerService::describe() {
            {"required", false}},
   });
   service["commands"] = json::array({
-      json{{"name", "open"}, {"description", "Open a media URL"}, {"params", json::array({json{{"name", "url"}, {"valueSchema", schema_string()}, {"required", true}}})}},
+      json{{"name", "open"},
+           {"description", "Open a media URL"},
+           {"params", json::array({json{{"name", "url"}, {"valueSchema", schema_string()}, {"required", true}}})}},
       json{{"name", "play"}, {"description", "Start playback"}},
       json{{"name", "pause"}, {"description", "Pause playback"}},
       json{{"name", "stop"}, {"description", "Stop playback"}},
-      json{{"name", "seek"}, {"description", "Seek"}, {"params", json::array({json{{"name", "position"}, {"valueSchema", schema_number()}, {"required", true}}})}},
-      json{{"name", "setVolume"}, {"description", "Set volume"}, {"params", json::array({json{{"name", "volume"}, {"valueSchema", schema_number()}, {"required", true}}})}},
+      json{{"name", "seek"},
+           {"description", "Seek"},
+           {"params", json::array({json{{"name", "position"}, {"valueSchema", schema_number()}, {"required", true}}})}},
+      json{{"name", "setVolume"},
+           {"description", "Set volume"},
+           {"params", json::array({json{{"name", "volume"}, {"valueSchema", schema_number()}, {"required", true}}})}},
   });
 
   json out;

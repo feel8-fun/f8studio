@@ -1,0 +1,6 @@
+.feel-bridge-highlight {
+  outline: 3px solid rgba(99, 102, 241, 0.9) !important;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.35), 0 0 30px rgba(15, 23, 42, 0.5) !important;
+  border-radius: 16px;
+  transition: outline 0.15s ease, box-shadow 0.15s ease;
+}

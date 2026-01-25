@@ -18,3 +18,10 @@ Fresh workspace for the API-first, NATS-only architecture. Current focus is cont
 - Hook `api/master.yaml` and `schemas/protocol.yml` into codegen/validation flow.
 - Add scripts to generate TS/C++ stubs from OpenAPI and wrap NATS req/rep.
 - Wire a minimal prototype: Web ping/echo + config apply via NATS in-memory broker.
+
+## C++ formatting
+- Config: `.clang-format`
+- Format: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/format_cpp.ps1`
+- Check: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/format_cpp.ps1 -Check`
+- Optional: `-ClangFormat <path-or-command>`
+- Optional: `-ChangedOnly` or `-StagedOnly`

@@ -8,6 +8,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <SDL3/SDL.h>
+
 #include <nlohmann/json_fwd.hpp>
 
 #include "f8cppsdk/kv_store.h"
@@ -52,6 +54,9 @@ class ImPlayerService final : public f8::cppsdk::ServiceControlHandler {
     return running_.load(std::memory_order_acquire) && !stop_requested_.load(std::memory_order_acquire);
   }
 
+  // When using SDL_MAIN_USE_CALLBACKS, feed events here from SDL_AppEvent.
+  void processSdlEvent(const SDL_Event& ev);
+
   // Called on the main thread periodically.
   void tick();
 
@@ -71,21 +76,21 @@ class ImPlayerService final : public f8::cppsdk::ServiceControlHandler {
 
  private:
   void set_active_local(bool active, const nlohmann::json& meta);
- void publish_static_state();
- void publish_dynamic_state();
+  void publish_static_state();
+  void publish_dynamic_state();
 
- void playlist_add(const std::vector<std::string>& items, bool play_if_idle);
- void playlist_play_index(int index);
- void playlist_next();
- void playlist_prev();
+  void playlist_add(const std::vector<std::string>& items, bool play_if_idle);
+  void playlist_play_index(int index);
+  void playlist_next();
+  void playlist_prev();
 
- bool open_media_internal(const std::string& url, bool keep_playlist, std::string& err);
+  bool open_media_internal(const std::string& url, bool keep_playlist, std::string& err);
 
- bool cmd_open(const nlohmann::json& args, std::string& err);
- bool cmd_play(std::string& err);
- bool cmd_pause(std::string& err);
- bool cmd_stop(std::string& err);
- bool cmd_seek(const nlohmann::json& args, std::string& err);
+  bool cmd_open(const nlohmann::json& args, std::string& err);
+  bool cmd_play(std::string& err);
+  bool cmd_pause(std::string& err);
+  bool cmd_stop(std::string& err);
+  bool cmd_seek(const nlohmann::json& args, std::string& err);
   bool cmd_set_volume(const nlohmann::json& args, std::string& err);
 
   Config cfg_;
@@ -133,6 +138,8 @@ class ImPlayerService final : public f8::cppsdk::ServiceControlHandler {
   float view_pan_start_y_ = 0.0f;
   unsigned view_last_video_w_ = 0;
   unsigned view_last_video_h_ = 0;
+
+  std::mutex render_mu_;
 };
 
 }  // namespace f8::implayer

@@ -8,6 +8,8 @@ dependencies = [
     "f8pysdk",
     "f8pystudio",
     "f8pyengine",
+    "numpy>=2.2.6",
+    "opencv-python>=4.13.0.90",
 ]
 
 [tool.uv.workspace]

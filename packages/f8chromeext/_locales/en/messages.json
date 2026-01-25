@@ -1,0 +1,122 @@
+{
+  "extension_name": {
+    "message": "Feel The Dance by Feel8.Fun"
+  },
+  "extension_description": {
+    "message": "Detect any page video and mirror it to your Feel tab via WebRTC. Highlight sources and stream with one click from the popup."
+  },
+  "context_menu_open_studio": {
+    "message": "Open Feel8 Studio"
+  },
+  "context_menu_no_tab": {
+    "message": "No Feel tab registered"
+  },
+  "context_menu_group_title": {
+    "message": "Streaming to"
+  },
+  "context_menu_group_title_with_target": {
+    "message": "Streaming to: $1"
+  },
+  "context_menu_tab_fallback": {
+    "message": "Tab $1"
+  },
+  "tab_registry_default_title": {
+    "message": "Feel Player"
+  },
+  "popup_title": {
+    "message": "Feel Bridge"
+  },
+  "popup_subtitle": {
+    "message": "Select a video on this page to stream via WebRTC."
+  },
+  "popup_button_stream": {
+    "message": "Stream"
+  },
+  "popup_status_detecting": {
+    "message": "Detecting videos..."
+  },
+  "popup_status_no_videos": {
+    "message": "No playable videos detected on this page."
+  },
+  "popup_status_no_active_tab": {
+    "message": "Unable to detect the active tab."
+  },
+  "popup_status_connecting": {
+    "message": "Connecting..."
+  },
+  "popup_status_streaming": {
+    "message": "Streaming to $1"
+  },
+  "popup_status_failed": {
+    "message": "Failed: $1"
+  },
+  "popup_status_error": {
+    "message": "Error: $1"
+  },
+  "popup_status_unknown_error": {
+    "message": "Unknown error"
+  },
+  "popup_target_fallback": {
+    "message": "Feel tab"
+  },
+  "popup_target_gateway": {
+    "message": "WebRTC gateway"
+  },
+  "popup_videos_inline_source": {
+    "message": "(inline blob)"
+  },
+  "popup_videos_unknown_size": {
+    "message": "Unknown size"
+  },
+  "popup_videos_unknown_duration": {
+    "message": "Unknown duration"
+  },
+  "popup_videos_live": {
+    "message": "Live / Stream"
+  },
+  "popup_videos_index_label": {
+    "message": "Video $1"
+  },
+  "popup_videos_duration_seconds": {
+    "message": "$1s"
+  },
+  "errors_feel_tab_cannot_source": {
+    "message": "The Feel tab cannot be used as a source."
+  },
+  "errors_highlight_not_allowed": {
+    "message": "Cannot highlight videos within the Feel tab."
+  },
+  "errors_feel_tab_required": {
+    "message": "No Feel tab registered. Please open $1."
+  },
+  "errors_video_not_found": {
+    "message": "Video not found. Try refreshing the page."
+  },
+  "errors_video_uncapturable": {
+    "message": "This video cannot be captured. Try using a different source."
+  },
+  "errors_open_feel_tab_failed": {
+    "message": "Failed to open the Feel The Dance tab automatically."
+  },
+  "errors_feel_tab_loading": {
+    "message": "The Feel The Dance tab is still loading. Please open $1 manually."
+  },
+  "errors_missing_tab_context": {
+    "message": "Missing tab context."
+  },
+  "errors_missing_target_tab": {
+    "message": "Missing target tab for WebRTC offer."
+  },
+  "errors_no_pending_session": {
+    "message": "No pending session available for an answer."
+  },
+  "errors_invalid_ice_payload": {
+    "message": "Invalid ICE payload."
+  },
+  "errors_no_active_session": {
+    "message": "No active session found for ICE exchange."
+  },
+  "errors_gateway_unavailable": {
+    "message": "WebRTC gateway unavailable at $1. Please start f8webrtc_gateway_service."
+  }
+}

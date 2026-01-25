@@ -1,0 +1,15 @@
+export const MESSAGE_TYPES = {
+  REGISTER_PLAYER: 'bridge:register-player',
+  UNREGISTER_PLAYER: 'bridge:unregister-player',
+  LIST_PLAYERS: 'bridge:list-players',
+  GET_TARGET: 'bridge:get-target',
+  WEBRTC_OFFER: 'bridge:webrtc-offer',
+  WEBRTC_ANSWER: 'bridge:webrtc-answer',
+  WEBRTC_ICE: 'bridge:webrtc-ice',
+  WEBRTC_STOP: 'bridge:webrtc-stop',
+  COLLECT_MEDIA: 'bridge:collect-media',
+  HIGHLIGHT_VIDEO: 'bridge:highlight-video',
+  START_STREAM: 'bridge:start-stream',
+  STOP_STREAM: 'bridge:stop-stream',
+  MEDIA_LIST: 'bridge:media-list',
+};

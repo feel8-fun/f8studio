@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Feel Bridge</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <main id="app">
+      <header>
+        <h1 data-i18n-key="popup_title"></h1>
+        <p data-i18n-key="popup_subtitle"></p>
+      </header>
+
+      <section id="status" role="status"></section>
+      <ul id="video-list" aria-live="polite"></ul>
+    </main>
+
+    <template id="video-item-template">
+      <li class="video-item">
+        <div class="primary-row">
+          <span class="video-index"></span>
+          <button class="stream-button" type="button"></button>
+        </div>
+        <div class="video-meta"></div>
+        <div class="video-src"></div>
+      </li>
+    </template>
+
+    <script type="module" src="./popup.js"></script>
+  </body>
+</html>

@@ -41,6 +41,7 @@ find_package(Threads REQUIRED)
 
 add_subdirectory(packages/f8cppsdk)
 add_subdirectory(packages/f8implayer)
+add_subdirectory(packages/f8webrtc_gateway)
 
 if (BUILD_TESTS)
     add_subdirectory(tests)
