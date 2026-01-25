@@ -74,48 +74,90 @@ bool ServiceControlPlaneServer::start() {
   }
   const auto sid = ensure_token(cfg_.service_id, "service_id");
 
-  sub_activate_ = client_->subscribe(svc_endpoint_subject(sid, "activate"), [this](natsMsg* msg) {
-    handle_request(msg, "activate");
-  });
-  sub_deactivate_ = client_->subscribe(svc_endpoint_subject(sid, "deactivate"), [this](natsMsg* msg) {
-    handle_request(msg, "deactivate");
-  });
-  sub_set_active_ = client_->subscribe(svc_endpoint_subject(sid, "set_active"), [this](natsMsg* msg) {
-    handle_request(msg, "set_active");
-  });
-  sub_status_ = client_->subscribe(svc_endpoint_subject(sid, "status"), [this](natsMsg* msg) { handle_request(msg, "status"); });
-  sub_set_state_ = client_->subscribe(svc_endpoint_subject(sid, "set_state"), [this](natsMsg* msg) {
-    handle_request(msg, "set_state");
-  });
-  sub_set_rungraph_ = client_->subscribe(svc_endpoint_subject(sid, "set_rungraph"), [this](natsMsg* msg) {
-    handle_request(msg, "set_rungraph");
-  });
-  sub_cmd_ = client_->subscribe(cmd_channel_subject(sid), [this](natsMsg* msg) { handle_request(msg, "cmd"); });
+  if (client_->raw() == nullptr) {
+    spdlog::error("micro endpoints require an active NATS connection");
+    return false;
+  }
 
-  return sub_activate_.valid() && sub_deactivate_.valid() && sub_set_active_.valid() && sub_status_.valid() &&
-         sub_set_state_.valid() && sub_set_rungraph_.valid() && sub_cmd_.valid();
+  microServiceConfig sc{};
+  const auto micro_name = svc_micro_name(sid);
+  sc.Name = micro_name.c_str();
+  sc.Version = "0.0.1";
+  sc.Description = "F8 service runtime control plane (lifecycle + cmd + state + rungraph).";
+  const char* md_kv[] = {"serviceId", sid.c_str()};
+  sc.Metadata.List = md_kv;
+  sc.Metadata.Count = 1;
+  sc.State = this;
+
+  microError* err = micro_AddService(&micro_, client_->raw(), &sc);
+  if (err != nullptr) {
+    char buf[256] = {};
+    spdlog::error("micro_AddService failed: {}", microError_String(err, buf, sizeof(buf)));
+    microError_Destroy(err);
+    micro_ = nullptr;
+    return false;
+  }
+
+  auto add_ep = [&](const char* name, const std::string& subject) -> bool {
+    microEndpointConfig ec{};
+    ec.Name = name;
+    ec.Subject = subject.c_str();
+    ec.Handler = &ServiceControlPlaneServer::on_micro_request;
+    ec.State = const_cast<char*>(name);  // stable, points to string literal
+    microError* e = microService_AddEndpoint(micro_, &ec);
+    if (e != nullptr) {
+      char buf[256] = {};
+      spdlog::error("microService_AddEndpoint failed ep={} subject={} err={}", name, subject, microError_String(e, buf, sizeof(buf)));
+      microError_Destroy(e);
+      return false;
+    }
+    return true;
+  };
+
+  const bool ok = add_ep("activate", svc_endpoint_subject(sid, "activate")) &&
+                  add_ep("deactivate", svc_endpoint_subject(sid, "deactivate")) &&
+                  add_ep("set_active", svc_endpoint_subject(sid, "set_active")) &&
+                  add_ep("status", svc_endpoint_subject(sid, "status")) &&
+                  add_ep("cmd", cmd_channel_subject(sid)) &&
+                  add_ep("set_state", svc_endpoint_subject(sid, "set_state")) &&
+                  add_ep("set_rungraph", svc_endpoint_subject(sid, "set_rungraph"));
+  if (!ok) {
+    stop();
+    return false;
+  }
+  return true;
 }
 
 void ServiceControlPlaneServer::stop() {
-  sub_activate_.unsubscribe();
-  sub_deactivate_.unsubscribe();
-  sub_set_active_.unsubscribe();
-  sub_status_.unsubscribe();
-  sub_set_state_.unsubscribe();
-  sub_set_rungraph_.unsubscribe();
-  sub_cmd_.unsubscribe();
+  if (micro_ != nullptr) {
+    microError* err = microService_Destroy(micro_);
+    if (err != nullptr) {
+      char buf[256] = {};
+      spdlog::warn("microService_Destroy failed: {}", microError_String(err, buf, sizeof(buf)));
+      microError_Destroy(err);
+    }
+    micro_ = nullptr;
+  }
 }
 
-void ServiceControlPlaneServer::respond(natsMsg* req, const std::string& req_id, bool ok, const json& result,
-                                       const std::string& err_code, const std::string& err_message) {
-  if (client_ == nullptr || req == nullptr) {
-    return;
+microError* ServiceControlPlaneServer::on_micro_request(microRequest* req) {
+  if (req == nullptr) {
+    return nullptr;
   }
-  const char* reply = natsMsg_GetReply(req);
-  if (reply == nullptr || std::string(reply).empty()) {
-    return;
+  auto* self = static_cast<ServiceControlPlaneServer*>(microRequest_GetServiceState(req));
+  const char* endpoint = static_cast<const char*>(microRequest_GetEndpointState(req));
+  if (self == nullptr || endpoint == nullptr) {
+    return nullptr;
   }
+  self->handle_request(req, std::string(endpoint));
+  return nullptr;
+}
 
+void ServiceControlPlaneServer::respond(microRequest* req, const std::string& req_id, bool ok, const json& result,
+                                       const std::string& err_code, const std::string& err_message) {
+  if (req == nullptr) {
+    return;
+  }
   json payload;
   payload["reqId"] = req_id;
   payload["ok"] = ok;
@@ -126,15 +168,15 @@ void ServiceControlPlaneServer::respond(natsMsg* req, const std::string& req_id,
     payload["error"] = json(nullptr);
   }
   const auto out = payload.dump();
-  client_->publish(reply, out.data(), out.size());
+  (void)microRequest_Respond(req, out.data(), out.size());
 }
 
-void ServiceControlPlaneServer::handle_request(natsMsg* msg, const std::string& endpoint) {
+void ServiceControlPlaneServer::handle_request(microRequest* msg, const std::string& endpoint) {
   if (client_ == nullptr || handler_ == nullptr || kv_ == nullptr || msg == nullptr) {
     return;
   }
-  const void* data = natsMsg_GetData(msg);
-  const int len = natsMsg_GetDataLength(msg);
+  const void* data = microRequest_GetData(msg);
+  const int len = microRequest_GetDataLength(msg);
   const auto env = parse_envelope(data, len < 0 ? 0 : static_cast<std::size_t>(len));
 
   std::string err_code;
@@ -170,7 +212,7 @@ void ServiceControlPlaneServer::handle_request(natsMsg* msg, const std::string& 
       return;
     }
     if (endpoint == "status") {
-      result = json{{"serviceId", cfg_.service_id}};
+      result = json{{"serviceId", cfg_.service_id}, {"active", handler_->is_active()}};
       respond(msg, env.req_id, true, result, "", "");
       return;
     }

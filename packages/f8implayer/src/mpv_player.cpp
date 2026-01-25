@@ -42,8 +42,10 @@ MpvPlayer::MpvPlayer(const VideoConfig& config, TimeCallback timeCallback, Playi
       timeCallback_(std::move(timeCallback)),
       playingCallback_(std::move(playingCallback)),
       finishedCallback_(std::move(finishedCallback)) {
-  shmFrameInterval_ = config_.videoShmMaxFps > 0.0 ? std::chrono::duration<double>(1.0 / config_.videoShmMaxFps)
-                                                  : std::chrono::duration<double>(0.0);
+  shm_max_width_.store(config_.videoShmMaxWidth, std::memory_order_relaxed);
+  shm_max_height_.store(config_.videoShmMaxHeight, std::memory_order_relaxed);
+  shm_max_fps_.store(config_.videoShmMaxFps, std::memory_order_relaxed);
+  shm_frame_interval_s_.store(config_.videoShmMaxFps > 0.0 ? (1.0 / config_.videoShmMaxFps) : 0.0, std::memory_order_relaxed);
   initializeMpv();
   startEventThread();
 }
@@ -71,6 +73,9 @@ void MpvPlayer::initializeMpv() {
   mpv_set_option_string(mpv_, "msg-level", "all=v");
   mpv_set_option_string(mpv_, "config", "yes");
   mpv_set_option_string(mpv_, "load-scripts", "yes");
+  // Enable ytdl_hook.lua (youtube-dl / yt-dlp) when available; mpv will auto-detect the binary.
+  mpv_set_option_string(mpv_, "ytdl", "yes");
+  mpv_set_option_string(mpv_, "ytdl-format", "best");
 #if defined(_WIN32)
   mpv_set_option_string(mpv_, "vo", "libmpv");
   // Prefer Windows native audio output. Some builds default to "null" ao when probing fails.
@@ -132,6 +137,21 @@ void MpvPlayer::setSharedMemorySink(std::shared_ptr<VideoSharedMemorySink> sink)
   std::lock_guard<std::mutex> lock(sinkMutex_);
   sink_ = std::move(sink);
 }
+
+void MpvPlayer::setVideoShmMaxSize(std::uint32_t max_width, std::uint32_t max_height) {
+  shm_max_width_.store(max_width, std::memory_order_relaxed);
+  shm_max_height_.store(max_height, std::memory_order_relaxed);
+}
+
+void MpvPlayer::setVideoShmMaxFps(double max_fps) {
+  if (max_fps < 0.0) max_fps = 0.0;
+  shm_max_fps_.store(max_fps, std::memory_order_relaxed);
+  shm_frame_interval_s_.store(max_fps > 0.0 ? (1.0 / max_fps) : 0.0, std::memory_order_relaxed);
+}
+
+std::uint32_t MpvPlayer::videoShmMaxWidth() const { return shm_max_width_.load(std::memory_order_relaxed); }
+std::uint32_t MpvPlayer::videoShmMaxHeight() const { return shm_max_height_.load(std::memory_order_relaxed); }
+double MpvPlayer::videoShmMaxFps() const { return shm_max_fps_.load(std::memory_order_relaxed); }
 
 bool MpvPlayer::initializeGl() {
   if (glInitialized_) return true;
@@ -280,7 +300,17 @@ void MpvPlayer::processEvent(const mpv_event& event) {
       break;
     case MPV_EVENT_END_FILE:
       if (playingCallback_) playingCallback_(false);
-      if (finishedCallback_) finishedCallback_();
+      if (finishedCallback_) {
+        int reason = 0;
+        if (event.data) {
+          const auto* end = static_cast<const mpv_event_end_file*>(event.data);
+          reason = end ? end->reason : 0;
+        }
+        // Auto-advance playlist only on natural EOF; ignore stop/error.
+        if (reason == MPV_END_FILE_REASON_EOF) {
+          finishedCallback_();
+        }
+      }
       break;
     case MPV_EVENT_PROPERTY_CHANGE:
       if (event.data) handlePropertyChange(*static_cast<mpv_event_property*>(event.data));
@@ -327,8 +357,10 @@ std::pair<unsigned, unsigned> MpvPlayer::targetDimensions(unsigned width, unsign
   double out_w = static_cast<double>(width);
   double out_h = static_cast<double>(height);
   double scale = 1.0;
-  if (config_.videoShmMaxWidth > 0) scale = std::min(scale, static_cast<double>(config_.videoShmMaxWidth) / out_w);
-  if (config_.videoShmMaxHeight > 0) scale = std::min(scale, static_cast<double>(config_.videoShmMaxHeight) / out_h);
+  const auto max_w = shm_max_width_.load(std::memory_order_relaxed);
+  const auto max_h = shm_max_height_.load(std::memory_order_relaxed);
+  if (max_w > 0) scale = std::min(scale, static_cast<double>(max_w) / out_w);
+  if (max_h > 0) scale = std::min(scale, static_cast<double>(max_h) / out_h);
   if (scale < 1.0) {
     out_w = std::max(1.0, std::floor(out_w * scale));
     out_h = std::max(1.0, std::floor(out_h * scale));
@@ -426,9 +458,11 @@ void MpvPlayer::destroyReadbackPbos() {
 
 bool MpvPlayer::shouldCopyToSharedMemory(std::chrono::steady_clock::time_point now) const {
   if (config_.offline) return false;
-  if (shmFrameInterval_.count() <= 0.0) return true;
+  const double interval_s = shm_frame_interval_s_.load(std::memory_order_relaxed);
+  if (interval_s <= 0.0) return true;
   if (lastShmFrameTime_.time_since_epoch().count() == 0) return true;
-  return (now - lastShmFrameTime_) >= shmFrameInterval_;
+  const double elapsed_s = std::chrono::duration<double>(now - lastShmFrameTime_).count();
+  return elapsed_s >= interval_s;
 }
 
 bool MpvPlayer::copyFrameToSharedMemory(unsigned width, unsigned height, double&) {

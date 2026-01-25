@@ -23,6 +23,11 @@ std::string kv_bucket_for_service(const std::string& service_id) {
   return std::string("svc_") + ensure_token(service_id, "service_id");
 }
 
+std::string svc_micro_name(const std::string& service_id) {
+  // Mirror f8pysdk: micro service names cannot contain '.', so we use `svc_<serviceId>`.
+  return std::string("svc_") + ensure_token(service_id, "service_id");
+}
+
 std::string kv_key_rungraph() { return "rungraph"; }
 std::string kv_key_ready() { return "ready"; }
 
@@ -51,4 +56,3 @@ std::string svc_endpoint_subject(const std::string& service_id, const std::strin
 }
 
 }  // namespace f8::cppsdk
-

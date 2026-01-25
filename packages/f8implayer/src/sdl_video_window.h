@@ -37,8 +37,14 @@ class SdlVideoWindow {
 
   // Present the latest mpv frame (blits the player's framebuffer into the window).
   // If no mpv frame exists yet, clears to black.
+  struct ViewTransform {
+    float zoom = 1.0f;
+    float pan_x = 0.0f;
+    float pan_y = 0.0f;
+  };
+
   using OverlayCallback = std::function<void()>;
-  void present(const MpvPlayer& player, const OverlayCallback& overlay = {});
+  void present(const MpvPlayer& player, const OverlayCallback& overlay = {}, const ViewTransform& view = ViewTransform{});
 
   bool wantsClose() const { return wants_close_; }
   bool needsRedraw() const { return needs_redraw_; }

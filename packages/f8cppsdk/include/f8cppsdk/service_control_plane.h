@@ -11,6 +11,9 @@ namespace f8::cppsdk {
 struct ServiceControlHandler {
   virtual ~ServiceControlHandler() = default;
 
+  // Optional hint for `status` endpoint (defaults to true).
+  virtual bool is_active() const { return true; }
+
   virtual void on_activate(const nlohmann::json& meta) = 0;
   virtual void on_deactivate(const nlohmann::json& meta) = 0;
   virtual void on_set_active(bool active, const nlohmann::json& meta) = 0;
@@ -26,4 +29,3 @@ struct ServiceControlHandler {
 };
 
 }  // namespace f8::cppsdk
-

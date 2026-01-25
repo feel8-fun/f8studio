@@ -21,17 +21,6 @@ void on_signal(int) { g_stop.store(true, std::memory_order_release); }
 }  // namespace
 
 int main(int argc, char** argv) {
-  try {
-    spdlog::set_default_logger(spdlog::stdout_color_mt("console"));
-  } catch (...) {
-  }
-  spdlog::set_level(spdlog::level::info);
-  spdlog::flush_on(spdlog::level::info);
-  spdlog::info("starting f8implayer_service");
-
-  std::signal(SIGINT, &on_signal);
-  std::signal(SIGTERM, &on_signal);
-
   cxxopts::Options options("f8implayer_service", "F8 C++ IM Player service");
   options.add_options()("describe", "Print service spec JSON and exit")(
       "service-id", "Service instance id (required unless --describe)", cxxopts::value<std::string>()->default_value(""))(
@@ -49,6 +38,17 @@ int main(int argc, char** argv) {
     std::cout << f8::implayer::ImPlayerService::describe().dump(1) << "\n";
     return 0;
   }
+
+  try {
+    spdlog::set_default_logger(spdlog::stdout_color_mt("console"));
+  } catch (...) {
+  }
+  spdlog::set_level(spdlog::level::info);
+  spdlog::flush_on(spdlog::level::info);
+  spdlog::info("starting f8implayer_service");
+
+  std::signal(SIGINT, &on_signal);
+  std::signal(SIGTERM, &on_signal);
 
   const std::string service_id = result["service-id"].as<std::string>();
   if (service_id.empty()) {

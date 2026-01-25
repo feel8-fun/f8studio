@@ -44,6 +44,11 @@ class MpvPlayer {
   void setVolume(double volume01);
   void seek(double positionSeconds);
   void setSharedMemorySink(std::shared_ptr<VideoSharedMemorySink> sink);
+  void setVideoShmMaxSize(std::uint32_t max_width, std::uint32_t max_height);
+  void setVideoShmMaxFps(double max_fps);
+  std::uint32_t videoShmMaxWidth() const;
+  std::uint32_t videoShmMaxHeight() const;
+  double videoShmMaxFps() const;
 
   bool initializeGl();
   void shutdownGl();
@@ -76,7 +81,11 @@ class MpvPlayer {
   static void HandleRenderUpdate(void* userdata);
   static void* GetProcAddress(void* ctx, const char* name);
 
-  const VideoConfig config_;
+  VideoConfig config_;
+  std::atomic<std::uint32_t> shm_max_width_{0};
+  std::atomic<std::uint32_t> shm_max_height_{0};
+  std::atomic<double> shm_max_fps_{0.0};
+  std::atomic<double> shm_frame_interval_s_{0.0};
   TimeCallback timeCallback_;
   PlayingCallback playingCallback_;
   FinishedCallback finishedCallback_;
@@ -93,7 +102,6 @@ class MpvPlayer {
 
   mutable std::mutex sinkMutex_;
   std::shared_ptr<VideoSharedMemorySink> sink_;
-  std::chrono::duration<double> shmFrameInterval_{0.0};
   std::chrono::steady_clock::time_point lastShmFrameTime_{};
 
   std::atomic<unsigned> videoWidth_{0};

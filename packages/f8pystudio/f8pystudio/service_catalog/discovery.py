@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import subprocess
+import re
 from collections.abc import Iterable
 from pathlib import Path
 import yaml
@@ -198,18 +199,37 @@ def _describe_entry(service_dir: Path, entry: F8ServiceEntry) -> dict[str, Any] 
         logger.warning(f"Error output from describe command {' '.join(cmd)}:\n{err}")
         return None
 
-    data: dict[str, Any] | None = None
-    try:
-        data = json.loads(out)
-    except Exception:
-        # best-effort: extract the last JSON object from noisy output
-        start = out.rfind("{")
-        end = out.rfind("}")
-        if start != -1 and end != -1 and end > start:
+    def _extract_last_json_obj(text: str) -> Any | None:
+        """
+        Best-effort: extract the last JSON value from noisy output (logs + JSON).
+
+        Handles nested objects by using `raw_decode` instead of naive brace matching.
+        """
+        s = (text or "").strip()
+        if not s:
+            return None
+        try:
+            return json.loads(s)
+        except Exception:
+            pass
+
+        decoder = json.JSONDecoder()
+        idx = 0
+        last: Any | None = None
+        while idx < len(s):
+            m = re.search(r"[\{\[]", s[idx:])
+            if not m:
+                break
+            start = idx + m.start()
             try:
-                data = json.loads(out[start : end + 1])
+                obj, end = decoder.raw_decode(s[start:])
+                last = obj
+                idx = start + end
             except Exception:
-                data = None
+                idx = start + 1
+        return last
+
+    data = _extract_last_json_obj(out)
 
     if not isinstance(data, dict):
         return None

@@ -1,11 +1,17 @@
 #include "implayer_service.h"
 
 #include <algorithm>
+#include <atomic>
+#include <cctype>
+#include <cstdint>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
+#include "f8cppsdk/data_bus.h"
 #include "f8cppsdk/f8_naming.h"
 #include "f8cppsdk/state_kv.h"
 #include "f8cppsdk/time_utils.h"
@@ -24,6 +30,14 @@ json schema_string() { return json{{"type", "string"}}; }
 json schema_number() { return json{{"type", "number"}}; }
 json schema_integer() { return json{{"type", "integer"}}; }
 json schema_boolean() { return json{{"type", "boolean"}}; }
+json schema_object(const json& props, const json& required = json::array()) {
+  json obj;
+  obj["type"] = "object";
+  obj["properties"] = props;
+  if (required.is_array()) obj["required"] = required;
+  obj["additionalProperties"] = false;
+  return obj;
+}
 
 json state_field(std::string name, const json& value_schema, std::string access, std::string label = {},
                  std::string description = {}, bool show_on_node = false) {
@@ -38,6 +52,39 @@ json state_field(std::string name, const json& value_schema, std::string access,
 }
 
 std::string default_video_shm_name(const std::string& service_id) { return "shm." + service_id + ".video"; }
+
+std::string new_video_id() {
+  static std::atomic<std::uint64_t> g_seq{0};
+  const auto seq = g_seq.fetch_add(1, std::memory_order_relaxed);
+  return std::to_string(static_cast<long long>(f8::cppsdk::now_ms())) + "-" +
+         std::to_string(static_cast<unsigned long long>(seq));
+}
+
+std::string trim_copy(std::string s) {
+  auto is_ws = [](unsigned char ch) { return std::isspace(ch) != 0; };
+  while (!s.empty() && is_ws(static_cast<unsigned char>(s.front()))) s.erase(s.begin());
+  while (!s.empty() && is_ws(static_cast<unsigned char>(s.back()))) s.pop_back();
+  return s;
+}
+
+std::vector<std::string> split_drop_payload(const std::string& raw) {
+  std::vector<std::string> out;
+  std::string cur;
+  cur.reserve(raw.size());
+  for (char ch : raw) {
+    if (ch == '\r') continue;
+    if (ch == '\n') {
+      auto t = trim_copy(cur);
+      if (!t.empty()) out.emplace_back(std::move(t));
+      cur.clear();
+      continue;
+    }
+    cur.push_back(ch);
+  }
+  auto t = trim_copy(cur);
+  if (!t.empty()) out.emplace_back(std::move(t));
+  return out;
+}
 
 }  // namespace
 
@@ -117,7 +164,10 @@ bool ImPlayerService::start() {
           duration_seconds_.store(dur, std::memory_order_relaxed);
         },
         [this](bool playing) { playing_.store(playing, std::memory_order_relaxed); },
-        [this]() { playing_.store(false, std::memory_order_relaxed); });
+        [this]() {
+          playing_.store(false, std::memory_order_relaxed);
+          media_finished_.store(true, std::memory_order_release);
+        });
   } catch (const std::exception& e) {
     spdlog::error("mpv init failed: {}", e.what());
     return false;
@@ -142,6 +192,7 @@ bool ImPlayerService::start() {
   }
 
   publish_static_state();
+  publish_dynamic_state();
   f8::cppsdk::kv_set_ready(kv_, true);
 
   running_.store(true, std::memory_order_release);
@@ -175,13 +226,73 @@ void ImPlayerService::stop() {
 void ImPlayerService::tick() {
   if (!running_.load(std::memory_order_acquire)) return;
 
+  if (media_finished_.exchange(false, std::memory_order_acq_rel)) {
+    playlist_next();
+  }
+
   if (window_) {
-    bool saw_input = false;
-    auto on_ev = [this, &saw_input](const SDL_Event& ev) {
+    auto on_ev = [this](const SDL_Event& ev) {
       SDL_Event copy = ev;
       if (gui_) gui_->processEvent(&copy);
+      if (ev.type == SDL_EVENT_DROP_FILE || ev.type == SDL_EVENT_DROP_TEXT) {
+        if (ev.drop.data) {
+          const auto items = split_drop_payload(std::string(ev.drop.data));
+          playlist_add(items, true);
+        }
+        return;
+      }
+      if (ev.type == SDL_EVENT_MOUSE_WHEEL) {
+        const float zoom_step = 1.05f;
+        if (ev.wheel.y > 0) {
+          view_zoom_ *= zoom_step;
+        } else if (ev.wheel.y < 0) {
+          view_zoom_ /= zoom_step;
+        }
+        view_zoom_ = std::clamp(view_zoom_, 0.1f, 10.0f);
+        return;
+      }
+      if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+        if (ev.button.button == SDL_BUTTON_MIDDLE) {
+          int win_w = 0, win_h = 0;
+          int px_w = 0, px_h = 0;
+          SDL_GetWindowSize(window_->sdlWindow(), &win_w, &win_h);
+          SDL_GetWindowSizeInPixels(window_->sdlWindow(), &px_w, &px_h);
+          const float sx = (win_w > 0 && px_w > 0) ? static_cast<float>(px_w) / static_cast<float>(win_w) : 1.0f;
+          const float sy = (win_h > 0 && px_h > 0) ? static_cast<float>(px_h) / static_cast<float>(win_h) : 1.0f;
+
+          view_panning_ = true;
+          view_pan_anchor_x_ = static_cast<float>(ev.button.x) * sx;
+          view_pan_anchor_y_ = static_cast<float>(ev.button.y) * sy;
+          view_pan_start_x_ = view_pan_x_;
+          view_pan_start_y_ = view_pan_y_;
+        }
+        return;
+      }
+      if (ev.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+        if (ev.button.button == SDL_BUTTON_MIDDLE) {
+          view_panning_ = false;
+        }
+        return;
+      }
+      if (ev.type == SDL_EVENT_MOUSE_MOTION) {
+        if (view_panning_) {
+          int win_w = 0, win_h = 0;
+          int px_w = 0, px_h = 0;
+          SDL_GetWindowSize(window_->sdlWindow(), &win_w, &win_h);
+          SDL_GetWindowSizeInPixels(window_->sdlWindow(), &px_w, &px_h);
+          const float sx = (win_w > 0 && px_w > 0) ? static_cast<float>(px_w) / static_cast<float>(win_w) : 1.0f;
+          const float sy = (win_h > 0 && px_h > 0) ? static_cast<float>(px_h) / static_cast<float>(win_h) : 1.0f;
+
+          const float mx = static_cast<float>(ev.motion.x) * sx;
+          const float my = static_cast<float>(ev.motion.y) * sy;
+          view_pan_x_ = view_pan_start_x_ + (mx - view_pan_anchor_x_);
+          // SDL y+ goes down, OpenGL framebuffer y+ goes up.
+          view_pan_y_ = view_pan_start_y_ - (my - view_pan_anchor_y_);
+        }
+        return;
+      }
+
       if (ev.type == SDL_EVENT_KEY_DOWN) {
-        saw_input = true;
         if (!player_) return;
         const SDL_Keycode key = ev.key.key;
         if (key == SDLK_SPACE) {
@@ -219,7 +330,7 @@ void ImPlayerService::tick() {
         }
       } else if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev.type == SDL_EVENT_MOUSE_WHEEL ||
                  ev.type == SDL_EVENT_MOUSE_MOTION) {
-        saw_input = true;
+        // keep for future
       }
     };
 
@@ -227,15 +338,25 @@ void ImPlayerService::tick() {
       stop_requested_.store(true, std::memory_order_release);
       return;
     }
-    (void)saw_input;
   }
   if (player_ && window_) {
+    const unsigned vw = player_->videoWidth();
+    const unsigned vh = player_->videoHeight();
+    if (vw != 0 && vh != 0 && (vw != view_last_video_w_ || vh != view_last_video_h_)) {
+      view_last_video_w_ = vw;
+      view_last_video_h_ = vh;
+      view_zoom_ = 1.0f;
+      view_pan_x_ = 0.0f;
+      view_pan_y_ = 0.0f;
+      view_panning_ = false;
+    }
+
     const bool updated = player_->renderVideoFrame();
     if (updated || window_->needsRedraw() || (gui_ && gui_->wantsRepaint())) {
       ImPlayerGui::Callbacks cb;
       cb.open = [this](const std::string& url) {
         std::string err;
-        (void)cmd_open(json{{"url", url}}, err);
+        (void)open_media_internal(url, false, err);
       };
       cb.play = [this]() {
         std::string err;
@@ -257,19 +378,28 @@ void ImPlayerService::tick() {
         std::string err;
         (void)cmd_set_volume(json{{"volume", vol}}, err);
       };
+      cb.playlist_select = [this](int index) { playlist_play_index(index); };
+      cb.playlist_next = [this]() { playlist_next(); };
+      cb.playlist_prev = [this]() { playlist_prev(); };
 
       std::string err;
+      std::vector<std::string> playlist_snapshot;
+      int playlist_index_snapshot = -1;
       {
         std::lock_guard<std::mutex> lock(state_mu_);
         err = last_error_;
+        playlist_snapshot = playlist_;
+        playlist_index_snapshot = playlist_index_;
       }
 
-      window_->present(*player_, [this, &cb, &err]() {
+      const SdlVideoWindow::ViewTransform view{view_zoom_, view_pan_x_, view_pan_y_};
+      const bool playing = playing_.load(std::memory_order_relaxed);
+      window_->present(*player_, [this, &cb, &err, &playlist_snapshot, playlist_index_snapshot, playing]() {
         if (gui_ && player_) {
-          gui_->renderOverlay(*player_, cb, err);
+          gui_->renderOverlay(*player_, cb, err, playlist_snapshot, playlist_index_snapshot, playing);
           gui_->clearRepaintFlag();
         }
-      });
+      }, view);
     }
   }
 
@@ -277,6 +407,35 @@ void ImPlayerService::tick() {
   if (now - last_state_pub_ms_ >= 200) {
     publish_dynamic_state();
     last_state_pub_ms_ = now;
+  }
+
+  // High-frequency signals go through the data bus, not KV state.
+  if (shm_) {
+    const auto frame_id = shm_->frameId();
+    if (frame_id != last_frame_id_published_) {
+      last_frame_id_published_ = frame_id;
+      (void)f8::cppsdk::publish_data(nats_, cfg_.service_id, cfg_.service_id, "frameId", frame_id, now);
+    }
+  }
+
+  if (now - last_playback_data_pub_ms_ >= 200) {
+    last_playback_data_pub_ms_ = now;
+    json evt;
+    bool have_video = false;
+    {
+      std::lock_guard<std::mutex> lock(state_mu_);
+      if (!video_id_.empty()) {
+        evt["videoId"] = video_id_;
+        have_video = true;
+      }
+    }
+    if (!have_video) {
+      return;
+    }
+    evt["position"] = position_seconds_.load(std::memory_order_relaxed);
+    evt["duration"] = duration_seconds_.load(std::memory_order_relaxed);
+    evt["playing"] = playing_.load(std::memory_order_relaxed);
+    (void)f8::cppsdk::publish_data(nats_, cfg_.service_id, cfg_.service_id, "playback", evt, now);
   }
 }
 
@@ -291,7 +450,14 @@ void ImPlayerService::set_active_local(bool active, const nlohmann::json& meta) 
         player_->pause();
     }
   }
-  f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, "active", active, "cmd", meta);
+  {
+    std::lock_guard<std::mutex> lock(state_mu_);
+    auto it = published_state_.find("active");
+    if (it == published_state_.end() || it->second != active) {
+      published_state_["active"] = active;
+      f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, "active", active, "cmd", meta);
+    }
+  }
 }
 
 void ImPlayerService::on_activate(const nlohmann::json& meta) { set_active_local(true, meta); }
@@ -323,6 +489,37 @@ bool ImPlayerService::on_set_state(const std::string& node_id, const std::string
       set_active_local(value.get<bool>(), meta);
       ok = true;
     }
+  } else if (f == "videoShmMaxWidth" || f == "videoShmMaxHeight") {
+    if (!value.is_number_integer() && !value.is_number()) {
+      err = "value must be a number";
+      ok = false;
+    } else {
+      const auto v = static_cast<std::int64_t>(value.get<double>());
+      if (v < 0) {
+        err = "value must be >= 0";
+        ok = false;
+      } else {
+        if (f == "videoShmMaxWidth") cfg_.video_shm_max_width = static_cast<std::uint32_t>(v);
+        if (f == "videoShmMaxHeight") cfg_.video_shm_max_height = static_cast<std::uint32_t>(v);
+        if (player_) player_->setVideoShmMaxSize(cfg_.video_shm_max_width, cfg_.video_shm_max_height);
+        ok = true;
+      }
+    }
+  } else if (f == "videoShmMaxFps") {
+    if (!value.is_number()) {
+      err = "value must be a number";
+      ok = false;
+    } else {
+      const double fps = value.get<double>();
+      if (fps < 0.0) {
+        err = "value must be >= 0";
+        ok = false;
+      } else {
+        cfg_.video_shm_max_fps = fps;
+        if (player_) player_->setVideoShmMaxFps(cfg_.video_shm_max_fps);
+        ok = true;
+      }
+    }
   } else {
     error_code = "UNKNOWN_FIELD";
     error_message = "unknown state field";
@@ -335,20 +532,110 @@ bool ImPlayerService::on_set_state(const std::string& node_id, const std::string
     return false;
   }
 
-  f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, f, value, "endpoint", meta);
+  // Avoid writing high-frequency values (e.g. position) into the KV bucket.
+  if (f == "position") {
+    return true;
+  }
+
+  json write_value = value;
+  if (f == "volume") {
+    std::lock_guard<std::mutex> lock(state_mu_);
+    write_value = volume_;
+  } else if (f == "mediaUrl") {
+    std::lock_guard<std::mutex> lock(state_mu_);
+    write_value = media_url_;
+  } else if (f == "videoShmMaxWidth") {
+    write_value = cfg_.video_shm_max_width;
+  } else if (f == "videoShmMaxHeight") {
+    write_value = cfg_.video_shm_max_height;
+  } else if (f == "videoShmMaxFps") {
+    write_value = cfg_.video_shm_max_fps;
+  }
+  {
+    std::lock_guard<std::mutex> lock(state_mu_);
+    auto it = published_state_.find(f);
+    if (it == published_state_.end() || it->second != write_value) {
+      published_state_[f] = write_value;
+      f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, f, write_value, "endpoint", meta);
+    }
+  }
   return true;
 }
 
-bool ImPlayerService::on_set_rungraph(const nlohmann::json&, const nlohmann::json&, std::string& error_code,
-                                     std::string& error_message) {
-  // For now, accept any rungraph snapshot; operator nodes are not implemented in C++ yet.
+bool ImPlayerService::on_set_rungraph(const nlohmann::json& graph_obj, const nlohmann::json& meta, std::string& error_code,
+                                      std::string& error_message) {
+  // Apply rungraph-provided service node `stateValues` (studio node properties).
+  //
+  // Studio deploys graphs via the `set_rungraph` endpoint; for python runtimes, the ServiceHost reconciles
+  // `stateValues` into KV. This C++ service implements the same behavior for a single service node.
   error_code.clear();
   error_message.clear();
+
+  try {
+    if (!graph_obj.is_object() || !graph_obj.contains("nodes") || !graph_obj["nodes"].is_array()) {
+      return true;
+    }
+
+    const auto nodes = graph_obj["nodes"];
+    nlohmann::json service_node;
+    for (const auto& n : nodes) {
+      if (!n.is_object()) continue;
+      const std::string nid = n.value("nodeId", "");
+      if (nid != cfg_.service_id) continue;
+
+      // Service node snapshot has no operatorClass.
+      bool is_service_snapshot = true;
+      if (n.contains("operatorClass") && !n["operatorClass"].is_null()) {
+        try {
+          const std::string oc = n["operatorClass"].is_string() ? n["operatorClass"].get<std::string>() : "";
+          if (!oc.empty()) is_service_snapshot = false;
+        } catch (...) {
+        }
+      }
+      if (!is_service_snapshot) continue;
+
+      service_node = n;
+      break;
+    }
+
+    if (!service_node.is_object() || !service_node.contains("stateValues") || !service_node["stateValues"].is_object()) {
+      return true;
+    }
+
+    nlohmann::json meta2 = meta;
+    if (!meta2.is_object()) meta2 = nlohmann::json::object();
+    meta2["via"] = "rungraph";
+    meta2["graphId"] = graph_obj.value("graphId", "");
+
+    const auto& values = service_node["stateValues"];
+    for (auto it = values.begin(); it != values.end(); ++it) {
+      const std::string field = it.key();
+      if (field.empty()) continue;
+
+      // Only apply writable fields from rungraph (never seed runtime-owned ro fields).
+      if (field != "active" && field != "mediaUrl" && field != "volume" && field != "videoShmMaxWidth" && field != "videoShmMaxHeight" &&
+          field != "videoShmMaxFps") {
+        continue;
+      }
+
+      std::string ec;
+      std::string em;
+      // Best-effort apply: ignore invalid values rather than rejecting the deploy.
+      (void)on_set_state(cfg_.service_id, field, it.value(), meta2, ec, em);
+    }
+
+    // Ensure the KV bucket has a full snapshot quickly (reduces monitor "miss" spam).
+    publish_static_state();
+    publish_dynamic_state();
+  } catch (...) {
+    // Deploy should not fail because of a local parse issue.
+  }
+
   return true;
 }
 
 bool ImPlayerService::on_command(const std::string& call, const nlohmann::json& args, const nlohmann::json& meta,
-                                nlohmann::json& result, std::string& error_code, std::string& error_message) {
+                                 nlohmann::json& result, std::string& error_code, std::string& error_message) {
   std::string err;
   bool ok = false;
 
@@ -375,21 +662,105 @@ bool ImPlayerService::on_command(const std::string& call, const nlohmann::json& 
   return true;
 }
 
-bool ImPlayerService::cmd_open(const nlohmann::json& args, std::string& err) {
+void ImPlayerService::playlist_add(const std::vector<std::string>& items, bool play_if_idle) {
+  if (items.empty()) return;
+
+  std::string url_to_open;
+  {
+    std::lock_guard<std::mutex> lock(state_mu_);
+    const bool empty_before = playlist_.empty();
+    for (const auto& s : items) {
+      if (!s.empty()) playlist_.push_back(s);
+    }
+    if (playlist_.empty()) return;
+    if (empty_before) {
+      playlist_index_ = 0;
+      url_to_open = playlist_[0];
+    } else if (play_if_idle && playlist_index_ < 0) {
+      playlist_index_ = 0;
+      url_to_open = playlist_[0];
+    } else if (play_if_idle && playlist_index_ >= static_cast<int>(playlist_.size())) {
+      playlist_index_ = 0;
+      url_to_open = playlist_[0];
+    }
+  }
+
+  if (!url_to_open.empty()) {
+    std::string err;
+    (void)open_media_internal(url_to_open, true, err);
+  }
+}
+
+void ImPlayerService::playlist_play_index(int index) {
+  std::string url;
+  {
+    std::lock_guard<std::mutex> lock(state_mu_);
+    if (index < 0 || index >= static_cast<int>(playlist_.size())) return;
+    playlist_index_ = index;
+    url = playlist_[static_cast<std::size_t>(playlist_index_)];
+  }
+  std::string err;
+  (void)open_media_internal(url, true, err);
+}
+
+void ImPlayerService::playlist_next() {
+  std::string url;
+  {
+    std::lock_guard<std::mutex> lock(state_mu_);
+    if (playlist_.empty()) return;
+    if (playlist_index_ < 0) playlist_index_ = 0;
+    const int next = playlist_index_ + 1;
+    if (next >= static_cast<int>(playlist_.size())) return;
+    playlist_index_ = next;
+    url = playlist_[static_cast<std::size_t>(playlist_index_)];
+  }
+  std::string err;
+  (void)open_media_internal(url, true, err);
+}
+
+void ImPlayerService::playlist_prev() {
+  std::string url;
+  {
+    std::lock_guard<std::mutex> lock(state_mu_);
+    if (playlist_.empty()) return;
+    if (playlist_index_ <= 0) return;
+    playlist_index_ -= 1;
+    url = playlist_[static_cast<std::size_t>(playlist_index_)];
+  }
+  std::string err;
+  (void)open_media_internal(url, true, err);
+}
+
+bool ImPlayerService::open_media_internal(const std::string& url, bool keep_playlist, std::string& err) {
   if (!player_) {
     err = "player not initialized";
     return false;
   }
-  std::string url;
-  if (args.is_object()) {
-    if (args.contains("url") && args["url"].is_string()) url = args["url"].get<std::string>();
-    if (url.empty() && args.contains("mediaUrl") && args["mediaUrl"].is_string()) url = args["mediaUrl"].get<std::string>();
-  }
-  if (url.empty()) {
+  const std::string u = trim_copy(url);
+  if (u.empty()) {
     err = "missing url";
     return false;
   }
-  if (!player_->openMedia(url)) {
+
+  {
+    std::lock_guard<std::mutex> lock(state_mu_);
+    if (!media_url_.empty() && media_url_ == u) {
+      last_error_.clear();
+      if (!keep_playlist) {
+        playlist_.clear();
+        playlist_.push_back(u);
+        playlist_index_ = 0;
+      }
+      if (active_.load(std::memory_order_acquire)) {
+        (void)player_->play();
+      } else {
+        player_->pause();
+      }
+      return true;
+    }
+  }
+
+  if (!player_->openMedia(u)) {
     err = "mpv loadfile failed";
     std::lock_guard<std::mutex> lock(state_mu_);
     last_error_ = err;
@@ -397,15 +768,37 @@ bool ImPlayerService::cmd_open(const nlohmann::json& args, std::string& err) {
   }
   {
     std::lock_guard<std::mutex> lock(state_mu_);
-    media_url_ = url;
+    media_url_ = u;
     last_error_.clear();
+    video_id_ = new_video_id();
+    if (!keep_playlist) {
+      playlist_.clear();
+      playlist_.push_back(u);
+      playlist_index_ = 0;
+    }
   }
   if (active_.load(std::memory_order_acquire)) {
-    player_->play();
+    (void)player_->play();
   } else {
     player_->pause();
   }
+
+  json media_evt;
+  {
+    std::lock_guard<std::mutex> lock(state_mu_);
+    media_evt = json{{"videoId", video_id_}, {"url", media_url_}};
+  }
+  (void)f8::cppsdk::publish_data(nats_, cfg_.service_id, cfg_.service_id, "media", media_evt);
   return true;
+}
+
+bool ImPlayerService::cmd_open(const nlohmann::json& args, std::string& err) {
+  std::string url;
+  if (args.is_object()) {
+    if (args.contains("url") && args["url"].is_string()) url = args["url"].get<std::string>();
+    if (url.empty() && args.contains("mediaUrl") && args["mediaUrl"].is_string()) url = args["mediaUrl"].get<std::string>();
+  }
+  return open_media_internal(url, false, err);
 }
 
 bool ImPlayerService::cmd_play(std::string& err) {
@@ -493,42 +886,63 @@ void ImPlayerService::publish_static_state() {
   if (!shm_) return;
   const json meta = json{{"via", "startup"}};
 
-  f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, "serviceClass", cfg_.service_class, "runtime", meta);
-  f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, "videoShmName", shm_->regionName(), "runtime", meta);
-  f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, "videoShmEvent", shm_->frameEventName(), "runtime", meta);
-  f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, "active", active_.load(), "runtime", meta);
+  std::vector<std::pair<std::string, json>> updates;
+  {
+    std::lock_guard<std::mutex> lock(state_mu_);
+    auto want = [&](const std::string& field, const json& v) {
+      auto it = published_state_.find(field);
+      if (it != published_state_.end() && it->second == v) return;
+      published_state_[field] = v;
+      updates.emplace_back(field, v);
+    };
+    want("serviceClass", cfg_.service_class);
+    want("videoShmName", shm_->regionName());
+    want("videoShmEvent", shm_->frameEventName());
+    want("active", active_.load());
+    want("videoShmMaxWidth", cfg_.video_shm_max_width);
+    want("videoShmMaxHeight", cfg_.video_shm_max_height);
+    want("videoShmMaxFps", cfg_.video_shm_max_fps);
+  }
+  for (const auto& [field, v] : updates) {
+    f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, field, v, "runtime", meta);
+  }
 }
 
 void ImPlayerService::publish_dynamic_state() {
   const json meta = json{{"via", "periodic"}};
 
-  double vol = 1.0;
-  std::string url;
-  std::string err;
   const bool playing = playing_.load(std::memory_order_relaxed);
-  const double pos = position_seconds_.load(std::memory_order_relaxed);
   const double dur = duration_seconds_.load(std::memory_order_relaxed);
+
+  std::vector<std::pair<std::string, json>> updates;
   {
     std::lock_guard<std::mutex> lock(state_mu_);
-    vol = volume_;
-    url = media_url_;
-    err = last_error_;
+    const double vol = volume_;
+    const std::string url = media_url_;
+    const std::string err = last_error_;
+
+    auto want = [&](const std::string& field, const json& v) {
+      auto it = published_state_.find(field);
+      if (it != published_state_.end() && it->second == v) return;
+      published_state_[field] = v;
+      updates.emplace_back(field, v);
+    };
+
+    want("playing", playing);
+    want("duration", dur);
+    want("volume", vol);
+    want("mediaUrl", url);
+    want("lastError", err);
+
+    if (shm_) {
+      want("videoWidth", shm_->outputWidth());
+      want("videoHeight", shm_->outputHeight());
+      want("videoPitch", shm_->outputPitch());
+    }
   }
 
-  f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, "playing", playing, "runtime", meta);
-  f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, "position", pos, "runtime", meta);
-  f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, "duration", dur, "runtime", meta);
-  f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, "volume", vol, "runtime", meta);
-  f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, "mediaUrl", url, "runtime", meta);
-
-  if (shm_) {
-    f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, "videoWidth", shm_->outputWidth(), "runtime", meta);
-    f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, "videoHeight", shm_->outputHeight(), "runtime", meta);
-    f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, "videoPitch", shm_->outputPitch(), "runtime", meta);
-    f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, "videoFrameId", shm_->frameId(), "runtime", meta);
-  }
-  if (!err.empty()) {
-    f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, "lastError", err, "runtime", meta);
+  for (const auto& [field, v] : updates) {
+    f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, field, v, "runtime", meta);
   }
 }
 
@@ -543,16 +957,38 @@ json ImPlayerService::describe() {
       state_field("active", schema_boolean(), "rw", "Active", "Pause playback when false.", true),
       state_field("mediaUrl", schema_string(), "rw", "Media URL", "URI or file path to open.", true),
       state_field("volume", schema_number(), "rw", "Volume", "0.0-1.0"),
-      state_field("position", schema_number(), "rw", "Position", "Seek position (seconds)."),
       state_field("playing", schema_boolean(), "ro", "Playing", "Playback state.", true),
       state_field("duration", schema_number(), "ro", "Duration", "Duration (seconds)."),
       state_field("lastError", schema_string(), "ro", "Last Error", "Last error message."),
       state_field("videoShmName", schema_string(), "ro", "Video SHM", "Shared memory region name."),
       state_field("videoShmEvent", schema_string(), "ro", "Video Event", "Optional named event to signal new frames."),
+      state_field("videoShmMaxWidth", schema_integer(), "rw", "SHM Max Width", "Downsample limit (0 = auto)."),
+      state_field("videoShmMaxHeight", schema_integer(), "rw", "SHM Max Height", "Downsample limit (0 = auto)."),
+      state_field("videoShmMaxFps", schema_number(), "rw", "SHM Max FPS", "Copy rate limit (0 = unlimited)."),
       state_field("videoWidth", schema_integer(), "ro", "Width"),
       state_field("videoHeight", schema_integer(), "ro", "Height"),
       state_field("videoPitch", schema_integer(), "ro", "Pitch"),
-      state_field("videoFrameId", schema_integer(), "ro", "FrameId"),
+  });
+
+  service["dataOutPorts"] = json::array({
+      json{{"name", "media"},
+           {"valueSchema",
+            schema_object(json{{"videoId", schema_string()}, {"url", schema_string()}}, json::array({"videoId", "url"}))},
+           {"description", "Emitted when a new media is opened (videoId + url)."},
+           {"required", false}},
+      json{{"name", "playback"},
+           {"valueSchema",
+            schema_object(json{{"videoId", schema_string()},
+                               {"position", schema_number()},
+                               {"duration", schema_number()},
+                               {"playing", schema_boolean()}},
+                          json::array({"videoId", "position"}))},
+           {"description", "Playback telemetry stream (position/duration/playing)."},
+           {"required", false}},
+      json{{"name", "frameId"},
+           {"valueSchema", schema_integer()},
+           {"description", "Monotonic frame counter for new shm frames."},
+           {"required", false}},
   });
   service["commands"] = json::array({
       json{{"name", "open"}, {"description", "Open a media URL"}, {"params", json::array({json{{"name", "url"}, {"valueSchema", schema_string()}, {"required", true}}})}},

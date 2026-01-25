@@ -3,6 +3,7 @@ add_library(f8cppsdk
   src/kv_store.cpp
   src/service_control_plane.cpp
   src/state_kv.cpp
+  src/data_bus.cpp
   src/time_utils.cpp
   src/f8_naming.cpp
 )

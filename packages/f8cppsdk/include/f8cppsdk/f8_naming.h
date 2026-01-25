@@ -8,6 +8,7 @@ namespace f8::cppsdk {
 std::string ensure_token(std::string value, const char* label);
 
 std::string kv_bucket_for_service(const std::string& service_id);
+std::string svc_micro_name(const std::string& service_id);
 std::string kv_key_rungraph();
 std::string kv_key_ready();
 std::string kv_key_node_state(const std::string& node_id, const std::string& field);
@@ -17,4 +18,3 @@ std::string cmd_channel_subject(const std::string& service_id);
 std::string svc_endpoint_subject(const std::string& service_id, const std::string& endpoint);
 
 }  // namespace f8::cppsdk
-

@@ -1,6 +1,7 @@
 #include "sdl_video_window.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <glad/glad.h>
 #include <spdlog/spdlog.h>
@@ -150,7 +151,7 @@ bool SdlVideoWindow::makeCurrent() {
   return SDL_GL_MakeCurrent(window_, gl_context_);
 }
 
-void SdlVideoWindow::present(const MpvPlayer& player, const OverlayCallback& overlay) {
+void SdlVideoWindow::present(const MpvPlayer& player, const OverlayCallback& overlay, const ViewTransform& view) {
   if (!started_ || !window_) return;
   if (!makeCurrent()) return;
 
@@ -166,9 +167,25 @@ void SdlVideoWindow::present(const MpvPlayer& player, const OverlayCallback& ove
   if (src_w > 0 && src_h > 0 && src_fbo != 0) {
     int x0, y0, x1, y1;
     aspect_fit_rect(src_w, src_h, drawable_w_, drawable_h_, x0, y0, x1, y1);
+
+    const float zoom = std::clamp(view.zoom, 0.1f, 10.0f);
+    const float base_w = static_cast<float>(x1 - x0);
+    const float base_h = static_cast<float>(y1 - y0);
+    const float cx = static_cast<float>(x0) + base_w * 0.5f;
+    const float cy = static_cast<float>(y0) + base_h * 0.5f;
+    const float w = base_w * zoom;
+    const float h = base_h * zoom;
+
+    const float dx0 = cx - w * 0.5f + view.pan_x;
+    const float dy0 = cy - h * 0.5f + view.pan_y;
+    const float dx1 = dx0 + w;
+    const float dy1 = dy0 + h;
+
     glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(src_fbo));
     glReadBuffer(GL_COLOR_ATTACHMENT0);
-    glBlitFramebuffer(0, 0, static_cast<GLint>(src_w), static_cast<GLint>(src_h), x0, y0, x1, y1, GL_COLOR_BUFFER_BIT,
+    glBlitFramebuffer(0, 0, static_cast<GLint>(src_w), static_cast<GLint>(src_h),
+                      static_cast<GLint>(std::lround(dx0)), static_cast<GLint>(std::lround(dy0)),
+                      static_cast<GLint>(std::lround(dx1)), static_cast<GLint>(std::lround(dy1)), GL_COLOR_BUFFER_BIT,
                       GL_LINEAR);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
   }

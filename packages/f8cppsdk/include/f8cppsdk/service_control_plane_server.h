@@ -28,23 +28,18 @@ class ServiceControlPlaneServer {
   void stop();
 
  private:
-  void handle_request(natsMsg* msg, const std::string& endpoint);
-  void respond(natsMsg* req, const std::string& req_id, bool ok, const nlohmann::json& result,
+  void handle_request(microRequest* req, const std::string& endpoint);
+  void respond(microRequest* req, const std::string& req_id, bool ok, const nlohmann::json& result,
                const std::string& err_code, const std::string& err_message);
+
+  static microError* on_micro_request(microRequest* req);
 
   Config cfg_;
   NatsClient* client_ = nullptr;
   KvStore* kv_ = nullptr;
   ServiceControlHandler* handler_ = nullptr;
 
-  NatsSubscription sub_activate_;
-  NatsSubscription sub_deactivate_;
-  NatsSubscription sub_set_active_;
-  NatsSubscription sub_status_;
-  NatsSubscription sub_set_state_;
-  NatsSubscription sub_set_rungraph_;
-  NatsSubscription sub_cmd_;
+  microService* micro_ = nullptr;
 };
 
 }  // namespace f8::cppsdk
-

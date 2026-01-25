@@ -1,4 +1,5 @@
 param(
+  [switch]$PrintOnly,
   [Parameter(ValueFromRemainingArguments = $true)]
   [string[]]$Args
 )
@@ -15,9 +16,52 @@ function Resolve-RepoRoot {
 
 $root = Resolve-RepoRoot
 
+$explicitExe = $env:F8IMPLAYER_EXE
+if ($explicitExe) {
+  if (-not (Split-Path $explicitExe -IsAbsolute)) {
+    $explicitExe = Join-Path $root $explicitExe
+  }
+  $explicitExe = (Resolve-Path $explicitExe -ErrorAction Stop).Path
+}
+
+$exeItems = @()
+
+if ($explicitExe) {
+  if (-not (Test-Path $explicitExe)) {
+    throw "F8IMPLAYER_EXE points to missing file: $explicitExe"
+  }
+  $exeItems += Get-Item $explicitExe
+} else {
+  $common = @(
+    (Join-Path $root "build\\bin\\f8implayer_service.exe"),
+    (Join-Path $root "build\\build\\bin\\f8implayer_service.exe")
+  )
+
+  foreach ($p in $common) {
+    if (Test-Path $p) { $exeItems += Get-Item $p }
+  }
+
+  if ($exeItems.Count -eq 0 -and (Test-Path (Join-Path $root "build"))) {
+    $exeItems += Get-ChildItem -Path (Join-Path $root "build") -Recurse -Filter "f8implayer_service.exe" -ErrorAction SilentlyContinue
+  }
+}
+
+if ($exeItems.Count -eq 0) {
+  throw "f8implayer_service.exe not found. Build first (e.g. conan install + cmake --build)."
+}
+
+$exeItems =
+  $exeItems |
+  Sort-Object `
+    @{ Expression = { if ($_.FullName -match "\\\\build\\\\bin\\\\") { 0 } else { 1 } }; Ascending = $true }, `
+    @{ Expression = { $_.LastWriteTimeUtc }; Descending = $true }
+
+$exe = $exeItems[0].FullName
+
+$buildRoot = Split-Path (Split-Path $exe -Parent) -Parent
 $conanEnvCandidates = @(
-  (Join-Path $root "build\\build\\generators\\conanrun.ps1"),
-  (Join-Path $root "build\\generators\\conanrun.ps1")
+  (Join-Path $buildRoot "generators\\conanrun.ps1"),
+  (Join-Path $buildRoot "generators\\conanbuild.ps1")
 )
 
 foreach ($p in $conanEnvCandidates) {
@@ -27,24 +71,19 @@ foreach ($p in $conanEnvCandidates) {
   }
 }
 
-$exeCandidates = @(
-  (Join-Path $root "build\\build\\bin\\f8implayer_service.exe"),
-  (Join-Path $root "build\\bin\\f8implayer_service.exe"),
-  "f8implayer_service.exe"
-)
+Write-Verbose "repoRoot: $root"
+Write-Verbose "exe:      $exe"
+Write-Verbose "build:    $buildRoot"
 
-$exe = $null
-foreach ($p in $exeCandidates) {
-  if ($p -is [string] -and (Test-Path $p)) {
-    $exe = $p
-    break
-  }
+if ($PrintOnly) {
+  Write-Output $exe
+  exit 0
 }
 
-if (-not $exe) {
-  throw "f8implayer_service.exe not found. Build first (e.g. conan install + cmake --build)."
+Push-Location $root
+try {
+  & $exe @Args
+  exit $LASTEXITCODE
+} finally {
+  Pop-Location
 }
-
-& $exe @Args
-exit $LASTEXITCODE
-

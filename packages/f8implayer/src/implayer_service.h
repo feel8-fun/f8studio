@@ -5,6 +5,8 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 #include <nlohmann/json_fwd.hpp>
 
@@ -54,6 +56,7 @@ class ImPlayerService final : public f8::cppsdk::ServiceControlHandler {
   void tick();
 
   // ServiceControlHandler
+  bool is_active() const override { return active_.load(std::memory_order_acquire); }
   void on_activate(const nlohmann::json& meta) override;
   void on_deactivate(const nlohmann::json& meta) override;
   void on_set_active(bool active, const nlohmann::json& meta) override;
@@ -68,14 +71,21 @@ class ImPlayerService final : public f8::cppsdk::ServiceControlHandler {
 
  private:
   void set_active_local(bool active, const nlohmann::json& meta);
-  void publish_static_state();
-  void publish_dynamic_state();
+ void publish_static_state();
+ void publish_dynamic_state();
 
-  bool cmd_open(const nlohmann::json& args, std::string& err);
-  bool cmd_play(std::string& err);
-  bool cmd_pause(std::string& err);
-  bool cmd_stop(std::string& err);
-  bool cmd_seek(const nlohmann::json& args, std::string& err);
+ void playlist_add(const std::vector<std::string>& items, bool play_if_idle);
+ void playlist_play_index(int index);
+ void playlist_next();
+ void playlist_prev();
+
+ bool open_media_internal(const std::string& url, bool keep_playlist, std::string& err);
+
+ bool cmd_open(const nlohmann::json& args, std::string& err);
+ bool cmd_play(std::string& err);
+ bool cmd_pause(std::string& err);
+ bool cmd_stop(std::string& err);
+ bool cmd_seek(const nlohmann::json& args, std::string& err);
   bool cmd_set_volume(const nlohmann::json& args, std::string& err);
 
   Config cfg_;
@@ -97,12 +107,32 @@ class ImPlayerService final : public f8::cppsdk::ServiceControlHandler {
   std::string media_url_;
   double volume_ = 1.0;
   std::string last_error_;
+  std::string video_id_;
+  std::unordered_map<std::string, nlohmann::json> published_state_;
 
   std::atomic<double> position_seconds_{0.0};
   std::atomic<double> duration_seconds_{0.0};
   std::atomic<bool> playing_{false};
+  std::atomic<bool> media_finished_{false};
 
   std::int64_t last_state_pub_ms_ = 0;
+  std::int64_t last_playback_data_pub_ms_ = 0;
+  std::uint64_t last_frame_id_published_ = 0;
+
+  std::vector<std::string> playlist_;
+  int playlist_index_ = -1;
+
+  // View transform (window-local, not published).
+  float view_zoom_ = 1.0f;
+  float view_pan_x_ = 0.0f;
+  float view_pan_y_ = 0.0f;
+  bool view_panning_ = false;
+  float view_pan_anchor_x_ = 0.0f;
+  float view_pan_anchor_y_ = 0.0f;
+  float view_pan_start_x_ = 0.0f;
+  float view_pan_start_y_ = 0.0f;
+  unsigned view_last_video_w_ = 0;
+  unsigned view_last_video_h_ = 0;
 };
 
 }  // namespace f8::implayer
