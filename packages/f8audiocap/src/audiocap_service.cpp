@@ -486,10 +486,13 @@ void AudioCapService::publish_dynamic_state() {
 nlohmann::json AudioCapService::describe() {
   json spec;
   spec["service"] = {
+      {"schemaVersion", "f8service/1"},
       {"serviceClass", "f8.audiocap"},
-      {"label", "Audio Capture (System Mix)"},
+      {"label", "Audio Capture"},
       {"version", "0.0.1"},
-      {"stateSchema",
+      {"rendererClass", "defaultService"},
+      {"tags", json::array({"audio", "capture", "shm"})},
+      {"stateFields",
        json::array({
            state_field("active", schema_boolean(), "rw", "Active", "Enable/disable capture", true),
            state_field("audioShmName", schema_string(), "ro"),
@@ -504,7 +507,13 @@ nlohmann::json AudioCapService::describe() {
            state_field("toneHz", schema_number(), "rw"),
            state_field("gain", schema_number(), "rw"),
        })},
+      {"editableStateFields", false},
       {"commands", json::array()},
+      {"editableCommands", false},
+      {"dataInPorts", json::array()},
+      {"dataOutPorts", json::array()},
+      {"editableDataInPorts", false},
+      {"editableDataOutPorts", false},
   };
   spec["operators"] = json::array();
   return spec;

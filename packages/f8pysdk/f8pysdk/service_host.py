@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .generated import F8JsonValue, F8RuntimeGraph, F8RuntimeNode, F8StateAccess
+from .generated import F8EdgeKindEnum, F8JsonValue, F8RuntimeGraph, F8RuntimeNode, F8StateAccess
 from .runtime_node_registry import RuntimeNodeRegistry
 from .service_bus import ServiceBus
 
@@ -169,9 +169,31 @@ class ServiceHost:
 
         rungraph_ts = _rungraph_ts(graph)
 
+        # Cross-service state edges: downstream fields are driven by upstream KV,
+        # so they must not be overwritten by rungraph reconciliation defaults.
+        cross_state_targets: set[tuple[str, str]] = set()
+        for e in list(getattr(graph, "edges", None) or []):
+            try:
+                if getattr(e, "kind", None) != F8EdgeKindEnum.state:
+                    continue
+                # Only cross-service edges targeting this service.
+                if str(getattr(e, "fromServiceId", "")) == str(getattr(e, "toServiceId", "")):
+                    continue
+                if str(getattr(e, "toServiceId", "")) != str(self._bus.service_id):
+                    continue
+                to_node = str(getattr(e, "toOperatorId", "") or "").strip()
+                to_field = str(getattr(e, "toPort", "") or "").strip()
+                if not to_node or not to_field:
+                    continue
+                cross_state_targets.add((to_node, to_field))
+            except Exception:
+                continue
+
         if service_snapshot is not None:
-            await self._seed_service_state_defaults(service_snapshot, rungraph_ts=rungraph_ts)
-        await self._seed_state_defaults(want_operator_nodes, rungraph_ts=rungraph_ts)
+            await self._seed_service_state_defaults(
+                service_snapshot, rungraph_ts=rungraph_ts, skip_fields=cross_state_targets
+            )
+        await self._seed_state_defaults(want_operator_nodes, rungraph_ts=rungraph_ts, skip_fields=cross_state_targets)
 
     @staticmethod
     def _needs_recreate(node: Any, snapshot: F8RuntimeNode) -> bool:
@@ -230,7 +252,9 @@ class ServiceHost:
             out[str(k)] = _unwrap_json_value(v)
         return out
 
-    async def _seed_state_defaults(self, nodes: list[F8RuntimeNode], *, rungraph_ts: int = 0) -> None:
+    async def _seed_state_defaults(
+        self, nodes: list[F8RuntimeNode], *, rungraph_ts: int = 0, skip_fields: set[tuple[str, str]] | None = None
+    ) -> None:
         """
         Seed rungraph-provided initial state values into KV.
 
@@ -245,6 +269,8 @@ class ServiceHost:
             except Exception:
                 access_by_name = {}
             for k, v in self._node_initial_state(n).items():
+                if skip_fields and (node_id, str(k)) in skip_fields:
+                    continue
                 # Never seed/overwrite read-only state from rungraph; it is runtime-owned.
                 try:
                     if access_by_name.get(str(k)) == F8StateAccess.ro:
@@ -280,7 +306,9 @@ class ServiceHost:
                 except Exception:
                     continue
 
-    async def _seed_service_state_defaults(self, n: F8RuntimeNode, *, rungraph_ts: int = 0) -> None:
+    async def _seed_service_state_defaults(
+        self, n: F8RuntimeNode, *, rungraph_ts: int = 0, skip_fields: set[tuple[str, str]] | None = None
+    ) -> None:
         """
         Apply rungraph-provided `stateValues` for the service node into KV.
         """
@@ -290,6 +318,8 @@ class ServiceHost:
         except Exception:
             access_by_name = {}
         for k, v in self._node_initial_state(n).items():
+            if skip_fields and (node_id, str(k)) in skip_fields:
+                continue
             # Never seed/overwrite read-only state from rungraph; it is runtime-owned.
             if k not in access_by_name:
                 continue

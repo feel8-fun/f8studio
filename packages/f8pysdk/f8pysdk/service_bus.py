@@ -136,6 +136,8 @@ class ServiceBus:
         # Cross-state binding (remote KV -> local node.on_state + local KV mirror).
         self._cross_state_in_by_key: dict[tuple[str, str], list[tuple[str, str, F8Edge]]] = {}
         self._remote_state_watches: dict[tuple[str, str], Any] = {}
+        self._cross_state_targets: set[tuple[str, str]] = set()
+        self._cross_state_last_ts: dict[tuple[str, str], int] = {}
 
         self._state_cache: dict[tuple[str, str], tuple[Any, int]] = {}
         self._state_access_by_node_field: dict[tuple[str, str], F8StateAccess] = {}
@@ -944,6 +946,8 @@ class ServiceBus:
                 access = self._state_access_by_node_field.get((node_id, field))
                 if access not in (F8StateAccess.rw, F8StateAccess.wo):
                     continue
+                if (node_id, field) in self._cross_state_targets:
+                    continue
                 try:
                     await self.set_state_with_meta(
                         node_id,
@@ -1203,6 +1207,8 @@ class ServiceBus:
             return
 
         self._graph = graph
+        # Reset cross-state ordering on graph changes.
+        self._cross_state_last_ts.clear()
         # Cache local node state access for enforcement and filtering.
         self._state_access_by_node_field.clear()
         try:
@@ -1667,6 +1673,7 @@ class ServiceBus:
         Cross-state binding via remote KV watch (read remote, apply to local).
         """
         want: dict[tuple[str, str], list[tuple[str, str, F8Edge]]] = {}
+        targets: set[tuple[str, str]] = set()
         for edge in graph.edges:
             if edge.kind != F8EdgeKindEnum.state:
                 continue
@@ -1689,6 +1696,7 @@ class ServiceBus:
             remote_field = str(edge.fromPort)
             remote_key = kv_key_node_state(node_id=remote_node, field=remote_field)
             want.setdefault((peer, remote_key), []).append((local_node, local_field, edge))
+            targets.add((local_node, local_field))
 
         # Stop watches no longer needed.
         for k, watch in list(self._remote_state_watches.items()):
@@ -1709,6 +1717,7 @@ class ServiceBus:
             self._remote_state_watches.pop(k, None)
 
         self._cross_state_in_by_key = want
+        self._cross_state_targets = targets
 
         # Start new watches.
         for k in want.keys():
@@ -1718,7 +1727,7 @@ class ServiceBus:
             bucket = kv_bucket_for_service(peer)
 
             async def _cb(key: str, val: bytes, *, _peer: str = peer) -> None:
-                await self._on_remote_state_kv(_peer, key, val)
+                await self._on_remote_state_kv(_peer, key, val, is_initial=False)
 
             self._remote_state_watches[k] = await self._transport.kv_watch_in_bucket(bucket, remote_key, cb=_cb)
             # Initial sync: fetch current value once so edges work even if the upstream
@@ -1726,11 +1735,11 @@ class ServiceBus:
             try:
                 raw = await self._transport.kv_get_in_bucket(bucket, remote_key)
                 if raw:
-                    await self._on_remote_state_kv(peer, remote_key, raw)
+                    await self._on_remote_state_kv(peer, remote_key, raw, is_initial=True)
             except Exception:
                 pass
 
-    async def _on_remote_state_kv(self, peer_service_id: str, key: str, value: bytes) -> None:
+    async def _on_remote_state_kv(self, peer_service_id: str, key: str, value: bytes, *, is_initial: bool) -> None:
         parsed = self._parse_state_key(key)
         if not parsed:
             return
@@ -1763,10 +1772,27 @@ class ServiceBus:
                 if hops >= 8:
                     continue
 
-                # Do not overwrite a newer local value.
+                # Cross-service state edges are directional bindings: downstream follows
+                # upstream. We only guard against out-of-order remote updates.
                 try:
-                    found_local, _v_local, ts_local = await self.get_state_with_ts(str(local_node_id), str(local_field))
-                    if found_local and ts_local is not None and int(ts_local) > int(ts):
+                    last_ts = self._cross_state_last_ts.get((str(local_node_id), str(local_field)))
+                    if not is_initial and last_ts is not None and int(ts) < int(last_ts):
+                        if self._debug_state:
+                            try:
+                                print(
+                                    "state_debug[%s] cross_state_skip_old_remote node=%s field=%s ts_last=%s ts_remote=%s peer=%s key=%s"
+                                    % (
+                                        self.service_id,
+                                        str(local_node_id),
+                                        str(local_field),
+                                        str(last_ts),
+                                        str(ts),
+                                        str(peer_service_id),
+                                        str(key),
+                                    )
+                                )
+                            except Exception:
+                                pass
                         continue
                 except Exception:
                     pass
@@ -1802,6 +1828,10 @@ class ServiceBus:
                         source="cross_state",
                         meta=meta_out,
                     )
+                try:
+                    self._cross_state_last_ts[(str(local_node_id), str(local_field))] = int(ts)
+                except Exception:
+                    pass
             except Exception:
                 pass
 

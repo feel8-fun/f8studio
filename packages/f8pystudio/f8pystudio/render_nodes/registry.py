@@ -9,6 +9,8 @@ from ..nodegraph.container_basenode import F8StudioContainerBaseNode
 from ..nodegraph.operator_basenode import F8StudioOperatorBaseNode
 from .pystudio_print import PyStudioPrintNode
 from .pystudio_timeseries import PyStudioTimeSeriesNode
+from .pystudio_videoshm import PyStudioVideoShmNode
+from .pystudio_audioshm import PyStudioAudioShmNode
 
 
 class RenderNodeRegistry:
@@ -28,6 +30,8 @@ class RenderNodeRegistry:
         self._renderers["default_container"] = F8StudioContainerBaseNode
         self._renderers["pystudio_print"] = PyStudioPrintNode
         self._renderers["pystudio_timeseries"] = PyStudioTimeSeriesNode
+        self._renderers["pystudio_videoshm"] = PyStudioVideoShmNode
+        self._renderers["pystudio_audioshm"] = PyStudioAudioShmNode
 
     def register(self, renderer_key: str, renderer: type[NodeObject]) -> None:
         if renderer_key in self._renderers:
