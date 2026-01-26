@@ -17,12 +17,16 @@
 #include "f8cppsdk/service_control_plane.h"
 #include "f8cppsdk/service_control_plane_server.h"
 
+namespace f8::cppsdk {
+class VideoSharedMemorySink;
+}
+
 namespace f8::implayer {
 
 class MpvPlayer;
 class SdlVideoWindow;
 class ImPlayerGui;
-class VideoSharedMemorySink;
+using VideoSharedMemorySink = ::f8::cppsdk::VideoSharedMemorySink;
 
 class ImPlayerService final : public f8::cppsdk::ServiceControlHandler {
  public:

@@ -15,7 +15,7 @@ extern "C" {
 #include <libswscale/swscale.h>
 }
 
-#include "video_shared_memory_sink.h"
+#include "f8cppsdk/video_shared_memory_sink.h"
 
 namespace f8::implayer {
 

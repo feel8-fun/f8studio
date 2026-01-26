@@ -6,6 +6,9 @@ add_library(f8cppsdk
   src/data_bus.cpp
   src/time_utils.cpp
   src/f8_naming.cpp
+  src/shm_region.cpp
+  src/video_shared_memory_sink.cpp
+  src/audio_shared_memory_sink.cpp
 )
 
 target_include_directories(f8cppsdk

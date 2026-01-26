@@ -2,8 +2,6 @@ add_executable(f8implayer_service
   src/main.cpp
   src/implayer_service.cpp
   src/implayer_gui.cpp
-  src/video_shared_memory_sink.cpp
-  src/shm_region.cpp
   src/sdl_video_window.cpp
   src/gl_loader.cpp
   src/mpv_player.cpp

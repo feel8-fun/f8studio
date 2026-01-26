@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <string>
 
-namespace f8::implayer {
+namespace f8::cppsdk {
 
 class ShmRegion {
  public:
@@ -15,6 +15,8 @@ class ShmRegion {
   ShmRegion& operator=(ShmRegion&&) = delete;
 
   bool open_or_create(const std::string& name, std::size_t bytes);
+  bool open_existing_readonly(const std::string& name, std::size_t bytes);
+  bool open_existing_readwrite(const std::string& name, std::size_t bytes);
   void close();
 
   void* data() const { return data_; }
@@ -22,6 +24,8 @@ class ShmRegion {
   const std::string& name() const { return name_; }
 
  private:
+  bool open_existing_impl(const std::string& name, std::size_t bytes, bool read_write);
+
   std::string name_;
   void* data_ = nullptr;
   std::size_t size_ = 0;
@@ -33,4 +37,5 @@ class ShmRegion {
 #endif
 };
 
-}  // namespace f8::implayer
+}  // namespace f8::cppsdk
+

@@ -155,10 +155,11 @@ bool AudioCapService::start() {
     return false;
   }
 
-  shm_ = std::make_unique<AudioSharedMemorySink>();
+  shm_ = std::make_unique<f8::cppsdk::AudioSharedMemorySink>();
   const std::string shm_name = default_audio_shm_name(cfg_.service_id);
   if (!shm_->initialize(shm_name, cfg_.audio_shm_bytes, cfg_.sample_rate, cfg_.channels,
-                        AudioSharedMemorySink::SampleFormat::kF32LE, cfg_.frames_per_chunk, cfg_.chunk_count)) {
+                        f8::cppsdk::AudioSharedMemorySink::SampleFormat::kF32LE, cfg_.frames_per_chunk,
+                        cfg_.chunk_count)) {
     spdlog::error("failed to initialize audio shm sink name={} bytes={}", shm_name, cfg_.audio_shm_bytes);
     return false;
   }

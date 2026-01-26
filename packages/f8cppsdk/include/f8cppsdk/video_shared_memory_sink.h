@@ -2,12 +2,12 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <string>
+#include <vector>
 
-#include "shm_region.h"
+#include "f8cppsdk/shm_region.h"
 
-namespace f8::implayer {
+namespace f8::cppsdk {
 
 class VideoSharedMemorySink {
  public:
@@ -15,7 +15,6 @@ class VideoSharedMemorySink {
   ~VideoSharedMemorySink();
 
   bool initialize(const std::string& region_name, std::size_t capacity_bytes, std::uint32_t slot_count = 2);
-
   bool ensureConfiguration(unsigned width, unsigned height);
   bool writeFrame(const void* data, unsigned stride_bytes);
 
@@ -45,4 +44,34 @@ class VideoSharedMemorySink {
   std::uint64_t frame_id_ = 0;
 };
 
-}  // namespace f8::implayer
+struct VideoSharedMemoryHeader {
+  std::uint32_t magic = 0;
+  std::uint32_t version = 0;
+  std::uint32_t slot_count = 0;
+  std::uint32_t width = 0;
+  std::uint32_t height = 0;
+  std::uint32_t pitch = 0;
+  std::uint32_t format = 0;
+  std::uint64_t frame_id = 0;
+  std::int64_t ts_ms = 0;
+  std::uint32_t active_slot = 0;
+  std::uint32_t payload_capacity = 0;
+};
+
+class VideoSharedMemoryReader {
+ public:
+  VideoSharedMemoryReader() = default;
+  ~VideoSharedMemoryReader() = default;
+
+  bool open(const std::string& region_name, std::size_t bytes);
+  void close() { region_.close(); }
+
+  bool readHeader(VideoSharedMemoryHeader& out) const;
+  bool copyLatestFrame(std::vector<std::byte>& out_bgra, VideoSharedMemoryHeader& out_header) const;
+
+ private:
+  ShmRegion region_;
+};
+
+}  // namespace f8::cppsdk
+

@@ -12,7 +12,7 @@
 #include <SDL3/SDL.h>
 #include <nlohmann/json_fwd.hpp>
 
-#include "audio_shared_memory_sink.h"
+#include "f8cppsdk/audio_shared_memory_sink.h"
 #include "f8cppsdk/kv_store.h"
 #include "f8cppsdk/nats_client.h"
 #include "f8cppsdk/service_control_plane.h"
@@ -81,7 +81,7 @@ class AudioCapService final : public f8::cppsdk::ServiceControlHandler {
   f8::cppsdk::KvStore kv_;
   std::unique_ptr<f8::cppsdk::ServiceControlPlaneServer> ctrl_;
 
-  std::unique_ptr<AudioSharedMemorySink> shm_;
+  std::unique_ptr<f8::cppsdk::AudioSharedMemorySink> shm_;
 
   std::mutex state_mu_;
   std::unordered_map<std::string, nlohmann::json> published_state_;

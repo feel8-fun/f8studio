@@ -1,9 +1,7 @@
 add_executable(f8audiocap_service
   src/main.cpp
   src/audiocap_service.cpp
-  src/audio_shared_memory_sink.cpp
   src/wasapi_loopback_capture.cpp
-  src/shm_region.cpp
 )
 
 target_compile_features(f8audiocap_service PRIVATE cxx_std_17)

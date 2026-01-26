@@ -7,9 +7,13 @@
 #include <string>
 #include <thread>
 
+namespace f8::cppsdk {
+class VideoSharedMemorySink;
+}
+
 namespace f8::implayer {
 
-class VideoSharedMemorySink;
+using VideoSharedMemorySink = ::f8::cppsdk::VideoSharedMemorySink;
 
 class FfmpegDecoder {
  public:

@@ -16,9 +16,13 @@ extern "C" {
 #include <mpv/render_gl.h>
 }
 
+namespace f8::cppsdk {
+class VideoSharedMemorySink;
+}
+
 namespace f8::implayer {
 
-class VideoSharedMemorySink;
+using VideoSharedMemorySink = ::f8::cppsdk::VideoSharedMemorySink;
 
 class MpvPlayer {
  public:
