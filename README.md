@@ -25,3 +25,11 @@ Fresh workspace for the API-first, NATS-only architecture. Current focus is cont
 - Check: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/format_cpp.ps1 -Check`
 - Optional: `-ClangFormat <path-or-command>`
 - Optional: `-ChangedOnly` or `-StagedOnly`
+
+## SHM tools
+- Audio waveform viewer: `uv run scripts/audioshm_viewer.py --service-id audiocap --use-event`
+
+## Audio capture
+- List recording devices: `build/bin/f8audiocap_service.exe --list-devices`
+- Capture system mix (Windows): `build/bin/f8audiocap_service.exe --service-id audiocap --mode capture --backend wasapi`
+- Capture microphone (SDL): `build/bin/f8audiocap_service.exe --service-id audiocap --mode capture --backend sdl --device 0`

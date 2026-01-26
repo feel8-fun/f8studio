@@ -60,6 +60,9 @@ CTestTestfile.cmake
 *~
 .#*
 
+# ImGui runtime state
+imgui.ini
+
 
 # Ignore generated code folders
 **/generated/*

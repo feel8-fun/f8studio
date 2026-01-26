@@ -46,21 +46,39 @@ Suggested defaults:
 - sampleRate: 48000
 - channels: 2
 - format: float32 little-endian (interleaved)
-- slot_count: 8 (more jitter tolerance than video)
+- ring buffer: 1–2 seconds of 10ms chunks
+
+### Layout (proposal)
+
+- Mapping name: `shm.<serviceId>.audio` (convention)
+- Writer appends fixed-size chunks into a ring. Multiple consumers keep their own `last_seq` (no shared read cursor).
+- Optional Windows event: writer pulses named event `<shmName>_evt` on each new chunk (manual-reset; SetEvent+ResetEvent).
 
 ### Header (proposal)
 
 - `magic` (u32) = `0xF8A11A02`
 - `version` (u32) = `1`
-- `slot_count` (u32)
 - `sample_rate` (u32)
-- `channels` (u32)
-- `format` (u32) = `1` for F32LE, `2` for S16LE
-- `frames_per_slot` (u32) fixed block size per slot
-- padding (0 or 4 bytes to align 8)
-- `frame_id` (u64) monotonic block counter
-- `ts_ms` (i64) wall-clock ms for the block start (or mid-point)
-- `active_slot` (u32)
-- `payload_capacity` (u32) bytes per slot
+- `channels` (u16)
+- `format` (u16) = `1` for F32LE, `2` for S16LE
+- `frames_per_chunk` (u32) fixed block size (e.g. 10ms at 48k = 480)
+- `chunk_count` (u32) total chunks in ring
+- `bytes_per_frame` (u32) = `channels * bytes_per_sample`
+- `payload_bytes_per_chunk` (u32) = `frames_per_chunk * bytes_per_frame`
+- `write_seq` (u64) monotonic chunk counter
+- `write_frame_index` (u64) monotonic frame counter (optional but useful for A/V sync)
+- `ts_ms` (i64) wall-clock ms for the latest chunk (start timestamp)
 
-Payload: interleaved PCM, `frames_per_slot * channels * bytes_per_sample` bytes.
+### Chunk record
+
+Each chunk is `ChunkHeader + PCM payload`:
+
+- `seq` (u64) chunk sequence number
+- `ts_ms` (i64) wall-clock ms for this chunk
+- `frames` (u32) valid frames in this chunk (<= frames_per_chunk)
+- padding (u32)
+- payload: interleaved PCM, `frames * bytes_per_frame` bytes, remaining bytes in the chunk are undefined.
+
+Consumers:
+- Read `write_seq`, pick the newest `seq` and compute ring index `seq % chunk_count`.
+- Validate `ChunkHeader.seq` matches expected `seq` before using payload; if mismatch, retry.
