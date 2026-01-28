@@ -112,7 +112,7 @@ class F8Build(ConanFile):
         self.requires("libvpx/1.15.2")
 
         # WebRTC
-        self.requires("gstreamer/1.24.7", override=True)
+        self.requires("gstreamer/1.24.7")
         self.requires("libdatachannel/0.24.0")
 
         if self.options.with_gst_webrtc:

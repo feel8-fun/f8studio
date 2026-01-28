@@ -170,6 +170,10 @@ bool SdlVideoWindow::makeCurrent() {
   return SDL_GL_MakeCurrent(window_, gl_context_);
 }
 
+void SdlVideoWindow::present(const MpvPlayer& player, const OverlayCallback& overlay) {
+  present(player, overlay, ViewTransform{});
+}
+
 void SdlVideoWindow::present(const MpvPlayer& player, const OverlayCallback& overlay, const ViewTransform& view) {
   if (!started_ || !window_)
     return;

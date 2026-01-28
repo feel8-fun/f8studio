@@ -3,7 +3,16 @@ serviceClass: f8.webrtc.gateway
 label: WebRTC Gateway
 version: 0.0.1
 launch:
-  command: powershell.exe
-  args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/run_webrtc_gateway.ps1"]
+  command: uv
+  args:
+    - run
+    - python
+    - scripts/run_cpp_service.py
+    - --service-dir
+    - services/f8/webrtc_gateway
+    - --exe
+    - f8webrtc_gateway_service
+    - --env-var
+    - F8WEBRTC_GATEWAY_EXE
   env: {}
   workdir: "../../../"

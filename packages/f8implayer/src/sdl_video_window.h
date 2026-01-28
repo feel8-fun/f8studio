@@ -46,8 +46,8 @@ class SdlVideoWindow {
   };
 
   using OverlayCallback = std::function<void()>;
-  void present(const MpvPlayer& player, const OverlayCallback& overlay = {},
-               const ViewTransform& view = ViewTransform{});
+  void present(const MpvPlayer& player, const OverlayCallback& overlay = {});
+  void present(const MpvPlayer& player, const OverlayCallback& overlay, const ViewTransform& view);
 
   bool wantsClose() const { return wants_close_; }
   bool needsRedraw() const { return needs_redraw_; }
