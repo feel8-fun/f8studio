@@ -2,6 +2,7 @@ add_library(f8cppsdk
   src/nats_client.cpp
   src/kv_store.cpp
   src/service_control_plane.cpp
+  src/service_bus.cpp
   src/state_kv.cpp
   src/data_bus.cpp
   src/time_utils.cpp

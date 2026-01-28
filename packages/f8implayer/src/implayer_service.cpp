@@ -129,23 +129,6 @@ bool ImPlayerService::start() {
     return false;
   }
 
-  if (!nats_.connect(cfg_.nats_url))
-    return false;
-
-  f8::cppsdk::KvConfig kvc;
-  kvc.bucket = f8::cppsdk::kv_bucket_for_service(cfg_.service_id);
-  kvc.history = 1;
-  kvc.memory_storage = true;
-  if (!kv_.open_or_create(nats_.jetstream(), kvc))
-    return false;
-
-  ctrl_ = std::make_unique<f8::cppsdk::ServiceControlPlaneServer>(
-      f8::cppsdk::ServiceControlPlaneServer::Config{cfg_.service_id, cfg_.nats_url}, &nats_, &kv_, this);
-  if (!ctrl_->start()) {
-    spdlog::error("failed to start control plane");
-    return false;
-  }
-
   shm_ = std::make_shared<VideoSharedMemorySink>();
   const auto shm_name = default_video_shm_name(cfg_.service_id);
   if (!shm_->initialize(shm_name, cfg_.video_shm_bytes, cfg_.video_shm_slots)) {
@@ -207,9 +190,23 @@ bool ImPlayerService::start() {
     return false;
   }
   player_->setVolume(volume_);
-  if (!active_.load(std::memory_order_acquire)) {
-    player_->pause();
+
+  // Start the service bus only after the GUI/player are ready, so rungraph/state
+  // deployments won't race against initialization.
+  bus_ = std::make_unique<f8::cppsdk::ServiceBus>(f8::cppsdk::ServiceBus::Config{cfg_.service_id, cfg_.nats_url, true});
+  bus_->set_lifecycle_callback([this](bool active, const json&) { set_active_local(active); });
+  bus_->set_state_handler([this](const std::string& node_id, const std::string& field, const json& value, const json& meta,
+                                 std::string& ec, std::string& em) { return on_set_state(node_id, field, value, meta, ec, em); });
+  bus_->set_rungraph_handler([this](const json& graph_obj, const json& meta, std::string& ec, std::string& em) {
+    return on_set_rungraph(graph_obj, meta, ec, em);
+  });
+  bus_->set_command_handler([this](const std::string& call, const json& args, const json& meta, json& result, std::string& ec,
+                                   std::string& em) { return on_command(call, args, meta, result, ec, em); });
+  if (!bus_->start()) {
+    bus_.reset();
+    return false;
   }
+
   if (!cfg_.initial_media_url.empty()) {
     std::string err;
     if (!cmd_open(json{{"url", cfg_.initial_media_url}}, err)) {
@@ -219,7 +216,6 @@ bool ImPlayerService::start() {
 
   publish_static_state();
   publish_dynamic_state();
-  f8::cppsdk::kv_set_ready(kv_, true);
 
   running_.store(true, std::memory_order_release);
   stop_requested_.store(false, std::memory_order_release);
@@ -233,10 +229,10 @@ void ImPlayerService::stop() {
   stop_requested_.store(true, std::memory_order_release);
 
   try {
-    if (ctrl_)
-      ctrl_->stop();
+    if (bus_)
+      bus_->stop();
   } catch (...) {}
-  ctrl_.reset();
+  bus_.reset();
 
   if (window_)
     window_->makeCurrent();
@@ -248,9 +244,6 @@ void ImPlayerService::stop() {
   player_.reset();
   window_.reset();
   shm_.reset();
-  kv_.stop_watch();
-  kv_.close();
-  nats_.close();
 }
 
 void ImPlayerService::tick() {
@@ -354,7 +347,9 @@ void ImPlayerService::tick() {
     const auto frame_id = shm_->frameId();
     if (frame_id != last_frame_id_published_) {
       last_frame_id_published_ = frame_id;
-      (void)f8::cppsdk::publish_data(nats_, cfg_.service_id, cfg_.service_id, "frameId", frame_id, now);
+      if (bus_) {
+        (void)f8::cppsdk::publish_data(bus_->nats(), cfg_.service_id, cfg_.service_id, "frameId", frame_id, now);
+      }
     }
   }
 
@@ -375,7 +370,9 @@ void ImPlayerService::tick() {
     evt["position"] = position_seconds_.load(std::memory_order_relaxed);
     evt["duration"] = duration_seconds_.load(std::memory_order_relaxed);
     evt["playing"] = playing_.load(std::memory_order_relaxed);
-    (void)f8::cppsdk::publish_data(nats_, cfg_.service_id, cfg_.service_id, "playback", evt, now);
+    if (bus_) {
+      (void)f8::cppsdk::publish_data(bus_->nats(), cfg_.service_id, cfg_.service_id, "playback", evt, now);
+    }
   }
 }
 
@@ -491,7 +488,7 @@ void ImPlayerService::processSdlEvent(const SDL_Event& ev) {
   }
 }
 
-void ImPlayerService::set_active_local(bool active, const nlohmann::json& meta) {
+void ImPlayerService::set_active_local(bool active) {
   active_.store(active, std::memory_order_release);
   {
     std::lock_guard<std::mutex> lock(state_mu_);
@@ -502,24 +499,6 @@ void ImPlayerService::set_active_local(bool active, const nlohmann::json& meta) 
         player_->pause();
     }
   }
-  {
-    std::lock_guard<std::mutex> lock(state_mu_);
-    auto it = published_state_.find("active");
-    if (it == published_state_.end() || it->second != active) {
-      published_state_["active"] = active;
-      f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, "active", active, "cmd", meta);
-    }
-  }
-}
-
-void ImPlayerService::on_activate(const nlohmann::json& meta) {
-  set_active_local(true, meta);
-}
-void ImPlayerService::on_deactivate(const nlohmann::json& meta) {
-  set_active_local(false, meta);
-}
-void ImPlayerService::on_set_active(bool active, const nlohmann::json& meta) {
-  set_active_local(active, meta);
 }
 
 bool ImPlayerService::on_set_state(const std::string& node_id, const std::string& field, const nlohmann::json& value,
@@ -544,8 +523,13 @@ bool ImPlayerService::on_set_state(const std::string& node_id, const std::string
       err = "active must be boolean";
       ok = false;
     } else {
-      set_active_local(value.get<bool>(), meta);
-      ok = true;
+      if (!bus_) {
+        err = "service bus not ready";
+        ok = false;
+      } else {
+        bus_->set_active_local(value.get<bool>(), meta, "endpoint");
+        ok = true;
+      }
     }
   } else if (f == "videoShmMaxWidth" || f == "videoShmMaxHeight") {
     if (!value.is_number_integer() && !value.is_number()) {
@@ -618,7 +602,9 @@ bool ImPlayerService::on_set_state(const std::string& node_id, const std::string
     auto it = published_state_.find(f);
     if (it == published_state_.end() || it->second != write_value) {
       published_state_[f] = write_value;
-      f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, f, write_value, "endpoint", meta);
+      if (bus_) {
+        f8::cppsdk::kv_set_node_state(bus_->kv(), cfg_.service_id, cfg_.service_id, f, write_value, "endpoint", meta);
+      }
     }
   }
   return true;
@@ -875,7 +861,9 @@ bool ImPlayerService::open_media_internal(const std::string& url, bool keep_play
     std::lock_guard<std::mutex> lock(state_mu_);
     media_evt = json{{"videoId", video_id_}, {"url", media_url_}};
   }
-  (void)f8::cppsdk::publish_data(nats_, cfg_.service_id, cfg_.service_id, "media", media_evt);
+  if (bus_) {
+    (void)f8::cppsdk::publish_data(bus_->nats(), cfg_.service_id, cfg_.service_id, "media", media_evt);
+  }
   return true;
 }
 
@@ -994,7 +982,9 @@ void ImPlayerService::publish_static_state() {
     want("videoShmMaxFps", cfg_.video_shm_max_fps);
   }
   for (const auto& [field, v] : updates) {
-    f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, field, v, "runtime", meta);
+    if (bus_) {
+      f8::cppsdk::kv_set_node_state(bus_->kv(), cfg_.service_id, cfg_.service_id, field, v, "runtime", meta);
+    }
   }
 }
 
@@ -1033,7 +1023,9 @@ void ImPlayerService::publish_dynamic_state() {
   }
 
   for (const auto& [field, v] : updates) {
-    f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, field, v, "runtime", meta);
+    if (bus_) {
+      f8::cppsdk::kv_set_node_state(bus_->kv(), cfg_.service_id, cfg_.service_id, field, v, "runtime", meta);
+    }
   }
 }
 

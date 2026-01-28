@@ -13,9 +13,7 @@
 #include <nlohmann/json_fwd.hpp>
 
 #include "f8cppsdk/kv_store.h"
-#include "f8cppsdk/nats_client.h"
-#include "f8cppsdk/service_control_plane.h"
-#include "f8cppsdk/service_control_plane_server.h"
+#include "f8cppsdk/service_bus.h"
 
 namespace f8::cppsdk {
 class VideoSharedMemorySink;
@@ -28,7 +26,7 @@ class SdlVideoWindow;
 class ImPlayerGui;
 using VideoSharedMemorySink = ::f8::cppsdk::VideoSharedMemorySink;
 
-class ImPlayerService final : public f8::cppsdk::ServiceControlHandler {
+class ImPlayerService final {
  public:
   struct Config {
     std::string service_id;
@@ -64,22 +62,16 @@ class ImPlayerService final : public f8::cppsdk::ServiceControlHandler {
   // Called on the main thread periodically.
   void tick();
 
-  // ServiceControlHandler
-  bool is_active() const override { return active_.load(std::memory_order_acquire); }
-  void on_activate(const nlohmann::json& meta) override;
-  void on_deactivate(const nlohmann::json& meta) override;
-  void on_set_active(bool active, const nlohmann::json& meta) override;
-  bool on_set_state(const std::string& node_id, const std::string& field, const nlohmann::json& value,
-                    const nlohmann::json& meta, std::string& error_code, std::string& error_message) override;
-  bool on_set_rungraph(const nlohmann::json& graph_obj, const nlohmann::json& meta, std::string& error_code,
-                       std::string& error_message) override;
-  bool on_command(const std::string& call, const nlohmann::json& args, const nlohmann::json& meta,
-                  nlohmann::json& result, std::string& error_code, std::string& error_message) override;
-
   static nlohmann::json describe();
 
  private:
-  void set_active_local(bool active, const nlohmann::json& meta);
+  void set_active_local(bool active);
+  bool on_set_state(const std::string& node_id, const std::string& field, const nlohmann::json& value,
+                    const nlohmann::json& meta, std::string& error_code, std::string& error_message);
+  bool on_set_rungraph(const nlohmann::json& graph_obj, const nlohmann::json& meta, std::string& error_code,
+                       std::string& error_message);
+  bool on_command(const std::string& call, const nlohmann::json& args, const nlohmann::json& meta,
+                  nlohmann::json& result, std::string& error_code, std::string& error_message);
   void publish_static_state();
   void publish_dynamic_state();
 
@@ -103,9 +95,7 @@ class ImPlayerService final : public f8::cppsdk::ServiceControlHandler {
   std::atomic<bool> stop_requested_{false};
   std::atomic<bool> active_{true};
 
-  f8::cppsdk::NatsClient nats_;
-  f8::cppsdk::KvStore kv_;
-  std::unique_ptr<f8::cppsdk::ServiceControlPlaneServer> ctrl_;
+  std::unique_ptr<f8::cppsdk::ServiceBus> bus_;
 
   std::unique_ptr<SdlVideoWindow> window_;
   std::unique_ptr<ImPlayerGui> gui_;
