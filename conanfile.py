@@ -28,6 +28,7 @@ class F8Build(ConanFile):
         "with_tests": [True, False],
         "with_examples": [True, False],
         "with_apps": [True, False],
+        "with_gst_webrtc": [True, False],
     }
     default_options = {
         "shared": False,
@@ -35,6 +36,7 @@ class F8Build(ConanFile):
         "with_tests": False,
         "with_examples": False,
         "with_apps": False,
+        "with_gst_webrtc": False,
     }
 
     def config_options(self):
@@ -54,6 +56,14 @@ class F8Build(ConanFile):
                 del self.options.fPIC
             except Exception:
                 pass
+
+        if self.options.with_gst_webrtc:
+            # GStreamer plugins (dll) require shared GStreamer + GLib on Windows.
+            self.options["gstreamer"].shared = True
+            self.options["glib"].shared = True
+            # webrtcbin needs nicesrc/nicesink from libnice's GStreamer plugin.
+            self.options["libnice"].with_gstreamer = True
+            self.options["libnice"].shared = True
 
     def build_requirements(self):
         # Ensure a modern CMake is available as a build tool when Conan runs the build
@@ -98,10 +108,18 @@ class F8Build(ConanFile):
 
         # WebRTC gateway (localhost signaling)
         self.requires("websocketpp/0.8.2")
+        self.requires("openh264/2.6.0")
+        self.requires("libvpx/1.15.2")
 
         # WebRTC
-        self.requires("gstreamer/1.24.7")
+        self.requires("gstreamer/1.24.7", override=True)
         self.requires("libdatachannel/0.24.0")
+
+        if self.options.with_gst_webrtc:
+            # Local recipe (see conan_recipes/gst_plugins_bad_recipe).
+            self.requires("gst-plugins-base/1.24.7")
+            self.requires("gst-plugins-good/1.24.7")
+            self.requires("gst-plugins-bad/1.24.7")
 
         if self.options.with_tests:
             self.requires("gtest/1.17.0")

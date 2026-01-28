@@ -28,7 +28,11 @@ int main(int argc, char** argv) {
       "service-id", "Service instance id (required unless --describe)",
       cxxopts::value<std::string>()->default_value(""))(
       "nats-url", "NATS server URL", cxxopts::value<std::string>()->default_value("nats://127.0.0.1:4222"))(
-      "ws-port", "Websocket port (localhost)", cxxopts::value<int>()->default_value("8765"))("help", "Show help");
+      "ws-port", "Websocket port (localhost)", cxxopts::value<int>()->default_value("8765"))(
+      "video-force-h264", "Force H264 only (munge offer + answer)", cxxopts::value<bool>()->default_value("false"))(
+      "video-use-gstreamer", "Use GStreamer webrtcbin receive+decode path (experimental)",
+      cxxopts::value<bool>()->default_value("false"))(
+      "help", "Show help");
 
   auto result = options.parse(argc, argv);
   if (result.count("help")) {
@@ -64,6 +68,8 @@ int main(int argc, char** argv) {
   cfg.service_id = service_id;
   cfg.nats_url = result["nats-url"].as<std::string>();
   cfg.ws_port = static_cast<std::uint16_t>(ws_port);
+  cfg.video_force_h264 = result["video-force-h264"].as<bool>();
+  cfg.video_use_gstreamer = result["video-use-gstreamer"].as<bool>();
 
   f8::webrtc_gateway::WebRtcGatewayService svc(cfg);
   if (!svc.start()) {

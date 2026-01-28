@@ -8,7 +8,7 @@
 
   const { sendRuntimeMessage } = runtime;
   const { t } = i18n;
-  const { FEEL_META_NAME, ICE_CONFIG, HIGHLIGHT_CLASS } = BRIDGE_CONSTANTS;
+  const { FEEL_META_NAME, ICE_CONFIG, HIGHLIGHT_CLASS, GATEWAY_VIDEO_CODEC } = BRIDGE_CONSTANTS;
 
   const isFeelPlayer = () => !!document.querySelector(`meta[name="${FEEL_META_NAME}"]`);
 
@@ -131,6 +131,14 @@
       this.target = targetInfo;
       this.stream = null;
       this.pc = new RTCPeerConnection(ICE_CONFIG);
+      this.gatewayWs = null;
+      this.keepalivePort = null;
+      this.statsInterval = null;
+      this.gatewaySessionId =
+        this.target?.targetKind === 'gateway'
+          ? (globalThis.crypto?.randomUUID?.() ||
+              `gw_${Date.now()}_${Math.random().toString(16).slice(2)}_${Math.random().toString(16).slice(2)}`)
+          : null;
       this.pc.onicecandidate = (event) => {
         if (event.candidate) {
           const candidateJson =
@@ -142,28 +150,206 @@
                   sdpMLineIndex: event.candidate.sdpMLineIndex,
                   usernameFragment: event.candidate.usernameFragment,
                 };
-          chrome.runtime.sendMessage(
-            {
-              type: MESSAGE_TYPES.WEBRTC_ICE,
-              payload: {
-                candidate: candidateJson,
-                targetKind: this.target.targetKind ?? null,
-                targetTabId: this.target.targetTabId ?? null,
-                sessionId: this.target.sessionId ?? null,
+          if (this.target?.targetKind === 'gateway' && this.gatewayWs?.readyState === WebSocket.OPEN) {
+            try {
+              this.gatewayWs.send(
+                JSON.stringify({
+                  type: 'webrtc.ice',
+                  sessionId: this.gatewaySessionId,
+                  candidate: candidateJson,
+                  ts: Date.now(),
+                }),
+              );
+            } catch {
+              // ignore
+            }
+          } else {
+            chrome.runtime.sendMessage(
+              {
+                type: MESSAGE_TYPES.WEBRTC_ICE,
+                payload: {
+                  candidate: candidateJson,
+                  targetKind: this.target.targetKind ?? null,
+                  targetTabId: this.target.targetTabId ?? null,
+                  sessionId: this.target.sessionId ?? null,
+                },
               },
-            },
-            () => void chrome.runtime.lastError,
-          );
+              () => void chrome.runtime.lastError,
+            );
+          }
+        }
+      };
+    }
+
+    _applyVideoCodecPreferences(preferCodec) {
+      const prefer = typeof preferCodec === 'string' ? preferCodec.trim() : '';
+      if (!prefer || prefer.toLowerCase() === 'auto') return;
+
+      const transceiver = this.pc
+        ?.getTransceivers?.()
+        ?.find((t) => t?.sender?.track?.kind === 'video' && typeof t?.setCodecPreferences === 'function');
+      if (!transceiver) return;
+
+      const caps = globalThis.RTCRtpSender?.getCapabilities?.('video');
+      const codecs = Array.isArray(caps?.codecs) ? caps.codecs : [];
+      if (!codecs.length) return;
+
+      const wantMime = `video/${prefer.toLowerCase()}`;
+      const preferred = codecs.filter((c) => String(c?.mimeType || '').toLowerCase() === wantMime);
+      if (!preferred.length) return;
+
+      const rtx = codecs.filter((c) => String(c?.mimeType || '').toLowerCase() === 'video/rtx');
+      transceiver.setCodecPreferences([...preferred, ...rtx]);
+    }
+
+    _startStatsLog() {
+      if (this.statsInterval) return;
+      this.statsInterval = setInterval(async () => {
+        if (!this.pc || this.pc.connectionState === 'closed') return;
+        const stats = await this.pc.getStats().catch(() => null);
+        if (!stats) return;
+        for (const report of stats.values()) {
+          if (report.type === 'outbound-rtp' && report.kind === 'video') {
+            console.log(
+              '[Feel Bridge] outbound-rtp video',
+              'codecId=' + (report.codecId || ''),
+              'bytesSent=' + (report.bytesSent ?? 0),
+              'packetsSent=' + (report.packetsSent ?? 0),
+              'framesEncoded=' + (report.framesEncoded ?? ''),
+            );
+            return;
+          }
+        }
+      }, 1000);
+    }
+
+    async _ensureGatewayWs() {
+      if (this.target?.targetKind !== 'gateway') return;
+      if (this.gatewayWs && this.gatewayWs.readyState === WebSocket.OPEN) return;
+
+      const wsUrl = this.target?.wsUrl || BRIDGE_CONSTANTS?.GATEWAY_WS_URL;
+      if (!wsUrl) return;
+
+      const ws = new WebSocket(wsUrl);
+      this.gatewayWs = ws;
+      try {
+        await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error(t('errors_gateway_unavailable', [wsUrl]))), 800);
+          ws.onopen = () => {
+            clearTimeout(timeout);
+            resolve();
+          };
+          ws.onerror = () => {
+            clearTimeout(timeout);
+            reject(new Error(t('errors_gateway_unavailable', [wsUrl])));
+          };
+        });
+      } catch {
+        // Fall back to background signaling path.
+        try {
+          ws.close();
+        } catch {
+          // ignore
+        }
+        this.gatewayWs = null;
+        return;
+      }
+
+      try {
+        ws.send(
+          JSON.stringify({
+            type: 'hello',
+            client: 'f8chromeext-content',
+            ts: Date.now(),
+          }),
+        );
+      } catch {
+        // ignore
+      }
+
+      ws.onmessage = (event) => {
+        if (!event?.data) return;
+        let msg = null;
+        try {
+          msg = JSON.parse(String(event.data));
+        } catch {
+          return;
+        }
+        const type = msg?.type || null;
+        const payload = msg?.payload && typeof msg.payload === 'object' ? msg.payload : msg;
+        if (!type) return;
+        const sid = payload?.sessionId || msg?.sessionId || null;
+        if (!sid || sid !== this.gatewaySessionId) return;
+
+        if (type === 'webrtc.answer') {
+          this.handleAnswer(payload?.description ?? null);
+        } else if (type === 'webrtc.ice') {
+          this.handleRemoteIce(payload?.candidate ?? null);
+        } else if (type === 'webrtc.stop') {
+          this.stop(payload?.reason || 'stopped', false);
         }
       };
     }
 
     async start() {
+      if (this.target?.targetKind === 'gateway') {
+        try {
+          this.keepalivePort = chrome.runtime.connect({ name: 'gateway-stream' });
+        } catch {
+          // ignore
+        }
+        await this._ensureGatewayWs();
+      }
       this.stream = captureVideoStream(this.video);
       if (!this.stream) {
         throw new Error(t('errors_video_uncapturable'));
       }
       this.stream.getTracks().forEach((track) => this.pc.addTrack(track, this.stream));
+      if (this.target?.targetKind === 'gateway') {
+        this._applyVideoCodecPreferences(GATEWAY_VIDEO_CODEC);
+        const videoTrack = this.stream?.getVideoTracks?.()?.[0] ?? null;
+        if (videoTrack && typeof videoTrack.applyConstraints === 'function') {
+          const idealWidth = Number(this.video?.videoWidth || 0);
+          const idealHeight = Number(this.video?.videoHeight || 0);
+          const constraints = {
+            frameRate: { ideal: 30, max: 30 },
+          };
+          if (idealWidth > 0 && idealHeight > 0) {
+            constraints.width = { ideal: idealWidth };
+            constraints.height = { ideal: idealHeight };
+          }
+          try {
+            try {
+              videoTrack.contentHint = 'motion';
+            } catch {
+              // ignore
+            }
+            await videoTrack.applyConstraints(constraints);
+            const settings = typeof videoTrack.getSettings === 'function' ? videoTrack.getSettings() : {};
+            console.log('[Feel Bridge] videoTrack constraints applied', constraints, settings);
+          } catch (error) {
+            console.warn('[Feel Bridge] videoTrack applyConstraints failed', error);
+          }
+        }
+        try {
+          const sender = this.pc
+            ?.getSenders?.()
+            ?.find((s) => s?.track?.kind === 'video' && typeof s?.getParameters === 'function');
+          if (sender && typeof sender.setParameters === 'function') {
+            const params = sender.getParameters();
+            params.encodings = Array.isArray(params.encodings) && params.encodings.length ? params.encodings : [{}];
+            params.encodings[0] = {
+              ...params.encodings[0],
+              maxFramerate: 30,
+              maxBitrate: 2_500_000,
+            };
+            await sender.setParameters(params);
+          }
+        } catch (error) {
+          console.warn('[Feel Bridge] sender.setParameters failed', error);
+        }
+        this._startStatsLog();
+      }
       try {
         await this.video.play();
       } catch {
@@ -178,20 +364,39 @@
         typeof this.pc.localDescription?.toJSON === 'function'
           ? this.pc.localDescription.toJSON()
           : { type: this.pc.localDescription?.type, sdp: this.pc.localDescription?.sdp };
-      await sendRuntimeMessage({
-        type: MESSAGE_TYPES.WEBRTC_OFFER,
-        payload: {
-          targetKind: this.target.targetKind ?? null,
-          targetTabId: this.target.targetTabId ?? null,
-          sessionId: this.target.sessionId ?? null,
-          description: descriptionJson,
-          video: this.metadata,
-          source: {
-            title: document.title,
-            url: window.location.href,
+      if (this.target?.targetKind === 'gateway' && this.gatewayWs?.readyState === WebSocket.OPEN) {
+        this.gatewayWs.send(
+          JSON.stringify({
+            type: 'webrtc.offer',
+            sessionId: this.gatewaySessionId,
+            description: descriptionJson,
+            video: this.metadata,
+            source: {
+              title: document.title,
+              url: window.location.href,
+            },
+            ts: Date.now(),
+          }),
+        );
+      } else {
+        const resp = await sendRuntimeMessage({
+          type: MESSAGE_TYPES.WEBRTC_OFFER,
+          payload: {
+            targetKind: this.target.targetKind ?? null,
+            targetTabId: this.target.targetTabId ?? null,
+            sessionId: this.target.sessionId ?? null,
+            description: descriptionJson,
+            video: this.metadata,
+            source: {
+              title: document.title,
+              url: window.location.href,
+            },
           },
-        },
-      });
+        });
+        if (resp && resp.ok === false) {
+          throw new Error(resp.error || t('errors_gateway_unavailable', [BRIDGE_CONSTANTS.GATEWAY_WS_URL]));
+        }
+      }
     }
 
     async handleAnswer(description) {
@@ -211,6 +416,40 @@
     stop(reason = 'stopped', notify = true) {
       this.stream?.getTracks().forEach((track) => track.stop());
       this.pc?.close();
+      if (this.statsInterval) {
+        clearInterval(this.statsInterval);
+        this.statsInterval = null;
+      }
+      if (this.keepalivePort) {
+        try {
+          this.keepalivePort.disconnect();
+        } catch {
+          // ignore
+        }
+        this.keepalivePort = null;
+      }
+      if (this.gatewayWs) {
+        if (notify && this.gatewayWs.readyState === WebSocket.OPEN && this.gatewaySessionId) {
+          try {
+            this.gatewayWs.send(
+              JSON.stringify({
+                type: 'webrtc.stop',
+                sessionId: this.gatewaySessionId,
+                reason,
+                ts: Date.now(),
+              }),
+            );
+          } catch {
+            // ignore
+          }
+        }
+        try {
+          this.gatewayWs.close();
+        } catch {
+          // ignore
+        }
+        this.gatewayWs = null;
+      }
       if (notify) {
         chrome.runtime.sendMessage(
           {

@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.20)
 project(f8studio VERSION 0.1.0 LANGUAGES CXX)
 
 if(MSVC)
-    # Keep multi-config generators usable; default to Release for typical local runs.
-    if(NOT CMAKE_CONFIGURATION_TYPES)
+    # Conan deps here are single-config; force Release for MSVC multi-config generators.
+    if(CMAKE_CONFIGURATION_TYPES)
         set(CMAKE_CONFIGURATION_TYPES "Release" CACHE STRING "" FORCE)
     endif()
 endif()
@@ -45,7 +45,11 @@ add_subdirectory(packages/f8webrtc_gateway)
 add_subdirectory(packages/f8audiocap)
 
 if (BUILD_TESTS)
-    add_subdirectory(tests)
+    if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
+        add_subdirectory(tests)
+    else()
+        message(WARNING "BUILD_TESTS=ON but ./tests is missing; skipping")
+    endif()
 endif()
 
 # # Packaging

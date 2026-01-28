@@ -55,20 +55,15 @@ $exeItems =
 $exe = $exeItems[0].FullName
 
 $buildRoot = Split-Path (Split-Path $exe -Parent) -Parent
-$loadConanEnv = $env:F8WEBRTC_GATEWAY_LOAD_CONAN_ENV
-if ($loadConanEnv -and $loadConanEnv.ToLowerInvariant() -in @("1", "true", "yes", "on")) {
-  $runEnv = Join-Path $buildRoot "generators\\conanrunenv-release-x86_64.ps1"
-  if (Test-Path $runEnv) {
-    try {
-      $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("f8_conan_env_" + [guid]::NewGuid().ToString("N"))
-      New-Item -ItemType Directory -Path $tmp -Force | Out-Null
-      $tmpRunEnv = Join-Path $tmp (Split-Path $runEnv -Leaf)
-      Copy-Item -Force $runEnv $tmpRunEnv
-      . $tmpRunEnv
-    } catch {
-      Write-Warning "Failed to load Conan runenv ($runEnv): $($_.Exception.Message)"
-    }
+$runEnv = Join-Path $buildRoot "generators\\conanrun.ps1"
+if (Test-Path $runEnv) {
+  try {
+    . $runEnv
+  } catch {
+    Write-Warning "Failed to load Conan runenv ($runEnv): $($_.Exception.Message)"
   }
+} else {
+  Write-Warning "Conan runenv not found: $runEnv (you may hit missing DLLs)"
 }
 
 Write-Verbose "repoRoot: $root"
@@ -97,6 +92,9 @@ try {
   $finalArgs += $Args
 
   & $exe @finalArgs
+  if ($LASTEXITCODE -eq -1073741515) {
+    Write-Warning "Process exited with STATUS_DLL_NOT_FOUND (0xC0000135). Run 'conan install .' then re-run this script so it can source build/generators/conanrun.ps1."
+  }
   exit $LASTEXITCODE
 } finally {
   Pop-Location

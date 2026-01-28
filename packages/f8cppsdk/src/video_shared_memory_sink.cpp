@@ -64,7 +64,8 @@ bool VideoSharedMemorySink::initialize(const std::string& region_name, std::size
   }
   {
     const std::wstring wname(frame_event_name_.begin(), frame_event_name_.end());
-    HANDLE ev = CreateEventW(nullptr, TRUE, FALSE, wname.c_str());
+    // Auto-reset event so slow consumers don't miss signals.
+    HANDLE ev = CreateEventW(nullptr, FALSE, FALSE, wname.c_str());
     if (!ev) {
       spdlog::warn("CreateEventW failed name={} err={}", frame_event_name_, GetLastError());
     } else {
@@ -132,7 +133,6 @@ bool VideoSharedMemorySink::writeFrame(const void* data, unsigned stride_bytes) 
 #if defined(_WIN32)
   if (frame_event_) {
     SetEvent(static_cast<HANDLE>(frame_event_));
-    ResetEvent(static_cast<HANDLE>(frame_event_));
   }
 #endif
 
@@ -142,19 +142,19 @@ bool VideoSharedMemorySink::writeFrame(const void* data, unsigned stride_bytes) 
 bool VideoSharedMemorySink::configureDimensions(unsigned requested_width, unsigned requested_height) {
   if (requested_width == 0 || requested_height == 0) return false;
 
-  auto align32 = [](unsigned v) { return v < 32u ? 32u : (v / 32u) * 32u; };
-  unsigned out_w = align32(requested_width);
-  unsigned out_h = align32(requested_height);
+  // BGRA32 has no alignment requirement; keep requested dimensions to avoid unnecessary resampling artifacts.
+  unsigned out_w = requested_width;
+  unsigned out_h = requested_height;
 
   const unsigned bpp = 4;
   auto required_bytes = [&]() { return static_cast<std::size_t>(out_w) * out_h * bpp; };
 
   while (required_bytes() > slot_payload_capacity_) {
     const double ratio = std::sqrt(static_cast<double>(slot_payload_capacity_) / static_cast<double>(required_bytes()));
-    unsigned new_w = align32(static_cast<unsigned>(static_cast<double>(out_w) * ratio));
-    unsigned new_h = align32(static_cast<unsigned>(static_cast<double>(out_h) * ratio));
-    new_w = std::max(new_w, 32u);
-    new_h = std::max(new_h, 32u);
+    unsigned new_w = static_cast<unsigned>(static_cast<double>(out_w) * ratio);
+    unsigned new_h = static_cast<unsigned>(static_cast<double>(out_h) * ratio);
+    new_w = std::max(new_w, 1u);
+    new_h = std::max(new_h, 1u);
     if (new_w == out_w && new_h == out_h) return false;
     out_w = new_w;
     out_h = new_h;

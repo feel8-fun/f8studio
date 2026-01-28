@@ -3,6 +3,7 @@ export const BRIDGE_CONSTANTS = {
   REGISTER_INTERVAL_MS: 15_000,
   DEFAULT_SIGNALING_TARGET: 'auto',
   GATEWAY_WS_URL: 'ws://127.0.0.1:8765/ws',
+  GATEWAY_VIDEO_CODEC: 'H264',
   ICE_CONFIG: {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },

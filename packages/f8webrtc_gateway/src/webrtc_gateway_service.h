@@ -11,6 +11,7 @@
 
 #include <nlohmann/json_fwd.hpp>
 
+#include "f8cppsdk/video_shared_memory_sink.h"
 #include "f8cppsdk/kv_store.h"
 #include "f8cppsdk/nats_client.h"
 #include "f8cppsdk/service_control_plane.h"
@@ -26,6 +27,8 @@ class WebRtcGatewayService final : public f8::cppsdk::ServiceControlHandler {
     std::string service_class = "f8.webrtc.gateway";
     std::string nats_url = "nats://127.0.0.1:4222";
     std::uint16_t ws_port = 8765;
+    bool video_force_h264 = false;
+    bool video_use_gstreamer = false;
   };
 
   explicit WebRtcGatewayService(Config cfg);
@@ -64,6 +67,8 @@ class WebRtcGatewayService final : public f8::cppsdk::ServiceControlHandler {
   void set_active_local(bool active, const nlohmann::json& meta);
   void publish_static_state();
   void publish_dynamic_state();
+  void process_video(std::int64_t now_ms);
+  void maybe_request_periodic_keyframes(std::int64_t now_ms);
 
   void enqueue_ws_event(const WsSignalingServer::Event& ev);
   std::vector<WsSignalingServer::Event> drain_ws_events();
@@ -74,6 +79,16 @@ class WebRtcGatewayService final : public f8::cppsdk::ServiceControlHandler {
   void handle_ws_json_message(const WsSignalingServer::Event& ev, const nlohmann::json& msg);
   void stop_session_by_id(const std::string& session_id, const std::string& reason);
   void stop_sessions_by_client(const std::string& client_id, const std::string& reason);
+
+  // Optional GStreamer webrtcbin receive+decode path.
+  bool handle_offer_gst(const std::string& client_id, const std::string& session_id, const std::string& offer_sdp);
+  bool handle_ice_gst(const std::string& session_id, int mline, const std::string& candidate);
+  void stop_session_gst(WebRtcSession& session);
+  void tick_gst();
+
+  static void gst_on_pad_added(void* webrtc, void* pad, void* user_data);
+  static void gst_on_ice_candidate(void* webrtc, unsigned mline, char* candidate, void* user_data);
+  static int gst_on_new_sample(void* appsink, void* user_data);
 
   Config cfg_;
 
@@ -90,6 +105,38 @@ class WebRtcGatewayService final : public f8::cppsdk::ServiceControlHandler {
   mutable std::mutex state_mu_;
   std::unordered_map<std::string, nlohmann::json> published_state_;
   std::int64_t last_state_pub_ms_ = 0;
+
+  // Decoded video output (BGRA32) to SHM for downstream analysis/preview.
+  mutable std::mutex video_mu_;
+  f8::cppsdk::VideoSharedMemorySink video_shm_;
+  std::string video_shm_name_;
+  std::size_t video_shm_bytes_ = 256ull * 1024ull * 1024ull;
+  std::uint32_t video_shm_slots_ = 2;
+  std::int64_t last_video_write_ms_ = 0;
+  int video_shm_max_width_ = 1920;
+  int video_shm_max_height_ = 1080;
+  int video_shm_max_fps_ = 30;
+  bool video_enabled_ = true;
+  bool video_force_h264_ = false;
+  bool video_use_gstreamer_ = false;
+  std::atomic<std::uint64_t> video_frames_rx_{0};
+  std::atomic<std::uint64_t> video_frames_decoded_{0};
+  std::atomic<std::uint64_t> video_frames_written_{0};
+  std::atomic<std::uint64_t> video_decode_errors_{0};
+  std::atomic<std::uint64_t> video_unsupported_tracks_{0};
+  std::atomic<std::uint64_t> video_rtp_packets_rx_{0};
+  std::atomic<std::uint64_t> video_rtp_bytes_rx_{0};
+  std::atomic<int> video_last_rtp_pt_{-1};
+  std::atomic<std::uint64_t> video_last_frame_bytes_{0};
+  std::atomic<std::int64_t> video_last_frame_ts_ms_{0};
+  std::atomic<std::int64_t> video_last_decode_ms_{0};
+  mutable std::mutex video_err_mu_;
+  std::string video_last_error_;
+
+  std::atomic<std::uint64_t> ice_tx_{0};
+  std::atomic<std::uint64_t> ice_rx_{0};
+  mutable std::mutex ice_err_mu_;
+  std::string ice_last_error_;
 
   mutable std::mutex ws_mu_;
   std::vector<WsSignalingServer::Event> ws_events_;
