@@ -97,6 +97,36 @@ class ServiceLogDock(QtWidgets.QDockWidget):
         self.setWidget(self._tabs)
 
         self._views: dict[str, ServiceLogView] = {}
+        self._service_names: dict[str, str] = {}  # serviceId -> serviceName/serviceClass
+
+    def set_service_name(self, service_id: str, service_name: str) -> None:
+        sid = str(service_id or "").strip()
+        if not sid:
+            return
+        name = str(service_name or "").strip()
+        if name:
+            self._service_names[sid] = name
+        else:
+            self._service_names.pop(sid, None)
+        view = self._views.get(sid)
+        if view is None:
+            return
+        try:
+            idx = self._tabs.indexOf(view)
+        except Exception:
+            idx = -1
+        if idx >= 0:
+            try:
+                self._tabs.setTabText(idx, self._tab_label(sid))
+            except Exception:
+                pass
+
+    def _tab_label(self, service_id: str) -> str:
+        sid = str(service_id or "").strip() or "unknown"
+        name = str(self._service_names.get(sid, "") or "").strip()
+        if name:
+            return f"{name}[{sid}]"
+        return sid
 
     def _ensure_tab(self, service_id: str) -> ServiceLogView:
         sid = str(service_id or "").strip() or "unknown"
@@ -105,7 +135,7 @@ class ServiceLogDock(QtWidgets.QDockWidget):
             return view
         view = ServiceLogView()
         self._views[sid] = view
-        self._tabs.addTab(view, sid)
+        self._tabs.addTab(view, self._tab_label(sid))
         return view
 
     @QtCore.Slot(str, str)

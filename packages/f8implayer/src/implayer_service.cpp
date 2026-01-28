@@ -707,7 +707,11 @@ bool ImPlayerService::on_command(const std::string& call, const nlohmann::json& 
   std::string err;
   bool ok = false;
 
-  if (call == "open")
+  if (call == "terminate" || call == "quit") {
+    spdlog::info("terminate requested: serviceId={}", cfg_.service_id);
+    stop_requested_.store(true, std::memory_order_release);
+    ok = true;
+  } else if (call == "open")
     ok = cmd_open(args, err);
   else if (call == "play")
     ok = cmd_play(err);

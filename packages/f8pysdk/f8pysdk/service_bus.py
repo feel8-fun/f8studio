@@ -150,6 +150,13 @@ class ServiceBus:
         self._rungraph_validators: list[Callable[[F8RuntimeGraph], Awaitable[None] | None]] = []
         self._data_listeners: dict[tuple[str, str], list[Callable[[str, str, Any, int], Awaitable[None] | None]]] = {}
 
+        # Process-level termination request (set via `svc.<serviceId>.terminate`).
+        # Service entrypoints may `await bus.wait_terminate()` to exit gracefully.
+        self._terminate_event = asyncio.Event()
+
+    async def wait_terminate(self) -> None:
+        await self._terminate_event.wait()
+
     @staticmethod
     def _coerce_data_delivery(value: Any) -> DataDeliveryMode | None:
         s = str(value or "").strip().lower()
@@ -319,6 +326,8 @@ class ServiceBus:
         return self._nodes.get(node_id)
 
     async def start(self) -> None:
+        # Reset termination latch for a fresh run.
+        self._terminate_event = asyncio.Event()
         await self._transport.connect()
         # Clear any stale ready flag from a previous run as early as possible.
         await self._announce_ready(False, reason="starting")
@@ -539,6 +548,28 @@ class ServiceBus:
             req_id, _raw, _args, _meta = _parse_envelope(req.data)
             await _respond(req, req_id=req_id, ok=True, result={"serviceId": self.service_id, "active": self.active})
 
+        async def _terminate(req: Any) -> None:
+            req_id, _raw, args, meta = _parse_envelope(req.data)
+
+            try:
+                log.info("terminate requested serviceId=%s meta=%s", self.service_id, dict(meta or {}))
+            except Exception:
+                pass
+
+            service_node = self.get_node(self.service_id)
+            if service_node is not None and isinstance(service_node, CommandableNode):
+                try:
+                    await service_node.on_command("terminate", dict(args), meta={"cmd": "terminate", **meta})  # type: ignore[misc]
+                except Exception as exc:
+                    await _respond(req, req_id=req_id, ok=False, error={"code": "FORBIDDEN", "message": str(exc)})
+                    return
+
+            try:
+                self._terminate_event.set()
+            except Exception:
+                pass
+            await _respond(req, req_id=req_id, ok=True, result={"terminating": True})
+
         async def _cmd(req: Any) -> None:
             req_id, raw, args, meta = _parse_envelope(req.data)
             call = str(raw.get("call") or "").strip()
@@ -643,6 +674,12 @@ class ServiceBus:
         )
         await self._micro.add_endpoint(
             EndpointConfig(name="status", subject=svc_endpoint_subject(sid, "status"), handler=_status, metadata={"builtin": "true"})
+        )
+        await self._micro.add_endpoint(
+            EndpointConfig(name="terminate", subject=svc_endpoint_subject(sid, "terminate"), handler=_terminate, metadata={"builtin": "true"})
+        )
+        await self._micro.add_endpoint(
+            EndpointConfig(name="quit", subject=svc_endpoint_subject(sid, "quit"), handler=_terminate, metadata={"builtin": "true"})
         )
         await self._micro.add_endpoint(
             EndpointConfig(name="cmd", subject=cmd_channel_subject(sid), handler=_cmd, metadata={"builtin": "false"})

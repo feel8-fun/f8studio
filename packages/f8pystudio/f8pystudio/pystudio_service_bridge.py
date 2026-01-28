@@ -105,6 +105,7 @@ class PyStudioServiceBridge(QtCore.QObject):
     ui_command = QtCore.Signal(object)  # UiCommand
     service_output = QtCore.Signal(str, str)  # serviceId, line
     log = QtCore.Signal(str)
+    service_process_state = QtCore.Signal(str, bool)  # serviceId, running
 
     def __init__(self, config: PyStudioServiceBridgeConfig, parent: QtCore.QObject | None = None) -> None:
         super().__init__(parent)
@@ -112,7 +113,12 @@ class PyStudioServiceBridge(QtCore.QObject):
         self._async = _AsyncThread()
         self._proc_mgr = ServiceProcessManager()
         self._managed_service_ids: set[str] = set()
+        self._managed_service_classes: dict[str, str] = {}  # serviceId -> serviceClass
         self._managed_active: bool = True
+        self._pending_proc_actions: dict[str, dict[str, Any]] = {}  # serviceId -> {action, deadline, serviceClass?}
+        self._pending_proc_timers: dict[str, QtCore.QTimer] = {}  # serviceId -> timer
+        self._service_status_cache: dict[str, tuple[bool | None, float]] = {}  # serviceId -> (active, monotonic_ts)
+        self._last_compiled: CompiledRuntimeGraphs | None = None
 
         self._svc: PyStudioService | None = None
         self._nc: Any = None
@@ -169,25 +175,557 @@ class PyStudioServiceBridge(QtCore.QObject):
         and installs a monitoring graph into the studio bus.
         """
         # 1) start processes (sync)
+        self._last_compiled = compiled
         managed: set[str] = set()
+        managed_classes: dict[str, str] = {}
         for svc in list(compiled.global_graph.services or []):
             try:
                 sid = ensure_token(str(svc.serviceId), label="service_id")
                 if sid == self.studio_service_id or str(svc.serviceClass) == SERVICE_CLASS:
                     continue
                 managed.add(sid)
+                managed_classes[sid] = str(svc.serviceClass)
                 self._proc_mgr.start(
                     ServiceProcessConfig(service_class=str(svc.serviceClass), service_id=sid, nats_url=self._cfg.nats_url),
                     on_output=lambda _sid, line, _sid2=sid: self.service_output.emit(_sid2, str(line)),
                 )
+                try:
+                    self.service_process_state.emit(sid, True)
+                except Exception:
+                    pass
             except Exception as exc:
                 self.log.emit(f"start service failed: {exc}")
         self._managed_service_ids = managed
+        self._managed_service_classes = managed_classes
 
         # 2) deploy + install monitoring (async)
         self._async.submit(self._deploy_and_monitor_async(compiled))
         # Deploy implies global active by default.
         self.set_managed_active(True)
+
+    def is_service_running(self, service_id: str) -> bool:
+        try:
+            return bool(self._proc_mgr.is_running(str(service_id)))
+        except Exception:
+            return False
+
+    def get_service_class(self, service_id: str) -> str:
+        """
+        Best-effort service identity lookup for UI display (eg log tabs).
+        """
+        try:
+            sid = ensure_token(str(service_id), label="service_id")
+        except Exception:
+            return ""
+        try:
+            return str(self._managed_service_classes.get(sid, "") or "")
+        except Exception:
+            return ""
+
+    def _cache_service_active(self, service_id: str, active: bool | None) -> None:
+        sid = str(service_id or "").strip()
+        if not sid:
+            return
+        self._service_status_cache[sid] = (active, time.monotonic())
+
+    def get_cached_service_active(self, service_id: str) -> bool | None:
+        """
+        Return last known remote service active state (best-effort).
+        """
+        sid = str(service_id or "").strip()
+        if not sid:
+            return None
+        v = self._service_status_cache.get(sid)
+        if not v:
+            return None
+        return v[0]
+
+    async def _request_service_status_async(self, service_id: str) -> bool | None:
+        sid = ""
+        try:
+            sid = ensure_token(str(service_id), label="service_id")
+        except Exception:
+            return None
+        nc = await self._ensure_nc()
+        if nc is None:
+            return None
+
+        payload = json.dumps({"reqId": new_id(), "args": {}, "meta": {"actor": "studio", "cmd": "status"}}, ensure_ascii=False).encode(
+            "utf-8"
+        )
+        try:
+            msg = await nc.request(svc_endpoint_subject(sid, "status"), payload, timeout=0.4)
+        except Exception:
+            return None
+        raw = bytes(getattr(msg, "data", b"") or b"")
+        if not raw:
+            return None
+        try:
+            resp = json.loads(raw.decode("utf-8"))
+        except Exception:
+            resp = {}
+        if not (isinstance(resp, dict) and resp.get("ok") is True):
+            return None
+        result = resp.get("result") if isinstance(resp.get("result"), dict) else {}
+        if not isinstance(result, dict):
+            return None
+        if "active" not in result:
+            return None
+        try:
+            return bool(result.get("active"))
+        except Exception:
+            return None
+
+    def request_service_status(self, service_id: str) -> None:
+        """
+        Trigger a best-effort status refresh (async).
+        """
+        sid = ""
+        try:
+            sid = ensure_token(str(service_id), label="service_id")
+        except Exception:
+            return
+
+        async def _do() -> None:
+            active = await self._request_service_status_async(sid)
+            self._cache_service_active(sid, active)
+
+        try:
+            self._async.submit(_do())
+        except Exception:
+            return
+
+    async def _set_service_active_async(self, service_id: str, active: bool) -> bool:
+        sid = ""
+        try:
+            sid = ensure_token(str(service_id), label="service_id")
+        except Exception:
+            return False
+        nc = await self._ensure_nc()
+        if nc is None:
+            return False
+
+        cmd = "activate" if bool(active) else "deactivate"
+        payload = json.dumps(
+            {"reqId": new_id(), "args": {"active": bool(active)}, "meta": {"actor": "studio", "cmd": cmd}},
+            ensure_ascii=False,
+        ).encode("utf-8")
+        for _ in range(2):
+            try:
+                msg = await nc.request(svc_endpoint_subject(sid, cmd), payload, timeout=0.5)
+                data = bytes(getattr(msg, "data", b"") or b"")
+                if data:
+                    try:
+                        resp = json.loads(data.decode("utf-8"))
+                    except Exception:
+                        resp = {}
+                    if isinstance(resp, dict) and resp.get("ok") is True:
+                        self._cache_service_active(sid, bool(active))
+                        return True
+            except Exception:
+                await asyncio.sleep(0.15)
+                continue
+        return False
+
+    @QtCore.Slot(str, bool)
+    def set_service_active(self, service_id: str, active: bool) -> None:
+        sid = ""
+        try:
+            sid = ensure_token(str(service_id), label="service_id")
+        except Exception:
+            return
+        if sid == self.studio_service_id:
+            return
+
+        try:
+            self._async.submit(self._set_service_active_async(sid, bool(active)))
+        except Exception:
+            return
+
+    async def _request_service_terminate_async(self, service_id: str) -> bool:
+        """
+        Ask a running service process to exit itself (graceful).
+
+        This is best-effort and may fail if the service isn't connected to NATS yet.
+        """
+        sid = ""
+        try:
+            sid = ensure_token(str(service_id), label="service_id")
+        except Exception:
+            return False
+
+        nc = await self._ensure_nc()
+        if nc is None:
+            return False
+
+        subject = svc_endpoint_subject(sid, "terminate")
+        payload = json.dumps({"reqId": new_id(), "args": {}, "meta": {"actor": "studio", "cmd": "terminate"}}, ensure_ascii=False).encode(
+            "utf-8"
+        )
+        for _ in range(2):
+            try:
+                msg = await nc.request(subject, payload, timeout=0.4)
+                raw = bytes(getattr(msg, "data", b"") or b"")
+                if not raw:
+                    continue
+                try:
+                    resp = json.loads(raw.decode("utf-8"))
+                except Exception:
+                    resp = {}
+                if isinstance(resp, dict) and resp.get("ok") is True:
+                    return True
+                return False
+            except Exception:
+                await asyncio.sleep(0.15)
+                continue
+        return False
+
+    def _ensure_proc_action_timer(self, service_id: str) -> QtCore.QTimer:
+        sid = str(service_id)
+        existing = self._pending_proc_timers.get(sid)
+        if existing is not None:
+            return existing
+        t = QtCore.QTimer(self)
+        t.setInterval(120)
+        t.timeout.connect(lambda _sid=sid: self._poll_proc_action(_sid))
+        self._pending_proc_timers[sid] = t
+        return t
+
+    def _clear_proc_action(self, service_id: str) -> None:
+        sid = str(service_id)
+        t = self._pending_proc_timers.pop(sid, None)
+        if t is not None:
+            try:
+                t.stop()
+            except Exception:
+                pass
+            try:
+                t.deleteLater()
+            except Exception:
+                pass
+        self._pending_proc_actions.pop(sid, None)
+
+    def _poll_proc_action(self, service_id: str) -> None:
+        sid = str(service_id)
+        action = self._pending_proc_actions.get(sid)
+        if not action:
+            self._clear_proc_action(sid)
+            return
+
+        try:
+            if not self.is_service_running(sid):
+                self._clear_proc_action(sid)
+                try:
+                    self.service_process_state.emit(sid, False)
+                except Exception:
+                    pass
+
+                if action.get("action") == "restart":
+                    svc_class = str(action.get("serviceClass") or "").strip() or None
+                    self.start_service(sid, service_class=svc_class)
+                return
+        except Exception:
+            pass
+
+        deadline = float(action.get("deadline") or 0.0)
+        if deadline and time.monotonic() < deadline:
+            return
+
+        # Grace period expired: fall back to local hard stop (taskkill / kill-tree).
+        try:
+            ok = bool(self._proc_mgr.stop(sid))
+        except Exception as exc:
+            self.log.emit(f"stop_service failed: {exc}")
+            ok = False
+
+        still_running = bool(self.is_service_running(sid))
+        if not ok and still_running:
+            self.log.emit(f"stop_service incomplete (process still running): serviceId={sid}")
+            # Keep timer running; do not clear, to avoid allowing duplicates.
+            self._pending_proc_actions[sid]["deadline"] = time.monotonic() + 1.0
+            return
+
+        self._clear_proc_action(sid)
+        try:
+            self.service_process_state.emit(sid, still_running)
+        except Exception:
+            pass
+
+        if not still_running and action.get("action") == "restart":
+            svc_class = str(action.get("serviceClass") or "").strip() or None
+            self.start_service(sid, service_class=svc_class)
+
+    @QtCore.Slot(str)
+    def start_service(self, service_id: str, *, service_class: str | None = None) -> None:
+        sid = ""
+        try:
+            sid = ensure_token(str(service_id), label="service_id")
+        except Exception:
+            return
+        if sid == self.studio_service_id:
+            return
+        svc_class = self._managed_service_classes.get(sid, "") or str(service_class or "")
+        if not svc_class:
+            self.log.emit(f"start_service ignored (unknown serviceClass): serviceId={sid}")
+            return
+        try:
+            self._proc_mgr.start(
+                ServiceProcessConfig(service_class=str(svc_class), service_id=sid, nats_url=self._cfg.nats_url),
+                on_output=lambda _sid, line, _sid2=sid: self.service_output.emit(_sid2, str(line)),
+            )
+        except Exception as exc:
+            self.log.emit(f"start_service failed: {exc}")
+            return
+        try:
+            self._managed_service_ids.add(sid)
+            if svc_class:
+                self._managed_service_classes[sid] = str(svc_class)
+        except Exception:
+            pass
+        try:
+            self.service_process_state.emit(sid, bool(self.is_service_running(sid)))
+        except Exception:
+            pass
+
+    @QtCore.Slot(str)
+    def stop_service(self, service_id: str) -> None:
+        try:
+            sid = ensure_token(str(service_id), label="service_id")
+        except Exception:
+            return
+        if sid == self.studio_service_id:
+            return
+
+        if not self.is_service_running(sid):
+            try:
+                self.service_process_state.emit(sid, False)
+            except Exception:
+                pass
+            return
+
+        # 1) Ask the service to terminate itself (best for GUI apps / child process trees).
+        try:
+            self._async.submit(self._request_service_terminate_async(sid))
+        except Exception:
+            pass
+
+        # 2) Poll for graceful exit, then fall back to local kill-tree.
+        self._pending_proc_actions[sid] = {"action": "stop", "deadline": time.monotonic() + 2.2}
+        t = self._ensure_proc_action_timer(sid)
+        try:
+            if not t.isActive():
+                t.start()
+        except Exception:
+            pass
+        self._poll_proc_action(sid)
+
+    @QtCore.Slot(str)
+    def restart_service(self, service_id: str, *, service_class: str | None = None) -> None:
+        try:
+            sid = ensure_token(str(service_id), label="service_id")
+        except Exception:
+            return
+        if sid == self.studio_service_id:
+            return
+
+        svc_class = self._managed_service_classes.get(sid, "") or str(service_class or "")
+
+        if not self.is_service_running(sid):
+            self.start_service(sid, service_class=svc_class or None)
+            return
+
+        try:
+            self._async.submit(self._request_service_terminate_async(sid))
+        except Exception:
+            pass
+
+        self._pending_proc_actions[sid] = {"action": "restart", "deadline": time.monotonic() + 2.2, "serviceClass": svc_class}
+        t = self._ensure_proc_action_timer(sid)
+        try:
+            if not t.isActive():
+                t.start()
+        except Exception:
+            pass
+        self._poll_proc_action(sid)
+
+    async def _deploy_service_rungraph_async(self, service_id: str) -> None:
+        """
+        Deploy the last compiled per-service rungraph for a single service (best-effort).
+        """
+        compiled = self._last_compiled
+        if compiled is None:
+            return
+        sid = ""
+        try:
+            sid = ensure_token(str(service_id), label="service_id")
+        except Exception:
+            return
+        g = compiled.per_service.get(sid)
+        if g is None:
+            return
+
+        nats_url = str(self._cfg.nats_url).strip() or "nats://127.0.0.1:4222"
+        bucket = kv_bucket_for_service(sid)
+        tr = NatsTransport(NatsTransportConfig(url=nats_url, kv_bucket=bucket))
+        try:
+            await tr.connect()
+            try:
+                await wait_service_ready(tr, timeout_s=6.0)
+            except Exception:
+                return
+            payload = g.model_dump(mode="json", by_alias=True)
+            meta = dict(payload.get("meta") or {})
+            if not str(meta.get("source") or "").strip():
+                meta["source"] = "studio"
+            payload["meta"] = meta
+            req = {"reqId": new_id(), "args": {"graph": payload}, "meta": {"source": "studio"}}
+            req_bytes = json.dumps(req, ensure_ascii=False, default=str).encode("utf-8")
+            _ = await tr.request(
+                svc_endpoint_subject(sid, "set_rungraph"),
+                req_bytes,
+                timeout=2.0,
+                raise_on_error=True,
+            )
+        except Exception as exc:
+            try:
+                self.log.emit(f"deploy service rungraph failed serviceId={sid}: {exc}")
+            except Exception:
+                pass
+        finally:
+            try:
+                await tr.close()
+            except Exception:
+                pass
+
+    async def _install_monitor_graph_async(self) -> None:
+        """
+        Reinstall the studio monitor graph from the last compiled graphs (best-effort).
+        """
+        compiled = self._last_compiled
+        if compiled is None or self._svc is None:
+            return
+
+        mon_edges: list[F8Edge] = []
+        for n in list(compiled.global_graph.nodes or []):
+            try:
+                from_sid = str(getattr(n, "serviceId", "") or "")
+                if not from_sid:
+                    continue
+                from_sid = ensure_token(from_sid, label="fromServiceId")
+                from_nid = ensure_token(str(getattr(n, "nodeId", "") or ""), label="nodeId")
+            except Exception:
+                continue
+
+            for sf in list(getattr(n, "stateFields", None) or []):
+                try:
+                    field_name = str(getattr(sf, "name", "") or "").strip()
+                except Exception:
+                    field_name = ""
+                if not field_name:
+                    continue
+                try:
+                    access = getattr(sf, "access", None)
+                except Exception:
+                    access = None
+                if access not in (F8StateAccess.rw, F8StateAccess.ro):
+                    continue
+                mon_edges.append(
+                    F8Edge(
+                        edgeId=f"mon_{from_sid}_{from_nid}_{field_name}".replace(".", "_"),
+                        fromServiceId=from_sid,
+                        fromOperatorId=from_nid,
+                        fromPort=field_name,
+                        toServiceId=self.studio_service_id,
+                        toOperatorId=_MONITOR_NODE_ID,
+                        toPort=_encode_remote_state_key(service_id=from_sid, node_id=from_nid, field=field_name),
+                        kind=F8EdgeKindEnum.state,
+                        strategy=F8EdgeStrategyEnum.latest,
+                    )
+                )
+
+        try:
+            studio_sub = compiled.per_service.get(self.studio_service_id)
+        except Exception:
+            studio_sub = None
+        base_nodes: list[F8RuntimeNode] = []
+        base_edges: list[F8Edge] = []
+        if studio_sub is not None:
+            base_nodes = list(getattr(studio_sub, "nodes", None) or [])
+            base_edges = list(getattr(studio_sub, "edges", None) or [])
+
+        studio_graph = F8RuntimeGraph(
+            graphId=str(getattr(compiled.global_graph, "graphId", "") or "studio_monitor"),
+            revision=str(getattr(compiled.global_graph, "revision", "") or "1"),
+            meta={"source": "studio"},
+            services=[],
+            nodes=[
+                *base_nodes,
+                F8RuntimeNode(
+                    nodeId=_MONITOR_NODE_ID,
+                    serviceId=self.studio_service_id,
+                    serviceClass=SERVICE_CLASS,
+                    operatorClass="f8.monitor_state",
+                ),
+            ],
+            edges=[*base_edges, *mon_edges],
+        )
+        try:
+            await self._svc.bus.set_rungraph(studio_graph)
+        except Exception as exc:
+            try:
+                self.log.emit(f"install monitor graph failed: {exc}")
+            except Exception:
+                pass
+
+    @QtCore.Slot(str)
+    def start_service_and_deploy(self, service_id: str, *, service_class: str | None = None) -> None:
+        """
+        Start service process (if needed) and deploy last compiled rungraph for it (best-effort).
+        """
+        try:
+            sid = ensure_token(str(service_id), label="service_id")
+        except Exception:
+            return
+        if sid == self.studio_service_id:
+            return
+        self.start_service(sid, service_class=service_class)
+
+        async def _do() -> None:
+            await self._deploy_service_rungraph_async(sid)
+            await self._install_monitor_graph_async()
+            await self._set_service_active_async(sid, True)
+
+        try:
+            self._async.submit(_do())
+        except Exception:
+            pass
+
+    @QtCore.Slot(str)
+    def restart_service_and_deploy(self, service_id: str, *, service_class: str | None = None) -> None:
+        """
+        Restart service (terminate -> start) and deploy last compiled rungraph for it (best-effort).
+        """
+        try:
+            sid = ensure_token(str(service_id), label="service_id")
+        except Exception:
+            return
+        if sid == self.studio_service_id:
+            return
+
+        # Reuse existing restart flow; deploy will happen once process is back.
+        self.restart_service(sid, service_class=service_class)
+
+        async def _do() -> None:
+            # Give restart a moment to come back; readiness wait inside deploy handles most cases.
+            await asyncio.sleep(0.3)
+            await self._deploy_service_rungraph_async(sid)
+            await self._install_monitor_graph_async()
+            await self._set_service_active_async(sid, True)
+
+        try:
+            self._async.submit(_do())
+        except Exception:
+            pass
 
     def set_local_state(self, node_id: str, field: str, value: Any) -> None:
         """

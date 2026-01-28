@@ -65,6 +65,16 @@ class F8StudioGraph(NodeGraph):
 
         self.property_changed.connect(self._on_property_changed)  # type: ignore[attr-defined]
 
+        # Optional bridge used by UI widgets to control local service processes.
+        self._service_bridge: Any | None = None
+
+    def set_service_bridge(self, bridge: Any | None) -> None:
+        self._service_bridge = bridge
+
+    @property
+    def service_bridge(self) -> Any | None:
+        return self._service_bridge
+
         # NodeGraphQt exposes `nodes_deleted` (list[str]), not `node_deleted`.
         self.nodes_deleted.connect(self._on_nodes_deleted)  # type: ignore[attr-defined]
 

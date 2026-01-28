@@ -32,6 +32,7 @@ from NodeGraphQt.qgraphics.node_text_item import NodeTextItem
 from NodeGraphQt.qgraphics.port import CustomPortItem, PortItem
 
 from .port_painter import draw_square_port, DATA_PORT_COLOR, STATE_PORT_COLOR
+from .service_process_toolbar import ServiceProcessToolbar
 
 logger = logging.getLogger(__name__)
 
@@ -967,6 +968,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             self._draw_node_vertical()
         else:
             raise RuntimeError("Node graph layout direction not valid!")
+        self._position_service_toolbar()
 
     def post_init(self, viewer=None, pos=None):
         """
@@ -978,10 +980,66 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             pos (tuple): cursor position.
         """
         self.draw_node()
+        self._ensure_service_toolbar(viewer)
+        self._position_service_toolbar()
 
         # set initial node position.
         if pos:
             self.xy_pos = pos
+            self._position_service_toolbar()
+
+    def _ensure_service_toolbar(self, viewer: Any | None) -> None:
+        if getattr(self, "_svc_toolbar_proxy", None) is not None:
+            return
+        service_id = str(getattr(self, "id", "") or "").strip()
+        if not service_id:
+            return
+
+        def _get_bridge() -> Any | None:
+            try:
+                g = getattr(viewer, "_f8_graph", None)
+                return getattr(g, "service_bridge", None) if g is not None else None
+            except Exception:
+                return None
+
+        def _get_service_class() -> str:
+            try:
+                g = getattr(viewer, "_f8_graph", None)
+                if g is None:
+                    return ""
+                n = g.get_node_by_id(service_id)
+                spec = getattr(n, "spec", None)
+                return str(getattr(spec, "serviceClass", "") or "")
+            except Exception:
+                return ""
+
+        try:
+            w = ServiceProcessToolbar(
+                service_id=service_id, get_bridge=_get_bridge, get_service_class=_get_service_class
+            )
+            proxy = QtWidgets.QGraphicsProxyWidget(self)
+            proxy.setWidget(w)
+            proxy.setZValue(10_000)
+            proxy.setCacheMode(QtWidgets.QGraphicsItem.DeviceCoordinateCache)
+            self._svc_toolbar_proxy = proxy
+        except Exception:
+            self._svc_toolbar_proxy = None
+
+    def _position_service_toolbar(self) -> None:
+        proxy = getattr(self, "_svc_toolbar_proxy", None)
+        if proxy is None:
+            return
+        try:
+            rect = self.boundingRect()
+            w = float(proxy.size().width() or 0.0)
+            h = float(proxy.size().height() or 0.0)
+        except Exception:
+            return
+        
+        try:
+            proxy.setPos(rect.right() - w, rect.top() - h)
+        except Exception:
+            pass
 
     def auto_switch_mode(self):
         """

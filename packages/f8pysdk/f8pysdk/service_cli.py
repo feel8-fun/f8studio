@@ -68,7 +68,7 @@ class ServiceCliTemplate(ABC):
         await runtime.start()
 
         try:
-            await asyncio.Event().wait()
+            await runtime.bus.wait_terminate()
         finally:
             try:
                 await self.teardown(runtime)

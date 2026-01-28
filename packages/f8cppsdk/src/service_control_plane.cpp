@@ -120,7 +120,9 @@ bool ServiceControlPlaneServer::start() {
   const bool ok = add_ep("activate", svc_endpoint_subject(sid, "activate")) &&
                   add_ep("deactivate", svc_endpoint_subject(sid, "deactivate")) &&
                   add_ep("set_active", svc_endpoint_subject(sid, "set_active")) &&
-                  add_ep("status", svc_endpoint_subject(sid, "status")) && add_ep("cmd", cmd_channel_subject(sid)) &&
+                  add_ep("status", svc_endpoint_subject(sid, "status")) &&
+                  add_ep("terminate", svc_endpoint_subject(sid, "terminate")) &&
+                  add_ep("quit", svc_endpoint_subject(sid, "quit")) && add_ep("cmd", cmd_channel_subject(sid)) &&
                   add_ep("set_state", svc_endpoint_subject(sid, "set_state")) &&
                   add_ep("set_rungraph", svc_endpoint_subject(sid, "set_rungraph"));
   if (!ok) {
@@ -216,6 +218,17 @@ void ServiceControlPlaneServer::handle_request(microRequest* msg, const std::str
     if (endpoint == "status") {
       result = json{{"serviceId", cfg_.service_id}, {"active", handler_->is_active()}};
       respond(msg, env.req_id, true, result, "", "");
+      return;
+    }
+    if (endpoint == "terminate" || endpoint == "quit") {
+      spdlog::info("{} requested serviceId={}", endpoint, cfg_.service_id);
+      json out;
+      bool ok = handler_->on_command("terminate", env.args, env.meta, out, err_code, err_msg);
+      if (!ok) {
+        respond(msg, env.req_id, false, json(nullptr), err_code, err_msg);
+        return;
+      }
+      respond(msg, env.req_id, true, json{{"terminating", true}}, "", "");
       return;
     }
     if (endpoint == "set_state") {

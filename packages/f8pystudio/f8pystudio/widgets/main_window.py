@@ -44,14 +44,31 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
 
         self._bridge = PyStudioServiceBridge(PyStudioServiceBridgeConfig(), parent=self)
         self._bridge.ui_command.connect(self._on_ui_command)  # type: ignore[attr-defined]
-        self._bridge.service_output.connect(self._log_dock.append)  # type: ignore[attr-defined]
+        self._bridge.service_output.connect(self._on_service_output)  # type: ignore[attr-defined]
         self._bridge.log.connect(lambda s: self._log_dock.append("studio", str(s) + "\n"))  # type: ignore[attr-defined]
         self._bridge.start()
+        try:
+            self.studio_graph.set_service_bridge(self._bridge)
+        except Exception:
+            pass
         self._applying_runtime_state = False
         self.studio_graph.property_changed.connect(self._on_ui_property_changed)  # type: ignore[attr-defined]
 
         QtCore.QTimer.singleShot(0, self._auto_load_session)
         QtWidgets.QApplication.instance().aboutToQuit.connect(self._auto_save_session)  # type: ignore[attr-defined]
+
+    @QtCore.Slot(str, str)
+    def _on_service_output(self, service_id: str, line: str) -> None:
+        try:
+            svc_name = str(self._bridge.get_service_class(service_id) or "").strip()
+        except Exception:
+            svc_name = ""
+        if svc_name:
+            try:
+                self._log_dock.set_service_name(service_id, svc_name)
+            except Exception:
+                pass
+        self._log_dock.append(service_id, line)
 
     def _setup_docks(self) -> None:
         prop_editor = F8StudioPropertiesBinWidget(node_graph=self.studio_graph)

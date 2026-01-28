@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -54,17 +55,39 @@ class ServiceProcessManager:
         t.start()
 
     def is_running(self, service_id: str) -> bool:
-        p = self._procs.get(str(service_id))
+        sid = str(service_id)
+        p = self._procs.get(sid)
         if p is None:
             return False
-        return p.poll() is None
+        if p.poll() is None:
+            return True
+        # Process already exited: clean up stale entry so we don't accidentally
+        # allow duplicate processes under the same serviceId.
+        self._cleanup_entry(sid)
+        return False
 
-    def stop(self, service_id: str) -> None:
+    def _cleanup_entry(self, service_id: str) -> None:
         sid = str(service_id)
         p = self._procs.pop(sid, None)
+        t = self._threads.pop(sid, None)
         if p is None:
             return
-        t = self._threads.pop(sid, None)
+
+        try:
+            # Avoid closing stdout while a reader thread is blocked in `readline()`;
+            # on Windows this can deadlock the UI thread. Let the pipe close naturally
+            # when the process exits; only close if no reader thread is alive.
+            if t is None or not t.is_alive():
+                if p.stdout:
+                    p.stdout.close()
+        except Exception:
+            pass
+ 
+    def stop(self, service_id: str) -> bool:
+        sid = str(service_id)
+        p = self._procs.get(sid)
+        if p is None:
+            return True
         pid = getattr(p, "pid", None)
 
         # Best-effort graceful terminate, then ensure the whole process tree is gone.
@@ -73,7 +96,7 @@ class ServiceProcessManager:
         except Exception:
             pass
         try:
-            p.wait(timeout=0.5)
+            p.wait(timeout=0.8)
         except Exception:
             pass
 
@@ -97,20 +120,23 @@ class ServiceProcessManager:
                     p.kill()
             except Exception:
                 pass
-            try:
-                p.wait(timeout=1.0)
-            except Exception:
-                pass
 
-        # Avoid closing stdout while a reader thread is blocked in `readline()`;
-        # on Windows this can deadlock the UI thread. Let the pipe close naturally
-        # when the process exits; only close if no reader thread is alive.
-        try:
-            if t is None or not t.is_alive():
-                if p.stdout:
-                    p.stdout.close()
-        except Exception:
-            pass
+        # Wait a bit longer for shutdown (especially after taskkill).
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            try:
+                if p.poll() is not None:
+                    break
+            except Exception:
+                break
+            time.sleep(0.05)
+
+        if p.poll() is None:
+            # Still alive: keep tracking it so we don't allow duplicates.
+            return False
+
+        self._cleanup_entry(sid)
+        return True
 
     def start(self, cfg: ServiceProcessConfig, *, on_output: Any | None = None) -> None:
         service_class = str(cfg.service_class).strip()
@@ -132,6 +158,8 @@ class ServiceProcessManager:
 
         if self.is_running(service_id):
             return
+        # Ensure stale exited procs are removed before starting.
+        self._cleanup_entry(service_id)
 
         # Studio has "root" permissions; clear the service KV bucket before starting a new process
         # to avoid stale `ready=true` from a previous run.

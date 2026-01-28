@@ -13,6 +13,7 @@ from NodeGraphQt.qgraphics.node_backdrop import BackdropSizer
 from f8pysdk import F8ServiceSpec
 from f8pysdk.schema_helpers import schema_default, schema_type
 from .node_base import F8StudioBaseNode
+from .service_process_toolbar import ServiceProcessToolbar
 
 
 class F8StudioContainerBaseNode(F8StudioBaseNode):
@@ -123,10 +124,76 @@ class F8StudioContainerNodeItem(AbstractNodeItem):
         # Match `NodeGraphQt.qgraphics.node_base.NodeItem` API so
         # `BaseNode.update_model()` can iterate `self.view.widgets`.
         self._widgets = OrderedDict()
+        # Must exist before BackdropSizer calls `itemChange()` which may call `_position_service_toolbar()`.
+        self._svc_toolbar_proxy: QtWidgets.QGraphicsProxyWidget | None = None
         self._min_size = 500, 300
         self._sizer = BackdropSizer(self, 26.0)
         self._sizer.set_pos(*self._min_size)
         self._child_views: list[AbstractNodeItem] = []
+        self._svc_toolbar_proxy: QtWidgets.QGraphicsProxyWidget | None = None
+
+    def post_init(self, viewer=None, pos=None):
+        self._ensure_service_toolbar(viewer)
+        self._position_service_toolbar()
+        if pos:
+            try:
+                self.xy_pos = pos
+            except Exception:
+                pass
+            self._position_service_toolbar()
+
+    def _ensure_service_toolbar(self, viewer: Any | None) -> None:
+        if self._svc_toolbar_proxy is not None:
+            return
+        service_id = str(getattr(self, "id", "") or "").strip()
+        if not service_id:
+            return
+
+        def _get_bridge() -> Any | None:
+            try:
+                g = getattr(viewer, "_f8_graph", None)
+                return getattr(g, "service_bridge", None) if g is not None else None
+            except Exception:
+                return None
+
+        def _get_service_class() -> str:
+            try:
+                g = getattr(viewer, "_f8_graph", None)
+                if g is None:
+                    return ""
+                n = g.get_node_by_id(service_id)
+                spec = getattr(n, "spec", None)
+                return str(getattr(spec, "serviceClass", "") or "")
+            except Exception:
+                return ""
+
+        try:
+            w = ServiceProcessToolbar(
+                service_id=service_id, get_bridge=_get_bridge, get_service_class=_get_service_class
+            )
+            proxy = QtWidgets.QGraphicsProxyWidget(self)
+            proxy.setWidget(w)
+            proxy.setZValue(10_000)
+            proxy.setCacheMode(QtWidgets.QGraphicsItem.DeviceCoordinateCache)
+            self._svc_toolbar_proxy = proxy
+        except Exception:
+            self._svc_toolbar_proxy = None
+
+    def _position_service_toolbar(self) -> None:
+        proxy = getattr(self, "_svc_toolbar_proxy", None)
+        if proxy is None:
+            return
+        try:
+            rect = self.boundingRect()
+            w = float(proxy.size().width() or 0.0)
+            h = float(proxy.size().height() or 0.0)
+        except Exception:
+            return
+        
+        try:
+            proxy.setPos(rect.right() - w, rect.top() - h)
+        except Exception:
+            pass
 
     def _combined_rect(self, nodes: list[AbstractNodeItem]) -> QtCore.QRectF:
         group = self.scene().createItemGroup(nodes)
@@ -158,6 +225,7 @@ class F8StudioContainerNodeItem(AbstractNodeItem):
         delta_x = new_x - self.pos().x()
         delta_y = new_y - self.pos().y()
         self.setPos(new_x, new_y)
+        self._position_service_toolbar()
         for view in self._child_views:
             p = view.xy_pos
             p[0] += delta_x
@@ -167,6 +235,7 @@ class F8StudioContainerNodeItem(AbstractNodeItem):
     def on_sizer_pos_changed(self, pos):
         self._width = pos.x() + self._sizer.size
         self._height = pos.y() + self._sizer.size
+        self._position_service_toolbar()
         self.update()
 
     def on_sizer_pos_mouse_release(self):

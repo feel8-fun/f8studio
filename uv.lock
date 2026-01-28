@@ -407,6 +407,7 @@ dependencies = [
     { name = "nodegraphqt" },
     { name = "pyqtgraph" },
     { name = "pyside6" },
+    { name = "qtawesome" },
     { name = "qtpy" },
     { name = "setuptools" },
     { name = "shortuuid" },
@@ -419,6 +420,7 @@ requires-dist = [
     { name = "nodegraphqt", specifier = ">=0.6.43" },
     { name = "pyqtgraph", specifier = ">=0.14.0" },
     { name = "pyside6", specifier = ">=6.10.1" },
+    { name = "qtawesome", specifier = ">=1.4.1" },
     { name = "qtpy", specifier = ">=2.4.3" },
     { name = "setuptools" },
     { name = "shortuuid", specifier = ">=1.0.13" },
@@ -1193,6 +1195,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/41/7f/3602c68c0c1545ced4560efc2ef7fa6cf23978380816b462039913db2071/qt_py-1.4.8.tar.gz", hash = "sha256:3ca0e4526bc53cf0a8c6d1fbf1dce2554ed5daa1a4abf0e3e67f73bbc9799b39", size = 62828, upload-time = "2025-10-17T19:57:08.36Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/71/a0/47b2b80fb0aa22fedaf1ceafb1e0a2dccb65ca7de55e61eeb0c07bcde248/qt_py-1.4.8-py2.py3-none-any.whl", hash = "sha256:bccb05611a904689569ef73372adfd2c47bd9307ee9f795477cc2b981b0fce65", size = 44454, upload-time = "2025-10-17T19:57:06.708Z" },
+]
+
+[[package]]
+name = "qtawesome"
+version = "1.4.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "qtpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/96/b8/7bd7527025a6f485e8f40b9f85b813ca3420ba940a91ac41bd1eb5904cda/qtawesome-1.4.1.tar.gz", hash = "sha256:d6c5aa545b614fc562769e9eeadf18530e08b8eebe28af4ab5d38131194c9c7b", size = 2614043, upload-time = "2026-01-23T20:45:18.847Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/11/ef/b7c8c38d1717e2fcb777678ed11568b31062e34550e23297cc32e9e1105e/qtawesome-1.4.1-py3-none-any.whl", hash = "sha256:6a45f0ec214e0cd7c9c867772ec596799dcd5fae00a4b17717ff0d95d2e3fb64", size = 2593544, upload-time = "2026-01-23T20:45:16.93Z" },
 ]
 
 [[package]]
