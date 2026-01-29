@@ -18,6 +18,7 @@ from f8pysdk import (
     F8RuntimeService,
 )
 from f8pysdk.schema_helpers import boolean_schema
+from f8pysdk.schema_helpers import string_schema
 from f8pysdk.nats_naming import ensure_token
 
 from ..pystudio_node_registry import SERVICE_CLASS as STUDIO_SERVICE_CLASS
@@ -193,6 +194,36 @@ def compile_global_runtime_graph(
                 continue
 
         state_fields = list(getattr(spec, "stateFields", None) or [])
+
+        # Built-in identity fields (readonly) for cross-process routing/commands.
+        # - svcId: service instance id
+        # - operatorId: operator/node id (operators only; service/container nodes omit it)
+        try:
+            existing = {str(getattr(sf, "name", "") or "") for sf in state_fields}
+        except Exception:
+            existing = set()
+        if "svcId" not in existing:
+            state_fields.append(
+                F8StateSpec(
+                    name="svcId",
+                    label="Service Id",
+                    description="Readonly: current service instance id (svcId).",
+                    valueSchema=string_schema(),
+                    access=F8StateAccess.ro,
+                    showOnNode=False,
+                )
+            )
+        if isinstance(spec, F8OperatorSpec) and "operatorId" not in existing:
+            state_fields.append(
+                F8StateSpec(
+                    name="operatorId",
+                    label="Operator Id",
+                    description="Readonly: current operator/node id (operatorId).",
+                    valueSchema=string_schema(),
+                    access=F8StateAccess.ro,
+                    showOnNode=False,
+                )
+            )
         if isinstance(spec, F8ServiceSpec):
             # Runtime-level lifecycle state (service-scoped), persisted in KV by the runtime.
             try:

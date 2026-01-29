@@ -412,6 +412,76 @@ def _normalize_describe_payload(*, payload: dict, service_dir: Path | None) -> d
             fixed_ops.append(o)
         payload["operators"] = fixed_ops
 
+    def _schema_string() -> dict:
+        return {"type": "string"}
+
+    def _state_field(*, name: str, value_schema: dict, access: str, label: str, description: str, show_on_node: bool) -> dict:
+        return {
+            "name": str(name),
+            "label": str(label),
+            "description": str(description),
+            "valueSchema": dict(value_schema),
+            "access": str(access),
+            "showOnNode": bool(show_on_node),
+        }
+
+    def _ensure_state_field(obj: dict, *, name: str, access: str, label: str, description: str, show_on_node: bool) -> None:
+        fields = obj.get("stateFields")
+        if not isinstance(fields, list):
+            fields = []
+        have = {str(x.get("name") or "") for x in fields if isinstance(x, dict)}
+        if name in have:
+            obj["stateFields"] = fields
+            return
+        fields.append(
+            _state_field(
+                name=name,
+                value_schema=_schema_string(),
+                access=access,
+                label=label,
+                description=description,
+                show_on_node=show_on_node,
+            )
+        )
+        obj["stateFields"] = fields
+
+    # Built-in identity fields (match f8pysdk behavior):
+    # - svcId: for all nodes
+    # - operatorId: operator nodes only
+    try:
+        _ensure_state_field(
+            payload["service"],
+            name="svcId",
+            access="ro",
+            label="Service Id",
+            description="Readonly: current service instance id (svcId).",
+            show_on_node=False,
+        )
+    except Exception:
+        pass
+    try:
+        for op in list(payload.get("operators") or []):
+            if not isinstance(op, dict):
+                continue
+            _ensure_state_field(
+                op,
+                name="svcId",
+                access="ro",
+                label="Service Id",
+                description="Readonly: current service instance id (svcId).",
+                show_on_node=False,
+            )
+            _ensure_state_field(
+                op,
+                name="operatorId",
+                access="ro",
+                label="Operator Id",
+                description="Readonly: current operator/node id (operatorId).",
+                show_on_node=False,
+            )
+    except Exception:
+        pass
+
     return payload
 
 
@@ -480,10 +550,19 @@ def _run_describe(
 
     combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
     obj = _extract_last_json_obj(combined)
-    if isinstance(obj, dict) and "service" in obj:
-        if "operators" not in obj:
-            obj["operators"] = []
-        return _normalize_describe_payload(payload=obj, service_dir=service_dir)
+    if isinstance(obj, dict):
+        # Preferred: already wrapped as f8describe/1.
+        if "service" in obj:
+            if "operators" not in obj:
+                obj["operators"] = []
+            obj.setdefault("schemaVersion", "f8describe/1")
+            return _normalize_describe_payload(payload=obj, service_dir=service_dir)
+
+        # Common C++ pattern: `--describe` prints only the f8service/1 service spec.
+        # Wrap it so Studio discovery can consume it uniformly.
+        if str(obj.get("schemaVersion") or "").strip() == "f8service/1" or "serviceClass" in obj:
+            wrapped = {"schemaVersion": "f8describe/1", "service": obj, "operators": []}
+            return _normalize_describe_payload(payload=wrapped, service_dir=service_dir)
 
     return _fallback_describe_payload(service_dir=service_dir)
 

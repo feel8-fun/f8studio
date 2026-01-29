@@ -11,9 +11,8 @@ import nats  # type: ignore[import-not-found]
 from qtpy import QtCore
 
 from f8pysdk import F8Edge, F8EdgeKindEnum, F8EdgeStrategyEnum, F8RuntimeGraph, F8RuntimeNode, F8StateAccess
-from f8pysdk.nats_naming import ensure_token, kv_bucket_for_service, kv_key_rungraph, new_id, svc_endpoint_subject, svc_micro_name
+from f8pysdk.nats_naming import ensure_token, kv_bucket_for_service, new_id, svc_endpoint_subject, svc_micro_name
 from f8pysdk.nats_transport import NatsTransport, NatsTransportConfig
-from f8pysdk.runtime_node import RuntimeNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from f8pysdk.service_ready import wait_service_ready
 from .nodegraph.runtime_compiler import CompiledRuntimeGraphs
@@ -118,10 +117,14 @@ class PyStudioServiceBridge(QtCore.QObject):
         self._pending_proc_actions: dict[str, dict[str, Any]] = {}  # serviceId -> {action, deadline, serviceClass?}
         self._pending_proc_timers: dict[str, QtCore.QTimer] = {}  # serviceId -> timer
         self._service_status_cache: dict[str, tuple[bool | None, float]] = {}  # serviceId -> (active, monotonic_ts)
+        self._service_alive_cache: dict[str, tuple[bool, float]] = {}  # serviceId -> (alive, monotonic_ts)
+        self._service_status_inflight: set[str] = set()
+        self._service_status_req_s: dict[str, float] = {}
         self._last_compiled: CompiledRuntimeGraphs | None = None
 
         self._svc: PyStudioService | None = None
         self._nc: Any = None
+        self._last_nats_error_log_s: float = 0.0
 
     @property
     def studio_service_id(self) -> str:
@@ -203,11 +206,213 @@ class PyStudioServiceBridge(QtCore.QObject):
         # Deploy implies global active by default.
         self.set_managed_active(True)
 
-    def is_service_running(self, service_id: str) -> bool:
+    @QtCore.Slot(str)
+    def unmanage_service(self, service_id: str) -> None:
+        """
+        Remove a serviceId from the studio's managed set (UI bookkeeping only).
+
+        This does not stop the process by itself.
+        """
         try:
-            return bool(self._proc_mgr.is_running(str(service_id)))
+            sid = ensure_token(str(service_id), label="service_id")
         except Exception:
+            return
+        if sid == self.studio_service_id:
+            return
+
+        try:
+            self._managed_service_ids.discard(sid)
+        except Exception:
+            pass
+        try:
+            self._managed_service_classes.pop(sid, None)
+        except Exception:
+            pass
+        try:
+            self._service_status_cache.pop(sid, None)
+        except Exception:
+            pass
+
+        # Cancel any pending process actions/timers for this service.
+        try:
+            self._pending_proc_actions.pop(sid, None)
+        except Exception:
+            pass
+        try:
+            t = self._pending_proc_timers.pop(sid, None)
+            if t is not None:
+                try:
+                    t.stop()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    @QtCore.Slot(str)
+    def reclaim_service(self, service_id: str) -> None:
+        """
+        Best-effort reclamation for a serviceId that was removed from the canvas:
+        terminate the process and drop it from the managed set.
+        """
+        try:
+            sid = ensure_token(str(service_id), label="service_id")
+        except Exception:
+            return
+        if sid == self.studio_service_id:
+            return
+        try:
+            self.log.emit(f"reclaim service process serviceId={sid}")
+        except Exception:
+            pass
+        try:
+            self.stop_service(sid)
+        except Exception:
+            pass
+        self.unmanage_service(sid)
+
+    @QtCore.Slot(str)
+    def deploy_service_rungraph(self, service_id: str, *, compiled: CompiledRuntimeGraphs | None = None) -> None:
+        """
+        Deploy the current per-service rungraph to a running service instance (best-effort).
+        """
+        try:
+            sid = ensure_token(str(service_id), label="service_id")
+        except Exception:
+            return
+        if sid == self.studio_service_id:
+            return
+        if not self.is_service_running(sid):
+            try:
+                self.log.emit(f"deploy skipped (service not running) serviceId={sid}")
+            except Exception:
+                pass
+            return
+
+        async def _do() -> None:
+            await self._install_monitor_graph_async(compiled=compiled)
+            await self._deploy_service_rungraph_async(sid, compiled=compiled)
+
+        try:
+            self._async.submit(_do())
+        except Exception:
+            pass
+
+    async def _ensure_studio_runtime_async(self, *, timeout_s: float = 6.0) -> bool:
+        """
+        Best-effort wait for the in-process studio runtime (ServiceRuntime) to be ready.
+        """
+        deadline = time.monotonic() + float(timeout_s or 0.0)
+        while True:
+            if self._svc is not None and getattr(self._svc, "bus", None) is not None:
+                return True
+            if time.monotonic() >= deadline:
+                try:
+                    self.log.emit("studio runtime not ready (timeout)")
+                except Exception:
+                    pass
+                return False
+            await asyncio.sleep(0.08)
+
+    @staticmethod
+    def _pick_compiled(
+        compiled: CompiledRuntimeGraphs | None, fallback: CompiledRuntimeGraphs | None
+    ) -> CompiledRuntimeGraphs | None:
+        return compiled if compiled is not None else fallback
+
+    def _build_studio_monitor_graph(self, compiled: CompiledRuntimeGraphs) -> F8RuntimeGraph:
+        mon_edges: list[F8Edge] = []
+        for n in list(compiled.global_graph.nodes or []):
+            try:
+                from_sid = str(getattr(n, "serviceId", "") or "")
+                if not from_sid:
+                    continue
+                from_sid = ensure_token(from_sid, label="fromServiceId")
+                from_nid = ensure_token(str(getattr(n, "nodeId", "") or ""), label="nodeId")
+            except Exception:
+                continue
+
+            fields: list[str] = []
+            for sf in list(getattr(n, "stateFields", None) or []):
+                try:
+                    field_name = str(getattr(sf, "name", "") or "").strip()
+                except Exception:
+                    field_name = ""
+                if not field_name:
+                    continue
+                try:
+                    access = getattr(sf, "access", None)
+                except Exception:
+                    access = None
+                # Only monitor readable state (rw/ro). Write-only has no fanout by design.
+                if access not in (F8StateAccess.rw, F8StateAccess.ro):
+                    continue
+                fields.append(field_name)
+
+            # Always monitor identity fields even if a node spec/stateFields list is stale.
+            if "svcId" not in fields:
+                fields.append("svcId")
+            try:
+                op_class = str(getattr(n, "operatorClass", "") or "").strip()
+            except Exception:
+                op_class = ""
+            if op_class and "operatorId" not in fields:
+                fields.append("operatorId")
+
+            for field_name in fields:
+                mon_edges.append(
+                    F8Edge(
+                        edgeId=f"mon_{from_sid}_{from_nid}_{field_name}".replace(".", "_"),
+                        fromServiceId=from_sid,
+                        fromOperatorId=from_nid,
+                        fromPort=field_name,
+                        toServiceId=self.studio_service_id,
+                        toOperatorId=_MONITOR_NODE_ID,
+                        toPort=_encode_remote_state_key(service_id=from_sid, node_id=from_nid, field=field_name),
+                        kind=F8EdgeKindEnum.state,
+                        strategy=F8EdgeStrategyEnum.latest,
+                    )
+                )
+
+        studio_sub = compiled.per_service.get(self.studio_service_id)
+        base_nodes: list[F8RuntimeNode] = list(getattr(studio_sub, "nodes", None) or []) if studio_sub is not None else []
+        base_edges: list[F8Edge] = list(getattr(studio_sub, "edges", None) or []) if studio_sub is not None else []
+
+        return F8RuntimeGraph(
+            graphId=str(getattr(compiled.global_graph, "graphId", "") or "studio_monitor"),
+            revision=str(getattr(compiled.global_graph, "revision", "") or "1"),
+            meta={"source": "studio"},
+            services=[],
+            nodes=[
+                *base_nodes,
+                F8RuntimeNode(
+                    nodeId=_MONITOR_NODE_ID,
+                    serviceId=self.studio_service_id,
+                    serviceClass=SERVICE_CLASS,
+                    operatorClass="f8.monitor_state",
+                ),
+            ],
+            edges=[*base_edges, *mon_edges],
+        )
+
+    def is_service_running(self, service_id: str) -> bool:
+        sid = str(service_id or "").strip()
+        if not sid:
             return False
+        try:
+            if bool(self._proc_mgr.is_running(str(sid))):
+                return True
+        except Exception:
+            pass
+        # If the service wasn't launched by this studio process, fall back to
+        # a best-effort "alive" cache (refreshed via status endpoint).
+        v = self._service_alive_cache.get(sid)
+        if not v:
+            return False
+        alive, ts = v
+        if not alive:
+            return False
+        # Consider alive cache fresh for a short window to avoid UI flicker.
+        return (time.monotonic() - float(ts)) < 0.9
 
     def get_service_class(self, service_id: str) -> str:
         """
@@ -228,6 +433,12 @@ class PyStudioServiceBridge(QtCore.QObject):
             return
         self._service_status_cache[sid] = (active, time.monotonic())
 
+    def _cache_service_alive(self, service_id: str, alive: bool) -> None:
+        sid = str(service_id or "").strip()
+        if not sid:
+            return
+        self._service_alive_cache[sid] = (bool(alive), time.monotonic())
+
     def get_cached_service_active(self, service_id: str) -> bool | None:
         """
         Return last known remote service active state (best-effort).
@@ -240,7 +451,7 @@ class PyStudioServiceBridge(QtCore.QObject):
             return None
         return v[0]
 
-    async def _request_service_status_async(self, service_id: str) -> bool | None:
+    async def _request_service_status_async(self, service_id: str) -> dict[str, Any] | None:
         sid = ""
         try:
             sid = ensure_token(str(service_id), label="service_id")
@@ -269,12 +480,13 @@ class PyStudioServiceBridge(QtCore.QObject):
         result = resp.get("result") if isinstance(resp.get("result"), dict) else {}
         if not isinstance(result, dict):
             return None
-        if "active" not in result:
-            return None
-        try:
-            return bool(result.get("active"))
-        except Exception:
-            return None
+        out: dict[str, Any] = {"alive": True}
+        if "active" in result:
+            try:
+                out["active"] = bool(result.get("active"))
+            except Exception:
+                out["active"] = None
+        return out
 
     def request_service_status(self, service_id: str) -> None:
         """
@@ -285,14 +497,43 @@ class PyStudioServiceBridge(QtCore.QObject):
             sid = ensure_token(str(service_id), label="service_id")
         except Exception:
             return
+        try:
+            now = time.monotonic()
+            last = float(self._service_status_req_s.get(sid, 0.0))
+            if (now - last) < 0.25:
+                return
+            if sid in self._service_status_inflight:
+                return
+            self._service_status_inflight.add(sid)
+            self._service_status_req_s[sid] = now
+        except Exception:
+            pass
 
         async def _do() -> None:
-            active = await self._request_service_status_async(sid)
-            self._cache_service_active(sid, active)
+            try:
+                status = await self._request_service_status_async(sid)
+                if not isinstance(status, dict):
+                    # Fast "down" signal: if status endpoint doesn't respond, treat service
+                    # as not running for UI purposes (it will flip back to True on next success).
+                    self._cache_service_alive(sid, False)
+                    self._cache_service_active(sid, None)
+                    return
+                self._cache_service_alive(sid, True)
+                if "active" in status:
+                    self._cache_service_active(sid, status.get("active"))
+            finally:
+                try:
+                    self._service_status_inflight.discard(sid)
+                except Exception:
+                    pass
 
         try:
             self._async.submit(_do())
         except Exception:
+            try:
+                self._service_status_inflight.discard(sid)
+            except Exception:
+                pass
             return
 
     async def _set_service_active_async(self, service_id: str, active: bool) -> bool:
@@ -548,11 +789,11 @@ class PyStudioServiceBridge(QtCore.QObject):
             pass
         self._poll_proc_action(sid)
 
-    async def _deploy_service_rungraph_async(self, service_id: str) -> None:
+    async def _deploy_service_rungraph_async(self, service_id: str, *, compiled: CompiledRuntimeGraphs | None = None) -> None:
         """
         Deploy the last compiled per-service rungraph for a single service (best-effort).
         """
-        compiled = self._last_compiled
+        compiled = self._pick_compiled(compiled, self._last_compiled)
         if compiled is None:
             return
         sid = ""
@@ -569,10 +810,30 @@ class PyStudioServiceBridge(QtCore.QObject):
         tr = NatsTransport(NatsTransportConfig(url=nats_url, kv_bucket=bucket))
         try:
             await tr.connect()
-            try:
-                await wait_service_ready(tr, timeout_s=6.0)
-            except Exception:
-                return
+
+            # Wait for `ready=true` with periodic warnings (services may take time to boot).
+            deadline = time.monotonic() + 30.0
+            last_log_s: float = 0.0
+            while True:
+                try:
+                    await wait_service_ready(tr, timeout_s=3.0)
+                    break
+                except Exception:
+                    if time.monotonic() >= deadline:
+                        try:
+                            self.log.emit(f"service not ready (timeout) serviceId={sid}")
+                        except Exception:
+                            pass
+                        return
+                    now = time.monotonic()
+                    if (now - last_log_s) >= 3.0:
+                        last_log_s = now
+                        try:
+                            remain = max(0.0, deadline - now)
+                            self.log.emit(f"waiting service ready... serviceId={sid} (timeout in {remain:.0f}s)")
+                        except Exception:
+                            pass
+                    await asyncio.sleep(0.4)
             payload = g.model_dump(mode="json", by_alias=True)
             meta = dict(payload.get("meta") or {})
             if not str(meta.get("source") or "").strip():
@@ -597,79 +858,19 @@ class PyStudioServiceBridge(QtCore.QObject):
             except Exception:
                 pass
 
-    async def _install_monitor_graph_async(self) -> None:
+    async def _install_monitor_graph_async(self, *, compiled: CompiledRuntimeGraphs | None = None) -> None:
         """
         Reinstall the studio monitor graph from the last compiled graphs (best-effort).
         """
-        compiled = self._last_compiled
-        if compiled is None or self._svc is None:
+        compiled = self._pick_compiled(compiled, self._last_compiled)
+        if compiled is None:
             return
-
-        mon_edges: list[F8Edge] = []
-        for n in list(compiled.global_graph.nodes or []):
-            try:
-                from_sid = str(getattr(n, "serviceId", "") or "")
-                if not from_sid:
-                    continue
-                from_sid = ensure_token(from_sid, label="fromServiceId")
-                from_nid = ensure_token(str(getattr(n, "nodeId", "") or ""), label="nodeId")
-            except Exception:
-                continue
-
-            for sf in list(getattr(n, "stateFields", None) or []):
-                try:
-                    field_name = str(getattr(sf, "name", "") or "").strip()
-                except Exception:
-                    field_name = ""
-                if not field_name:
-                    continue
-                try:
-                    access = getattr(sf, "access", None)
-                except Exception:
-                    access = None
-                if access not in (F8StateAccess.rw, F8StateAccess.ro):
-                    continue
-                mon_edges.append(
-                    F8Edge(
-                        edgeId=f"mon_{from_sid}_{from_nid}_{field_name}".replace(".", "_"),
-                        fromServiceId=from_sid,
-                        fromOperatorId=from_nid,
-                        fromPort=field_name,
-                        toServiceId=self.studio_service_id,
-                        toOperatorId=_MONITOR_NODE_ID,
-                        toPort=_encode_remote_state_key(service_id=from_sid, node_id=from_nid, field=field_name),
-                        kind=F8EdgeKindEnum.state,
-                        strategy=F8EdgeStrategyEnum.latest,
-                    )
-                )
-
+        if not await self._ensure_studio_runtime_async():
+            return
         try:
-            studio_sub = compiled.per_service.get(self.studio_service_id)
-        except Exception:
-            studio_sub = None
-        base_nodes: list[F8RuntimeNode] = []
-        base_edges: list[F8Edge] = []
-        if studio_sub is not None:
-            base_nodes = list(getattr(studio_sub, "nodes", None) or [])
-            base_edges = list(getattr(studio_sub, "edges", None) or [])
-
-        studio_graph = F8RuntimeGraph(
-            graphId=str(getattr(compiled.global_graph, "graphId", "") or "studio_monitor"),
-            revision=str(getattr(compiled.global_graph, "revision", "") or "1"),
-            meta={"source": "studio"},
-            services=[],
-            nodes=[
-                *base_nodes,
-                F8RuntimeNode(
-                    nodeId=_MONITOR_NODE_ID,
-                    serviceId=self.studio_service_id,
-                    serviceClass=SERVICE_CLASS,
-                    operatorClass="f8.monitor_state",
-                ),
-            ],
-            edges=[*base_edges, *mon_edges],
-        )
-        try:
+            if self._svc is None or self._svc.bus is None:
+                return
+            studio_graph = self._build_studio_monitor_graph(compiled)
             await self._svc.bus.set_rungraph(studio_graph)
         except Exception as exc:
             try:
@@ -678,7 +879,9 @@ class PyStudioServiceBridge(QtCore.QObject):
                 pass
 
     @QtCore.Slot(str)
-    def start_service_and_deploy(self, service_id: str, *, service_class: str | None = None) -> None:
+    def start_service_and_deploy(
+        self, service_id: str, *, service_class: str | None = None, compiled: CompiledRuntimeGraphs | None = None
+    ) -> None:
         """
         Start service process (if needed) and deploy last compiled rungraph for it (best-effort).
         """
@@ -691,8 +894,8 @@ class PyStudioServiceBridge(QtCore.QObject):
         self.start_service(sid, service_class=service_class)
 
         async def _do() -> None:
-            await self._deploy_service_rungraph_async(sid)
-            await self._install_monitor_graph_async()
+            await self._install_monitor_graph_async(compiled=compiled)
+            await self._deploy_service_rungraph_async(sid, compiled=compiled)
             await self._set_service_active_async(sid, True)
 
         try:
@@ -701,7 +904,9 @@ class PyStudioServiceBridge(QtCore.QObject):
             pass
 
     @QtCore.Slot(str)
-    def restart_service_and_deploy(self, service_id: str, *, service_class: str | None = None) -> None:
+    def restart_service_and_deploy(
+        self, service_id: str, *, service_class: str | None = None, compiled: CompiledRuntimeGraphs | None = None
+    ) -> None:
         """
         Restart service (terminate -> start) and deploy last compiled rungraph for it (best-effort).
         """
@@ -718,8 +923,8 @@ class PyStudioServiceBridge(QtCore.QObject):
         async def _do() -> None:
             # Give restart a moment to come back; readiness wait inside deploy handles most cases.
             await asyncio.sleep(0.3)
-            await self._deploy_service_rungraph_async(sid)
-            await self._install_monitor_graph_async()
+            await self._install_monitor_graph_async(compiled=compiled)
+            await self._deploy_service_rungraph_async(sid, compiled=compiled)
             await self._set_service_active_async(sid, True)
 
         try:
@@ -835,7 +1040,17 @@ class PyStudioServiceBridge(QtCore.QObject):
 
         # Singleton guard (best-effort): if any existing studio ServiceBus micro responds, do not start.
         try:
-            self._nc = await nats.connect(servers=[nats_url], connect_timeout=2)
+            async def _err_cb(exc: Exception) -> None:
+                now = time.monotonic()
+                if (now - self._last_nats_error_log_s) < 2.0:
+                    return
+                self._last_nats_error_log_s = now
+                try:
+                    self.log.emit(f"NATS not reachable at {nats_url!r} (will retry): {type(exc).__name__}: {exc}")
+                except Exception:
+                    pass
+
+            self._nc = await nats.connect(servers=[nats_url], connect_timeout=2, error_cb=_err_cb)
             try:
                 await self._nc.request(f"$SRV.PING.{svc_micro_name(self.studio_service_id)}", b"", timeout=0.2)
                 self.log.emit("Another PyStudio instance is already running (micro service ping responded).")
@@ -936,74 +1151,8 @@ class PyStudioServiceBridge(QtCore.QObject):
         # Install monitoring graph into studio serviceId.
         if self._svc is None or self._svc.bus is None:
             return
-
-        mon_edges: list[F8Edge] = []
-        for n in list(compiled.global_graph.nodes or []):
-            try:
-                from_sid = str(getattr(n, "serviceId", "") or "")
-                if not from_sid:
-                    continue
-                from_sid = ensure_token(from_sid, label="fromServiceId")
-                from_nid = ensure_token(str(getattr(n, "nodeId", "") or ""), label="nodeId")
-            except Exception:
-                continue
-
-            for sf in list(getattr(n, "stateFields", None) or []):
-                try:
-                    field_name = str(getattr(sf, "name", "") or "").strip()
-                except Exception:
-                    field_name = ""
-                if not field_name:
-                    continue
-                try:
-                    access = getattr(sf, "access", None)
-                except Exception:
-                    access = None
-                # Only monitor readable state (rw/ro). Write-only has no fanout by design.
-                if access not in (F8StateAccess.rw, F8StateAccess.ro):
-                    continue
-                mon_edges.append(
-                    F8Edge(
-                        edgeId=f"mon_{from_sid}_{from_nid}_{field_name}".replace(".", "_"),
-                        fromServiceId=from_sid,
-                        fromOperatorId=from_nid,
-                        fromPort=field_name,
-                        toServiceId=self.studio_service_id,
-                        toOperatorId=_MONITOR_NODE_ID,
-                        toPort=_encode_remote_state_key(service_id=from_sid, node_id=from_nid, field=field_name),
-                        kind=F8EdgeKindEnum.state,
-                        strategy=F8EdgeStrategyEnum.latest,
-                    )
-                )
-
         try:
-            studio_sub = compiled.per_service.get(self.studio_service_id)
-        except Exception:
-            studio_sub = None
-        base_nodes: list[F8RuntimeNode] = []
-        base_edges: list[F8Edge] = []
-        if studio_sub is not None:
-            base_nodes = list(getattr(studio_sub, "nodes", None) or [])
-            base_edges = list(getattr(studio_sub, "edges", None) or [])
-
-        studio_graph = F8RuntimeGraph(
-            graphId=str(getattr(compiled.global_graph, "graphId", "") or "studio_monitor"),
-            revision=str(getattr(compiled.global_graph, "revision", "") or "1"),
-            meta={"source": "studio"},
-            services=[],
-            nodes=[
-                *base_nodes,
-                F8RuntimeNode(
-                    nodeId=_MONITOR_NODE_ID,
-                    serviceId=self.studio_service_id,
-                    serviceClass=SERVICE_CLASS,
-                    operatorClass="f8.monitor_state",
-                ),
-            ],
-            edges=[*base_edges, *mon_edges],
-        )
-
-        try:
+            studio_graph = self._build_studio_monitor_graph(compiled)
             await self._svc.bus.set_rungraph(studio_graph)
         except Exception as exc:
             self.log.emit(f"install monitor graph failed: {exc}")
@@ -1016,7 +1165,17 @@ class PyStudioServiceBridge(QtCore.QObject):
             return self._nc
         nats_url = str(self._cfg.nats_url).strip() or "nats://127.0.0.1:4222"
         try:
-            self._nc = await nats.connect(servers=[nats_url], connect_timeout=2)
+            async def _err_cb(exc: Exception) -> None:
+                now = time.monotonic()
+                if (now - self._last_nats_error_log_s) < 2.0:
+                    return
+                self._last_nats_error_log_s = now
+                try:
+                    self.log.emit(f"NATS not reachable at {nats_url!r} (will retry): {type(exc).__name__}: {exc}")
+                except Exception:
+                    pass
+
+            self._nc = await nats.connect(servers=[nats_url], connect_timeout=2, error_cb=_err_cb)
         except Exception:
             self._nc = None
         return self._nc

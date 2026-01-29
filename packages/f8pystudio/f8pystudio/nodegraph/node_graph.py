@@ -67,13 +67,8 @@ class F8StudioGraph(NodeGraph):
 
         # Optional bridge used by UI widgets to control local service processes.
         self._service_bridge: Any | None = None
-
-    def set_service_bridge(self, bridge: Any | None) -> None:
-        self._service_bridge = bridge
-
-    @property
-    def service_bridge(self) -> Any | None:
-        return self._service_bridge
+        # Debounced reclaim timers for removed service instances (serviceId -> QTimer).
+        self._reclaim_timers: dict[str, QtCore.QTimer] = {}
 
         # NodeGraphQt exposes `nodes_deleted` (list[str]), not `node_deleted`.
         self.nodes_deleted.connect(self._on_nodes_deleted)  # type: ignore[attr-defined]
@@ -81,6 +76,13 @@ class F8StudioGraph(NodeGraph):
         # Continuous move events during dragging.
         if hasattr(self._viewer, "moving_nodes"):
             self._viewer.moving_nodes.connect(self._on_nodes_moving)  # type: ignore[attr-defined]
+
+    def set_service_bridge(self, bridge: Any | None) -> None:
+        self._service_bridge = bridge
+
+    @property
+    def service_bridge(self) -> Any | None:
+        return self._service_bridge
 
     @staticmethod
     def _strip_port_restore_data(layout_data: dict) -> dict:
@@ -508,6 +510,21 @@ class F8StudioGraph(NodeGraph):
         new_nid = self.new_unique_node_id()
         node.model.id = new_nid
         node.view.id = new_nid
+        # Seed identity state into UI properties early (these are runtime-owned readonly
+        # fields; the runtime compiler skips ro values so they won't be deployed).
+        try:
+            spec = getattr(node, "spec", None)
+        except Exception:
+            spec = None
+        try:
+            if isinstance(spec, F8OperatorSpec):
+                if "operatorId" in node.model.properties or "operatorId" in node.model.custom_properties:
+                    node.set_property("operatorId", str(new_nid), push_undo=False)
+            elif isinstance(spec, F8ServiceSpec):
+                if "svcId" in node.model.properties or "svcId" in node.model.custom_properties:
+                    node.set_property("svcId", str(new_nid), push_undo=False)
+        except Exception:
+            pass
         return node
 
     def create_node(self, node_type, name=None, selected=True, color=None, text_color=None, pos=None, push_undo=True):
@@ -656,9 +673,7 @@ class F8StudioGraph(NodeGraph):
         Note: deleting a service container also deletes its bound operators.
         """
         nodes = self._expand_delete_nodes([node])
-        if len(nodes) <= 1:
-            return super().delete_node(node, push_undo=push_undo)
-        return super().delete_nodes(nodes, push_undo=push_undo)
+        return self._delete_nodes_expanded(nodes, push_undo=push_undo)
 
     def delete_nodes(self, nodes, push_undo=True):
         """
@@ -667,7 +682,118 @@ class F8StudioGraph(NodeGraph):
         Note: deleting any service container also deletes its bound operators.
         """
         nodes = self._expand_delete_nodes(list(nodes or []))
-        return super().delete_nodes(nodes, push_undo=push_undo)
+        return self._delete_nodes_expanded(nodes, push_undo=push_undo)
+
+    def _delete_nodes_expanded(self, nodes: list[Any], *, push_undo: bool = True) -> Any:
+        """
+        Delete nodes where the list is already expanded (ie. includes container children).
+        """
+        if not nodes:
+            return
+
+        service_ids: set[str] = set()
+        for n in list(nodes or []):
+            try:
+                if self._is_container_node(n) and isinstance(getattr(n, "spec", None), F8ServiceSpec):
+                    sid = str(getattr(n, "id", "") or "").strip()
+                    svc_class = str(getattr(getattr(n, "spec", None), "serviceClass", "") or "")
+                    if sid and sid != STUDIO_SERVICE_ID and svc_class != _CANVAS_SERVICE_CLASS_:
+                        service_ids.add(sid)
+            except Exception:
+                continue
+
+        # NodeGraphQt's `delete_nodes([single])` calls back into `self.delete_node(...)`,
+        # which we override. Avoid recursion by using `delete_node` directly for the
+        # single-node case, and manually emitting `nodes_deleted` to keep our cleanup
+        # hooks consistent with multi-node delete behavior.
+        if len(nodes) == 1:
+            node = nodes[0]
+            node_id = ""
+            try:
+                node_id = str(getattr(node, "id", "") or "")
+            except Exception:
+                node_id = ""
+            r = super().delete_node(node, push_undo=push_undo)
+            if node_id:
+                try:
+                    self.nodes_deleted.emit([node_id])  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+        else:
+            r = super().delete_nodes(nodes, push_undo=push_undo)
+
+        for sid in sorted(service_ids):
+            self._schedule_service_reclaim(sid, delay_ms=3000)
+        return r
+
+    def clear_session(self, *args, **kwargs) -> None:
+        """
+        Clear the current canvas. Any removed service instances are reclaimed
+        after a short debounce (so undo / immediate re-add won't kill processes).
+        """
+        before = {n.id for n in self.all_nodes() if self._is_container_node(n)}
+        super().clear_session(*args, **kwargs)
+        for sid in sorted({s for s in before if s and s != STUDIO_SERVICE_ID}):
+            self._schedule_service_reclaim(sid, delay_ms=3000)
+
+    def _is_service_referenced(self, service_id: str) -> bool:
+        """
+        True if the serviceId is still referenced by the current canvas.
+        """
+        sid = str(service_id or "").strip()
+        if not sid:
+            return False
+        try:
+            n = self.get_node_by_id(sid)
+            if n is not None and self._is_container_node(n):
+                return True
+        except Exception:
+            pass
+        # If any operator still points at this svcId, keep the service alive.
+        for n in self.all_nodes():
+            if not self._is_operator_node(n):
+                continue
+            try:
+                if str(getattr(n, "svcId", "") or "") == sid:
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _schedule_service_reclaim(self, service_id: str, *, delay_ms: int = 3000) -> None:
+        sid = str(service_id or "").strip()
+        if not sid or sid == STUDIO_SERVICE_ID:
+            return
+        # Reset debounce timer.
+        t = self._reclaim_timers.get(sid)
+        if t is None:
+            t = QtCore.QTimer(self)
+            t.setSingleShot(True)
+            t.timeout.connect(lambda _sid=sid: self._reclaim_service_if_unreferenced(_sid))  # type: ignore[attr-defined]
+            self._reclaim_timers[sid] = t
+        try:
+            if t.isActive():
+                t.stop()
+        except Exception:
+            pass
+        try:
+            t.start(max(1, int(delay_ms)))
+        except Exception:
+            pass
+
+    def _reclaim_service_if_unreferenced(self, service_id: str) -> None:
+        sid = str(service_id or "").strip()
+        if not sid or sid == STUDIO_SERVICE_ID:
+            return
+        if self._is_service_referenced(sid):
+            return
+        bridge = self._service_bridge
+        if bridge is None:
+            return
+        try:
+            bridge.reclaim_service(sid)
+        except Exception:
+            return
 
     def new_unique_node_id(self) -> str:
         """Generate a new unique node ID."""
@@ -719,6 +845,11 @@ class F8StudioGraph(NodeGraph):
             logger.error("Container node has no ID")
             return False
         operator.svcId = sid  # type: ignore[attr-defined]
+        try:
+            if "svcId" in operator.model.properties or "svcId" in operator.model.custom_properties:
+                operator.set_property("svcId", str(sid), push_undo=False)
+        except Exception:
+            pass
         container.add_child(operator)
         return True
 
@@ -805,6 +936,11 @@ class F8StudioGraph(NodeGraph):
 
         if node.spec.serviceClass == _CANVAS_SERVICE_CLASS_:
             node.svcId = STUDIO_SERVICE_ID  # type: ignore[attr-defined]
+            try:
+                if "svcId" in node.model.properties or "svcId" in node.model.custom_properties:
+                    node.set_property("svcId", STUDIO_SERVICE_ID, push_undo=False)
+            except Exception:
+                pass
             return True, None
 
         in_scene = node.view.scene() is not None
@@ -871,12 +1007,22 @@ class F8StudioGraph(NodeGraph):
                 # Studio (editor-local) operators belong to the built-in PyStudio service.
                 # They are not bound to a container instance, but still need a stable svcId.
                 op.svcId = STUDIO_SERVICE_ID  # type: ignore[attr-defined]
+                try:
+                    if "svcId" in op.model.properties or "svcId" in op.model.custom_properties:
+                        op.set_property("svcId", STUDIO_SERVICE_ID, push_undo=False)
+                except Exception:
+                    pass
                 continue
 
             container = self._container_at_node(op)
             if container is None:
                 # Leave as orphan so user can fix placement manually.
                 op.svcId = ""  # type: ignore[attr-defined]
+                try:
+                    if "svcId" in op.model.properties or "svcId" in op.model.custom_properties:
+                        op.set_property("svcId", "", push_undo=False)
+                except Exception:
+                    pass
                 logger.warning('Operator "%s" is not inside any container after load.', op.name())
                 continue
 

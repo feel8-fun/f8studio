@@ -58,6 +58,12 @@ bool ServiceBus::start() {
 
   load_active_from_kv();
 
+  // Seed identity fields (best-effort). Specs should declare these as readonly.
+  try {
+    (void)kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, "svcId", cfg_.service_id, "runtime",
+                            json{{"builtin", true}});
+  } catch (...) {}
+
   // Announce readiness after endpoints are up.
   (void)kv_set_ready(kv_, true);
   spdlog::info("service_bus started serviceId={} natsUrl={}", cfg_.service_id, cfg_.nats_url);

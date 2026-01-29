@@ -22,31 +22,38 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
         service_id: str,
         get_bridge: Callable[[], Any | None],
         get_service_class: Callable[[], str] | None = None,
+        get_compiled_graphs: Callable[[], Any | None] | None = None,
     ):
         super().__init__(parent)
         self._service_id = str(service_id or "")
         self._get_bridge = get_bridge
         self._get_service_class = get_service_class
+        self._get_compiled_graphs = get_compiled_graphs
 
         self._btn_toggle = QtWidgets.QToolButton(self)  # start/pause (active)
         self._btn_stop = QtWidgets.QToolButton(self)  # quit process
+        self._btn_sync = QtWidgets.QToolButton(self)  # deploy
         self._btn_restart = QtWidgets.QToolButton(self)
 
         self._play_icon = qta.icon("fa5s.play", color="green")
         self._pause_icon = qta.icon("fa5s.pause", color="yellow")
         self._stop_icon = qta.icon("fa5s.stop", color="red")
+        self._sync_icon = qta.icon("fa5s.exchange-alt", color="white")
         self._restart_icon = qta.icon("fa5s.redo", color="white")
 
 
         self._btn_toggle.setAutoRaise(True)
         self._btn_stop.setAutoRaise(True)
+        self._btn_sync.setAutoRaise(True)
         self._btn_restart.setAutoRaise(True)
         self._btn_toggle.setToolButtonStyle(QtCore.Qt.ToolButtonIconOnly)
         self._btn_stop.setToolButtonStyle(QtCore.Qt.ToolButtonIconOnly)
+        self._btn_sync.setToolButtonStyle(QtCore.Qt.ToolButtonIconOnly)
         self._btn_restart.setToolButtonStyle(QtCore.Qt.ToolButtonIconOnly)
 
         self._btn_toggle.clicked.connect(self._on_toggle_clicked)  # type: ignore[attr-defined]
         self._btn_stop.clicked.connect(self._on_stop_clicked)  # type: ignore[attr-defined]
+        self._btn_sync.clicked.connect(self._on_sync_clicked)  # type: ignore[attr-defined]
         self._btn_restart.clicked.connect(self._on_restart_clicked)  # type: ignore[attr-defined]
 
         lay = QtWidgets.QHBoxLayout(self)
@@ -54,6 +61,7 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
         lay.setSpacing(2)
         lay.addWidget(self._btn_toggle)
         lay.addWidget(self._btn_stop)
+        lay.addWidget(self._btn_sync)
         lay.addWidget(self._btn_restart)
 
         # Match NodeGraphQt's dark UI: a subtle "badge" container with hover feedback.
@@ -80,7 +88,8 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
 
         # Poll state so crashes/external stops are reflected.
         self._timer = QtCore.QTimer(self)
-        self._timer.setInterval(800)
+        # Keep UI responsive when services are started/stopped outside this process.
+        self._timer.setInterval(400)
         self._timer.timeout.connect(self.refresh)  # type: ignore[attr-defined]
         self._timer.start()
 
@@ -107,6 +116,12 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
         except Exception:
             return ""
 
+    def _compiled_graphs(self) -> Any | None:
+        try:
+            return self._get_compiled_graphs() if self._get_compiled_graphs is not None else None
+        except Exception:
+            return None
+
     @QtCore.Slot()
     def refresh(self) -> None:
         sid = str(self._service_id or "").strip()
@@ -119,14 +134,13 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
         if not enabled:
             return
 
-        style = self.style()
+        try:
+            bridge.request_service_status(sid)
+        except Exception:
+            pass
         running = self._is_running()
         active = None
         if running:
-            try:
-                bridge.request_service_status(sid)
-            except Exception:
-                pass
             try:
                 active = bridge.get_cached_service_active(sid)
             except Exception:
@@ -146,11 +160,15 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
         self._btn_stop.setIcon(self._stop_icon)
         self._btn_stop.setToolTip("Terminate service process")
 
+        self._btn_sync.setIcon(self._sync_icon)
+        self._btn_sync.setToolTip("Deploy current rungraph to service")
+
         self._btn_restart.setIcon(self._restart_icon)
         self._btn_restart.setToolTip("Restart service (terminate + deploy + activate)")
 
         # Button availability.
         self._btn_stop.setEnabled(bool(running))
+        self._btn_sync.setEnabled(bool(running))
         self._btn_restart.setEnabled(bool(running))
 
     def _on_toggle_clicked(self) -> None:
@@ -162,7 +180,11 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
             if not sid or sid == STUDIO_SERVICE_ID:
                 return
             if not self._is_running():
-                bridge.start_service_and_deploy(sid, service_class=self._service_class())
+                compiled = self._compiled_graphs()
+                if compiled is not None:
+                    bridge.start_service_and_deploy(sid, service_class=self._service_class(), compiled=compiled)
+                else:
+                    bridge.start_service_and_deploy(sid, service_class=self._service_class())
                 return
 
             active = None
@@ -197,6 +219,27 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
             sid = str(self._service_id or "").strip()
             if not sid or sid == STUDIO_SERVICE_ID:
                 return
-            bridge.restart_service_and_deploy(sid, service_class=self._service_class())
+            compiled = self._compiled_graphs()
+            if compiled is not None:
+                bridge.restart_service_and_deploy(sid, service_class=self._service_class(), compiled=compiled)
+            else:
+                bridge.restart_service_and_deploy(sid, service_class=self._service_class())
+        finally:
+            self.refresh()
+
+    def _on_sync_clicked(self) -> None:
+        bridge = self._bridge()
+        if bridge is None:
+            return
+        try:
+            sid = str(self._service_id or "").strip()
+            if not sid or sid == STUDIO_SERVICE_ID:
+                return
+            if not self._is_running():
+                return
+            compiled = self._compiled_graphs()
+            if compiled is None:
+                return
+            bridge.deploy_service_rungraph(sid, compiled=compiled)
         finally:
             self.refresh()

@@ -1279,6 +1279,7 @@ class ServiceBus:
             )
         await self._rebuild_routes()
         await self._apply_rungraph_state_values(graph)
+        await self._seed_builtin_identity_state(graph)
         await self._initial_sync_intra_state_edges(graph)
 
         for cb in list(self._rungraph_listeners):
@@ -1288,6 +1289,63 @@ class ServiceBus:
                     await r
             except Exception:
                 continue
+
+    async def _seed_builtin_identity_state(self, graph: F8RuntimeGraph) -> None:
+        """
+        Seed readonly identity fields (`svcId`, `operatorId`) into KV for local nodes.
+
+        These fields are declared as `ro` in specs, so they cannot be set via
+        rungraph `stateValues` or external `set_state`. We write them directly
+        to KV (without dispatching to nodes) so UIs and cross-service consumers
+        can discover identities for routing/commands.
+        """
+        ts = int(now_ms())
+        for n in list(getattr(graph, "nodes", None) or []):
+            if str(getattr(n, "serviceId", "")) != self.service_id:
+                continue
+            node_id = str(getattr(n, "nodeId", "") or "").strip()
+            if not node_id:
+                continue
+            try:
+                if self._state_access_by_node_field.get((node_id, "svcId")) is not None:
+                    await self._put_state_kv_unvalidated(
+                        node_id=node_id,
+                        field="svcId",
+                        value=str(getattr(n, "serviceId", "") or self.service_id),
+                        ts_ms=ts,
+                        meta={"source": "runtime", "builtin": True},
+                    )
+                # `operatorId` is only meaningful for operator nodes (not service/container nodes).
+                if getattr(n, "operatorClass", None) is not None and self._state_access_by_node_field.get((node_id, "operatorId")) is not None:
+                    await self._put_state_kv_unvalidated(
+                        node_id=node_id,
+                        field="operatorId",
+                        value=str(getattr(n, "nodeId", "") or node_id),
+                        ts_ms=ts,
+                        meta={"source": "runtime", "builtin": True},
+                    )
+            except Exception:
+                continue
+
+    async def _put_state_kv_unvalidated(
+        self, *, node_id: str, field: str, value: Any, ts_ms: int, meta: dict[str, Any] | None
+    ) -> None:
+        """
+        Write state to KV without access validation and without dispatching to nodes.
+
+        This is reserved for runtime-owned fields that are declared `ro` but must
+        exist in KV for discovery/monitoring.
+        """
+        node_id = ensure_token(node_id, label="node_id")
+        field = str(field or "").strip()
+        if not field:
+            return
+        ts = int(ts_ms or now_ms())
+        value = self._coerce_state_value(value)
+        key = kv_key_node_state(node_id=node_id, field=field)
+        payload = {"value": value, "actor": self.service_id, "ts": ts, **(dict(meta or {}))}
+        await self._transport.kv_put(key, json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8"))
+        self._state_cache[(node_id, field)] = (value, int(ts))
 
     async def _validate_rungraph_or_raise(self, graph: F8RuntimeGraph) -> None:
         """

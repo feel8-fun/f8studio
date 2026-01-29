@@ -167,9 +167,23 @@ class F8StudioContainerNodeItem(AbstractNodeItem):
             except Exception:
                 return ""
 
+        def _get_compiled_graphs() -> Any | None:
+            try:
+                g = getattr(viewer, "_f8_graph", None)
+                if g is None:
+                    return None
+                from .runtime_compiler import compile_runtime_graphs_from_studio
+
+                return compile_runtime_graphs_from_studio(g)
+            except Exception:
+                return None
+
         try:
             w = ServiceProcessToolbar(
-                service_id=service_id, get_bridge=_get_bridge, get_service_class=_get_service_class
+                service_id=service_id,
+                get_bridge=_get_bridge,
+                get_service_class=_get_service_class,
+                get_compiled_graphs=_get_compiled_graphs,
             )
             proxy = QtWidgets.QGraphicsProxyWidget(self)
             proxy.setWidget(w)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
@@ -60,12 +61,49 @@ class NatsTransport:
         async with self._lock:
             if self._nc is not None:
                 return
-            self._nc = await nats.connect(
-                servers=[self._config.url],
-                connect_timeout=2,
-                reconnect_time_wait=0.5,
-                max_reconnect_attempts=-1,
-            )
+            url = str(getattr(self._config, "url", "") or "nats://127.0.0.1:4222").strip()
+            last_log = 0.0
+            attempt = 0
+
+            # nats.py's default error callback can print very noisy tracebacks on connect failures.
+            # Provide our own callback to keep logs clean.
+            last_err_log = 0.0
+
+            async def _error_cb(exc: Exception) -> None:
+                nonlocal last_err_log
+                now = time.monotonic()
+                if (now - last_err_log) < 2.0:
+                    return
+                last_err_log = now
+                try:
+                    print(f"[f8] NATS connection error (will retry): {type(exc).__name__}: {exc}")
+                except Exception:
+                    pass
+
+            while self._nc is None:
+                attempt += 1
+                try:
+                    self._nc = await nats.connect(
+                        servers=[url],
+                        connect_timeout=2,
+                        reconnect_time_wait=0.5,
+                        max_reconnect_attempts=-1,
+                        error_cb=_error_cb,
+                    )
+                except Exception as exc:
+                    now = time.monotonic()
+                    # Friendly reminder without traceback spam.
+                    if attempt == 1 or (now - last_log) >= 2.0:
+                        last_log = now
+                        try:
+                            print(
+                                f"[f8] NATS server is not reachable at {url!r}. "
+                                f"Start `nats-server` or set `F8_NATS_URL`. retrying... ({type(exc).__name__})"
+                            )
+                        except Exception:
+                            pass
+                    await asyncio.sleep(min(2.0, 0.2 * attempt))
+                    continue
             self._js = self._nc.jetstream()
             if bool(getattr(self._config, "delete_bucket_on_connect", False)) and self._js is not None:
                 try:

@@ -106,10 +106,68 @@ class RuntimeNodeRegistry:
         if service is None:
             raise ServiceNotRegistered(service_class)
         operators = list((self._operator_specs.get(service_class) or {}).values())
+        self._inject_builtin_identity_state_fields(service, operators)
         # Lazy import to keep runtime module light by default.
         from .generated import F8ServiceDescribe  # type: ignore[import-not-found]
 
         return F8ServiceDescribe(service=service, operators=operators)
+
+    @staticmethod
+    def _inject_builtin_identity_state_fields(service_spec: Any, operator_specs: list[Any]) -> None:
+        """
+        Inject readonly identity fields into specs so graphs can route them like normal state.
+
+        - `svcId`: current service instance id
+        - `operatorId`: runtime node id (operator id)
+        """
+        try:
+            from .generated import F8StateAccess, F8StateSpec  # type: ignore[import-not-found]
+            from .schema_helpers import string_schema
+        except Exception:
+            return
+
+        builtin_all = [
+            F8StateSpec(
+                name="svcId",
+                label="Service Id",
+                description="Readonly: current service instance id (svcId).",
+                valueSchema=string_schema(),
+                access=F8StateAccess.ro,
+                showOnNode=False,
+            ),
+        ]
+        builtin_operator_only = [
+            F8StateSpec(
+                name="operatorId",
+                label="Operator Id",
+                description="Readonly: current operator/node id (operatorId).",
+                valueSchema=string_schema(),
+                access=F8StateAccess.ro,
+                showOnNode=False,
+            ),
+        ]
+
+        def _apply(spec: Any, extra: list[Any]) -> None:
+            try:
+                fields = list(getattr(spec, "stateFields", None) or [])
+            except Exception:
+                return
+            existing = {str(getattr(sf, "name", "") or "") for sf in fields}
+            added = False
+            for sf in [*builtin_all, *extra]:
+                if sf.name in existing:
+                    continue
+                fields.append(sf)
+                added = True
+            if added:
+                try:
+                    setattr(spec, "stateFields", fields)
+                except Exception:
+                    pass
+
+        _apply(service_spec, [])
+        for op in list(operator_specs or []):
+            _apply(op, builtin_operator_only)
 
     def ensure_service(self, service_class: str) -> dict[str, OperatorFactory]:
         service_class = str(service_class or "").strip()
