@@ -11,6 +11,22 @@ from .audio import (
     read_audio_header,
     read_chunk_header,
 )
+from .core import open_shared_memory_create, open_shared_memory_readonly
+from .naming import (
+    DEFAULT_AUDIO_SHM_BYTES,
+    DEFAULT_VIDEO_SHM_BYTES,
+    DEFAULT_VIDEO_SHM_SLOTS,
+    audio_shm_name,
+    frame_event_name,
+    video_shm_name,
+)
+from .sizing import (
+    audio_recommended_bytes,
+    audio_required_bytes,
+    video_min_bytes,
+    video_recommended_bytes,
+    video_required_bytes,
+)
 from .video import (
     VIDEO_FORMAT_BGRA32,
     VIDEO_SHM_MAGIC,
@@ -34,6 +50,19 @@ __all__ = [
     "default_audio_shm_name",
     "read_audio_header",
     "read_chunk_header",
+    "open_shared_memory_readonly",
+    "open_shared_memory_create",
+    "DEFAULT_VIDEO_SHM_BYTES",
+    "DEFAULT_VIDEO_SHM_SLOTS",
+    "DEFAULT_AUDIO_SHM_BYTES",
+    "video_shm_name",
+    "audio_shm_name",
+    "frame_event_name",
+    "video_min_bytes",
+    "video_required_bytes",
+    "video_recommended_bytes",
+    "audio_required_bytes",
+    "audio_recommended_bytes",
     "VIDEO_SHM_MAGIC",
     "VIDEO_SHM_VERSION",
     "VIDEO_FORMAT_BGRA32",

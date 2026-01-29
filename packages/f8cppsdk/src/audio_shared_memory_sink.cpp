@@ -87,6 +87,10 @@ bool AudioSharedMemorySink::initialize(const std::string& region_name, std::size
   }
 
   if (!region_.open_or_create(region_name, capacity_bytes)) return false;
+#if !defined(_WIN32)
+  // POSIX SHM names persist until shm_unlink(). Make the creator clean up on shutdown.
+  region_.set_unlink_on_close(true);
+#endif
 
   sample_rate_ = sample_rate;
   channels_ = channels;

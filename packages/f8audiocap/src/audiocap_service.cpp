@@ -10,6 +10,7 @@
 #include <spdlog/spdlog.h>
 
 #include "f8cppsdk/f8_naming.h"
+#include "f8cppsdk/shm/audio.h"
 #include "f8cppsdk/state_kv.h"
 #include "f8cppsdk/time_utils.h"
 #include "wasapi_loopback_capture.h"
@@ -53,7 +54,9 @@ AudioCapService::AudioCapService(Config cfg) : cfg_(std::move(cfg)) {}
 
 AudioCapService::~AudioCapService() { stop(); }
 
-std::string AudioCapService::default_audio_shm_name(const std::string& service_id) { return "shm." + service_id + ".audio"; }
+std::string AudioCapService::default_audio_shm_name(const std::string& service_id) {
+  return f8::cppsdk::shm::audio_shm_name(service_id);
+}
 
 namespace {
 
@@ -156,7 +159,7 @@ bool AudioCapService::start() {
   }
 
   shm_ = std::make_unique<f8::cppsdk::AudioSharedMemorySink>();
-  const std::string shm_name = default_audio_shm_name(cfg_.service_id);
+  const std::string shm_name = f8::cppsdk::shm::audio_shm_name(cfg_.service_id);
   if (!shm_->initialize(shm_name, cfg_.audio_shm_bytes, cfg_.sample_rate, cfg_.channels,
                         f8::cppsdk::AudioSharedMemorySink::SampleFormat::kF32LE, cfg_.frames_per_chunk,
                         cfg_.chunk_count)) {

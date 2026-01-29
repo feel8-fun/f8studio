@@ -8,6 +8,7 @@ add_library(f8cppsdk
   src/time_utils.cpp
   src/f8_naming.cpp
   src/shm_region.cpp
+  src/shm_event_wait.cpp
   src/video_shared_memory_sink.cpp
   src/audio_shared_memory_sink.cpp
 )

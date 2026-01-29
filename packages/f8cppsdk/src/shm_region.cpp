@@ -43,6 +43,7 @@ bool ShmRegion::open_or_create(const std::string& name, std::size_t bytes) {
 #else
   std::string shm_name = name;
   if (!shm_name.empty() && shm_name[0] != '/') shm_name = "/" + shm_name;
+  posix_name_ = shm_name;
   int fd = shm_open(shm_name.c_str(), O_CREAT | O_RDWR, 0666);
   if (fd < 0) {
     spdlog::error("shm_open failed name={}", shm_name);
@@ -61,6 +62,7 @@ bool ShmRegion::open_or_create(const std::string& name, std::size_t bytes) {
   }
   fd_ = fd;
   data_ = ptr;
+  owner_ = true;
   return true;
 #endif
 }
@@ -99,6 +101,7 @@ bool ShmRegion::open_existing_impl(const std::string& name, std::size_t bytes, b
 #else
   std::string shm_name = name;
   if (!shm_name.empty() && shm_name[0] != '/') shm_name = "/" + shm_name;
+  posix_name_ = shm_name;
   const int oflag = read_write ? O_RDWR : O_RDONLY;
   int fd = shm_open(shm_name.c_str(), oflag, 0666);
   if (fd < 0) {
@@ -125,6 +128,7 @@ bool ShmRegion::open_existing_impl(const std::string& name, std::size_t bytes, b
   }
   fd_ = fd;
   data_ = ptr;
+  owner_ = false;
   return true;
 #endif
 }
@@ -148,10 +152,15 @@ void ShmRegion::close() {
     ::close(fd_);
     fd_ = -1;
   }
+  if (owner_ && unlink_on_close_ && !posix_name_.empty()) {
+    (void)shm_unlink(posix_name_.c_str());
+  }
+  owner_ = false;
+  unlink_on_close_ = false;
+  posix_name_.clear();
 #endif
   size_ = 0;
   name_.clear();
 }
 
 }  // namespace f8::cppsdk
-

@@ -1,12 +1,16 @@
 import argparse
 import os
-import struct
 import sys
 import time
-from dataclasses import dataclass
 from typing import Optional
 
-from multiprocessing.shared_memory import SharedMemory
+try:
+    from f8pysdk.shm import VideoShmReader, default_video_shm_name
+except ModuleNotFoundError:
+    # Allow running from a source checkout without installing the workspace packages.
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    sys.path.insert(0, os.path.join(repo_root, "packages", "f8pysdk"))
+    from f8pysdk.shm import VideoShmReader, default_video_shm_name
 
 
 def _require(module_name: str, pip_name: Optional[str] = None):
@@ -19,64 +23,8 @@ def _require(module_name: str, pip_name: Optional[str] = None):
         raise
 
 
-VIDEO_SHM_MAGIC = 0xF8A11A01
-VIDEO_SHM_VERSION = 1
-VIDEO_FORMAT_BGRA32 = 1
-
-_VIDEO_HEADER_STRUCT = struct.Struct("<7I4xQq2I")
-
-
-@dataclass(frozen=True)
-class VideoShmHeader:
-    magic: int
-    version: int
-    slot_count: int
-    width: int
-    height: int
-    pitch: int
-    fmt: int
-    frame_id: int
-    ts_ms: int
-    active_slot: int
-    payload_capacity: int
-
-    @property
-    def header_bytes(self) -> int:
-        return _VIDEO_HEADER_STRUCT.size
-
-    @property
-    def frame_bytes(self) -> int:
-        return int(self.pitch) * int(self.height)
-
-    @property
-    def slot_offset_bytes(self) -> int:
-        return self.header_bytes + int(self.active_slot) * int(self.payload_capacity)
-
-
-def read_video_header(buf: memoryview) -> Optional[VideoShmHeader]:
-    if len(buf) < _VIDEO_HEADER_STRUCT.size:
-        return None
-    try:
-        fields = _VIDEO_HEADER_STRUCT.unpack_from(buf, 0)
-    except Exception:
-        return None
-    return VideoShmHeader(
-        magic=fields[0],
-        version=fields[1],
-        slot_count=fields[2],
-        width=fields[3],
-        height=fields[4],
-        pitch=fields[5],
-        fmt=fields[6],
-        frame_id=fields[7],
-        ts_ms=fields[8],
-        active_slot=fields[9],
-        payload_capacity=fields[10],
-    )
-
-
 def compute_default_video_shm_name(service_id: str) -> str:
-    return f"shm.{service_id}.video"
+    return default_video_shm_name(service_id)
 
 
 def main() -> int:
@@ -99,40 +47,10 @@ def main() -> int:
     numpy = _require("numpy")
     cv2 = None if args.no_display else _require("cv2", "opencv-python")
 
-    shm = SharedMemory(name=shm_name, create=False)
+    reader = VideoShmReader(shm_name)
+    reader.open(use_event=args.use_event)
     try:
-        buf = shm.buf
-        print(f"[videoshm] name={shm_name} bytes={shm.size}")
-
-        event_handle = None
-        if args.use_event and os.name == "nt":
-            import ctypes
-
-            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-            SYNCHRONIZE = 0x00100000
-            INFINITE = 0xFFFFFFFF
-            WAIT_OBJECT_0 = 0x00000000
-
-            OpenEventW = kernel32.OpenEventW
-            OpenEventW.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_wchar_p]
-            OpenEventW.restype = ctypes.c_void_p
-
-            WaitForSingleObject = kernel32.WaitForSingleObject
-            WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
-            WaitForSingleObject.restype = ctypes.c_uint32
-
-            CloseHandle = kernel32.CloseHandle
-            CloseHandle.argtypes = [ctypes.c_void_p]
-            CloseHandle.restype = ctypes.c_int
-
-            ev_name = shm_name + "_evt"
-            h = OpenEventW(SYNCHRONIZE, 0, ev_name)
-            if h:
-                event_handle = h
-                print(f"[videoshm] using event={ev_name}")
-            else:
-                err = ctypes.get_last_error()
-                print(f"[videoshm] event not available ({ev_name}) err={err}, falling back to polling")
+        print(f"[videoshm] name={shm_name}")
 
         last_frame_id = 0
         last_show_ms = 0
@@ -141,27 +59,9 @@ def main() -> int:
         shown_start_ms = int(time.time() * 1000)
 
         while True:
-            hdr0 = read_video_header(buf)
-            if hdr0 is None or hdr0.magic != VIDEO_SHM_MAGIC or hdr0.version != VIDEO_SHM_VERSION:
+            hdr0 = reader.read_header()
+            if hdr0 is None or hdr0.width == 0 or hdr0.height == 0 or hdr0.pitch == 0 or hdr0.payload_capacity == 0:
                 time.sleep(max(args.poll_ms, 1) / 1000.0)
-                continue
-            if hdr0.fmt != VIDEO_FORMAT_BGRA32:
-                print(f"[videoshm] unsupported format={hdr0.fmt}, expected={VIDEO_FORMAT_BGRA32}", file=sys.stderr)
-                time.sleep(0.25)
-                continue
-            if hdr0.width == 0 or hdr0.height == 0 or hdr0.pitch == 0 or hdr0.payload_capacity == 0:
-                time.sleep(max(args.poll_ms, 1) / 1000.0)
-                continue
-            if hdr0.frame_bytes > hdr0.payload_capacity:
-                print(
-                    f"[videoshm] invalid header: frameBytes={hdr0.frame_bytes} > payloadCapacity={hdr0.payload_capacity}",
-                    file=sys.stderr,
-                )
-                time.sleep(0.25)
-                continue
-            if hdr0.slot_offset_bytes + hdr0.frame_bytes > len(buf):
-                print("[videoshm] shm size too small for header/payload", file=sys.stderr)
-                time.sleep(0.25)
                 continue
 
             if hdr0.frame_id == last_frame_id:
@@ -171,31 +71,21 @@ def main() -> int:
                     print(
                         f"[videoshm] frameId={hdr0.frame_id} {hdr0.width}x{hdr0.height} pitch={hdr0.pitch} slot={hdr0.active_slot}/{hdr0.slot_count} ts={hdr0.ts_ms}"
                     )
-                if event_handle:
-                    # Keep UI responsive (OpenCV pumps messages via waitKey).
-                    if not args.no_display and cv2:
-                        key = cv2.waitKey(1) & 0xFF
-                        if key in (ord("q"), 27):
-                            break
-                    rc = WaitForSingleObject(event_handle, 10)
-                    if rc != WAIT_OBJECT_0:
-                        time.sleep(max(args.poll_ms, 1) / 1000.0)
-                else:
-                    time.sleep(max(args.poll_ms, 1) / 1000.0)
+                if not args.no_display and cv2:
+                    key = cv2.waitKey(1) & 0xFF
+                    if key in (ord("q"), 27):
+                        break
+                reader.wait_new_frame(timeout_ms=max(1, int(args.poll_ms)))
                 continue
 
-            hdr1 = read_video_header(buf)
-            if hdr1 is None:
+            hdr, frame_view = reader.read_latest_bgra()
+            if hdr is None or frame_view is None:
                 continue
-            if hdr1.frame_id != hdr0.frame_id or hdr1.active_slot != hdr0.active_slot:
-                continue
-
-            frame_view = buf[hdr0.slot_offset_bytes : hdr0.slot_offset_bytes + hdr0.frame_bytes]
             frame = numpy.frombuffer(frame_view, dtype=numpy.uint8).copy()
-            frame = frame.reshape((hdr0.height, hdr0.pitch))
-            frame = frame[:, : hdr0.width * 4].reshape((hdr0.height, hdr0.width, 4))
+            frame = frame.reshape((hdr.height, hdr.pitch))
+            frame = frame[:, : hdr.width * 4].reshape((hdr.height, hdr.width, 4))
 
-            last_frame_id = hdr0.frame_id
+            last_frame_id = hdr.frame_id
 
             if args.no_display:
                 continue
@@ -213,7 +103,7 @@ def main() -> int:
             fps = shown_frames / elapsed_s
             cv2.putText(
                 bgr,
-                f"{hdr0.width}x{hdr0.height} frameId={hdr0.frame_id} fps={fps:.1f}",
+                f"{hdr.width}x{hdr.height} frameId={hdr.frame_id} fps={fps:.1f}",
                 (10, 24),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.7,
@@ -226,15 +116,8 @@ def main() -> int:
             if key in (ord("q"), 27):
                 break
     finally:
-        if "event_handle" in locals() and event_handle:
-            try:
-                import ctypes
-
-                ctypes.WinDLL("kernel32", use_last_error=True).CloseHandle(event_handle)
-            except Exception:
-                pass
         try:
-            shm.close()
+            reader.close()
         except Exception:
             pass
 

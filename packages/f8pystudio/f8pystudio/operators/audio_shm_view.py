@@ -16,6 +16,7 @@ from f8pysdk import (
 from f8pysdk.nats_naming import ensure_token
 from f8pysdk.runtime_node import RuntimeNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
+from f8pysdk.shm import audio_shm_name
 
 from ..constants import SERVICE_CLASS
 from ..ui_bus import emit_ui_command
@@ -27,7 +28,7 @@ RENDERER_CLASS = "pystudio_audioshm"
 
 def _default_audio_shm_name(service_id: str) -> str:
     s = str(service_id or "").strip()
-    return f"shm.{s}.audio" if s else ""
+    return audio_shm_name(s) if s else ""
 
 
 class PyStudioAudioShmViewRuntimeNode(RuntimeNode):

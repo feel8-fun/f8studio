@@ -4,9 +4,10 @@ import os
 import struct
 import time
 from dataclasses import dataclass
-from multiprocessing.shared_memory import SharedMemory
 from typing import Optional, Tuple
 
+from .core import open_shared_memory_create, open_shared_memory_readonly
+from .naming import audio_shm_name, frame_event_name
 from .win_event import Win32Event
 
 
@@ -56,7 +57,7 @@ class AudioShmChunkHeader:
 
 
 def default_audio_shm_name(service_id: str) -> str:
-    return f"shm.{service_id}.audio"
+    return audio_shm_name(service_id)
 
 
 def read_audio_header(buf: memoryview) -> Optional[AudioShmHeader]:
@@ -95,13 +96,13 @@ def read_chunk_header(buf: memoryview, offset: int) -> Optional[AudioShmChunkHea
 class AudioShmReader:
     def __init__(self, shm_name: str):
         self.shm_name = shm_name
-        self._shm: Optional[SharedMemory] = None
+        self._shm = None
         self._event: Optional[Win32Event] = None
 
     def open(self, use_event: bool = True) -> None:
-        self._shm = SharedMemory(name=self.shm_name, create=False)
+        self._shm = open_shared_memory_readonly(self.shm_name)
         if use_event and os.name == "nt":
-            self._event = Win32Event.open(self.shm_name + "_evt")
+            self._event = Win32Event.open(frame_event_name(self.shm_name))
 
     def close(self) -> None:
         if self._event:
@@ -173,7 +174,7 @@ class AudioShmWriter:
         self._write_frame_index = 0
 
     def open(self) -> None:
-        self._shm = SharedMemory(name=self.shm_name, create=True, size=self.size)
+        self._shm = open_shared_memory_create(self.shm_name, self.size)
         if os.name == "nt":
             self._event = Win32Event.create(self.shm_name + "_evt", manual_reset=True, initial_state=False)
         self._init_header()
@@ -260,4 +261,3 @@ class AudioShmWriter:
         )
         if self._event:
             self._event.pulse()
-

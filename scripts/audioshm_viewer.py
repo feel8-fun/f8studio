@@ -3,12 +3,16 @@ import importlib
 import os
 import struct
 import sys
-import threading
 import time
 from dataclasses import dataclass
 from typing import Optional
 
-from multiprocessing.shared_memory import SharedMemory
+try:
+    from f8pysdk.shm import AudioShmReader, default_audio_shm_name
+except ModuleNotFoundError:
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    sys.path.insert(0, os.path.join(repo_root, "packages", "f8pysdk"))
+    from f8pysdk.shm import AudioShmReader, default_audio_shm_name
 
 
 def _require(module_name: str, pip_name: Optional[str] = None):
@@ -67,7 +71,7 @@ class AudioChunkHeader:
 
 
 def compute_default_audio_shm_name(service_id: str) -> str:
-    return f"shm.{service_id}.audio"
+    return default_audio_shm_name(service_id)
 
 
 def read_audio_header(buf: memoryview) -> Optional[AudioShmHeader]:
@@ -103,37 +107,6 @@ def read_chunk_header(buf: memoryview, offset: int) -> Optional[AudioChunkHeader
     return AudioChunkHeader(seq=fields[0], ts_ms=fields[1], frames=fields[2])
 
 
-class _Win32EventWaiter:
-    def __init__(self, event_handle, wait_fn):
-        self._event_handle = event_handle
-        self._wait_fn = wait_fn
-        self._stop = threading.Event()
-        self._pending = 0
-        self._lock = threading.Lock()
-        self._thread = threading.Thread(target=self._run, name="audioshm_event_waiter", daemon=True)
-
-    def start(self) -> None:
-        self._thread.start()
-
-    def stop(self) -> None:
-        self._stop.set()
-        self._thread.join(timeout=1.0)
-
-    def pop_pending(self) -> int:
-        with self._lock:
-            v = self._pending
-            self._pending = 0
-            return v
-
-    def _run(self) -> None:
-        WAIT_OBJECT_0 = 0x00000000
-        while not self._stop.is_set():
-            rc = self._wait_fn(self._event_handle, 200)
-            if rc == WAIT_OBJECT_0:
-                with self._lock:
-                    self._pending += 1
-
-
 def main() -> int:
     ap = argparse.ArgumentParser(description="Visualize f8 AudioSHM (ring buffer) as a waveform.")
     ap.add_argument("--shm", default="", help="Shared memory mapping name (e.g. shm.audiocap.audio)")
@@ -159,41 +132,11 @@ def main() -> int:
     QtCore = pg.Qt.QtCore
     QtWidgets = pg.Qt.QtWidgets
 
-    shm = SharedMemory(name=shm_name, create=False)
+    reader = AudioShmReader(shm_name)
+    reader.open(use_event=args.use_event)
     try:
-        buf = shm.buf
-        print(f"[audioshm] name={shm_name} bytes={shm.size}")
-
-        event_handle = None
-        event_waiter = None
-        if args.use_event and os.name == "nt":
-            import ctypes
-
-            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-            SYNCHRONIZE = 0x00100000
-
-            OpenEventW = kernel32.OpenEventW
-            OpenEventW.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_wchar_p]
-            OpenEventW.restype = ctypes.c_void_p
-
-            WaitForSingleObject = kernel32.WaitForSingleObject
-            WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
-            WaitForSingleObject.restype = ctypes.c_uint32
-
-            CloseHandle = kernel32.CloseHandle
-            CloseHandle.argtypes = [ctypes.c_void_p]
-            CloseHandle.restype = ctypes.c_int
-
-            ev_name = shm_name + "_evt"
-            h = OpenEventW(SYNCHRONIZE, 0, ev_name)
-            if h:
-                event_handle = h
-                print(f"[audioshm] using event={ev_name}")
-                event_waiter = _Win32EventWaiter(event_handle, WaitForSingleObject)
-                event_waiter.start()
-            else:
-                err = ctypes.get_last_error()
-                print(f"[audioshm] event not available ({ev_name}) err={err}, falling back to polling")
+        buf = reader.buf
+        print(f"[audioshm] name={shm_name}")
 
         app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
@@ -305,8 +248,6 @@ def main() -> int:
                 last_header = key
                 rebuild_plot(hdr)
 
-            if event_waiter and hdr.write_seq == last_seq and event_waiter.pop_pending() == 0:
-                return
             if hdr.write_seq == last_seq:
                 return
 
@@ -355,20 +296,8 @@ def main() -> int:
         app.exec()
 
     finally:
-        if "event_waiter" in locals() and event_waiter:
-            try:
-                event_waiter.stop()
-            except Exception:
-                pass
-        if "event_handle" in locals() and event_handle:
-            try:
-                import ctypes
-
-                ctypes.WinDLL("kernel32", use_last_error=True).CloseHandle(event_handle)
-            except Exception:
-                pass
         try:
-            shm.close()
+            reader.close()
         except Exception:
             pass
     return 0

@@ -2,20 +2,26 @@
 
 #include <algorithm>
 #include <sstream>
+#include <thread>
 #include <utility>
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
-#include "win32_wgc_capture.h"
 #include "f8cppsdk/f8_naming.h"
+#include "f8cppsdk/shm/video.h"
 #include "f8cppsdk/state_kv.h"
 #include "f8cppsdk/time_utils.h"
 #include "f8cppsdk/video_shared_memory_sink.h"
 
 #if defined(_WIN32)
+#include "win32_wgc_capture.h"
 #include "win32_capture_sources.h"
 #include "win32_picker.h"
+#else
+#include "linux_x11_capture.h"
+#include "x11_capture_sources.h"
+#include "x11_picker.h"
 #endif
 
 namespace f8::screencap {
@@ -48,8 +54,6 @@ json state_field(std::string name, const json& value_schema, std::string access,
   if (show_on_node) sf["showOnNode"] = true;
   return sf;
 }
-
-std::string default_video_shm_name(const std::string& service_id) { return "shm." + service_id + ".video"; }
 
 bool is_mode_valid(const std::string& m) { return m == "display" || m == "window" || m == "region"; }
 
@@ -154,7 +158,7 @@ bool ScreenCapService::start() {
   }
 
   shm_ = std::make_shared<f8::cppsdk::VideoSharedMemorySink>();
-  const auto shm_name = default_video_shm_name(cfg_.service_id);
+  const auto shm_name = f8::cppsdk::shm::video_shm_name(cfg_.service_id);
   if (!shm_->initialize(shm_name, cfg_.video_shm_bytes, cfg_.video_shm_slots)) {
     spdlog::error("failed to initialize video shm sink name={} bytes={} slots={}", shm_name, cfg_.video_shm_bytes,
                   cfg_.video_shm_slots);
@@ -180,7 +184,11 @@ bool ScreenCapService::start() {
     return false;
   }
 
+#if defined(_WIN32)
   capture_ = std::make_unique<Win32WgcCapture>(cfg_.service_id, shm_);
+#else
+  capture_ = std::make_unique<LinuxX11Capture>(cfg_.service_id, shm_);
+#endif
   capture_->configure(cfg_.mode, cfg_.fps, cfg_.display_id, cfg_.window_id, cfg_.region_csv, cfg_.scale_csv);
   capture_->set_on_running([this](bool r) { capture_running_.store(r, std::memory_order_release); });
   capture_->set_on_frame([this](std::uint64_t frame_id, std::int64_t ts_ms) {
@@ -443,6 +451,30 @@ bool ScreenCapService::on_set_state(const std::string& node_id, const std::strin
         f8::cppsdk::kv_set_node_state(bus_->kv(), cfg_.service_id, cfg_.service_id, "window", w, "endpoint", meta);
       }
     }
+#else
+    if (f == "windowId") {
+      json w = json::object();
+      if (!cfg_.window_id.empty()) {
+        std::uint64_t xid = 0;
+        std::string err2;
+        if (x11::try_parse_window_id(cfg_.window_id, xid, err2)) {
+          x11::RectI rc{};
+          std::string title;
+          std::uint32_t pid = 0;
+          if (x11::try_get_window_rect(xid, rc, title, pid, err2)) {
+            w = json{{"backend", "x11"},
+                     {"id", cfg_.window_id},
+                     {"pid", pid},
+                     {"title", title},
+                     {"rect", json{{"x", rc.x}, {"y", rc.y}, {"w", rc.w}, {"h", rc.h}}}};
+          }
+        }
+      }
+      published_state_["window"] = w;
+      if (bus_) {
+        f8::cppsdk::kv_set_node_state(bus_->kv(), cfg_.service_id, cfg_.service_id, "window", w, "endpoint", meta);
+      }
+    }
 #endif
   }
   return true;
@@ -511,9 +543,23 @@ bool ScreenCapService::on_command(const std::string& call, const json& args, con
     result["displays"] = std::move(arr);
     return true;
 #else
-    error_code = "NOT_SUPPORTED";
-    error_message = "listDisplays not supported";
-    return false;
+    std::string err;
+    const auto displays = x11::enumerate_displays(err);
+    if (displays.empty()) {
+      error_code = "NOT_SUPPORTED";
+      error_message = err.empty() ? "listDisplays not supported" : err;
+      return false;
+    }
+    json arr = json::array();
+    for (const auto& d : displays) {
+      arr.push_back(json{{"displayId", d.id},
+                         {"name", d.name},
+                         {"primary", d.primary},
+                         {"rect", json{{"x", d.rect.x}, {"y", d.rect.y}, {"w", d.rect.w}, {"h", d.rect.h}}},
+                         {"workRect", json{{"x", d.work_rect.x}, {"y", d.work_rect.y}, {"w", d.work_rect.w}, {"h", d.work_rect.h}}}});
+    }
+    result["displays"] = std::move(arr);
+    return true;
 #endif
   }
 
@@ -525,10 +571,31 @@ bool ScreenCapService::on_command(const std::string& call, const json& args, con
     }
 
 #if !defined(_WIN32)
-    picker_running_.store(false, std::memory_order_release);
-    error_code = "NOT_SUPPORTED";
-    error_message = "picker not supported on this platform";
-    return false;
+    if (call != "pickRegion") {
+      picker_running_.store(false, std::memory_order_release);
+      error_code = "NOT_SUPPORTED";
+      error_message = "picker not supported on this platform";
+      return false;
+    }
+
+    (void)args;
+    x11::X11Picker::pick_region_async([this](x11::PickRegionResult r) {
+      picker_running_.store(false, std::memory_order_release);
+      if (!r.ok) {
+        if (!r.error.empty()) {
+          std::lock_guard<std::mutex> lock(state_mu_);
+          last_error_ = "pickRegion: " + r.error;
+        }
+        return;
+      }
+      json patch;
+      patch["mode"] = "region";
+      patch["region"] = json{{"x", r.rect.x}, {"y", r.rect.y}, {"w", r.rect.w}, {"h", r.rect.h}};
+      std::lock_guard<std::mutex> lock(picker_mu_);
+      picker_pending_patch_ = std::move(patch);
+    });
+    result["started"] = true;
+    return true;
 #else
     (void)args;
     if (call == "pickDisplay") {
@@ -619,6 +686,26 @@ void ScreenCapService::publish_static_state() {
         }
       }
     }
+#else
+    if ((region.value("w", 0) <= 0 || region.value("h", 0) <= 0) && cfg_.mode == "display") {
+      std::string err;
+      const auto displays = x11::enumerate_displays(err);
+      if (!displays.empty()) {
+        const auto& d = displays.front();
+        region = json{{"x", d.rect.x}, {"y", d.rect.y}, {"w", d.rect.w}, {"h", d.rect.h}};
+      }
+    } else if ((region.value("w", 0) <= 0 || region.value("h", 0) <= 0) && cfg_.mode == "window") {
+      std::uint64_t xid = 0;
+      std::string err;
+      if (x11::try_parse_window_id(cfg_.window_id, xid, err)) {
+        x11::RectI r{};
+        std::string title;
+        std::uint32_t pid = 0;
+        if (x11::try_get_window_rect(xid, r, title, pid, err)) {
+          region = json{{"x", r.x}, {"y", r.y}, {"w", r.w}, {"h", r.h}};
+        }
+      }
+    }
 #endif
     set_if_changed("region", region);
   }
@@ -665,7 +752,7 @@ json ScreenCapService::describe() {
       state_field("mode", schema_string(), "rw", "Mode", "display|window|region", true),
       state_field("fps", schema_number(), "rw", "FPS", "Capture rate", true),
       state_field("displayId", schema_integer(), "rw", "Display ID", "0..N-1 (see listDisplays)"),
-      state_field("windowId", schema_string(), "rw", "Window ID", "backend-specific (e.g. win32:hwnd:0x...)"),
+      state_field("windowId", schema_string(), "rw", "Window ID", "backend-specific (e.g. win32:hwnd:0x... or x11:win:0x...)"),
       state_field("window",
                   schema_object(json{{"backend", schema_string()},
                                      {"id", schema_string()},

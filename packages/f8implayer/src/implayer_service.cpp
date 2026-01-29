@@ -13,6 +13,7 @@
 
 #include "f8cppsdk/data_bus.h"
 #include "f8cppsdk/f8_naming.h"
+#include "f8cppsdk/shm/video.h"
 #include "f8cppsdk/state_kv.h"
 #include "f8cppsdk/time_utils.h"
 #include "f8cppsdk/video_shared_memory_sink.h"
@@ -61,10 +62,6 @@ json state_field(std::string name, const json& value_schema, std::string access,
   if (show_on_node)
     sf["showOnNode"] = true;
   return sf;
-}
-
-std::string default_video_shm_name(const std::string& service_id) {
-  return "shm." + service_id + ".video";
 }
 
 std::string new_video_id() {
@@ -130,7 +127,7 @@ bool ImPlayerService::start() {
   }
 
   shm_ = std::make_shared<VideoSharedMemorySink>();
-  const auto shm_name = default_video_shm_name(cfg_.service_id);
+  const auto shm_name = f8::cppsdk::shm::video_shm_name(cfg_.service_id);
   if (!shm_->initialize(shm_name, cfg_.video_shm_bytes, cfg_.video_shm_slots)) {
     spdlog::error("failed to initialize video shm sink name={} bytes={} slots={}", shm_name, cfg_.video_shm_bytes,
                   cfg_.video_shm_slots);

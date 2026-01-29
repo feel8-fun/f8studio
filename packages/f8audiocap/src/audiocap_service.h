@@ -13,6 +13,7 @@
 #include <nlohmann/json_fwd.hpp>
 
 #include "f8cppsdk/audio_shared_memory_sink.h"
+#include "f8cppsdk/shm/audio.h"
 #include "f8cppsdk/kv_store.h"
 #include "f8cppsdk/nats_client.h"
 #include "f8cppsdk/service_control_plane.h"
@@ -28,7 +29,7 @@ class AudioCapService final : public f8::cppsdk::ServiceControlHandler {
     std::string service_class = "f8.audiocap";
     std::string nats_url = "nats://127.0.0.1:4222";
 
-    std::size_t audio_shm_bytes = 8ull * 1024ull * 1024ull;
+    std::size_t audio_shm_bytes = f8::cppsdk::shm::kDefaultAudioShmBytes;
     std::uint32_t sample_rate = 48000;
     std::uint16_t channels = 2;
     std::uint32_t frames_per_chunk = 480;

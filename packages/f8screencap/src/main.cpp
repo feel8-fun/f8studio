@@ -20,16 +20,16 @@ void on_signal(int) { g_stop.store(true, std::memory_order_release); }
 }  // namespace
 
 int main(int argc, char** argv) {
-  cxxopts::Options options("f8screencap_service", "F8 screen capture (Windows Graphics Capture) -> video SHM service");
+  cxxopts::Options options("f8screencap_service", "F8 screen capture (platform backend) -> video SHM service");
   options.add_options()("describe", "Print service spec JSON and exit")(
       "service-id", "Service instance id (required unless --describe)", cxxopts::value<std::string>()->default_value(""))(
       "nats-url", "NATS server URL", cxxopts::value<std::string>()->default_value("nats://127.0.0.1:4222"))(
-      "shm-bytes", "Video SHM bytes", cxxopts::value<std::size_t>()->default_value(std::to_string(256ull * 1024ull * 1024ull)))(
-      "shm-slots", "Video SHM slots", cxxopts::value<std::uint32_t>()->default_value("2"))(
+      "shm-bytes", "Video SHM bytes", cxxopts::value<std::size_t>()->default_value(std::to_string(f8::cppsdk::shm::kDefaultVideoShmBytes)))(
+      "shm-slots", "Video SHM slots", cxxopts::value<std::uint32_t>()->default_value(std::to_string(f8::cppsdk::shm::kDefaultVideoShmSlots)))(
       "fps", "Capture FPS", cxxopts::value<double>()->default_value("30.0"))(
       "mode", "Capture mode (display|window|region)", cxxopts::value<std::string>()->default_value("display"))(
       "display-id", "Display id (0..N-1)", cxxopts::value<int>()->default_value("0"))(
-      "window-id", "Window id (backend-specific, eg. win32:hwnd:0x0001234)", cxxopts::value<std::string>()->default_value(""))(
+      "window-id", "Window id (backend-specific, e.g. win32:hwnd:0x... or x11:win:0x...)", cxxopts::value<std::string>()->default_value(""))(
       "region", "Region as x,y,w,h (mode=region)", cxxopts::value<std::string>()->default_value(""))(
       "scale", "Scale as w,h (optional; 0,0 disables)", cxxopts::value<std::string>()->default_value(""))("help", "Show help");
 

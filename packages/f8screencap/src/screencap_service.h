@@ -11,6 +11,7 @@
 #include <nlohmann/json_fwd.hpp>
 
 #include "f8cppsdk/service_bus.h"
+#include "f8cppsdk/shm/video.h"
 
 namespace f8::cppsdk {
 class VideoSharedMemorySink;
@@ -19,6 +20,13 @@ class VideoSharedMemorySink;
 namespace f8::screencap {
 
 class Win32WgcCapture;
+class LinuxX11Capture;
+
+#if defined(_WIN32)
+using CaptureBackend = Win32WgcCapture;
+#else
+using CaptureBackend = LinuxX11Capture;
+#endif
 
 class ScreenCapService final {
  public:
@@ -27,8 +35,8 @@ class ScreenCapService final {
     std::string service_class = "f8.screencap";
     std::string nats_url = "nats://127.0.0.1:4222";
 
-    std::size_t video_shm_bytes = 256ull * 1024ull * 1024ull;
-    std::uint32_t video_shm_slots = 2;
+    std::size_t video_shm_bytes = f8::cppsdk::shm::kDefaultVideoShmBytes;
+    std::uint32_t video_shm_slots = f8::cppsdk::shm::kDefaultVideoShmSlots;
 
     std::string mode = "display";  // display|window|region
     double fps = 30.0;
@@ -74,7 +82,7 @@ class ScreenCapService final {
 
   std::unique_ptr<f8::cppsdk::ServiceBus> bus_;
   std::shared_ptr<f8::cppsdk::VideoSharedMemorySink> shm_;
-  std::unique_ptr<Win32WgcCapture> capture_;
+  std::unique_ptr<CaptureBackend> capture_;
 
   mutable std::mutex state_mu_;
   std::unordered_map<std::string, json> published_state_;
