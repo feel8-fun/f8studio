@@ -250,6 +250,11 @@ void ImPlayerService::tick() {
   if (!running_.load(std::memory_order_acquire))
     return;
 
+  if (bus_ && bus_->terminate_requested()) {
+    stop_requested_.store(true, std::memory_order_release);
+    return;
+  }
+
   if (media_finished_.exchange(false, std::memory_order_acq_rel)) {
     playlist_next();
   }
@@ -693,11 +698,7 @@ bool ImPlayerService::on_command(const std::string& call, const nlohmann::json& 
   std::string err;
   bool ok = false;
 
-  if (call == "terminate" || call == "quit") {
-    spdlog::info("terminate requested: serviceId={}", cfg_.service_id);
-    stop_requested_.store(true, std::memory_order_release);
-    ok = true;
-  } else if (call == "open")
+  if (call == "open")
     ok = cmd_open(args, err);
   else if (call == "play")
     ok = cmd_play(err);

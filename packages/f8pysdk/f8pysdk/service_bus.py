@@ -517,14 +517,6 @@ class ServiceBus:
             req_id, _raw, args, meta = _parse_envelope(req.data)
             want_active = bool(active)
 
-            service_node = self.get_node(self.service_id)
-            if service_node is not None and isinstance(service_node, CommandableNode):
-                try:
-                    await service_node.on_command("activate", {"active": want_active}, meta={"cmd": cmd, **meta})  # type: ignore[misc]
-                except Exception as exc:
-                    await _respond(req, req_id=req_id, ok=False, error={"code": "FORBIDDEN", "message": str(exc)})
-                    return
-
             await self.set_active(want_active, source="cmd", meta={"cmd": cmd, **meta})
             await _respond(req, req_id=req_id, ok=True, result={"active": self.active})
 
@@ -555,14 +547,6 @@ class ServiceBus:
                 log.info("terminate requested serviceId=%s meta=%s", self.service_id, dict(meta or {}))
             except Exception:
                 pass
-
-            service_node = self.get_node(self.service_id)
-            if service_node is not None and isinstance(service_node, CommandableNode):
-                try:
-                    await service_node.on_command("terminate", dict(args), meta={"cmd": "terminate", **meta})  # type: ignore[misc]
-                except Exception as exc:
-                    await _respond(req, req_id=req_id, ok=False, error={"code": "FORBIDDEN", "message": str(exc)})
-                    return
 
             try:
                 self._terminate_event.set()

@@ -223,6 +223,11 @@ void ScreenCapService::stop() {
 void ScreenCapService::tick() {
   if (!running()) return;
 
+  if (bus_ && bus_->terminate_requested()) {
+    stop_requested_.store(true, std::memory_order_release);
+    return;
+  }
+
   // Apply pending picker result on the main thread (so KV writes are serialized).
   {
     std::optional<json> patch;

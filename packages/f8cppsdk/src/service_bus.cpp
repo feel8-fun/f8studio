@@ -157,17 +157,6 @@ bool ServiceBus::on_command(const std::string& call, const json& args, const jso
     term_cv_.notify_all();
     result = json::object();
     result["terminating"] = true;
-    // Also forward to the user-level command handler (best-effort). This lets
-    // GUI/event-loop services set their own shutdown flags while keeping the
-    // bus-level termination latch available for blocking services.
-    if (on_command_) {
-      try {
-        json out;
-        std::string ec;
-        std::string em;
-        (void)on_command_(call, args, meta, out, ec, em);
-      } catch (...) {}
-    }
     return true;
   }
 
