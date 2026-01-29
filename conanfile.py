@@ -27,16 +27,14 @@ class F8Build(ConanFile):
         "fPIC": [True, False],
         "with_tests": [True, False],
         "with_examples": [True, False],
-        "with_apps": [True, False],
-        "with_gst_webrtc": [True, False],
+        "with_apps": [True, False]
     }
     default_options = {
         "shared": False,
         "fPIC": True,
         "with_tests": False,
         "with_examples": False,
-        "with_apps": False,
-        "with_gst_webrtc": False,
+        "with_apps": False
     }
 
     def config_options(self):
@@ -57,14 +55,6 @@ class F8Build(ConanFile):
             except Exception:
                 pass
 
-        if self.options.with_gst_webrtc:
-            # GStreamer plugins (dll) require shared GStreamer + GLib on Windows.
-            self.options["gstreamer"].shared = True
-            self.options["glib"].shared = True
-            # webrtcbin needs nicesrc/nicesink from libnice's GStreamer plugin.
-            self.options["libnice"].with_gstreamer = True
-            self.options["libnice"].shared = True
-
     def build_requirements(self):
         # Ensure a modern CMake is available as a build tool when Conan runs the build
         # Adjust the version to whatever your CI or environment prefers.
@@ -75,13 +65,9 @@ class F8Build(ConanFile):
         # core runtime dependencies
         self.requires("cnats/3.11.0")
         self.requires("nlohmann_json/3.12.0")
-        self.requires("sigslot/1.2.3")
-        self.requires("cpp-httplib/0.20.1")
         self.requires("openssl/3.6.0")
         self.requires("cxxopts/3.3.1")
         self.requires("spdlog/1.16.0")
-        self.requires("concurrentqueue/1.0.4")
-        self.requires("cr/cci.20221105")
         # Mathematical expressions plugin
         self.requires("mexce/1.0.1")
         # Python plugin
@@ -105,21 +91,6 @@ class F8Build(ConanFile):
         self.requires("opengl/system")
         self.requires("imgui/1.92.4")
         self.requires("pulseaudio/17.0", override=True)
-
-        # WebRTC gateway (localhost signaling)
-        self.requires("websocketpp/0.8.2")
-        self.requires("openh264/2.6.0")
-        self.requires("libvpx/1.15.2")
-
-        # WebRTC
-        self.requires("gstreamer/1.24.7")
-        self.requires("libdatachannel/0.24.0")
-
-        if self.options.with_gst_webrtc:
-            # Local recipe (see conan_recipes/gst_plugins_bad_recipe).
-            self.requires("gst-plugins-base/1.24.7")
-            self.requires("gst-plugins-good/1.24.7")
-            self.requires("gst-plugins-bad/1.24.7")
 
         if self.options.with_tests:
             self.requires("gtest/1.17.0")
