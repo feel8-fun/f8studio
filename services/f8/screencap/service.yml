@@ -1,0 +1,18 @@
+schemaVersion: f8serviceEntry/1
+serviceClass: f8.screencap
+label: Screen Capture
+version: 0.0.1
+launch:
+  command: uv
+  args:
+    - run
+    - python
+    - scripts/run_cpp_service.py
+    - --service-dir
+    - services/f8/screencap
+    - --exe
+    - f8screencap_service
+    - --env-var
+    - F8SCREENCAP_EXE
+  env: {}
+  workdir: "../../../"
