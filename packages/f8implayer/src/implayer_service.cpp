@@ -112,6 +112,20 @@ ImPlayerService::~ImPlayerService() {
   stop();
 }
 
+void ImPlayerService::on_lifecycle(bool active, const nlohmann::json&) {
+  set_active_local(active);
+}
+
+void ImPlayerService::on_state(const std::string& node_id, const std::string& field, const nlohmann::json& value,
+                               std::int64_t ts_ms, const nlohmann::json& meta) {
+  (void)ts_ms;
+  if (node_id != cfg_.service_id) return;
+  std::string ec;
+  std::string em;
+  json result;
+  (void)on_set_state(node_id, field, value, meta, ec, em);
+}
+
 bool ImPlayerService::start() {
   if (running_.load(std::memory_order_acquire))
     return true;
@@ -191,14 +205,11 @@ bool ImPlayerService::start() {
   // Start the service bus only after the GUI/player are ready, so rungraph/state
   // deployments won't race against initialization.
   bus_ = std::make_unique<f8::cppsdk::ServiceBus>(f8::cppsdk::ServiceBus::Config{cfg_.service_id, cfg_.nats_url, true});
-  bus_->set_lifecycle_callback([this](bool active, const json&) { set_active_local(active); });
-  bus_->set_state_handler([this](const std::string& node_id, const std::string& field, const json& value, const json& meta,
-                                 std::string& ec, std::string& em) { return on_set_state(node_id, field, value, meta, ec, em); });
-  bus_->set_rungraph_handler([this](const json& graph_obj, const json& meta, std::string& ec, std::string& em) {
-    return on_set_rungraph(graph_obj, meta, ec, em);
-  });
-  bus_->set_command_handler([this](const std::string& call, const json& args, const json& meta, json& result, std::string& ec,
-                                   std::string& em) { return on_command(call, args, meta, result, ec, em); });
+  bus_->add_lifecycle_node(this);
+  bus_->add_stateful_node(this);
+  bus_->add_set_state_node(this);
+  bus_->add_rungraph_node(this);
+  bus_->add_command_node(this);
   if (!bus_->start()) {
     bus_.reset();
     return false;
@@ -246,6 +257,10 @@ void ImPlayerService::stop() {
 void ImPlayerService::tick() {
   if (!running_.load(std::memory_order_acquire))
     return;
+
+  if (bus_) {
+    (void)bus_->drain_main_thread();
+  }
 
   if (bus_ && bus_->terminate_requested()) {
     stop_requested_.store(true, std::memory_order_release);

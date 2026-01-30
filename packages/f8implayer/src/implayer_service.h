@@ -12,6 +12,7 @@
 
 #include <nlohmann/json_fwd.hpp>
 
+#include "f8cppsdk/capabilities.h"
 #include "f8cppsdk/kv_store.h"
 #include "f8cppsdk/service_bus.h"
 #include "f8cppsdk/shm/video.h"
@@ -27,7 +28,11 @@ class SdlVideoWindow;
 class ImPlayerGui;
 using VideoSharedMemorySink = ::f8::cppsdk::VideoSharedMemorySink;
 
-class ImPlayerService final {
+class ImPlayerService final : public f8::cppsdk::LifecycleNode,
+                              public f8::cppsdk::StatefulNode,
+                              public f8::cppsdk::SetStateHandlerNode,
+                              public f8::cppsdk::RungraphHandlerNode,
+                              public f8::cppsdk::CommandableNode {
  public:
   struct Config {
     std::string service_id;
@@ -57,6 +62,10 @@ class ImPlayerService final {
     return running_.load(std::memory_order_acquire) && !stop_requested_.load(std::memory_order_acquire);
   }
 
+  void on_lifecycle(bool active, const nlohmann::json& meta) override;
+  void on_state(const std::string& node_id, const std::string& field, const nlohmann::json& value, std::int64_t ts_ms,
+                const nlohmann::json& meta) override;
+
   // When using SDL_MAIN_USE_CALLBACKS, feed events here from SDL_AppEvent.
   void processSdlEvent(const SDL_Event& ev);
 
@@ -68,11 +77,11 @@ class ImPlayerService final {
  private:
   void set_active_local(bool active);
   bool on_set_state(const std::string& node_id, const std::string& field, const nlohmann::json& value,
-                    const nlohmann::json& meta, std::string& error_code, std::string& error_message);
+                    const nlohmann::json& meta, std::string& error_code, std::string& error_message) override;
   bool on_set_rungraph(const nlohmann::json& graph_obj, const nlohmann::json& meta, std::string& error_code,
-                       std::string& error_message);
+                       std::string& error_message) override;
   bool on_command(const std::string& call, const nlohmann::json& args, const nlohmann::json& meta,
-                  nlohmann::json& result, std::string& error_code, std::string& error_message);
+                  nlohmann::json& result, std::string& error_code, std::string& error_message) override;
   void publish_static_state();
   void publish_dynamic_state();
 

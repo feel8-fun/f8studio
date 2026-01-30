@@ -144,6 +144,20 @@ ScreenCapService::ScreenCapService(Config cfg) : cfg_(std::move(cfg)) {}
 
 ScreenCapService::~ScreenCapService() { stop(); }
 
+void ScreenCapService::on_lifecycle(bool active, const json& meta) {
+  set_active_local(active, meta);
+}
+
+void ScreenCapService::on_state(const std::string& node_id, const std::string& field, const nlohmann::json& value,
+                                std::int64_t ts_ms, const nlohmann::json& meta) {
+  (void)ts_ms;
+  if (node_id != cfg_.service_id) return;
+  std::string ec;
+  std::string em;
+  nlohmann::json result;
+  (void)on_set_state(node_id, field, value, meta, ec, em);
+}
+
 bool ScreenCapService::start() {
   if (running_.load(std::memory_order_acquire)) return true;
 
@@ -166,17 +180,11 @@ bool ScreenCapService::start() {
   }
 
   bus_ = std::make_unique<f8::cppsdk::ServiceBus>(f8::cppsdk::ServiceBus::Config{cfg_.service_id, cfg_.nats_url, true});
-  bus_->set_lifecycle_callback([this](bool active, const json& meta) { set_active_local(active, meta); });
-  bus_->set_state_handler([this](const std::string& node_id, const std::string& field, const json& value, const json& meta,
-                                 std::string& error_code, std::string& error_message) {
-    return on_set_state(node_id, field, value, meta, error_code, error_message);
-  });
-  bus_->set_rungraph_handler([this](const json& graph_obj, const json& meta, std::string& error_code,
-                                    std::string& error_message) { return on_set_rungraph(graph_obj, meta, error_code, error_message); });
-  bus_->set_command_handler([this](const std::string& call, const json& args, const json& meta, json& result,
-                                   std::string& error_code, std::string& error_message) {
-    return on_command(call, args, meta, result, error_code, error_message);
-  });
+  bus_->add_lifecycle_node(this);
+  bus_->add_stateful_node(this);
+  bus_->add_set_state_node(this);
+  bus_->add_rungraph_node(this);
+  bus_->add_command_node(this);
 
   if (!bus_->start()) {
     bus_.reset();
@@ -230,6 +238,10 @@ void ScreenCapService::stop() {
 
 void ScreenCapService::tick() {
   if (!running()) return;
+
+  if (bus_) {
+    (void)bus_->drain_main_thread();
+  }
 
   if (bus_ && bus_->terminate_requested()) {
     stop_requested_.store(true, std::memory_order_release);

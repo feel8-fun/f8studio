@@ -10,6 +10,7 @@
 
 #include <nlohmann/json_fwd.hpp>
 
+#include "f8cppsdk/capabilities.h"
 #include "f8cppsdk/service_bus.h"
 #include "f8cppsdk/shm/video.h"
 
@@ -28,7 +29,11 @@ using CaptureBackend = Win32WgcCapture;
 using CaptureBackend = LinuxX11Capture;
 #endif
 
-class ScreenCapService final {
+class ScreenCapService final : public f8::cppsdk::LifecycleNode,
+                               public f8::cppsdk::StatefulNode,
+                               public f8::cppsdk::SetStateHandlerNode,
+                               public f8::cppsdk::RungraphHandlerNode,
+                               public f8::cppsdk::CommandableNode {
  public:
   struct Config {
     std::string service_id;
@@ -55,6 +60,16 @@ class ScreenCapService final {
     return running_.load(std::memory_order_acquire) && !stop_requested_.load(std::memory_order_acquire);
   }
 
+  void on_lifecycle(bool active, const nlohmann::json& meta) override;
+  void on_state(const std::string& node_id, const std::string& field, const nlohmann::json& value, std::int64_t ts_ms,
+                const nlohmann::json& meta) override;
+  bool on_set_state(const std::string& node_id, const std::string& field, const nlohmann::json& value,
+                    const nlohmann::json& meta, std::string& error_code, std::string& error_message) override;
+  bool on_set_rungraph(const nlohmann::json& graph_obj, const nlohmann::json& meta, std::string& error_code,
+                       std::string& error_message) override;
+  bool on_command(const std::string& call, const nlohmann::json& args, const nlohmann::json& meta,
+                  nlohmann::json& result, std::string& error_code, std::string& error_message) override;
+
   void tick();
 
   static nlohmann::json describe();
@@ -63,11 +78,6 @@ class ScreenCapService final {
   using json = nlohmann::json;
 
   void set_active_local(bool active, const json& meta);
-  bool on_set_state(const std::string& node_id, const std::string& field, const json& value, const json& meta,
-                    std::string& error_code, std::string& error_message);
-  bool on_set_rungraph(const json& graph_obj, const json& meta, std::string& error_code, std::string& error_message);
-  bool on_command(const std::string& call, const json& args, const json& meta, json& result, std::string& error_code,
-                  std::string& error_message);
 
   void publish_static_state();
   void publish_dynamic_state();

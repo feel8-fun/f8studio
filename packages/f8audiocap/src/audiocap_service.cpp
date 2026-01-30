@@ -143,20 +143,13 @@ bool AudioCapService::start() {
     return false;
   }
 
-  if (!nats_.connect(cfg_.nats_url)) return false;
-
-  f8::cppsdk::KvConfig kvc;
-  kvc.bucket = f8::cppsdk::kv_bucket_for_service(cfg_.service_id);
-  kvc.history = 1;
-  kvc.memory_storage = true;
-  if (!kv_.open_or_create(nats_.jetstream(), kvc)) return false;
-
-  ctrl_ = std::make_unique<f8::cppsdk::ServiceControlPlaneServer>(
-      f8::cppsdk::ServiceControlPlaneServer::Config{cfg_.service_id, cfg_.nats_url}, &nats_, &kv_, this);
-  if (!ctrl_->start()) {
-    spdlog::error("failed to start control plane");
-    return false;
-  }
+  bus_ = std::make_unique<f8::cppsdk::ServiceBus>(f8::cppsdk::ServiceBus::Config{cfg_.service_id, cfg_.nats_url, true});
+  bus_->add_lifecycle_node(this);
+  bus_->add_stateful_node(this);
+  bus_->add_set_state_node(this);
+  bus_->add_rungraph_node(this);
+  bus_->add_command_node(this);
+  if (!bus_->start()) return false;
 
   shm_ = std::make_unique<f8::cppsdk::AudioSharedMemorySink>();
   const std::string shm_name = f8::cppsdk::shm::audio_shm_name(cfg_.service_id);
@@ -204,7 +197,6 @@ bool AudioCapService::start() {
     if (wasapi_) {
       publish_static_state();
       publish_dynamic_state();
-      f8::cppsdk::kv_set_ready(kv_, true);
       running_.store(true, std::memory_order_release);
       stop_requested_.store(false, std::memory_order_release);
       spdlog::info("audiocap started serviceId={} natsUrl={}", cfg_.service_id, cfg_.nats_url);
@@ -238,7 +230,6 @@ bool AudioCapService::start() {
 
   publish_static_state();
   publish_dynamic_state();
-  f8::cppsdk::kv_set_ready(kv_, true);
 
   running_.store(true, std::memory_order_release);
   stop_requested_.store(false, std::memory_order_release);
@@ -249,12 +240,6 @@ bool AudioCapService::start() {
 void AudioCapService::stop() {
   if (!running_.exchange(false, std::memory_order_acq_rel)) return;
   stop_requested_.store(true, std::memory_order_release);
-
-  try {
-    if (ctrl_) ctrl_->stop();
-  } catch (...) {
-  }
-  ctrl_.reset();
 
   if (stream_) {
     SDL_DestroyAudioStream(stream_);
@@ -268,15 +253,20 @@ void AudioCapService::stop() {
   opened_device_name_.clear();
 
   shm_.reset();
-  kv_.stop_watch();
-  kv_.close();
-  nats_.close();
+  if (bus_) {
+    bus_->stop();
+  }
+  bus_.reset();
 
   SDL_QuitSubSystem(SDL_INIT_AUDIO);
 }
 
 void AudioCapService::tick() {
   if (!running_.load(std::memory_order_acquire)) return;
+
+  if (bus_) {
+    (void)bus_->drain_main_thread();
+  }
 
   const std::int64_t now = f8::cppsdk::now_ms();
   if (now - last_state_pub_ms_ >= 200) {
@@ -408,14 +398,24 @@ void AudioCapService::set_active_local(bool active, const nlohmann::json& meta) 
     auto it = published_state_.find("active");
     if (it == published_state_.end() || it->second != active) {
       published_state_["active"] = active;
-      f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, "active", active, "cmd", meta);
+      if (bus_) {
+        f8::cppsdk::kv_set_node_state(bus_->kv(), cfg_.service_id, cfg_.service_id, "active", active, "cmd", meta);
+      }
     }
   }
 }
 
-void AudioCapService::on_activate(const nlohmann::json& meta) { set_active_local(true, meta); }
-void AudioCapService::on_deactivate(const nlohmann::json& meta) { set_active_local(false, meta); }
-void AudioCapService::on_set_active(bool active, const nlohmann::json& meta) { set_active_local(active, meta); }
+void AudioCapService::on_lifecycle(bool active, const nlohmann::json& meta) { set_active_local(active, meta); }
+
+void AudioCapService::on_state(const std::string& node_id, const std::string& field, const nlohmann::json& value,
+                               std::int64_t ts_ms, const nlohmann::json& meta) {
+  (void)ts_ms;
+  if (node_id != cfg_.service_id) return;
+  std::string ec;
+  std::string em;
+  json result;
+  (void)on_set_state(node_id, field, value, meta, ec, em);
+}
 
 bool AudioCapService::on_set_state(const std::string& node_id, const std::string& field, const nlohmann::json& value,
                                    const nlohmann::json& meta, std::string& error_code, std::string& error_message) {
@@ -458,7 +458,9 @@ void AudioCapService::publish_static_state() {
     auto it = published_state_.find(field);
     if (it != published_state_.end() && it->second == v) return;
     published_state_[field] = v;
-    f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, field, v, "init", json::object());
+    if (bus_) {
+      f8::cppsdk::kv_set_node_state(bus_->kv(), cfg_.service_id, cfg_.service_id, field, v, "init", json::object());
+    }
   };
 
   set_if_changed("serviceClass", cfg_.service_class);
@@ -480,7 +482,9 @@ void AudioCapService::publish_dynamic_state() {
     auto it = published_state_.find(field);
     if (it != published_state_.end() && it->second == v) return;
     published_state_[field] = v;
-    f8::cppsdk::kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, field, v, "tick", json::object());
+    if (bus_) {
+      f8::cppsdk::kv_set_node_state(bus_->kv(), cfg_.service_id, cfg_.service_id, field, v, "tick", json::object());
+    }
   };
   set_if_changed("active", active_.load(std::memory_order_relaxed));
   if (shm_) set_if_changed("writeSeq", static_cast<std::uint64_t>(shm_->write_seq()));

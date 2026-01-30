@@ -4,12 +4,16 @@
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
+#include <unordered_map>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
+#include "f8cppsdk/capabilities.h"
+#include "f8cppsdk/main_thread_queue.h"
 #include "f8cppsdk/kv_store.h"
 #include "f8cppsdk/nats_client.h"
 #include "f8cppsdk/service_control_plane.h"
@@ -34,15 +38,6 @@ class ServiceBus final : public ServiceControlHandler {
     bool kv_memory_storage = true;
   };
 
-  using LifecycleCallback = std::function<void(bool active, const json& meta)>;
-  using SetStateHandler =
-      std::function<bool(const std::string& node_id, const std::string& field, const json& value, const json& meta,
-                         std::string& error_code, std::string& error_message)>;
-  using SetRungraphHandler =
-      std::function<bool(const json& graph_obj, const json& meta, std::string& error_code, std::string& error_message)>;
-  using CommandHandler = std::function<bool(const std::string& call, const json& args, const json& meta, json& result,
-                                            std::string& error_code, std::string& error_message)>;
-
   explicit ServiceBus(Config cfg);
   ~ServiceBus();
   ServiceBus(const ServiceBus&) = delete;
@@ -51,10 +46,12 @@ class ServiceBus final : public ServiceControlHandler {
   ServiceBus& operator=(ServiceBus&&) = delete;
 
   // Handlers are optional; unhandled calls will be rejected.
-  void set_lifecycle_callback(LifecycleCallback cb);
-  void set_state_handler(SetStateHandler cb);
-  void set_rungraph_handler(SetRungraphHandler cb);
-  void set_command_handler(CommandHandler cb);
+  void add_lifecycle_node(LifecycleNode* node);
+  void add_stateful_node(StatefulNode* node);
+  void add_data_node(DataReceivableNode* node);
+  void add_set_state_node(SetStateHandlerNode* node);
+  void add_rungraph_node(RungraphHandlerNode* node);
+  void add_command_node(CommandableNode* node);
 
   bool start();
   void stop();
@@ -70,6 +67,9 @@ class ServiceBus final : public ServiceControlHandler {
   const NatsClient& nats() const { return nats_; }
   KvStore& kv() { return kv_; }
   const KvStore& kv() const { return kv_; }
+
+  // Pump tasks that must run on the service main/tick thread.
+  std::size_t drain_main_thread(std::size_t max_tasks = 0);
 
   // Apply lifecycle locally and persist to KV (best-effort).
   void set_active_local(bool active, const json& meta, const std::string& source = "cmd");
@@ -88,6 +88,7 @@ class ServiceBus final : public ServiceControlHandler {
 
  private:
   void load_active_from_kv();
+  void apply_data_routes_from_rungraph(const json& graph_obj);
 
   Config cfg_;
   std::atomic<bool> active_{true};
@@ -100,10 +101,28 @@ class ServiceBus final : public ServiceControlHandler {
   KvStore kv_;
   std::unique_ptr<ServiceControlPlaneServer> ctrl_;
 
-  LifecycleCallback on_lifecycle_;
-  SetStateHandler on_set_state_;
-  SetRungraphHandler on_set_rungraph_;
-  CommandHandler on_command_;
+  MainThreadQueue main_thread_;
+
+  mutable std::mutex lifecycle_mu_;
+  std::vector<LifecycleNode*> lifecycle_nodes_;
+
+  mutable std::mutex handlers_mu_;
+  std::vector<SetStateHandlerNode*> set_state_nodes_;
+  std::vector<RungraphHandlerNode*> rungraph_nodes_;
+  std::vector<CommandableNode*> command_nodes_;
+  std::vector<StatefulNode*> stateful_nodes_;
+  std::vector<DataReceivableNode*> data_nodes_;
+
+  struct DataRoute {
+    std::string to_node_id;
+    std::string to_port;
+    std::string from_service_id;
+    std::string from_node_id;
+    std::string from_port;
+  };
+  mutable std::mutex data_mu_;
+  std::unordered_map<std::string, std::vector<DataRoute>> data_routes_by_subject_;
+  std::unordered_map<std::string, NatsSubscription> data_subs_;
 };
 
 }  // namespace f8::cppsdk
