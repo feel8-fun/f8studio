@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, cast
 
-from .capabilities import BusAttachableNode, ComputableNode, DataReceivableNode, NodeBus, StatefulNode
+from .capabilities import BusAttachableNode, ComputableNode, DataReceivableNode, LifecycleNode, NodeBus, StatefulNode
 
 
 @dataclass
-class RuntimeNode(BusAttachableNode, StatefulNode, DataReceivableNode, ComputableNode):
+class RuntimeNode(BusAttachableNode, StatefulNode, DataReceivableNode, ComputableNode, LifecycleNode):
     """
     Base class for service runtime nodes.
 
@@ -41,6 +41,12 @@ class RuntimeNode(BusAttachableNode, StatefulNode, DataReceivableNode, Computabl
     async def on_data(self, port: str, value: Any, *, ts_ms: int | None = None) -> None:
         """
         Push-based data callback (optional).
+        """
+        return
+
+    async def on_lifecycle(self, active: bool, meta: dict[str, Any]) -> None:
+        """
+        Optional lifecycle callback (activate/deactivate).
         """
         return
 

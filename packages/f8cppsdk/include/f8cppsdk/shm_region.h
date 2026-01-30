@@ -33,12 +33,14 @@ class ShmRegion {
   void* data_ = nullptr;
   std::size_t size_ = 0;
 
+  // POSIX behavior flag; on Windows this is ignored.
+  bool unlink_on_close_ = false;
+
 #if defined(_WIN32)
   void* mapping_ = nullptr;
 #else
   int fd_ = -1;
   bool owner_ = false;
-  bool unlink_on_close_ = false;
   std::string posix_name_;
 #endif
 };

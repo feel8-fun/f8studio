@@ -12,7 +12,15 @@ from nats.js.api import StorageType  # type: ignore[import-not-found]
 from nats.micro import ServiceConfig, add_service  # type: ignore[import-not-found]
 from nats.micro.service import EndpointConfig  # type: ignore[import-not-found]
 
-from .capabilities import BusAttachableNode, ClosableNode, CommandableNode, ComputableNode, DataReceivableNode, StatefulNode
+from .capabilities import (
+    BusAttachableNode,
+    ClosableNode,
+    CommandableNode,
+    ComputableNode,
+    DataReceivableNode,
+    LifecycleNode,
+    StatefulNode,
+)
 from .generated import F8Edge, F8EdgeKindEnum, F8EdgeStrategyEnum, F8RuntimeGraph, F8StateAccess
 from .nats_naming import (
     cmd_channel_subject,
@@ -463,6 +471,17 @@ class ServiceBus:
             return
 
         payload = {"source": str(source or "runtime"), **(dict(meta or {}))}
+
+        for node in list(self._nodes.values()):
+            try:
+                if not isinstance(node, LifecycleNode):
+                    continue
+                r = node.on_lifecycle(bool(active), dict(payload))
+                if asyncio.iscoroutine(r):
+                    await r
+            except Exception:
+                continue
+
         for cb in list(self._lifecycle_listeners):
             try:
                 r = cb(bool(active), payload)

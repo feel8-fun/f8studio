@@ -108,6 +108,19 @@ class ClosableNode(Protocol):
 
 
 @runtime_checkable
+class LifecycleNode(Protocol):
+    """
+    Node lifecycle callback capability.
+
+    Nodes can opt-in to receiving service activate/deactivate transitions.
+    """
+
+    node_id: str
+
+    async def on_lifecycle(self, active: bool, meta: dict[str, Any]) -> None: ...
+
+
+@runtime_checkable
 class DataListenerBus(Protocol):
     """
     Data listener registration capability (bus-side).
