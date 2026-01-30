@@ -583,29 +583,68 @@ bool ScreenCapService::on_command(const std::string& call, const json& args, con
     }
 
 #if !defined(_WIN32)
-    if (call != "pickRegion") {
+    (void)args;
+    if (call == "pickRegion") {
+      x11::X11Picker::pick_region_async([this](x11::PickRegionResult r) {
+        picker_running_.store(false, std::memory_order_release);
+        if (!r.ok) {
+          if (!r.error.empty()) {
+            std::lock_guard<std::mutex> lock(state_mu_);
+            last_error_ = "pickRegion: " + r.error;
+          }
+          return;
+        }
+        json patch;
+        patch["mode"] = "region";
+        patch["region"] = json{{"x", r.rect.x}, {"y", r.rect.y}, {"w", r.rect.w}, {"h", r.rect.h}};
+        std::lock_guard<std::mutex> lock(picker_mu_);
+        picker_pending_patch_ = std::move(patch);
+      });
+    } else if (call == "pickDisplay") {
+      x11::X11Picker::pick_display_async([this](x11::PickDisplayResult r) {
+        picker_running_.store(false, std::memory_order_release);
+        if (!r.ok) {
+          if (!r.error.empty()) {
+            std::lock_guard<std::mutex> lock(state_mu_);
+            last_error_ = "pickDisplay: " + r.error;
+          }
+          return;
+        }
+        json patch;
+        patch["mode"] = "display";
+        patch["displayId"] = r.display_id;
+        patch["region"] = json{{"x", r.rect.x}, {"y", r.rect.y}, {"w", r.rect.w}, {"h", r.rect.h}};
+        std::lock_guard<std::mutex> lock(picker_mu_);
+        picker_pending_patch_ = std::move(patch);
+      });
+    } else if (call == "pickWindow") {
+      x11::X11Picker::pick_window_async([this](x11::PickWindowResult r) {
+        picker_running_.store(false, std::memory_order_release);
+        if (!r.ok) {
+          if (!r.error.empty()) {
+            std::lock_guard<std::mutex> lock(state_mu_);
+            last_error_ = "pickWindow: " + r.error;
+          }
+          return;
+        }
+        json patch;
+        patch["mode"] = "window";
+        patch["windowId"] = r.window_id;
+        patch["region"] = json{{"x", r.rect.x}, {"y", r.rect.y}, {"w", r.rect.w}, {"h", r.rect.h}};
+        patch["window"] = json{{"backend", "x11"},
+                               {"id", r.window_id},
+                               {"pid", r.pid},
+                               {"title", r.title},
+                               {"rect", json{{"x", r.rect.x}, {"y", r.rect.y}, {"w", r.rect.w}, {"h", r.rect.h}}}};
+        std::lock_guard<std::mutex> lock(picker_mu_);
+        picker_pending_patch_ = std::move(patch);
+      });
+    } else {
       picker_running_.store(false, std::memory_order_release);
       error_code = "NOT_SUPPORTED";
       error_message = "picker not supported on this platform";
       return false;
     }
-
-    (void)args;
-    x11::X11Picker::pick_region_async([this](x11::PickRegionResult r) {
-      picker_running_.store(false, std::memory_order_release);
-      if (!r.ok) {
-        if (!r.error.empty()) {
-          std::lock_guard<std::mutex> lock(state_mu_);
-          last_error_ = "pickRegion: " + r.error;
-        }
-        return;
-      }
-      json patch;
-      patch["mode"] = "region";
-      patch["region"] = json{{"x", r.rect.x}, {"y", r.rect.y}, {"w", r.rect.w}, {"h", r.rect.h}};
-      std::lock_guard<std::mutex> lock(picker_mu_);
-      picker_pending_patch_ = std::move(patch);
-    });
     result["started"] = true;
     return true;
 #else
@@ -703,7 +742,14 @@ void ScreenCapService::publish_static_state() {
       std::string err;
       const auto displays = x11::enumerate_displays(err);
       if (!displays.empty()) {
-        const auto& d = displays.front();
+        const auto* sel = &displays.front();
+        for (const auto& d : displays) {
+          if (d.id == cfg_.display_id) {
+            sel = &d;
+            break;
+          }
+        }
+        const auto& d = *sel;
         region = json{{"x", d.rect.x}, {"y", d.rect.y}, {"w", d.rect.w}, {"h", d.rect.h}};
       }
     } else if ((region.value("w", 0) <= 0 || region.value("h", 0) <= 0) && cfg_.mode == "window") {

@@ -158,8 +158,8 @@ bool LinuxX11Capture::open_capture(std::string& err) {
   const int screens = ScreenCount(rt->dpy);
   rt->screen = std::clamp(cfg.display_id, 0, std::max(0, screens - 1));
   rt->root = RootWindow(rt->dpy, rt->screen);
-  const int screen_w = DisplayWidth(rt->dpy, rt->screen);
-  const int screen_h = DisplayHeight(rt->dpy, rt->screen);
+  const int root_w = DisplayWidth(rt->dpy, rt->screen);
+  const int root_h = DisplayHeight(rt->dpy, rt->screen);
 
   int src_w = 0;
   int src_h = 0;
@@ -167,10 +167,26 @@ bool LinuxX11Capture::open_capture(std::string& err) {
   int src_y = 0;
 
   if (cfg.mode == "display") {
-    src_x = 0;
-    src_y = 0;
-    src_w = screen_w;
-    src_h = screen_h;
+    std::string derr;
+    const auto displays = x11::enumerate_displays(derr);
+    const x11::DisplayInfo* sel = nullptr;
+    for (const auto& d : displays) {
+      if (d.id == cfg.display_id) {
+        sel = &d;
+        break;
+      }
+    }
+    if (sel) {
+      src_x = sel->rect.x;
+      src_y = sel->rect.y;
+      src_w = sel->rect.w;
+      src_h = sel->rect.h;
+    } else {
+      src_x = 0;
+      src_y = 0;
+      src_w = root_w;
+      src_h = root_h;
+    }
   } else if (cfg.mode == "window") {
     std::uint64_t xid = 0;
     std::string perr;
@@ -197,10 +213,10 @@ bool LinuxX11Capture::open_capture(std::string& err) {
       err = "invalid region: " + perr;
       return false;
     }
-    src_x = std::clamp(rc.x, 0, std::max(0, screen_w - 1));
-    src_y = std::clamp(rc.y, 0, std::max(0, screen_h - 1));
-    src_w = std::clamp(rc.w, 1, std::max(1, screen_w - src_x));
-    src_h = std::clamp(rc.h, 1, std::max(1, screen_h - src_y));
+    src_x = std::clamp(rc.x, 0, std::max(0, root_w - 1));
+    src_y = std::clamp(rc.y, 0, std::max(0, root_h - 1));
+    src_w = std::clamp(rc.w, 1, std::max(1, root_w - src_x));
+    src_h = std::clamp(rc.h, 1, std::max(1, root_h - src_y));
   } else {
     err = "invalid mode";
     return false;

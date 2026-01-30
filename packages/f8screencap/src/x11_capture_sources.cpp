@@ -6,6 +6,9 @@
 #include <sstream>
 
 #if defined(__linux__) && !defined(_WIN32)
+#if defined(F8_HAVE_XRANDR)
+#include <X11/extensions/Xrandr.h>
+#endif
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
@@ -134,6 +137,40 @@ std::vector<DisplayInfo> enumerate_displays(std::string& err) {
     err = "XOpenDisplay failed (is DISPLAY set?)";
     return out;
   }
+
+#if defined(F8_HAVE_XRANDR)
+  // Prefer XRandR monitors when available (multi-monitor under a single X11 screen).
+  const int screen = DefaultScreen(dpy);
+  const Window root = RootWindow(dpy, screen);
+  int nmon = 0;
+  XRRMonitorInfo* mons = XRRGetMonitors(dpy, root, True, &nmon);
+  if (mons && nmon > 0) {
+    out.reserve(static_cast<std::size_t>(nmon));
+    for (int i = 0; i < nmon; ++i) {
+      DisplayInfo di;
+      di.id = i;
+      di.primary = mons[i].primary != 0;
+      di.rect = RectI{mons[i].x, mons[i].y, mons[i].width, mons[i].height};
+      di.work_rect = di.rect;
+      std::string name = "Monitor " + std::to_string(i);
+      if (mons[i].name != None) {
+        char* atom_name = XGetAtomName(dpy, mons[i].name);
+        if (atom_name) {
+          name = atom_name;
+          XFree(atom_name);
+        }
+      }
+      di.name = std::move(name);
+      out.push_back(std::move(di));
+    }
+    XRRFreeMonitors(mons);
+    XCloseDisplay(dpy);
+    return out;
+  }
+  if (mons) XRRFreeMonitors(mons);
+#endif
+
+  // Fallback: X11 screens.
   const int screens = ScreenCount(dpy);
   for (int i = 0; i < screens; ++i) {
     DisplayInfo di;
@@ -225,4 +262,3 @@ bool try_get_window_rect(std::uint64_t xid, RectI& out, std::string& title, std:
 }
 
 }  // namespace f8::screencap::x11
-
