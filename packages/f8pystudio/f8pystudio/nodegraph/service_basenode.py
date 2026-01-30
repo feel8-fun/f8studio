@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import logging
+import json
 from typing import Any
 
 from qtpy import QtWidgets
 
 from .node_base import F8StudioBaseNode
 
-from f8pysdk import F8ServiceSpec
+from f8pysdk import F8ServiceSpec, F8StateAccess
 
 from collections import OrderedDict
 
@@ -31,10 +32,93 @@ from NodeGraphQt.qgraphics.node_overlay_disabled import XDisabledItem
 from NodeGraphQt.qgraphics.node_text_item import NodeTextItem
 from NodeGraphQt.qgraphics.port import CustomPortItem, PortItem
 
-from .port_painter import draw_square_port, DATA_PORT_COLOR, STATE_PORT_COLOR
+from .port_painter import draw_exec_port, draw_square_port, EXEC_PORT_COLOR, DATA_PORT_COLOR, STATE_PORT_COLOR
 from .service_process_toolbar import ServiceProcessToolbar
 
 logger = logging.getLogger(__name__)
+
+
+class _F8OnTopComboBox(QtWidgets.QComboBox):
+    """
+    QComboBox used inside QGraphicsProxyWidget nodes.
+
+    Qt can sometimes proxy the popup behind other embedded widgets in the same
+    QGraphicsScene. Rather than relying on Qt's internal popup, we render the
+    dropdown using a QMenu (top-level popup) so it always appears above the
+    scene.
+    """
+
+    def showPopup(self) -> None:  # type: ignore[override]
+        if not self.isEnabled():
+            return
+
+        self._raise_proxy(True)
+        try:
+            menu = QtWidgets.QMenu()
+            try:
+                menu.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
+            except Exception:
+                pass
+
+            group = QtGui.QActionGroup(menu)
+            group.setExclusive(True)
+            current = int(self.currentIndex())
+
+            for i in range(self.count()):
+                text = str(self.itemText(i))
+                act = menu.addAction(text)
+                act.setCheckable(True)
+                act.setChecked(i == current)
+                act.setData(i)
+                group.addAction(act)
+
+            pos = self.mapToGlobal(QtCore.QPoint(0, int(self.height())))
+            chosen = menu.exec(pos)
+            if chosen is not None:
+                try:
+                    idx = int(chosen.data())
+                except Exception:
+                    idx = -1
+                if 0 <= idx < self.count():
+                    self.setCurrentIndex(idx)
+        finally:
+            self._raise_proxy(False)
+
+    def hidePopup(self) -> None:  # type: ignore[override]
+        # no-op (popup handled by QMenu in showPopup)
+        return
+
+    def _raise_popup(self) -> None:
+        # Legacy path (kept for compatibility). With QMenu-based popup, this is not used.
+        try:
+            w = self.view().window()
+            w.raise_()
+            w.activateWindow()
+        except Exception:
+            return
+
+    def _raise_proxy(self, enabled: bool) -> None:
+        try:
+            proxy = self.graphicsProxyWidget()
+        except Exception:
+            proxy = None
+        if proxy is None:
+            return
+        try:
+            if enabled:
+                if not hasattr(proxy, "_f8_prev_z"):
+                    setattr(proxy, "_f8_prev_z", float(proxy.zValue()))
+                proxy.setZValue(100_000)
+            else:
+                prev = getattr(proxy, "_f8_prev_z", None)
+                if prev is not None:
+                    proxy.setZValue(float(prev))
+                try:
+                    delattr(proxy, "_f8_prev_z")
+                except Exception:
+                    pass
+        except Exception:
+            return
 
 
 class F8StudioServiceBaseNode(F8StudioBaseNode):
@@ -59,9 +143,28 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
 
         self.set_port_deletion_allowed(True)
 
+        self._build_exec_port()
         self._build_data_port()
         self._build_state_port()
         self._build_state_properties()
+
+    def _build_exec_port(self) -> None:
+        """
+        Services may optionally expose exec ports (extra schema fields).
+        """
+        for p in list(getattr(self.spec, "execInPorts", None) or []):
+            self.add_input(
+                f"[E]{p}",
+                color=EXEC_PORT_COLOR,
+                painter_func=draw_exec_port,
+            )
+
+        for p in list(getattr(self.spec, "execOutPorts", None) or []):
+            self.add_output(
+                f"{p}[E]",
+                color=EXEC_PORT_COLOR,
+                painter_func=draw_exec_port,
+            )
 
     def _build_data_port(self):
 
@@ -82,17 +185,20 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
         for s in self.effective_state_fields():
             if not s.showOnNode:
                 continue
-            self.add_input(
-                f"[S]{s.name}",
-                color=STATE_PORT_COLOR,
-                painter_func=draw_square_port,
-            )
 
-            self.add_output(
-                f"{s.name}[S]",
-                color=STATE_PORT_COLOR,
-                painter_func=draw_square_port,
-            )
+            if getattr(s, "access", None) in [F8StateAccess.rw, F8StateAccess.wo]:
+                self.add_input(
+                    f"[S]{s.name}",
+                    color=STATE_PORT_COLOR,
+                    painter_func=draw_square_port,
+                )
+
+            if getattr(s, "access", None) in [F8StateAccess.rw, F8StateAccess.ro]:
+                self.add_output(
+                    f"{s.name}[S]",
+                    color=STATE_PORT_COLOR,
+                    painter_func=draw_square_port,
+                )
 
     def _build_state_properties(self) -> None:
         for s in self.effective_state_fields() or []:
@@ -177,6 +283,11 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
         desired_inputs: dict[str, dict[str, Any]] = {}
         desired_outputs: dict[str, dict[str, Any]] = {}
 
+        for p in list(getattr(self.spec, "execInPorts", None) or []):
+            desired_inputs[f"[E]{p}"] = {"color": EXEC_PORT_COLOR, "painter_func": draw_exec_port}
+        for p in list(getattr(self.spec, "execOutPorts", None) or []):
+            desired_outputs[f"{p}[E]"] = {"color": EXEC_PORT_COLOR, "painter_func": draw_exec_port}
+
         for p in list(getattr(self.spec, "dataInPorts", None) or []):
             try:
                 desired_inputs[f"[D]{p.name}"] = {"color": DATA_PORT_COLOR}
@@ -195,8 +306,11 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
                 name = str(getattr(s, "name", "") or "").strip()
                 if not name:
                     continue
-                desired_inputs[f"[S]{name}"] = {"color": STATE_PORT_COLOR, "painter_func": draw_square_port}
-                desired_outputs[f"{name}[S]"] = {"color": STATE_PORT_COLOR, "painter_func": draw_square_port}
+                access = getattr(s, "access", None)
+                if access in [F8StateAccess.rw, F8StateAccess.wo]:
+                    desired_inputs[f"[S]{name}"] = {"color": STATE_PORT_COLOR, "painter_func": draw_square_port}
+                if access in [F8StateAccess.rw, F8StateAccess.ro]:
+                    desired_outputs[f"{name}[S]"] = {"color": STATE_PORT_COLOR, "painter_func": draw_square_port}
             except Exception:
                 continue
 
@@ -325,6 +439,806 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         self._widgets = OrderedDict()
         self._proxy_mode = False
         self._proxy_mode_threshold = 70
+        self._state_inline_proxies: OrderedDict[str, QtWidgets.QGraphicsProxyWidget] = OrderedDict()
+        self._state_inline_controls: OrderedDict[str, QtWidgets.QWidget] = OrderedDict()
+        self._state_inline_updaters: OrderedDict[str, Any] = OrderedDict()
+        self._state_row_y: dict[str, tuple[float, float]] = {}
+        self._graph_prop_hooked: bool = False
+        self._cmd_proxy: QtWidgets.QGraphicsProxyWidget | None = None
+        self._cmd_widget: QtWidgets.QWidget | None = None
+        self._ports_end_y: float | None = None
+
+    def _backend_node(self) -> Any | None:
+        """
+        Best-effort access to the backing BaseNode object for this view item.
+        """
+        try:
+            viewer = self.viewer()
+        except Exception:
+            viewer = None
+        try:
+            g = getattr(viewer, "_f8_graph", None) if viewer is not None else None
+            return g.get_node_by_id(str(getattr(self, "id", "") or "")) if g is not None else None
+        except Exception:
+            return None
+
+    def _graph(self) -> Any | None:
+        try:
+            viewer = self.viewer()
+        except Exception:
+            viewer = None
+        try:
+            return getattr(viewer, "_f8_graph", None) if viewer is not None else None
+        except Exception:
+            return None
+
+    def _ensure_graph_property_hook(self) -> None:
+        if self._graph_prop_hooked:
+            return
+        g = self._graph()
+        if g is None:
+            return
+        try:
+            g.property_changed.connect(self._on_graph_property_changed)  # type: ignore[attr-defined]
+            self._graph_prop_hooked = True
+        except Exception:
+            self._graph_prop_hooked = False
+
+    def _bridge(self) -> Any | None:
+        try:
+            g = self._graph()
+            return getattr(g, "service_bridge", None) if g is not None else None
+        except Exception:
+            return None
+
+    def _service_id(self) -> str:
+        # For service nodes, nodeId == serviceId.
+        try:
+            return str(getattr(self, "id", "") or "").strip()
+        except Exception:
+            return ""
+
+    def _invoke_command(self, cmd: Any) -> None:
+        """
+        Invoke a command declared on the service spec.
+
+        - no params: fire immediately
+        - has params: show dialog to collect args
+        """
+        call = str(getattr(cmd, "name", "") or "").strip()
+        if not call:
+            return
+        bridge = self._bridge()
+        if bridge is None:
+            return
+        sid = self._service_id()
+        if not sid:
+            return
+        params = list(getattr(cmd, "params", None) or [])
+        if not params:
+            try:
+                bridge.invoke_remote_command(sid, call, {})
+            except Exception:
+                return
+            return
+
+        args = self._prompt_command_args(cmd)
+        if args is None:
+            return
+        try:
+            bridge.invoke_remote_command(sid, call, args)
+        except Exception:
+            return
+
+    def _prompt_command_args(self, cmd: Any) -> dict[str, Any] | None:
+        call = str(getattr(cmd, "name", "") or "").strip() or "Command"
+        params = list(getattr(cmd, "params", None) or [])
+        if not params:
+            return {}
+
+        parent = None
+        try:
+            v = self.viewer()
+            parent = v.window() if v is not None else None
+        except Exception:
+            parent = None
+
+        dlg = QtWidgets.QDialog(parent)
+        dlg.setWindowTitle(call)
+        dlg.setModal(True)
+
+        form = QtWidgets.QFormLayout()
+        form.setContentsMargins(12, 12, 12, 12)
+        form.setSpacing(8)
+
+        editors: dict[str, tuple[QtWidgets.QWidget, callable]] = {}
+
+        for p in params:
+            name = str(getattr(p, "name", "") or "").strip()
+            if not name:
+                continue
+            required = bool(getattr(p, "required", False))
+            ui = str(getattr(p, "uiControl", "") or "").strip().lower()
+            schema = getattr(p, "valueSchema", None)
+            t = ""
+            try:
+                t = schema_type(schema) or ""
+            except Exception:
+                t = ""
+
+            enum_items = self._schema_enum_items(schema)
+            lo, hi = self._schema_numeric_range(schema)
+            try:
+                default_value = schema_default(schema)
+            except Exception:
+                default_value = None
+
+            label = f"{name} *" if required else name
+            tooltip = str(getattr(p, "description", "") or "").strip()
+
+            def _with_tooltip(w: QtWidgets.QWidget) -> QtWidgets.QWidget:
+                if tooltip:
+                    try:
+                        w.setToolTip(tooltip)
+                    except Exception:
+                        pass
+                return w
+
+            if enum_items or ui in {"select", "dropdown", "dropbox", "combo", "combobox"}:
+                w = QtWidgets.QComboBox()
+                if enum_items:
+                    w.addItems(enum_items)
+                if default_value is not None:
+                    idx = w.findText(str(default_value))
+                    if idx >= 0:
+                        w.setCurrentIndex(idx)
+
+                def _get() -> Any:
+                    return str(w.currentText())
+
+                editors[name] = (_with_tooltip(w), _get)
+                form.addRow(label, w)
+                continue
+
+            if t == "boolean" or ui in {"switch", "toggle"}:
+                w = QtWidgets.QCheckBox()
+                try:
+                    w.setChecked(bool(default_value))
+                except Exception:
+                    pass
+
+                def _get() -> Any:
+                    return bool(w.isChecked())
+
+                editors[name] = (_with_tooltip(w), _get)
+                form.addRow(label, w)
+                continue
+
+            if t in {"integer", "number"} and ui == "slider":
+                container = QtWidgets.QWidget()
+                hl = QtWidgets.QHBoxLayout(container)
+                hl.setContentsMargins(0, 0, 0, 0)
+                hl.setSpacing(6)
+                slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+                val = QtWidgets.QLabel("")
+                val.setMinimumWidth(60)
+                val.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                hl.addWidget(slider, 1)
+                hl.addWidget(val, 0)
+
+                is_int = t == "integer"
+                if lo is None:
+                    lo = 0.0
+                if hi is None:
+                    hi = 100.0
+                if hi < lo:
+                    lo, hi = hi, lo
+                scale = 1.0 if is_int else 1000.0
+                imin = int(round(lo * scale))
+                imax = int(round(hi * scale))
+                if imax == imin:
+                    imax = imin + int(1 * scale)
+                slider.setMinimum(imin)
+                slider.setMaximum(imax)
+
+                def _slider_to_value(v: int) -> Any:
+                    if is_int:
+                        return int(v)
+                    return float(v) / scale
+
+                def _sync_label() -> None:
+                    try:
+                        val.setText(str(_slider_to_value(int(slider.value()))))
+                    except Exception:
+                        val.setText("")
+
+                slider.valueChanged.connect(lambda _v: _sync_label())
+
+                if default_value is not None:
+                    try:
+                        slider.setValue(int(round(float(default_value) * scale)))
+                    except Exception:
+                        pass
+                _sync_label()
+
+                def _get() -> Any:
+                    return _slider_to_value(int(slider.value()))
+
+                editors[name] = (_with_tooltip(container), _get)
+                form.addRow(label, container)
+                continue
+
+            if t == "integer" or ui in {"spinbox", "int"}:
+                w = QtWidgets.QSpinBox()
+                if lo is not None:
+                    try:
+                        w.setMinimum(int(lo))
+                    except Exception:
+                        pass
+                if hi is not None:
+                    try:
+                        w.setMaximum(int(hi))
+                    except Exception:
+                        pass
+                if default_value is not None:
+                    try:
+                        w.setValue(int(default_value))
+                    except Exception:
+                        pass
+
+                def _get() -> Any:
+                    return int(w.value())
+
+                editors[name] = (_with_tooltip(w), _get)
+                form.addRow(label, w)
+                continue
+
+            if t == "number" or ui in {"doublespinbox", "float"}:
+                w = QtWidgets.QDoubleSpinBox()
+                try:
+                    w.setDecimals(6)
+                except Exception:
+                    pass
+                if lo is not None:
+                    try:
+                        w.setMinimum(float(lo))
+                    except Exception:
+                        pass
+                if hi is not None:
+                    try:
+                        w.setMaximum(float(hi))
+                    except Exception:
+                        pass
+                if default_value is not None:
+                    try:
+                        w.setValue(float(default_value))
+                    except Exception:
+                        pass
+
+                def _get() -> Any:
+                    return float(w.value())
+
+                editors[name] = (_with_tooltip(w), _get)
+                form.addRow(label, w)
+                continue
+
+            if t in {"object", "array", "any"}:
+                w = QtWidgets.QPlainTextEdit()
+                w.setMinimumHeight(90)
+                if default_value is not None:
+                    try:
+                        w.setPlainText(json.dumps(default_value, ensure_ascii=False, indent=2))
+                    except Exception:
+                        w.setPlainText(str(default_value))
+
+                def _get() -> Any:
+                    txt = str(w.toPlainText() or "").strip()
+                    if not txt:
+                        return None
+                    try:
+                        return json.loads(txt)
+                    except Exception:
+                        return txt
+
+                editors[name] = (_with_tooltip(w), _get)
+                form.addRow(label, w)
+                continue
+
+            w = QtWidgets.QLineEdit()
+            if default_value is not None:
+                try:
+                    w.setText("" if default_value is None else str(default_value))
+                except Exception:
+                    pass
+
+            def _get() -> Any:
+                return str(w.text() or "")
+
+            editors[name] = (_with_tooltip(w), _get)
+            form.addRow(label, w)
+
+        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        layout = QtWidgets.QVBoxLayout(dlg)
+        layout.addLayout(form)
+        layout.addWidget(buttons)
+
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+
+        while True:
+            if dlg.exec() != QtWidgets.QDialog.Accepted:
+                return None
+            args: dict[str, Any] = {}
+            missing: list[str] = []
+            for p in params:
+                pname = str(getattr(p, "name", "") or "").strip()
+                if not pname or pname not in editors:
+                    continue
+                required = bool(getattr(p, "required", False))
+                _w, getter = editors[pname]
+                try:
+                    v = getter()
+                except Exception:
+                    v = None
+                # normalize empties
+                if isinstance(v, str) and v.strip() == "":
+                    v = None
+                if required and v is None:
+                    missing.append(pname)
+                    continue
+                if v is not None:
+                    args[pname] = v
+            if missing:
+                QtWidgets.QMessageBox.warning(dlg, "Missing required fields", "Please fill: " + ", ".join(missing))
+                continue
+            return args
+
+    def _ensure_inline_command_widget(self) -> None:
+        node = self._backend_node()
+        if node is None:
+            return
+        spec = getattr(node, "spec", None)
+        cmds = list(getattr(spec, "commands", None) or []) if spec is not None else []
+        visible_cmds = [c for c in cmds if bool(getattr(c, "showOnNode", False))]
+
+        # Remove if no commands to show.
+        if not visible_cmds:
+            if self._cmd_proxy is not None:
+                try:
+                    self._cmd_proxy.setWidget(None)
+                except Exception:
+                    pass
+                try:
+                    self._cmd_proxy.setParentItem(None)
+                    if self.scene() is not None:
+                        self.scene().removeItem(self._cmd_proxy)
+                except Exception:
+                    pass
+                self._cmd_proxy = None
+                self._cmd_widget = None
+            return
+
+        # Rebuild widget each time; command lists are small and this avoids stale buttons.
+        w = QtWidgets.QWidget()
+        grid = QtWidgets.QGridLayout(w)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(6)
+        grid.setVerticalSpacing(6)
+
+        cols = 3
+        for i, c in enumerate(visible_cmds):
+            r = i // cols
+            col = i % cols
+            b = QtWidgets.QPushButton(str(getattr(c, "name", "") or ""))
+            b.setMinimumWidth(78)
+            b.setMinimumHeight(20)
+            b.setStyleSheet(
+                """
+                QPushButton {
+                    color: rgb(235, 235, 235);
+                    background: rgba(0, 0, 0, 45);
+                    border: 1px solid rgba(255, 255, 255, 55);
+                    border-radius: 4px;
+                    padding: 2px 8px;
+                }
+                QPushButton:hover { background: rgba(255, 255, 255, 18); }
+                QPushButton:pressed { background: rgba(255, 255, 255, 12); }
+                """
+            )
+            desc = str(getattr(c, "description", "") or "").strip()
+            if desc:
+                b.setToolTip(desc)
+            b.clicked.connect(lambda _=False, _c=c: self._invoke_command(_c))  # type: ignore[attr-defined]
+            grid.addWidget(b, r, col)
+
+        if self._cmd_proxy is None:
+            proxy = QtWidgets.QGraphicsProxyWidget(self)
+            proxy.setWidget(w)
+            try:
+                proxy.setCacheMode(QtWidgets.QGraphicsItem.DeviceCoordinateCache)
+            except Exception:
+                pass
+            self._cmd_proxy = proxy
+        else:
+            self._cmd_proxy.setWidget(w)
+        self._cmd_widget = w
+
+    def _on_graph_property_changed(self, node: Any, name: str, value: Any) -> None:
+        """
+        Keep inline state widgets in sync with NodeGraphQt properties.
+
+        The inspector already tracks these through NodeGraphQt's own property
+        widgets; since our inline widgets are custom QWidgets, we mirror updates
+        here to get the same "two-way binding" behavior.
+        """
+        try:
+            if str(getattr(node, "id", "") or "") != str(getattr(self, "id", "") or ""):
+                return
+        except Exception:
+            return
+        key = str(name or "").strip()
+        if not key:
+            return
+        updater = self._state_inline_updaters.get(key)
+        if not updater:
+            return
+        try:
+            updater(value)
+        except Exception:
+            return
+
+    @staticmethod
+    def _port_group(name: str) -> str:
+        n = str(name or "")
+        if n.startswith("[E]") or n.endswith("[E]"):
+            return "exec"
+        if n.startswith("[D]") or n.endswith("[D]"):
+            return "data"
+        if n.startswith("[S]") or n.endswith("[S]"):
+            return "state"
+        return "other"
+
+    @staticmethod
+    def _schema_enum_items(value_schema: Any) -> list[str]:
+        try:
+            return [str(x) for x in list(getattr(getattr(value_schema, "root", None), "enum", None) or [])]
+        except Exception:
+            return []
+
+    @staticmethod
+    def _schema_numeric_range(value_schema: Any) -> tuple[float | None, float | None]:
+        if value_schema is None:
+            return None, None
+        # F8DataTypeSchema proxies unknown attrs to `.root` via f8pysdk/__init__.py
+        mins = []
+        maxs = []
+        for k in ("minimum", "exclusiveMinimum"):
+            try:
+                v = getattr(value_schema, k, None)
+                if v is not None:
+                    mins.append(float(v))
+            except Exception:
+                pass
+        for k in ("maximum", "exclusiveMaximum"):
+            try:
+                v = getattr(value_schema, k, None)
+                if v is not None:
+                    maxs.append(float(v))
+            except Exception:
+                pass
+        lo = min(mins) if mins else None
+        hi = max(maxs) if maxs else None
+        return lo, hi
+
+    def _make_state_inline_control(self, state_field: Any) -> QtWidgets.QWidget:
+        name = str(getattr(state_field, "name", "") or "").strip()
+        ui = str(getattr(state_field, "uiControl", "") or "").strip().lower()
+        schema = getattr(state_field, "valueSchema", None)
+        access = getattr(state_field, "access", None)
+        try:
+            access_s = str(getattr(access, "value", access) or "").strip().lower()
+        except Exception:
+            access_s = ""
+        t = ""
+        try:
+            t = schema_type(schema) or ""
+        except Exception:
+            t = ""
+
+        enum_items = self._schema_enum_items(schema)
+        lo, hi = self._schema_numeric_range(schema)
+
+        def _common_style(w: QtWidgets.QWidget) -> None:
+            # Make controls readable on dark node themes.
+            w.setStyleSheet(
+                """
+                QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+                    color: rgb(235, 235, 235);
+                    background: rgba(0, 0, 0, 45);
+                    border: 1px solid rgba(255, 255, 255, 55);
+                    border-radius: 3px;
+                    padding: 1px 4px;
+                }
+                QComboBox::drop-down { border: 0px; }
+                QComboBox QAbstractItemView {
+                    color: rgb(235, 235, 235);
+                    background: rgb(35, 35, 35);
+                    selection-background-color: rgb(80, 130, 180);
+                }
+                QCheckBox { color: rgb(235, 235, 235); }
+                QCheckBox::indicator {
+                    width: 13px;
+                    height: 13px;
+                    border: 1px solid rgba(255, 255, 255, 90);
+                    background: rgba(0, 0, 0, 35);
+                    border-radius: 2px;
+                }
+                QCheckBox::indicator:checked { background: rgba(120, 200, 255, 90); }
+                """
+            )
+
+        def _set_node_value(value: Any, *, push_undo: bool) -> None:
+            node = self._backend_node()
+            if node is None or not name:
+                return
+            try:
+                node.set_property(name, value, push_undo=push_undo)
+            except Exception:
+                try:
+                    node.set_property(name, value)
+                except Exception:
+                    return
+
+        def _get_node_value() -> Any:
+            node = self._backend_node()
+            if node is None or not name:
+                return None
+            try:
+                return node.get_property(name)
+            except Exception:
+                return None
+
+        # Create control.
+        read_only = access_s in {"ro", "init"}
+
+        if enum_items or ui in {"select", "dropdown", "dropbox", "combo", "combobox"}:
+            combo = _F8OnTopComboBox()
+            if enum_items:
+                combo.addItems(enum_items)
+            combo.setMinimumWidth(90)
+            _common_style(combo)
+
+            def _apply_value(v: Any) -> None:
+                s = "" if v is None else str(v)
+                idx = combo.findText(s)
+                with QtCore.QSignalBlocker(combo):
+                    if idx >= 0:
+                        combo.setCurrentIndex(idx)
+
+            combo.currentTextChanged.connect(lambda v: _set_node_value(v, push_undo=True))
+            _apply_value(_get_node_value())
+            self._state_inline_updaters[name] = _apply_value
+            if read_only:
+                combo.setDisabled(True)
+            return combo
+
+        if t == "boolean" or ui in {"switch", "toggle"}:
+            chk = QtWidgets.QCheckBox()
+            _common_style(chk)
+            try:
+                chk.setTristate(False)
+            except Exception:
+                pass
+            chk.toggled.connect(lambda v: _set_node_value(bool(v), push_undo=True))
+            def _apply_value(v: Any) -> None:
+                with QtCore.QSignalBlocker(chk):
+                    chk.setChecked(bool(v))
+
+            _apply_value(_get_node_value())
+            self._state_inline_updaters[name] = _apply_value
+            if read_only:
+                chk.setDisabled(True)
+            return chk
+
+        if t in {"integer", "number"} and ui == "slider":
+            slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+            slider.setMinimumWidth(110)
+            try:
+                slider.setSingleStep(1)
+                slider.setPageStep(1)
+            except Exception:
+                pass
+            _common_style(slider)
+
+            is_int = t == "integer"
+            if lo is None:
+                lo = 0.0
+            if hi is None:
+                hi = 100.0
+            if hi < lo:
+                lo, hi = hi, lo
+
+            scale = 1.0 if is_int else 1000.0
+            imin = int(round(lo * scale))
+            imax = int(round(hi * scale))
+            if imax == imin:
+                imax = imin + int(1 * scale)
+            slider.setMinimum(imin)
+            slider.setMaximum(imax)
+
+            def _slider_to_value(v: int) -> Any:
+                if is_int:
+                    return int(v)
+                return float(v) / scale
+
+            def _value_to_slider(v: Any) -> int:
+                try:
+                    if v is None:
+                        return imin
+                    return int(round(float(v) * scale))
+                except Exception:
+                    return imin
+
+            slider.valueChanged.connect(lambda v: _set_node_value(_slider_to_value(v), push_undo=False))
+            slider.sliderReleased.connect(lambda: _set_node_value(_slider_to_value(slider.value()), push_undo=True))
+            def _apply_value(v: Any) -> None:
+                with QtCore.QSignalBlocker(slider):
+                    slider.setValue(_value_to_slider(v))
+
+            _apply_value(_get_node_value())
+            self._state_inline_updaters[name] = _apply_value
+            if read_only:
+                slider.setDisabled(True)
+            return slider
+
+        if t == "integer" or ui in {"spinbox", "int"}:
+            spin = QtWidgets.QSpinBox()
+            _common_style(spin)
+            spin.setMinimumWidth(90)
+            if lo is not None:
+                try:
+                    spin.setMinimum(int(lo))
+                except Exception:
+                    pass
+            if hi is not None:
+                try:
+                    spin.setMaximum(int(hi))
+                except Exception:
+                    pass
+            spin.valueChanged.connect(lambda v: _set_node_value(int(v), push_undo=False))
+            spin.editingFinished.connect(lambda: _set_node_value(int(spin.value()), push_undo=True))
+            def _apply_value(v: Any) -> None:
+                try:
+                    if v is None:
+                        return
+                    with QtCore.QSignalBlocker(spin):
+                        spin.setValue(int(v))
+                except Exception:
+                    return
+
+            _apply_value(_get_node_value())
+            self._state_inline_updaters[name] = _apply_value
+            if read_only:
+                spin.setDisabled(True)
+            return spin
+
+        if t == "number" or ui in {"doublespinbox", "float"}:
+            dsp = QtWidgets.QDoubleSpinBox()
+            _common_style(dsp)
+            dsp.setMinimumWidth(90)
+            try:
+                dsp.setDecimals(6)
+            except Exception:
+                pass
+            if lo is not None:
+                try:
+                    dsp.setMinimum(float(lo))
+                except Exception:
+                    pass
+            if hi is not None:
+                try:
+                    dsp.setMaximum(float(hi))
+                except Exception:
+                    pass
+            dsp.valueChanged.connect(lambda v: _set_node_value(float(v), push_undo=False))
+            dsp.editingFinished.connect(lambda: _set_node_value(float(dsp.value()), push_undo=True))
+            def _apply_value(v: Any) -> None:
+                try:
+                    if v is None:
+                        return
+                    with QtCore.QSignalBlocker(dsp):
+                        dsp.setValue(float(v))
+                except Exception:
+                    return
+
+            _apply_value(_get_node_value())
+            self._state_inline_updaters[name] = _apply_value
+            if read_only:
+                dsp.setDisabled(True)
+            return dsp
+
+        # default: text input.
+        line = QtWidgets.QLineEdit()
+        line.setMinimumWidth(90)
+        _common_style(line)
+        def _apply_value(v: Any) -> None:
+            s = "" if v is None else str(v)
+            with QtCore.QSignalBlocker(line):
+                line.setText(s)
+
+        _apply_value(_get_node_value())
+        self._state_inline_updaters[name] = _apply_value
+        line.editingFinished.connect(lambda: _set_node_value(line.text(), push_undo=True))
+        if read_only:
+            line.setDisabled(True)
+        return line
+
+    def _ensure_inline_state_widgets(self) -> None:
+        self._ensure_graph_property_hook()
+        node = self._backend_node()
+        if node is None:
+            return
+        try:
+            fields = list(node.effective_state_fields() or [])
+        except Exception:
+            fields = list(getattr(getattr(node, "spec", None), "stateFields", None) or [])
+        show = []
+        for f in fields:
+            try:
+                if getattr(f, "showOnNode", False):
+                    n = str(getattr(f, "name", "") or "").strip()
+                    if n:
+                        show.append((n, f))
+            except Exception:
+                continue
+
+        desired = [n for n, _f in show]
+
+        # delete stale widgets.
+        for n in list(self._state_inline_proxies.keys()):
+            if n in desired:
+                continue
+            proxy = self._state_inline_proxies.pop(n, None)
+            self._state_inline_controls.pop(n, None)
+            self._state_inline_updaters.pop(n, None)
+            if proxy is None:
+                continue
+            try:
+                proxy.setWidget(None)
+            except Exception:
+                pass
+            try:
+                proxy.setParentItem(None)
+                if self.scene() is not None:
+                    self.scene().removeItem(proxy)
+            except Exception:
+                pass
+
+        # create missing widgets.
+        for n, f in show:
+            if n in self._state_inline_proxies:
+                continue
+            try:
+                control = self._make_state_inline_control(f)
+            except Exception:
+                continue
+            container = QtWidgets.QWidget()
+            lay = QtWidgets.QHBoxLayout(container)
+            lay.setContentsMargins(0, 0, 0, 0)
+            lay.setSpacing(0)
+            lay.addWidget(control)
+            try:
+                container.setMinimumHeight(max(18, int(control.sizeHint().height())))
+            except Exception:
+                pass
+            proxy = QtWidgets.QGraphicsProxyWidget(self)
+            proxy.setWidget(container)
+            try:
+                proxy.setCacheMode(QtWidgets.QGraphicsItem.DeviceCoordinateCache)
+            except Exception:
+                pass
+            self._state_inline_proxies[n] = proxy
+            self._state_inline_controls[n] = control
 
     def post_init(self, viewer=None, pos=None):
         """
@@ -593,36 +1507,102 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         text_w = self._text_item.boundingRect().width()
         text_h = self._text_item.boundingRect().height()
 
-        # width, height from node ports.
+        # width, height from node ports (grouped rows).
         port_width = 0.0
         p_input_text_width = 0.0
         p_output_text_width = 0.0
         p_input_height = 0.0
         p_output_height = 0.0
+        port_height = 0.0
+        spacing = 1.0
+        group_gap = 6.0
+
         for port, text in self._input_items.items():
             if not port.isVisible():
                 continue
             if not port_width:
                 port_width = port.boundingRect().width()
+            if not port_height:
+                port_height = port.boundingRect().height()
             t_width = text.boundingRect().width()
             if text.isVisible() and t_width > p_input_text_width:
                 p_input_text_width = text.boundingRect().width()
-            p_input_height += port.boundingRect().height()
         for port, text in self._output_items.items():
             if not port.isVisible():
                 continue
             if not port_width:
                 port_width = port.boundingRect().width()
+            if not port_height:
+                port_height = port.boundingRect().height()
             t_width = text.boundingRect().width()
             if text.isVisible() and t_width > p_output_text_width:
                 p_output_text_width = text.boundingRect().width()
-            p_output_height += port.boundingRect().height()
+
+        # Determine grouped row count using current ports (fallback when backend node isn't available).
+        def _names_for(kind: str, *, is_in: bool) -> list[str]:
+            items = self._input_items if is_in else self._output_items
+            out = []
+            for p in items.keys():
+                try:
+                    if not p.isVisible():
+                        continue
+                    if self._port_group(p.name) == kind:
+                        out.append(str(p.name))
+                except Exception:
+                    continue
+            return out
+
+        exec_in = _names_for("exec", is_in=True)
+        exec_out = _names_for("exec", is_in=False)
+        data_in = _names_for("data", is_in=True)
+        data_out = _names_for("data", is_in=False)
+        state_in = _names_for("state", is_in=True)
+        state_out = _names_for("state", is_in=False)
+        other_in = _names_for("other", is_in=True)
+        other_out = _names_for("other", is_in=False)
+
+        rows_exec = max(len(exec_in), len(exec_out))
+        rows_data = max(len(data_in), len(data_out))
+        # Prefer inline widget count for state rows (1 row per showOnNode state).
+        rows_state = len([p for p in self._state_inline_proxies.values() if p.isVisible()])
+        if rows_state <= 0:
+            # Best-effort fallback from state port names.
+            state_names: list[str] = []
+            for n in state_in:
+                if n.startswith("[S]"):
+                    state_names.append(n[3:])
+            for n in state_out:
+                if n.endswith("[S]"):
+                    state_names.append(n[:-3])
+            rows_state = len([x for x in list(OrderedDict.fromkeys(state_names).keys()) if x])
+        rows_other = max(len(other_in), len(other_out))
+
+        total_rows = rows_exec + rows_data + rows_state + rows_other
+        gaps = 0
+        for rows in (rows_exec, rows_data, rows_state, rows_other):
+            if rows > 0:
+                gaps += 1
+        gaps = max(0, gaps - 1)
+
+        if port_height and total_rows:
+            grouped_height = (total_rows * port_height) + (max(0, total_rows - 1) * spacing) + (gaps * group_gap)
+            p_input_height = grouped_height
+            p_output_height = grouped_height
 
         port_text_width = p_input_text_width + p_output_text_width
 
         # width, height from node embedded widgets.
         widget_width = 0.0
         widget_height = 0.0
+        # Ensure state inline widgets exist so we can account for width.
+        try:
+            self._ensure_inline_state_widgets()
+        except Exception:
+            pass
+        try:
+            self._ensure_inline_command_widget()
+        except Exception:
+            pass
         for widget in self._widgets.values():
             if not widget.isVisible():
                 continue
@@ -631,6 +1611,23 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             if w_width > widget_width:
                 widget_width = w_width
             widget_height += w_height
+        for proxy in self._state_inline_proxies.values():
+            try:
+                if not proxy.isVisible():
+                    continue
+                w_width = proxy.boundingRect().width()
+                if w_width > widget_width:
+                    widget_width = w_width
+            except Exception:
+                continue
+        if self._cmd_proxy is not None:
+            try:
+                if self._cmd_proxy.isVisible():
+                    w_width = self._cmd_proxy.boundingRect().width()
+                    if w_width > widget_width:
+                        widget_width = w_width
+            except Exception:
+                pass
 
         side_padding = 0.0
         if all([widget_width, p_input_text_width, p_output_text_width]):
@@ -640,6 +1637,17 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             side_padding = 10
 
         width = port_width + max([text_w, port_text_width]) + side_padding
+        # If command buttons are visible, they are placed below the port area.
+        if self._cmd_proxy is not None:
+            try:
+                if self._cmd_proxy.isVisible() and port_height:
+                    cmd_h = float(self._cmd_proxy.boundingRect().height())
+                    if cmd_h > 0:
+                        p_input_height = max(p_input_height, (p_input_height or 0.0) + cmd_h + 8.0)
+                        p_output_height = max(p_output_height, (p_output_height or 0.0) + cmd_h + 8.0)
+            except Exception:
+                pass
+
         height = max([text_h, p_input_height, p_output_height, widget_height])
         if widget_width:
             # add additional width for node widget.
@@ -760,12 +1768,48 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             raise RuntimeError("Node graph layout direction not valid!")
 
     def _align_widgets_horizontal(self, v_offset):
+        # State inline widgets are aligned to state rows (populated by port alignment).
+        rect = self.boundingRect()
+        inputs = [p for p in self.inputs if p.isVisible()]
+        outputs = [p for p in self.outputs if p.isVisible()]
+
+        for name, proxy in self._state_inline_proxies.items():
+            if not proxy.isVisible():
+                continue
+            row = self._state_row_y.get(name)
+            if not row:
+                continue
+            port_y, port_h = row
+            w_rect = proxy.boundingRect()
+            if not inputs:
+                x = rect.left() + 10
+            elif not outputs:
+                x = rect.right() - w_rect.width() - 10
+            else:
+                x = rect.center().x() - (w_rect.width() / 2)
+            y = port_y + (port_h - w_rect.height()) / 2.0
+            proxy.setPos(x, y)
+
+        # Command buttons are placed below the ports area.
+        cmd_bottom = None
+        if self._cmd_proxy is not None and self._cmd_proxy.isVisible():
+            try:
+                rect = self.boundingRect()
+                w_rect = self._cmd_proxy.boundingRect()
+                x = rect.center().x() - (w_rect.width() / 2)
+                y = float(self._ports_end_y or (rect.y() + v_offset))
+                self._cmd_proxy.setPos(x, y + 6.0)
+                cmd_bottom = y + 6.0 + w_rect.height()
+            except Exception:
+                cmd_bottom = None
+
         if not self._widgets:
             return
         rect = self.boundingRect()
+        # Place regular NodeGraphQt embedded widgets below the command area.
         y = rect.y() + v_offset
-        inputs = [p for p in self.inputs if p.isVisible()]
-        outputs = [p for p in self.outputs if p.isVisible()]
+        if cmd_bottom is not None:
+            y = max(y, cmd_bottom + 6.0)
         for widget in self._widgets.values():
             if not widget.isVisible():
                 continue
@@ -821,34 +1865,154 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
     def _align_ports_horizontal(self, v_offset):
         width = self._width
         txt_offset = PortEnum.CLICK_FALLOFF.value - 2
-        spacing = 1
+        spacing = 1.0
+        group_gap = 6.0
+        self._state_row_y = {}
 
-        # adjust input position
-        inputs = [p for p in self.inputs if p.isVisible()]
-        if inputs:
-            port_width = inputs[0].boundingRect().width()
-            port_height = inputs[0].boundingRect().height()
-            port_x = (port_width / 2) * -1
-            port_y = v_offset
-            for port in inputs:
-                port.setPos(port_x, port_y)
-                port_y += port_height + spacing
+        # Ensure inline widgets exist before aligning so sizing + rows match.
+        try:
+            self._ensure_inline_state_widgets()
+        except Exception:
+            pass
+
+        node = self._backend_node()
+        spec = getattr(node, "spec", None) if node is not None else None
+        try:
+            eff_states = list(node.effective_state_fields() or []) if node is not None else []
+        except Exception:
+            eff_states = list(getattr(spec, "stateFields", None) or []) if spec is not None else []
+
+        # Build ordered port name lists per group.
+        exec_in_names: list[str] = []
+        exec_out_names: list[str] = []
+        if spec is not None:
+            for p in list(getattr(spec, "execInPorts", None) or []):
+                exec_in_names.append(f"[E]{p}")
+            for p in list(getattr(spec, "execOutPorts", None) or []):
+                exec_out_names.append(f"{p}[E]")
+
+        data_in_names: list[str] = []
+        data_out_names: list[str] = []
+        if spec is not None:
+            for p in list(getattr(spec, "dataInPorts", None) or []):
+                try:
+                    data_in_names.append(f"[D]{p.name}")
+                except Exception:
+                    continue
+            for p in list(getattr(spec, "dataOutPorts", None) or []):
+                try:
+                    data_out_names.append(f"{p.name}[D]")
+                except Exception:
+                    continue
+
+        state_names: list[str] = []
+        for s in eff_states:
+            try:
+                if not getattr(s, "showOnNode", False):
+                    continue
+                nm = str(getattr(s, "name", "") or "").strip()
+                if nm:
+                    state_names.append(nm)
+            except Exception:
+                continue
+
+        # Fallback when spec is unavailable: keep insertion order but grouped.
+        if not exec_in_names:
+            exec_in_names = [str(p.name) for p in self._input_items.keys() if self._port_group(p.name) == "exec"]
+        if not exec_out_names:
+            exec_out_names = [str(p.name) for p in self._output_items.keys() if self._port_group(p.name) == "exec"]
+        if not data_in_names:
+            data_in_names = [str(p.name) for p in self._input_items.keys() if self._port_group(p.name) == "data"]
+        if not data_out_names:
+            data_out_names = [str(p.name) for p in self._output_items.keys() if self._port_group(p.name) == "data"]
+        if not state_names:
+            # Infer state rows from existing ports.
+            tmp: list[str] = []
+            for p in self._input_items.keys():
+                n = str(p.name)
+                if n.startswith("[S]"):
+                    tmp.append(n[3:])
+            for p in self._output_items.keys():
+                n = str(p.name)
+                if n.endswith("[S]"):
+                    tmp.append(n[:-3])
+            state_names = [x for x in list(OrderedDict.fromkeys(tmp).keys()) if x]
+
+        other_in_names = [str(p.name) for p in self._input_items.keys() if self._port_group(p.name) == "other"]
+        other_out_names = [str(p.name) for p in self._output_items.keys() if self._port_group(p.name) == "other"]
+
+        inputs_by_name = {str(p.name): p for p in self.inputs if p.isVisible()}
+        outputs_by_name = {str(p.name): p for p in self.outputs if p.isVisible()}
+
+        # Determine base port geometry.
+        port_width = 0.0
+        port_height = 0.0
+        for p in list(inputs_by_name.values()) + list(outputs_by_name.values()):
+            try:
+                port_width = float(p.boundingRect().width())
+                port_height = float(p.boundingRect().height())
+                break
+            except Exception:
+                continue
+
+        in_x = (port_width / 2.0) * -1.0
+        out_x = width - (port_width / 2.0)
+
+        def place_row(in_name: str | None, out_name: str | None, *, y: float, is_state: bool, state_key: str | None):
+            if in_name:
+                p = inputs_by_name.get(in_name)
+                if p is not None:
+                    p.setPos(in_x, y)
+            if out_name:
+                p = outputs_by_name.get(out_name)
+                if p is not None:
+                    p.setPos(out_x, y)
+            if is_state and state_key:
+                self._state_row_y[state_key] = (y, port_height)
+
+        y = float(v_offset)
+        groups: list[tuple[str, list[str], list[str]]] = [
+            ("exec", exec_in_names, exec_out_names),
+            ("data", data_in_names, data_out_names),
+            ("state", [f"[S]{n}" for n in state_names], [f"{n}[S]" for n in state_names]),
+            ("other", other_in_names, other_out_names),
+        ]
+
+        for gi, (gname, ins, outs) in enumerate(groups):
+            if gname == "state":
+                rows = len(state_names)
+            else:
+                rows = max(len(ins), len(outs))
+            if rows <= 0:
+                continue
+            for i in range(rows):
+                in_name = ins[i] if i < len(ins) else None
+                out_name = outs[i] if i < len(outs) else None
+                state_key = state_names[i] if (gname == "state" and i < len(state_names)) else None
+                place_row(in_name, out_name, y=y, is_state=(gname == "state"), state_key=state_key)
+                y += port_height + spacing
+            # group gap (except after last visible group)
+            # determine if any later group has rows.
+            has_later = False
+            for _g2, ins2, outs2 in groups[gi + 1 :]:
+                if _g2 == "state":
+                    if len(state_names) > 0:
+                        has_later = True
+                        break
+                else:
+                    if max(len(ins2), len(outs2)) > 0:
+                        has_later = True
+                        break
+            if has_later:
+                y += group_gap
+        self._ports_end_y = y
+
         # adjust input text position
         for port, text in self._input_items.items():
             if port.isVisible():
                 txt_x = port.boundingRect().width() / 2 - txt_offset
                 text.setPos(txt_x, port.y() - 1.5)
 
-        # adjust output position
-        outputs = [p for p in self.outputs if p.isVisible()]
-        if outputs:
-            port_width = outputs[0].boundingRect().width()
-            port_height = outputs[0].boundingRect().height()
-            port_x = width - (port_width / 2)
-            port_y = v_offset
-            for port in outputs:
-                port.setPos(port_x, port_y)
-                port_y += port_height + spacing
         # adjust output text position
         for port, text in self._output_items.items():
             if port.isVisible():
@@ -898,6 +2062,14 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             raise RuntimeError("Node graph layout direction not valid!")
 
     def _draw_node_horizontal(self):
+        try:
+            self._ensure_inline_state_widgets()
+        except Exception:
+            pass
+        try:
+            self._ensure_inline_command_widget()
+        except Exception:
+            pass
         height = self._text_item.boundingRect().height() + 4.0
 
         # update port text items in visibility.
@@ -1091,6 +2263,16 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         # node widget visibility.
         for w in self._widgets.values():
             w.widget().setVisible(visible)
+        for p in self._state_inline_proxies.values():
+            try:
+                p.setVisible(visible)
+            except Exception:
+                pass
+        if self._cmd_proxy is not None:
+            try:
+                self._cmd_proxy.setVisible(visible)
+            except Exception:
+                pass
 
         # port text is not visible in vertical layout.
         if self.layout_direction is LayoutDirectionEnum.VERTICAL.value:

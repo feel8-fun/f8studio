@@ -11,7 +11,7 @@ import nats  # type: ignore[import-not-found]
 from qtpy import QtCore
 
 from f8pysdk import F8Edge, F8EdgeKindEnum, F8EdgeStrategyEnum, F8RuntimeGraph, F8RuntimeNode, F8StateAccess
-from f8pysdk.nats_naming import ensure_token, kv_bucket_for_service, new_id, svc_endpoint_subject, svc_micro_name
+from f8pysdk.nats_naming import cmd_channel_subject, ensure_token, kv_bucket_for_service, new_id, svc_endpoint_subject, svc_micro_name
 from f8pysdk.nats_transport import NatsTransport, NatsTransportConfig
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from f8pysdk.service_ready import wait_service_ready
@@ -1029,6 +1029,84 @@ class PyStudioServiceBridge(QtCore.QObject):
                 except Exception:
                     await asyncio.sleep(0.1)
                     continue
+
+        try:
+            self._async.submit(_do())
+        except Exception:
+            return
+
+    def invoke_remote_command(self, service_id: str, call: str, args: dict[str, Any] | None = None) -> None:
+        """
+        Invoke a user-defined command on a remote service via the reserved cmd channel.
+
+        Request is sent to `cmd_channel_subject(service_id)` with a JSON envelope
+        (reqId/call/args/meta). This matches the service control plane `cmd` endpoint.
+        """
+        try:
+            service_id = ensure_token(str(service_id), label="service_id")
+        except Exception:
+            return
+        call = str(call or "").strip()
+        if not call or service_id == self.studio_service_id:
+            return
+
+        def _coerce_json_value(v: Any) -> Any:
+            if v is None or isinstance(v, (str, int, float, bool)):
+                return v
+            if isinstance(v, (list, tuple)):
+                return [_coerce_json_value(x) for x in v]
+            if isinstance(v, dict):
+                return {str(k): _coerce_json_value(x) for k, x in v.items()}
+            try:
+                model_dump = getattr(v, "model_dump", None)
+                if callable(model_dump):
+                    return _coerce_json_value(model_dump(mode="json"))
+            except Exception:
+                pass
+            try:
+                if hasattr(v, "root"):
+                    return _coerce_json_value(getattr(v, "root"))
+            except Exception:
+                pass
+            return v
+
+        args_json = _coerce_json_value(args or {})
+
+        async def _do() -> None:
+            nc = await self._ensure_nc()
+            if nc is None:
+                return
+            subject = cmd_channel_subject(service_id)
+            payload = json.dumps(
+                {
+                    "reqId": new_id(),
+                    "call": call,
+                    "args": args_json,
+                    "meta": {"actor": "studio", "source": "ui"},
+                },
+                ensure_ascii=False,
+                default=str,
+            ).encode("utf-8")
+            try:
+                msg = await nc.request(subject, payload, timeout=1.5)
+                raw = bytes(getattr(msg, "data", b"") or b"")
+                if not raw:
+                    self.log.emit(f"command {call} failed serviceId={service_id}: empty response")
+                    return
+                try:
+                    resp = json.loads(raw.decode("utf-8"))
+                except Exception:
+                    resp = {}
+                if isinstance(resp, dict) and resp.get("ok") is True:
+                    return
+                msg = ""
+                try:
+                    msg = str((resp.get("error") or {}).get("message") or "")
+                except Exception:
+                    msg = ""
+                self.log.emit(f"command {call} failed serviceId={service_id}: {msg or 'rejected'}")
+            except Exception as exc:
+                self.log.emit(f"command {call} failed serviceId={service_id}: {type(exc).__name__}: {exc}")
 
         try:
             self._async.submit(_do())

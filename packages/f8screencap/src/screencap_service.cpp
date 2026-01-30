@@ -31,6 +31,14 @@ using json = nlohmann::json;
 namespace {
 
 json schema_string() { return json{{"type", "string"}}; }
+json schema_string_enum(std::initializer_list<const char*> items) {
+  json s = schema_string();
+  s["enum"] = json::array();
+  for (const char* it : items) {
+    if (it && *it) s["enum"].push_back(it);
+  }
+  return s;
+}
 json schema_number() { return json{{"type", "number"}}; }
 json schema_integer() { return json{{"type", "integer"}}; }
 json schema_boolean() { return json{{"type", "boolean"}}; }
@@ -782,8 +790,6 @@ void ScreenCapService::publish_dynamic_state() {
 
   set_if_changed("active", active_.load(std::memory_order_relaxed));
   set_if_changed("captureRunning", capture_running_.load(std::memory_order_relaxed));
-  set_if_changed("frameId", frame_id_.load(std::memory_order_relaxed));
-  set_if_changed("lastFrameTsMs", last_frame_ts_ms_.load(std::memory_order_relaxed));
   set_if_changed("lastError", last_error_);
 
   if (shm_) {
@@ -805,9 +811,9 @@ json ScreenCapService::describe() {
   service["tags"] = json::array({"video", "capture", "shm"});
   service["stateFields"] = json::array({
       state_field("active", schema_boolean(), "rw", "Active", "Enable/disable capture", true),
-      state_field("videoShmName", schema_string(), "ro"),
-      state_field("videoShmEvent", schema_string(), "ro"),
-      state_field("mode", schema_string(), "rw", "Mode", "display|window|region", true),
+      state_field("videoShmName", schema_string(), "ro", "Video SHM Name", "Shared memory region name", true),
+      state_field("videoShmEvent", schema_string(), "ro", "Video SHM Event", "Shared memory event name"),
+      state_field("mode", schema_string_enum({"display", "window", "region"}), "rw", "Mode", "display|window|region", true),
       state_field("fps", schema_number(), "rw", "FPS", "Capture rate", true),
       state_field("displayId", schema_integer(), "rw", "Display ID", "0..N-1 (see listDisplays)"),
       state_field("windowId", schema_string(), "rw", "Window ID", "backend-specific (e.g. win32:hwnd:0x... or x11:win:0x...)"),
@@ -820,20 +826,18 @@ json ScreenCapService::describe() {
                   "ro", "Window", "Resolved window metadata (best-effort)"),
       state_field("region", rect_schema(), "rw", "Region", "Virtual desktop coordinates"),
       state_field("scale", size_schema(), "rw", "Scale", "Optional output size (0 disables)"),
-      state_field("captureRunning", schema_boolean(), "ro"),
-      state_field("frameId", schema_integer(), "ro"),
-      state_field("lastFrameTsMs", schema_integer(), "ro"),
+      state_field("captureRunning", schema_boolean(), "ro", "Capture Running", "Is capture currently running"),
       state_field("lastError", schema_string(), "ro"),
-      state_field("videoWidth", schema_integer(), "ro"),
-      state_field("videoHeight", schema_integer(), "ro"),
-      state_field("videoPitch", schema_integer(), "ro"),
+      state_field("videoWidth", schema_integer(), "ro", "Video Width", "Width of the video frame in pixels", true),
+      state_field("videoHeight", schema_integer(), "ro", "Video Height", "Height of the video frame in pixels", true),
+      state_field("videoPitch", schema_integer(), "ro", "Video Pitch", "Number of bytes per row of the video frame"),
   });
   service["editableStateFields"] = false;
   service["commands"] = json::array({
-      json{{"name", "listDisplays"}, {"description", "List displays/monitors (backend-specific)"}},
-      json{{"name", "pickDisplay"}, {"description", "Interactive pick a display (hover highlight + click)"}},
-      json{{"name", "pickWindow"}, {"description", "Interactive pick a window (hover highlight + click)"}},
-      json{{"name", "pickRegion"}, {"description", "Interactive pick a region (click-drag to draw)"}},
+      json{{"name", "listDisplays"}, {"description", "List displays/monitors (backend-specific)"}, {"showOnNode", true}},
+      json{{"name", "pickDisplay"}, {"description", "Interactive pick a display (hover highlight + click)"}, {"showOnNode", true}},
+      json{{"name", "pickWindow"}, {"description", "Interactive pick a window (hover highlight + click)"}, {"showOnNode", true}},
+      json{{"name", "pickRegion"}, {"description", "Interactive pick a region (click-drag to draw)"}, {"showOnNode", true}},
   });
   service["editableCommands"] = false;
   service["dataInPorts"] = json::array();

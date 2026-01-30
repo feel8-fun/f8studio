@@ -33,6 +33,12 @@ json schema_string() {
 json schema_number() {
   return json{{"type", "number"}};
 }
+json schema_number(double minimum, double maximum) {
+  json s{{"type", "number"}};
+  s["minimum"] = minimum;
+  s["maximum"] = maximum;
+  return s;
+}
 json schema_integer() {
   return json{{"type", "integer"}};
 }
@@ -50,7 +56,7 @@ json schema_object(const json& props, const json& required = json::array()) {
 }
 
 json state_field(std::string name, const json& value_schema, std::string access, std::string label = {},
-                 std::string description = {}, bool show_on_node = false) {
+                 std::string description = {}, bool show_on_node = false, std::string ui_control = {}) {
   json sf;
   sf["name"] = std::move(name);
   sf["valueSchema"] = value_schema;
@@ -61,6 +67,8 @@ json state_field(std::string name, const json& value_schema, std::string access,
     sf["description"] = std::move(description);
   if (show_on_node)
     sf["showOnNode"] = true;
+  if (!ui_control.empty())
+    sf["uiControl"] = std::move(ui_control);
   return sf;
 }
 
@@ -119,7 +127,8 @@ void ImPlayerService::on_lifecycle(bool active, const nlohmann::json&) {
 void ImPlayerService::on_state(const std::string& node_id, const std::string& field, const nlohmann::json& value,
                                std::int64_t ts_ms, const nlohmann::json& meta) {
   (void)ts_ms;
-  if (node_id != cfg_.service_id) return;
+  if (node_id != cfg_.service_id)
+    return;
   std::string ec;
   std::string em;
   json result;
@@ -1052,18 +1061,18 @@ json ImPlayerService::describe() {
   service["stateFields"] = json::array({
       state_field("active", schema_boolean(), "rw", "Active", "Pause playback when false.", true),
       state_field("mediaUrl", schema_string(), "rw", "Media URL", "URI or file path to open.", true),
-      state_field("volume", schema_number(), "rw", "Volume", "0.0-1.0"),
+      state_field("volume", schema_number(0.0, 1.0), "rw", "Volume", "0.0-1.0", false, "slider"),
       state_field("playing", schema_boolean(), "ro", "Playing", "Playback state.", true),
       state_field("duration", schema_number(), "ro", "Duration", "Duration (seconds)."),
       state_field("lastError", schema_string(), "ro", "Last Error", "Last error message."),
-      state_field("videoShmName", schema_string(), "ro", "Video SHM", "Shared memory region name."),
+      state_field("videoShmName", schema_string(), "ro", "Video SHM", "Shared memory region name.", true),
       state_field("videoShmEvent", schema_string(), "ro", "Video Event", "Optional named event to signal new frames."),
       state_field("videoShmMaxWidth", schema_integer(), "rw", "SHM Max Width", "Downsample limit (0 = auto)."),
       state_field("videoShmMaxHeight", schema_integer(), "rw", "SHM Max Height", "Downsample limit (0 = auto)."),
       state_field("videoShmMaxFps", schema_number(), "rw", "SHM Max FPS", "Copy rate limit (0 = unlimited)."),
-      state_field("videoWidth", schema_integer(), "ro", "Width"),
-      state_field("videoHeight", schema_integer(), "ro", "Height"),
-      state_field("videoPitch", schema_integer(), "ro", "Pitch"),
+      state_field("videoWidth", schema_integer(), "ro", "Width", "Width of the video frame.", true),
+      state_field("videoHeight", schema_integer(), "ro", "Height", "Height of the video frame.", true),
+      state_field("videoPitch", schema_integer(), "ro", "Pitch", "Pitch of the video frame."),
   });
 
   service["dataOutPorts"] = json::array({
@@ -1088,10 +1097,11 @@ json ImPlayerService::describe() {
   service["commands"] = json::array({
       json{{"name", "open"},
            {"description", "Open a media URL"},
+           {"showOnNode", true},
            {"params", json::array({json{{"name", "url"}, {"valueSchema", schema_string()}, {"required", true}}})}},
-      json{{"name", "play"}, {"description", "Start playback"}},
-      json{{"name", "pause"}, {"description", "Pause playback"}},
-      json{{"name", "stop"}, {"description", "Stop playback"}},
+      json{{"name", "play"}, {"description", "Start playback"}, {"showOnNode", true}},
+      json{{"name", "pause"}, {"description", "Pause playback"}, {"showOnNode", true}},
+      json{{"name", "stop"}, {"description", "Stop playback"}, {"showOnNode", true}},
       json{{"name", "seek"},
            {"description", "Seek"},
            {"params", json::array({json{{"name", "position"}, {"valueSchema", schema_number()}, {"required", true}}})}},

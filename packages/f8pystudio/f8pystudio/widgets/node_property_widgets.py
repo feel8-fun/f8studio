@@ -93,8 +93,16 @@ def _schema_type(schema: Any) -> str:
 
 
 def _state_field_schema(node: Any, prop_name: str) -> Any | None:
-    spec = getattr(node, "spec", None)
-    fields = list(getattr(spec, "stateFields", None) or [])
+    # Prefer effective fields (applies UI overrides such as `uiControl`).
+    fields: list[Any] = []
+    try:
+        if hasattr(node, "effective_state_fields"):
+            fields = list(node.effective_state_fields() or [])
+    except Exception:
+        fields = []
+    if not fields:
+        spec = getattr(node, "spec", None)
+        fields = list(getattr(spec, "stateFields", None) or [])
     for f in fields:
         if str(getattr(f, "name", "") or "").strip() == prop_name:
             return getattr(f, "valueSchema", None)
@@ -102,13 +110,67 @@ def _state_field_schema(node: Any, prop_name: str) -> Any | None:
 
 
 def _state_field_access(node: Any, prop_name: str) -> F8StateAccess | None:
-    spec = getattr(node, "spec", None)
-    fields = list(getattr(spec, "stateFields", None) or [])
+    fields: list[Any] = []
+    try:
+        if hasattr(node, "effective_state_fields"):
+            fields = list(node.effective_state_fields() or [])
+    except Exception:
+        fields = []
+    if not fields:
+        spec = getattr(node, "spec", None)
+        fields = list(getattr(spec, "stateFields", None) or [])
     for f in fields:
         if str(getattr(f, "name", "") or "").strip() == prop_name:
             a = getattr(f, "access", None)
             return a if isinstance(a, F8StateAccess) else None
     return None
+
+
+def _state_field_ui_control(node: Any, prop_name: str) -> str:
+    fields: list[Any] = []
+    try:
+        if hasattr(node, "effective_state_fields"):
+            fields = list(node.effective_state_fields() or [])
+    except Exception:
+        fields = []
+    if not fields:
+        spec = getattr(node, "spec", None)
+        fields = list(getattr(spec, "stateFields", None) or [])
+    for f in fields:
+        if str(getattr(f, "name", "") or "").strip() == prop_name:
+            return str(getattr(f, "uiControl", "") or "").strip().lower()
+    return ""
+
+
+def _schema_enum_items(schema: Any) -> list[str]:
+    try:
+        return [str(x) for x in list(getattr(getattr(schema, "root", None), "enum", None) or [])]
+    except Exception:
+        return []
+
+
+def _schema_numeric_range(schema: Any) -> tuple[float | None, float | None]:
+    if schema is None:
+        return None, None
+    mins = []
+    maxs = []
+    for k in ("minimum", "exclusiveMinimum"):
+        try:
+            v = getattr(schema, k, None)
+            if v is not None:
+                mins.append(float(v))
+        except Exception:
+            pass
+    for k in ("maximum", "exclusiveMaximum"):
+        try:
+            v = getattr(schema, k, None)
+            if v is not None:
+                maxs.append(float(v))
+        except Exception:
+            pass
+    lo = min(mins) if mins else None
+    hi = max(maxs) if maxs else None
+    return lo, hi
 
 
 class _F8JsonEditorDialog(QtWidgets.QDialog):
@@ -351,17 +413,235 @@ class _F8NumberPropLineEdit(QtWidgets.QLineEdit):
         self.value_changed.emit(self.get_name(), value)
 
 
+class _F8NumberSliderPropWidget(QtWidgets.QWidget):
+    """
+    Slider property widget for numeric state fields.
+
+    Emits value only on slider release to avoid spamming runtime updates.
+    """
+
+    value_changed = QtCore.Signal(str, object)
+
+    def __init__(self, parent=None, *, data_type: type[int] | type[float]):
+        super().__init__(parent)
+        self._name = ""
+        self._data_type = data_type
+        self._min: float | int | None = None
+        self._max: float | int | None = None
+        self._scale = 1.0 if data_type is int else 1000.0
+        self._value: float | int | None = None
+
+        self._slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self._slider.setMinimumWidth(140)
+        self._label = QtWidgets.QLabel("")
+        self._label.setMinimumWidth(60)
+        self._label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        layout.addWidget(self._slider, 1)
+        layout.addWidget(self._label, 0)
+
+        self._slider.valueChanged.connect(self._on_slider_value_changed)
+        self._slider.sliderReleased.connect(self._on_slider_released)
+        self._apply_range()
+
+    def set_name(self, name: str) -> None:
+        self._name = str(name or "")
+
+    def get_name(self) -> str:
+        return self._name
+
+    def set_min(self, v) -> None:
+        self._min = v
+        self._apply_range()
+
+    def set_max(self, v) -> None:
+        self._max = v
+        self._apply_range()
+
+    def _apply_range(self) -> None:
+        lo = 0.0 if self._min is None else float(self._min)
+        hi = 100.0 if self._max is None else float(self._max)
+        if hi < lo:
+            lo, hi = hi, lo
+        imin = int(round(lo * self._scale))
+        imax = int(round(hi * self._scale))
+        if imax == imin:
+            imax = imin + int(1 * self._scale)
+        with QtCore.QSignalBlocker(self._slider):
+            self._slider.setMinimum(imin)
+            self._slider.setMaximum(imax)
+        if self._value is not None:
+            self.set_value(self._value)
+        else:
+            self._update_label_from_slider()
+
+    def _slider_to_value(self, v: int) -> float | int:
+        if self._data_type is int:
+            return int(v)
+        return float(v) / float(self._scale)
+
+    def _value_to_slider(self, v: Any) -> int:
+        try:
+            if v is None:
+                return int(self._slider.minimum())
+            return int(round(float(v) * self._scale))
+        except Exception:
+            return int(self._slider.minimum())
+
+    def get_value(self):
+        return self._value
+
+    def set_value(self, value) -> None:
+        self._value = value
+        with QtCore.QSignalBlocker(self._slider):
+            self._slider.setValue(self._value_to_slider(value))
+        self._update_label_from_slider()
+
+    def _update_label_from_slider(self) -> None:
+        v = self._slider_to_value(int(self._slider.value()))
+        self._label.setText("" if v is None else str(v))
+
+    def _on_slider_value_changed(self, _v: int) -> None:
+        self._update_label_from_slider()
+
+    def _on_slider_released(self) -> None:
+        self._value = self._slider_to_value(int(self._slider.value()))
+        self.value_changed.emit(self.get_name(), self._value)
+
+
+class _F8IntSpinBoxPropWidget(QtWidgets.QSpinBox):
+    value_changed = QtCore.Signal(str, object)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._name = ""
+        self.setMinimumWidth(120)
+        self.editingFinished.connect(self._emit_value)
+
+    def set_name(self, name: str) -> None:
+        self._name = str(name or "")
+
+    def get_name(self) -> str:
+        return self._name
+
+    def set_min(self, v) -> None:
+        try:
+            self.setMinimum(int(v))
+        except Exception:
+            pass
+
+    def set_max(self, v) -> None:
+        try:
+            self.setMaximum(int(v))
+        except Exception:
+            pass
+
+    def get_value(self):
+        try:
+            return int(self.value())
+        except Exception:
+            return None
+
+    def set_value(self, value) -> None:
+        try:
+            if value is None:
+                return
+            with QtCore.QSignalBlocker(self):
+                self.setValue(int(value))
+        except Exception:
+            pass
+
+    def _emit_value(self) -> None:
+        self.value_changed.emit(self.get_name(), self.get_value())
+
+
+class _F8DoubleSpinBoxPropWidget(QtWidgets.QDoubleSpinBox):
+    value_changed = QtCore.Signal(str, object)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._name = ""
+        self.setMinimumWidth(120)
+        try:
+            self.setDecimals(6)
+        except Exception:
+            pass
+        self.editingFinished.connect(self._emit_value)
+
+    def set_name(self, name: str) -> None:
+        self._name = str(name or "")
+
+    def get_name(self) -> str:
+        return self._name
+
+    def set_min(self, v) -> None:
+        try:
+            self.setMinimum(float(v))
+        except Exception:
+            pass
+
+    def set_max(self, v) -> None:
+        try:
+            self.setMaximum(float(v))
+        except Exception:
+            pass
+
+    def get_value(self):
+        try:
+            return float(self.value())
+        except Exception:
+            return None
+
+    def set_value(self, value) -> None:
+        try:
+            if value is None:
+                return
+            with QtCore.QSignalBlocker(self):
+                self.setValue(float(value))
+        except Exception:
+            pass
+
+    def _emit_value(self) -> None:
+        self.value_changed.emit(self.get_name(), self.get_value())
+
+
 class _F8StateContainer(QtWidgets.QWidget):
     """
     Node properties container widget that displays nodes properties under
     a tab in the ``NodePropWidget`` widget.
     """
 
+    class _ElideLabel(QtWidgets.QLabel):
+        def __init__(self, text: str, parent: QtWidgets.QWidget | None = None):
+            super().__init__("", parent)
+            self._full_text = str(text or "")
+            self.setText(self._full_text)
+
+        def setText(self, text: str) -> None:  # type: ignore[override]
+            self._full_text = str(text or "")
+            self._update_elide()
+
+        def resizeEvent(self, event):  # type: ignore[override]
+            super().resizeEvent(event)
+            self._update_elide()
+
+        def _update_elide(self) -> None:
+            try:
+                fm = QtGui.QFontMetrics(self.font())
+                elided = fm.elidedText(self._full_text, QtCore.Qt.ElideRight, max(10, int(self.width())))
+                super().setText(elided)
+            except Exception:
+                super().setText(self._full_text)
+
     def __init__(self, parent=None):
         super(_F8StateContainer, self).__init__(parent)
         self.__layout = QtWidgets.QGridLayout()
         self.__layout.setColumnStretch(1, 1)
         self.__layout.setSpacing(6)
+        self.__layout.setColumnMinimumWidth(0, 90)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setAlignment(QtCore.Qt.AlignTop)
@@ -384,7 +664,10 @@ class _F8StateContainer(QtWidgets.QWidget):
             tooltip (str): custom tooltip.
         """
         label = label or name
-        label_widget = QtWidgets.QLabel(label)
+        label_widget = _F8StateContainer._ElideLabel(label)
+        # Keep the label column bounded so value widgets (eg. sliders) remain usable
+        # in narrow PropertiesBin panels.
+        label_widget.setMaximumWidth(150)
         if tooltip:
             widget.setToolTip("{}\n{}".format(name, tooltip))
             label_widget.setToolTip("{}\n{}".format(name, tooltip))
@@ -1241,9 +1524,49 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
 
                 schema = _state_field_schema(node, prop_name)
                 schema_t = _schema_type(schema) if schema is not None else ""
-                if schema is not None and schema_t in {"integer", "number"}:
+                ui_control = _state_field_ui_control(node, prop_name)
+                enum_items = _schema_enum_items(schema) if schema is not None else []
+                lo, hi = _schema_numeric_range(schema) if schema is not None else (None, None)
+
+                # UI-control driven widgets for state fields (matches showOnNode behavior).
+                if enum_items or ui_control in {"select", "dropdown", "dropbox", "combo", "combobox"}:
+                    widget = widget_factory.get_widget(NodePropWidgetEnum.QCOMBO_BOX.value)
+                    widget.set_name(prop_name)
+                    try:
+                        widget.set_items(enum_items)
+                    except Exception:
+                        pass
+                elif schema is not None and (schema_t == "boolean" or ui_control in {"switch", "toggle"}):
+                    widget = widget_factory.get_widget(NodePropWidgetEnum.QCHECK_BOX.value)
+                    widget.set_name(prop_name)
+                elif schema is not None and schema_t in {"integer", "number"} and ui_control == "slider":
+                    widget = _F8NumberSliderPropWidget(data_type=int if schema_t == "integer" else float)
+                    widget.set_name(prop_name)
+                    if lo is not None:
+                        widget.set_min(lo)
+                    if hi is not None:
+                        widget.set_max(hi)
+                elif schema is not None and schema_t == "integer" and ui_control in {"spinbox", "int"}:
+                    widget = _F8IntSpinBoxPropWidget()
+                    widget.set_name(prop_name)
+                    if lo is not None:
+                        widget.set_min(lo)
+                    if hi is not None:
+                        widget.set_max(hi)
+                elif schema is not None and schema_t == "number" and ui_control in {"doublespinbox", "float"}:
+                    widget = _F8DoubleSpinBoxPropWidget()
+                    widget.set_name(prop_name)
+                    if lo is not None:
+                        widget.set_min(lo)
+                    if hi is not None:
+                        widget.set_max(hi)
+                elif schema is not None and schema_t in {"integer", "number"}:
                     widget = _F8NumberPropLineEdit(data_type=int if schema_t == "integer" else float)
                     widget.set_name(prop_name)
+                    if lo is not None:
+                        widget.set_min(lo)
+                    if hi is not None:
+                        widget.set_max(hi)
                 else:
                     widget = widget_factory.get_widget(wid_type)
                     widget.set_name(prop_name)

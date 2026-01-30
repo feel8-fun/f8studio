@@ -92,6 +92,10 @@ components:
           type: string
         description:
           type: string
+        showOnNode:
+          type: boolean
+          default: false
+          description: If true, render this command as a button inline on the node body.
         params:
           type: array
           items:
