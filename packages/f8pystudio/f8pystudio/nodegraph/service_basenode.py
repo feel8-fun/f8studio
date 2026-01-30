@@ -824,14 +824,27 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(6)
         grid.setVerticalSpacing(6)
+        try:
+            w.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        except Exception:
+            pass
 
         cols = 3
+        for c in range(cols):
+            try:
+                grid.setColumnStretch(c, 1)
+            except Exception:
+                pass
         for i, c in enumerate(visible_cmds):
             r = i // cols
             col = i % cols
             b = QtWidgets.QPushButton(str(getattr(c, "name", "") or ""))
             b.setMinimumWidth(78)
             b.setMinimumHeight(20)
+            try:
+                b.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+            except Exception:
+                pass
             b.setStyleSheet(
                 """
                 QPushButton {
@@ -897,6 +910,32 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         if n.startswith("[S]") or n.endswith("[S]"):
             return "state"
         return "other"
+
+    @staticmethod
+    def _display_port_label(name: str, *, max_chars: int | None = None) -> str:
+        """
+        Display-friendly label for port text items.
+
+        Strip `[E]/[D]/[S]` markers (color already conveys kind), and optionally
+        elide to keep the state-field area compact.
+        """
+        n = str(name or "")
+        if n.startswith("[E]"):
+            n = n[3:]
+        elif n.endswith("[E]"):
+            n = n[:-3]
+        elif n.startswith("[D]"):
+            n = n[3:]
+        elif n.endswith("[D]"):
+            n = n[:-3]
+        elif n.startswith("[S]"):
+            n = n[3:]
+        elif n.endswith("[S]"):
+            n = n[:-3]
+        n = n.strip()
+        if max_chars is not None and max_chars > 0 and len(n) > max_chars:
+            return n[: max(1, max_chars - 1)] + "…"
+        return n
 
     @staticmethod
     def _schema_enum_items(value_schema: Any) -> list[str]:
@@ -1620,14 +1659,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                     widget_width = w_width
             except Exception:
                 continue
-        if self._cmd_proxy is not None:
-            try:
-                if self._cmd_proxy.isVisible():
-                    w_width = self._cmd_proxy.boundingRect().width()
-                    if w_width > widget_width:
-                        widget_width = w_width
-            except Exception:
-                pass
+        # Command widget spans the node width; it should not participate in width calculation.
 
         side_padding = 0.0
         if all([widget_width, p_input_text_width, p_output_text_width]):
@@ -1637,18 +1669,17 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             side_padding = 10
 
         width = port_width + max([text_w, port_text_width]) + side_padding
-        # If command buttons are visible, they are placed below the port area.
+
+        port_area_height = max(p_input_height, p_output_height)
+        height = max([text_h, port_area_height, widget_height])
         if self._cmd_proxy is not None:
             try:
                 if self._cmd_proxy.isVisible() and port_height:
                     cmd_h = float(self._cmd_proxy.boundingRect().height())
                     if cmd_h > 0:
-                        p_input_height = max(p_input_height, (p_input_height or 0.0) + cmd_h + 8.0)
-                        p_output_height = max(p_output_height, (p_output_height or 0.0) + cmd_h + 8.0)
+                        height = max(height, port_area_height + cmd_h + 10.0)
             except Exception:
                 pass
-
-        height = max([text_h, p_input_height, p_output_height, widget_height])
         if widget_width:
             # add additional width for node widget.
             width += widget_width
@@ -1790,14 +1821,21 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             y = port_y + (port_h - w_rect.height()) / 2.0
             proxy.setPos(x, y)
 
-        # Command buttons are placed below the ports area.
+        # Command buttons are placed below the ports area and should span the full node width.
         cmd_bottom = None
         if self._cmd_proxy is not None and self._cmd_proxy.isVisible():
             try:
                 rect = self.boundingRect()
-                w_rect = self._cmd_proxy.boundingRect()
-                x = rect.center().x() - (w_rect.width() / 2)
                 y = float(self._ports_end_y or (rect.y() + v_offset))
+                # Force the underlying QWidget to take the full available width.
+                try:
+                    if self._cmd_widget is not None:
+                        self._cmd_widget.setFixedWidth(max(10, int(rect.width() - 8.0)))
+                        self._cmd_widget.adjustSize()
+                except Exception:
+                    pass
+                w_rect = self._cmd_proxy.boundingRect()
+                x = rect.left() + 4.0
                 self._cmd_proxy.setPos(x, y + 6.0)
                 cmd_bottom = y + 6.0 + w_rect.height()
             except Exception:
@@ -2078,7 +2116,12 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 text.setVisible(port.display_name)
         for port, text in self._output_items.items():
             if port.isVisible():
-                text.setVisible(port.display_name)
+                # Reduce width pressure in the state-field area by hiding the
+                # mirrored state labels on the output side (tooltip still shows full name).
+                if self._port_group(str(getattr(port, "name", "") or "")) == "state":
+                    text.setVisible(False)
+                else:
+                    text.setVisible(port.display_name)
 
         # setup initial base size.
         self._set_base_size(add_h=height)
@@ -2420,11 +2463,20 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         Returns:
             PortItem: port qgraphics item.
         """
-        text = QtWidgets.QGraphicsTextItem(port.name, self)
+        full_name = str(port.name or "")
+        group = self._port_group(full_name)
+        # Aggressively elide state port labels to reduce width usage.
+        max_chars = 10 if group == "state" else 18
+        label = self._display_port_label(full_name, max_chars=max_chars)
+        text = QtWidgets.QGraphicsTextItem(label, self)
         text.font().setPointSize(8)
         text.setFont(text.font())
         text.setVisible(port.display_name)
         text.setCacheMode(ITEM_CACHE_MODE)
+        try:
+            text.setToolTip(full_name)
+        except Exception:
+            pass
         if port.port_type == PortTypeEnum.IN.value:
             self._input_items[port] = text
         elif port.port_type == PortTypeEnum.OUT.value:
