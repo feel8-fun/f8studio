@@ -14,6 +14,7 @@
 
 #include "f8cppsdk/capabilities.h"
 #include "f8cppsdk/main_thread_queue.h"
+#include "f8cppsdk/rungraph_routes.h"
 #include "f8cppsdk/kv_store.h"
 #include "f8cppsdk/nats_client.h"
 #include "f8cppsdk/service_control_plane.h"
@@ -113,13 +114,6 @@ class ServiceBus final : public ServiceControlHandler {
   std::vector<StatefulNode*> stateful_nodes_;
   std::vector<DataReceivableNode*> data_nodes_;
 
-  struct DataRoute {
-    std::string to_node_id;
-    std::string to_port;
-    std::string from_service_id;
-    std::string from_node_id;
-    std::string from_port;
-  };
   mutable std::mutex data_mu_;
   std::unordered_map<std::string, std::vector<DataRoute>> data_routes_by_subject_;
   std::unordered_map<std::string, NatsSubscription> data_subs_;

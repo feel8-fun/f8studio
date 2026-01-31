@@ -7,6 +7,7 @@
 #include <spdlog/spdlog.h>
 
 #include "f8cppsdk/f8_naming.h"
+#include "f8cppsdk/rungraph_routes.h"
 #include "f8cppsdk/state_kv.h"
 
 namespace f8::cppsdk {
@@ -60,53 +61,7 @@ std::size_t ServiceBus::drain_main_thread(std::size_t max_tasks) {
 }
 
 void ServiceBus::apply_data_routes_from_rungraph(const json& graph_obj) {
-  std::unordered_map<std::string, std::vector<DataRoute>> new_routes;
-
-  if (!graph_obj.is_object()) {
-    return;
-  }
-  const auto edges_it = graph_obj.find("edges");
-  if (edges_it == graph_obj.end() || !edges_it->is_array()) {
-    return;
-  }
-
-  for (const auto& e : *edges_it) {
-    if (!e.is_object()) continue;
-    const std::string kind = e.value("kind", std::string());
-    if (kind != "data") continue;
-
-    const std::string from_sid = e.value("fromServiceId", std::string());
-    const std::string to_sid = e.value("toServiceId", std::string());
-    if (to_sid.empty() || from_sid.empty()) continue;
-    if (to_sid != cfg_.service_id) continue;
-
-    // Cross-service only for now.
-    if (from_sid == to_sid) continue;
-
-    std::string from_nid = e.value("fromOperatorId", std::string());
-    if (from_nid.empty()) from_nid = from_sid;
-    std::string to_nid = e.value("toOperatorId", std::string());
-    if (to_nid.empty()) to_nid = to_sid;
-
-    const std::string from_port = e.value("fromPort", std::string());
-    const std::string to_port = e.value("toPort", std::string());
-    if (from_port.empty() || to_port.empty()) continue;
-
-    std::string subject;
-    try {
-      subject = data_subject(from_sid, from_nid, from_port);
-    } catch (...) {
-      continue;
-    }
-
-    DataRoute r;
-    r.to_node_id = to_nid;
-    r.to_port = to_port;
-    r.from_service_id = from_sid;
-    r.from_node_id = from_nid;
-    r.from_port = from_port;
-    new_routes[subject].push_back(std::move(r));
-  }
+  auto new_routes = parse_cross_service_data_routes(graph_obj, cfg_.service_id);
 
   std::lock_guard<std::mutex> lock(data_mu_);
 

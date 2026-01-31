@@ -6,6 +6,7 @@
 #include <nlohmann/json.hpp>
 
 #include "f8cppsdk/f8_naming.h"
+#include "f8cppsdk/generated/protocol_models.h"
 #include "f8cppsdk/kv_store.h"
 #include "f8cppsdk/service_control_plane.h"
 #include "f8cppsdk/time_utils.h"
@@ -201,15 +202,23 @@ void ServiceControlPlaneServer::handle_request(microRequest* msg, const std::str
       return;
     }
     if (endpoint == "set_active") {
-      bool active = false;
+      const json* src = nullptr;
       if (env.args.contains("active")) {
-        active = env.args["active"].get<bool>();
+        src = &env.args;
       } else if (env.raw.contains("active")) {
-        active = env.raw["active"].get<bool>();
+        src = &env.raw;
       } else {
         respond(msg, env.req_id, false, json(nullptr), "INVALID_ARGS", "missing active");
         return;
       }
+      f8::cppsdk::generated::F8SetActiveArgs req;
+      f8::cppsdk::generated::ParseError perr;
+      if (!f8::cppsdk::generated::parse_F8SetActiveArgs(*src, req, perr)) {
+        respond(msg, env.req_id, false, json(nullptr), "INVALID_ARGS",
+                perr.message.empty() ? "invalid request" : perr.message);
+        return;
+      }
+      const bool active = req.active;
       handler_->on_set_active(active, env.meta);
       result = json{{"active", active}};
       respond(msg, env.req_id, true, result, "", "");
@@ -232,45 +241,62 @@ void ServiceControlPlaneServer::handle_request(microRequest* msg, const std::str
       return;
     }
     if (endpoint == "set_state") {
-      std::string node_id_s;
-      std::string field_s;
-      if (env.args.contains("nodeId") && env.args["nodeId"].is_string())
-        node_id_s = env.args["nodeId"].get<std::string>();
-      if (node_id_s.empty() && env.raw.contains("nodeId") && env.raw["nodeId"].is_string())
-        node_id_s = env.raw["nodeId"].get<std::string>();
-      if (env.args.contains("field") && env.args["field"].is_string())
-        field_s = env.args["field"].get<std::string>();
-      if (field_s.empty() && env.raw.contains("field") && env.raw["field"].is_string())
-        field_s = env.raw["field"].get<std::string>();
-      json value;
-      if (env.args.contains("value"))
-        value = env.args["value"];
-      else if (env.raw.contains("value"))
-        value = env.raw["value"];
-      else
-        value = json(nullptr);
-      if (node_id_s.empty() || field_s.empty()) {
-        respond(msg, env.req_id, false, json(nullptr), "INVALID_ARGS", "missing nodeId/field");
+      const json* src = nullptr;
+      if (env.args.contains("nodeId") || env.args.contains("field") || env.args.contains("value")) {
+        src = &env.args;
+      } else if (env.raw.contains("nodeId") || env.raw.contains("field") || env.raw.contains("value")) {
+        src = &env.raw;
+      } else {
+        respond(msg, env.req_id, false, json(nullptr), "INVALID_ARGS", "missing nodeId/field/value");
         return;
       }
-      bool ok = handler_->on_set_state(node_id_s, field_s, value, env.meta, err_code, err_msg);
+
+      f8::cppsdk::generated::F8SetStateArgs req;
+      f8::cppsdk::generated::ParseError perr;
+      if (!f8::cppsdk::generated::parse_F8SetStateArgs(*src, req, perr)) {
+        respond(msg, env.req_id, false, json(nullptr), "INVALID_ARGS",
+                perr.message.empty() ? "invalid request" : perr.message);
+        return;
+      }
+
+      bool ok = handler_->on_set_state(req.nodeId, req.field, req.value, env.meta, err_code, err_msg);
       if (!ok) {
         respond(msg, env.req_id, false, json(nullptr), err_code, err_msg);
         return;
       }
-      result = json{{"nodeId", node_id_s}, {"field", field_s}};
+      result = json{{"nodeId", req.nodeId}, {"field", req.field}};
       respond(msg, env.req_id, true, result, "", "");
       return;
     }
     if (endpoint == "set_rungraph") {
       json graph_obj;
-      if (env.args.contains("graph") && env.args["graph"].is_object())
+      f8::cppsdk::generated::ParseError perr;
+      if (env.args.contains("graph") && env.args["graph"].is_object()) {
+        f8::cppsdk::generated::F8SetRungraphArgs req;
+        if (!f8::cppsdk::generated::parse_F8SetRungraphArgs(env.args, req, perr)) {
+          respond(msg, env.req_id, false, json(nullptr), "INVALID_ARGS",
+                  perr.message.empty() ? "invalid request" : perr.message);
+          return;
+        }
         graph_obj = env.args["graph"];
-      else if (env.raw.contains("graph") && env.raw["graph"].is_object())
+      } else if (env.raw.contains("graph") && env.raw["graph"].is_object()) {
+        f8::cppsdk::generated::F8SetRungraphArgs req;
+        if (!f8::cppsdk::generated::parse_F8SetRungraphArgs(env.raw, req, perr)) {
+          respond(msg, env.req_id, false, json(nullptr), "INVALID_ARGS",
+                  perr.message.empty() ? "invalid request" : perr.message);
+          return;
+        }
         graph_obj = env.raw["graph"];
-      else if (env.raw.is_object() && env.raw.contains("nodes") && env.raw.contains("edges"))
+      } else if (env.raw.is_object() && env.raw.contains("nodes") && env.raw.contains("edges")) {
+        // Allow passing the graph as the top-level request body (non-enveloped).
+        f8::cppsdk::generated::F8RuntimeGraph req;
+        if (!f8::cppsdk::generated::parse_F8RuntimeGraph(env.raw, req, perr)) {
+          respond(msg, env.req_id, false, json(nullptr), "INVALID_ARGS",
+                  perr.message.empty() ? "invalid request" : perr.message);
+          return;
+        }
         graph_obj = env.raw;
-      else {
+      } else {
         respond(msg, env.req_id, false, json(nullptr), "INVALID_ARGS", "missing graph");
         return;
       }
@@ -291,15 +317,15 @@ void ServiceControlPlaneServer::handle_request(microRequest* msg, const std::str
       return;
     }
     if (endpoint == "cmd") {
-      std::string call;
-      if (env.raw.contains("call") && env.raw["call"].is_string())
-        call = env.raw["call"].get<std::string>();
-      if (call.empty()) {
-        respond(msg, env.req_id, false, json(nullptr), "INVALID_ARGS", "missing call");
+      f8::cppsdk::generated::F8CommandInvokeRequest req;
+      f8::cppsdk::generated::ParseError perr;
+      if (!f8::cppsdk::generated::parse_F8CommandInvokeRequest(env.raw, req, perr)) {
+        respond(msg, env.req_id, false, json(nullptr), "INVALID_ARGS",
+                perr.message.empty() ? "invalid request" : perr.message);
         return;
       }
       json out;
-      bool ok = handler_->on_command(call, env.args, env.meta, out, err_code, err_msg);
+      bool ok = handler_->on_command(req.call, req.args, req.meta, out, err_code, err_msg);
       if (!ok) {
         respond(msg, env.req_id, false, json(nullptr), err_code, err_msg);
         return;

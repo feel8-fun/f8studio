@@ -43,6 +43,7 @@ add_subdirectory(packages/f8cppsdk)
 add_subdirectory(packages/f8implayer)
 add_subdirectory(packages/f8audiocap)
 add_subdirectory(packages/f8screencap)
+add_subdirectory(packages/f8sdk_demo)
 
 if (BUILD_TESTS)
     if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")

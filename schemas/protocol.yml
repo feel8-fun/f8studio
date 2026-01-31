@@ -208,6 +208,45 @@ components:
       required:
         - ok
       additionalProperties: false
+
+    F8SetActiveArgs:
+      title: F8SetActiveArgs
+      type: object
+      description: Args payload for the `set_active` service endpoint.
+      properties:
+        active:
+          type: boolean
+      required:
+        - active
+      additionalProperties: false
+
+    F8SetStateArgs:
+      title: F8SetStateArgs
+      type: object
+      description: Args payload for the `set_state` service endpoint.
+      properties:
+        nodeId:
+          type: string
+        field:
+          type: string
+        value:
+          $ref: "#/components/schemas/F8JsonValue"
+      required:
+        - nodeId
+        - field
+        - value
+      additionalProperties: false
+
+    F8SetRungraphArgs:
+      title: F8SetRungraphArgs
+      type: object
+      description: Args payload for the `set_rungraph` service endpoint.
+      properties:
+        graph:
+          $ref: "#/components/schemas/F8RuntimeGraph"
+      required:
+        - graph
+      additionalProperties: false
     F8DataTypeSchemaCommonMetadata:
       title: F8DataTypeSchemaCommonMetadata
       type: object

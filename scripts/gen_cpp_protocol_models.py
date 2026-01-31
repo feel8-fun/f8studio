@@ -1,0 +1,557 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+
+@dataclass(frozen=True)
+class Schema:
+    name: str
+    obj: dict[str, Any]
+
+
+def _load_schemas(protocol_yml: Path) -> dict[str, Schema]:
+    root = yaml.safe_load(protocol_yml.read_text(encoding="utf-8"))
+    schemas = root.get("components", {}).get("schemas", {})
+    out: dict[str, Schema] = {}
+    for name, obj in schemas.items():
+        if isinstance(name, str) and isinstance(obj, dict):
+            out[name] = Schema(name=name, obj=obj)
+    return out
+
+
+def _cpp_ident(s: str) -> str:
+    # Keep it simple: schemas/titles are already stable identifiers in this repo.
+    # We only need to fix a few invalid patterns.
+    s = "".join(ch if (ch.isalnum() or ch == "_") else "_" for ch in str(s))
+    if not s:
+        return "X"
+    if s[0].isdigit():
+        s = "X_" + s
+    return s
+
+
+def _cpp_escape(s: str) -> str:
+    return str(s).replace("\\", "\\\\").replace('"', '\\"')
+
+
+_CPP_KEYWORDS = {
+    # common keywords (C++17)
+    "alignas",
+    "alignof",
+    "and",
+    "and_eq",
+    "asm",
+    "atomic_cancel",
+    "atomic_commit",
+    "atomic_noexcept",
+    "auto",
+    "bitand",
+    "bitor",
+    "bool",
+    "break",
+    "case",
+    "catch",
+    "char",
+    "char8_t",
+    "char16_t",
+    "char32_t",
+    "class",
+    "compl",
+    "concept",
+    "const",
+    "consteval",
+    "constexpr",
+    "constinit",
+    "const_cast",
+    "continue",
+    "co_await",
+    "co_return",
+    "co_yield",
+    "decltype",
+    "default",
+    "delete",
+    "do",
+    "double",
+    "dynamic_cast",
+    "else",
+    "enum",
+    "explicit",
+    "export",
+    "extern",
+    "false",
+    "float",
+    "for",
+    "friend",
+    "goto",
+    "if",
+    "inline",
+    "int",
+    "long",
+    "mutable",
+    "namespace",
+    "new",
+    "noexcept",
+    "not",
+    "not_eq",
+    "nullptr",
+    "operator",
+    "or",
+    "or_eq",
+    "private",
+    "protected",
+    "public",
+    "register",
+    "reinterpret_cast",
+    "requires",
+    "return",
+    "short",
+    "signed",
+    "sizeof",
+    "static",
+    "static_assert",
+    "static_cast",
+    "struct",
+    "switch",
+    "synchronized",
+    "template",
+    "this",
+    "thread_local",
+    "throw",
+    "true",
+    "try",
+    "typedef",
+    "typeid",
+    "typename",
+    "union",
+    "unsigned",
+    "using",
+    "virtual",
+    "void",
+    "volatile",
+    "wchar_t",
+    "while",
+    "xor",
+    "xor_eq",
+}
+
+
+def _cpp_member_name(json_key: str) -> str:
+    """
+    Convert an arbitrary JSON key into a safe C++ member identifier.
+
+    Unknown/extra JSON fields are ignored; this only affects field naming of known schema properties.
+    """
+
+    s = str(json_key)
+    if s.startswith("$"):
+        s = s[1:]
+    s = "".join(ch if (ch.isalnum() or ch == "_") else "_" for ch in s)
+    if not s:
+        s = "field"
+    if s[0].isdigit():
+        s = "field_" + s
+    if s in _CPP_KEYWORDS:
+        s = s + "_"
+    return s
+
+
+def _enum_member(v: str) -> str:
+    s = _cpp_ident(v)
+    if s in {"class", "struct", "namespace"}:
+        s = s + "_"
+    if s == "in":
+        return "in_"
+    return s
+
+
+@dataclass
+class EnumType:
+    name: str
+    values: list[str]
+
+
+def _collect_enum_types(schemas: dict[str, Schema]) -> dict[str, EnumType]:
+    enums: dict[str, EnumType] = {}
+
+    def add_enum(name: str, values: list[str]) -> None:
+        nm = _cpp_ident(name)
+        vals = [str(v) for v in values if isinstance(v, (str, int, float, bool))]  # stringify for stability
+        vals_s = [str(v) for v in vals]
+        if nm in enums:
+            if enums[nm].values != vals_s:
+                # Conflict; keep the first and let later callers fall back to string.
+                return
+            return
+        enums[nm] = EnumType(name=nm, values=vals_s)
+
+    # schema-level enums
+    for s in schemas.values():
+        obj = s.obj
+        if isinstance(obj.get("enum"), list):
+            add_enum(s.name, obj["enum"])
+
+    # property-level enums (use `title` when present, otherwise derive a stable name)
+    for s in schemas.values():
+        props = s.obj.get("properties")
+        if not isinstance(props, dict):
+            continue
+        for prop_name, prop_schema in props.items():
+            if not isinstance(prop_schema, dict):
+                continue
+            values = prop_schema.get("enum")
+            if not isinstance(values, list):
+                continue
+            title = prop_schema.get("title")
+            if isinstance(title, str) and title.strip():
+                add_enum(title.strip(), values)
+            else:
+                add_enum(f"{s.name}_{prop_name}_Enum", values)
+
+    return enums
+
+
+def _gen_header(*, schemas: dict[str, Schema], namespace: str) -> str:
+    lines: list[str] = []
+    lines.append("// AUTO-GENERATED FILE. DO NOT EDIT BY HAND.")
+    lines.append("// Generated by `scripts/gen_cpp_protocol_models.py` from `schemas/protocol.yml`.")
+    lines.append("")
+    lines.append("#pragma once")
+    lines.append("")
+    lines.append("#include <cstdint>")
+    lines.append("#include <optional>")
+    lines.append("#include <string>")
+    lines.append("#include <vector>")
+    lines.append("")
+    lines.append("#include <nlohmann/json.hpp>")
+    lines.append("")
+    lines.append(f"namespace {namespace} {{")
+    lines.append("")
+    lines.append("struct ParseError {")
+    lines.append("  std::string code;")
+    lines.append("  std::string message;")
+    lines.append("};")
+    lines.append("")
+    lines.append("inline std::optional<std::string> _get_str_opt(const nlohmann::json& obj, const char* k) {")
+    lines.append("  if (!obj.is_object() || k == nullptr || *k == '\\0') return std::nullopt;")
+    lines.append("  const auto it = obj.find(k);")
+    lines.append("  if (it == obj.end() || it->is_null()) return std::nullopt;")
+    lines.append("  if (!it->is_string()) return std::nullopt;")
+    lines.append("  return it->get<std::string>();")
+    lines.append("}")
+    lines.append("")
+    lines.append("inline bool _get_str_req(const nlohmann::json& obj, const char* k, std::string& out, ParseError& err) {")
+    lines.append("  auto v = _get_str_opt(obj, k);")
+    lines.append("  if (!v.has_value() || v->empty()) {")
+    lines.append("    err.code = \"INVALID_SCHEMA\";")
+    lines.append("    err.message = std::string(\"missing/invalid required string: \") + (k ? k : \"\");")
+    lines.append("    return false;")
+    lines.append("  }")
+    lines.append("  out = *v;")
+    lines.append("  return true;")
+    lines.append("}")
+    lines.append("")
+
+    enums = _collect_enum_types(schemas)
+
+    for e in sorted(enums.values(), key=lambda x: x.name):
+        lines.append(f"enum class {e.name} {{")
+        for v in e.values:
+            lines.append(f"  {_enum_member(v)},")
+        lines.append("};")
+        lines.append("")
+        lines.append(f"inline std::optional<{e.name}> parse_{e.name}(const std::string& s) {{")
+        for v in e.values:
+            lines.append(f"  if (s == \"{_cpp_escape(str(v))}\") return {e.name}::{_enum_member(str(v))};")
+        lines.append("  return std::nullopt;")
+        lines.append("}")
+        lines.append("")
+
+    def enum_type_for(prop_schema: dict[str, Any], parent: Schema, prop_name: str) -> str | None:
+        values = prop_schema.get("enum")
+        if not isinstance(values, list):
+            return None
+        title = prop_schema.get("title")
+        if isinstance(title, str) and title.strip():
+            nm = _cpp_ident(title.strip())
+            if nm in enums and enums[nm].values == [str(x) for x in values]:
+                return nm
+            return None
+        nm2 = _cpp_ident(f"{parent.name}_{prop_name}_Enum")
+        if nm2 in enums and enums[nm2].values == [str(x) for x in values]:
+            return nm2
+        return None
+
+    def cpp_type(prop_schema: dict[str, Any], parent: Schema, prop_name: str) -> str:
+        if "$ref" in prop_schema and isinstance(prop_schema["$ref"], str):
+            ref = prop_schema["$ref"].split("/")[-1]
+            if ref == "F8JsonValue":
+                return "nlohmann::json"
+            ref_id = _cpp_ident(ref)
+            if ref_id in enums:
+                return ref_id
+            if ref in struct_names:
+                return ref_id
+            # Non-object / union / allOf / etc: keep as json passthrough.
+            return "nlohmann::json"
+        et = enum_type_for(prop_schema, parent, prop_name)
+        if et is not None:
+            return et
+        t = prop_schema.get("type")
+        if t == "string":
+            return "std::string"
+        if t == "integer":
+            return "std::int64_t"
+        if t == "number":
+            return "double"
+        if t == "boolean":
+            return "bool"
+        if t == "array":
+            items = prop_schema.get("items")
+            if isinstance(items, dict):
+                if "$ref" in items and isinstance(items["$ref"], str):
+                    ref = items["$ref"].split("/")[-1]
+                    ref_id = _cpp_ident(ref)
+                    if ref_id in enums:
+                        return f"std::vector<{ref_id}>"
+                    if ref in struct_names:
+                        return f"std::vector<{ref_id}>"
+                    return "std::vector<nlohmann::json>"
+                it_t = items.get("type")
+                if it_t == "string":
+                    return "std::vector<std::string>"
+                if it_t == "integer":
+                    return "std::vector<std::int64_t>"
+                if it_t == "number":
+                    return "std::vector<double>"
+                if it_t == "boolean":
+                    return "std::vector<bool>"
+            return "std::vector<nlohmann::json>"
+        # objects/oneOf/anyOf/etc -> json passthrough (extra ignored)
+        return "nlohmann::json"
+
+    def is_required(schema_obj: dict[str, Any], prop: str) -> bool:
+        req = schema_obj.get("required")
+        return isinstance(req, list) and prop in req
+
+    # Generate model structs for object schemas (best-effort) and type aliases for non-object schemas.
+    #
+    # Important: some object schemas contain properties like `array[$ref: OtherSchema]` which become
+    # `std::vector<OtherSchema>`. MSVC's STL requires `OtherSchema` to be a complete type at the point
+    # where `std::vector<OtherSchema>` is instantiated, so we must emit structs in dependency order.
+    struct_names: set[str] = set()
+    for s in schemas.values():
+        obj = s.obj
+        if s.name == "F8JsonValue":
+            continue
+        if obj.get("type") == "object" and isinstance(obj.get("properties"), dict):
+            struct_names.add(s.name)
+
+    def deps_for(schema: Schema) -> set[str]:
+        obj = schema.obj
+        props = obj.get("properties")
+        if not isinstance(props, dict):
+            return set()
+        deps: set[str] = set()
+        for prop_name, prop_schema in props.items():
+            if not isinstance(prop_name, str) or not isinstance(prop_schema, dict):
+                continue
+            if "$ref" in prop_schema and isinstance(prop_schema["$ref"], str):
+                ref = prop_schema["$ref"].split("/")[-1]
+                if ref in struct_names and ref != schema.name:
+                    deps.add(ref)
+                continue
+            if prop_schema.get("type") == "array":
+                items = prop_schema.get("items")
+                if isinstance(items, dict) and "$ref" in items and isinstance(items["$ref"], str):
+                    ref = items["$ref"].split("/")[-1]
+                    if ref in struct_names and ref != schema.name:
+                        deps.add(ref)
+        return deps
+
+    deps_by_name: dict[str, set[str]] = {name: deps_for(schemas[name]) for name in struct_names}
+
+    # Kahn topo sort (best-effort; falls back to name order for any residual cycle).
+    ready = sorted([n for n in struct_names if not deps_by_name.get(n)], key=str)
+    struct_order: list[str] = []
+    remaining = {k: set(v) for k, v in deps_by_name.items()}
+    while ready:
+        n = ready.pop(0)
+        struct_order.append(n)
+        for m, deps in list(remaining.items()):
+            if n in deps:
+                deps.remove(n)
+                if not deps:
+                    ready.append(m)
+                    ready.sort()
+        remaining.pop(n, None)
+    if remaining:
+        # Cycle or unresolved refs; keep deterministic output.
+        struct_order.extend(sorted(remaining.keys(), key=str))
+
+    # Emit F8JsonValue alias first (used widely in additionalProperties).
+    if "F8JsonValue" in schemas:
+        lines.append("using F8JsonValue = nlohmann::json;")
+        lines.append("")
+
+    for name in struct_order:
+        s = schemas[name]
+        obj = s.obj
+        schema_type = obj.get("type")
+
+        if schema_type == "object" and isinstance(obj.get("properties"), dict):
+            props: dict[str, Any] = obj["properties"]
+            lines.append(f"struct {s.name} {{")
+            for prop_name, prop_schema in props.items():
+                if not isinstance(prop_name, str) or not isinstance(prop_schema, dict):
+                    continue
+                member = _cpp_member_name(prop_name)
+                t = cpp_type(prop_schema, s, prop_name)
+                if is_required(obj, prop_name):
+                    if t == "nlohmann::json":
+                        lines.append(f"  {t} {member} = nlohmann::json::object();")
+                    else:
+                        lines.append(f"  {t} {member};")
+                else:
+                    # Optional
+                    if t.startswith("std::vector<"):
+                        lines.append(f"  std::optional<{t}> {member};")
+                    elif t == "nlohmann::json":
+                        lines.append(f"  nlohmann::json {member} = nlohmann::json::object();")
+                    else:
+                        lines.append(f"  std::optional<{t}> {member};")
+            lines.append("};")
+            lines.append("")
+
+            lines.append(f"inline bool parse_{s.name}(const nlohmann::json& j, {s.name}& out, ParseError& err) {{")
+            lines.append("  if (!j.is_object()) { err.code=\"INVALID_SCHEMA\"; err.message=\"object expected\"; return false; }")
+            for prop_name, prop_schema in props.items():
+                if not isinstance(prop_name, str) or not isinstance(prop_schema, dict):
+                    continue
+                member = _cpp_member_name(prop_name)
+                t = cpp_type(prop_schema, s, prop_name)
+                req = is_required(obj, prop_name)
+                key = prop_name
+                if req:
+                    if t == "std::string":
+                        lines.append(f"  if (!_get_str_req(j, \"{_cpp_escape(key)}\", out.{member}, err)) return false;")
+                    elif t == "std::int64_t":
+                        lines.append(f"  if (!j.contains(\"{_cpp_escape(key)}\") || j[\"{_cpp_escape(key)}\"].is_null() || !j[\"{_cpp_escape(key)}\"].is_number_integer()) {{")
+                        lines.append("    err.code=\"INVALID_SCHEMA\"; err.message=\"missing/invalid required integer\"; return false; }")
+                        lines.append(f"  out.{member} = j[\"{_cpp_escape(key)}\"].get<std::int64_t>();")
+                    elif t == "double":
+                        lines.append(f"  if (!j.contains(\"{_cpp_escape(key)}\") || j[\"{_cpp_escape(key)}\"].is_null() || !j[\"{_cpp_escape(key)}\"].is_number()) {{")
+                        lines.append("    err.code=\"INVALID_SCHEMA\"; err.message=\"missing/invalid required number\"; return false; }")
+                        lines.append(f"  out.{member} = j[\"{_cpp_escape(key)}\"].get<double>();")
+                    elif t == "bool":
+                        lines.append(f"  if (!j.contains(\"{_cpp_escape(key)}\") || j[\"{_cpp_escape(key)}\"].is_null() || !j[\"{_cpp_escape(key)}\"].is_boolean()) {{")
+                        lines.append("    err.code=\"INVALID_SCHEMA\"; err.message=\"missing/invalid required boolean\"; return false; }")
+                        lines.append(f"  out.{member} = j[\"{_cpp_escape(key)}\"].get<bool>();")
+                    elif t in enums:
+                        lines.append(f"  {{ std::string s; if (!_get_str_req(j, \"{_cpp_escape(key)}\", s, err)) return false;")
+                        lines.append(f"    auto v = parse_{t}(s); if (!v) {{ err.code=\"INVALID_SCHEMA\"; err.message=\"invalid enum\"; return false; }} out.{member} = *v; }}")
+                    elif t.startswith("std::vector<"):
+                        lines.append(f"  if (!j.contains(\"{_cpp_escape(key)}\") || !j[\"{_cpp_escape(key)}\"].is_array()) {{ err.code=\"INVALID_SCHEMA\"; err.message=\"missing/invalid required array\"; return false; }}")
+                        inner = t[len("std::vector<") : -1]
+                        lines.append(f"  out.{member}.clear(); out.{member}.reserve(j[\"{_cpp_escape(key)}\"].size());")
+                        if inner == "std::string":
+                            lines.append(f"  for (const auto& it : j[\"{_cpp_escape(key)}\"]) {{ if (!it.is_string()) {{ err.code=\"INVALID_SCHEMA\"; err.message=\"array item must be string\"; return false; }} out.{member}.push_back(it.get<std::string>()); }}")
+                        elif inner == "std::int64_t":
+                            lines.append(f"  for (const auto& it : j[\"{_cpp_escape(key)}\"]) {{ if (!it.is_number_integer()) {{ err.code=\"INVALID_SCHEMA\"; err.message=\"array item must be integer\"; return false; }} out.{member}.push_back(it.get<std::int64_t>()); }}")
+                        elif inner == "double":
+                            lines.append(f"  for (const auto& it : j[\"{_cpp_escape(key)}\"]) {{ if (!it.is_number()) {{ err.code=\"INVALID_SCHEMA\"; err.message=\"array item must be number\"; return false; }} out.{member}.push_back(it.get<double>()); }}")
+                        elif inner == "bool":
+                            lines.append(f"  for (const auto& it : j[\"{_cpp_escape(key)}\"]) {{ if (!it.is_boolean()) {{ err.code=\"INVALID_SCHEMA\"; err.message=\"array item must be boolean\"; return false; }} out.{member}.push_back(it.get<bool>()); }}")
+                        elif inner in struct_names:
+                            lines.append(f"  for (const auto& it : j[\"{_cpp_escape(key)}\"]) {{ {inner} tmp; ParseError e2; if (!parse_{inner}(it, tmp, e2)) return false; out.{member}.push_back(std::move(tmp)); }}")
+                        else:
+                            lines.append(f"  for (const auto& it : j[\"{_cpp_escape(key)}\"]) out.{member}.push_back(it);")
+                    elif t in struct_names:
+                        lines.append(f"  if (!j.contains(\"{_cpp_escape(key)}\")) {{ err.code=\"INVALID_SCHEMA\"; err.message=\"missing required object\"; return false; }}")
+                        lines.append(f"  {{ ParseError e2; if (!parse_{t}(j[\"{_cpp_escape(key)}\"], out.{member}, e2)) return false; }}")
+                    else:
+                        lines.append(f"  if (!j.contains(\"{_cpp_escape(key)}\")) {{ err.code=\"INVALID_SCHEMA\"; err.message=\"missing required\"; return false; }}")
+                        lines.append(f"  out.{member} = j[\"{_cpp_escape(key)}\"];")
+                else:
+                    # optional
+                    if t == "nlohmann::json":
+                        lines.append(f"  if (j.contains(\"{_cpp_escape(key)}\") && j[\"{_cpp_escape(key)}\"].is_object()) out.{member} = j[\"{_cpp_escape(key)}\"];")
+                    elif t == "std::string":
+                        lines.append(f"  out.{member} = _get_str_opt(j, \"{_cpp_escape(key)}\");")
+                    elif t == "std::int64_t":
+                        lines.append(f"  if (j.contains(\"{_cpp_escape(key)}\") && j[\"{_cpp_escape(key)}\"].is_number_integer()) out.{member} = j[\"{_cpp_escape(key)}\"].get<std::int64_t>();")
+                    elif t == "double":
+                        lines.append(f"  if (j.contains(\"{_cpp_escape(key)}\") && j[\"{_cpp_escape(key)}\"].is_number()) out.{member} = j[\"{_cpp_escape(key)}\"].get<double>();")
+                    elif t == "bool":
+                        lines.append(f"  if (j.contains(\"{_cpp_escape(key)}\") && j[\"{_cpp_escape(key)}\"].is_boolean()) out.{member} = j[\"{_cpp_escape(key)}\"].get<bool>();")
+                    elif t in enums:
+                        lines.append(f"  if (auto s2 = _get_str_opt(j, \"{_cpp_escape(key)}\")) out.{member} = parse_{t}(*s2);")
+                    elif t.startswith("std::vector<"):
+                        inner = t[len("std::vector<") : -1]
+                        lines.append(f"  if (j.contains(\"{_cpp_escape(key)}\") && j[\"{_cpp_escape(key)}\"].is_array()) {{")
+                        lines.append(f"    {t} vec; vec.reserve(j[\"{_cpp_escape(key)}\"].size());")
+                        if inner == "std::string":
+                            lines.append(f"    for (const auto& it : j[\"{_cpp_escape(key)}\"]) if (it.is_string()) vec.push_back(it.get<std::string>());")
+                        elif inner == "std::int64_t":
+                            lines.append(f"    for (const auto& it : j[\"{_cpp_escape(key)}\"]) if (it.is_number_integer()) vec.push_back(it.get<std::int64_t>());")
+                        elif inner == "double":
+                            lines.append(f"    for (const auto& it : j[\"{_cpp_escape(key)}\"]) if (it.is_number()) vec.push_back(it.get<double>());")
+                        elif inner == "bool":
+                            lines.append(f"    for (const auto& it : j[\"{_cpp_escape(key)}\"]) if (it.is_boolean()) vec.push_back(it.get<bool>());")
+                        elif inner in struct_names:
+                            lines.append(f"    for (const auto& it : j[\"{_cpp_escape(key)}\"]) {{ {inner} tmp; ParseError e2; if (parse_{inner}(it, tmp, e2)) vec.push_back(std::move(tmp)); }}")
+                        else:
+                            lines.append(f"    for (const auto& it : j[\"{_cpp_escape(key)}\"]) vec.push_back(it);")
+                        lines.append(f"    out.{member} = std::move(vec);")
+                        lines.append("  }")
+                    elif t in struct_names:
+                        lines.append(f"  if (j.contains(\"{_cpp_escape(key)}\") && j[\"{_cpp_escape(key)}\"].is_object()) {{")
+                        lines.append(f"    {t} tmp; ParseError e2; if (parse_{t}(j[\"{_cpp_escape(key)}\"], tmp, e2)) out.{member} = std::move(tmp);")
+                        lines.append("  }")
+                    else:
+                        lines.append(f"  if (j.contains(\"{_cpp_escape(key)}\")) out.{member} = j[\"{_cpp_escape(key)}\"];")
+            lines.append("  return true;")
+            lines.append("}")
+            lines.append("")
+
+    # Emit remaining schemas (enums already handled above; others become json aliases).
+    for s in sorted(schemas.values(), key=lambda x: x.name):
+        if s.name == "F8JsonValue":
+            continue
+        if s.name in struct_names:
+            continue
+        obj = s.obj
+        if isinstance(obj.get("enum"), list):
+            continue
+        lines.append(f"using {s.name} = nlohmann::json;")
+        lines.append("")
+
+    lines.append(f"}}  // namespace {namespace}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--protocol", default="schemas/protocol.yml")
+    ap.add_argument("--out", default="packages/f8cppsdk/include/f8cppsdk/generated/protocol_models.h")
+    ap.add_argument("--namespace", default="f8::cppsdk::generated")
+    args = ap.parse_args()
+
+    protocol = Path(args.protocol)
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    schemas = _load_schemas(protocol)
+    header = _gen_header(schemas=schemas, namespace=args.namespace)
+    out.write_text(header, encoding="utf-8")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
