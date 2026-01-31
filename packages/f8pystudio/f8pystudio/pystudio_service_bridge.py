@@ -188,14 +188,9 @@ class PyStudioServiceBridge(QtCore.QObject):
                     continue
                 managed.add(sid)
                 managed_classes[sid] = str(svc.serviceClass)
-                self._proc_mgr.start(
-                    ServiceProcessConfig(service_class=str(svc.serviceClass), service_id=sid, nats_url=self._cfg.nats_url),
-                    on_output=lambda _sid, line, _sid2=sid: self.service_output.emit(_sid2, str(line)),
-                )
-                try:
-                    self.service_process_state.emit(sid, True)
-                except Exception:
-                    pass
+                # Use the public helper so we dedup against already-running services
+                # (including ones started outside this Studio process).
+                self.start_service(sid, service_class=str(svc.serviceClass))
             except Exception as exc:
                 self.log.emit(f"start service failed: {exc}")
         self._managed_service_ids = managed
@@ -705,6 +700,16 @@ class PyStudioServiceBridge(QtCore.QObject):
             return
         if sid == self.studio_service_id:
             return
+
+        # Dedup: if Studio already believes the service is alive (via local proc tracking or a fresh
+        # status ping), do not spawn another process on repeated deploy (e.g. repeated F5).
+        try:
+            if self.is_service_running(sid):
+                self.log.emit(f"start_service ignored (already running): serviceId={sid}")
+                return
+        except Exception:
+            pass
+
         svc_class = self._managed_service_classes.get(sid, "") or str(service_class or "")
         if not svc_class:
             self.log.emit(f"start_service ignored (unknown serviceClass): serviceId={sid}")
