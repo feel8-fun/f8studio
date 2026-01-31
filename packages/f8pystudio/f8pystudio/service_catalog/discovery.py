@@ -192,12 +192,33 @@ def _describe_entry(service_dir: Path, entry: F8ServiceEntry) -> dict[str, Any] 
 
     out = (proc.stdout or "").strip()
     err = (proc.stderr or "").strip()
-    if err and not out:
-        logger.error(f"Error output from describe command {' '.join(cmd)}:\n{err}")
+
+    def _filter_benign_stderr(text: str) -> str:
+        """
+        Some launchers print informational messages to stderr even on success.
+
+        Example: `pixi run` prints "Pixi task (...): <cmd>" to stderr by default.
+        Treat these as benign so `--describe` discovery still works.
+        """
+        if not text:
+            return ""
+        keep: list[str] = []
+        for line in str(text).splitlines():
+            s = str(line).strip()
+            if not s:
+                continue
+            if s.startswith("Pixi task ("):
+                continue
+            keep.append(line)
+        return "\n".join(keep).strip()
+
+    err2 = _filter_benign_stderr(err)
+    if err2 and not out:
+        logger.error(f"Error output from describe command {' '.join(cmd)}:\n{err2}")
         return None
-    elif err:
-        logger.warning(f"Error output from describe command {' '.join(cmd)}:\n{err}")
-        return None
+    elif err2:
+        # Don't fail discovery if stdout contains JSON; stderr might contain harmless noise.
+        logger.warning(f"Error output from describe command {' '.join(cmd)}:\n{err2}")
 
     def _extract_last_json_obj(text: str) -> Any | None:
         """

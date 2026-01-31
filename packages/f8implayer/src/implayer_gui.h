@@ -20,6 +20,7 @@ class ImPlayerGui {
     std::function<void()> stop;
     std::function<void(double position_seconds)> seek;
     std::function<void(double volume01)> set_volume;
+    std::function<void(bool loop)> set_loop;
 
     std::function<void(int index)> playlist_select;
     std::function<void()> playlist_next;
@@ -37,7 +38,7 @@ class ImPlayerGui {
 
   void processEvent(SDL_Event* ev);
   void renderOverlay(const MpvPlayer& player, const Callbacks& cb, const std::string& last_error,
-                     const std::vector<std::string>& playlist, int playlist_index, bool playing);
+                     const std::vector<std::string>& playlist, int playlist_index, bool playing, bool loop);
 
   bool wantsRepaint() const { return dirty_; }
   void clearRepaintFlag() { dirty_ = false; }

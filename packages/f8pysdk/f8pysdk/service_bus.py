@@ -431,13 +431,24 @@ class ServiceBus:
     async def _load_active_from_kv(self) -> None:
         """
         Initialize `active` from KV (best-effort).
+
+        If KV has no value yet, seed the default (True) into KV so:
+        - UIs can read `nodes.<serviceId>.state.active` without special-casing "missing"
+        - `state_debug ... get_state miss ... active` noise is avoided on first boot
         """
-        try:
-            v = await self.get_state(self.service_id, "active")
-        except Exception:
-            v = None
-        if v is None:
+        key = kv_key_node_state(node_id=self.service_id, field="active")
+        raw = await self._transport.kv_get(key)
+        if not raw:
+            await self._apply_active(True, persist=True, source="runtime", meta={"init": True, "seed": True})
             return
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except Exception:
+            return
+        if isinstance(payload, dict) and "value" in payload:
+            v = payload.get("value")
+        else:
+            v = payload
         try:
             active = bool(v)
         except Exception:

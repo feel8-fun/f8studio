@@ -82,7 +82,7 @@ class ServiceProcessManager:
                     p.stdout.close()
         except Exception:
             pass
- 
+
     def stop(self, service_id: str) -> bool:
         sid = str(service_id)
         p = self._procs.get(sid)
@@ -100,7 +100,7 @@ class ServiceProcessManager:
         except Exception:
             pass
 
-        # `service.yml` launch commonly uses `uv run ...` which spawns a child Python process.
+        # `service.yml` launch commonly uses `pixi run ...` which spawns a child Python process.
         # On Windows, `terminate()` only kills the parent process; explicitly kill the tree.
         if os.name == "nt" and pid:
             try:

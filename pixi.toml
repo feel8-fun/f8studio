@@ -1,0 +1,53 @@
+[workspace]
+name = "feel8"
+version = "0.1.0"
+description = "Feel8 meta package"
+channels = ["conda-forge"]
+platforms = ["win-64", "linux-64"]
+
+[dependencies]
+
+[system-requirements]
+# Pixi uses `system-requirements` to determine the compatible manylinux tag for PyPI wheels on linux.
+# PySide6 6.10.1 wheels are published as `manylinux_2_34_x86_64`, so we must require glibc >= 2.34
+# for the linux environment solve to succeed.
+libc = { family = "glibc", version = "2.34" }
+
+[feature.py313.dependencies]
+python = "3.13.*"
+pip = ">=24"
+
+[feature.sdk.pypi-dependencies]
+f8pysdk = { path = "packages/f8pysdk", editable = true }
+
+[feature.engine.pypi-dependencies]
+f8pyengine = { path = "packages/f8pyengine", editable = true }
+
+
+[feature.studio.pypi-dependencies]
+f8pystudio = { path = "packages/f8pystudio", editable = true }
+pyside6 = ">=6.10.1"
+qtpy = ">=2.4.3"
+websockets = ">=16.0"
+aiortc = ">=1.14.0"
+
+[feature.vision.pypi-dependencies]
+numpy = ">=2.2.0"
+opencv-contrib-python = ">=4.13.0.90"
+
+[feature.onnx.dependencies]
+# Separate environment for ONNXRuntime GPU wheels.
+
+[feature.onnx.pypi-dependencies]
+f8pyonnx_tracker = { path = "packages/f8pyonnx_tracker", editable = true }
+onnxruntime-gpu = ">=1.17.0"
+pyyaml = ">=6.0.0"
+
+[environments]
+default = { features = ["py313", "sdk", "engine", "studio", "vision"], solve-group = "default" }
+onnx = { features = ["py313", "sdk", "onnx", "vision"], solve-group = "onnx" }
+
+[tasks]
+engine = "python -m f8pyengine.main"
+studio = "python -m f8pystudio.main"
+onnxtracker = "python -m f8pyonnx_tracker.main"

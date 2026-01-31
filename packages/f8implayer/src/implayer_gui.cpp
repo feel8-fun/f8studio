@@ -84,7 +84,7 @@ void ImPlayerGui::processEvent(SDL_Event* ev) {
 }
 
 void ImPlayerGui::renderOverlay(const MpvPlayer& player, const Callbacks& cb, const std::string& last_error,
-                                const std::vector<std::string>& playlist, int playlist_index, bool playing) {
+                                const std::vector<std::string>& playlist, int playlist_index, bool playing, bool loop) {
   if (!started_)
     return;
 
@@ -157,6 +157,13 @@ void ImPlayerGui::renderOverlay(const MpvPlayer& player, const Callbacks& cb, co
       show_playlist_ = show_playlist_ || (playlist.size() > 1);
       if (ImGui::SmallButton(show_playlist_ ? "List:On" : "List:Off")) {
         show_playlist_ = !show_playlist_;
+        dirty_ = true;
+      }
+
+      ImGui::SameLine();
+      if (ImGui::SmallButton(loop ? "Loop:On" : "Loop:Off")) {
+        if (cb.set_loop)
+          cb.set_loop(!loop);
         dirty_ = true;
       }
 

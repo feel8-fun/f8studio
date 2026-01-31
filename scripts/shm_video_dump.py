@@ -25,7 +25,7 @@ def main() -> int:
         import cv2  # type: ignore
     except Exception as e:
         print(f"Missing dependency: {e}", file=sys.stderr)
-        print("Install: uv sync (or pip install numpy opencv-python)", file=sys.stderr)
+        print("Install: pixi install (or pip install numpy opencv-python)", file=sys.stderr)
         return 2
 
     shm_name = default_video_shm_name(args.service_id)

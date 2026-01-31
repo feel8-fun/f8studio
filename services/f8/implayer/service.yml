@@ -3,9 +3,11 @@ serviceClass: f8.implayer
 label: IM Player
 version: 0.0.1
 launch:
-  command: uv
+  command: pixi
   args:
     - run
+    - -e
+    - default
     - python
     - scripts/run_cpp_service.py
     - --service-dir

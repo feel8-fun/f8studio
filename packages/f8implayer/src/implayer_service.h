@@ -123,6 +123,7 @@ class ImPlayerService final : public f8::cppsdk::LifecycleNode,
   std::atomic<double> duration_seconds_{0.0};
   std::atomic<bool> playing_{false};
   std::atomic<bool> media_finished_{false};
+  std::atomic<bool> eof_reached_{false};
 
   std::int64_t last_state_pub_ms_ = 0;
   std::int64_t last_playback_data_pub_ms_ = 0;
@@ -142,6 +143,8 @@ class ImPlayerService final : public f8::cppsdk::LifecycleNode,
   float view_pan_start_y_ = 0.0f;
   unsigned view_last_video_w_ = 0;
   unsigned view_last_video_h_ = 0;
+
+  bool loop_ = false;
 
   std::mutex render_mu_;
 };

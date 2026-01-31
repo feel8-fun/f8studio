@@ -91,7 +91,23 @@ class ServiceCliTemplate(ABC):
         args = parser.parse_args(argv)
 
         if args.describe:
-            print(json.dumps(self.describe_json(), ensure_ascii=False, indent=1))
+            payload = json.dumps(self.describe_json(), ensure_ascii=False, indent=1)
+            try:
+                # On Windows, the console encoding may be cp1252 and crash on unicode.
+                reconfigure = getattr(sys.stdout, "reconfigure", None)
+                if callable(reconfigure):
+                    try:
+                        reconfigure(encoding="utf-8", errors="replace")
+                    except Exception:
+                        pass
+                print(payload)
+            except UnicodeEncodeError:
+                try:
+                    sys.stdout.buffer.write(payload.encode("utf-8", errors="replace"))
+                    sys.stdout.buffer.write(b"\n")
+                    sys.stdout.flush()
+                except Exception:
+                    print(json.dumps(self.describe_json(), ensure_ascii=True, indent=1))
             return 0
 
         service_id = str(args.service_id or "").strip()

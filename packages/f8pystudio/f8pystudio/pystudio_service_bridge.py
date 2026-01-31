@@ -66,9 +66,39 @@ class _AsyncThread:
             await asyncio.sleep(0.05)
 
     def submit(self, coro: Any) -> "asyncio.Future[Any]":
+        """
+        Submit a coroutine to the thread's event loop.
+
+        Accepts either:
+        - a coroutine object
+        - a coroutine function (no-arg), which will be called lazily
+
+        Important: if the async thread isn't started yet, we close coroutine
+        objects to avoid "coroutine was never awaited" warnings.
+        """
         if self._loop is None:
+            try:
+                if asyncio.iscoroutine(coro):
+                    coro.close()
+            except Exception:
+                pass
             raise RuntimeError("async thread not started")
-        return asyncio.run_coroutine_threadsafe(coro, self._loop)  # type: ignore[arg-type]
+
+        try:
+            if asyncio.iscoroutinefunction(coro):
+                coro_obj = coro()
+            else:
+                coro_obj = coro
+            if not asyncio.iscoroutine(coro_obj):
+                raise TypeError(f"submit(...) requires a coroutine; got {type(coro_obj).__name__}")
+            return asyncio.run_coroutine_threadsafe(coro_obj, self._loop)  # type: ignore[arg-type]
+        except Exception:
+            try:
+                if asyncio.iscoroutine(coro):
+                    coro.close()
+            except Exception:
+                pass
+            raise
 
     def stop(self) -> None:
         self._stop.set()

@@ -27,7 +27,7 @@ Fresh workspace for the API-first, NATS-only architecture. Current focus is cont
 - Optional: `-ChangedOnly` or `-StagedOnly`
 
 ## SHM tools
-- Audio waveform viewer: `uv run scripts/audioshm_viewer.py --service-id audiocap --use-event`
+- Audio waveform viewer: `pixi run -e default python scripts/audioshm_viewer.py --service-id audiocap --use-event`
 
 ## Audio capture
 - List recording devices: `build/bin/f8audiocap_service.exe --list-devices`

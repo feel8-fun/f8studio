@@ -17,6 +17,10 @@ node_modules/
 *.tmp
 tmp/
 .uv-cache/
+.uv/
+.pixi/
+pixi.lock
+uv.lock
 
 # Ignore IDE-specific folder
 .vscode/
@@ -69,3 +73,4 @@ imgui.ini
 !**/.gitkeep
 
 **/ignore/*
+*.onnx

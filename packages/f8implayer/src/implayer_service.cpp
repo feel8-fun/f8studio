@@ -196,6 +196,7 @@ bool ImPlayerService::start() {
         [this]() {
           playing_.store(false, std::memory_order_relaxed);
           media_finished_.store(true, std::memory_order_release);
+          eof_reached_.store(true, std::memory_order_release);
         });
   } catch (const std::exception& e) {
     spdlog::error("mpv init failed: {}", e.what());
@@ -327,6 +328,10 @@ void ImPlayerService::tick() {
           std::string err;
           (void)cmd_set_volume(json{{"volume", vol}}, err);
         };
+        cb.set_loop = [this](bool loop) {
+          std::lock_guard<std::mutex> lock(state_mu_);
+          loop_ = loop;
+        };
         cb.playlist_select = [this](int index) {
           playlist_play_index(index);
         };
@@ -340,20 +345,22 @@ void ImPlayerService::tick() {
         std::string err;
         std::vector<std::string> playlist_snapshot;
         int playlist_index_snapshot = -1;
+        bool loop_snapshot = false;
         {
           std::lock_guard<std::mutex> lock(state_mu_);
           err = last_error_;
           playlist_snapshot = playlist_;
           playlist_index_snapshot = playlist_index_;
+          loop_snapshot = loop_;
         }
 
         const SdlVideoWindow::ViewTransform view{view_zoom_, view_pan_x_, view_pan_y_};
         const bool playing = playing_.load(std::memory_order_relaxed);
         window_->present(
             *player_,
-            [this, &cb, &err, &playlist_snapshot, playlist_index_snapshot, playing]() {
+            [this, &cb, &err, &playlist_snapshot, playlist_index_snapshot, playing, loop_snapshot]() {
               if (gui_ && player_) {
-                gui_->renderOverlay(*player_, cb, err, playlist_snapshot, playlist_index_snapshot, playing);
+                gui_->renderOverlay(*player_, cb, err, playlist_snapshot, playlist_index_snapshot, playing, loop_snapshot);
                 gui_->clearRepaintFlag();
               }
             },
@@ -557,6 +564,17 @@ bool ImPlayerService::on_set_state(const std::string& node_id, const std::string
         ok = true;
       }
     }
+  } else if (f == "loop") {
+    if (!value.is_boolean()) {
+      err = "loop must be boolean";
+      ok = false;
+    } else {
+      {
+        std::lock_guard<std::mutex> lock(state_mu_);
+        loop_ = value.get<bool>();
+      }
+      ok = true;
+    }
   } else if (f == "videoShmMaxWidth" || f == "videoShmMaxHeight") {
     if (!value.is_number_integer() && !value.is_number()) {
       err = "value must be a number";
@@ -616,6 +634,9 @@ bool ImPlayerService::on_set_state(const std::string& node_id, const std::string
   } else if (f == "mediaUrl") {
     std::lock_guard<std::mutex> lock(state_mu_);
     write_value = media_url_;
+  } else if (f == "loop") {
+    std::lock_guard<std::mutex> lock(state_mu_);
+    write_value = loop_;
   } else if (f == "videoShmMaxWidth") {
     write_value = cfg_.video_shm_max_width;
   } else if (f == "videoShmMaxHeight") {
@@ -795,6 +816,8 @@ void ImPlayerService::playlist_play_index(int index) {
 
 void ImPlayerService::playlist_next() {
   std::string url;
+  bool loop = false;
+  bool single = false;
   {
     std::lock_guard<std::mutex> lock(state_mu_);
     if (playlist_.empty())
@@ -802,12 +825,42 @@ void ImPlayerService::playlist_next() {
     if (playlist_index_ < 0)
       playlist_index_ = 0;
     const int next = playlist_index_ + 1;
-    if (next >= static_cast<int>(playlist_.size()))
-      return;
-    playlist_index_ = next;
-    url = playlist_[static_cast<std::size_t>(playlist_index_)];
+    loop = loop_;
+    single = (playlist_.size() == 1);
+    if (next >= static_cast<int>(playlist_.size())) {
+      if (!loop)
+        return;
+      if (single) {
+        url = playlist_[0];
+      } else {
+        playlist_index_ = 0;
+        url = playlist_[0];
+      }
+    } else {
+      playlist_index_ = next;
+      url = playlist_[static_cast<std::size_t>(playlist_index_)];
+    }
   }
   std::string err;
+  if (single) {
+    if (!player_) {
+      return;
+    }
+    if (!player_->openMedia(url)) {
+      err = "mpv loadfile failed";
+      std::lock_guard<std::mutex> lock(state_mu_);
+      last_error_ = err;
+      return;
+    }
+    eof_reached_.store(false, std::memory_order_release);
+    player_->seek(0.0);
+    if (active_.load(std::memory_order_acquire)) {
+      (void)player_->play();
+    } else {
+      player_->pause();
+    }
+    return;
+  }
   (void)open_media_internal(url, true, err);
 }
 
@@ -861,6 +914,7 @@ bool ImPlayerService::open_media_internal(const std::string& url, bool keep_play
     last_error_ = err;
     return false;
   }
+  eof_reached_.store(false, std::memory_order_release);
   {
     std::lock_guard<std::mutex> lock(state_mu_);
     media_url_ = u;
@@ -923,6 +977,7 @@ bool ImPlayerService::cmd_stop(std::string& err) {
     return false;
   }
   player_->stop();
+  eof_reached_.store(false, std::memory_order_release);
   return true;
 }
 
@@ -948,7 +1003,30 @@ bool ImPlayerService::cmd_seek(const nlohmann::json& args, std::string& err) {
     err = "missing position";
     return false;
   }
+  if (eof_reached_.load(std::memory_order_acquire)) {
+    std::string url;
+    {
+      std::lock_guard<std::mutex> lock(state_mu_);
+      url = media_url_;
+    }
+    if (url.empty()) {
+      err = "no media loaded";
+      return false;
+    }
+    if (!player_->openMedia(url)) {
+      err = "mpv loadfile failed";
+      std::lock_guard<std::mutex> lock(state_mu_);
+      last_error_ = err;
+      return false;
+    }
+    eof_reached_.store(false, std::memory_order_release);
+  }
   player_->seek(pos);
+  if (active_.load(std::memory_order_acquire)) {
+    (void)player_->play();
+  } else {
+    player_->pause();
+  }
   return true;
 }
 
@@ -999,6 +1077,7 @@ void ImPlayerService::publish_static_state() {
     want("videoShmName", shm_->regionName());
     want("videoShmEvent", shm_->frameEventName());
     want("active", active_.load());
+    want("loop", loop_);
     want("videoShmMaxWidth", cfg_.video_shm_max_width);
     want("videoShmMaxHeight", cfg_.video_shm_max_height);
     want("videoShmMaxFps", cfg_.video_shm_max_fps);
@@ -1022,6 +1101,7 @@ void ImPlayerService::publish_dynamic_state() {
     const double vol = volume_;
     const std::string url = media_url_;
     const std::string err = last_error_;
+    const bool loop = loop_;
 
     auto want = [&](const std::string& field, const json& v) {
       auto it = published_state_.find(field);
@@ -1034,6 +1114,7 @@ void ImPlayerService::publish_dynamic_state() {
     want("playing", playing);
     want("duration", dur);
     want("volume", vol);
+    want("loop", loop);
     want("mediaUrl", url);
     want("lastError", err);
 
@@ -1060,6 +1141,7 @@ json ImPlayerService::describe() {
   service["description"] = "C++ MPV-based player service with shared-memory video output.";
   service["stateFields"] = json::array({
       state_field("active", schema_boolean(), "rw", "Active", "Pause playback when false.", true),
+      state_field("loop", schema_boolean(), "rw", "Loop", "Repeat playlist when reaching EOF.", false),
       state_field("mediaUrl", schema_string(), "rw", "Media URL", "URI or file path to open.", true),
       state_field("volume", schema_number(0.0, 1.0), "rw", "Volume", "0.0-1.0", false, "slider"),
       state_field("playing", schema_boolean(), "ro", "Playing", "Playback state.", true),

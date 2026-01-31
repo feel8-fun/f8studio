@@ -3,7 +3,7 @@ serviceClass: f8.pystudio
 label: PyStudio
 version: 0.0.1
 launch:
-  command: uv
-  args: ["run", "python", "-m", "f8pystudio.main"]
+  command: pixi
+  args: ["run", "-e", "default", "studio"]
   env: {}
   workdir: "../../../"

@@ -83,6 +83,8 @@ void MpvPlayer::initializeMpv() {
   mpv_set_option_string(mpv_, "msg-level", "all=v");
   mpv_set_option_string(mpv_, "config", "yes");
   mpv_set_option_string(mpv_, "load-scripts", "yes");
+  // Keep the file open at EOF so seeking still works after playback finishes.
+  mpv_set_option_string(mpv_, "keep-open", "yes");
   // Enable ytdl_hook.lua (youtube-dl / yt-dlp) when available; mpv will auto-detect the binary.
   mpv_set_option_string(mpv_, "ytdl", "yes");
   mpv_set_option_string(mpv_, "ytdl-format", "best");
