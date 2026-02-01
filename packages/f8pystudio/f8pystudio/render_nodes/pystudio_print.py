@@ -201,8 +201,46 @@ class _PrintPreviewPane(QtWidgets.QWidget):
             self._pending_text = s
             return
         self._pending_text = None
+        vbar = None
+        hbar = None
+        try:
+            vbar = self._text.verticalScrollBar()
+            hbar = self._text.horizontalScrollBar()
+        except Exception:
+            vbar = None
+            hbar = None
+        v_val = vbar.value() if vbar is not None else None
+        v_max = vbar.maximum() if vbar is not None else None
+        h_val = hbar.value() if hbar is not None else None
+        h_max = hbar.maximum() if hbar is not None else None
+        follow_tail = False
+        try:
+            if v_val is not None and v_max is not None:
+                follow_tail = (v_max - v_val) <= 2
+        except Exception:
+            follow_tail = False
         try:
             self._text.setPlainText(s)
+        except Exception:
+            pass
+        # Restore scroll position: if the user was at the bottom, keep following tail;
+        # otherwise keep the previous position (relative from bottom, best-effort).
+        try:
+            if vbar is not None:
+                new_max = int(vbar.maximum())
+                if follow_tail:
+                    vbar.setValue(new_max)
+                else:
+                    if v_val is not None and v_max is not None:
+                        delta_from_bottom = int(v_max) - int(v_val)
+                        vbar.setValue(max(0, new_max - delta_from_bottom))
+        except Exception:
+            pass
+        try:
+            if hbar is not None and h_val is not None and h_max is not None:
+                new_hmax = int(hbar.maximum())
+                delta_from_right = int(h_max) - int(h_val)
+                hbar.setValue(max(0, new_hmax - delta_from_right))
         except Exception:
             pass
 

@@ -1,0 +1,9 @@
+schemaVersion: f8serviceEntry/1
+serviceClass: f8.templatetracker
+label: Template Tracker
+version: 0.0.1
+launch:
+  command: pixi
+  args: ["run", "-e", "default", "template_tracker"]
+  env: {}
+  workdir: "../../../"

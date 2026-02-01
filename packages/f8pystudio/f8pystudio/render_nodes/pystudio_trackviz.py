@@ -18,6 +18,20 @@ def _color_for_id(track_id: int) -> tuple[int, int, int]:
     return int(r * 255), int(g * 255), int(b * 255)
 
 
+def _color_for_kind(kind: str) -> tuple[int, int, int] | None:
+    """
+    Optional override colors (used when `kind` is present in samples).
+    - match: yellow
+    - track: green
+    """
+    k = str(kind or "").strip().lower()
+    if k == "match":
+        return (235, 200, 70)
+    if k == "track":
+        return (80, 220, 120)
+    return None
+
+
 _COCO17_EDGES: list[tuple[int, int]] = [
     (0, 1),
     (0, 2),
@@ -105,7 +119,7 @@ class _TrackVizCanvas(pg.GraphicsObject):  # type: ignore[misc]
 
             r, g, b = _color_for_id(tid)
 
-            centers: list[tuple[float, float, float]] = []
+            centers: list[tuple[float, float, float, int, int, int]] = []
 
             # Draw fading boxes and compute trail centers.
             for s in hist:
@@ -130,20 +144,30 @@ class _TrackVizCanvas(pg.GraphicsObject):  # type: ignore[misc]
                         h = max(0.0, y2 - y1)
                         if w <= 0.5 or h <= 0.5:
                             continue
-                        pen = QtGui.QPen(QtGui.QColor(r, g, b, int(a01 * 255)))
+                        kind = ""
+                        try:
+                            kind = str(s.get("kind") or "")
+                        except Exception:
+                            kind = ""
+                        override = _color_for_kind(kind)
+                        rr, gg, bb_ = (override if override is not None else (r, g, b))
+                        pen = QtGui.QPen(QtGui.QColor(rr, gg, bb_, int(a01 * 255)))
                         pen.setWidthF(2.0 if a01 > 0.7 else 1.0)
                         p.setPen(pen)
                         p.setBrush(QtCore.Qt.NoBrush)
                         p.drawRect(QtCore.QRectF(x1, y1, w, h))
-                        centers.append(((x1 + x2) * 0.5, (y1 + y2) * 0.5, a01))
+                        centers.append(((x1 + x2) * 0.5, (y1 + y2) * 0.5, a01, rr, gg, bb_))
                     except Exception:
                         pass
 
             # Trail as fading segments.
             if len(centers) >= 2:
-                for (x0, y0, a0), (x1, y1, a1) in zip(centers[:-1], centers[1:], strict=False):
+                for (x0, y0, a0, r0, g0, b0), (x1, y1, a1, r1, g1, b1) in zip(centers[:-1], centers[1:], strict=False):
                     a = max(0.05, min(1.0, (a0 + a1) * 0.5))
-                    pen = QtGui.QPen(QtGui.QColor(r, g, b, int(a * 255)))
+                    rr = int((r0 + r1) * 0.5)
+                    gg = int((g0 + g1) * 0.5)
+                    bb_ = int((b0 + b1) * 0.5)
+                    pen = QtGui.QPen(QtGui.QColor(rr, gg, bb_, int(a * 255)))
                     pen.setWidthF(2.0)
                     p.setPen(pen)
                     p.drawLine(QtCore.QPointF(x0, y0), QtCore.QPointF(x1, y1))

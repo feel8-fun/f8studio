@@ -33,14 +33,18 @@ class _Sample:
     ts_ms: int
     bbox: tuple[float, float, float, float] | None = None  # x1,y1,x2,y2
     keypoints: list[dict[str, Any]] | None = None
+    kind: str = "track"  # "track" | "match" | other
 
 
 class PyStudioTrackVizRuntimeNode(RuntimeNode):
     """
     Studio-side node that visualizes tracking results.
 
-    Expected input payload (from f8.onnxtracker `detections`):
+    Expected input payloads:
+    - Multi-target (from f8.onnxtracker `detections`):
       { "tsMs": int, "width": int, "height": int, "tracks": [ {id, bbox, keypoints?}, ... ] }
+    - Single-target (from f8.templatetracker `tracking`):
+      { "tsMs": int, "width": int, "height": int, "bbox": [x1,y1,x2,y2] | null }
 
     The runtime node maintains a short history per track id, and emits a UI command
     that the render node draws (boxes, pose, and fading motion trails).
@@ -114,36 +118,75 @@ class PyStudioTrackVizRuntimeNode(RuntimeNode):
         except Exception:
             pass
 
-        tracks = payload.get("tracks")
-        if isinstance(tracks, list):
-            for t in tracks:
-                if not isinstance(t, dict):
-                    continue
-                try:
-                    tid = int(t.get("id"))
-                except Exception:
-                    continue
-                bbox = None
-                try:
-                    bb = t.get("bbox")
-                    if isinstance(bb, (list, tuple)) and len(bb) == 4:
-                        x1, y1, x2, y2 = (float(bb[0]), float(bb[1]), float(bb[2]), float(bb[3]))
-                        bbox = (x1, y1, x2, y2)
-                except Exception:
-                    bbox = None
-                kps = None
-                try:
-                    kp = t.get("keypoints")
-                    if isinstance(kp, list):
-                        kps = [x for x in kp if isinstance(x, dict)]
-                except Exception:
-                    kps = None
+        tracks_any = payload.get("tracks")
+        tracks: list[dict[str, Any]] = [t for t in tracks_any if isinstance(t, dict)] if isinstance(tracks_any, list) else []
 
-                q = self._tracks.get(tid)
-                if q is None:
-                    q = deque()
-                    self._tracks[tid] = q
-                q.append(_Sample(ts_ms=now, bbox=bbox, keypoints=kps))
+        # Single-target compatibility: accept a top-level bbox and treat it as track id 1.
+        if not tracks:
+            bb0 = payload.get("bbox")
+            bbox0 = None
+            kind0 = "track"
+            try:
+                if isinstance(bb0, (list, tuple)) and len(bb0) == 4:
+                    x1, y1, x2, y2 = (float(bb0[0]), float(bb0[1]), float(bb0[2]), float(bb0[3]))
+                    bbox0 = (x1, y1, x2, y2)
+            except Exception:
+                bbox0 = None
+            if bbox0 is None:
+                # Fallback for template tracker when status="lost": visualize best match bbox (debug-friendly).
+                try:
+                    m = payload.get("match") if isinstance(payload.get("match"), dict) else {}
+                    mb = (m or {}).get("bbox")
+                    if isinstance(mb, (list, tuple)) and len(mb) == 4 and all(v is not None for v in mb):
+                        x1, y1, x2, y2 = (float(mb[0]), float(mb[1]), float(mb[2]), float(mb[3]))
+                        bbox0 = (x1, y1, x2, y2)
+                        kind0 = "match"
+                except Exception:
+                    bbox0 = None
+            kps0 = None
+            try:
+                kp0 = payload.get("keypoints")
+                if isinstance(kp0, list):
+                    kps0 = [x for x in kp0 if isinstance(x, dict)]
+            except Exception:
+                kps0 = None
+            tracks = [{"id": 1, "bbox": list(bbox0) if bbox0 is not None else None, "keypoints": kps0, "kind": kind0}]
+
+        for t in tracks:
+            if not isinstance(t, dict):
+                continue
+            if not isinstance(t, dict):
+                continue
+            try:
+                tid = int(t.get("id"))
+            except Exception:
+                continue
+            bbox = None
+            try:
+                bb = t.get("bbox")
+                if isinstance(bb, (list, tuple)) and len(bb) == 4 and all(v is not None for v in bb):
+                    x1, y1, x2, y2 = (float(bb[0]), float(bb[1]), float(bb[2]), float(bb[3]))
+                    bbox = (x1, y1, x2, y2)
+            except Exception:
+                bbox = None
+            kps = None
+            try:
+                kp = t.get("keypoints")
+                if isinstance(kp, list):
+                    kps = [x for x in kp if isinstance(x, dict)]
+            except Exception:
+                kps = None
+            kind = "track"
+            try:
+                kind = str(t.get("kind") or t.get("source") or "track")
+            except Exception:
+                kind = "track"
+
+            q = self._tracks.get(tid)
+            if q is None:
+                q = deque()
+                self._tracks[tid] = q
+            q.append(_Sample(ts_ms=now, bbox=bbox, keypoints=kps, kind=kind))
 
         self._dirty = True
         self._prune(now_ms=now)
@@ -208,6 +251,8 @@ class PyStudioTrackVizRuntimeNode(RuntimeNode):
                     item["bbox"] = [float(x) for x in s.bbox]
                 if s.keypoints is not None:
                     item["keypoints"] = s.keypoints
+                if s.kind:
+                    item["kind"] = str(s.kind)
                 hist.append(item)
             out_tracks.append({"id": int(tid), "history": hist})
 
@@ -320,4 +365,3 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
         overwrite=True,
     )
     return reg
-

@@ -135,6 +135,7 @@ class PyStudioServiceBridge(QtCore.QObject):
     service_output = QtCore.Signal(str, str)  # serviceId, line
     log = QtCore.Signal(str)
     service_process_state = QtCore.Signal(str, bool)  # serviceId, running
+    _remote_command_response = QtCore.Signal(str, object, object)  # reqId, result, err
 
     def __init__(self, config: PyStudioServiceBridgeConfig, parent: QtCore.QObject | None = None) -> None:
         super().__init__(parent)
@@ -155,6 +156,22 @@ class PyStudioServiceBridge(QtCore.QObject):
         self._svc: PyStudioService | None = None
         self._nc: Any = None
         self._last_nats_error_log_s: float = 0.0
+        self._pending_remote_command_cbs: dict[str, Callable[[dict[str, Any] | None, str | None], None]] = {}
+
+        try:
+            self._remote_command_response.connect(self._on_remote_command_response)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+    @QtCore.Slot(str, object, object)
+    def _on_remote_command_response(self, req_id: str, result: object, err: object) -> None:
+        cb = self._pending_remote_command_cbs.pop(str(req_id), None)
+        if cb is None:
+            return
+        try:
+            cb(result if isinstance(result, dict) else None, str(err) if err else None)
+        except Exception:
+            return
 
     @property
     def studio_service_id(self) -> str:
@@ -1068,6 +1085,130 @@ class PyStudioServiceBridge(QtCore.QObject):
         try:
             self._async.submit(_do())
         except Exception:
+            return
+
+    def request_remote_command(
+        self,
+        service_id: str,
+        call: str,
+        args: dict[str, Any] | None,
+        cb: Callable[[dict[str, Any] | None, str | None], None],
+        *,
+        timeout_s: float = 2.0,
+    ) -> None:
+        """
+        Invoke a user-defined command on a remote service and return the parsed `result`.
+
+        Callback is always delivered on the Qt main thread as:
+        - cb(result_dict, None) on success (result may be any JSON object; non-dict becomes {"value": ...})
+        - cb(None, "error message") on failure
+        """
+        req_id = new_id()
+        self._pending_remote_command_cbs[str(req_id)] = cb
+
+        try:
+            service_id = ensure_token(str(service_id), label="service_id")
+        except Exception as exc:
+            try:
+                self._remote_command_response.emit(str(req_id), None, str(exc))
+            except Exception:
+                pass
+            return
+        call = str(call or "").strip()
+        if not call or service_id == self.studio_service_id:
+            try:
+                self._remote_command_response.emit(str(req_id), None, "invalid call/service_id")
+            except Exception:
+                pass
+            return
+
+        def _coerce_json_value(v: Any) -> Any:
+            if v is None or isinstance(v, (str, int, float, bool)):
+                return v
+            if isinstance(v, (list, tuple)):
+                return [_coerce_json_value(x) for x in v]
+            if isinstance(v, dict):
+                return {str(k): _coerce_json_value(x) for k, x in v.items()}
+            try:
+                model_dump = getattr(v, "model_dump", None)
+                if callable(model_dump):
+                    return _coerce_json_value(model_dump(mode="json"))
+            except Exception:
+                pass
+            try:
+                if hasattr(v, "root"):
+                    return _coerce_json_value(getattr(v, "root"))
+            except Exception:
+                pass
+            return v
+
+        args_json = _coerce_json_value(args or {})
+
+        async def _do() -> None:
+            nc = await self._ensure_nc()
+            if nc is None:
+                try:
+                    self._remote_command_response.emit(str(req_id), None, "NATS not connected")
+                except Exception:
+                    pass
+                return
+            subject = cmd_channel_subject(service_id)
+            payload = json.dumps(
+                {"reqId": str(req_id), "call": call, "args": args_json, "meta": {"actor": "studio", "source": "ui"}},
+                ensure_ascii=False,
+                default=str,
+            ).encode("utf-8")
+            try:
+                msg = await nc.request(subject, payload, timeout=float(timeout_s))
+                raw = bytes(getattr(msg, "data", b"") or b"")
+                if not raw:
+                    try:
+                        self._remote_command_response.emit(str(req_id), None, "empty response")
+                    except Exception:
+                        pass
+                    return
+                try:
+                    resp = json.loads(raw.decode("utf-8"))
+                except Exception:
+                    resp = {}
+                if not isinstance(resp, dict):
+                    try:
+                        self._remote_command_response.emit(str(req_id), None, "invalid response")
+                    except Exception:
+                        pass
+                    return
+                if resp.get("ok") is True:
+                    result = resp.get("result")
+                    if isinstance(result, dict):
+                        try:
+                            self._remote_command_response.emit(str(req_id), dict(result), None)
+                        except Exception:
+                            pass
+                    else:
+                        try:
+                            self._remote_command_response.emit(str(req_id), {"value": result}, None)
+                        except Exception:
+                            pass
+                    return
+                err = resp.get("error") if isinstance(resp.get("error"), dict) else {}
+                msg_s = str((err or {}).get("message") or "") if isinstance(err, dict) else ""
+                try:
+                    self._remote_command_response.emit(str(req_id), None, msg_s or "rejected")
+                except Exception:
+                    pass
+            except Exception as exc:
+                try:
+                    self._remote_command_response.emit(str(req_id), None, f"{type(exc).__name__}: {exc}")
+                except Exception:
+                    pass
+
+        try:
+            self._async.submit(_do())
+        except Exception as exc:
+            try:
+                self._remote_command_response.emit(str(req_id), None, str(exc))
+            except Exception:
+                pass
             return
 
     def invoke_remote_command(self, service_id: str, call: str, args: dict[str, Any] | None = None) -> None:

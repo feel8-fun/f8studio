@@ -36,6 +36,9 @@ aiortc = ">=1.14.0"
 numpy = ">=2.2.0"
 opencv-contrib-python = ">=4.13.0.90"
 
+[feature.template_tracker.pypi-dependencies]
+f8pytemplate_tracker = { path = "packages/f8pytemplate_tracker", editable = true }
+
 [feature.onnx.dependencies]
 # Separate environment for ONNXRuntime GPU wheels.
 
@@ -45,10 +48,11 @@ onnxruntime-gpu = ">=1.17.0"
 pyyaml = ">=6.0.0"
 
 [environments]
-default = { features = ["py313", "sdk", "engine", "studio", "vision"], solve-group = "default" }
+default = { features = ["py313", "sdk", "engine", "studio", "vision", "template_tracker"], solve-group = "default" }
 onnx = { features = ["py313", "sdk", "onnx", "vision"], solve-group = "onnx" }
 
 [tasks]
 engine = "python -m f8pyengine.main"
 studio = "python -m f8pystudio.main"
 onnxtracker = "python -m f8pyonnx_tracker.main"
+template_tracker = "python -m f8pytemplate_tracker.main"

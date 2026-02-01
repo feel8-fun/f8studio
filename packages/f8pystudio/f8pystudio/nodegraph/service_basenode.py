@@ -38,6 +38,9 @@ from .service_process_toolbar import ServiceProcessToolbar
 logger = logging.getLogger(__name__)
 
 
+_TEMPLATE_TRACKER_SERVICE_CLASS = "f8.templatetracker"
+
+
 class _F8OnTopComboBox(QtWidgets.QComboBox):
     """
     QComboBox used inside QGraphicsProxyWidget nodes.
@@ -515,6 +518,16 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         if not sid:
             return
         params = list(getattr(cmd, "params", None) or [])
+        if call == "captureFrame":
+            try:
+                node = self._backend_node()
+                spec = getattr(node, "spec", None) if node is not None else None
+                svc_class = str(getattr(spec, "serviceClass", "") or "")
+            except Exception:
+                svc_class = ""
+            if svc_class == _TEMPLATE_TRACKER_SERVICE_CLASS:
+                return self._invoke_template_tracker_capture_flow(bridge=bridge, service_id=sid)
+
         if not params:
             try:
                 bridge.invoke_remote_command(sid, call, {})
@@ -529,6 +542,72 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             bridge.invoke_remote_command(sid, call, args)
         except Exception:
             return
+
+    def _invoke_template_tracker_capture_flow(self, *, bridge: Any, service_id: str) -> None:
+        """
+        Custom UI flow for template tracker:
+        button -> captureFrame -> ROI select -> set_state(templatePngB64)
+        """
+        try:
+            from ..widgets.template_tracker_template import CaptureFrame, TemplateCaptureDialog
+        except Exception:
+            return
+
+        parent = None
+        try:
+            v = self.viewer()
+            parent = v.window() if v is not None else None
+        except Exception:
+            parent = None
+
+        sid = str(service_id or "").strip()
+        if not sid:
+            return
+
+        def _request_capture(done: Any) -> None:
+            def _cb(result: dict[str, Any] | None, err: str | None) -> None:
+                if err:
+                    done(None, err)
+                    return
+                if not isinstance(result, dict):
+                    done(None, "invalid capture result")
+                    return
+                try:
+                    frame_id = int(result.get("frameId") or 0)
+                    ts_ms = int(result.get("tsMs") or 0)
+                    img = result.get("image") if isinstance(result.get("image"), dict) else {}
+                    b64 = str((img or {}).get("b64") or "")
+                    fmt = str((img or {}).get("format") or "")
+                    w = int((img or {}).get("width") or 0)
+                    h = int((img or {}).get("height") or 0)
+                    if not b64:
+                        done(None, "empty image")
+                        return
+                    import base64 as _b64
+
+                    raw = _b64.b64decode(b64.encode("ascii"), validate=False)
+                    done(CaptureFrame(frame_id=frame_id, ts_ms=ts_ms, image_bytes=raw, image_format=fmt, width=w, height=h), None)
+                except Exception as exc:
+                    done(None, str(exc))
+
+            try:
+                bridge.request_remote_command(
+                    sid,
+                    "captureFrame",
+                    {"format": "jpg", "quality": 85, "maxBytes": 900000, "maxWidth": 1280, "maxHeight": 720},
+                    _cb,
+                    timeout_s=2.0,
+                )
+            except Exception as exc:
+                _cb(None, str(exc))
+
+            return
+
+        def _set_template_b64(b64: str) -> None:
+            bridge.set_remote_state(sid, sid, "templatePngB64", str(b64))
+
+        dlg = TemplateCaptureDialog(parent=parent, bridge=bridge, service_id=sid, request_capture=_request_capture, set_template_b64=_set_template_b64)
+        dlg.exec()
 
     def _prompt_command_args(self, cmd: Any) -> dict[str, Any] | None:
         call = str(getattr(cmd, "name", "") or "").strip() or "Command"
