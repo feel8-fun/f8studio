@@ -208,6 +208,22 @@ def register_onnxtracker_specs(registry: RuntimeNodeRegistry | None = None) -> R
             access=F8StateAccess.rw,
             showOnNode=False,
         ),
+        F8StateSpec(
+            name="telemetryIntervalMs",
+            label="Telemetry Interval (ms)",
+            description="Emit telemetry summaries every N milliseconds (0 disables).",
+            valueSchema=integer_schema(default=1000, minimum=0, maximum=60000),
+            access=F8StateAccess.rw,
+            showOnNode=False,
+        ),
+        F8StateSpec(
+            name="telemetryWindowMs",
+            label="Telemetry Window (ms)",
+            description="Rolling window for telemetry averages (ms).",
+            valueSchema=integer_schema(default=2000, minimum=100, maximum=60000),
+            access=F8StateAccess.rw,
+            showOnNode=False,
+        ),
     ]
 
     reg.register_service_spec(
@@ -224,6 +240,11 @@ def register_onnxtracker_specs(registry: RuntimeNodeRegistry | None = None) -> R
                 F8DataPortSpec(
                     name="detections",
                     description="Stream of per-frame detections/tracks.",
+                    valueSchema=any_schema(),
+                ),
+                F8DataPortSpec(
+                    name="telemetry",
+                    description="Periodic telemetry summaries (fps + timings).",
                     valueSchema=any_schema(),
                 )
             ],

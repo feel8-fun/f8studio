@@ -394,9 +394,17 @@ void MpvPlayer::handleVideoReconfig() {
     return;
   int64_t width = 0;
   int64_t height = 0;
-  if (mpv_get_property(mpv_, "dwidth", MPV_FORMAT_INT64, &width) < 0 ||
-      mpv_get_property(mpv_, "dheight", MPV_FORMAT_INT64, &height) < 0) {
-    return;
+  // Use the decoded frame size for the render targets so the on-screen playback
+  // remains full-quality. The SHM size limit is applied later in
+  // copyFrameToSharedMemory() via targetDimensions().
+  //
+  // Fallback to display dimensions if the source dimensions are unavailable.
+  if (mpv_get_property(mpv_, "width", MPV_FORMAT_INT64, &width) < 0 ||
+      mpv_get_property(mpv_, "height", MPV_FORMAT_INT64, &height) < 0) {
+    if (mpv_get_property(mpv_, "dwidth", MPV_FORMAT_INT64, &width) < 0 ||
+        mpv_get_property(mpv_, "dheight", MPV_FORMAT_INT64, &height) < 0) {
+      return;
+    }
   }
   if (width <= 0 || height <= 0)
     return;

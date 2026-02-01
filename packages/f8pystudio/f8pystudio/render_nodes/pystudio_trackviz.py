@@ -1,0 +1,361 @@
+from __future__ import annotations
+
+import colorsys
+from typing import Any
+
+from qtpy import QtCore, QtGui, QtWidgets
+from NodeGraphQt.nodes.base_node import NodeBaseWidget
+
+from ..nodegraph.operator_basenode import F8StudioOperatorBaseNode
+
+import pyqtgraph as pg  # type: ignore[import-not-found]
+
+
+def _color_for_id(track_id: int) -> tuple[int, int, int]:
+    # Stable distinct-ish colors by hue.
+    h = (int(track_id) * 0.161803398875) % 1.0  # golden ratio
+    r, g, b = colorsys.hsv_to_rgb(h, 0.85, 0.95)
+    return int(r * 255), int(g * 255), int(b * 255)
+
+
+_COCO17_EDGES: list[tuple[int, int]] = [
+    (0, 1),
+    (0, 2),
+    (1, 3),
+    (2, 4),
+    (0, 5),
+    (0, 6),
+    (5, 7),
+    (7, 9),
+    (6, 8),
+    (8, 10),
+    (5, 6),
+    (5, 11),
+    (6, 12),
+    (11, 12),
+    (11, 13),
+    (13, 15),
+    (12, 14),
+    (14, 16),
+]
+
+
+class _TrackVizCanvas(pg.GraphicsObject):  # type: ignore[misc]
+    """
+    A single GraphicsObject that paints the whole scene.
+
+    This avoids creating thousands of QGraphicsItems per refresh, which is the
+    primary cause of UI jank/lag when history is enabled.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._payload: dict[str, Any] | None = None
+        self._w: int = 0
+        self._h: int = 0
+
+    def set_payload(self, payload: dict[str, Any]) -> None:
+        self._payload = payload
+        try:
+            self._w = int(payload.get("width") or 0)
+            self._h = int(payload.get("height") or 0)
+        except Exception:
+            self._w, self._h = 0, 0
+        self.prepareGeometryChange()
+        self.update()
+
+    def boundingRect(self) -> QtCore.QRectF:  # type: ignore[override]
+        w = float(max(0, int(self._w)))
+        h = float(max(0, int(self._h)))
+        if w <= 0 or h <= 0:
+            return QtCore.QRectF(0.0, 0.0, 1.0, 1.0)
+        return QtCore.QRectF(0.0, 0.0, w, h)
+
+    def paint(self, p: QtGui.QPainter, *args) -> None:  # type: ignore[override]
+        payload = self._payload
+        if not payload:
+            return
+
+        try:
+            now_ms = int(payload.get("nowMs") or 0)
+        except Exception:
+            now_ms = 0
+        try:
+            history_ms = int(payload.get("historyMs") or 0)
+        except Exception:
+            history_ms = 0
+
+        tracks = payload.get("tracks") if isinstance(payload.get("tracks"), list) else []
+        if not tracks:
+            return
+
+        p.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        p.setRenderHint(QtGui.QPainter.TextAntialiasing, True)
+
+        for t in tracks:
+            if not isinstance(t, dict):
+                continue
+            try:
+                tid = int(t.get("id"))
+            except Exception:
+                continue
+            hist = t.get("history")
+            if not isinstance(hist, list) or not hist:
+                continue
+
+            r, g, b = _color_for_id(tid)
+
+            centers: list[tuple[float, float, float]] = []
+
+            # Draw fading boxes and compute trail centers.
+            for s in hist:
+                if not isinstance(s, dict):
+                    continue
+                try:
+                    ts = int(s.get("tsMs") or 0)
+                except Exception:
+                    ts = 0
+
+                age = max(0, now_ms - ts) if now_ms > 0 and ts > 0 else 0
+                if history_ms > 0:
+                    a01 = max(0.05, 1.0 - (float(age) / float(history_ms)))
+                else:
+                    a01 = 1.0
+
+                bb = s.get("bbox")
+                if isinstance(bb, list) and len(bb) == 4:
+                    try:
+                        x1, y1, x2, y2 = (float(bb[0]), float(bb[1]), float(bb[2]), float(bb[3]))
+                        w = max(0.0, x2 - x1)
+                        h = max(0.0, y2 - y1)
+                        if w <= 0.5 or h <= 0.5:
+                            continue
+                        pen = QtGui.QPen(QtGui.QColor(r, g, b, int(a01 * 255)))
+                        pen.setWidthF(2.0 if a01 > 0.7 else 1.0)
+                        p.setPen(pen)
+                        p.setBrush(QtCore.Qt.NoBrush)
+                        p.drawRect(QtCore.QRectF(x1, y1, w, h))
+                        centers.append(((x1 + x2) * 0.5, (y1 + y2) * 0.5, a01))
+                    except Exception:
+                        pass
+
+            # Trail as fading segments.
+            if len(centers) >= 2:
+                for (x0, y0, a0), (x1, y1, a1) in zip(centers[:-1], centers[1:], strict=False):
+                    a = max(0.05, min(1.0, (a0 + a1) * 0.5))
+                    pen = QtGui.QPen(QtGui.QColor(r, g, b, int(a * 255)))
+                    pen.setWidthF(2.0)
+                    p.setPen(pen)
+                    p.drawLine(QtCore.QPointF(x0, y0), QtCore.QPointF(x1, y1))
+
+            # Pose overlay (only latest sample).
+            last = hist[-1]
+            if not isinstance(last, dict):
+                continue
+            kps = last.get("keypoints")
+            if not (isinstance(kps, list) and kps):
+                continue
+
+            pts: list[tuple[float, float]] = []
+            for kp in kps:
+                if not isinstance(kp, dict):
+                    pts.append((float("nan"), float("nan")))
+                    continue
+                try:
+                    x = float(kp.get("x"))
+                    y = float(kp.get("y"))
+                    pts.append((x, y))
+                except Exception:
+                    pts.append((float("nan"), float("nan")))
+
+            # Skeleton lines.
+            pen = QtGui.QPen(QtGui.QColor(r, g, b, 220))
+            pen.setWidthF(2.0)
+            p.setPen(pen)
+            for i, j in _COCO17_EDGES:
+                if i >= len(pts) or j >= len(pts):
+                    continue
+                x0, y0 = pts[i]
+                x1, y1 = pts[j]
+                if not (x0 == x0 and y0 == y0 and x1 == x1 and y1 == y1):
+                    continue
+                p.drawLine(QtCore.QPointF(x0, y0), QtCore.QPointF(x1, y1))
+
+            # Keypoint dots.
+            brush = QtGui.QBrush(QtGui.QColor(r, g, b, 220))
+            p.setBrush(brush)
+            p.setPen(QtCore.Qt.NoPen)
+            rad = 3.0
+            for x, y in pts:
+                if not (x == x and y == y):
+                    continue
+                p.drawEllipse(QtCore.QPointF(x, y), rad, rad)
+
+
+class _TrackVizPane(QtWidgets.QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        top = QtWidgets.QHBoxLayout()
+        top.setContentsMargins(0, 0, 0, 0)
+        self._title = QtWidgets.QLabel("TrackViz")
+        self._title.setStyleSheet("color: rgb(225, 225, 225);")
+        self._update = QtWidgets.QCheckBox("Update")
+        self._update.setChecked(True)
+        top.addWidget(self._title, 1)
+        top.addWidget(self._update, 0)
+
+        layout.addLayout(top)
+
+        if pg is None:
+            label = QtWidgets.QLabel("pyqtgraph not installed")
+            label.setAlignment(QtCore.Qt.AlignCenter)
+            layout.addWidget(label, 1)
+            self._plot = None
+            self._vb = None
+            self._pending: dict[str, Any] | None = None
+            return
+
+        plot = pg.PlotWidget()
+        plot.setBackground((16, 16, 16))
+        plot.showGrid(x=False, y=False, alpha=0.2)
+        plot.hideAxis("bottom")
+        plot.hideAxis("left")
+        plot.setMouseEnabled(x=True, y=True)
+        plot.setMenuEnabled(False)
+        vb = plot.getPlotItem().getViewBox()
+        vb.invertY(True)
+        vb.setAspectLocked(True)
+
+        layout.addWidget(plot, 1)
+        self._plot = plot
+        self._vb = vb
+        self._canvas = _TrackVizCanvas()
+        vb.addItem(self._canvas)
+
+        self._status = QtWidgets.QLabel("")
+        self._status.setStyleSheet("color: rgb(160, 160, 160);")
+        layout.addWidget(self._status)
+
+        self._pending = None
+        self._last_wh: tuple[int, int] | None = None
+
+        self.setMinimumWidth(320)
+        self.setMinimumHeight(240)
+
+    def update_checkbox(self) -> QtWidgets.QCheckBox:
+        return self._update
+
+    def update_enabled(self) -> bool:
+        try:
+            return bool(self._update.isChecked())
+        except Exception:
+            return True
+
+    def set_update_enabled(self, enabled: bool) -> None:
+        try:
+            self._update.setChecked(bool(enabled))
+        except Exception:
+            pass
+        if self.update_enabled() and self._pending is not None:
+            p = self._pending
+            self._pending = None
+            self.set_scene(p)
+
+    def set_scene(self, payload: dict[str, Any]) -> None:
+        if self._plot is None or self._vb is None:
+            return
+        if not self.update_enabled():
+            self._pending = payload
+            return
+
+        try:
+            w = int(payload.get("width") or 0)
+            h = int(payload.get("height") or 0)
+        except Exception:
+            w, h = 0, 0
+        now_ms = int(payload.get("nowMs") or 0)
+        history_ms = int(payload.get("historyMs") or 0)
+        tracks = payload.get("tracks") if isinstance(payload.get("tracks"), list) else []
+
+        if w > 0 and h > 0:
+            if self._last_wh != (w, h):
+                self._last_wh = (w, h)
+            self._vb.setRange(
+                QtCore.QRectF(0.0, 0.0, float(w), float(h)),
+                padding=0.01,
+                disableAutoRange=True,
+            )
+            self._title.setText(f"TrackViz  {w}x{h}")
+        else:
+            self._title.setText("TrackViz")
+
+        try:
+            self._canvas.set_payload(payload)
+        except Exception:
+            pass
+
+        try:
+            self._status.setText(f"tracks={len(tracks)}  now={now_ms}")
+        except Exception:
+            pass
+
+
+class _TrackVizWidget(NodeBaseWidget):
+    def __init__(self, parent=None, name: str = "__trackviz", label: str = "") -> None:
+        super().__init__(parent=parent, name=name, label=label)
+        self._pane = _TrackVizPane()
+        self.set_custom_widget(self._pane)
+        self._block = False
+        self._pane.update_checkbox().toggled.connect(self.on_value_changed)  # type: ignore[attr-defined]
+
+    def get_value(self) -> object:
+        return {"update": bool(self._pane.update_enabled())}
+
+    def set_value(self, value: object) -> None:
+        enabled = True
+        if isinstance(value, dict):
+            enabled = bool(value.get("update", True))
+        try:
+            self._block = True
+            self._pane.set_update_enabled(enabled)
+        finally:
+            self._block = False
+
+    def on_value_changed(self, *args, **kwargs):
+        if getattr(self, "_block", False):
+            return
+        return super().on_value_changed(*args, **kwargs)
+
+    def set_scene(self, payload: dict[str, Any]) -> None:
+        self._pane.set_scene(payload)
+
+
+class PyStudioTrackVizNode(F8StudioOperatorBaseNode):
+    """
+    Render node for `f8.trackviz`.
+    """
+
+    def __init__(self):
+        super().__init__()
+        try:
+            self.add_custom_widget(_TrackVizWidget(self.view, name="__trackviz", label=""))
+        except Exception:
+            pass
+
+    def apply_ui_command(self, cmd: Any) -> None:
+        try:
+            if str(getattr(cmd, "command", "")) != "trackviz.set":
+                return
+            payload = getattr(cmd, "payload", {}) or {}
+        except Exception:
+            return
+        try:
+            w = self.get_widget("__trackviz")
+            if w and hasattr(w, "set_scene"):
+                w.set_scene(dict(payload))
+        except Exception:
+            return

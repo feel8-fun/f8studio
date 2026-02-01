@@ -1094,6 +1094,8 @@ void ImPlayerService::publish_dynamic_state() {
 
   const bool playing = playing_.load(std::memory_order_relaxed);
   const double dur = duration_seconds_.load(std::memory_order_relaxed);
+  const unsigned decoded_w = player_ ? player_->videoWidth() : 0;
+  const unsigned decoded_h = player_ ? player_->videoHeight() : 0;
 
   std::vector<std::pair<std::string, json>> updates;
   {
@@ -1117,6 +1119,9 @@ void ImPlayerService::publish_dynamic_state() {
     want("loop", loop);
     want("mediaUrl", url);
     want("lastError", err);
+
+    want("decodedWidth", static_cast<std::int64_t>(decoded_w));
+    want("decodedHeight", static_cast<std::int64_t>(decoded_h));
 
     if (shm_) {
       want("videoWidth", shm_->outputWidth());
@@ -1152,6 +1157,8 @@ json ImPlayerService::describe() {
       state_field("videoShmMaxWidth", schema_integer(), "rw", "SHM Max Width", "Downsample limit (0 = auto)."),
       state_field("videoShmMaxHeight", schema_integer(), "rw", "SHM Max Height", "Downsample limit (0 = auto)."),
       state_field("videoShmMaxFps", schema_number(), "rw", "SHM Max FPS", "Copy rate limit (0 = unlimited)."),
+      state_field("decodedWidth", schema_integer(), "ro", "Decoded Width", "Decoded/source video width (on-screen uses this).", true),
+      state_field("decodedHeight", schema_integer(), "ro", "Decoded Height", "Decoded/source video height (on-screen uses this).", true),
       state_field("videoWidth", schema_integer(), "ro", "Width", "Width of the video frame.", true),
       state_field("videoHeight", schema_integer(), "ro", "Height", "Height of the video frame.", true),
       state_field("videoPitch", schema_integer(), "ro", "Pitch", "Pitch of the video frame."),
