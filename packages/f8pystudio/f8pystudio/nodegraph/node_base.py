@@ -108,6 +108,37 @@ class F8StudioBaseNode(BaseNode):
                 out.append(f)
         return out
 
+    def effective_commands(self):
+        """
+        Return service commands with UI overrides applied.
+
+        Currently only supports overriding `showOnNode` when `editableCommands`
+        is false (UI-only customization).
+        """
+        spec = getattr(self, "spec", None)
+        cmds = list(getattr(spec, "commands", None) or []) if spec is not None else []
+        if not cmds:
+            return cmds
+        ui = self.ui_overrides()
+        cmd_over = ui.get("commands") if isinstance(ui, dict) else None
+        if not isinstance(cmd_over, dict) or not cmd_over:
+            return cmds
+
+        allowed_keys = {"showOnNode"}
+        out = []
+        for c in cmds:
+            name = str(getattr(c, "name", "") or "").strip()
+            ov = cmd_over.get(name) if name else None
+            if not isinstance(ov, dict) or not ov:
+                out.append(c)
+                continue
+            patch = {k: ov.get(k) for k in allowed_keys if k in ov}
+            try:
+                out.append(c.model_copy(update=patch))
+            except Exception:
+                out.append(c)
+        return out
+
     def _ui_serial(self) -> str:
         try:
             ui = getattr(self.model, "f8_ui", None)

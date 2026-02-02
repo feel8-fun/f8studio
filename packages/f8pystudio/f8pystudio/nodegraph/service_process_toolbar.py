@@ -240,25 +240,33 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
                 pass
             return
 
-        # If the node was deleted, stop polling.
+        # During node creation / graph reload, the toolbar widget can exist briefly
+        # before the proxy is in a scene or the backend node is resolvable. This
+        # is a transient state; do not stop polling or permanently disable the UI.
         item = self._node_item()
         if item is not None:
             try:
                 if item.scene() is None:
-                    item = None
+                    # Not in scene yet (or being removed). Keep polling.
+                    self._btn_disable.setEnabled(True)
+                    self._btn_toggle.setEnabled(False)
+                    self._btn_stop.setEnabled(False)
+                    self._btn_sync.setEnabled(False)
+                    self._btn_restart.setEnabled(False)
+                    self._btn_toggle.setToolTip("Start service (initializing)")
+                    return
             except Exception:
                 pass
         if self._node() is None and item is None:
-            try:
-                self._timer.stop()
-            except Exception:
-                pass
+            # Backend graph/node not ready yet (or node was deleted). Keep polling;
+            # if the widget is truly orphaned it will be deleted with its proxy.
             try:
                 self._btn_disable.setEnabled(False)
                 self._btn_toggle.setEnabled(False)
                 self._btn_stop.setEnabled(False)
                 self._btn_sync.setEnabled(False)
                 self._btn_restart.setEnabled(False)
+                self._btn_toggle.setToolTip("Start service (node not ready)")
             except Exception:
                 pass
             return

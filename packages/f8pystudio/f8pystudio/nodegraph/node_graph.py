@@ -694,11 +694,14 @@ class F8StudioGraph(NodeGraph):
         service_ids: set[str] = set()
         for n in list(nodes or []):
             try:
-                if self._is_container_node(n) and isinstance(getattr(n, "spec", None), F8ServiceSpec):
-                    sid = str(getattr(n, "id", "") or "").strip()
-                    svc_class = str(getattr(getattr(n, "spec", None), "serviceClass", "") or "")
-                    if sid and sid != STUDIO_SERVICE_ID and svc_class != _CANVAS_SERVICE_CLASS_:
-                        service_ids.add(sid)
+                # Reclaim applies to *service instance nodes* (containers + standalone services).
+                spec = getattr(n, "spec", None)
+                if not isinstance(spec, F8ServiceSpec):
+                    continue
+                sid = str(getattr(n, "id", "") or "").strip()
+                svc_class = str(getattr(spec, "serviceClass", "") or "")
+                if sid and sid != STUDIO_SERVICE_ID and svc_class != _CANVAS_SERVICE_CLASS_:
+                    service_ids.add(sid)
             except Exception:
                 continue
 
@@ -731,7 +734,18 @@ class F8StudioGraph(NodeGraph):
         Clear the current canvas. Any removed service instances are reclaimed
         after a short debounce (so undo / immediate re-add won't kill processes).
         """
-        before = {n.id for n in self.all_nodes() if self._is_container_node(n)}
+        before: set[str] = set()
+        for n in self.all_nodes():
+            try:
+                spec = getattr(n, "spec", None)
+                if not isinstance(spec, F8ServiceSpec):
+                    continue
+                sid = str(getattr(n, "id", "") or "").strip()
+                svc_class = str(getattr(spec, "serviceClass", "") or "")
+                if sid and sid != STUDIO_SERVICE_ID and svc_class != _CANVAS_SERVICE_CLASS_:
+                    before.add(sid)
+            except Exception:
+                continue
         super().clear_session(*args, **kwargs)
         for sid in sorted({s for s in before if s and s != STUDIO_SERVICE_ID}):
             self._schedule_service_reclaim(sid, delay_ms=3000)
@@ -745,7 +759,8 @@ class F8StudioGraph(NodeGraph):
             return False
         try:
             n = self.get_node_by_id(sid)
-            if n is not None and self._is_container_node(n):
+            # Any service instance node with this id keeps the service alive.
+            if n is not None and isinstance(getattr(n, "spec", None), F8ServiceSpec):
                 return True
         except Exception:
             pass
