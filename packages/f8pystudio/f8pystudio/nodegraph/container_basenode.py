@@ -121,6 +121,10 @@ class F8StudioContainerNodeItem(AbstractNodeItem):
     def __init__(self, name: str = "container", text: str = "", parent=None):
         super().__init__(name, parent)
         self.setZValue(Z_VAL_BACKDROP)
+        # NodeGraphQt BaseNode.set_property expects node.view.inputs/outputs lists to exist.
+        # Container/backdrop nodes don't expose ports yet, but these must still be present.
+        self.inputs = []
+        self.outputs = []
         # Match `NodeGraphQt.qgraphics.node_base.NodeItem` API so
         # `BaseNode.update_model()` can iterate `self.view.widgets`.
         self._widgets = OrderedDict()
@@ -167,6 +171,13 @@ class F8StudioContainerNodeItem(AbstractNodeItem):
             except Exception:
                 return ""
 
+        def _get_node() -> Any | None:
+            try:
+                g = getattr(viewer, "_f8_graph", None)
+                return g.get_node_by_id(service_id) if g is not None else None
+            except Exception:
+                return None
+
         def _get_compiled_graphs() -> Any | None:
             try:
                 g = getattr(viewer, "_f8_graph", None)
@@ -182,6 +193,7 @@ class F8StudioContainerNodeItem(AbstractNodeItem):
             w = ServiceProcessToolbar(
                 service_id=service_id,
                 get_bridge=_get_bridge,
+                get_node=_get_node,
                 get_service_class=_get_service_class,
                 get_compiled_graphs=_get_compiled_graphs,
             )
