@@ -121,22 +121,6 @@ def register_template_tracker_specs(registry: RuntimeNodeRegistry | None = None)
             access=F8StateAccess.rw,
             showOnNode=False,
         ),
-        F8StateSpec(
-            name="debug",
-            label="Debug",
-            description="Enable periodic debug logging to stdout (visible in studio console).",
-            valueSchema=boolean_schema(default=False),
-            access=F8StateAccess.rw,
-            showOnNode=True,
-        ),
-        F8StateSpec(
-            name="debugIntervalMs",
-            label="Debug Interval (ms)",
-            description="Minimum interval between debug log lines.",
-            valueSchema=integer_schema(default=1000, minimum=0, maximum=60000),
-            access=F8StateAccess.rw,
-            showOnNode=False,
-        ),
     ]
 
     reg.register_service_spec(

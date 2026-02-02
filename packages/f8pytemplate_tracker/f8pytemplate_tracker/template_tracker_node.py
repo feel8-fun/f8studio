@@ -414,9 +414,6 @@ class TemplateTrackerServiceNode(ServiceNode):
 
         self._telemetry = _Telemetry()
         self._last_error: str = ""
-        self._debug: bool = False
-        self._debug_interval_ms: int = 1000
-        self._last_debug_ms: int = 0
 
         self._shm: VideoShmReader | None = None
         self._shm_open_name: str = ""
@@ -495,10 +492,6 @@ class TemplateTrackerServiceNode(ServiceNode):
             )
         elif name == "templatePngB64":
             await self._load_template_from_state()
-        elif name == "debug":
-            self._debug = _coerce_bool(await self.get_state("debug"), default=self._debug)
-        elif name == "debugIntervalMs":
-            self._debug_interval_ms = _coerce_int(await self.get_state("debugIntervalMs"), default=self._debug_interval_ms, minimum=0, maximum=60000)
 
     async def on_command(self, name: str, args: dict[str, Any] | None = None, *, meta: dict[str, Any] | None = None) -> Any:
         del meta
@@ -541,24 +534,7 @@ class TemplateTrackerServiceNode(ServiceNode):
             interval_ms=_coerce_int(await self.get_state("telemetryIntervalMs"), default=int(self._initial_state.get("telemetryIntervalMs") or 1000), minimum=0),
             window_ms=_coerce_int(await self.get_state("telemetryWindowMs"), default=int(self._initial_state.get("telemetryWindowMs") or 2000), minimum=100),
         )
-        self._debug = _coerce_bool(await self.get_state("debug"), default=bool(self._initial_state.get("debug", False)))
-        self._debug_interval_ms = _coerce_int(
-            await self.get_state("debugIntervalMs"), default=int(self._initial_state.get("debugIntervalMs") or 1000), minimum=0, maximum=60000
-        )
         await self._load_template_from_state()
-
-    def _dbg(self, msg: str, *, ts_ms: int | None = None, force: bool = False) -> None:
-        if not force and not bool(self._debug):
-            return
-        now = int(ts_ms) if ts_ms is not None else int(time.time() * 1000)
-        interval = max(0, int(self._debug_interval_ms))
-        if not force and interval > 0 and (now - int(self._last_debug_ms)) < interval:
-            return
-        self._last_debug_ms = int(now)
-        try:
-            print(f"template_tracker[{self.node_id}] {msg}", flush=True)
-        except Exception:
-            return
 
     async def _load_template_from_state(self) -> None:
         b64 = _coerce_str(await self.get_state("templatePngB64"), default=str(self._initial_state.get("templatePngB64") or ""))
@@ -569,15 +545,9 @@ class TemplateTrackerServiceNode(ServiceNode):
         if self._template_bgr is None:
             self._template_gray = None
             self._reset_tracker()
-            self._dbg("template cleared/invalid", force=True)
             return
         self._template_gray = cv2.cvtColor(self._template_bgr, cv2.COLOR_BGR2GRAY)
         self._reset_tracker()
-        try:
-            h, w = int(self._template_bgr.shape[0]), int(self._template_bgr.shape[1])
-        except Exception:
-            h, w = 0, 0
-        self._dbg(f"template loaded {w}x{h}", force=True)
 
     def _resolve_shm_name(self) -> str:
         shm = str(self._shm_name or "").strip()
@@ -610,7 +580,6 @@ class TemplateTrackerServiceNode(ServiceNode):
             shm.open(use_event=True)
             self._shm = shm
             self._shm_open_name = shm_name
-            self._dbg(f"shm opened name={shm_name}", force=True)
             return True
         except Exception:
             self._close_shm()
@@ -757,11 +726,9 @@ class TemplateTrackerServiceNode(ServiceNode):
             res = self._tracker.init(bgr, (int(x), int(y), int(w), int(h)))
             ok = True if res is None else bool(res)
         except Exception as exc:
-            self._dbg(f"tracker.init ERROR kind={self._tracker_kind} bbox_xywh={bbox_xywh}: {exc}", force=True)
             raise RuntimeError(f"tracker.init failed kind={self._tracker_kind} bbox_xywh={bbox_xywh}: {exc}") from exc
         if ok:
             self._bbox_xywh = bbox_xywh
-            self._dbg(f"tracker.init ok kind={self._tracker_kind} bbox_xywh={bbox_xywh}", force=True)
         return ok
 
     def _update_tracker(self, bgr: np.ndarray) -> tuple[bool, tuple[int, int, int, int] | None]:
@@ -769,7 +736,6 @@ class TemplateTrackerServiceNode(ServiceNode):
             return False, None
         ok, box = self._tracker.update(bgr)
         if not ok:
-            self._dbg(f"tracker.update failed kind={self._tracker_kind}", force=True)
             return False, None
         x, y, w, h = [int(round(v)) for v in box]
         x, y, w, h = _clip_xywh(x, y, w, h, width=int(bgr.shape[1]), height=int(bgr.shape[0]))
@@ -792,7 +758,6 @@ class TemplateTrackerServiceNode(ServiceNode):
                     continue
                 if self._shm is None:
                     if not self._open_shm(shm_name):
-                        self._dbg(f"shm open failed name={shm_name}", force=True)
                         await asyncio.sleep(0.1)
                         continue
 
@@ -843,10 +808,6 @@ class TemplateTrackerServiceNode(ServiceNode):
                         match_ms = (t_match1 - t_match0) * 1000.0
                         did_match = True
                         self._last_match_ts_ms = int(ts_ms)
-                        self._dbg(
-                            f"match score={match_score:.3f} thr={self._match_threshold:.3f} bbox={match_bbox} roi={match_roi}",
-                            ts_ms=int(ts_ms),
-                        )
                         if match_bbox is not None and float(match_score) >= float(self._match_threshold):
                             if self._bbox_xywh is None or _iou_xywh(self._bbox_xywh, match_bbox) < 0.9:
                                 self._reset_tracker()
@@ -895,11 +856,6 @@ class TemplateTrackerServiceNode(ServiceNode):
                 t_emit0 = time.perf_counter()
                 await self.emit("tracking", payload_out, ts_ms=int(ts_ms))
                 t_emit1 = time.perf_counter()
-
-                self._dbg(
-                    f"frameId={frame_id} status={status} bbox={out_bbox_xyxy} matchScore={match_score:.3f} trackOk={track_ok} kind={self._tracker_kind}",
-                    ts_ms=int(ts_ms),
-                )
 
                 t_end = time.perf_counter()
                 self._telemetry.observe(
