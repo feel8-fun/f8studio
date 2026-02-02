@@ -4,8 +4,6 @@ import logging
 import json
 from typing import Any
 
-from qtpy import QtWidgets
-
 from .node_base import F8StudioBaseNode
 
 from f8pysdk import F8ServiceSpec, F8StateAccess
@@ -38,9 +36,6 @@ from .service_process_toolbar import ServiceProcessToolbar
 logger = logging.getLogger(__name__)
 
 
-_TEMPLATE_TRACKER_SERVICE_CLASS = "f8.templatetracker"
-
-
 class _F8OnTopComboBox(QtWidgets.QComboBox):
     """
     QComboBox used inside QGraphicsProxyWidget nodes.
@@ -51,6 +46,10 @@ class _F8OnTopComboBox(QtWidgets.QComboBox):
     scene.
     """
 
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._prev_proxy_z: float | None = None
+
     def showPopup(self) -> None:  # type: ignore[override]
         if not self.isEnabled():
             return
@@ -58,10 +57,7 @@ class _F8OnTopComboBox(QtWidgets.QComboBox):
         self._raise_proxy(True)
         try:
             menu = QtWidgets.QMenu()
-            try:
-                menu.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
-            except Exception:
-                pass
+            menu.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
 
             group = QtGui.QActionGroup(menu)
             group.setExclusive(True)
@@ -80,7 +76,7 @@ class _F8OnTopComboBox(QtWidgets.QComboBox):
             if chosen is not None:
                 try:
                     idx = int(chosen.data())
-                except Exception:
+                except (TypeError, ValueError):
                     idx = -1
                 if 0 <= idx < self.count():
                     self.setCurrentIndex(idx)
@@ -91,115 +87,20 @@ class _F8OnTopComboBox(QtWidgets.QComboBox):
         # no-op (popup handled by QMenu in showPopup)
         return
 
-    def _raise_popup(self) -> None:
-        # Legacy path (kept for compatibility). With QMenu-based popup, this is not used.
-        try:
-            w = self.view().window()
-            w.raise_()
-            w.activateWindow()
-        except Exception:
-            return
-
     def _raise_proxy(self, enabled: bool) -> None:
-        try:
-            proxy = self.graphicsProxyWidget()
-        except Exception:
-            proxy = None
+        proxy = self.graphicsProxyWidget()
         if proxy is None:
             return
-        try:
-            if enabled:
-                if not hasattr(proxy, "_f8_prev_z"):
-                    setattr(proxy, "_f8_prev_z", float(proxy.zValue()))
-                proxy.setZValue(100_000)
-            else:
-                prev = getattr(proxy, "_f8_prev_z", None)
-                if prev is not None:
-                    proxy.setZValue(float(prev))
-                try:
-                    delattr(proxy, "_f8_prev_z")
-                except Exception:
-                    pass
-        except Exception:
+        if enabled:
+            if self._prev_proxy_z is None:
+                self._prev_proxy_z = float(proxy.zValue())
+            proxy.setZValue(100_000)
             return
 
-
-class _F8FlowLayout(QtWidgets.QLayout):
-    """
-    Simple flow layout (wraps widgets horizontally).
-    """
-
-    def __init__(self, parent: QtWidgets.QWidget | None = None, *, margin: int = 0, spacing: int = 6) -> None:
-        super().__init__(parent)
-        self._items: list[QtWidgets.QLayoutItem] = []
-        self.setContentsMargins(margin, margin, margin, margin)
-        self.setSpacing(spacing)
-
-    def addItem(self, item: QtWidgets.QLayoutItem) -> None:  # type: ignore[override]
-        self._items.append(item)
-
-    def count(self) -> int:  # type: ignore[override]
-        return len(self._items)
-
-    def itemAt(self, index: int) -> QtWidgets.QLayoutItem | None:  # type: ignore[override]
-        if 0 <= index < len(self._items):
-            return self._items[index]
-        return None
-
-    def takeAt(self, index: int) -> QtWidgets.QLayoutItem | None:  # type: ignore[override]
-        if 0 <= index < len(self._items):
-            return self._items.pop(index)
-        return None
-
-    def expandingDirections(self) -> QtCore.Qt.Orientations:  # type: ignore[override]
-        return QtCore.Qt.Orientations(0)
-
-    def hasHeightForWidth(self) -> bool:  # type: ignore[override]
-        return True
-
-    def heightForWidth(self, width: int) -> int:  # type: ignore[override]
-        return self._do_layout(QtCore.QRect(0, 0, width, 0), test_only=True)
-
-    def setGeometry(self, rect: QtCore.QRect) -> None:  # type: ignore[override]
-        super().setGeometry(rect)
-        self._do_layout(rect, test_only=False)
-
-    def sizeHint(self) -> QtCore.QSize:  # type: ignore[override]
-        return self.minimumSize()
-
-    def minimumSize(self) -> QtCore.QSize:  # type: ignore[override]
-        size = QtCore.QSize()
-        for item in self._items:
-            size = size.expandedTo(item.minimumSize())
-        l, t, r, b = self.getContentsMargins()
-        size += QtCore.QSize(l + r, t + b)
-        return size
-
-    def _do_layout(self, rect: QtCore.QRect, *, test_only: bool) -> int:
-        l, t, r, b = self.getContentsMargins()
-        effective = rect.adjusted(l, t, -r, -b)
-        x = effective.x()
-        y = effective.y()
-        line_height = 0
-        space_x = self.spacing()
-        space_y = self.spacing()
-
-        for item in self._items:
-            w = item.widget()
-            if w is not None and not w.isVisible():
-                continue
-            hint = item.sizeHint()
-            next_x = x + hint.width() + space_x
-            if next_x - space_x > effective.right() and line_height > 0:
-                x = effective.x()
-                y += line_height + space_y
-                next_x = x + hint.width() + space_x
-                line_height = 0
-            if not test_only:
-                item.setGeometry(QtCore.QRect(QtCore.QPoint(x, y), hint))
-            x = next_x
-            line_height = max(line_height, hint.height())
-        return (y + line_height + b) - rect.y()
+        prev = getattr(self, "_prev_proxy_z", None)
+        if prev is not None:
+            proxy.setZValue(float(prev))
+        self._prev_proxy_z = None
 
 
 class _F8ElideToolButton(QtWidgets.QToolButton):
@@ -221,7 +122,7 @@ class _F8ElideToolButton(QtWidgets.QToolButton):
             # Leave room for the arrow icon.
             w = max(10, int(self.width() - 24))
             self.setText(fm.elidedText(self._full_text, QtCore.Qt.ElideRight, w))
-        except Exception:
+        except RuntimeError:
             self.setText(self._full_text)
 
 
@@ -309,29 +210,23 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
             name = str(getattr(s, "name", "") or "").strip()
             if not name:
                 continue
-            try:
-                if self.has_property(name):  # type: ignore[attr-defined]
-                    continue
-            except Exception:
-                pass
+            if self.has_property(name):  # type: ignore[attr-defined]
+                continue
             try:
                 default_value = schema_default(s.valueSchema)
             except Exception:
                 default_value = None
             widget_type, items, prop_range = self._state_widget_for_schema(getattr(s, "valueSchema", None))
             tooltip = str(getattr(s, "description", "") or "").strip() or None
-            try:
-                self.create_property(
-                    name,
-                    default_value,
-                    items=items,
-                    range=prop_range,
-                    widget_type=widget_type,
-                    widget_tooltip=tooltip,
-                    tab="State",
-                )
-            except Exception:
-                continue
+            self.create_property(
+                name,
+                default_value,
+                items=items,
+                range=prop_range,
+                widget_type=widget_type,
+                widget_tooltip=tooltip,
+                tab="State",
+            )
 
     @staticmethod
     def _state_widget_for_schema(value_schema) -> tuple[int, list[str] | None, tuple[float, float] | None]:
@@ -340,16 +235,11 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
         """
         if value_schema is None:
             return NodePropWidgetEnum.QTEXT_EDIT.value, None, None
-        try:
-            t = schema_type(value_schema)
-        except Exception:
-            t = ""
+        t = schema_type(value_schema) or ""
 
         # enum choice.
-        try:
-            enum_items = list(getattr(getattr(value_schema, "root", None), "enum", None) or [])
-        except Exception:
-            enum_items = []
+        root = getattr(value_schema, "root", None)
+        enum_items = list(getattr(root, "enum", None) or []) if root is not None else []
         if enum_items:
             return NodePropWidgetEnum.QCOMBO_BOX.value, [str(x) for x in enum_items], None
 
@@ -373,11 +263,8 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
         - ports (exec/data/state)
         - state properties (adds any missing fields)
         """
-        try:
-            if not self.port_deletion_allowed():
-                self.set_port_deletion_allowed(True)
-        except Exception:
-            pass
+        if not self.port_deletion_allowed():
+            self.set_port_deletion_allowed(True)
 
         # Sync ports from spec.
         #
@@ -393,30 +280,21 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
             desired_outputs[f"{p}[E]"] = {"color": EXEC_PORT_COLOR, "painter_func": draw_exec_port}
 
         for p in list(getattr(self.spec, "dataInPorts", None) or []):
-            try:
-                desired_inputs[f"[D]{p.name}"] = {"color": DATA_PORT_COLOR}
-            except Exception:
-                continue
+            desired_inputs[f"[D]{p.name}"] = {"color": DATA_PORT_COLOR}
         for p in list(getattr(self.spec, "dataOutPorts", None) or []):
-            try:
-                desired_outputs[f"{p.name}[D]"] = {"color": DATA_PORT_COLOR}
-            except Exception:
-                continue
+            desired_outputs[f"{p.name}[D]"] = {"color": DATA_PORT_COLOR}
 
         for s in list(self.effective_state_fields() or []):
-            try:
-                if not getattr(s, "showOnNode", False):
-                    continue
-                name = str(getattr(s, "name", "") or "").strip()
-                if not name:
-                    continue
-                access = getattr(s, "access", None)
-                if access in [F8StateAccess.rw, F8StateAccess.wo]:
-                    desired_inputs[f"[S]{name}"] = {"color": STATE_PORT_COLOR, "painter_func": draw_square_port}
-                if access in [F8StateAccess.rw, F8StateAccess.ro]:
-                    desired_outputs[f"{name}[S]"] = {"color": STATE_PORT_COLOR, "painter_func": draw_square_port}
-            except Exception:
+            if not getattr(s, "showOnNode", False):
                 continue
+            name = str(getattr(s, "name", "") or "").strip()
+            if not name:
+                continue
+            access = getattr(s, "access", None)
+            if access in [F8StateAccess.rw, F8StateAccess.wo]:
+                desired_inputs[f"[S]{name}"] = {"color": STATE_PORT_COLOR, "painter_func": draw_square_port}
+            if access in [F8StateAccess.rw, F8StateAccess.ro]:
+                desired_outputs[f"{name}[S]"] = {"color": STATE_PORT_COLOR, "painter_func": draw_square_port}
 
         # Remove ports that no longer exist in spec (disconnect first).
         current_input_names = set(self.inputs().keys())
@@ -430,7 +308,7 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
                 if port is not None:
                     try:
                         port.clear_connections(push_undo=False, emit_signal=False)
-                    except Exception:
+                    except (AttributeError, RuntimeError, TypeError):
                         pass
                 self.delete_input(name)
             except Exception as e:
@@ -442,7 +320,7 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
                 if port is not None:
                     try:
                         port.clear_connections(push_undo=False, emit_signal=False)
-                    except Exception:
+                    except (AttributeError, RuntimeError, TypeError):
                         pass
                 self.delete_output(name)
             except Exception as e:
@@ -486,7 +364,7 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
                         if view.scene() is not None:
                             view.scene().removeItem(port_item)
                             view.scene().removeItem(text_item)
-                    except Exception:
+                    except RuntimeError:
                         pass
 
             output_items = getattr(view, "_output_items", None)
@@ -503,17 +381,17 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
                         if view.scene() is not None:
                             view.scene().removeItem(port_item)
                             view.scene().removeItem(text_item)
-                    except Exception:
+                    except RuntimeError:
                         pass
         except Exception:
-            pass
+            logger.debug("sync_from_spec orphan port-item cleanup failed", exc_info=True)
 
         self._build_state_properties()
 
         try:
             self.view.draw_node()
         except Exception:
-            pass
+            logger.debug("sync_from_spec draw_node failed", exc_info=True)
 
 
 class F8StudioServiceNodeItem(AbstractNodeItem):
@@ -560,25 +438,23 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         """
         Best-effort access to the backing BaseNode object for this view item.
         """
+        g = self._graph()
+        if g is None:
+            return None
+        node_id = str(getattr(self, "id", "") or "").strip()
+        if not node_id:
+            return None
         try:
-            viewer = self.viewer()
-        except Exception:
-            viewer = None
-        try:
-            g = getattr(viewer, "_f8_graph", None) if viewer is not None else None
-            return g.get_node_by_id(str(getattr(self, "id", "") or "")) if g is not None else None
-        except Exception:
+            return g.get_node_by_id(node_id)
+        except KeyError:
             return None
 
     def _graph(self) -> Any | None:
         try:
             viewer = self.viewer()
-        except Exception:
-            viewer = None
-        try:
-            return getattr(viewer, "_f8_graph", None) if viewer is not None else None
-        except Exception:
+        except RuntimeError:
             return None
+        return getattr(viewer, "_f8_graph", None) if viewer is not None else None
 
     def _ensure_graph_property_hook(self) -> None:
         if self._graph_prop_hooked:
@@ -588,23 +464,18 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             return
         try:
             g.property_changed.connect(self._on_graph_property_changed)  # type: ignore[attr-defined]
-            self._graph_prop_hooked = True
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             self._graph_prop_hooked = False
+            return
+        self._graph_prop_hooked = True
 
     def _bridge(self) -> Any | None:
-        try:
-            g = self._graph()
-            return getattr(g, "service_bridge", None) if g is not None else None
-        except Exception:
-            return None
+        g = self._graph()
+        return getattr(g, "service_bridge", None) if g is not None else None
 
     def _service_id(self) -> str:
         # For service nodes, nodeId == serviceId.
-        try:
-            return str(getattr(self, "id", "") or "").strip()
-        except Exception:
-            return ""
+        return str(getattr(self, "id", "") or "").strip()
 
     def _invoke_command(self, cmd: Any) -> None:
         """
@@ -623,21 +494,12 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         if not sid:
             return
         params = list(getattr(cmd, "params", None) or [])
-        if call == "captureFrame":
-            try:
-                node = self._backend_node()
-                spec = getattr(node, "spec", None) if node is not None else None
-                svc_class = str(getattr(spec, "serviceClass", "") or "")
-            except Exception:
-                svc_class = ""
-            if svc_class == _TEMPLATE_TRACKER_SERVICE_CLASS:
-                return self._invoke_template_tracker_capture_flow(bridge=bridge, service_id=sid)
 
         if not params:
             try:
                 bridge.invoke_remote_command(sid, call, {})
             except Exception:
-                return
+                logger.exception("invoke_remote_command failed serviceId=%s call=%s", sid, call)
             return
 
         args = self._prompt_command_args(cmd)
@@ -646,73 +508,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         try:
             bridge.invoke_remote_command(sid, call, args)
         except Exception:
-            return
-
-    def _invoke_template_tracker_capture_flow(self, *, bridge: Any, service_id: str) -> None:
-        """
-        Custom UI flow for template tracker:
-        button -> captureFrame -> ROI select -> set_state(templatePngB64)
-        """
-        try:
-            from ..widgets.template_tracker_template import CaptureFrame, TemplateCaptureDialog
-        except Exception:
-            return
-
-        parent = None
-        try:
-            v = self.viewer()
-            parent = v.window() if v is not None else None
-        except Exception:
-            parent = None
-
-        sid = str(service_id or "").strip()
-        if not sid:
-            return
-
-        def _request_capture(done: Any) -> None:
-            def _cb(result: dict[str, Any] | None, err: str | None) -> None:
-                if err:
-                    done(None, err)
-                    return
-                if not isinstance(result, dict):
-                    done(None, "invalid capture result")
-                    return
-                try:
-                    frame_id = int(result.get("frameId") or 0)
-                    ts_ms = int(result.get("tsMs") or 0)
-                    img = result.get("image") if isinstance(result.get("image"), dict) else {}
-                    b64 = str((img or {}).get("b64") or "")
-                    fmt = str((img or {}).get("format") or "")
-                    w = int((img or {}).get("width") or 0)
-                    h = int((img or {}).get("height") or 0)
-                    if not b64:
-                        done(None, "empty image")
-                        return
-                    import base64 as _b64
-
-                    raw = _b64.b64decode(b64.encode("ascii"), validate=False)
-                    done(CaptureFrame(frame_id=frame_id, ts_ms=ts_ms, image_bytes=raw, image_format=fmt, width=w, height=h), None)
-                except Exception as exc:
-                    done(None, str(exc))
-
-            try:
-                bridge.request_remote_command(
-                    sid,
-                    "captureFrame",
-                    {"format": "jpg", "quality": 85, "maxBytes": 900000, "maxWidth": 1280, "maxHeight": 720},
-                    _cb,
-                    timeout_s=2.0,
-                )
-            except Exception as exc:
-                _cb(None, str(exc))
-
-            return
-
-        def _set_template_b64(b64: str) -> None:
-            bridge.set_remote_state(sid, sid, "templatePngB64", str(b64))
-
-        dlg = TemplateCaptureDialog(parent=parent, bridge=bridge, service_id=sid, request_capture=_request_capture, set_template_b64=_set_template_b64)
-        dlg.exec()
+            logger.exception("invoke_remote_command failed serviceId=%s call=%s", sid, call)
 
     def _prompt_command_args(self, cmd: Any) -> dict[str, Any] | None:
         call = str(getattr(cmd, "name", "") or "").strip() or "Command"
@@ -720,12 +516,8 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         if not params:
             return {}
 
-        parent = None
-        try:
-            v = self.viewer()
-            parent = v.window() if v is not None else None
-        except Exception:
-            parent = None
+        v = self.viewer()
+        parent = v.window() if v is not None else None
 
         dlg = QtWidgets.QDialog(parent)
         dlg.setWindowTitle(call)
@@ -744,11 +536,8 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             required = bool(getattr(p, "required", False))
             ui = str(getattr(p, "uiControl", "") or "").strip().lower()
             schema = getattr(p, "valueSchema", None)
-            t = ""
-            try:
-                t = schema_type(schema) or ""
-            except Exception:
-                t = ""
+            t = schema_type(schema) if schema is not None else ""
+            t = t or ""
 
             enum_items = self._schema_enum_items(schema)
             lo, hi = self._schema_numeric_range(schema)
@@ -762,10 +551,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
 
             def _with_tooltip(w: QtWidgets.QWidget) -> QtWidgets.QWidget:
                 if tooltip:
-                    try:
-                        w.setToolTip(tooltip)
-                    except Exception:
-                        pass
+                    w.setToolTip(tooltip)
                 return w
 
             if enum_items or ui in {"select", "dropdown", "dropbox", "combo", "combobox"}:
@@ -786,10 +572,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
 
             if t == "boolean" or ui in {"switch", "toggle"}:
                 w = QtWidgets.QCheckBox()
-                try:
-                    w.setChecked(bool(default_value))
-                except Exception:
-                    pass
+                w.setChecked(bool(default_value))
 
                 def _get() -> Any:
                     return bool(w.isChecked())
@@ -831,18 +614,15 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                     return float(v) / scale
 
                 def _sync_label() -> None:
-                    try:
-                        val.setText(str(_slider_to_value(int(slider.value()))))
-                    except Exception:
-                        val.setText("")
+                    val.setText(str(_slider_to_value(int(slider.value()))))
 
                 slider.valueChanged.connect(lambda _v: _sync_label())
 
                 if default_value is not None:
                     try:
                         slider.setValue(int(round(float(default_value) * scale)))
-                    except Exception:
-                        pass
+                    except (TypeError, ValueError):
+                        slider.setValue(imin)
                 _sync_label()
 
                 def _get() -> Any:
@@ -855,19 +635,13 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             if t == "integer" or ui in {"spinbox", "int"}:
                 w = QtWidgets.QSpinBox()
                 if lo is not None:
-                    try:
-                        w.setMinimum(int(lo))
-                    except Exception:
-                        pass
+                    w.setMinimum(int(lo))
                 if hi is not None:
-                    try:
-                        w.setMaximum(int(hi))
-                    except Exception:
-                        pass
+                    w.setMaximum(int(hi))
                 if default_value is not None:
                     try:
                         w.setValue(int(default_value))
-                    except Exception:
+                    except (TypeError, ValueError):
                         pass
 
                 def _get() -> Any:
@@ -879,24 +653,15 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
 
             if t == "number" or ui in {"doublespinbox", "float"}:
                 w = QtWidgets.QDoubleSpinBox()
-                try:
-                    w.setDecimals(6)
-                except Exception:
-                    pass
+                w.setDecimals(6)
                 if lo is not None:
-                    try:
-                        w.setMinimum(float(lo))
-                    except Exception:
-                        pass
+                    w.setMinimum(float(lo))
                 if hi is not None:
-                    try:
-                        w.setMaximum(float(hi))
-                    except Exception:
-                        pass
+                    w.setMaximum(float(hi))
                 if default_value is not None:
                     try:
                         w.setValue(float(default_value))
-                    except Exception:
+                    except (TypeError, ValueError):
                         pass
 
                 def _get() -> Any:
@@ -930,10 +695,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
 
             w = QtWidgets.QLineEdit()
             if default_value is not None:
-                try:
-                    w.setText("" if default_value is None else str(default_value))
-                except Exception:
-                    pass
+                w.setText("" if default_value is None else str(default_value))
 
             def _get() -> Any:
                 return str(w.text() or "")
@@ -990,13 +752,13 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             if self._cmd_proxy is not None:
                 try:
                     self._cmd_proxy.setWidget(None)
-                except Exception:
+                except RuntimeError:
                     pass
                 try:
                     self._cmd_proxy.setParentItem(None)
                     if self.scene() is not None:
                         self.scene().removeItem(self._cmd_proxy)
-                except Exception:
+                except RuntimeError:
                     pass
                 self._cmd_proxy = None
                 self._cmd_widget = None
@@ -1007,23 +769,14 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         lay = QtWidgets.QVBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(6)
-        try:
-            w.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
-        except Exception:
-            pass
-        try:
-            w.setAttribute(QtCore.Qt.WA_StyledBackground, True)
-            w.setStyleSheet("background: transparent;")
-        except Exception:
-            pass
+        w.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        w.setAttribute(QtCore.Qt.WA_StyledBackground, True)
+        w.setStyleSheet("background: transparent;")
 
         for i, c in enumerate(visible_cmds):
             b = QtWidgets.QPushButton(str(getattr(c, "name", "") or ""))
             b.setMinimumHeight(24)
-            try:
-                b.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
-            except Exception:
-                pass
+            b.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
             b.setStyleSheet(
                 """
                 QPushButton {
@@ -1047,10 +800,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         if self._cmd_proxy is None:
             proxy = QtWidgets.QGraphicsProxyWidget(self)
             proxy.setWidget(w)
-            try:
-                proxy.setCacheMode(QtWidgets.QGraphicsItem.DeviceCoordinateCache)
-            except Exception:
-                pass
+            proxy.setCacheMode(QtWidgets.QGraphicsItem.DeviceCoordinateCache)
             self._cmd_proxy = proxy
         else:
             self._cmd_proxy.setWidget(w)
@@ -1064,10 +814,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         widgets; since our inline widgets are custom QWidgets, we mirror updates
         here to get the same "two-way binding" behavior.
         """
-        try:
-            if str(getattr(node, "id", "") or "") != str(getattr(self, "id", "") or ""):
-                return
-        except Exception:
+        if str(getattr(node, "id", "") or "") != str(getattr(self, "id", "") or ""):
             return
         key = str(name or "").strip()
         if not key:
@@ -1078,15 +825,25 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         try:
             updater(value)
         except Exception:
+            logger.exception("inline state updater failed nodeId=%s key=%s", getattr(self, "id", ""), key)
             return
 
     def _on_state_toggle(self, name: str, expanded: bool) -> None:
         name = str(name)
+        # When collapsing, node height shrinks. With partial viewport updates this
+        # can leave stale pixels from the old bounding rect. Track the old rect
+        # and explicitly request a scene update covering both old+new bounds.
+        old_scene_rect = None
+        try:
+            old_scene_rect = self.mapToScene(self.boundingRect()).boundingRect()
+        except RuntimeError:
+            old_scene_rect = None
+
         self._state_inline_expanded[name] = bool(expanded)
         # Persist expand state in the node's UI overrides so it survives reloads.
-        try:
-            node = self._backend_node()
-            if node is not None and hasattr(node, "ui_overrides") and hasattr(node, "set_ui_overrides"):
+        node = self._backend_node()
+        if node is not None:
+            try:
                 ui = dict(node.ui_overrides() or {})
                 store = ui.get("stateInlineExpanded")
                 if not isinstance(store, dict):
@@ -1094,27 +851,39 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 store[name] = bool(expanded)
                 ui["stateInlineExpanded"] = store
                 node.set_ui_overrides(ui, rebuild=False)
-        except Exception:
-            pass
+            except AttributeError:
+                logger.exception("node missing ui_overrides/set_ui_overrides; cannot persist expand state")
         btn = self._state_inline_toggles.get(str(name))
         if btn is not None:
             try:
                 btn.setArrowType(QtCore.Qt.DownArrow if expanded else QtCore.Qt.RightArrow)
-            except Exception:
+            except RuntimeError:
                 pass
         body = self._state_inline_bodies.get(str(name))
         if body is not None:
             try:
                 body.setVisible(bool(expanded))
-            except Exception:
+            except RuntimeError:
                 pass
+
+        def _redraw_and_invalidate() -> None:
+            self.draw_node()
+            new_scene_rect = self.mapToScene(self.boundingRect()).boundingRect()
+            r = new_scene_rect
+            if old_scene_rect is not None:
+                r = old_scene_rect.united(new_scene_rect)
+            r = r.adjusted(-6, -6, 6, 6)
+            sc = self.scene()
+            if sc is not None:
+                sc.update(r)
+            v = self.viewer()
+            if v is not None:
+                v.viewport().update()
+
         try:
-            QtCore.QTimer.singleShot(0, self.draw_node)
-        except Exception:
-            try:
-                self.draw_node()
-            except Exception:
-                pass
+            QtCore.QTimer.singleShot(0, _redraw_and_invalidate)
+        except RuntimeError:
+            _redraw_and_invalidate()
 
     @staticmethod
     def _port_group(name: str) -> str:
@@ -1155,32 +924,28 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
 
     @staticmethod
     def _schema_enum_items(value_schema: Any) -> list[str]:
-        try:
-            return [str(x) for x in list(getattr(getattr(value_schema, "root", None), "enum", None) or [])]
-        except Exception:
+        if value_schema is None:
             return []
+        root = getattr(value_schema, "root", None)
+        enum = getattr(root, "enum", None)
+        if not enum:
+            return []
+        return [str(x) for x in list(enum)]
 
     @staticmethod
     def _schema_numeric_range(value_schema: Any) -> tuple[float | None, float | None]:
         if value_schema is None:
             return None, None
-        # F8DataTypeSchema proxies unknown attrs to `.root` via f8pysdk/__init__.py
-        mins = []
-        maxs = []
+        mins: list[float] = []
+        maxs: list[float] = []
         for k in ("minimum", "exclusiveMinimum"):
-            try:
-                v = getattr(value_schema, k, None)
-                if v is not None:
-                    mins.append(float(v))
-            except Exception:
-                pass
+            v = getattr(value_schema, k, None)
+            if v is not None:
+                mins.append(float(v))
         for k in ("maximum", "exclusiveMaximum"):
-            try:
-                v = getattr(value_schema, k, None)
-                if v is not None:
-                    maxs.append(float(v))
-            except Exception:
-                pass
+            v = getattr(value_schema, k, None)
+            if v is not None:
+                maxs.append(float(v))
         lo = min(mins) if mins else None
         hi = max(maxs) if maxs else None
         return lo, hi
@@ -1190,15 +955,8 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         ui = str(getattr(state_field, "uiControl", "") or "").strip().lower()
         schema = getattr(state_field, "valueSchema", None)
         access = getattr(state_field, "access", None)
-        try:
-            access_s = str(getattr(access, "value", access) or "").strip().lower()
-        except Exception:
-            access_s = ""
-        t = ""
-        try:
-            t = schema_type(schema) or ""
-        except Exception:
-            t = ""
+        access_s = str(getattr(access, "value", access) or "").strip().lower()
+        t = (schema_type(schema) or "") if schema is not None else ""
 
         enum_items = self._schema_enum_items(schema)
         lo, hi = self._schema_numeric_range(schema)
@@ -1238,11 +996,8 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 return
             try:
                 node.set_property(name, value, push_undo=push_undo)
-            except Exception:
-                try:
-                    node.set_property(name, value)
-                except Exception:
-                    return
+            except TypeError:
+                node.set_property(name, value)
 
         def _get_node_value() -> Any:
             node = self._backend_node()
@@ -1250,7 +1005,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 return None
             try:
                 return node.get_property(name)
-            except Exception:
+            except KeyError:
                 return None
 
         # Create control.
@@ -1280,10 +1035,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         if t == "boolean" or ui in {"switch", "toggle"}:
             chk = QtWidgets.QCheckBox()
             _common_style(chk)
-            try:
-                chk.setTristate(False)
-            except Exception:
-                pass
+            chk.setTristate(False)
             chk.toggled.connect(lambda v: _set_node_value(bool(v), push_undo=True))
             def _apply_value(v: Any) -> None:
                 with QtCore.QSignalBlocker(chk):
@@ -1298,11 +1050,8 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         if t in {"integer", "number"} and ui == "slider":
             slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
             slider.setMinimumWidth(110)
-            try:
-                slider.setSingleStep(1)
-                slider.setPageStep(1)
-            except Exception:
-                pass
+            slider.setSingleStep(1)
+            slider.setPageStep(1)
             _common_style(slider)
 
             is_int = t == "integer"
@@ -1327,12 +1076,13 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 return float(v) / scale
 
             def _value_to_slider(v: Any) -> int:
-                try:
-                    if v is None:
-                        return imin
-                    return int(round(float(v) * scale))
-                except Exception:
+                if v is None:
                     return imin
+                try:
+                    fv = float(v)
+                except (TypeError, ValueError):
+                    return imin
+                return int(round(fv * scale))
 
             slider.valueChanged.connect(lambda v: _set_node_value(_slider_to_value(v), push_undo=False))
             slider.sliderReleased.connect(lambda: _set_node_value(_slider_to_value(slider.value()), push_undo=True))
@@ -1351,25 +1101,19 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             _common_style(spin)
             spin.setMinimumWidth(90)
             if lo is not None:
-                try:
-                    spin.setMinimum(int(lo))
-                except Exception:
-                    pass
+                spin.setMinimum(int(lo))
             if hi is not None:
-                try:
-                    spin.setMaximum(int(hi))
-                except Exception:
-                    pass
+                spin.setMaximum(int(hi))
             spin.valueChanged.connect(lambda v: _set_node_value(int(v), push_undo=False))
             spin.editingFinished.connect(lambda: _set_node_value(int(spin.value()), push_undo=True))
             def _apply_value(v: Any) -> None:
-                try:
-                    if v is None:
-                        return
-                    with QtCore.QSignalBlocker(spin):
-                        spin.setValue(int(v))
-                except Exception:
+                if v is None:
                     return
+                with QtCore.QSignalBlocker(spin):
+                    try:
+                        spin.setValue(int(v))
+                    except (TypeError, ValueError):
+                        return
 
             _apply_value(_get_node_value())
             self._state_inline_updaters[name] = _apply_value
@@ -1381,30 +1125,21 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             dsp = QtWidgets.QDoubleSpinBox()
             _common_style(dsp)
             dsp.setMinimumWidth(90)
-            try:
-                dsp.setDecimals(6)
-            except Exception:
-                pass
+            dsp.setDecimals(6)
             if lo is not None:
-                try:
-                    dsp.setMinimum(float(lo))
-                except Exception:
-                    pass
+                dsp.setMinimum(float(lo))
             if hi is not None:
-                try:
-                    dsp.setMaximum(float(hi))
-                except Exception:
-                    pass
+                dsp.setMaximum(float(hi))
             dsp.valueChanged.connect(lambda v: _set_node_value(float(v), push_undo=False))
             dsp.editingFinished.connect(lambda: _set_node_value(float(dsp.value()), push_undo=True))
             def _apply_value(v: Any) -> None:
-                try:
-                    if v is None:
-                        return
-                    with QtCore.QSignalBlocker(dsp):
-                        dsp.setValue(float(v))
-                except Exception:
+                if v is None:
                     return
+                with QtCore.QSignalBlocker(dsp):
+                    try:
+                        dsp.setValue(float(v))
+                    except (TypeError, ValueError):
+                        return
 
             _apply_value(_get_node_value())
             self._state_inline_updaters[name] = _apply_value
@@ -1435,17 +1170,16 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             return
         try:
             fields = list(node.effective_state_fields() or [])
-        except Exception:
+        except AttributeError:
             fields = list(getattr(getattr(node, "spec", None), "stateFields", None) or [])
-        show = []
+
+        show: list[tuple[str, Any]] = []
         for f in fields:
-            try:
-                if getattr(f, "showOnNode", False):
-                    n = str(getattr(f, "name", "") or "").strip()
-                    if n:
-                        show.append((n, f))
-            except Exception:
+            if not getattr(f, "showOnNode", False):
                 continue
+            n = str(getattr(f, "name", "") or "").strip()
+            if n:
+                show.append((n, f))
 
         desired = [n for n, _f in show]
 
@@ -1464,56 +1198,40 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 continue
             try:
                 proxy.setWidget(None)
-            except Exception:
+            except RuntimeError:
                 pass
             try:
                 proxy.setParentItem(None)
                 if self.scene() is not None:
                     self.scene().removeItem(proxy)
-            except Exception:
+            except RuntimeError:
                 pass
 
         # Rebuild state widgets as collapsible panels (stable + simple).
         for n, f in show:
             # Default collapsed; restore persisted expand state from ui overrides.
             expanded = False
-            try:
-                if node is not None and hasattr(node, "ui_overrides"):
-                    ui = node.ui_overrides() or {}
-                    store = ui.get("stateInlineExpanded") if isinstance(ui, dict) else None
-                    if isinstance(store, dict) and n in store:
-                        expanded = bool(store.get(n))
-            except Exception:
-                expanded = False
+            ui = node.ui_overrides() or {}
+            store = ui.get("stateInlineExpanded") if isinstance(ui, dict) else None
+            if isinstance(store, dict) and n in store:
+                expanded = bool(store.get(n))
             expanded = bool(self._state_inline_expanded.get(n, expanded))
-            try:
-                control = self._make_state_inline_control(f)
-            except Exception:
-                continue
+            control = self._make_state_inline_control(f)
 
             # Header: toggle button (state name).
             header = QtWidgets.QWidget()
             header_lay = QtWidgets.QHBoxLayout(header)
             header_lay.setContentsMargins(0, 0, 0, 0)
             header_lay.setSpacing(6)
-            try:
-                header.setAttribute(QtCore.Qt.WA_StyledBackground, True)
-                header.setStyleSheet("background: transparent;")
-            except Exception:
-                pass
+            header.setAttribute(QtCore.Qt.WA_StyledBackground, True)
+            header.setStyleSheet("background: transparent;")
 
             btn = _F8ElideToolButton()
             btn.setCheckable(True)
             btn.setChecked(expanded)
             btn.setAutoRaise(True)
-            try:
-                btn.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
-            except Exception:
-                pass
-            try:
-                btn.setArrowType(QtCore.Qt.DownArrow if expanded else QtCore.Qt.RightArrow)
-            except Exception:
-                pass
+            btn.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+            btn.setArrowType(QtCore.Qt.DownArrow if expanded else QtCore.Qt.RightArrow)
 
             label = str(getattr(f, "label", "") or "").strip() or n
             btn.setFullText(label)
@@ -1559,11 +1277,8 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             panel_lay.addWidget(header)
             panel_lay.addWidget(body)
             panel.setProperty("_f8_state_panel", True)
-            try:
-                panel.setAttribute(QtCore.Qt.WA_StyledBackground, True)
-                panel.setStyleSheet("background: transparent;")
-            except Exception:
-                pass
+            panel.setAttribute(QtCore.Qt.WA_StyledBackground, True)
+            panel.setStyleSheet("background: transparent;")
 
             # Connect toggle.
             btn.toggled.connect(lambda v, _n=n: self._on_state_toggle(_n, bool(v)))  # type: ignore[attr-defined]
@@ -1572,10 +1287,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             proxy = self._state_inline_proxies.get(n)
             if proxy is None:
                 proxy = QtWidgets.QGraphicsProxyWidget(self)
-                try:
-                    proxy.setCacheMode(QtWidgets.QGraphicsItem.DeviceCoordinateCache)
-                except Exception:
-                    pass
+                proxy.setCacheMode(QtWidgets.QGraphicsItem.DeviceCoordinateCache)
                 self._state_inline_proxies[n] = proxy
             proxy.setWidget(panel)
 

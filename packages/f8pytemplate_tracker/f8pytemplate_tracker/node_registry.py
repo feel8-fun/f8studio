@@ -95,7 +95,7 @@ def register_template_tracker_specs(registry: RuntimeNodeRegistry | None = None)
             description="Template image (PNG, base64). Use captureFrame + setTemplateFromCaptureRoi.",
             valueSchema=string_schema(default=""),
             access=F8StateAccess.rw,
-            showOnNode=False,
+            showOnNode=True,
         ),
         F8StateSpec(
             name="telemetryIntervalMs",
@@ -131,7 +131,7 @@ def register_template_tracker_specs(registry: RuntimeNodeRegistry | None = None)
             label="Template Tracker",
             description="Single-target template matching + OpenCV tracker service.",
             tags=["vision", "tracker", "template"],
-            rendererClass="default_svc",
+            rendererClass="pystudio_template_tracker",
             stateFields=state_fields,
             commands=[
                 F8Command(

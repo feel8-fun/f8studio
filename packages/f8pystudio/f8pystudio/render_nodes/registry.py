@@ -12,6 +12,7 @@ from .pystudio_timeseries import PyStudioTimeSeriesNode
 from .pystudio_videoshm import PyStudioVideoShmNode
 from .pystudio_audioshm import PyStudioAudioShmNode
 from .pystudio_trackviz import PyStudioTrackVizNode
+from .pystudio_template_tracker import PyStudioTemplateTrackerNode
 
 
 class RenderNodeRegistry:
@@ -34,6 +35,7 @@ class RenderNodeRegistry:
         self._renderers["pystudio_videoshm"] = PyStudioVideoShmNode
         self._renderers["pystudio_audioshm"] = PyStudioAudioShmNode
         self._renderers["pystudio_trackviz"] = PyStudioTrackVizNode
+        self._renderers["pystudio_template_tracker"] = PyStudioTemplateTrackerNode
 
     def register(self, renderer_key: str, renderer: type[NodeObject]) -> None:
         if renderer_key in self._renderers:
