@@ -4,6 +4,6 @@ label: Template Tracker
 version: 0.0.1
 launch:
   command: pixi
-  args: ["run", "-e", "default", "template_tracker"]
+  args: ["run", "-e", "onnx", "template_tracker"]
   env: {}
   workdir: "../../../"

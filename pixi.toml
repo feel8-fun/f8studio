@@ -48,11 +48,11 @@ onnxruntime-gpu = ">=1.17.0"
 pyyaml = ">=6.0.0"
 
 [environments]
-default = { features = ["py313", "sdk", "engine", "studio", "vision", "template_tracker"], solve-group = "default" }
-onnx = { features = ["py313", "sdk", "onnx", "vision"], solve-group = "onnx" }
+default = { features = ["py313", "sdk", "engine", "studio", "vision"], solve-group = "default" }
+onnx = { features = ["py313", "sdk", "onnx", "vision", "template_tracker"], solve-group = "onnx" }
 
 [tasks]
 engine = "python -m f8pyengine.main"
 studio = "python -m f8pystudio.main"
-detecttracker = "python -m f8pydetect_tracker.main"
+detect_tracker = "python -m f8pydetect_tracker.main"
 template_tracker = "python -m f8pytemplate_tracker.main"

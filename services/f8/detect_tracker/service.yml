@@ -4,7 +4,7 @@ label: Detect Tracker
 version: 0.0.1
 launch:
   command: pixi
-  args: ["run", "-e", "onnx", "detecttracker"]
+  args: ["run", "-e", "onnx", "detect_tracker"]
   env: {}
   workdir: "../../../"
 
