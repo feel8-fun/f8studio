@@ -2289,19 +2289,44 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         if not service_id:
             return
 
-        def _get_bridge() -> Any | None:
+        def _resolve_graph() -> Any | None:
+            # Prefer the viewer passed by NodeGraphQt (more reliable than self.viewer() during init).
             try:
-                g = getattr(viewer, "_f8_graph", None)
+                g = getattr(viewer, "_f8_graph", None) if viewer is not None else None
+                if g is not None:
+                    return g
+            except Exception:
+                pass
+            try:
+                v = self.viewer()
+            except Exception:
+                v = None
+            try:
+                return getattr(v, "_f8_graph", None) if v is not None else None
+            except Exception:
+                return None
+
+        def _get_bridge() -> Any | None:
+            g = _resolve_graph()
+            try:
                 return getattr(g, "service_bridge", None) if g is not None else None
+            except Exception:
+                return None
+
+        def _get_node() -> Any | None:
+            g = _resolve_graph()
+            if g is None:
+                return None
+            try:
+                return g.get_node_by_id(service_id)
             except Exception:
                 return None
 
         def _get_service_class() -> str:
             try:
-                g = getattr(viewer, "_f8_graph", None)
-                if g is None:
+                n = _get_node() or self._backend_node()
+                if n is None:
                     return ""
-                n = g.get_node_by_id(service_id)
                 spec = getattr(n, "spec", None)
                 return str(getattr(spec, "serviceClass", "") or "")
             except Exception:
@@ -2309,7 +2334,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
 
         def _get_compiled_graphs() -> Any | None:
             try:
-                g = getattr(viewer, "_f8_graph", None)
+                g = _resolve_graph() or self._graph()
                 if g is None:
                     return None
                 from .runtime_compiler import compile_runtime_graphs_from_studio
@@ -2322,6 +2347,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             w = ServiceProcessToolbar(
                 service_id=service_id,
                 get_bridge=_get_bridge,
+                get_node=_get_node,
                 get_service_class=_get_service_class,
                 get_compiled_graphs=_get_compiled_graphs,
             )

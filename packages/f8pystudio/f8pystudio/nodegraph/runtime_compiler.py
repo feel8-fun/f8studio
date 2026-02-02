@@ -348,7 +348,24 @@ def compile_runtime_graphs_from_studio(studio_graph: Any) -> CompiledRuntimeGrap
     Convenience wrapper that extracts container/operator nodes from an
     `F8StudioGraph`.
     """
-    all_nodes = list(studio_graph.all_nodes() or [])
+    def _is_disabled(n: Any) -> bool:
+        try:
+            if hasattr(n, "disabled"):
+                d = getattr(n, "disabled")
+                if callable(d):
+                    return bool(d())
+                return bool(d)
+        except Exception:
+            pass
+        try:
+            v = getattr(n, "view", None)
+            if v is not None and hasattr(v, "disabled"):
+                return bool(getattr(v, "disabled"))
+        except Exception:
+            pass
+        return False
+
+    all_nodes = [n for n in list(studio_graph.all_nodes() or []) if not _is_disabled(n)]
     if not hasattr(studio_graph, "_is_container_node") or not hasattr(studio_graph, "_is_operator_node"):
         raise TypeError("studio_graph must be an F8StudioGraph (missing type predicates).")
 
