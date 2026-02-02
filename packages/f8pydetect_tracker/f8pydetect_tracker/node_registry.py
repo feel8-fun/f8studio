@@ -21,10 +21,10 @@ from f8pysdk.runtime_node import RuntimeNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from .constants import SERVICE_CLASS
-from .onnxtracker_node import OnnxTrackerServiceNode
+from .detecttracker_node import detecttrackerServiceNode
 
 
-def register_onnxtracker_specs(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
+def register_detecttracker_specs(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
     reg = registry or RuntimeNodeRegistry.instance()
 
     # Single-node service design:
@@ -50,8 +50,8 @@ def register_onnxtracker_specs(registry: RuntimeNodeRegistry | None = None) -> R
         F8StateSpec(
             name="weightsDir",
             label="Weights Dir",
-            description="Directory containing *.yaml + *.onnx pairs (defaults to services/f8/onnx_tracker/weights).",
-            valueSchema=string_schema(default="services/f8/onnx_tracker/weights"),
+            description="Directory containing *.yaml + *.onnx pairs (defaults to services/f8/detect_tracker/weights).",
+            valueSchema=string_schema(default="services/f8/detect_tracker/weights"),
             access=F8StateAccess.rw,
             showOnNode=True,
         ),
@@ -231,7 +231,7 @@ def register_onnxtracker_specs(registry: RuntimeNodeRegistry | None = None) -> R
             schemaVersion=F8ServiceSchemaVersion.f8service_1,
             serviceClass=SERVICE_CLASS,
             version="0.0.1",
-            label="ONNX Tracker",
+            label="Detect Tracker",
             description="ONNXRuntime-based detector + tracker service (single-node source).",
             tags=["onnx", "vision", "tracker"],
             rendererClass="default_svc",
@@ -257,7 +257,7 @@ def register_onnxtracker_specs(registry: RuntimeNodeRegistry | None = None) -> R
     )
 
     def _service_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
-        return OnnxTrackerServiceNode(node_id=node_id, node=node, initial_state=initial_state)
+        return detecttrackerServiceNode(node_id=node_id, node=node, initial_state=initial_state)
 
     reg.register_service(SERVICE_CLASS, _service_factory, overwrite=True)
     return reg

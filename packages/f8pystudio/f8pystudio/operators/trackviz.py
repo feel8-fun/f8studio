@@ -41,7 +41,7 @@ class PyStudioTrackVizRuntimeNode(RuntimeNode):
     Studio-side node that visualizes tracking results.
 
     Expected input payloads:
-    - Multi-target (from f8.onnxtracker `detections`):
+    - Multi-target (from f8.detecttracker `detections`):
       { "tsMs": int, "width": int, "height": int, "tracks": [ {id, bbox, keypoints?}, ... ] }
     - Single-target (from f8.templatetracker `tracking`):
       { "tsMs": int, "width": int, "height": int, "bbox": [x1,y1,x2,y2] | null }
@@ -329,7 +329,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
             dataInPorts=[
                 F8DataPortSpec(
                     name="detections",
-                    description="Tracking payload (e.g. from f8.onnxtracker.detections).",
+                    description="Tracking payload (e.g. from f8.detecttracker.detections).",
                     valueSchema=any_schema(),
                 ),
             ],

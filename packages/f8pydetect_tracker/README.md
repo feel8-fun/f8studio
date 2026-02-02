@@ -1,4 +1,4 @@
-# f8pyonnx_tracker
+# f8pydetect_tracker
 
 Feel8 ONNX detector + tracker runtime service.
 

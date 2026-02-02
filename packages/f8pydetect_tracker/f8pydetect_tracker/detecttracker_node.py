@@ -26,7 +26,7 @@ from .vision_utils import clamp_xyxy
 def _default_weights_dir() -> Path:
     # Run from repo root by default (service.yml workdir is "../../../").
     # Keep this tolerant: if the path doesn't exist, user can override via state.weightsDir.
-    return (Path.cwd() / "services" / "f8" / "onnx_tracker" / "weights").resolve()
+    return (Path.cwd() / "services" / "f8" / "detect_tracker" / "weights").resolve()
 
 
 def _coerce_int(v: Any, *, default: int, minimum: int | None = None, maximum: int | None = None) -> int:
@@ -223,7 +223,7 @@ class _Telemetry:
             "schemaVersion": "f8telemetry/1",
             "tsMs": int(now_ms),
             "nodeId": str(node_id),
-            "serviceClass": "f8.onnxtracker",
+            "serviceClass": "f8.detecttracker",
             "model": {
                 "id": (model.model_id if model else ""),
                 "task": (model.task if model else ""),
@@ -267,7 +267,7 @@ class _Telemetry:
         }
 
 
-class OnnxTrackerServiceNode(ServiceNode):
+class detecttrackerServiceNode(ServiceNode):
     """
     Runtime operator:
     - reads frames from VideoSHM (BGRA32)
@@ -325,8 +325,8 @@ class OnnxTrackerServiceNode(ServiceNode):
         super().attach(bus)
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(self._ensure_config_loaded(), name=f"onnxtracker:init:{self.node_id}")
-            self._task = loop.create_task(self._loop(), name=f"onnxtracker:loop:{self.node_id}")
+            loop.create_task(self._ensure_config_loaded(), name=f"detecttracker:init:{self.node_id}")
+            self._task = loop.create_task(self._loop(), name=f"detecttracker:loop:{self.node_id}")
         except Exception:
             pass
 

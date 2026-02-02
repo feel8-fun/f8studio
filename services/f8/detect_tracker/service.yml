@@ -1,10 +1,10 @@
 schemaVersion: f8serviceEntry/1
-serviceClass: f8.onnxtracker
-label: ONNX Tracker
+serviceClass: f8.detecttracker
+label: Detect Tracker
 version: 0.0.1
 launch:
   command: pixi
-  args: ["run", "-e", "onnx", "onnxtracker"]
+  args: ["run", "-e", "onnx", "detecttracker"]
   env: {}
   workdir: "../../../"
 
