@@ -124,6 +124,107 @@ class _F8OnTopComboBox(QtWidgets.QComboBox):
             return
 
 
+class _F8FlowLayout(QtWidgets.QLayout):
+    """
+    Simple flow layout (wraps widgets horizontally).
+    """
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None, *, margin: int = 0, spacing: int = 6) -> None:
+        super().__init__(parent)
+        self._items: list[QtWidgets.QLayoutItem] = []
+        self.setContentsMargins(margin, margin, margin, margin)
+        self.setSpacing(spacing)
+
+    def addItem(self, item: QtWidgets.QLayoutItem) -> None:  # type: ignore[override]
+        self._items.append(item)
+
+    def count(self) -> int:  # type: ignore[override]
+        return len(self._items)
+
+    def itemAt(self, index: int) -> QtWidgets.QLayoutItem | None:  # type: ignore[override]
+        if 0 <= index < len(self._items):
+            return self._items[index]
+        return None
+
+    def takeAt(self, index: int) -> QtWidgets.QLayoutItem | None:  # type: ignore[override]
+        if 0 <= index < len(self._items):
+            return self._items.pop(index)
+        return None
+
+    def expandingDirections(self) -> QtCore.Qt.Orientations:  # type: ignore[override]
+        return QtCore.Qt.Orientations(0)
+
+    def hasHeightForWidth(self) -> bool:  # type: ignore[override]
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # type: ignore[override]
+        return self._do_layout(QtCore.QRect(0, 0, width, 0), test_only=True)
+
+    def setGeometry(self, rect: QtCore.QRect) -> None:  # type: ignore[override]
+        super().setGeometry(rect)
+        self._do_layout(rect, test_only=False)
+
+    def sizeHint(self) -> QtCore.QSize:  # type: ignore[override]
+        return self.minimumSize()
+
+    def minimumSize(self) -> QtCore.QSize:  # type: ignore[override]
+        size = QtCore.QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        l, t, r, b = self.getContentsMargins()
+        size += QtCore.QSize(l + r, t + b)
+        return size
+
+    def _do_layout(self, rect: QtCore.QRect, *, test_only: bool) -> int:
+        l, t, r, b = self.getContentsMargins()
+        effective = rect.adjusted(l, t, -r, -b)
+        x = effective.x()
+        y = effective.y()
+        line_height = 0
+        space_x = self.spacing()
+        space_y = self.spacing()
+
+        for item in self._items:
+            w = item.widget()
+            if w is not None and not w.isVisible():
+                continue
+            hint = item.sizeHint()
+            next_x = x + hint.width() + space_x
+            if next_x - space_x > effective.right() and line_height > 0:
+                x = effective.x()
+                y += line_height + space_y
+                next_x = x + hint.width() + space_x
+                line_height = 0
+            if not test_only:
+                item.setGeometry(QtCore.QRect(QtCore.QPoint(x, y), hint))
+            x = next_x
+            line_height = max(line_height, hint.height())
+        return (y + line_height + b) - rect.y()
+
+
+class _F8ElideToolButton(QtWidgets.QToolButton):
+    def __init__(self, parent: QtWidgets.QWidget | None = None):
+        super().__init__(parent)
+        self._full_text = ""
+
+    def setFullText(self, text: str) -> None:
+        self._full_text = str(text or "")
+        self._apply_elide()
+
+    def resizeEvent(self, event):  # type: ignore[override]
+        super().resizeEvent(event)
+        self._apply_elide()
+
+    def _apply_elide(self) -> None:
+        try:
+            fm = QtGui.QFontMetrics(self.font())
+            # Leave room for the arrow icon.
+            w = max(10, int(self.width() - 24))
+            self.setText(fm.elidedText(self._full_text, QtCore.Qt.ElideRight, w))
+        except Exception:
+            self.setText(self._full_text)
+
+
 class F8StudioServiceBaseNode(F8StudioBaseNode):
     """
     Base class for all single-node service (nodes that are intended to live without
@@ -445,6 +546,10 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         self._state_inline_proxies: OrderedDict[str, QtWidgets.QGraphicsProxyWidget] = OrderedDict()
         self._state_inline_controls: OrderedDict[str, QtWidgets.QWidget] = OrderedDict()
         self._state_inline_updaters: OrderedDict[str, Any] = OrderedDict()
+        self._state_inline_toggles: OrderedDict[str, QtWidgets.QToolButton] = OrderedDict()
+        self._state_inline_headers: OrderedDict[str, QtWidgets.QWidget] = OrderedDict()
+        self._state_inline_bodies: OrderedDict[str, QtWidgets.QWidget] = OrderedDict()
+        self._state_inline_expanded: dict[str, bool] = {}
         self._state_row_y: dict[str, tuple[float, float]] = {}
         self._graph_prop_hooked: bool = False
         self._cmd_proxy: QtWidgets.QGraphicsProxyWidget | None = None
@@ -899,27 +1004,22 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
 
         # Rebuild widget each time; command lists are small and this avoids stale buttons.
         w = QtWidgets.QWidget()
-        grid = QtWidgets.QGridLayout(w)
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(6)
-        grid.setVerticalSpacing(6)
+        lay = QtWidgets.QVBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
         try:
             w.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         except Exception:
             pass
+        try:
+            w.setAttribute(QtCore.Qt.WA_StyledBackground, True)
+            w.setStyleSheet("background: transparent;")
+        except Exception:
+            pass
 
-        cols = 3
-        for c in range(cols):
-            try:
-                grid.setColumnStretch(c, 1)
-            except Exception:
-                pass
         for i, c in enumerate(visible_cmds):
-            r = i // cols
-            col = i % cols
             b = QtWidgets.QPushButton(str(getattr(c, "name", "") or ""))
-            b.setMinimumWidth(78)
-            b.setMinimumHeight(20)
+            b.setMinimumHeight(24)
             try:
                 b.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
             except Exception:
@@ -928,20 +1028,21 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 """
                 QPushButton {
                     color: rgb(235, 235, 235);
-                    background: rgba(0, 0, 0, 45);
+                    background: transparent;
                     border: 1px solid rgba(255, 255, 255, 55);
                     border-radius: 4px;
-                    padding: 2px 8px;
+                    padding: 4px 10px;
+                    text-align: center;
                 }
-                QPushButton:hover { background: rgba(255, 255, 255, 18); }
-                QPushButton:pressed { background: rgba(255, 255, 255, 12); }
+                QPushButton:hover { background: transparent; }
+                QPushButton:pressed { background: transparent; }
                 """
             )
             desc = str(getattr(c, "description", "") or "").strip()
             if desc:
                 b.setToolTip(desc)
             b.clicked.connect(lambda _=False, _c=c: self._invoke_command(_c))  # type: ignore[attr-defined]
-            grid.addWidget(b, r, col)
+            lay.addWidget(b)
 
         if self._cmd_proxy is None:
             proxy = QtWidgets.QGraphicsProxyWidget(self)
@@ -978,6 +1079,42 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             updater(value)
         except Exception:
             return
+
+    def _on_state_toggle(self, name: str, expanded: bool) -> None:
+        name = str(name)
+        self._state_inline_expanded[name] = bool(expanded)
+        # Persist expand state in the node's UI overrides so it survives reloads.
+        try:
+            node = self._backend_node()
+            if node is not None and hasattr(node, "ui_overrides") and hasattr(node, "set_ui_overrides"):
+                ui = dict(node.ui_overrides() or {})
+                store = ui.get("stateInlineExpanded")
+                if not isinstance(store, dict):
+                    store = {}
+                store[name] = bool(expanded)
+                ui["stateInlineExpanded"] = store
+                node.set_ui_overrides(ui, rebuild=False)
+        except Exception:
+            pass
+        btn = self._state_inline_toggles.get(str(name))
+        if btn is not None:
+            try:
+                btn.setArrowType(QtCore.Qt.DownArrow if expanded else QtCore.Qt.RightArrow)
+            except Exception:
+                pass
+        body = self._state_inline_bodies.get(str(name))
+        if body is not None:
+            try:
+                body.setVisible(bool(expanded))
+            except Exception:
+                pass
+        try:
+            QtCore.QTimer.singleShot(0, self.draw_node)
+        except Exception:
+            try:
+                self.draw_node()
+            except Exception:
+                pass
 
     @staticmethod
     def _port_group(name: str) -> str:
@@ -1319,6 +1456,10 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             proxy = self._state_inline_proxies.pop(n, None)
             self._state_inline_controls.pop(n, None)
             self._state_inline_updaters.pop(n, None)
+            self._state_inline_toggles.pop(n, None)
+            self._state_inline_headers.pop(n, None)
+            self._state_inline_bodies.pop(n, None)
+            self._state_inline_expanded.pop(n, None)
             if proxy is None:
                 continue
             try:
@@ -1332,31 +1473,117 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             except Exception:
                 pass
 
-        # create missing widgets.
+        # Rebuild state widgets as collapsible panels (stable + simple).
         for n, f in show:
-            if n in self._state_inline_proxies:
-                continue
+            # Default collapsed; restore persisted expand state from ui overrides.
+            expanded = False
+            try:
+                if node is not None and hasattr(node, "ui_overrides"):
+                    ui = node.ui_overrides() or {}
+                    store = ui.get("stateInlineExpanded") if isinstance(ui, dict) else None
+                    if isinstance(store, dict) and n in store:
+                        expanded = bool(store.get(n))
+            except Exception:
+                expanded = False
+            expanded = bool(self._state_inline_expanded.get(n, expanded))
             try:
                 control = self._make_state_inline_control(f)
             except Exception:
                 continue
-            container = QtWidgets.QWidget()
-            lay = QtWidgets.QHBoxLayout(container)
-            lay.setContentsMargins(0, 0, 0, 0)
-            lay.setSpacing(0)
-            lay.addWidget(control)
+
+            # Header: toggle button (state name).
+            header = QtWidgets.QWidget()
+            header_lay = QtWidgets.QHBoxLayout(header)
+            header_lay.setContentsMargins(0, 0, 0, 0)
+            header_lay.setSpacing(6)
             try:
-                container.setMinimumHeight(max(18, int(control.sizeHint().height())))
+                header.setAttribute(QtCore.Qt.WA_StyledBackground, True)
+                header.setStyleSheet("background: transparent;")
             except Exception:
                 pass
-            proxy = QtWidgets.QGraphicsProxyWidget(self)
-            proxy.setWidget(container)
+
+            btn = _F8ElideToolButton()
+            btn.setCheckable(True)
+            btn.setChecked(expanded)
+            btn.setAutoRaise(True)
             try:
-                proxy.setCacheMode(QtWidgets.QGraphicsItem.DeviceCoordinateCache)
+                btn.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
             except Exception:
                 pass
-            self._state_inline_proxies[n] = proxy
+            try:
+                btn.setArrowType(QtCore.Qt.DownArrow if expanded else QtCore.Qt.RightArrow)
+            except Exception:
+                pass
+
+            label = str(getattr(f, "label", "") or "").strip() or n
+            btn.setFullText(label)
+            btn.setToolTip(str(getattr(f, "description", "") or "").strip() or n)
+            btn.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+            btn.setStyleSheet(
+                """
+                QToolButton {
+                    color: rgb(235, 235, 235);
+                    background: transparent;
+                    border: 1px solid rgba(255, 255, 255, 18);
+                    border-radius: 4px;
+                    padding: 2px 8px;
+                    text-align: left;
+                }
+                QToolButton:hover { background: transparent; }
+                QToolButton:checked { background: transparent; }
+                """
+            )
+
+            header_lay.addWidget(btn, 1)
+
+            # Body: control widget (collapsed by default).
+            body = QtWidgets.QWidget()
+            body_lay = QtWidgets.QVBoxLayout(body)
+            body_lay.setContentsMargins(8, 0, 8, 6)
+            body_lay.setSpacing(0)
+            body_lay.addWidget(control)
+            body.setVisible(expanded)
+            body.setStyleSheet(
+                """
+                QWidget {
+                    background: transparent;
+                    border: 0px;
+                }
+                """
+            )
+
+            panel = QtWidgets.QWidget()
+            panel_lay = QtWidgets.QVBoxLayout(panel)
+            panel_lay.setContentsMargins(0, 0, 0, 0)
+            panel_lay.setSpacing(0)
+            panel_lay.addWidget(header)
+            panel_lay.addWidget(body)
+            panel.setProperty("_f8_state_panel", True)
+            try:
+                panel.setAttribute(QtCore.Qt.WA_StyledBackground, True)
+                panel.setStyleSheet("background: transparent;")
+            except Exception:
+                pass
+
+            # Connect toggle.
+            btn.toggled.connect(lambda v, _n=n: self._on_state_toggle(_n, bool(v)))  # type: ignore[attr-defined]
+
+            # Install/replace proxy.
+            proxy = self._state_inline_proxies.get(n)
+            if proxy is None:
+                proxy = QtWidgets.QGraphicsProxyWidget(self)
+                try:
+                    proxy.setCacheMode(QtWidgets.QGraphicsItem.DeviceCoordinateCache)
+                except Exception:
+                    pass
+                self._state_inline_proxies[n] = proxy
+            proxy.setWidget(panel)
+
             self._state_inline_controls[n] = control
+            self._state_inline_toggles[n] = btn
+            self._state_inline_headers[n] = header
+            self._state_inline_bodies[n] = body
+            self._state_inline_expanded[n] = expanded
 
     def post_init(self, viewer=None, pos=None):
         """
@@ -1642,6 +1869,9 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 port_width = port.boundingRect().width()
             if not port_height:
                 port_height = port.boundingRect().height()
+            # State labels are displayed via the collapsible header button, not port text.
+            if self._port_group(str(getattr(port, "name", "") or "")) == "state":
+                continue
             t_width = text.boundingRect().width()
             if text.isVisible() and t_width > p_input_text_width:
                 p_input_text_width = text.boundingRect().width()
@@ -1652,6 +1882,8 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 port_width = port.boundingRect().width()
             if not port_height:
                 port_height = port.boundingRect().height()
+            if self._port_group(str(getattr(port, "name", "") or "")) == "state":
+                continue
             t_width = text.boundingRect().width()
             if text.isVisible() and t_width > p_output_text_width:
                 p_output_text_width = text.boundingRect().width()
@@ -1679,33 +1911,64 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         other_in = _names_for("other", is_in=True)
         other_out = _names_for("other", is_in=False)
 
-        rows_exec = max(len(exec_in), len(exec_out))
-        rows_data = max(len(data_in), len(data_out))
-        # Prefer inline widget count for state rows (1 row per showOnNode state).
-        rows_state = len([p for p in self._state_inline_proxies.values() if p.isVisible()])
-        if rows_state <= 0:
-            # Best-effort fallback from state port names.
-            state_names: list[str] = []
+        state_names: list[str] = [n for n, p in self._state_inline_proxies.items() if p.isVisible()]
+        if not state_names:
+            # Infer state row order from port names (best-effort).
+            tmp: list[str] = []
             for n in state_in:
                 if n.startswith("[S]"):
-                    state_names.append(n[3:])
+                    tmp.append(n[3:])
             for n in state_out:
                 if n.endswith("[S]"):
-                    state_names.append(n[:-3])
-            rows_state = len([x for x in list(OrderedDict.fromkeys(state_names).keys()) if x])
+                    tmp.append(n[:-3])
+            state_names = [x for x in list(OrderedDict.fromkeys(tmp).keys()) if x]
+
+        rows_exec = max(len(exec_in), len(exec_out))
+        rows_data = max(len(data_in), len(data_out))
         rows_other = max(len(other_in), len(other_out))
 
-        total_rows = rows_exec + rows_data + rows_state + rows_other
-        gaps = 0
-        for rows in (rows_exec, rows_data, rows_state, rows_other):
-            if rows > 0:
-                gaps += 1
-        gaps = max(0, gaps - 1)
+        # Calculate port area height with expandable state panels.
+        ports_h = 0.0
+        if port_height:
+            def _add_group_rows(rows: int) -> None:
+                nonlocal ports_h
+                if rows <= 0:
+                    return
+                if ports_h > 0:
+                    ports_h += group_gap
+                ports_h += (rows * port_height) + (max(0, rows - 1) * spacing)
 
-        if port_height and total_rows:
-            grouped_height = (total_rows * port_height) + (max(0, total_rows - 1) * spacing) + (gaps * group_gap)
-            p_input_height = grouped_height
-            p_output_height = grouped_height
+            _add_group_rows(rows_exec)
+            _add_group_rows(rows_data)
+
+            # State: each row has a header (ports+toggle) and optional expanded body.
+            if state_names:
+                if ports_h > 0:
+                    ports_h += group_gap
+                for i, sname in enumerate(state_names):
+                    header_h = port_height
+                    try:
+                        header = self._state_inline_headers.get(sname)
+                        if header is not None:
+                            header_h = float(max(port_height, header.sizeHint().height()))
+                    except Exception:
+                        header_h = port_height
+                    body_h = 0.0
+                    try:
+                        body = self._state_inline_bodies.get(sname)
+                        if body is not None and body.isVisible():
+                            body_h = float(max(0.0, body.sizeHint().height()))
+                    except Exception:
+                        body_h = 0.0
+                    ports_h += header_h + spacing
+                    if body_h > 0.0:
+                        ports_h += body_h + spacing
+                ports_h = max(0.0, ports_h - spacing)  # remove trailing row spacing
+
+            _add_group_rows(rows_other)
+
+            p_input_height = ports_h
+            p_output_height = ports_h
 
         port_text_width = p_input_text_width + p_output_text_width
 
@@ -1729,15 +1992,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             if w_width > widget_width:
                 widget_width = w_width
             widget_height += w_height
-        for proxy in self._state_inline_proxies.values():
-            try:
-                if not proxy.isVisible():
-                    continue
-                w_width = proxy.boundingRect().width()
-                if w_width > widget_width:
-                    widget_width = w_width
-            except Exception:
-                continue
+        # State panels span the node width; they should not participate in width calculation.
         # Command widget spans the node width; it should not participate in width calculation.
 
         side_padding = 0.0
@@ -1751,20 +2006,26 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
 
         port_area_height = max(p_input_height, p_output_height)
         height = max([text_h, port_area_height, widget_height])
-        if self._cmd_proxy is not None:
-            try:
-                if self._cmd_proxy.isVisible() and port_height:
-                    cmd_h = float(self._cmd_proxy.boundingRect().height())
-                    if cmd_h > 0:
-                        height = max(height, port_area_height + cmd_h + 10.0)
-            except Exception:
-                pass
         if widget_width:
             # add additional width for node widget.
             width += widget_width
         if widget_height:
             # add bottom margin for node widget.
             height += 4.0
+
+        # Commands: compute height using the final width (flow wrap depends on width).
+        if self._cmd_proxy is not None:
+            try:
+                if self._cmd_proxy.isVisible() and port_height:
+                    rect_w = max(10, int(width - 8.0))
+                    if self._cmd_widget is not None:
+                        self._cmd_widget.setFixedWidth(rect_w)
+                        self._cmd_widget.adjustSize()
+                    cmd_h = float(self._cmd_proxy.boundingRect().height())
+                    if cmd_h > 0:
+                        height = max(height, port_area_height + cmd_h + 10.0)
+            except Exception:
+                pass
         height *= 1.05
         return width, height
 
@@ -1878,27 +2139,9 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             raise RuntimeError("Node graph layout direction not valid!")
 
     def _align_widgets_horizontal(self, v_offset):
-        # State inline widgets are aligned to state rows (populated by port alignment).
         rect = self.boundingRect()
         inputs = [p for p in self.inputs if p.isVisible()]
         outputs = [p for p in self.outputs if p.isVisible()]
-
-        for name, proxy in self._state_inline_proxies.items():
-            if not proxy.isVisible():
-                continue
-            row = self._state_row_y.get(name)
-            if not row:
-                continue
-            port_y, port_h = row
-            w_rect = proxy.boundingRect()
-            if not inputs:
-                x = rect.left() + 10
-            elif not outputs:
-                x = rect.right() - w_rect.width() - 10
-            else:
-                x = rect.center().x() - (w_rect.width() / 2)
-            y = port_y + (port_h - w_rect.height()) / 2.0
-            proxy.setPos(x, y)
 
         # Command buttons are placed below the ports area and should span the full node width.
         cmd_bottom = None
@@ -1984,7 +2227,6 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         txt_offset = PortEnum.CLICK_FALLOFF.value - 2
         spacing = 1.0
         group_gap = 6.0
-        self._state_row_y = {}
 
         # Ensure inline widgets exist before aligning so sizing + rows match.
         try:
@@ -2075,7 +2317,11 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         in_x = (port_width / 2.0) * -1.0
         out_x = width - (port_width / 2.0)
 
-        def place_row(in_name: str | None, out_name: str | None, *, y: float, is_state: bool, state_key: str | None):
+        rect = self.boundingRect()
+        inner_x = rect.left() + 4.0
+        inner_w = max(10.0, rect.width() - 8.0)
+
+        def place_row(in_name: str | None, out_name: str | None, *, y: float):
             if in_name:
                 p = inputs_by_name.get(in_name)
                 if p is not None:
@@ -2084,8 +2330,6 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 p = outputs_by_name.get(out_name)
                 if p is not None:
                     p.setPos(out_x, y)
-            if is_state and state_key:
-                self._state_row_y[state_key] = (y, port_height)
 
         y = float(v_offset)
         groups: list[tuple[str, list[str], list[str]]] = [
@@ -2105,9 +2349,46 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             for i in range(rows):
                 in_name = ins[i] if i < len(ins) else None
                 out_name = outs[i] if i < len(outs) else None
-                state_key = state_names[i] if (gname == "state" and i < len(state_names)) else None
-                place_row(in_name, out_name, y=y, is_state=(gname == "state"), state_key=state_key)
-                y += port_height + spacing
+
+                if gname != "state":
+                    place_row(in_name, out_name, y=y)
+                    y += port_height + spacing
+                    continue
+
+                # State row: place collapsible panel + ports aligned to header line.
+                state_key = state_names[i] if i < len(state_names) else None
+                panel_proxy = self._state_inline_proxies.get(state_key) if state_key else None
+                header_h = port_height
+                body_h = 0.0
+                if state_key and panel_proxy is not None:
+                    try:
+                        if self._state_inline_headers.get(state_key) is not None:
+                            header_h = float(max(port_height, self._state_inline_headers[state_key].sizeHint().height()))
+                    except Exception:
+                        header_h = port_height
+                    try:
+                        body_w = self._state_inline_bodies.get(state_key)
+                        if body_w is not None and body_w.isVisible():
+                            body_h = float(max(0.0, body_w.sizeHint().height()))
+                    except Exception:
+                        body_h = 0.0
+                    try:
+                        w = panel_proxy.widget()
+                        if w is not None:
+                            w.setFixedWidth(int(inner_w))
+                            w.adjustSize()
+                    except Exception:
+                        pass
+                    try:
+                        panel_proxy.setPos(inner_x, y)
+                    except Exception:
+                        pass
+
+                port_y = y + (header_h - port_height) / 2.0
+                place_row(in_name, out_name, y=port_y)
+                y += header_h + spacing
+                if body_h > 0.0:
+                    y += body_h + spacing
             # group gap (except after last visible group)
             # determine if any later group has rows.
             has_later = False
@@ -2192,11 +2473,12 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         # update port text items in visibility.
         for port, text in self._input_items.items():
             if port.isVisible():
-                text.setVisible(port.display_name)
+                if self._port_group(str(getattr(port, "name", "") or "")) == "state":
+                    text.setVisible(False)
+                else:
+                    text.setVisible(port.display_name)
         for port, text in self._output_items.items():
             if port.isVisible():
-                # Reduce width pressure in the state-field area by hiding the
-                # mirrored state labels on the output side (tooltip still shows full name).
                 if self._port_group(str(getattr(port, "name", "") or "")) == "state":
                     text.setVisible(False)
                 else:
