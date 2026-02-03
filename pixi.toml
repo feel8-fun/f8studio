@@ -56,3 +56,4 @@ engine = "python -m f8pyengine.main"
 studio = "python -m f8pystudio.main"
 detect_tracker = "python -m f8pydetect_tracker.main"
 template_tracker = "python -m f8pytemplate_tracker.main"
+sdk_tests = 'python -m unittest discover -s packages/f8pysdk/tests -p "test_*.py"'

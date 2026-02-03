@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable, TYPE_CHECKING
-from collections.abc import Awaitable, Callable
 
 if TYPE_CHECKING:
     from ..generated import F8RuntimeGraph
@@ -51,12 +50,17 @@ class StatefulNode(Protocol):
     """
     State callback capability.
 
-    Nodes can opt-in to receiving state updates.
+    Nodes must implement state validation and callbacks.
     """
 
     node_id: str
+    allow_unknown_state_fields: bool
+
+    async def validate_state(self, field: str, value: Any, *, ts_ms: int, meta: dict[str, Any]) -> Any: ...
 
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None: ...
+
+
 
 
 @runtime_checkable
@@ -121,59 +125,44 @@ class LifecycleNode(Protocol):
 
 
 @runtime_checkable
-class DataListenerBus(Protocol):
+class RungraphHook(Protocol):
     """
-    Data listener registration capability (bus-side).
-
-    Consumers (e.g. UI tools) can subscribe to buffered input updates for a given (node_id, port).
+    Rungraph update hook (component-side).
     """
 
-    def add_data_listener(self, node_id: str, port: str, cb: Callable[[str, str, Any, int], Awaitable[None] | None]) -> None: ...
+    async def validate_rungraph(self, graph: "F8RuntimeGraph") -> None: ...
 
-    def remove_data_listener(self, node_id: str, port: str, cb: Callable[[str, str, Any, int], Awaitable[None] | None]) -> None: ...
+    async def on_rungraph(self, graph: "F8RuntimeGraph") -> None: ...
 
 
 @runtime_checkable
-class StateListenerBus(Protocol):
+class LifecycleHook(Protocol):
     """
-    State listener registration capability (bus-side).
-
-    Consumers can subscribe to local KV state updates.
+    Lifecycle hook (component-side).
     """
 
-    def add_state_listener(
-        self, cb: Callable[[str, str, Any, int, dict[str, Any]], Awaitable[None] | None]
-    ) -> None: ...
-
-    def remove_state_listener(
-        self, cb: Callable[[str, str, Any, int, dict[str, Any]], Awaitable[None] | None]
-    ) -> None: ...
+    async def on_lifecycle(self, active: bool, meta: dict[str, Any]) -> None: ...
 
 
 @runtime_checkable
-class RungraphListenerBus(Protocol):
+class RungraphHookBus(Protocol):
     """
-    Rungraph listener registration capability (bus-side).
-
-    Consumers can subscribe to validated rungraph updates.
+    Rungraph hook registration capability (bus-side).
     """
 
-    def add_rungraph_listener(self, cb: Callable[["F8RuntimeGraph"], Awaitable[None] | None]) -> None: ...
+    def register_rungraph_hook(self, hook: RungraphHook) -> None: ...
 
-    def remove_rungraph_listener(self, cb: Callable[["F8RuntimeGraph"], Awaitable[None] | None]) -> None: ...
-
+    def unregister_rungraph_hook(self, hook: RungraphHook) -> None: ...
 
 @runtime_checkable
-class LifecycleListenerBus(Protocol):
+class LifecycleHookBus(Protocol):
     """
-    Lifecycle listener registration capability (bus-side).
-
-    Consumers can subscribe to activate/deactivate transitions.
+    Lifecycle hook registration capability (bus-side).
     """
 
-    def add_lifecycle_listener(self, cb: Callable[[bool, dict[str, Any]], Awaitable[None] | None]) -> None: ...
+    def register_lifecycle_hook(self, hook: LifecycleHook) -> None: ...
 
-    def remove_lifecycle_listener(self, cb: Callable[[bool, dict[str, Any]], Awaitable[None] | None]) -> None: ...
+    def unregister_lifecycle_hook(self, hook: LifecycleHook) -> None: ...
 
 
 @runtime_checkable
@@ -203,13 +192,13 @@ class StateIOBus(Protocol):
     State read/write operations against the bus.
     """
 
-    async def set_state(self, node_id: str, field: str, value: Any, *, ts_ms: int | None = None) -> None: ...
+    async def publish_state_runtime(self, node_id: str, field: str, value: Any, *, ts_ms: int | None = None) -> None: ...
 
     async def get_state(self, node_id: str, field: str) -> Any: ...
 
 
 @runtime_checkable
-class NodeBus(StateIOBus, DataIOBus, LifecycleListenerBus, BusActive, Protocol):
+class NodeBus(StateIOBus, DataIOBus, BusActive, Protocol):
     """
     Composition of bus capabilities used by `RuntimeNode`.
     """

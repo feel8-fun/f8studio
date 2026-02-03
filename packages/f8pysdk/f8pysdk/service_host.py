@@ -6,6 +6,7 @@ from typing import Any
 from .generated import F8EdgeKindEnum, F8JsonValue, F8RuntimeGraph, F8RuntimeNode, F8StateAccess
 from .runtime_node_registry import RuntimeNodeRegistry
 from .service_bus import ServiceBus
+from .state_write import StateWriteOrigin
 
 
 def _unwrap_json_value(v: Any) -> Any:
@@ -71,7 +72,7 @@ class ServiceHost:
 
         self._service_node: Any | None = None
         self._operator_nodes: dict[str, Any] = {}
-        self._bus.add_rungraph_listener(self.apply_rungraph)
+        self._bus.register_rungraph_hook(self)
 
     async def start(self) -> None:
         """
@@ -195,6 +196,12 @@ class ServiceHost:
             )
         await self._seed_state_defaults(want_operator_nodes, rungraph_ts=rungraph_ts, skip_fields=cross_state_targets)
 
+    async def on_rungraph(self, graph: F8RuntimeGraph) -> None:
+        await self.apply_rungraph(graph)
+
+    async def validate_rungraph(self, graph: F8RuntimeGraph) -> None:
+        _ = graph
+
     @staticmethod
     def _needs_recreate(node: Any, snapshot: F8RuntimeNode) -> bool:
         """
@@ -295,11 +302,12 @@ class ServiceHost:
                     except Exception:
                         continue
                 try:
-                    await self._bus.set_state_with_meta(
+                    await self._bus._publish_state(
                         node_id,
                         str(k),
                         v,
                         ts_ms=(int(rungraph_ts) if rungraph_ts > 0 else None),
+                        origin=StateWriteOrigin.rungraph,
                         source="rungraph",
                         meta={"rungraphReconcile": True},
                     )
@@ -345,11 +353,12 @@ class ServiceHost:
                 except Exception:
                     continue
             try:
-                await self._bus.set_state_with_meta(
+                await self._bus._publish_state(
                     node_id,
                     str(k),
                     v,
                     ts_ms=(int(rungraph_ts) if rungraph_ts > 0 else None),
+                    origin=StateWriteOrigin.rungraph,
                     source="rungraph",
                     meta={"rungraphReconcile": True, "serviceNode": True},
                 )

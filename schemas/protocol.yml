@@ -45,8 +45,7 @@ components:
             - rw
             - ro
             - wo
-            - init
-          description: rw=mutable, ro=read-only, wo=write-only (no fanout), init=immutable in activation
+          description: rw=mutable, ro=read-only, wo=write-only (no fanout)
         required:
           type: boolean
           default: false

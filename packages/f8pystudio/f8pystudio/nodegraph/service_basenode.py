@@ -1090,7 +1090,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 return None
 
         # Create control.
-        read_only = access_s in {"ro", "init"}
+        read_only = access_s == "ro"
 
         is_image_b64 = t == "string" and (ui in {"image", "image_b64", "img"} or "b64" in name.lower())
         if is_image_b64:

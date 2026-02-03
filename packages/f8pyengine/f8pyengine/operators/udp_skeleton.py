@@ -20,7 +20,7 @@ from f8pysdk import (
     integer_schema,
     string_schema,
 )
-from f8pysdk.capabilities import LifecycleListenerBus, NodeBus
+from f8pysdk.capabilities import NodeBus
 from f8pysdk.nats_naming import ensure_token
 from f8pysdk.runtime_node import RuntimeNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
@@ -102,30 +102,11 @@ class UdpSkeletonRuntimeNode(RuntimeNode):
         self._last_emitted_version = -1
         self._last_emitted_keys: list[str] = []
         self._last_emitted_selected: tuple[str, int] | None = None  # (key, rxTsMs)
-        self._lifecycle_hooked = False
 
     def attach(self, bus: Any) -> None:
         super().attach(bus)
-        if self._lifecycle_hooked:
-            return
-        self._lifecycle_hooked = True
-
-        # Pause/resume UDP IO with service lifecycle.
-        bus_like = bus if isinstance(bus, NodeBus) else None
-
-        async def _on_active(active: bool, _meta: dict[str, Any]) -> None:
-            if bool(active):
-                await self._ensure_receiver()
-            else:
-                await self._stop_receiver()
-
-        if isinstance(bus, LifecycleListenerBus):
-            try:
-                bus.add_lifecycle_listener(_on_active)
-            except Exception:
-                pass
-
         # Apply current active state immediately (best-effort).
+        bus_like = bus if isinstance(bus, NodeBus) else None
         if bus_like is not None:
             try:
                 if not bool(bus_like.active):
@@ -133,6 +114,12 @@ class UdpSkeletonRuntimeNode(RuntimeNode):
                     loop.create_task(self._stop_receiver(), name=f"udp_skeleton:deactivate:{self.node_id}")
             except Exception:
                 pass
+
+    async def on_lifecycle(self, active: bool, _meta: dict[str, Any]) -> None:
+        if bool(active):
+            await self._ensure_receiver()
+        else:
+            await self._stop_receiver()
 
     def _bus_active(self) -> bool:
         bus = self._bus

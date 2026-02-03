@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from f8pysdk.executors.exec_flow import ExecFlowExecutor
 from f8pysdk.generated import F8RuntimeGraph
 from f8pysdk.capabilities import ExecutableNode
@@ -26,6 +28,7 @@ class PyEngineService(ServiceCliTemplate):
     def __init__(self) -> None:
         self._executor: ExecFlowExecutor | None = None
         self._exec_node_ids: set[str] = set()
+        self._runtime: ServiceRuntime | None = None
 
     @property
     def service_class(self) -> str:
@@ -37,20 +40,21 @@ class PyEngineService(ServiceCliTemplate):
     async def setup(self, runtime: ServiceRuntime) -> None:
         executor = ExecFlowExecutor(runtime.bus)
         self._executor = executor
-
-        async def _on_rungraph(graph: F8RuntimeGraph) -> None:
-            await self._sync_exec_nodes(runtime, graph)
-            await executor.apply_rungraph(graph)
-
-        runtime.bus.add_rungraph_listener(_on_rungraph)
-
-        async def _on_lifecycle(active: bool, _meta: dict[str, object]) -> None:
-            await executor.set_active(active)
-
-        runtime.bus.add_lifecycle_listener(_on_lifecycle)
+        self._runtime = runtime
+        runtime.bus.register_rungraph_hook(self)
+        runtime.bus.register_lifecycle_hook(self)
 
     async def teardown(self, runtime: ServiceRuntime) -> None:
         executor = self._executor
+        try:
+            runtime.bus.unregister_rungraph_hook(self)
+        except Exception:
+            pass
+        try:
+            runtime.bus.unregister_lifecycle_hook(self)
+        except Exception:
+            pass
+        self._runtime = None
         if executor is None:
             return
         try:
@@ -115,3 +119,20 @@ class PyEngineService(ServiceCliTemplate):
                 self._exec_node_ids.add(node_id)
             except Exception:
                 continue
+
+    async def on_rungraph(self, graph: F8RuntimeGraph) -> None:
+        runtime = self._runtime
+        executor = self._executor
+        if runtime is None or executor is None:
+            return
+        await self._sync_exec_nodes(runtime, graph)
+        await executor.apply_rungraph(graph)
+
+    async def validate_rungraph(self, graph: F8RuntimeGraph) -> None:
+        _ = graph
+
+    async def on_lifecycle(self, active: bool, _meta: dict[str, Any]) -> None:
+        executor = self._executor
+        if executor is None:
+            return
+        await executor.set_active(active)

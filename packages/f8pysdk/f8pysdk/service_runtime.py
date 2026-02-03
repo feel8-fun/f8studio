@@ -30,6 +30,7 @@ class ServiceRuntimeConfig:
         *,
         service_id: str,
         service_class: str,
+        service_name: str | None = None,
         nats_url: str = "nats://127.0.0.1:4222",
         publish_all_data: bool = True,
         kv_storage: StorageType = StorageType.MEMORY,
@@ -40,6 +41,8 @@ class ServiceRuntimeConfig:
     ) -> "ServiceRuntimeConfig":
         bus = ServiceBusConfig(
             service_id=str(service_id),
+            service_name=str(service_name or "") or None,
+            service_class=str(service_class or "") or None,
             nats_url=str(nats_url),
             publish_all_data=bool(publish_all_data),
             kv_storage=kv_storage,

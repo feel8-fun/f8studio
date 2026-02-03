@@ -15,6 +15,7 @@ from f8pysdk.nats_naming import cmd_channel_subject, ensure_token, kv_bucket_for
 from f8pysdk.nats_transport import NatsTransport, NatsTransportConfig
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from f8pysdk.service_ready import wait_service_ready
+from f8pysdk.state_write import StateWriteOrigin
 from .nodegraph.runtime_compiler import CompiledRuntimeGraphs
 from .pystudio_service import PyStudioService, PyStudioServiceConfig
 from .service_process_manager import ServiceProcessConfig, ServiceProcessManager
@@ -997,7 +998,13 @@ class PyStudioServiceBridge(QtCore.QObject):
             if self._svc is None or self._svc.bus is None:
                 return
             try:
-                await self._svc.bus.set_state(node_id, field, value)
+                await self._svc.bus._publish_state(
+                    node_id,
+                    field,
+                    value,
+                    origin=StateWriteOrigin.external,
+                    source="pystudio",
+                )
             except Exception:
                 return
 
