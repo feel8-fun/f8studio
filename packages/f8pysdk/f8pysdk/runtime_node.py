@@ -77,6 +77,12 @@ class RuntimeNode(BusAttachableNode, StatefulNode, DataReceivableNode, Computabl
     async def set_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
         if self._bus is None:
             return
+        # Prefer internal state publishing when available so runtimes can update their
+        # own read-only status fields (ro is "read-only for external writers").
+        fn = getattr(self._bus, "set_state_internal", None)
+        if callable(fn):
+            await fn(self.node_id, field, value, ts_ms=ts_ms)
+            return
         await self._bus.set_state(self.node_id, field, value, ts_ms=ts_ms)
 
     async def get_state(self, field: str) -> Any:

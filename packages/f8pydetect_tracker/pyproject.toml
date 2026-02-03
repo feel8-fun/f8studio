@@ -7,18 +7,10 @@ requires-python = ">=3.10"
 dependencies = [
     "f8pysdk",
     "numpy>=2.2.0",
-    # We rely on OpenCV trackers (KCF/CSRT/MOSSE) for high-frequency tracking,
-    # which require the contrib build.
+    "onnxruntime-gpu>=1.17.0",
     "opencv-contrib-python>=4.10.0",
-    # Note: onnxruntime does not ship wheels for every Python version (e.g. CPython 3.14+).
-    # Keep it conditional so the workspace can still install; the service will surface a
-    # clear runtime error if onnxruntime is missing.
-    "onnxruntime>=1.17.0; python_version < '3.14'",
     "pyyaml>=6.0.0",
 ]
-
-[project.optional-dependencies]
-gpu = ["onnxruntime-gpu>=1.17.0; python_version < '3.14'"]
 
 [build-system]
 requires = ["hatchling"]

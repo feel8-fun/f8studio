@@ -760,6 +760,39 @@ class ServiceBus:
         # Apply to listeners and the node callback immediately.
         await self._dispatch_local_state_update(node_id, field, value, int(payload["ts"]), dict(payload))
 
+    async def set_state_internal(self, node_id: str, field: str, value: Any, *, ts_ms: int | None = None) -> None:
+        """
+        Set local state for this service, bypassing read-only access restrictions.
+
+        Semantics:
+        - `access=ro` is intended to mean "read-only for external writers"; the runtime that owns
+          the node may still publish updates for its own RO fields (status/diagnostics/etc).
+        - External writers use the `set_state` micro endpoint, which calls `set_state()` and
+          remains access-controlled.
+        """
+        node_id = ensure_token(node_id, label="node_id")
+        field = str(field)
+        ts = int(ts_ms or now_ms())
+        value = await self._validate_state_write(
+            node_id=node_id,
+            field=field,
+            value=value,
+            ts_ms=ts,
+            meta={"source": "runtime"},
+            allow_readonly_write=True,
+        )
+        value = self._coerce_state_value(value)
+        key = kv_key_node_state(node_id=node_id, field=field)
+        payload = {"value": value, "actor": self.service_id, "ts": ts, "source": "runtime"}
+        if self._debug_state:
+            print(
+                "state_debug[%s] set_state_internal node=%s field=%s ts=%s"
+                % (self.service_id, node_id, field, str(payload.get("ts")))
+            )
+        await self._transport.kv_put(key, json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8"))
+        self._state_cache[(node_id, field)] = (value, int(payload["ts"]))
+        await self._dispatch_local_state_update(node_id, field, value, int(payload["ts"]), dict(payload))
+
     async def apply_state_local(
         self,
         node_id: str,
@@ -828,7 +861,14 @@ class ServiceBus:
         await self._dispatch_local_state_update(node_id, field, value, int(payload["ts"]), dict(payload))
 
     async def _validate_state_write(
-        self, *, node_id: str, field: str, value: Any, ts_ms: int, meta: dict[str, Any] | None
+        self,
+        *,
+        node_id: str,
+        field: str,
+        value: Any,
+        ts_ms: int,
+        meta: dict[str, Any] | None,
+        allow_readonly_write: bool = False,
     ) -> Any:
         """
         Centralized state validation hook.
@@ -849,7 +889,10 @@ class ServiceBus:
 
         # Enforce write access when known.
         if access is not None and access not in (F8StateAccess.rw, F8StateAccess.wo):
-            raise ValueError(f"state field not writable: {node_id}.{field} ({access.value})")
+            if bool(allow_readonly_write) and access == F8StateAccess.ro:
+                pass
+            else:
+                raise ValueError(f"state field not writable: {node_id}.{field} ({access.value})")
 
         if node is None:
             return value

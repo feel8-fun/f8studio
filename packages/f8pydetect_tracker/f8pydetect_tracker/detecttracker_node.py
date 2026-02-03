@@ -26,7 +26,26 @@ from .vision_utils import clamp_xyxy
 def _default_weights_dir() -> Path:
     # Run from repo root by default (service.yml workdir is "../../../").
     # Keep this tolerant: if the path doesn't exist, user can override via state.weightsDir.
-    return (Path.cwd() / "services" / "f8" / "detect_tracker" / "weights").resolve()
+    candidates: list[Path] = []
+    try:
+        candidates.append((Path.cwd() / "services" / "f8" / "detect_tracker" / "weights").resolve())
+    except Exception:
+        pass
+    try:
+        # Best-effort repo root guess relative to this file:
+        # <root>/packages/f8pydetect_tracker/f8pydetect_tracker/detecttracker_node.py
+        root = Path(__file__).resolve().parents[3]
+        candidates.append((root / "services" / "f8" / "detect_tracker" / "weights").resolve())
+    except Exception:
+        pass
+    for p in candidates:
+        try:
+            if p.exists() and p.is_dir():
+                return p
+        except Exception:
+            continue
+    # Fallback to cwd-based path (even if missing) so the user can see it.
+    return candidates[0] if candidates else Path.cwd().resolve()
 
 
 def _coerce_int(v: Any, *, default: int, minimum: int | None = None, maximum: int | None = None) -> int:
@@ -347,7 +366,24 @@ class detecttrackerServiceNode(ServiceNode):
         await self._ensure_config_loaded()
 
         if name == "weightsDir":
-            self._weights_dir = Path(_coerce_str(await self.get_state("weightsDir"), default=str(self._weights_dir))).expanduser().resolve()
+            raw = _coerce_str(await self.get_state("weightsDir"), default=str(self._weights_dir))
+            p = Path(raw).expanduser()
+            if not p.is_absolute():
+                # Resolve relative to cwd first.
+                p1 = (Path.cwd() / p).resolve()
+                # If missing, also try resolving relative to repo root guess.
+                if not p1.exists():
+                    try:
+                        root = Path(__file__).resolve().parents[3]
+                        p2 = (root / p).resolve()
+                        p = p2 if p2.exists() else p1
+                    except Exception:
+                        p = p1
+                else:
+                    p = p1
+            else:
+                p = p.resolve()
+            self._weights_dir = p
             await self._publish_model_index()
             await self._reset_detector()
         elif name == "modelId":
@@ -405,9 +441,25 @@ class detecttrackerServiceNode(ServiceNode):
         if self._config_loaded:
             return
 
-        self._weights_dir = Path(
-            _coerce_str(await self.get_state("weightsDir"), default=str(self._initial_state.get("weightsDir") or _default_weights_dir()))
-        ).expanduser().resolve()
+        raw_weights = _coerce_str(
+            await self.get_state("weightsDir"),
+            default=str(self._initial_state.get("weightsDir") or _default_weights_dir()),
+        )
+        p = Path(raw_weights).expanduser()
+        if not p.is_absolute():
+            p1 = (Path.cwd() / p).resolve()
+            if not p1.exists():
+                try:
+                    root = Path(__file__).resolve().parents[3]
+                    p2 = (root / p).resolve()
+                    p = p2 if p2.exists() else p1
+                except Exception:
+                    p = p1
+            else:
+                p = p1
+        else:
+            p = p.resolve()
+        self._weights_dir = p
         self._model_id = _coerce_str(await self.get_state("modelId"), default=str(self._initial_state.get("modelId") or ""))
         self._model_yaml_path = _coerce_str(
             await self.get_state("modelYamlPath"), default=str(self._initial_state.get("modelYamlPath") or "")
@@ -443,8 +495,42 @@ class detecttrackerServiceNode(ServiceNode):
         await self._publish_model_index()
 
     async def _publish_model_index(self) -> None:
+        # Build index; print diagnostics so we can debug path/env issues even
+        # when state fields don't show up in the UI.
         idx = build_model_index(self._weights_dir)
-        payload = [{"id": i.model_id, "name": i.display_name, "task": i.task, "yaml": str(i.yaml_path)} for i in idx]
+        if not idx:
+            # If an explicit modelYamlPath is set, prefer indexing from that file's directory.
+            try:
+                if self._model_yaml_path:
+                    yp = Path(self._model_yaml_path).expanduser()
+                    yaml_path = yp.resolve() if yp.is_absolute() else (Path.cwd() / yp).resolve()
+                    if yaml_path.exists():
+                        alt_dir = yaml_path.parent
+                        idx2 = build_model_index(alt_dir)
+                        if idx2:
+                            idx = idx2
+            except Exception:
+                pass
+            try:
+                yamls = list(self._weights_dir.glob("*.yaml")) + list(self._weights_dir.glob("*.yml"))
+            except Exception:
+                yamls = []
+            # Always publish useful diagnostics (paths/cwd are the most common root cause).
+            try:
+                cwd = Path.cwd().resolve()
+            except Exception:
+                cwd = Path(".")
+            if not idx:
+                msg = (
+                    "Model index is empty. "
+                    f"weightsDir={self._weights_dir!s} (exists={self._weights_dir.exists() if hasattr(self._weights_dir,'exists') else 'unknown'}), "
+                    f"yamlCount={len(yamls)}, cwd={cwd!s}. "
+                    "If you expect models here, ensure the path is correct and 'pyyaml' is installed in the detect_tracker runtime environment."
+                )
+                if self._model_yaml_path:
+                    msg += f" modelYamlPath={self._model_yaml_path!s}"
+                await self.set_state("lastError", msg)
+        payload = [i.model_id for i in idx]
         await self.set_state("availableModels", json.dumps(payload, ensure_ascii=False))
 
         if not self._model_id and idx:
@@ -519,7 +605,32 @@ class detecttrackerServiceNode(ServiceNode):
         self._detector = det
         await self.set_state("loadedModel", f"{spec.model_id} ({spec.task})")
         await self.set_state("ortActiveProviders", json.dumps(det.active_providers))
-        await self.set_state("lastError", "")
+        warn_parts: list[str] = []
+        warn = str(getattr(det, "provider_warning", "") or "").strip()
+        if warn:
+            warn_parts.append(warn)
+
+        # If user expects CUDA but it's not available, surface a clear hint.
+        prefer = str(self._ort_provider or "auto").lower()
+        if prefer in ("auto", "cuda"):
+            try:
+                import onnxruntime as ort  # type: ignore
+
+                available = list(ort.get_available_providers())  # type: ignore[attr-defined]
+            except Exception:
+                available = []
+            active_l = {str(p).lower() for p in (det.active_providers or [])}
+            avail_l = {str(p).lower() for p in (available or [])}
+            if "cudaexecutionprovider" not in active_l and "cudaexecutionprovider" not in avail_l:
+                hint = (
+                    "CUDAExecutionProvider is not available in this runtime; running on "
+                    f"activeProviders={det.active_providers!r}, availableProviders={available!r}. "
+                    "If you expect NVIDIA GPU acceleration, ensure a CUDA-enabled ONNX Runtime build and compatible CUDA runtime are installed "
+                    "(for this repo, try the optional pixi env `onnx-cuda`)."
+                )
+                warn_parts.append(hint)
+
+        await self.set_state("lastError", "\n".join(warn_parts).strip())
         return True
 
     def _resolve_model_yaml(self) -> Path:
@@ -676,8 +787,9 @@ class detecttrackerServiceNode(ServiceNode):
                 t_emit0 = time.perf_counter()
                 await self.emit("detections", payload_out, ts_ms=int(header.ts_ms))
                 t_emit1 = time.perf_counter()
-                await self.set_state("lastFrameId", int(header.frame_id))
-                await self.set_state("lastFrameTsMs", int(header.ts_ms))
+                # Do not publish high-frequency frame counters as state.
+                # These are already represented in telemetry and publishing them as state
+                # can overwhelm the UI with per-frame updates.
 
                 now_ms = int(header.ts_ms)
                 self._telemetry.observe_frame(

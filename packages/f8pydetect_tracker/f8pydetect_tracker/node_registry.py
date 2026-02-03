@@ -41,7 +41,7 @@ def register_detecttracker_specs(registry: RuntimeNodeRegistry | None = None) ->
         ),
         F8StateSpec(
             name="shmName",
-            label="Video SHM Name",
+            label="Video SHM",
             description="Video SHM mapping name (e.g. shm.implayer.video). Overrides sourceServiceId.",
             valueSchema=string_schema(default=""),
             access=F8StateAccess.rw,
@@ -61,6 +61,7 @@ def register_detecttracker_specs(registry: RuntimeNodeRegistry | None = None) ->
             description="Model id selected from weightsDir (ignored if modelYamlPath is set).",
             valueSchema=string_schema(default=""),
             access=F8StateAccess.rw,
+            uiControl="select(availableModels)",
             showOnNode=True,
         ),
         F8StateSpec(
@@ -163,9 +164,9 @@ def register_detecttracker_specs(registry: RuntimeNodeRegistry | None = None) ->
         F8StateSpec(
             name="availableModels",
             label="Available Models",
-            description="JSON list of models discovered from weightsDir.",
+            description="JSON list of model ids discovered from weightsDir.",
             valueSchema=string_schema(default="[]"),
-            access=F8StateAccess.rw,
+            access=F8StateAccess.ro,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -173,7 +174,7 @@ def register_detecttracker_specs(registry: RuntimeNodeRegistry | None = None) ->
             label="Loaded Model",
             description="Current loaded model id/task.",
             valueSchema=string_schema(default=""),
-            access=F8StateAccess.rw,
+            access=F8StateAccess.ro,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -181,7 +182,7 @@ def register_detecttracker_specs(registry: RuntimeNodeRegistry | None = None) ->
             label="ORT Active Providers",
             description="JSON list of active ONNX Runtime providers for this session.",
             valueSchema=string_schema(default=""),
-            access=F8StateAccess.rw,
+            access=F8StateAccess.ro,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -189,23 +190,7 @@ def register_detecttracker_specs(registry: RuntimeNodeRegistry | None = None) ->
             label="Last Error",
             description="Last runtime error string (best-effort).",
             valueSchema=string_schema(default=""),
-            access=F8StateAccess.rw,
-            showOnNode=False,
-        ),
-        F8StateSpec(
-            name="lastFrameId",
-            label="Last Frame Id",
-            description="Last processed frame id from VideoSHM.",
-            valueSchema=integer_schema(default=0, minimum=0),
-            access=F8StateAccess.rw,
-            showOnNode=False,
-        ),
-        F8StateSpec(
-            name="lastFrameTsMs",
-            label="Last Frame Ts (ms)",
-            description="Last processed frame timestamp (ms) from VideoSHM.",
-            valueSchema=integer_schema(default=0, minimum=0),
-            access=F8StateAccess.rw,
+            access=F8StateAccess.ro,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -213,7 +198,7 @@ def register_detecttracker_specs(registry: RuntimeNodeRegistry | None = None) ->
             label="Telemetry Interval (ms)",
             description="Emit telemetry summaries every N milliseconds (0 disables).",
             valueSchema=integer_schema(default=1000, minimum=0, maximum=60000),
-            access=F8StateAccess.rw,
+            access=F8StateAccess.wo,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -221,7 +206,7 @@ def register_detecttracker_specs(registry: RuntimeNodeRegistry | None = None) ->
             label="Telemetry Window (ms)",
             description="Rolling window for telemetry averages (ms).",
             valueSchema=integer_schema(default=2000, minimum=100, maximum=60000),
-            access=F8StateAccess.rw,
+            access=F8StateAccess.wo,
             showOnNode=False,
         ),
     ]
@@ -246,7 +231,7 @@ def register_detecttracker_specs(registry: RuntimeNodeRegistry | None = None) ->
                     name="telemetry",
                     description="Periodic telemetry summaries (fps + timings).",
                     valueSchema=any_schema(),
-                )
+                ),
             ],
             editableStateFields=False,
             editableDataInPorts=False,

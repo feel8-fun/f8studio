@@ -145,6 +145,31 @@ def build_state_value_widget(
                     return []
                 if isinstance(v, (list, tuple)):
                     return [str(x) for x in v]
+                if isinstance(v, str):
+                    # Allow pools stored as JSON strings (eg. "[]", ["a","b"]).
+                    try:
+                        import json
+
+                        parsed = json.loads(v)
+                    except Exception:
+                        return []
+                    if isinstance(parsed, (list, tuple)):
+                        out: list[str] = []
+                        for x in parsed:
+                            if isinstance(x, str):
+                                s = x.strip()
+                                if s:
+                                    out.append(s)
+                                continue
+                            if isinstance(x, dict):
+                                s = str(x.get("id") or "").strip()
+                                if s:
+                                    out.append(s)
+                                continue
+                            s = str(x).strip()
+                            if s:
+                                out.append(s)
+                        return out
                 return []
 
             widget.set_pool(pool_field, _pool_resolver)

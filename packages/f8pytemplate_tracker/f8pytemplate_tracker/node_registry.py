@@ -102,7 +102,7 @@ def register_template_tracker_specs(registry: RuntimeNodeRegistry | None = None)
             label="Telemetry Interval (ms)",
             description="Emit telemetry summaries every N milliseconds (0 disables).",
             valueSchema=integer_schema(default=1000, minimum=0, maximum=60000),
-            access=F8StateAccess.rw,
+            access=F8StateAccess.wo,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -110,7 +110,7 @@ def register_template_tracker_specs(registry: RuntimeNodeRegistry | None = None)
             label="Telemetry Window (ms)",
             description="Rolling window for telemetry averages (ms).",
             valueSchema=integer_schema(default=2000, minimum=100, maximum=60000),
-            access=F8StateAccess.rw,
+            access=F8StateAccess.wo,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -118,7 +118,7 @@ def register_template_tracker_specs(registry: RuntimeNodeRegistry | None = None)
             label="Last Error",
             description="Last runtime error string (best-effort).",
             valueSchema=string_schema(default=""),
-            access=F8StateAccess.rw,
+            access=F8StateAccess.ro,
             showOnNode=False,
         ),
     ]

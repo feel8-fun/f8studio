@@ -29,17 +29,23 @@ class Detection:
 def _choose_ort_providers(*, prefer: Literal["auto", "cuda", "cpu"]) -> list[str]:
     import onnxruntime as ort  # type: ignore
 
-    available = list(ort.get_available_providers())
+    try:
+        available = list(ort.get_available_providers())  # type: ignore[attr-defined]
+    except Exception:
+        available = []
+    by_lower = {str(p).lower(): str(p) for p in available}
+    cuda = by_lower.get("cudaexecutionprovider", "CUDAExecutionProvider")
+    cpu = by_lower.get("cpuexecutionprovider", "CPUExecutionProvider")
     if prefer == "cpu":
-        return ["CPUExecutionProvider"]
+        return [cpu]
     if prefer == "cuda":
-        if "CUDAExecutionProvider" in available:
-            return ["CUDAExecutionProvider", "CPUExecutionProvider"]
-        return ["CPUExecutionProvider"]
+        if "cudaexecutionprovider" in by_lower:
+            return [cuda, cpu]
+        return [cpu]
     # auto
-    if "CUDAExecutionProvider" in available:
-        return ["CUDAExecutionProvider", "CPUExecutionProvider"]
-    return ["CPUExecutionProvider"]
+    if "cudaexecutionprovider" in by_lower:
+        return [cuda, cpu]
+    return [cpu]
 
 
 class OnnxYoloDetector:
@@ -52,8 +58,26 @@ class OnnxYoloDetector:
         import onnxruntime as ort  # type: ignore
 
         self.spec = spec
+        self.provider_warning: str = ""
         providers = _choose_ort_providers(prefer=ort_provider)
-        self._session = ort.InferenceSession(str(spec.onnx_path), providers=providers)
+        try:
+            self._session = ort.InferenceSession(str(spec.onnx_path), providers=providers)
+        except Exception as exc:
+            # If CUDA is requested/auto but unavailable or misconfigured, fall back to CPU
+            # so the service remains usable, while surfacing a clear warning.
+            prefer = str(ort_provider or "auto").lower()
+            if prefer in ("auto", "cuda"):
+                try:
+                    avail = list(ort.get_available_providers())
+                except Exception:
+                    avail = []
+                self.provider_warning = (
+                    f"Failed to init ORT providers={providers!r}; falling back to CPUExecutionProvider. "
+                    f"availableProviders={avail!r}; error={exc}"
+                )
+                self._session = ort.InferenceSession(str(spec.onnx_path), providers=["CPUExecutionProvider"])
+            else:
+                raise
         self._input_name = self._session.get_inputs()[0].name
         self.active_providers = list(self._session.get_providers())
 

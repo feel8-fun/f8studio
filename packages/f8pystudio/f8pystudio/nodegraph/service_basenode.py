@@ -366,6 +366,8 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         self._state_row_y: dict[str, tuple[float, float]] = {}
         self._graph_prop_hooked: bool = False
         self._bridge_proc_hooked: bool = False
+        self._state_inline_ctrl_serial: dict[str, str] = {}
+        self._cmd_serial: str = ""
         self._cmd_proxy: QtWidgets.QGraphicsProxyWidget | None = None
         self._cmd_widget: QtWidgets.QWidget | None = None
         self._cmd_buttons: list[QtWidgets.QAbstractButton] = []
@@ -711,14 +713,48 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         else:
             cmds = list(getattr(spec, "commands", None) or []) if spec is not None else []
         visible_cmds = [c for c in cmds if bool(getattr(c, "showOnNode", False))]
+        enabled = self._is_service_running()
+
+        # Rebuild only when command list / enabled state changes.
+        try:
+            serial = json.dumps(
+                {
+                    "cmds": [
+                        {
+                            "name": str(getattr(c, "name", "") or ""),
+                            "desc": str(getattr(c, "description", "") or ""),
+                        }
+                        for c in visible_cmds
+                    ],
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+                default=str,
+            )
+        except Exception:
+            serial = ""
 
         # Remove if no commands to show.
         if not visible_cmds:
             if self._cmd_proxy is not None:
+                old = None
+                try:
+                    old = self._cmd_proxy.widget()
+                except Exception:
+                    old = None
                 try:
                     self._cmd_proxy.setWidget(None)
                 except RuntimeError:
                     pass
+                if old is not None:
+                    try:
+                        old.setParent(None)
+                    except Exception:
+                        pass
+                    try:
+                        old.deleteLater()
+                    except Exception:
+                        pass
                 try:
                     self._cmd_proxy.setParentItem(None)
                     if self.scene() is not None:
@@ -730,7 +766,18 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 self._cmd_buttons = []
             return
 
-        # Rebuild widget each time; command lists are small and this avoids stale buttons.
+        if self._cmd_proxy is not None and serial and serial == str(getattr(self, "_cmd_serial", "") or ""):
+            # Keep enable state in sync (service running can change without spec changes).
+            for b in list(self._cmd_buttons or []):
+                try:
+                    b.setEnabled(bool(enabled))
+                except Exception:
+                    continue
+            return
+
+        self._cmd_serial = serial
+
+        # Build widget (only when changed).
         w = QtWidgets.QWidget()
         lay = QtWidgets.QVBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -740,7 +787,6 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         w.setStyleSheet("background: transparent;")
 
         self._cmd_buttons = []
-        enabled = self._is_service_running()
         for i, c in enumerate(visible_cmds):
             b = QtWidgets.QPushButton(str(getattr(c, "name", "") or ""))
             b.setMinimumHeight(24)
@@ -787,7 +833,21 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             proxy.setCacheMode(QtWidgets.QGraphicsItem.DeviceCoordinateCache)
             self._cmd_proxy = proxy
         else:
+            old = None
+            try:
+                old = self._cmd_proxy.widget()
+            except Exception:
+                old = None
             self._cmd_proxy.setWidget(w)
+            if old is not None and old is not w:
+                try:
+                    old.setParent(None)
+                except Exception:
+                    pass
+                try:
+                    old.deleteLater()
+                except Exception:
+                    pass
         self._cmd_widget = w
 
     def _on_graph_property_changed(self, node: Any, name: str, value: Any) -> None:
@@ -1061,6 +1121,33 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                     return []
                 if isinstance(v, (list, tuple)):
                     return [str(x) for x in v]
+                # Allow pools stored as JSON strings (eg. "[]", ["a","b"]). This is common for
+                # runtime-updated status fields where schemas are declared as strings.
+                if isinstance(v, str):
+                    try:
+                        import json as _json
+
+                        parsed = _json.loads(v)
+                    except Exception:
+                        return []
+                    if isinstance(parsed, (list, tuple)):
+                        out: list[str] = []
+                        for x in parsed:
+                            if isinstance(x, str):
+                                s = x.strip()
+                                if s:
+                                    out.append(s)
+                                continue
+                            if isinstance(x, dict):
+                                # Accept [{id,name,...}] and use id.
+                                s = str(x.get("id") or "").strip()
+                                if s:
+                                    out.append(s)
+                                continue
+                            s = str(x).strip()
+                            if s:
+                                out.append(s)
+                        return out
                 return []
 
             items = _pool_items() if pool_field else list(enum_items)
@@ -1211,12 +1298,27 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             self._state_inline_bodies.pop(n, None)
             self._state_inline_expanded.pop(n, None)
             self._state_inline_option_pools.pop(n, None)
+            self._state_inline_ctrl_serial.pop(n, None)
             if proxy is None:
                 continue
+            old = None
+            try:
+                old = proxy.widget()
+            except Exception:
+                old = None
             try:
                 proxy.setWidget(None)
             except RuntimeError:
                 pass
+            if old is not None:
+                try:
+                    old.setParent(None)
+                except Exception:
+                    pass
+                try:
+                    old.deleteLater()
+                except Exception:
+                    pass
             try:
                 proxy.setParentItem(None)
                 if self.scene() is not None:
@@ -1224,8 +1326,50 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             except RuntimeError:
                 pass
 
-        # Rebuild state widgets as collapsible panels (stable + simple).
+        def _ctrl_serial(f: Any) -> str:
+            """
+            Signature for deciding when the control widget must be rebuilt.
+            (Exclude label/description; those can be updated in-place.)
+            """
+            try:
+                vs = getattr(f, "valueSchema", None)
+                root = getattr(vs, "root", None) if vs is not None else None
+                enum_items = list(getattr(root, "enum", None) or []) if root is not None else []
+                return json.dumps(
+                    {
+                        "access": str(getattr(getattr(f, "access", None), "value", "") or ""),
+                        "required": bool(getattr(f, "required", False)),
+                        "uiControl": str(getattr(f, "uiControl", "") or ""),
+                        "uiLanguage": str(getattr(f, "uiLanguage", "") or ""),
+                        "schemaType": str(schema_type(vs) or ""),
+                        "enum": [str(x) for x in enum_items],
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    default=str,
+                )
+            except Exception:
+                return ""
+
         for n, f in show:
+            # Always keep label/tooltip up to date without rebuilding.
+            label = str(getattr(f, "label", "") or "").strip() or n
+            tip = str(getattr(f, "description", "") or "").strip() or n
+            btn_existing = self._state_inline_toggles.get(n)
+            if btn_existing is not None:
+                try:
+                    btn_existing.setFullText(label)
+                except Exception:
+                    pass
+                try:
+                    btn_existing.setToolTip(tip)
+                except Exception:
+                    pass
+
+            ctrl_sig = _ctrl_serial(f)
+            if n in self._state_inline_proxies and ctrl_sig and ctrl_sig == self._state_inline_ctrl_serial.get(n, ""):
+                continue
+
             # Default collapsed; restore persisted expand state from ui overrides.
             expanded = False
             ui = node.ui_overrides() or {}
@@ -1250,9 +1394,8 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             btn.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
             btn.setArrowType(QtCore.Qt.DownArrow if expanded else QtCore.Qt.RightArrow)
 
-            label = str(getattr(f, "label", "") or "").strip() or n
             btn.setFullText(label)
-            btn.setToolTip(str(getattr(f, "description", "") or "").strip() or n)
+            btn.setToolTip(tip)
             btn.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
             btn.setStyleSheet(
                 """
@@ -1306,13 +1449,30 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 proxy = QtWidgets.QGraphicsProxyWidget(self)
                 proxy.setCacheMode(QtWidgets.QGraphicsItem.DeviceCoordinateCache)
                 self._state_inline_proxies[n] = proxy
+
+            old = None
+            try:
+                old = proxy.widget()
+            except Exception:
+                old = None
             proxy.setWidget(panel)
+            if old is not None and old is not panel:
+                try:
+                    old.setParent(None)
+                except Exception:
+                    pass
+                try:
+                    old.deleteLater()
+                except Exception:
+                    pass
 
             self._state_inline_controls[n] = control
             self._state_inline_toggles[n] = btn
             self._state_inline_headers[n] = header
             self._state_inline_bodies[n] = body
             self._state_inline_expanded[n] = expanded
+            if ctrl_sig:
+                self._state_inline_ctrl_serial[n] = ctrl_sig
 
     def post_init(self, viewer=None, pos=None):
         """
@@ -1682,16 +1842,27 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                             header_h = float(max(port_height, header.sizeHint().height()))
                     except Exception:
                         header_h = port_height
-                    body_h = 0.0
+                    # Size hint for the expanded body depends on width (options wrap).
+                    # Use the proxy widget bounding rect after forcing a best-effort width.
+                    panel_h = header_h
                     try:
-                        body = self._state_inline_bodies.get(sname)
-                        if body is not None and body.isVisible():
-                            body_h = float(max(0.0, body.sizeHint().height()))
+                        proxy = self._state_inline_proxies.get(sname)
+                        if proxy is not None and proxy.isVisible():
+                            try:
+                                w = proxy.widget()
+                                if w is not None:
+                                    rect_w = max(10, int(self.boundingRect().width() - 8.0))
+                                    w.setFixedWidth(rect_w)
+                                    w.adjustSize()
+                            except Exception:
+                                pass
+                            try:
+                                panel_h = float(max(header_h, proxy.boundingRect().height()))
+                            except Exception:
+                                panel_h = header_h
                     except Exception:
-                        body_h = 0.0
-                    ports_h += header_h + spacing
-                    if body_h > 0.0:
-                        ports_h += body_h + spacing
+                        panel_h = header_h
+                    ports_h += panel_h + spacing
                 ports_h = max(0.0, ports_h - spacing)  # remove trailing row spacing
 
             _add_group_rows(rows_other)
@@ -2090,6 +2261,14 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 header_h = port_height
                 body_h = 0.0
                 if state_key and panel_proxy is not None:
+                    # Ensure width is up to date before measuring heights (option rows wrap by width).
+                    try:
+                        w = panel_proxy.widget()
+                        if w is not None:
+                            w.setFixedWidth(int(inner_w))
+                            w.adjustSize()
+                    except Exception:
+                        pass
                     try:
                         if self._state_inline_headers.get(state_key) is not None:
                             header_h = float(max(port_height, self._state_inline_headers[state_key].sizeHint().height()))
@@ -2101,13 +2280,6 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                             body_h = float(max(0.0, body_w.sizeHint().height()))
                     except Exception:
                         body_h = 0.0
-                    try:
-                        w = panel_proxy.widget()
-                        if w is not None:
-                            w.setFixedWidth(int(inner_w))
-                            w.adjustSize()
-                    except Exception:
-                        pass
                     try:
                         panel_proxy.setPos(inner_x, y)
                     except Exception:

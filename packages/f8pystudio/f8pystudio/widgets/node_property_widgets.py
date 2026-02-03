@@ -1472,6 +1472,11 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         self.__tab_windows = {}
         self.__tab = QtWidgets.QTabWidget()
         self._option_pool_dependents: dict[str, list[Any]] = {}
+        self._reload_pending = False
+        self._reload_debounce_ms = 50
+        self._reload_timer = QtCore.QTimer(self)
+        self._reload_timer.setSingleShot(True)
+        self._reload_timer.timeout.connect(self._reload_now)
 
         close_btn = QtWidgets.QPushButton()
         close_btn.setIcon(QtGui.QIcon(self.style().standardIcon(QtWidgets.QStyle.SP_DialogCloseButton)))
@@ -1921,6 +1926,43 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         self.reload()
 
     def reload(self) -> None:
+        """
+        Coalesce multiple reload requests into a single UI rebuild.
+
+        Some services update state at high frequency; rebuilding the entire
+        properties UI per update can freeze the UI and exhaust native window
+        handles if removed widgets are not properly released.
+        """
+        if self._reload_pending:
+            return
+        self._reload_pending = True
+        # Debounced rebuild to coalesce bursts of updates.
+        self._reload_timer.start(int(self._reload_debounce_ms))
+
+    def _clear_tabs(self) -> None:
+        # `removeTab()` does not delete the widget; explicitly detach + delete.
+        while self.__tab.count():
+            try:
+                w = self.__tab.widget(0)
+            except Exception:
+                w = None
+            try:
+                self.__tab.removeTab(0)
+            except Exception:
+                break
+            if w is None:
+                continue
+            try:
+                w.setParent(None)
+            except Exception:
+                pass
+            try:
+                w.deleteLater()
+            except Exception:
+                pass
+
+    def _reload_now(self) -> None:
+        self._reload_pending = False
         node = self._node
         if node is None:
             return
@@ -1947,9 +1989,10 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                     pass
         except Exception:
             scroll_pos = {}
-        while self.__tab.count():
-            self.__tab.removeTab(0)
+
+        self._clear_tabs()
         self.__tab_windows = {}
+        self._option_pool_dependents = {}
         self._port_connections = self._read_node(node)
         if prev_tab:
             try:
