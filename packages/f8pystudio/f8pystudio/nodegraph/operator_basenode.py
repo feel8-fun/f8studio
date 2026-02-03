@@ -3,15 +3,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from qtpy import QtWidgets
-
 from .node_base import F8StudioBaseNode
 
 from f8pysdk import F8OperatorSpec, F8StateAccess
 from f8pysdk.schema_helpers import schema_default, schema_type
 
 from collections import OrderedDict
-
 
 from qtpy import QtCore, QtGui, QtWidgets
 
@@ -32,6 +29,7 @@ from NodeGraphQt.qgraphics.node_text_item import NodeTextItem
 from NodeGraphQt.qgraphics.port import CustomPortItem, PortItem
 
 from .port_painter import draw_exec_port, draw_square_port, EXEC_PORT_COLOR, DATA_PORT_COLOR, STATE_PORT_COLOR
+from .service_basenode import F8StudioServiceNodeItem
 
 logger = logging.getLogger(__name__)
 
@@ -321,7 +319,7 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
             pass
 
 
-class F8StudioOperatorNodeItem(AbstractNodeItem):
+class _LegacyF8StudioOperatorNodeItem(AbstractNodeItem):
     """
     Base Node item.
 
@@ -1395,3 +1393,97 @@ class F8StudioOperatorNodeItem(AbstractNodeItem):
             prop_widget = self._widgets.get(prop_name)
             if prop_widget:
                 prop_widget.set_value(value)
+
+
+class F8StudioOperatorNodeItem(F8StudioServiceNodeItem):
+    """
+    Operator node item: reuse the service-node layout (grouped ports + inline collapsible
+    state widgets + persisted expand state), but without service process controls.
+
+    This intentionally disables:
+    - service process toolbar
+    - service command buttons
+    """
+
+    def __init__(self, name="node", parent=None):
+        super().__init__(name, parent)
+        # Operator nodes may be canvas-managed (no container). Containers bind by
+        # setting `view._container_item`; keep it always defined to avoid crashes
+        # during interactive moves before binding.
+        self._container_item = None
+
+    def itemChange(self, change, value):  # type: ignore[override]
+        """
+        Keep legacy operator behaviors:
+        - highlight pipes on selection
+        - clamp operator nodes to container bounds while dragging
+        """
+        if change == QtWidgets.QGraphicsItem.ItemSelectedChange and self.scene():
+            try:
+                self.reset_pipes()
+                if value:
+                    self.highlight_pipes()
+            except Exception:
+                pass
+            try:
+                self.setZValue(Z_VAL_NODE)
+                if not self.selected:
+                    self.setZValue(Z_VAL_NODE + 1)
+            except Exception:
+                pass
+
+        if change == QtWidgets.QGraphicsItem.ItemPositionChange and self.scene():
+            return self._clamp_pos_to_container(value)
+
+        return super().itemChange(change, value)
+
+    def _clamp_pos_to_container(self, proposed_pos: QtCore.QPointF) -> QtCore.QPointF:
+        """
+        Clamp the node's top-left position so the entire node stays within
+        its service container bounds (in scene coordinates).
+        """
+        container = getattr(self, "_container_item", None)
+        if container is None:
+            return proposed_pos
+
+        container_rect = container.mapToScene(container.boundingRect()).boundingRect()
+        padding = 2.0
+        container_rect = container_rect.adjusted(padding, padding, -padding, -padding)
+
+        brect = self.boundingRect()
+        node_w = brect.width()
+        node_h = brect.height()
+
+        x_min = container_rect.left()
+        y_min = container_rect.top()
+        x_max = container_rect.right() - node_w
+        y_max = container_rect.bottom() - node_h
+
+        x_new = x_min if x_max < x_min else min(max(proposed_pos.x(), x_min), x_max)
+        y_new = y_min if y_max < y_min else min(max(proposed_pos.y(), y_min), y_max)
+
+        return QtCore.QPointF(x_new, y_new)
+
+    def _ensure_service_toolbar(self, viewer: Any | None) -> None:  # type: ignore[override]
+        return
+
+    def _position_service_toolbar(self) -> None:  # type: ignore[override]
+        return
+
+    def _ensure_inline_command_widget(self) -> None:  # type: ignore[override]
+        # Operators don't expose service commands; ensure any previous command proxy is removed.
+        proxy = getattr(self, "_cmd_proxy", None)
+        if proxy is not None:
+            try:
+                proxy.setWidget(None)
+            except Exception:
+                pass
+            try:
+                proxy.setParentItem(None)
+                if self.scene() is not None:
+                    self.scene().removeItem(proxy)
+            except Exception:
+                pass
+        self._cmd_proxy = None
+        self._cmd_widget = None
+        self._cmd_buttons = []
