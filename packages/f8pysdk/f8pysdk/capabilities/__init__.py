@@ -4,6 +4,7 @@ from typing import Any, Protocol, runtime_checkable, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..generated import F8RuntimeGraph
+    from ..service_bus import ServiceBus
 
 
 @runtime_checkable
@@ -136,12 +137,48 @@ class RungraphHook(Protocol):
 
 
 @runtime_checkable
-class LifecycleHook(Protocol):
+class ServiceHook(Protocol):
     """
-    Lifecycle hook (component-side).
+    Service bus hooks (component-side).
+
+    This unifies readiness + activation/deactivation into one capability.
     """
 
-    async def on_lifecycle(self, active: bool, meta: dict[str, Any]) -> None: ...
+    async def on_before_ready(self, bus: "ServiceBus") -> None: ...
+
+    async def on_after_ready(self, bus: "ServiceBus") -> None: ...
+
+    async def on_before_stop(self, bus: "ServiceBus") -> None: ...
+
+    async def on_after_stop(self, bus: "ServiceBus") -> None: ...
+
+    async def on_activate(self, bus: "ServiceBus", meta: dict[str, Any]) -> None: ...
+
+    async def on_deactivate(self, bus: "ServiceBus", meta: dict[str, Any]) -> None: ...
+
+
+class ServiceHookBase:
+    """
+    Convenience base class so hook implementers can override only what they need.
+    """
+
+    async def on_before_ready(self, _bus: "ServiceBus") -> None:
+        return
+
+    async def on_after_ready(self, _bus: "ServiceBus") -> None:
+        return
+
+    async def on_before_stop(self, _bus: "ServiceBus") -> None:
+        return
+
+    async def on_after_stop(self, _bus: "ServiceBus") -> None:
+        return
+
+    async def on_activate(self, _bus: "ServiceBus", _meta: dict[str, Any]) -> None:
+        return
+
+    async def on_deactivate(self, _bus: "ServiceBus", _meta: dict[str, Any]) -> None:
+        return
 
 
 @runtime_checkable
@@ -155,14 +192,14 @@ class RungraphHookBus(Protocol):
     def unregister_rungraph_hook(self, hook: RungraphHook) -> None: ...
 
 @runtime_checkable
-class LifecycleHookBus(Protocol):
+class ServiceHookBus(Protocol):
     """
-    Lifecycle hook registration capability (bus-side).
+    Service hook registration capability (bus-side).
     """
 
-    def register_lifecycle_hook(self, hook: LifecycleHook) -> None: ...
+    def register_service_hook(self, hook: ServiceHook) -> None: ...
 
-    def unregister_lifecycle_hook(self, hook: LifecycleHook) -> None: ...
+    def unregister_service_hook(self, hook: ServiceHook) -> None: ...
 
 
 @runtime_checkable

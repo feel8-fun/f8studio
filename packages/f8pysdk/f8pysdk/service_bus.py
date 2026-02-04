@@ -18,9 +18,9 @@ from .capabilities import (
     CommandableNode,
     ComputableNode,
     DataReceivableNode,
-    LifecycleHook,
     LifecycleNode,
     RungraphHook,
+    ServiceHook,
     StatefulNode,
 )
 from .generated import F8Edge, F8EdgeKindEnum, F8EdgeStrategyEnum, F8RuntimeGraph, F8StateAccess
@@ -61,12 +61,6 @@ class ServiceBusConfig:
     delete_bucket_on_start: bool = False
     delete_bucket_on_stop: bool = False
     data_delivery: DataDeliveryMode = "pull"
-
-
-@dataclass
-class _Sub:
-    subject: str
-    handle: Any
 
 
 @dataclass
@@ -156,8 +150,15 @@ class _ServiceBusMicroEndpoints:
         meta = req.get("meta") if isinstance(req.get("meta"), dict) else {}
         return req_id, req, dict(args), dict(meta)
 
-    async def _respond(self, req: Any, *, req_id: str, ok: bool, result: Any = None, error: dict[str, Any] | None = None) -> None:
-        payload = {"reqId": req_id, "ok": bool(ok), "result": result if ok else None, "error": error if not ok else None}
+    async def _respond(
+        self, req: Any, *, req_id: str, ok: bool, result: Any = None, error: dict[str, Any] | None = None
+    ) -> None:
+        payload = {
+            "reqId": req_id,
+            "ok": bool(ok),
+            "result": result if ok else None,
+            "error": error if not ok else None,
+        }
         await req.respond(json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8"))
 
     async def _set_active_req(self, req: Any, active: bool, *, cmd: str) -> None:
@@ -178,13 +179,17 @@ class _ServiceBusMicroEndpoints:
         if want_active is None:
             want_active = raw.get("active")
         if want_active is None:
-            await self._respond(req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "missing active"})
+            await self._respond(
+                req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "missing active"}
+            )
             return
         await self._set_active_req(req, bool(want_active), cmd="set_active")
 
     async def _status(self, req: Any) -> None:
         req_id, _raw, _args, _meta = self._parse_envelope(req.data)
-        await self._respond(req, req_id=req_id, ok=True, result={"serviceId": self._bus.service_id, "active": self._bus.active})
+        await self._respond(
+            req, req_id=req_id, ok=True, result={"serviceId": self._bus.service_id, "active": self._bus.active}
+        )
 
     async def _terminate(self, req: Any) -> None:
         req_id, _raw, _args, meta = self._parse_envelope(req.data)
@@ -202,11 +207,15 @@ class _ServiceBusMicroEndpoints:
         req_id, raw, args, meta = self._parse_envelope(req.data)
         call = str(raw.get("call") or "").strip()
         if not call:
-            await self._respond(req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "missing call"})
+            await self._respond(
+                req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "missing call"}
+            )
             return
         service_node = self._bus.get_node(self._bus.service_id)
         if service_node is None or not isinstance(service_node, CommandableNode):
-            await self._respond(req, req_id=req_id, ok=False, error={"code": "UNKNOWN_CALL", "message": f"unknown call: {call}"})
+            await self._respond(
+                req, req_id=req_id, ok=False, error={"code": "UNKNOWN_CALL", "message": f"unknown call: {call}"}
+            )
             return
         try:
             out = await service_node.on_command(call, args, meta=meta)  # type: ignore[misc]
@@ -221,18 +230,24 @@ class _ServiceBusMicroEndpoints:
         field = args.get("field") or raw.get("field")
         value = args.get("value") if "value" in args else raw.get("value")
         if node_id is None or field is None:
-            await self._respond(req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "missing nodeId/field"})
+            await self._respond(
+                req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "missing nodeId/field"}
+            )
             return
         node_id_s = str(node_id).strip()
         field_s = str(field).strip()
         if not node_id_s or not field_s:
-            await self._respond(req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "empty nodeId/field"})
+            await self._respond(
+                req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "empty nodeId/field"}
+            )
             return
 
         try:
             node_id_s = ensure_token(node_id_s, label="node_id")
         except Exception:
-            await self._respond(req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "invalid nodeId"})
+            await self._respond(
+                req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "invalid nodeId"}
+            )
             return
 
         source = "endpoint"
@@ -267,7 +282,9 @@ class _ServiceBusMicroEndpoints:
         if graph_obj is None and isinstance(raw, dict):
             graph_obj = raw if "nodes" in raw and "edges" in raw else None
         if not isinstance(graph_obj, dict):
-            await self._respond(req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "missing graph"})
+            await self._respond(
+                req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "missing graph"}
+            )
             return
 
         try:
@@ -278,7 +295,9 @@ class _ServiceBusMicroEndpoints:
         try:
             await self._bus._validate_rungraph_or_raise(graph)
         except Exception as exc:
-            await self._respond(req, req_id=req_id, ok=False, error={"code": "FORBIDDEN_RUNGRAPH", "message": str(exc)})
+            await self._respond(
+                req, req_id=req_id, ok=False, error={"code": "FORBIDDEN_RUNGRAPH", "message": str(exc)}
+            )
             return
 
         try:
@@ -300,34 +319,72 @@ class _ServiceBusMicroEndpoints:
             return
         sid = self._bus.service_id
         await micro.add_endpoint(
-            EndpointConfig(name="activate", subject=svc_endpoint_subject(sid, "activate"), handler=self._activate, metadata={"builtin": "true"})
-        )
-        await micro.add_endpoint(
             EndpointConfig(
-                name="deactivate", subject=svc_endpoint_subject(sid, "deactivate"), handler=self._deactivate, metadata={"builtin": "true"}
+                name="activate",
+                subject=svc_endpoint_subject(sid, "activate"),
+                handler=self._activate,
+                metadata={"builtin": "true"},
             )
         )
         await micro.add_endpoint(
-            EndpointConfig(name="set_active", subject=svc_endpoint_subject(sid, "set_active"), handler=self._set_active, metadata={"builtin": "true"})
-        )
-        await micro.add_endpoint(
-            EndpointConfig(name="status", subject=svc_endpoint_subject(sid, "status"), handler=self._status, metadata={"builtin": "true"})
-        )
-        await micro.add_endpoint(
-            EndpointConfig(name="terminate", subject=svc_endpoint_subject(sid, "terminate"), handler=self._terminate, metadata={"builtin": "true"})
-        )
-        await micro.add_endpoint(
-            EndpointConfig(name="quit", subject=svc_endpoint_subject(sid, "quit"), handler=self._terminate, metadata={"builtin": "true"})
-        )
-        await micro.add_endpoint(
-            EndpointConfig(name="cmd", subject=cmd_channel_subject(sid), handler=self._cmd, metadata={"builtin": "false"})
-        )
-        await micro.add_endpoint(
-            EndpointConfig(name="set_state", subject=svc_endpoint_subject(sid, "set_state"), handler=self._set_state, metadata={"builtin": "true"})
+            EndpointConfig(
+                name="deactivate",
+                subject=svc_endpoint_subject(sid, "deactivate"),
+                handler=self._deactivate,
+                metadata={"builtin": "true"},
+            )
         )
         await micro.add_endpoint(
             EndpointConfig(
-                name="set_rungraph", subject=svc_endpoint_subject(sid, "set_rungraph"), handler=self._set_rungraph, metadata={"builtin": "true"}
+                name="set_active",
+                subject=svc_endpoint_subject(sid, "set_active"),
+                handler=self._set_active,
+                metadata={"builtin": "true"},
+            )
+        )
+        await micro.add_endpoint(
+            EndpointConfig(
+                name="status",
+                subject=svc_endpoint_subject(sid, "status"),
+                handler=self._status,
+                metadata={"builtin": "true"},
+            )
+        )
+        await micro.add_endpoint(
+            EndpointConfig(
+                name="terminate",
+                subject=svc_endpoint_subject(sid, "terminate"),
+                handler=self._terminate,
+                metadata={"builtin": "true"},
+            )
+        )
+        await micro.add_endpoint(
+            EndpointConfig(
+                name="quit",
+                subject=svc_endpoint_subject(sid, "quit"),
+                handler=self._terminate,
+                metadata={"builtin": "true"},
+            )
+        )
+        await micro.add_endpoint(
+            EndpointConfig(
+                name="cmd", subject=cmd_channel_subject(sid), handler=self._cmd, metadata={"builtin": "false"}
+            )
+        )
+        await micro.add_endpoint(
+            EndpointConfig(
+                name="set_state",
+                subject=svc_endpoint_subject(sid, "set_state"),
+                handler=self._set_state,
+                metadata={"builtin": "true"},
+            )
+        )
+        await micro.add_endpoint(
+            EndpointConfig(
+                name="set_rungraph",
+                subject=svc_endpoint_subject(sid, "set_rungraph"),
+                handler=self._set_rungraph,
+                metadata={"builtin": "true"},
             )
         )
 
@@ -337,7 +394,7 @@ class ServiceBus:
     Service bus (clean, protocol-first).
 
     - Shared NATS connection (pub/sub + JetStream KV).
-    - Loads `rungraph` (KV) on start; updates are applied via micro endpoints.
+    - Rungraph updates are applied via micro endpoints.
     - Builds intra/cross routing tables for data edges.
     - Provides a shared state KV API for nodes.
     - Data edges are pull-based: consumers pull buffered inputs and may trigger
@@ -374,7 +431,7 @@ class ServiceBus:
             )
         else:
             self._transport = transport
-        
+
         self._nodes: dict[str, _ServiceBusNode] = {}
         self._graph: F8RuntimeGraph | None = None
 
@@ -400,11 +457,11 @@ class ServiceBus:
 
         self._state_cache: dict[tuple[str, str], tuple[Any, int]] = {}
         self._state_access_by_node_field: dict[tuple[str, str], F8StateAccess] = {}
-        self._subs: dict[str, _Sub] = {}
-        self._raw_subs: list[Any] = []
+        self._data_route_subs: dict[str, Any] = {}
+        self._custom_subs: list[Any] = []
 
         self._rungraph_hooks: list[RungraphHook] = []
-        self._lifecycle_hooks: list[LifecycleHook] = []
+        self._service_hooks: list[ServiceHook] = []
 
         # Process-level termination request (set via `svc.<serviceId>.terminate`).
         # Service entrypoints may `await bus.wait_terminate()` to exit gracefully.
@@ -431,8 +488,11 @@ class ServiceBus:
         if origin == StateWriteOrigin.external:
             return access in (F8StateAccess.rw, F8StateAccess.wo)
         return False
-
-    def _apply_data_delivery(self, value: Any, *, source: str) -> None:
+ 
+    def set_data_delivery(self, value: Any, *, source: str = "service") -> None:
+        """
+        Update data delivery behavior at runtime (service-controlled).
+        """
         mode = self._coerce_data_delivery(value)
         if mode is None:
             return
@@ -440,16 +500,7 @@ class ServiceBus:
             return
         self._data_delivery = mode
         if self._debug_state:
-            try:
-                print(f"state_debug[{self.service_id}] data_delivery={mode} source={source}")
-            except Exception:
-                pass
-
-    def set_data_delivery(self, value: Any, *, source: str = "service") -> None:
-        """
-        Update data delivery behavior at runtime (service-controlled).
-        """
-        self._apply_data_delivery(value, source=str(source or "service"))
+            print(f"state_debug[{self.service_id}] data_delivery={mode} source={source}")
 
     def register_rungraph_hook(self, hook: RungraphHook) -> None:
         """
@@ -459,23 +510,19 @@ class ServiceBus:
 
     def unregister_rungraph_hook(self, hook: RungraphHook) -> None:
         reg = self._rungraph_hooks
-        try:
-            reg.remove(hook)
-        except ValueError:
-            return
+        reg.remove(hook)
+        
 
-    def register_lifecycle_hook(self, hook: LifecycleHook) -> None:
+    def register_service_hook(self, hook: ServiceHook) -> None:
         """
-        Register a lifecycle hook (activate/deactivate).
+        Register a service bus hook (ready/stop/activate/deactivate).
         """
-        self._lifecycle_hooks.append(hook)
+        self._service_hooks.append(hook)
 
-    def unregister_lifecycle_hook(self, hook: LifecycleHook) -> None:
-        reg = self._lifecycle_hooks
-        try:
-            reg.remove(hook)
-        except ValueError:
-            return
+    def unregister_service_hook(self, hook: ServiceHook) -> None:
+        reg = self._service_hooks
+        reg.remove(hook)
+        
 
     # ---- lifecycle ------------------------------------------------------
     @property
@@ -487,7 +534,7 @@ class ServiceBus:
         Set service active state.
 
         - Persists `active` into KV under `nodes.<service_id>.state.active`
-        - Notifies lifecycle listeners (engine/executor can pause/resume)
+        - Notifies lifecycle nodes + service hooks (engine/executor can pause/resume)
         """
         await self._apply_active(active, persist=True, source=source, meta=meta)
 
@@ -523,36 +570,26 @@ class ServiceBus:
         await self._announce_ready(False, reason="starting")
         if self._micro_endpoints is None:
             await self._start_micro_endpoints()
-        await self._seed_active_from_kv()
-        await self._seed_rungraph_from_kv()
+        await self._notify_before_ready()
         await self._announce_ready(True, reason="start")
+        await self._notify_after_ready()
 
     async def stop(self) -> None:
-        try:
-            await self._announce_ready(False, reason="stop")
-        except Exception:
-            pass
+        await self._notify_before_stop()
+        await self._announce_ready(False, reason="stop")
+
         endpoints = self._micro_endpoints
         if endpoints is not None:
-            try:
-                await endpoints.stop()
-            except Exception:
-                pass
+            await endpoints.stop()
         self._micro_endpoints = None
 
-        for sub in list(self._raw_subs):
-            try:
-                await sub.unsubscribe()
-            except Exception:
-                pass
-        self._raw_subs.clear()
+        for sub in list(self._custom_subs):
+            await sub.unsubscribe()
+        self._custom_subs.clear()
 
-        for sub in list(self._subs.values()):
-            try:
-                await sub.handle.unsubscribe()
-            except Exception:
-                pass
-        self._subs.clear()
+        for sub in list(self._data_route_subs.values()):
+            await sub.unsubscribe()
+        self._data_route_subs.clear()
 
         self._cross_in_by_subject.clear()
         self._intra_data_out.clear()
@@ -562,25 +599,18 @@ class ServiceBus:
 
         self._cross_state_in_by_key.clear()
         for (_sid, _key), watch in list(self._remote_state_watches.items()):
-            try:
-                watcher, task = watch
-                try:
-                    task.cancel()
-                except Exception:
-                    pass
-                try:
-                    await watcher.stop()
-                except Exception:
-                    pass
-            except Exception:
-                pass
+            watcher, task = watch
+            task.cancel()
+            await watcher.stop()
+
         self._remote_state_watches.clear()
 
         self._state_cache.clear()
 
         await self._transport.close()
+        await self._notify_after_stop()
         self._rungraph_hooks.clear()
-        self._lifecycle_hooks.clear()
+        self._service_hooks.clear()
 
     async def _announce_ready(self, ready: bool, *, reason: str) -> None:
         payload = {
@@ -590,61 +620,61 @@ class ServiceBus:
             "ts": int(now_ms()),
         }
         raw = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
-        try:
-            await self._transport.kv_put(self._ready_key, raw)
-        except Exception:
-            pass
+        await self._transport.kv_put(self._ready_key, raw)
 
-    async def _seed_active_from_kv(self) -> None:
-        """
-        Seed `active` from KV (best-effort).
+    async def _notify_before_ready(self) -> None:
+        for hook in list(self._service_hooks):
+            try:
+                r = hook.on_before_ready(self)
+                if asyncio.iscoroutine(r):
+                    await r
+            except Exception:
+                continue
 
-        If KV has no value yet, seed the default (True) into KV so:
-        - UIs can read `nodes.<serviceId>.state.active` without special-casing "missing"
-        - `state_debug ... get_state miss ... active` noise is avoided on first boot
-        """
-        key = kv_key_node_state(node_id=self.service_id, field="active")
-        raw = await self._transport.kv_get(key)
-        if not raw:
-            await self._apply_active(True, persist=True, source="runtime", meta={"init": True, "seed": True})
-            return
-        try:
-            payload = json.loads(raw.decode("utf-8"))
-        except Exception:
-            return
-        if isinstance(payload, dict) and "value" in payload:
-            v = payload.get("value")
-        else:
-            v = payload
-        try:
-            active = bool(v)
-        except Exception:
-            return
-        await self._apply_active(active, persist=False, source="kv", meta={"init": True})
+    async def _notify_after_ready(self) -> None:
+        for hook in list(self._service_hooks):
+            try:
+                r = hook.on_after_ready(self)
+                if asyncio.iscoroutine(r):
+                    await r
+            except Exception:
+                continue
+
+    async def _notify_before_stop(self) -> None:
+        for hook in list(self._service_hooks):
+            try:
+                r = hook.on_before_stop(self)
+                if asyncio.iscoroutine(r):
+                    await r
+            except Exception:
+                continue
+
+    async def _notify_after_stop(self) -> None:
+        for hook in list(self._service_hooks):
+            try:
+                r = hook.on_after_stop(self)
+                if asyncio.iscoroutine(r):
+                    await r
+            except Exception:
+                continue
 
     async def _apply_active(
         self, active: bool, *, persist: bool, source: str | None, meta: dict[str, Any] | None
     ) -> None:
-        try:
-            active = bool(active)
-        except Exception:
-            active = True
+        active = bool(active)
 
         changed = active != self._active
         self._active = active
 
         if persist:
-            try:
-                await self._publish_state(
-                    self.service_id,
-                    "active",
-                    bool(active),
-                    origin=StateWriteOrigin.runtime,
-                    source=source or "runtime",
-                    meta={"lifecycle": True, **(dict(meta or {}))},
-                )
-            except Exception:
-                pass
+            await self._publish_state(
+                self.service_id,
+                "active",
+                bool(active),
+                origin=StateWriteOrigin.runtime,
+                source=source or "runtime",
+                meta={"lifecycle": True, **(dict(meta or {}))},
+            )
 
         if not changed:
             return
@@ -652,18 +682,18 @@ class ServiceBus:
         payload = {"source": str(source or "runtime"), **(dict(meta or {}))}
 
         for node in list(self._nodes.values()):
-            try:
-                if not isinstance(node, LifecycleNode):
-                    continue
-                r = node.on_lifecycle(bool(active), dict(payload))
-                if asyncio.iscoroutine(r):
-                    await r
-            except Exception:
+            if not isinstance(node, LifecycleNode):
                 continue
+            r = node.on_lifecycle(bool(active), dict(payload))
+            if asyncio.iscoroutine(r):
+                await r
 
-        for hook in list(self._lifecycle_hooks):
+        for hook in list(self._service_hooks):
             try:
-                r = hook.on_lifecycle(bool(active), payload)
+                if bool(active):
+                    r = hook.on_activate(self, dict(payload))
+                else:
+                    r = hook.on_deactivate(self, dict(payload))
                 if asyncio.iscoroutine(r):
                     await r
             except Exception:
@@ -702,22 +732,18 @@ class ServiceBus:
         if not subject:
             raise ValueError("subject must be non-empty")
         handle = await self._transport.subscribe(subject, queue=str(queue) if queue else None, cb=cb)
-        self._raw_subs.append(handle)
+        self._custom_subs.append(handle)
         return handle
 
     async def unsubscribe_subject(self, handle: Any) -> None:
         if handle is None:
             return
-        try:
-            await handle.unsubscribe()
-        except Exception:
-            return
-        try:
-            if handle in self._raw_subs:
-                self._raw_subs.remove(handle)
-        except Exception:
-            pass
+        
+        await handle.unsubscribe()
 
+        if handle in self._custom_subs:
+            self._custom_subs.remove(handle)
+        
     # ---- KV state -------------------------------------------------------
     @staticmethod
     def _build_state_payload(update: _StateUpdate) -> dict[str, Any]:
@@ -855,7 +881,12 @@ class ServiceBus:
             raise StateWriteError(
                 "FORBIDDEN",
                 f"state field not writable: {node_id}.{field} ({access.value})",
-                details={"nodeId": str(node_id), "field": str(field), "access": access.value, "origin": ctx.origin.value},
+                details={
+                    "nodeId": str(node_id),
+                    "field": str(field),
+                    "access": access.value,
+                    "origin": ctx.origin.value,
+                },
             )
 
         if node is None:
@@ -1016,7 +1047,10 @@ class ServiceBus:
         for edge in list(getattr(graph, "edges", None) or []):
             if getattr(edge, "kind", None) != F8EdgeKindEnum.state:
                 continue
-            if str(getattr(edge, "fromServiceId", "")) != self.service_id or str(getattr(edge, "toServiceId", "")) != self.service_id:
+            if (
+                str(getattr(edge, "fromServiceId", "")) != self.service_id
+                or str(getattr(edge, "toServiceId", "")) != self.service_id
+            ):
                 continue
             if not edge.fromOperatorId or not edge.toOperatorId:
                 continue
@@ -1209,16 +1243,6 @@ class ServiceBus:
         # Endpoint-only mode: apply immediately (no KV watch).
         await self._apply_rungraph_bytes(raw)
 
-    async def _on_rungraph_kv(self, key: str, value: bytes) -> None:
-        if str(key) != self._rungraph_key:
-            return
-        await self._apply_rungraph_bytes(value)
-
-    async def _seed_rungraph_from_kv(self) -> None:
-        raw = await self._transport.kv_get(self._rungraph_key)
-        if raw:
-            await self._apply_rungraph_bytes(raw)
-
     async def _apply_rungraph_bytes(self, raw: bytes) -> None:
         try:
             payload = json.loads(raw.decode("utf-8")) if raw else {}
@@ -1237,7 +1261,9 @@ class ServiceBus:
         try:
             for n in list(getattr(graph, "nodes", None) or []):
                 # Service/container nodes use `nodeId == serviceId`.
-                if getattr(n, "operatorClass", None) is None and str(getattr(n, "nodeId", "")) != str(getattr(n, "serviceId", "")):
+                if getattr(n, "operatorClass", None) is None and str(getattr(n, "nodeId", "")) != str(
+                    getattr(n, "serviceId", "")
+                ):
                     raise ValueError("invalid rungraph: service node requires nodeId == serviceId")
         except Exception:
             return
@@ -1315,7 +1341,10 @@ class ServiceBus:
                         meta={"source": "system", "origin": "system", "builtin": True},
                     )
                 # `operatorId` is only meaningful for operator nodes (not service/container nodes).
-                if getattr(n, "operatorClass", None) is not None and self._state_access_by_node_field.get((node_id, "operatorId")) is not None:
+                if (
+                    getattr(n, "operatorClass", None) is not None
+                    and self._state_access_by_node_field.get((node_id, "operatorId")) is not None
+                ):
                     await self._put_state_kv_unvalidated(
                         node_id=node_id,
                         field="operatorId",
@@ -1937,23 +1966,23 @@ class ServiceBus:
 
     # ---- subscriptions --------------------------------------------------
     async def _sync_subscriptions(self, want_subjects: set[str]) -> None:
-        for subject in list(self._subs.keys()):
+        for subject in list(self._data_route_subs.keys()):
             if subject in want_subjects:
                 continue
-            sub = self._subs.pop(subject, None)
+            sub = self._data_route_subs.pop(subject, None)
             if sub is None:
                 continue
             try:
-                await sub.handle.unsubscribe()
+                await sub.unsubscribe()
             except Exception:
                 pass
 
         for subject in want_subjects:
-            if subject in self._subs:
+            if subject in self._data_route_subs:
                 continue
 
             async def _cb(s: str, p: bytes) -> None:
                 await self._on_cross_data_msg(s, p)
 
             handle = await self._transport.subscribe(subject, cb=_cb)
-            self._subs[subject] = _Sub(subject=subject, handle=handle)
+            self._data_route_subs[subject] = handle

@@ -4,7 +4,7 @@ from typing import Any
 
 from f8pysdk.executors.exec_flow import ExecFlowExecutor
 from f8pysdk.generated import F8RuntimeGraph
-from f8pysdk.capabilities import ExecutableNode
+from f8pysdk.capabilities import ExecutableNode, ServiceHookBase
 from f8pysdk.nats_naming import ensure_token
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from f8pysdk.service_runtime import ServiceRuntime
@@ -14,7 +14,7 @@ from .constants import SERVICE_CLASS
 from .pyengine_node_registry import register_pyengine_specs
 
 
-class PyEngineService(ServiceCliTemplate):
+class PyEngineService(ServiceCliTemplate, ServiceHookBase):
     """
     Fill-in-the-blanks service program for `f8.pyengine`.
 
@@ -42,7 +42,7 @@ class PyEngineService(ServiceCliTemplate):
         self._executor = executor
         self._runtime = runtime
         runtime.bus.register_rungraph_hook(self)
-        runtime.bus.register_lifecycle_hook(self)
+        runtime.bus.register_service_hook(self)
 
     async def teardown(self, runtime: ServiceRuntime) -> None:
         executor = self._executor
@@ -51,7 +51,7 @@ class PyEngineService(ServiceCliTemplate):
         except Exception:
             pass
         try:
-            runtime.bus.unregister_lifecycle_hook(self)
+            runtime.bus.unregister_service_hook(self)
         except Exception:
             pass
         self._runtime = None
@@ -131,8 +131,14 @@ class PyEngineService(ServiceCliTemplate):
     async def validate_rungraph(self, graph: F8RuntimeGraph) -> None:
         _ = graph
 
-    async def on_lifecycle(self, active: bool, _meta: dict[str, Any]) -> None:
+    async def on_activate(self, _bus: Any, _meta: dict[str, Any]) -> None:
         executor = self._executor
         if executor is None:
             return
-        await executor.set_active(active)
+        await executor.set_active(True)
+
+    async def on_deactivate(self, _bus: Any, _meta: dict[str, Any]) -> None:
+        executor = self._executor
+        if executor is None:
+            return
+        await executor.set_active(False)
