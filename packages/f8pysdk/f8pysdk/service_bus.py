@@ -445,6 +445,12 @@ class ServiceBus:
             except Exception:
                 pass
 
+    def set_data_delivery(self, value: Any, *, source: str = "service") -> None:
+        """
+        Update data delivery behavior at runtime (service-controlled).
+        """
+        self._apply_data_delivery(value, source=str(source or "service"))
+
     def register_rungraph_hook(self, hook: RungraphHook) -> None:
         """
         Register a rungraph hook (called after validation + routing rebuild).
@@ -518,21 +524,8 @@ class ServiceBus:
         if self._micro_endpoints is None:
             await self._start_micro_endpoints()
         await self._seed_active_from_kv()
-        await self._seed_data_delivery_from_kv()
         await self._seed_rungraph_from_kv()
         await self._announce_ready(True, reason="start")
-
-    async def _seed_data_delivery_from_kv(self) -> None:
-        key = kv_key_node_state(node_id=self.service_id, field="dataDelivery")
-        raw = await self._transport.kv_get(key)
-        if not raw:
-            return
-        try:
-            payload = json.loads(raw.decode("utf-8"))
-        except Exception:
-            return
-        if isinstance(payload, dict) and "value" in payload:
-            self._apply_data_delivery(payload.get("value"), source="kv")
 
     async def stop(self) -> None:
         try:
@@ -932,10 +925,6 @@ class ServiceBus:
 
         This is used for local writes where KV watcher callbacks are skipped (self-echo).
         """
-        # Service-scoped toggles.
-        if str(node_id) == self.service_id and str(field) == "dataDelivery":
-            self._apply_data_delivery(value, source=str(meta_dict.get("source") or "state"))
-
         node = self._nodes.get(node_id)
         if node is None:
             return

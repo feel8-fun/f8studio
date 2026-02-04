@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from f8pysdk import (
     F8ServiceSpec,
     F8ServiceSchemaVersion,
@@ -7,6 +9,8 @@ from f8pysdk import (
     F8StateSpec,
     string_schema,
 )
+from f8pysdk.generated import F8RuntimeNode
+from f8pysdk.runtime_node import RuntimeNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from .constants import SERVICE_CLASS
@@ -18,6 +22,7 @@ from .operators.tick import register_operator as register_tick_operator
 from .operators.udp_skeleton import register_operator as register_udp_skeleton_operator
 from .operators.tcode import register_operator as register_tcode_operator
 from .operators.python_script import register_operator as register_python_script_operator
+from .pyengine_service_node import PyEngineServiceNode
 
 
 def register_pyengine_specs(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
@@ -54,6 +59,11 @@ def register_pyengine_specs(registry: RuntimeNodeRegistry | None = None) -> Runt
         ),
         overwrite=True,
     )
+
+    def _service_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
+        return PyEngineServiceNode(node_id=node_id, node=node, initial_state=initial_state)
+
+    reg.register_service(SERVICE_CLASS, _service_factory, overwrite=True)
 
     register_tick_operator(reg)
     register_sequence_operator(reg)
