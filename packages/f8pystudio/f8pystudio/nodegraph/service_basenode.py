@@ -2094,8 +2094,11 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         if not self._widgets:
             return
         rect = self.boundingRect()
-        # Place regular NodeGraphQt embedded widgets below the command area.
-        y = rect.y() + v_offset
+        # Place regular NodeGraphQt embedded widgets below the ports area (and below
+        # command area if present). This prevents custom widgets from overlapping
+        # the ports/state region.
+        base_y = float(self._ports_end_y or (rect.y() + v_offset))
+        y = base_y + 6.0
         if cmd_bottom is not None:
             y = max(y, cmd_bottom + 6.0)
         for widget in self._widgets.values():

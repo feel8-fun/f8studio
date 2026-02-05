@@ -11,6 +11,7 @@ from f8pysdk import (
     F8RuntimeNode,
     F8StateAccess,
     F8StateSpec,
+    boolean_schema,
     integer_schema,
     number_schema,
 )
@@ -19,6 +20,7 @@ from f8pysdk.runtime_node import RuntimeNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from ..constants import SERVICE_CLASS
+from ..color_table import series_colors
 from ..ui_bus import emit_ui_command
 
 
@@ -44,12 +46,15 @@ class PyStudioTimeSeriesRuntimeNode(RuntimeNode):
         self._initial_state = dict(initial_state or {})
         self._refresh_task: asyncio.Task[object] | None = None
         self._config_loaded = False
-        self._points: list[tuple[int, float]] = []
+        self._series: dict[str, list[tuple[int, float]]] = {}
         self._last_refresh_ms: int | None = None
         self._dirty: bool = False
         self._throttle_ms: int = 100
         self._window_ms: int = 10000
         self._buffer_limit: int = 200
+        self._show_legend: bool = False
+        self._y_min: float | None = None
+        self._y_max: float | None = None
         self._scheduled_refresh_ms: int | None = None
 
     def attach(self, bus: Any) -> None:
@@ -72,7 +77,9 @@ class PyStudioTimeSeriesRuntimeNode(RuntimeNode):
             pass
 
     async def on_data(self, port: str, value: Any, *, ts_ms: int | None = None) -> None:
-        if str(port) != "value":
+        # Timeseries supports arbitrary editable data-in ports.
+        port = str(port or "").strip()
+        if not port:
             return
         await self._ensure_config_loaded()
         try:
@@ -80,7 +87,11 @@ class PyStudioTimeSeriesRuntimeNode(RuntimeNode):
         except Exception:
             return
         ts = int(ts_ms) if ts_ms is not None else int(time.time() * 1000)
-        self._points.append((ts, val))
+        buf = self._series.get(port)
+        if buf is None:
+            buf = []
+            self._series[port] = buf
+        buf.append((ts, val))
         self._dirty = True
         self._prune_points(window_ms=self._window_ms, buffer_limit=self._buffer_limit, now_ms=ts)
         await self._schedule_refresh(now_ms=ts)
@@ -93,6 +104,12 @@ class PyStudioTimeSeriesRuntimeNode(RuntimeNode):
             self._window_ms = await self._get_int_state("windowMs", default=10000, minimum=100, maximum=600000)
         elif f == "bufferLimit":
             self._buffer_limit = await self._get_int_state("bufferLimit", default=200, minimum=10, maximum=5000)
+        elif f == "showLegend":
+            self._show_legend = await self._get_bool_state("showLegend", default=False)
+        elif f == "minVal":
+            self._y_min = await self._get_float_state_optional("minVal")
+        elif f == "maxVal":
+            self._y_max = await self._get_float_state_optional("maxVal")
         else:
             return
         await self._schedule_refresh(now_ms=int(ts_ms) if ts_ms is not None else int(time.time() * 1000))
@@ -103,6 +120,9 @@ class PyStudioTimeSeriesRuntimeNode(RuntimeNode):
         self._throttle_ms = await self._get_int_state("throttleMs", default=100, minimum=0, maximum=60000)
         self._window_ms = await self._get_int_state("windowMs", default=10000, minimum=100, maximum=600000)
         self._buffer_limit = await self._get_int_state("bufferLimit", default=200, minimum=10, maximum=5000)
+        self._show_legend = await self._get_bool_state("showLegend", default=False)
+        self._y_min = await self._get_float_state_optional("minVal")
+        self._y_max = await self._get_float_state_optional("maxVal")
         self._config_loaded = True
 
     async def _schedule_refresh(self, *, now_ms: int) -> None:
@@ -143,11 +163,24 @@ class PyStudioTimeSeriesRuntimeNode(RuntimeNode):
         if self._dirty:
             changed = True
 
-        if changed or self._points:
+        any_points = any(bool(v) for v in (self._series or {}).values())
+        if changed or any_points:
+            preferred = list(getattr(self, "data_in_ports", None) or [])
+            keys = list(self._series.keys())
+            ordered_keys = [k for k in preferred if k in self._series] + [k for k in keys if k not in set(preferred)]
+            colors = series_colors(ordered_keys)
             emit_ui_command(
                 self.node_id,
                 "timeseries.set",
-                {"points": list(self._points), "windowMs": int(self._window_ms)},
+                {
+                    "series": {k: list(v) for k, v in (self._series or {}).items() if v},
+                    "colors": {k: list(rgb) for k, rgb in colors.items()},
+                    "windowMs": int(self._window_ms),
+                    "nowMs": int(now_ms),
+                    "showLegend": bool(self._show_legend),
+                    "minVal": self._y_min,
+                    "maxVal": self._y_max,
+                },
                 ts_ms=int(now_ms),
             )
 
@@ -176,17 +209,64 @@ class PyStudioTimeSeriesRuntimeNode(RuntimeNode):
             out = maximum
         return out
 
+    async def _get_bool_state(self, name: str, *, default: bool) -> bool:
+        v = None
+        try:
+            v = await self.get_state(name)
+        except Exception:
+            v = None
+        if v is None:
+            try:
+                v = self._initial_state.get(name)
+            except Exception:
+                v = None
+        try:
+            return bool(v) if v is not None else bool(default)
+        except Exception:
+            return bool(default)
+
+    async def _get_float_state_optional(self, name: str) -> float | None:
+        v = None
+        try:
+            v = await self.get_state(name)
+        except Exception:
+            v = None
+        if v is None:
+            try:
+                v = self._initial_state.get(name)
+            except Exception:
+                v = None
+        if v is None:
+            return None
+        if isinstance(v, str) and not v.strip():
+            return None
+        try:
+            out = float(v)
+        except Exception:
+            return None
+        if out != out:  # NaN
+            return None
+        return out
+
     def _prune_points(self, *, window_ms: int, buffer_limit: int, now_ms: int) -> bool:
         changed = False
-        if window_ms > 0 and self._points:
-            cutoff = int(now_ms) - int(window_ms)
-            n0 = len(self._points)
-            self._points = [(ts, v) for (ts, v) in self._points if ts >= cutoff]
-            if len(self._points) != n0:
+        if not self._series:
+            return False
+        cutoff = int(now_ms) - int(window_ms) if window_ms > 0 else None
+        for k in list(self._series.keys()):
+            pts = self._series.get(k) or []
+            n0 = len(pts)
+            if cutoff is not None and pts:
+                pts = [(ts, v) for (ts, v) in pts if int(ts) >= int(cutoff)]
+            if buffer_limit > 0 and len(pts) > buffer_limit:
+                pts = pts[-int(buffer_limit) :]
+            if len(pts) != n0:
                 changed = True
-        if buffer_limit > 0 and len(self._points) > buffer_limit:
-            self._points = self._points[-int(buffer_limit) :]
-            changed = True
+            if pts:
+                self._series[k] = pts
+            else:
+                # Drop empty series to keep payload small and allow UI to remove curves.
+                self._series.pop(k, None)
         return changed
 
 
@@ -223,7 +303,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
                     description="Maximum number of points kept in memory.",
                     valueSchema=integer_schema(default=200, minimum=10, maximum=5000),
                     access=F8StateAccess.rw,
-                    showOnNode=False,
+                    showOnNode=True,
                 ),
                 F8StateSpec(
                     name="windowMs",
@@ -231,7 +311,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
                     description="Only keep data within this time window.",
                     valueSchema=integer_schema(default=10000, minimum=100, maximum=600000),
                     access=F8StateAccess.rw,
-                    showOnNode=False,
+                    showOnNode=True,
                 ),
                 F8StateSpec(
                     name="throttleMs",
@@ -239,7 +319,31 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
                     description="UI refresh interval in milliseconds.",
                     valueSchema=integer_schema(default=100, minimum=0, maximum=60000),
                     access=F8StateAccess.rw,
-                    showOnNode=False,
+                    showOnNode=True,
+                ),
+                F8StateSpec(
+                    name="showLegend",
+                    label="Legend",
+                    description="Toggle plot legend visibility.",
+                    valueSchema=boolean_schema(default=False),
+                    access=F8StateAccess.rw,
+                    showOnNode=True,
+                ),
+                F8StateSpec(
+                    name="minVal",
+                    label="Min",
+                    description="Fixed y-axis minimum (leave empty for auto).",
+                    valueSchema=number_schema(default=None),
+                    access=F8StateAccess.rw,
+                    showOnNode=True,
+                ),
+                F8StateSpec(
+                    name="maxVal",
+                    label="Max",
+                    description="Fixed y-axis maximum (leave empty for auto).",
+                    valueSchema=number_schema(default=None),
+                    access=F8StateAccess.rw,
+                    showOnNode=True,
                 ),
             ],
         ),
