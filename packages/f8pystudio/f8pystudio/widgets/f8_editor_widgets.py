@@ -46,9 +46,6 @@ def parse_select_pool(ui_control: str) -> str | None:
         return None
     return str(m.group(2))
 
-
-
-
 class _F8ComboPopup(QtWidgets.QFrame):
     valueSelected = QtCore.Signal(int)
 
@@ -626,8 +623,55 @@ class F8ImageB64Editor(QtWidgets.QWidget):
     def set_disabled(self, disabled: bool) -> None:
         self._btn.setDisabled(bool(disabled))
 
+    def _resolve_dialog_parent(self) -> QtWidgets.QWidget | None:
+        # When embedded in a QGraphicsProxyWidget, self.window() can be the proxy,
+        # which makes dialogs appear inside the scene (scaled/transparent). Find
+        # the real window from the scene view instead.
+        proxy = None
+        try:
+            w: QtWidgets.QWidget | None = self
+            while w is not None and proxy is None:
+                try:
+                    proxy = w.graphicsProxyWidget()
+                except Exception:
+                    proxy = None
+                try:
+                    w = w.parentWidget()
+                except Exception:
+                    w = None
+        except Exception:
+            proxy = None
+        if proxy is not None:
+            try:
+                scene = proxy.scene()
+            except Exception:
+                scene = None
+            if scene is not None:
+                try:
+                    views = scene.views()
+                except Exception:
+                    views = []
+                if views:
+                    view = next((v for v in views if v.isVisible()), views[0])
+                    try:
+                        w = view.window()
+                        if w is not None:
+                            return w
+                    except Exception:
+                        pass
+        try:
+            w = self.window()
+            if w is not None:
+                return w
+        except Exception:
+            pass
+        try:
+            return QtWidgets.QApplication.activeWindow()
+        except Exception:
+            return None
+
     def _open(self) -> None:
-        parent = self.window()
+        parent = self._resolve_dialog_parent()
         dlg = _F8ImageB64Dialog(parent, b64=self._b64)
         if dlg.exec() != QtWidgets.QDialog.Accepted:
             return

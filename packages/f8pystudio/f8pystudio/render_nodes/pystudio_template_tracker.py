@@ -5,30 +5,45 @@ from typing import Any
 
 from qtpy import QtWidgets
 
-from ..nodegraph.service_basenode import F8StudioServiceBaseNode, F8StudioServiceNodeItem
+from ..command_ui_protocol import CommandUiHandler, CommandUiSource
+from ..nodegraph.service_basenode import F8StudioServiceBaseNode
 from ..widgets.template_tracker_template import CaptureFrame, TemplateCaptureDialog
 
 
-class _TemplateTrackerNodeItem(F8StudioServiceNodeItem):
-    def _invoke_command(self, cmd: Any) -> None:
+class PyStudioTemplateTrackerNode(F8StudioServiceBaseNode, CommandUiHandler):
+    def handle_command_ui(
+        self,
+        cmd: Any,
+        *,
+        parent: QtWidgets.QWidget | None,
+        source: CommandUiSource,
+    ) -> bool:
+        del source
         call = str(getattr(cmd, "name", "") or "").strip()
-        if call == "captureFrame":
-            self._open_template_capture_dialog()
-            return
-        super()._invoke_command(cmd)
+        if call != "captureFrame":
+            return False
+        self._open_template_capture_dialog(parent=parent)
+        return True
 
-    def _open_template_capture_dialog(self) -> None:
-        bridge = self._bridge()
-        sid = self._service_id()
+    def _open_template_capture_dialog(self, *, parent: QtWidgets.QWidget | None) -> None:
+        g = None
+        try:
+            g = self.graph  # NodeGraphQt node graph reference.
+        except Exception:
+            g = None
+        bridge = None
+        try:
+            bridge = g.service_bridge if g is not None else None
+        except Exception:
+            bridge = None
+
+        try:
+            sid = str(self.id or "").strip()
+        except Exception:
+            sid = ""
+
         if bridge is None or not sid:
             return
-
-        parent = None
-        try:
-            v = self.viewer()
-            parent = v.window() if v is not None else None
-        except Exception:
-            parent = None
 
         def _request_capture(done) -> None:
             def _cb(result: dict[str, Any] | None, err: str | None) -> None:
@@ -56,6 +71,8 @@ class _TemplateTrackerNodeItem(F8StudioServiceNodeItem):
                 done(cap, None)
 
             try:
+                # Use defaults from the service implementation (params exist in spec, but the
+                # custom UI doesn't currently expose them).
                 bridge.request_remote_command(sid, "captureFrame", {}, _cb)
             except Exception as exc:
                 done(None, str(exc))
@@ -70,19 +87,4 @@ class _TemplateTrackerNodeItem(F8StudioServiceNodeItem):
             request_capture=_request_capture,
             set_template_b64=_set_template_b64,
         )
-        try:
-            dlg.setAttribute(QtWidgets.QWidget.WA_DeleteOnClose, True)
-        except Exception:
-            pass
-        try:
-            dlg.show()
-            dlg.raise_()
-            dlg.activateWindow()
-        except Exception:
-            dlg.exec()
-
-
-class PyStudioTemplateTrackerNode(F8StudioServiceBaseNode):
-    def __init__(self) -> None:
-        super().__init__(qgraphics_item=_TemplateTrackerNodeItem)
-
+        dlg.exec()

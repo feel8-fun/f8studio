@@ -33,6 +33,7 @@ from NodeGraphQt.qgraphics.port import CustomPortItem, PortItem
 from .port_painter import draw_exec_port, draw_square_port, EXEC_PORT_COLOR, DATA_PORT_COLOR, STATE_PORT_COLOR
 from .service_process_toolbar import ServiceProcessToolbar
 from ..widgets.f8_editor_widgets import F8ImageB64Editor, F8OptionCombo, F8Switch, F8ValueBar, parse_select_pool
+from ..command_ui_protocol import CommandUiHandler, CommandUiSource
 
 logger = logging.getLogger(__name__)
 
@@ -476,6 +477,29 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             return
         if not self._is_service_running():
             return
+
+        # Allow a node to intercept command invocation with custom UI logic.
+        try:
+            node = self._backend_node()
+        except Exception:
+            node = None
+        if isinstance(node, CommandUiHandler):
+            parent = None
+            try:
+                v = self.viewer()
+                parent = v.window() if v is not None else None
+            except Exception:
+                parent = None
+            try:
+                if bool(node.handle_command_ui(cmd, parent=parent, source=CommandUiSource.NODEGRAPH)):
+                    return
+            except Exception:
+                node_id = ""
+                try:
+                    node_id = str(self.id or "").strip()
+                except Exception:
+                    node_id = ""
+                logger.exception("handle_command_ui failed nodeId=%s", node_id)
         params = list(getattr(cmd, "params", None) or [])
 
         if not params:

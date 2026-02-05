@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections import defaultdict
 from typing import Any, Callable
 
@@ -60,6 +61,10 @@ from .f8_ui_override_ops import (
     set_command_show_on_node_override as _set_command_show_on_node_override,
     set_state_field_ui_override as _set_state_field_ui_override,
 )
+from ..command_ui_protocol import CommandUiHandler, CommandUiSource
+
+
+logger = logging.getLogger(__name__)
 
 
 def _to_jsonable(value: Any) -> Any:
@@ -1138,6 +1143,7 @@ class _F8CommandRow(QtWidgets.QWidget):
     def __init__(self, parent=None, *, name: str, description: str, allow_edit: bool, allow_delete: bool):
         super().__init__(parent)
         self._name = str(name or "")
+        self._base_tooltip = str(description or "").strip()
 
         self._btn_invoke = QtWidgets.QPushButton(self._name)
         self._btn_invoke.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
@@ -1166,10 +1172,32 @@ class _F8CommandRow(QtWidgets.QWidget):
         layout.addWidget(self._btn_edit, 0)
         layout.addWidget(self._btn_del, 0)
 
-        tip = str(description or "").strip()
-        if tip:
+        if self._base_tooltip:
+            self._btn_invoke.setToolTip(self._base_tooltip)
+            self._btn_edit.setToolTip("Edit command…\n" + self._base_tooltip)
+
+    def set_invoke_enabled(self, enabled: bool, *, disabled_reason: str = "Service not running") -> None:
+        """
+        Enable/disable the invoke button (eg. based on service process running state).
+        """
+        en = bool(enabled)
+        try:
+            self._btn_invoke.setEnabled(en)
+        except Exception:
+            return
+        if en:
+            if self._base_tooltip:
+                try:
+                    self._btn_invoke.setToolTip(self._base_tooltip)
+                except Exception:
+                    pass
+            return
+        msg = str(disabled_reason or "").strip() or "Service not running"
+        tip = (self._base_tooltip + "\n" + msg) if self._base_tooltip else msg
+        try:
             self._btn_invoke.setToolTip(tip)
-            self._btn_edit.setToolTip("Edit command…\n" + tip)
+        except Exception:
+            pass
 
     def _on_invoke_clicked(self, _checked: bool = False) -> None:
         self.invoke_clicked.emit(self._name)
@@ -1186,6 +1214,8 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
         super().__init__(parent)
         self._node = node
         self._on_apply = on_apply
+        self._bridge_proc_hooked = False
+        self._cmd_rows: dict[str, _F8CommandRow] = {}
 
         self._sec = _F8SpecListSection(title="Commands")
         self._sec.add_clicked.connect(self._add_command)
@@ -1215,8 +1245,49 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
     def _service_id(self) -> str:
         return str(getattr(self._node, "id", "") or "").strip()
 
+    def _ensure_bridge_process_hook(self) -> None:
+        if self._bridge_proc_hooked:
+            return
+        bridge = self._bridge()
+        if bridge is None:
+            return
+        try:
+            bridge.service_process_state.connect(self._on_bridge_service_process_state)  # type: ignore[attr-defined]
+            self._bridge_proc_hooked = True
+        except Exception:
+            self._bridge_proc_hooked = False
+
+    def _is_service_running(self) -> bool:
+        bridge = self._bridge()
+        sid = self._service_id()
+        if bridge is None or not sid:
+            return False
+        fn = getattr(bridge, "is_service_running", None)
+        if not callable(fn):
+            return False
+        try:
+            return bool(fn(sid))
+        except Exception:
+            return False
+
+    @QtCore.Slot(str, bool)
+    def _on_bridge_service_process_state(self, service_id: str, running: bool) -> None:
+        if str(service_id or "").strip() != self._service_id():
+            return
+        self._apply_running_state(bool(running))
+
+    def _apply_running_state(self, running: bool) -> None:
+        enabled = bool(running)
+        for row in list(self._cmd_rows.values()):
+            try:
+                row.set_invoke_enabled(enabled)
+            except Exception:
+                continue
+
     def _load(self) -> None:
+        self._ensure_bridge_process_hook()
         self._sec.clear()
+        self._cmd_rows = {}
         spec = getattr(self._node, "spec", None)
         if not isinstance(spec, F8ServiceSpec):
             self._sec.set_add_visible(False)
@@ -1224,6 +1295,7 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
         editable = bool(getattr(spec, "editableCommands", False))
         self._sec.set_add_visible(bool(editable))
 
+        running = self._is_service_running()
         eff = getattr(self._node, "effective_commands", None)
         cmds = list(eff() or []) if callable(eff) else list(getattr(spec, "commands", None) or [])
         for c in cmds:
@@ -1239,6 +1311,11 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
             row.invoke_clicked.connect(self._invoke_command)
             row.edit_clicked.connect(self._edit_command)
             row.delete_clicked.connect(self._delete_command)
+            try:
+                row.set_invoke_enabled(bool(running))
+            except Exception:
+                pass
+            self._cmd_rows[str(name)] = row
             self._sec.add_row(row)
 
     def _prompt_command_args(self, cmd: F8Command) -> dict[str, Any] | None:
@@ -1356,6 +1433,29 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
                 break
         if cmd is None:
             return
+
+        # Mirror NodeGraph behavior: commands are only invokable when the service is running.
+        if not self._is_service_running():
+            return
+
+        # Allow node-specific UI to override command invocation (eg. open a custom dialog).
+        if isinstance(self._node, CommandUiHandler):
+            parent = None
+            try:
+                parent = self.window()
+            except Exception:
+                parent = None
+            try:
+                if bool(self._node.handle_command_ui(cmd, parent=parent, source=CommandUiSource.PROPERTIES_BIN)):
+                    return
+            except Exception:
+                node_id = ""
+                try:
+                    node_id = str(self._node.id or "").strip()
+                except Exception:
+                    node_id = ""
+                logger.exception("handle_command_ui failed command=%s nodeId=%s", name, node_id)
+
         bridge = self._bridge()
         sid = self._service_id()
         if bridge is None or not sid:
