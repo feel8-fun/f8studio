@@ -7,9 +7,9 @@ from NodeGraphQt.custom_widgets.properties_bin.node_property_factory import Node
 from f8pysdk import F8DataTypeSchema, F8StateAccess
 
 from .f8_editor_widgets import (
-    F8PropBoolToggle,
+    F8PropBoolSwitch,
     F8PropImageB64,
-    F8PropOptionToggle,
+    F8PropOptionCombo,
     F8PropValueBar,
     parse_select_pool,
 )
@@ -135,7 +135,7 @@ def build_state_value_widget(
         return widget
 
     if enum_items or pool_field or ui_control in {"select", "dropdown", "dropbox", "combo", "combobox"}:
-        widget = F8PropOptionToggle()
+        widget = F8PropOptionCombo()
         widget.set_name(prop_name)
         if pool_field:
             def _pool_resolver(field: str) -> list[str]:
@@ -180,7 +180,7 @@ def build_state_value_widget(
         return widget
 
     if schema is not None and (schema_t == "boolean" or ui_control in {"switch", "toggle"}):
-        widget = F8PropBoolToggle()
+        widget = F8PropBoolSwitch()
         widget.set_name(prop_name)
         return widget
 

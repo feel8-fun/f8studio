@@ -32,7 +32,7 @@ from NodeGraphQt.qgraphics.port import CustomPortItem, PortItem
 
 from .port_painter import draw_exec_port, draw_square_port, EXEC_PORT_COLOR, DATA_PORT_COLOR, STATE_PORT_COLOR
 from .service_process_toolbar import ServiceProcessToolbar
-from ..widgets.f8_editor_widgets import F8ExclusiveToggleRow, F8ImageB64Editor, F8ValueBar, parse_select_pool
+from ..widgets.f8_editor_widgets import F8ImageB64Editor, F8OptionCombo, F8Switch, F8ValueBar, parse_select_pool
 
 logger = logging.getLogger(__name__)
 
@@ -539,7 +539,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
 
             pool_field = parse_select_pool(ui)
             if enum_items or pool_field or ui in {"select", "dropdown", "dropbox", "combo", "combobox"}:
-                row = F8ExclusiveToggleRow()
+                combo = F8OptionCombo()
                 if pool_field:
                     node = self._backend_node()
                     items = []
@@ -552,31 +552,31 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                             items = []
                 else:
                     items = list(enum_items)
-                row.set_options(items, labels=items)
+                combo.set_options(items, labels=items)
                 if tooltip:
-                    row.set_context_tooltip(tooltip)
+                    combo.set_context_tooltip(tooltip)
                 if default_value is not None:
-                    row.set_value(str(default_value))
+                    combo.set_value(str(default_value))
 
                 def _get() -> Any:
-                    v = row.value()
+                    v = combo.value()
                     return None if v is None else str(v)
 
-                editors[name] = (_with_tooltip(row), _get)
-                form.addRow(label, row)
+                editors[name] = (_with_tooltip(combo), _get)
+                form.addRow(label, combo)
                 continue
 
             if t == "boolean" or ui in {"switch", "toggle"}:
-                row = F8ExclusiveToggleRow()
-                row.set_options([True, False], labels=["True", "False"])
-                row.set_value(bool(default_value) if default_value is not None else None)
+                sw = F8Switch()
+                sw.set_labels("True", "False")
+                if default_value is not None:
+                    sw.set_value(bool(default_value))
 
                 def _get() -> Any:
-                    v = row.value()
-                    return None if v is None else bool(v)
+                    return bool(sw.value())
 
-                editors[name] = (_with_tooltip(row), _get)
-                form.addRow(label, row)
+                editors[name] = (_with_tooltip(sw), _get)
+                form.addRow(label, sw)
                 continue
 
             if t in {"integer", "number"} and ui == "slider":
@@ -898,7 +898,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             if pool_name != pool:
                 continue
             ctrl = self._state_inline_controls.get(field)
-            if not isinstance(ctrl, F8ExclusiveToggleRow):
+            if not isinstance(ctrl, F8OptionCombo):
                 continue
             try:
                 cur = ctrl.value()
@@ -1107,7 +1107,8 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             return img
 
         if enum_items or pool_field or ui in {"select", "dropdown", "dropbox", "combo", "combobox"}:
-            row = F8ExclusiveToggleRow()
+            combo = F8OptionCombo()
+            _common_style(combo)
 
             def _pool_items() -> list[str]:
                 if not pool_field:
@@ -1151,37 +1152,40 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 return []
 
             items = _pool_items() if pool_field else list(enum_items)
-            row.set_options(items, labels=items)
+            combo.set_options(items, labels=items)
             if field_tooltip:
-                row.set_context_tooltip(field_tooltip)
+                combo.set_context_tooltip(field_tooltip)
 
             def _apply_value(v: Any) -> None:
-                row.set_value("" if v is None else str(v))
+                combo.set_value("" if v is None else str(v))
 
-            row.valueChanged.connect(lambda v: _set_node_value("" if v is None else str(v), push_undo=True))  # type: ignore[attr-defined]
+            combo.valueChanged.connect(  # type: ignore[attr-defined]
+                lambda v: _set_node_value("" if v is None else str(v), push_undo=True)
+            )
             _apply_value(_get_node_value())
             self._state_inline_updaters[name] = _apply_value
             if pool_field:
                 self._state_inline_option_pools[name] = pool_field
             if read_only:
-                row.set_disabled(True)
-            return row
+                combo.setDisabled(True)
+            return combo
 
         if t == "boolean" or ui in {"switch", "toggle"}:
-            row = F8ExclusiveToggleRow()
-            row.set_options([True, False], labels=["True", "False"], tooltips=["Set True", "Set False"])
+            sw = F8Switch()
+            sw.set_labels("True", "False")
             if field_tooltip:
-                row.set_context_tooltip(field_tooltip)
+                sw.setToolTip(field_tooltip)
 
             def _apply_value(v: Any) -> None:
-                row.set_value(bool(v) if v is not None else None)
+                with QtCore.QSignalBlocker(sw):
+                    sw.set_value(bool(v) if v is not None else False)
 
-            row.valueChanged.connect(lambda v: _set_node_value(bool(v), push_undo=True))  # type: ignore[attr-defined]
+            sw.valueChanged.connect(lambda v: _set_node_value(bool(v), push_undo=True))  # type: ignore[attr-defined]
             _apply_value(_get_node_value())
             self._state_inline_updaters[name] = _apply_value
             if read_only:
-                row.set_disabled(True)
-            return row
+                sw.setDisabled(True)
+            return sw
 
         if t in {"integer", "number"} and ui == "slider":
             is_int = t == "integer"

@@ -29,9 +29,10 @@ from .f8_prop_value_widgets import (
     F8JsonPropTextEdit as _F8JsonPropTextEdit,
 )
 from .f8_editor_widgets import (
-    F8ExclusiveToggleRow,
-    F8PropBoolToggle,
-    F8PropOptionToggle,
+    F8OptionCombo,
+    F8PropBoolSwitch,
+    F8PropOptionCombo,
+    F8Switch,
     F8ValueBar,
 )
 from .f8_spec_ops import (
@@ -1272,27 +1273,28 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
             tooltip = str(getattr(p, "description", "") or "").strip()
 
             if enum_items or ui in {"select", "dropdown", "dropbox", "combo", "combobox"}:
-                row = F8ExclusiveToggleRow()
-                row.set_options([str(x) for x in enum_items], labels=[str(x) for x in enum_items])
+                combo = F8OptionCombo()
+                items = [str(x) for x in enum_items]
+                combo.set_options(items, labels=items)
                 if tooltip:
-                    row.set_context_tooltip(tooltip)
+                    combo.set_context_tooltip(tooltip)
                 if default_value is not None:
-                    row.set_value(str(default_value))
-                widgets[pname] = row
-                editors[pname] = lambda _r=row: _r.value()
-                form.addRow(label, row)
+                    combo.set_value(str(default_value))
+                widgets[pname] = combo
+                editors[pname] = lambda _c=combo: _c.value()
+                form.addRow(label, combo)
                 continue
 
             if t == "boolean" or ui in {"switch", "toggle"}:
-                row = F8ExclusiveToggleRow()
-                row.set_options([True, False], labels=["True", "False"], tooltips=["Set True", "Set False"])
+                sw = F8Switch()
+                sw.set_labels("True", "False")
                 if tooltip:
-                    row.set_context_tooltip(tooltip)
+                    sw.setToolTip(tooltip)
                 if default_value is not None:
-                    row.set_value(bool(default_value))
-                widgets[pname] = row
-                editors[pname] = lambda _r=row: _r.value()
-                form.addRow(label, row)
+                    sw.set_value(bool(default_value))
+                widgets[pname] = sw
+                editors[pname] = lambda _s=sw: bool(_s.value())
+                form.addRow(label, sw)
                 continue
 
             if t in {"integer", "number"} and ui == "slider":
@@ -1819,8 +1821,8 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                 access = _state_field_access(node, prop_name)
                 if access == F8StateAccess.ro:
                     widget.setDisabled(True)
-                # Enrich tooltips for toggle-based option editors.
-                if isinstance(widget, (F8PropOptionToggle, F8PropBoolToggle)):
+                # Enrich tooltips for option/switch editors.
+                if isinstance(widget, (F8PropOptionCombo, F8PropBoolSwitch)):
                     desc = ""
                     for f in _effective_state_fields(node):
                         if str(getattr(f, "name", "") or "").strip() == str(prop_name):
@@ -1828,7 +1830,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                             break
                     if desc:
                         try:
-                            widget._row.set_context_tooltip(desc)  # type: ignore[attr-defined]
+                            widget.set_context_tooltip(desc)
                         except AttributeError:
                             pass
                 prop_window.add_widget(

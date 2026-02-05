@@ -8,84 +8,6 @@ from typing import Any, Callable
 from qtpy import QtCore, QtGui, QtWidgets
 
 
-class _F8FlowLayout(QtWidgets.QLayout):
-    """
-    Simple flow layout (wraps widgets horizontally).
-    """
-
-    def __init__(self, parent: QtWidgets.QWidget | None = None, *, margin: int = 0, spacing: int = 6) -> None:
-        super().__init__(parent)
-        self._items: list[QtWidgets.QLayoutItem] = []
-        self.setContentsMargins(margin, margin, margin, margin)
-        self.setSpacing(spacing)
-
-    def addItem(self, item: QtWidgets.QLayoutItem) -> None:  # type: ignore[override]
-        self._items.append(item)
-
-    def count(self) -> int:  # type: ignore[override]
-        return len(self._items)
-
-    def itemAt(self, index: int) -> QtWidgets.QLayoutItem | None:  # type: ignore[override]
-        if 0 <= index < len(self._items):
-            return self._items[index]
-        return None
-
-    def takeAt(self, index: int) -> QtWidgets.QLayoutItem | None:  # type: ignore[override]
-        if 0 <= index < len(self._items):
-            return self._items.pop(index)
-        return None
-
-    def expandingDirections(self) -> QtCore.Qt.Orientations:  # type: ignore[override]
-        return QtCore.Qt.Orientations(0)
-
-    def hasHeightForWidth(self) -> bool:  # type: ignore[override]
-        return True
-
-    def heightForWidth(self, width: int) -> int:  # type: ignore[override]
-        return self._do_layout(QtCore.QRect(0, 0, width, 0), test_only=True)
-
-    def setGeometry(self, rect: QtCore.QRect) -> None:  # type: ignore[override]
-        super().setGeometry(rect)
-        self._do_layout(rect, test_only=False)
-
-    def sizeHint(self) -> QtCore.QSize:  # type: ignore[override]
-        return self.minimumSize()
-
-    def minimumSize(self) -> QtCore.QSize:  # type: ignore[override]
-        size = QtCore.QSize()
-        for item in self._items:
-            size = size.expandedTo(item.minimumSize())
-        l, t, r, b = self.getContentsMargins()
-        size += QtCore.QSize(l + r, t + b)
-        return size
-
-    def _do_layout(self, rect: QtCore.QRect, *, test_only: bool) -> int:
-        l, t, r, b = self.getContentsMargins()
-        effective = rect.adjusted(l, t, -r, -b)
-        x = effective.x()
-        y = effective.y()
-        line_height = 0
-        space_x = self.spacing()
-        space_y = self.spacing()
-
-        for item in self._items:
-            w = item.widget()
-            if w is not None and not w.isVisible():
-                continue
-            hint = item.sizeHint()
-            next_x = x + hint.width() + space_x
-            if next_x - space_x > effective.right() and line_height > 0:
-                x = effective.x()
-                y += line_height + space_y
-                next_x = x + hint.width() + space_x
-                line_height = 0
-            if not test_only:
-                item.setGeometry(QtCore.QRect(QtCore.QPoint(x, y), hint))
-            x = next_x
-            line_height = max(line_height, hint.height())
-        return (y + line_height + b) - rect.y()
-
-
 def _strip_data_url_prefix(b64: str) -> tuple[str, str | None]:
     """
     Accepts either raw base64 or a minimal data URL like:
@@ -125,70 +47,114 @@ def parse_select_pool(ui_control: str) -> str | None:
     return str(m.group(2))
 
 
-class F8ToggleButton(QtWidgets.QToolButton):
-    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setCheckable(True)
-        self.setAutoRaise(True)
-        self.setToolButtonStyle(QtCore.Qt.ToolButtonTextOnly)
-        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
-        self.setMinimumHeight(22)
-        self.setCursor(QtCore.Qt.PointingHandCursor)
+
+
+class _F8ComboPopup(QtWidgets.QFrame):
+    valueSelected = QtCore.Signal(int)
+
+    def __init__(self, parent_combo: "F8OptionCombo") -> None:
+        super().__init__(
+            None,
+            QtCore.Qt.Popup | QtCore.Qt.FramelessWindowHint | QtCore.Qt.NoDropShadowWindowHint,
+        )
+        self._combo = parent_combo
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
+        self.setAutoFillBackground(False)
+        self.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self._bg_color = QtGui.QColor(35, 35, 35)
+        self._border_color = QtGui.QColor(255, 255, 255, 55)
+        self._radius = 6.0
         self.setStyleSheet(
             """
-            QToolButton {
-                color: rgb(235, 235, 235);
+            QListView {
                 background: transparent;
-                border: 1px solid rgba(255, 255, 255, 35);
-                border-radius: 4px;
-                padding: 2px 8px;
-            }
-            QToolButton:hover {
-                border-color: rgba(255, 255, 255, 70);
-            }
-            QToolButton:checked {
-                background: rgba(120, 200, 255, 60);
-                border-color: rgba(120, 200, 255, 140);
-            }
-            QToolButton:disabled {
-                color: rgba(235, 235, 235, 90);
-                border-color: rgba(255, 255, 255, 18);
-                background: rgba(0, 0, 0, 18);
-            }
-            QToolButton:checked:disabled {
-                color: rgba(235, 235, 235, 120);
-                background: rgba(120, 200, 255, 28);
-                border-color: rgba(120, 200, 255, 70);
+                color: rgb(235, 235, 235);
+                selection-background-color: rgb(80, 130, 180);
+                outline: 0;
+                border: 0px;
             }
             """
         )
 
+        self._view = QtWidgets.QListView(self)
+        self._view.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._view.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._view.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._view.setUniformItemSizes(True)
+        self._view.clicked.connect(self._on_clicked)  # type: ignore[attr-defined]
+        self._view.activated.connect(self._on_clicked)  # type: ignore[attr-defined]
 
-class F8ExclusiveToggleRow(QtWidgets.QWidget):
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.addWidget(self._view)
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # type: ignore[override]
+        del event
+        p = QtGui.QPainter(self)
+        p.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        rect = QtCore.QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        p.setPen(QtGui.QPen(self._border_color, 1.0))
+        p.setBrush(self._bg_color)
+        p.drawRoundedRect(rect, self._radius, self._radius)
+
+    def set_model(self, model: QtCore.QAbstractItemModel) -> None:
+        self._view.setModel(model)
+
+    def set_current_index(self, index: int) -> None:
+        model = self._view.model()
+        if model is None or index < 0:
+            return
+        try:
+            idx = model.index(index, 0)
+        except Exception:
+            return
+        self._view.setCurrentIndex(idx)
+
+    def focusOutEvent(self, event: QtGui.QFocusEvent) -> None:  # type: ignore[override]
+        super().focusOutEvent(event)
+        self.hide()
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:  # type: ignore[override]
+        if event.key() in (QtCore.Qt.Key_Escape,):
+            self.hide()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def _on_clicked(self, index: QtCore.QModelIndex) -> None:
+        if not index.isValid():
+            return
+        self.valueSelected.emit(index.row())
+        self.hide()
+
+
+class F8OptionCombo(QtWidgets.QComboBox):
     """
-    Exclusive toggle buttons (radio-like) built from QToolButtons.
+    Combo box with value helpers and a top-level popup (avoids NodeGraphQt Z issues).
     """
 
-    valueChanged = QtCore.Signal(object)  # object value (typically str/bool)
+    valueChanged = QtCore.Signal(object)
 
-    def __init__(self, parent: QtWidgets.QWidget | None = None, *, spacing: int = 4) -> None:
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
-        self._group = QtWidgets.QButtonGroup(self)
-        self._group.setExclusive(True)
-        self._buttons: list[F8ToggleButton] = []
         self._values: list[Any] = []
         self._context_tooltip = ""
-
-        layout = _F8FlowLayout(self, margin=0, spacing=spacing)
-        self.setLayout(layout)
-        self._layout = layout
-
-        self._group.buttonToggled.connect(self._on_toggled)  # type: ignore[attr-defined]
+        self.setEditable(False)
+        self.setInsertPolicy(QtWidgets.QComboBox.NoInsert)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        self.setMinimumHeight(22)
+        self.setMaxVisibleItems(16)
+        view = QtWidgets.QListView()
+        view.setUniformItemSizes(True)
+        self.setView(view)
+        self.currentIndexChanged.connect(self._emit)  # type: ignore[attr-defined]
+        self._popup = _F8ComboPopup(self)
+        self._popup.valueSelected.connect(self._on_popup_selected)  # type: ignore[attr-defined]
 
     def set_context_tooltip(self, tooltip: str) -> None:
         self._context_tooltip = str(tooltip or "").strip()
-        for b in self._buttons:
-            b.setToolTip(self._button_tooltip(b))
+        for i in range(self.count()):
+            self.setItemData(i, self._item_tooltip(i), QtCore.Qt.ToolTipRole)
 
     def set_options(
         self,
@@ -198,72 +164,212 @@ class F8ExclusiveToggleRow(QtWidgets.QWidget):
         tooltips: list[str] | None = None,
     ) -> None:
         cur = self.value()
-
-        while self._layout.count():
-            item = self._layout.takeAt(0)
-            w = item.widget() if item is not None else None
-            if w is not None:
-                w.deleteLater()
-
-        self._buttons.clear()
-        self._values = list(values)
-        if labels is None:
-            labels = [str(v) for v in values]
-        labels = list(labels)
-        if tooltips is None:
-            tooltips = ["" for _ in values]
-        tooltips = list(tooltips)
-
-        for i, v in enumerate(values):
-            b = F8ToggleButton(self)
-            b.setText(str(labels[i]) if i < len(labels) else str(v))
-            b.setProperty("_f8_toggle_value", v)
-            b.setAutoExclusive(True)
-            b.setToolTip(self._button_tooltip(b, tooltip=(tooltips[i] if i < len(tooltips) else "")))
-            self._group.addButton(b, i)
-            self._layout.addWidget(b)
-            self._buttons.append(b)
-
-        # restore selection best-effort.
+        with QtCore.QSignalBlocker(self):
+            self.clear()
+            self._values = list(values)
+            if labels is None:
+                labels = [str(v) for v in values]
+            labels = list(labels)
+            if tooltips is None:
+                tooltips = ["" for _ in values]
+            tooltips = list(tooltips)
+            for i, v in enumerate(values):
+                label = labels[i] if i < len(labels) else str(v)
+                self.addItem(str(label), v)
+                tip = tooltips[i] if i < len(tooltips) else ""
+                if self._context_tooltip or tip:
+                    self.setItemData(i, self._item_tooltip(i, tip), QtCore.Qt.ToolTipRole)
         self.set_value(cur)
 
     def set_value(self, value: Any) -> None:
-        idx = -1
+        if value is None:
+            with QtCore.QSignalBlocker(self):
+                self.setCurrentIndex(-1)
+            return
+        target = str(value)
         for i, v in enumerate(self._values):
-            if v == value:
-                idx = i
-                break
-        with QtCore.QSignalBlocker(self._group):
-            for i, b in enumerate(self._buttons):
-                b.setChecked(i == idx)
+            if str(v) == target:
+                with QtCore.QSignalBlocker(self):
+                    self.setCurrentIndex(i)
+                return
 
     def value(self) -> Any:
-        b = self._group.checkedButton()
-        if b is None:
+        idx = self.currentIndex()
+        if idx < 0:
             return None
-        return b.property("_f8_toggle_value")
+        data = self.itemData(idx, QtCore.Qt.UserRole)
+        return data if data is not None else self.currentText()
 
-    def set_disabled(self, disabled: bool) -> None:
-        for b in self._buttons:
-            b.setDisabled(bool(disabled))
+    def showPopup(self) -> None:  # type: ignore[override]
+        if not self.isEnabled():
+            return
+        model = self.model()
+        if model is None or model.rowCount() == 0:
+            return
+        self._popup.set_model(model)
+        self._popup.set_current_index(self.currentIndex())
+        self._popup.resize(self._popup_size())
+        pos = self._popup_pos(self._popup.height())
+        self._popup.move(pos)
+        self._popup.raise_()
+        self._popup.show()
+        self._popup.activateWindow()
 
-    def _button_tooltip(self, b: QtWidgets.QAbstractButton, tooltip: str = "") -> str:
-        label = str(getattr(b, "text", lambda: "")() or "")
-        v = b.property("_f8_toggle_value")
+    def hidePopup(self) -> None:  # type: ignore[override]
+        if self._popup.isVisible():
+            self._popup.hide()
+
+    def _popup_size(self) -> QtCore.QSize:
+        model = self.model()
+        rows = model.rowCount() if model is not None else 0
+        visible = min(rows, max(1, self.maxVisibleItems()))
+        row_h = self.view().sizeHintForRow(0)
+        if row_h <= 0:
+            row_h = self.fontMetrics().height() + 8
+        height = visible * row_h + 12
+        width = max(self.width(), self.view().sizeHintForColumn(0) + 20)
+        return QtCore.QSize(width, height)
+
+    def _popup_pos(self, popup_h: int) -> QtCore.QPoint:
+        anchor = self._anchor_global()
+        top_left = QtCore.QPoint(anchor.x(), anchor.y() - self.height())
+        below = anchor
+        above = QtCore.QPoint(top_left.x(), top_left.y() - popup_h)
+        screen = QtGui.QGuiApplication.screenAt(below)
+        if screen is None:
+            screen = QtGui.QGuiApplication.primaryScreen()
+        if screen is None:
+            return below
+        geo = screen.availableGeometry()
+        if below.y() + popup_h <= geo.bottom():
+            return below
+        if above.y() >= geo.top():
+            return above
+        return below
+
+    def _anchor_global(self) -> QtCore.QPoint:
+        try:
+            proxy = None
+            w: QtWidgets.QWidget | None = self
+            while w is not None and proxy is None:
+                proxy = w.graphicsProxyWidget()
+                w = w.parentWidget()
+            if proxy is not None:
+                scene = proxy.scene()
+                if scene is not None:
+                    views = scene.views()
+                    if views:
+                        view = next((v for v in views if v.isVisible()), views[0])
+                        root = proxy.widget()
+                        if root is not None:
+                            local_pt = self.mapTo(root, self.rect().bottomLeft())
+                            scene_pos = proxy.mapToScene(QtCore.QPointF(local_pt))
+                        else:
+                            scene_pos = proxy.mapToScene(QtCore.QPointF(self.rect().bottomLeft()))
+                        view_pt = view.mapFromScene(scene_pos)
+                        return view.viewport().mapToGlobal(view_pt)
+        except Exception:
+            pass
+        return self.mapToGlobal(QtCore.QPoint(0, self.height()))
+
+    def _on_popup_selected(self, row: int) -> None:
+        if row < 0:
+            return
+        self.setCurrentIndex(row)
+
+    def _item_tooltip(self, index: int, tooltip: str = "") -> str:
+        label = self.itemText(index)
         base = str(tooltip or "").strip()
         if not base:
             base = label
         extra = []
         if self._context_tooltip:
             extra.append(self._context_tooltip)
+        v = None
+        if 0 <= index < len(self._values):
+            v = self._values[index]
         if v is not None and str(v) != label:
             extra.append(f"Value: {v}")
         return "\n".join([base] + extra) if extra else base
 
-    def _on_toggled(self, button: QtWidgets.QAbstractButton, checked: bool) -> None:  # noqa: ARG002
-        if not checked:
-            return
+    def _emit(self, _index: int) -> None:
         self.valueChanged.emit(self.value())
+
+
+class F8Switch(QtWidgets.QAbstractButton):
+    """
+    Switch-style boolean toggle.
+    """
+
+    valueChanged = QtCore.Signal(bool)
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._label_on = "True"
+        self._label_off = "False"
+        self.setCheckable(True)
+        self.setCursor(QtCore.Qt.PointingHandCursor)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        self.setMinimumHeight(22)
+        self.toggled.connect(self._emit)  # type: ignore[attr-defined]
+
+    def set_labels(self, on_label: str, off_label: str) -> None:
+        self._label_on = str(on_label or "")
+        self._label_off = str(off_label or "")
+        self.update()
+
+    def set_value(self, value: Any) -> None:
+        with QtCore.QSignalBlocker(self):
+            self.setChecked(bool(value))
+        self.update()
+
+    def value(self) -> bool:
+        return bool(self.isChecked())
+
+    def sizeHint(self) -> QtCore.QSize:  # type: ignore[override]
+        return QtCore.QSize(72, 22)
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # type: ignore[override]
+        del event
+        p = QtGui.QPainter(self)
+        p.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        rect = QtCore.QRectF(self.rect()).adjusted(1.0, 1.0, -1.0, -1.0)
+        track_h = min(18.0, rect.height())
+        track_rect = QtCore.QRectF(
+            rect.left(),
+            rect.center().y() - track_h / 2.0,
+            rect.width(),
+            track_h,
+        )
+        radius = track_rect.height() / 2.0
+        knob_d = max(10.0, track_rect.height() - 4.0)
+        knob_y = track_rect.center().y() - knob_d / 2.0
+        if self.isChecked():
+            knob_x = track_rect.right() - knob_d - 2.0
+        else:
+            knob_x = track_rect.left() + 2.0
+
+        enabled = self.isEnabled()
+        border = QtGui.QColor(255, 255, 255, 70 if enabled else 35)
+        bg = QtGui.QColor(0, 0, 0, 45 if enabled else 25)
+        fill = QtGui.QColor(120, 200, 255, 80 if enabled else 35)
+        knob = QtGui.QColor(235, 235, 235, 235 if enabled else 120)
+        text = QtGui.QColor(235, 235, 235, 210 if enabled else 110)
+
+        p.setPen(QtGui.QPen(border, 1.0))
+        p.setBrush(fill if self.isChecked() else bg)
+        p.drawRoundedRect(track_rect, radius, radius)
+
+        p.setPen(QtCore.Qt.NoPen)
+        p.setBrush(knob)
+        p.drawEllipse(QtCore.QRectF(knob_x, knob_y, knob_d, knob_d))
+
+        p.setPen(text)
+        label = self._label_on if self.isChecked() else self._label_off
+        p.drawText(track_rect, QtCore.Qt.AlignCenter, label)
+
+    def _emit(self, v: bool) -> None:
+        self.valueChanged.emit(bool(v))
 
 
 class F8ValueBar(QtWidgets.QWidget):
@@ -531,9 +637,9 @@ class F8ImageB64Editor(QtWidgets.QWidget):
             self.valueChanged.emit(self._b64)
 
 
-class F8PropOptionToggle(QtWidgets.QWidget):
+class F8PropOptionCombo(QtWidgets.QWidget):
     """
-    PropertiesBin-compatible option editor (exclusive toggles).
+    PropertiesBin-compatible option editor (combo box).
     """
 
     value_changed = QtCore.Signal(str, object)
@@ -541,12 +647,12 @@ class F8PropOptionToggle(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._name = ""
-        self._row = F8ExclusiveToggleRow()
-        self._row.valueChanged.connect(self._emit)  # type: ignore[attr-defined]
+        self._combo = F8OptionCombo()
+        self._combo.valueChanged.connect(self._emit)  # type: ignore[attr-defined]
 
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self._row, 1)
+        layout.addWidget(self._combo, 1)
 
         self._pool_field: str | None = None
         self._pool_resolver: Callable[[str], list[str]] | None = None
@@ -558,7 +664,7 @@ class F8PropOptionToggle(QtWidgets.QWidget):
         return self._name
 
     def set_items(self, items: list[str]) -> None:
-        self._row.set_options(list(items), labels=list(items))
+        self._combo.set_options(list(items), labels=list(items))
 
     def set_pool(self, pool_field: str, resolver: Callable[[str], list[str]]) -> None:
         self._pool_field = str(pool_field or "")
@@ -572,31 +678,38 @@ class F8PropOptionToggle(QtWidgets.QWidget):
         self.set_items(items)
 
     def set_value(self, value: Any) -> None:
-        self._row.set_value("" if value is None else str(value))
+        self._combo.set_value("" if value is None else str(value))
 
     def get_value(self) -> Any:
-        v = self._row.value()
+        v = self._combo.value()
         if v is None:
             return None
         return str(v)
+
+    def set_context_tooltip(self, tooltip: str) -> None:
+        self._combo.set_context_tooltip(tooltip)
 
     def _emit(self, v: Any) -> None:
         self.value_changed.emit(self.get_name(), None if v is None else str(v))
 
 
-class F8PropBoolToggle(QtWidgets.QWidget):
+class F8PropBoolSwitch(QtWidgets.QWidget):
+    """
+    PropertiesBin-compatible boolean editor (switch).
+    """
+
     value_changed = QtCore.Signal(str, object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._name = ""
-        self._row = F8ExclusiveToggleRow()
-        self._row.set_options([True, False], labels=["True", "False"], tooltips=["Set True", "Set False"])
-        self._row.valueChanged.connect(self._emit)  # type: ignore[attr-defined]
+        self._switch = F8Switch()
+        self._switch.set_labels("True", "False")
+        self._switch.valueChanged.connect(self._emit)  # type: ignore[attr-defined]
 
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self._row, 1)
+        layout.addWidget(self._switch, 1)
 
     def set_name(self, name: str) -> None:
         self._name = str(name or "")
@@ -605,16 +718,16 @@ class F8PropBoolToggle(QtWidgets.QWidget):
         return self._name
 
     def set_value(self, value: Any) -> None:
-        self._row.set_value(bool(value) if value is not None else None)
+        self._switch.set_value(bool(value) if value is not None else False)
 
     def get_value(self) -> Any:
-        v = self._row.value()
-        if v is None:
-            return None
-        return bool(v)
+        return bool(self._switch.value())
+
+    def set_context_tooltip(self, tooltip: str) -> None:
+        self._switch.setToolTip(str(tooltip or ""))
 
     def _emit(self, v: Any) -> None:
-        self.value_changed.emit(self.get_name(), None if v is None else bool(v))
+        self.value_changed.emit(self.get_name(), bool(v))
 
 
 class F8PropValueBar(QtWidgets.QWidget):
