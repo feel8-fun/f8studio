@@ -9,6 +9,7 @@ from NodeGraphQt.nodes.base_node import NodeBaseWidget
 from f8pysdk.shm import VideoShmReader
 
 from ..nodegraph.operator_basenode import F8StudioOperatorBaseNode
+from ..nodegraph.viz_operator_nodeitem import F8StudioVizOperatorNodeItem
 
 
 class _VideoShmPane(QtWidgets.QWidget):
@@ -24,7 +25,7 @@ class _VideoShmPane(QtWidgets.QWidget):
 
         self._image = QtWidgets.QLabel()
         self._image.setAlignment(QtCore.Qt.AlignCenter)
-        self._image.setMinimumSize(240, 160)
+        self._image.setMinimumSize(200, 120)
         self._image.setStyleSheet("background: rgba(0,0,0,60); border: 1px solid rgba(255,255,255,25);")
 
         self._status = QtWidgets.QLabel("")
@@ -157,7 +158,7 @@ class PyStudioVideoShmNode(F8StudioOperatorBaseNode):
     """
 
     def __init__(self):
-        super().__init__()
+        super().__init__(qgraphics_item=F8StudioVizOperatorNodeItem)
         try:
             self.add_custom_widget(_VideoShmWidget(self.view, name="__videoshm", label=""))
         except Exception:
@@ -191,4 +192,3 @@ class PyStudioVideoShmNode(F8StudioOperatorBaseNode):
                 w.set_config(shm_name=shm_name, throttle_ms=throttle_ms)
         except Exception:
             return
-

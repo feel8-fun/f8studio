@@ -342,7 +342,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
                     description="UI refresh interval in milliseconds.",
                     valueSchema=integer_schema(default=50, minimum=0, maximum=60000),
                     access=F8StateAccess.rw,
-                    showOnNode=False,
+                    showOnNode=True,
                 ),
                 F8StateSpec(
                     name="historyMs",
@@ -350,7 +350,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
                     description="Keep history within this time window.",
                     valueSchema=integer_schema(default=500, minimum=0, maximum=60000),
                     access=F8StateAccess.rw,
-                    showOnNode=False,
+                    showOnNode=True,
                 ),
                 F8StateSpec(
                     name="historyFrames",
@@ -358,7 +358,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
                     description="Also keep up to this many recent samples per track.",
                     valueSchema=integer_schema(default=10, minimum=1, maximum=200),
                     access=F8StateAccess.rw,
-                    showOnNode=False,
+                    showOnNode=True,
                 ),
             ],
         ),

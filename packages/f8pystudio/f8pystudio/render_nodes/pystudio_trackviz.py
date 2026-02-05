@@ -7,6 +7,7 @@ from qtpy import QtCore, QtGui, QtWidgets
 from NodeGraphQt.nodes.base_node import NodeBaseWidget
 
 from ..nodegraph.operator_basenode import F8StudioOperatorBaseNode
+from ..nodegraph.viz_operator_nodeitem import F8StudioVizOperatorNodeItem
 
 import pyqtgraph as pg  # type: ignore[import-not-found]
 
@@ -250,6 +251,7 @@ class _TrackVizPane(QtWidgets.QWidget):
         plot.hideAxis("left")
         plot.setMouseEnabled(x=True, y=True)
         plot.setMenuEnabled(False)
+        plot.setMinimumSize(200, 120)
         vb = plot.getPlotItem().getViewBox()
         vb.invertY(True)
         vb.setAspectLocked(True)
@@ -267,8 +269,11 @@ class _TrackVizPane(QtWidgets.QWidget):
         self._pending = None
         self._last_wh: tuple[int, int] | None = None
 
-        self.setMinimumWidth(320)
-        self.setMinimumHeight(240)
+        # Smaller default footprint (similar to VideoSHM view).
+        self.setMinimumWidth(240)
+        self.setMinimumHeight(180)
+        self.setMaximumWidth(240)
+        self.setMaximumHeight(180)
 
     def update_checkbox(self) -> QtWidgets.QCheckBox:
         return self._update
@@ -364,7 +369,7 @@ class PyStudioTrackVizNode(F8StudioOperatorBaseNode):
     """
 
     def __init__(self):
-        super().__init__()
+        super().__init__(qgraphics_item=F8StudioVizOperatorNodeItem)
         try:
             self.add_custom_widget(_TrackVizWidget(self.view, name="__trackviz", label=""))
         except Exception:

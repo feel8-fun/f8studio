@@ -7,6 +7,7 @@ from qtpy import QtCore, QtGui, QtWidgets
 from NodeGraphQt.nodes.base_node import NodeBaseWidget
 
 from ..nodegraph.operator_basenode import F8StudioOperatorBaseNode
+from ..nodegraph.viz_operator_nodeitem import F8StudioVizOperatorNodeItem
 
 
 class _JsonHighlighter(QtGui.QSyntaxHighlighter):
@@ -97,8 +98,8 @@ class _PrintPreviewPane(QtWidgets.QWidget):
         layout.addLayout(top)
         layout.addWidget(self._text, 1)
 
-        self.setMinimumWidth(260)
-        self.setMinimumHeight(160)
+        self.setMinimumWidth(220)
+        self.setMinimumHeight(120)
         self._apply_wrap(True)
         self._apply_dark_style()
         self._copy.clicked.connect(self._copy_to_clipboard)
@@ -297,7 +298,7 @@ class PyStudioPrintNode(F8StudioOperatorBaseNode):
     """
 
     def __init__(self):
-        super().__init__()
+        super().__init__(qgraphics_item=F8StudioVizOperatorNodeItem)
         try:
             self.add_custom_widget(_PrintPreviewWidget(self.view, name="__print_preview", label=""))
         except Exception:

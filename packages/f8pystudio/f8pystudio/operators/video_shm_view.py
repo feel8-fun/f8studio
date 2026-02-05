@@ -57,7 +57,7 @@ class PyStudioVideoShmViewRuntimeNode(RuntimeNode):
                 description="If set and shmName is empty, uses shm.<serviceId>.video",
                 valueSchema=string_schema(default=""),
                 access=F8StateAccess.rw,
-                showOnNode=False,
+                showOnNode=True,
             ),
             F8StateSpec(
                 name="shmName",
@@ -73,7 +73,7 @@ class PyStudioVideoShmViewRuntimeNode(RuntimeNode):
                 description="UI refresh interval in milliseconds (0 = as fast as possible).",
                 valueSchema=integer_schema(default=33, minimum=0, maximum=60000),
                 access=F8StateAccess.rw,
-                showOnNode=False,
+                showOnNode=True,
             ),
         ],
     )

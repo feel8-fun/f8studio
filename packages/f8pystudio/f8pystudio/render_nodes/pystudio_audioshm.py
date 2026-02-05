@@ -12,6 +12,7 @@ from NodeGraphQt.nodes.base_node import NodeBaseWidget
 from f8pysdk.shm import AudioShmReader, read_audio_header, SAMPLE_FORMAT_F32LE
 
 from ..nodegraph.operator_basenode import F8StudioOperatorBaseNode
+from ..nodegraph.viz_operator_nodeitem import F8StudioVizOperatorNodeItem
 
 
 class _AudioShmPane(QtWidgets.QWidget):
@@ -19,7 +20,7 @@ class _AudioShmPane(QtWidgets.QWidget):
         super().__init__()
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
+        layout.setSpacing(2)
 
         self._title = QtWidgets.QLabel("AudioSHM")
         self._title.setStyleSheet("color: rgb(225, 225, 225);")
@@ -27,8 +28,29 @@ class _AudioShmPane(QtWidgets.QWidget):
         self._plot = pg.PlotWidget()
         self._plot.setBackground((20, 20, 20))
         self._plot.showGrid(x=True, y=True, alpha=0.25)
-        self._plot.setLabel("left", "Amp")
-        self._plot.setLabel("bottom", "t", units="s")
+        # Compact viz-style: no axis captions or tick labels.
+        try:
+            axb = self._plot.getAxis("bottom")
+            axl = self._plot.getAxis("left")
+            axb.setLabel("")
+            axl.setLabel("")
+            axb.setStyle(showValues=False)
+            axl.setStyle(showValues=False)
+        except Exception:
+            pass
+        try:
+            pi = self._plot.getPlotItem()
+            if pi is not None:
+                try:
+                    pi.layout.setContentsMargins(2, 2, 2, 2)
+                except Exception:
+                    pass
+                try:
+                    pi.setDefaultPadding(0.02)
+                except Exception:
+                    pass
+        except Exception:
+            pass
         self._curve = self._plot.plot([], [], pen=pg.mkPen((120, 200, 255), width=1))
 
         self._status = QtWidgets.QLabel("")
@@ -37,6 +59,15 @@ class _AudioShmPane(QtWidgets.QWidget):
         layout.addWidget(self._title)
         layout.addWidget(self._plot, 1)
         layout.addWidget(self._status)
+
+        # Node label + state fields already provide context; keep pane compact by default.
+        self._title.setVisible(False)
+        self._status.setVisible(False)
+        self.setMinimumWidth(200)
+        self.setMinimumHeight(120)
+        self.setMaximumWidth(200)
+        self.setMaximumHeight(150)
+
 
         self._timer = QtCore.QTimer(self)
         self._timer.timeout.connect(self._tick)  # type: ignore[attr-defined]
@@ -183,7 +214,7 @@ class PyStudioAudioShmNode(F8StudioOperatorBaseNode):
     """
 
     def __init__(self):
-        super().__init__()
+        super().__init__(qgraphics_item=F8StudioVizOperatorNodeItem)
         try:
             self.add_custom_widget(_AudioShmWidget(self.view, name="__audioshm", label=""))
         except Exception:
