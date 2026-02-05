@@ -19,6 +19,11 @@ from .operators.sequence import register_operator as register_sequence_operator
 from .operators.signal import register_operator as register_signal_operator
 from .operators.print import register_operator as register_print_operator
 from .operators.tick import register_operator as register_tick_operator
+from .operators.envelope import register_operator as register_envelope_operator
+from .operators.axis_envelope import register_operator as register_axis_envelope_operator
+from .operators.smooth_filter import register_operator as register_smooth_filter_operator
+from .operators.range_map import register_operator as register_range_map_operator
+from .operators.rate_limiter import register_operator as register_rate_limiter_operator
 from .operators.udp_skeleton import register_operator as register_udp_skeleton_operator
 from .operators.tcode import register_operator as register_tcode_operator
 from .operators.python_script import register_operator as register_python_script_operator
@@ -69,6 +74,11 @@ def register_pyengine_specs(registry: RuntimeNodeRegistry | None = None) -> Runt
     register_sequence_operator(reg)
     register_signal_operator(reg)
     register_print_operator(reg)
+    register_envelope_operator(reg)
+    register_axis_envelope_operator(reg)
+    register_smooth_filter_operator(reg)
+    register_range_map_operator(reg)
+    register_rate_limiter_operator(reg)
     register_udp_skeleton_operator(reg)
     register_serial_out_operator(reg)
     register_tcode_operator(reg)
