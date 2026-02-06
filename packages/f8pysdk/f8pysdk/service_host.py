@@ -6,7 +6,7 @@ from typing import Any
 from .generated import F8EdgeKindEnum, F8JsonValue, F8RuntimeGraph, F8RuntimeNode, F8StateAccess
 from .runtime_node_registry import RuntimeNodeRegistry
 from .service_bus import ServiceBus
-from .state_write import StateWriteOrigin
+from .service_bus import StateWriteOrigin
 
 
 def _unwrap_json_value(v: Any) -> Any:

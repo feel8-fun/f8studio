@@ -20,7 +20,7 @@ from f8pysdk.nats_naming import kv_key_node_state  # noqa: E402
 from f8pysdk.schema_helpers import string_schema  # noqa: E402
 from f8pysdk.runtime_node import RuntimeNode  # noqa: E402
 from f8pysdk.service_bus import ServiceBus, ServiceBusConfig  # noqa: E402
-from f8pysdk.state_write import StateWriteContext, StateWriteError, StateWriteOrigin  # noqa: E402
+from f8pysdk.service_bus import StateWriteContext, StateWriteError, StateWriteOrigin  # noqa: E402
 from f8pysdk.testing import InMemoryCluster, InMemoryTransport, ServiceBusHarness  # noqa: E402
 
 
