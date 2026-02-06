@@ -30,7 +30,7 @@ def origin_allows_access(origin: StateWriteOrigin, access: F8StateAccess) -> boo
     if origin == StateWriteOrigin.system:
         return True
     if origin == StateWriteOrigin.runtime:
-        return access in (F8StateAccess.rw, F8StateAccess.ro, F8StateAccess.wo)
+        return access in (F8StateAccess.rw, F8StateAccess.ro)
     if origin == StateWriteOrigin.rungraph:
         return access in (F8StateAccess.rw, F8StateAccess.wo)
     if origin == StateWriteOrigin.external:
@@ -166,6 +166,7 @@ async def publish_state(
     ts_ms: int | None = None,
     source: str | None = None,
     meta: dict[str, Any] | None = None,
+    deliver_local: bool = True,
 ) -> None:
     node_id = ensure_token(node_id, label="node_id")
     field = str(field)
@@ -202,9 +203,10 @@ async def publish_state(
         )
     await bus._transport.kv_put(key, json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8"))
     bus._state_cache[(node_id, field)] = (update.value, int(payload["ts"]))
-    # Local writes (actor == self.service_id) do not round-trip through the KV watcher.
-    # Apply to listeners and the node callback immediately.
-    await bus._deliver_state_local(node_id, field, update.value, int(payload["ts"]), dict(payload))
+    if deliver_local:
+        # Local writes (actor == self.service_id) do not round-trip through the KV watcher.
+        # Apply to listeners and the node callback immediately.
+        await bus._deliver_state_local(node_id, field, update.value, int(payload["ts"]), dict(payload))
 
 
 async def publish_state_runtime(
@@ -248,29 +250,3 @@ async def apply_state_local(
     meta_dict.setdefault("origin", str(meta_dict.get("origin") or meta_dict.get("source") or "local"))
     await bus._deliver_state_local(node_id, field, value, ts, meta_dict)
 
-
-async def put_state_kv_unvalidated(
-    bus: "ServiceBus",
-    *,
-    node_id: str,
-    field: str,
-    value: Any,
-    ts_ms: int,
-    meta: dict[str, Any] | None,
-) -> None:
-    """
-    Write state to KV without access validation and without dispatching to nodes.
-
-    This is reserved for runtime-owned fields that are declared `ro` but must
-    exist in KV for discovery/monitoring.
-    """
-    node_id = ensure_token(node_id, label="node_id")
-    field = str(field or "").strip()
-    if not field:
-        return
-    ts = int(ts_ms or now_ms())
-    value = coerce_state_value(value)
-    key = kv_key_node_state(node_id=node_id, field=field)
-    payload = {"value": value, "actor": bus.service_id, "ts": ts, **(dict(meta or {}))}
-    await bus._transport.kv_put(key, json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8"))
-    bus._state_cache[(node_id, field)] = (value, int(ts))

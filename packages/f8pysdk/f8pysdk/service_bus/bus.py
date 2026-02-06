@@ -39,7 +39,6 @@ from .state_publish import (
     coerce_state_value as _coerce_state_value,
     publish_state as _publish_state_impl,
     publish_state_runtime as _publish_state_runtime_impl,
-    put_state_kv_unvalidated as _put_state_kv_unvalidated_impl,
     validate_state_update as _validate_state_update_impl,
 )
 from .routing_data import _InputBuffer
@@ -327,6 +326,7 @@ class ServiceBus:
         ts_ms: int | None = None,
         source: str | None = None,
         meta: dict[str, Any] | None = None,
+        deliver_local: bool = True,
     ) -> None:
         await _publish_state_impl(
             self,
@@ -337,6 +337,7 @@ class ServiceBus:
             ts_ms=ts_ms,
             source=source,
             meta=meta,
+            deliver_local=deliver_local,
         )
 
     async def publish_state_runtime(self, node_id: str, field: str, value: Any, *, ts_ms: int | None = None) -> None:
@@ -513,18 +514,6 @@ class ServiceBus:
 
     async def _seed_builtin_identity_state(self, graph: F8RuntimeGraph) -> None:
         await _seed_builtin_identity_state_impl(self, graph)
-
-    async def _put_state_kv_unvalidated(
-        self, *, node_id: str, field: str, value: Any, ts_ms: int, meta: dict[str, Any] | None
-    ) -> None:
-        await _put_state_kv_unvalidated_impl(
-            self,
-            node_id=node_id,
-            field=field,
-            value=value,
-            ts_ms=ts_ms,
-            meta=meta,
-        )
 
     async def _validate_rungraph_or_raise(self, graph: F8RuntimeGraph) -> None:
         await _validate_rungraph_or_raise_impl(self, graph)

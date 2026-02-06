@@ -192,20 +192,26 @@ async def seed_builtin_identity_state(bus: "ServiceBus", graph: F8RuntimeGraph) 
             continue
         try:
             if bus._state_access_by_node_field.get((node_id, "svcId")) is not None:
-                await bus._put_state_kv_unvalidated(
-                    node_id=node_id,
-                    field="svcId",
-                    value=str(getattr(n, "serviceId", "") or bus.service_id),
+                await bus._publish_state(
+                    node_id,
+                    "svcId",
+                    str(getattr(n, "serviceId", "") or bus.service_id),
+                    origin=StateWriteOrigin.system,
+                    source="system",
                     ts_ms=ts,
-                    meta={"source": "system", "origin": "system", "builtin": True},
+                    meta={"builtin": True, "_noStateFanout": True},
+                    deliver_local=False,
                 )
             if getattr(n, "operatorClass", None) is not None and bus._state_access_by_node_field.get((node_id, "operatorId")) is not None:
-                await bus._put_state_kv_unvalidated(
-                    node_id=node_id,
-                    field="operatorId",
-                    value=str(getattr(n, "nodeId", "") or node_id),
+                await bus._publish_state(
+                    node_id,
+                    "operatorId",
+                    str(getattr(n, "nodeId", "") or node_id),
+                    origin=StateWriteOrigin.system,
+                    source="system",
                     ts_ms=ts,
-                    meta={"source": "system", "origin": "system", "builtin": True},
+                    meta={"builtin": True, "_noStateFanout": True},
+                    deliver_local=False,
                 )
         except Exception:
             continue
