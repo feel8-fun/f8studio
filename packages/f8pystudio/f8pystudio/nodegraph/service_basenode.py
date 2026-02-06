@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import json
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any
 
 from .node_base import F8StudioBaseNode
 
@@ -51,18 +51,6 @@ class _StateFieldInfo:
     ui_control: str
     ui_language: str
     value_schema: Any
-
-
-class _StateFieldLike(Protocol):
-    name: str
-    label: str | None
-    description: str | None
-    showOnNode: bool
-    access: Any
-    required: bool
-    uiControl: str | None
-    uiLanguage: str | None
-    valueSchema: Any
 
 
 def _state_field_info(field: Any) -> _StateFieldInfo | None:
