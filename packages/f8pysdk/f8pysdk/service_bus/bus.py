@@ -35,7 +35,6 @@ from .cross_state import (
     update_cross_state_bindings as _update_cross_state_bindings_impl,
 )
 from .state_publish import (
-    apply_state_local as _apply_state_local,
     coerce_state_value as _coerce_state_value,
     publish_state as _publish_state_impl,
     publish_state_runtime as _publish_state_runtime_impl,
@@ -342,17 +341,6 @@ class ServiceBus:
 
     async def publish_state_runtime(self, node_id: str, field: str, value: Any, *, ts_ms: int | None = None) -> None:
         await _publish_state_runtime_impl(self, node_id, field, value, ts_ms=ts_ms)
-
-    async def apply_state_local(
-        self,
-        node_id: str,
-        field: str,
-        value: Any,
-        *,
-        ts_ms: int | None = None,
-        meta: dict[str, Any] | None = None,
-    ) -> None:
-        await _apply_state_local(self, node_id, field, value, ts_ms=ts_ms, meta=meta)
 
     async def _validate_state_update(
         self,

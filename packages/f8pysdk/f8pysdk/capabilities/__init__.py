@@ -55,7 +55,6 @@ class StatefulNode(Protocol):
     """
 
     node_id: str
-    allow_unknown_state_fields: bool
 
     async def validate_state(self, field: str, value: Any, *, ts_ms: int, meta: dict[str, Any]) -> Any: ...
 

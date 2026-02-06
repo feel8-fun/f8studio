@@ -224,13 +224,21 @@ async def on_remote_state_kv(
                 pass
 
             if access is None:
-                await bus.apply_state_local(
-                    str(local_node_id),
-                    str(local_field),
-                    v2,
-                    ts_ms=ts,
-                    meta={"source": "cross_state", "origin": "external", **meta_out},
-                )
+                if bus._debug_state:
+                    try:
+                        print(
+                            "state_debug[%s] cross_state_skip_unknown_field to=%s.%s peer=%s remote_key=%s"
+                            % (
+                                bus.service_id,
+                                str(local_node_id),
+                                str(local_field),
+                                str(peer_service_id),
+                                str(key),
+                            )
+                        )
+                    except Exception:
+                        pass
+                continue
             else:
                 await bus._publish_state(
                     str(local_node_id),

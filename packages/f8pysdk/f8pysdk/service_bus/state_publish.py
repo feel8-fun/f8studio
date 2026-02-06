@@ -113,12 +113,10 @@ async def validate_state_update(
     - raise StateWriteError/ValueError to reject
     """
     node = bus._nodes.get(str(node_id))
-    allow_unknown = bool(node.allow_unknown_state_fields) if node is not None else False
 
     access = bus._state_access_by_node_field.get((str(node_id), str(field)))
-    # If we have an applied graph, unknown fields are rejected by default.
-    # Nodes may opt into dynamic fields (eg. fan-in aggregators) via `allow_unknown_state_fields=True`.
-    if bus._graph is not None and access is None and not allow_unknown:
+    # If we have an applied graph, unknown fields are rejected.
+    if bus._graph is not None and access is None:
         raise StateWriteError(
             "UNKNOWN_FIELD",
             f"unknown state field: {node_id}.{field}",
@@ -221,32 +219,3 @@ async def publish_state_runtime(
         source="runtime",
         ts_ms=ts_ms,
     )
-
-
-async def apply_state_local(
-    bus: "ServiceBus",
-    node_id: str,
-    field: str,
-    value: Any,
-    *,
-    ts_ms: int | None = None,
-    meta: dict[str, Any] | None = None,
-) -> None:
-    """
-    Apply a state update locally (cache + listeners + node callback) without writing to KV.
-
-    This is useful for endpoint-only / fan-in paths where we want UI updates but do not
-    want to persist synthetic state fields (eg. aggregated/fan-in keys) to the local bucket.
-    """
-    node_id = ensure_token(node_id, label="node_id")
-    field = str(field)
-    ts = int(ts_ms or now_ms())
-    bus._state_cache[(node_id, field)] = (value, ts)
-    meta_dict = dict(meta or {})
-    meta_dict.setdefault("actor", bus.service_id)
-    meta_dict.setdefault("ts", ts)
-    meta_dict.setdefault("value", value)
-    meta_dict.setdefault("source", str(meta_dict.get("source") or "local"))
-    meta_dict.setdefault("origin", str(meta_dict.get("origin") or meta_dict.get("source") or "local"))
-    await bus._deliver_state_local(node_id, field, value, ts, meta_dict)
-

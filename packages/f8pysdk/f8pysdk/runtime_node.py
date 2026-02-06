@@ -24,7 +24,6 @@ class RuntimeNode(BusAttachableNode, StatefulNode, DataReceivableNode, Computabl
     data_in_ports: list[str] = field(default_factory=list)
     data_out_ports: list[str] = field(default_factory=list)
     state_fields: list[str] = field(default_factory=list)
-    allow_unknown_state_fields: bool = False
 
     _bus: NodeBus | None = field(default=None, init=False, repr=False)
 

@@ -27,7 +27,6 @@ from f8pysdk.testing import InMemoryCluster, InMemoryTransport, ServiceBusHarnes
 class _DummyNode:
     def __init__(self, node_id: str) -> None:
         self.node_id = node_id
-        self.allow_unknown_state_fields = False
 
     def attach(self, bus: object) -> None:
         self._bus = bus
