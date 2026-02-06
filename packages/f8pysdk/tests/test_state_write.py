@@ -148,6 +148,82 @@ class StateWriteTests(unittest.IsolatedAsyncioTestCase):
         out = await bus_b.get_state("opB", "input")
         self.assertEqual(out, "v1")
 
+    async def test_cross_service_state_new_target_gets_initial_value(self) -> None:
+        """
+        If a new downstream target is added for an already-watched remote key,
+        it should receive the current value even if the upstream doesn't change.
+        """
+        harness = ServiceBusHarness()
+        bus_a = harness.create_bus("svcA")
+        bus_b = harness.create_bus("svcB")
+
+        node_a = F8RuntimeNode(
+            nodeId="opA",
+            serviceId="svcA",
+            serviceClass="svcA",
+            operatorClass="OpA",
+            stateFields=[
+                F8StateSpec(name="out", valueSchema=string_schema(), access=F8StateAccess.rw),
+            ],
+        )
+        node_b = F8RuntimeNode(
+            nodeId="opB",
+            serviceId="svcB",
+            serviceClass="svcB",
+            operatorClass="OpB",
+            stateFields=[
+                F8StateSpec(name="input", valueSchema=string_schema(), access=F8StateAccess.rw),
+            ],
+        )
+        edge = F8Edge(
+            edgeId="e1",
+            fromServiceId="svcA",
+            fromOperatorId="opA",
+            fromPort="out",
+            toServiceId="svcB",
+            toOperatorId="opB",
+            toPort="input",
+            kind=F8EdgeKindEnum.state,
+            strategy=F8EdgeStrategyEnum.latest,
+        )
+        graph_v1 = F8RuntimeGraph(graphId="g1", revision="r1", nodes=[node_a, node_b], edges=[edge])
+
+        await bus_a.set_rungraph(graph_v1)
+        await bus_b.set_rungraph(graph_v1)
+
+        await bus_a.publish_state_runtime("opA", "out", "v1", ts_ms=1)
+        out = await bus_b.get_state("opB", "input")
+        self.assertEqual(out, "v1")
+
+        # Add a second downstream binding for the same remote key.
+        node_c = F8RuntimeNode(
+            nodeId="opC",
+            serviceId="svcB",
+            serviceClass="svcB",
+            operatorClass="OpC",
+            stateFields=[
+                F8StateSpec(name="input2", valueSchema=string_schema(), access=F8StateAccess.rw),
+            ],
+        )
+        edge2 = F8Edge(
+            edgeId="e2",
+            fromServiceId="svcA",
+            fromOperatorId="opA",
+            fromPort="out",
+            toServiceId="svcB",
+            toOperatorId="opC",
+            toPort="input2",
+            kind=F8EdgeKindEnum.state,
+            strategy=F8EdgeStrategyEnum.latest,
+        )
+        graph_v2 = F8RuntimeGraph(graphId="g1", revision="r2", nodes=[node_a, node_b, node_c], edges=[edge, edge2])
+
+        await bus_a.set_rungraph(graph_v2)
+        await bus_b.set_rungraph(graph_v2)
+
+        out2 = await bus_b.get_state("opC", "input2")
+        self.assertEqual(out2, "v1")
+
     async def test_intra_state_edge_propagation(self) -> None:
         harness = ServiceBusHarness()
         bus = harness.create_bus("svcA")

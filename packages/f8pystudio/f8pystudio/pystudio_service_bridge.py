@@ -10,7 +10,7 @@ from typing import Any, Callable
 import nats  # type: ignore[import-not-found]
 from qtpy import QtCore
 
-from f8pysdk import F8Edge, F8EdgeKindEnum, F8EdgeStrategyEnum, F8RuntimeGraph, F8RuntimeNode, F8StateAccess
+from f8pysdk import F8Edge, F8RuntimeGraph, F8RuntimeNode
 from f8pysdk.nats_naming import cmd_channel_subject, ensure_token, kv_bucket_for_service, new_id, svc_endpoint_subject, svc_micro_name
 from f8pysdk.nats_transport import NatsTransport, NatsTransportConfig
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
@@ -20,14 +20,8 @@ from .nodegraph.runtime_compiler import CompiledRuntimeGraphs
 from .pystudio_service import PyStudioService, PyStudioServiceConfig
 from .service_process_manager import ServiceProcessConfig, ServiceProcessManager
 from .pystudio_node_registry import SERVICE_CLASS, STUDIO_SERVICE_ID
-
-
-_MONITOR_NODE_ID = "monitor"
-
-
-def _encode_remote_state_key(*, service_id: str, node_id: str, field: str) -> str:
-    # Keep this stable and human-readable; avoid "." (it can be confusing inside KV keys).
-    return f"{service_id}|{node_id}|{field}"
+from .remote_state_watcher import RemoteStateWatcher, WatchTarget
+from .ui_bus import UiCommand
 
 
 class _AsyncThread:
@@ -128,7 +122,7 @@ class PyStudioServiceBridge(QtCore.QObject):
     - singleton studio presence (NATS micro ping/info)
     - start service processes
     - deploy per-service rungraphs
-    - monitor remote state via cross-state edges into a local monitor node
+    - monitor remote state via Studio-side KV watches (UI reflection)
     """
 
     # Note: Qt `int` is typically 32-bit; use `object` for ts_ms (ms timestamps exceed 2^31).
@@ -155,6 +149,7 @@ class PyStudioServiceBridge(QtCore.QObject):
         self._last_compiled: CompiledRuntimeGraphs | None = None
 
         self._svc: PyStudioService | None = None
+        self._remote_state_watcher: RemoteStateWatcher | None = None
         self._nc: Any = None
         self._last_nats_error_log_s: float = 0.0
         self._pending_remote_command_cbs: dict[str, Callable[[dict[str, Any] | None, str | None], None]] = {}
@@ -223,7 +218,7 @@ class PyStudioServiceBridge(QtCore.QObject):
     def deploy_run_and_monitor(self, compiled: CompiledRuntimeGraphs) -> None:
         """
         Starts service processes (if not running), deploys per-service graphs,
-        and installs a monitoring graph into the studio bus.
+        installs the studio runtime graph, and enables remote state monitoring.
         """
         # 1) start processes (sync)
         self._last_compiled = compiled
@@ -332,7 +327,7 @@ class PyStudioServiceBridge(QtCore.QObject):
             return
 
         async def _do() -> None:
-            await self._install_monitor_graph_async(compiled=compiled)
+            await self._install_studio_graph_async(compiled=compiled)
             await self._deploy_service_rungraph_async(sid, compiled=compiled)
 
         try:
@@ -362,36 +357,43 @@ class PyStudioServiceBridge(QtCore.QObject):
     ) -> CompiledRuntimeGraphs | None:
         return compiled if compiled is not None else fallback
 
-    def _build_studio_monitor_graph(self, compiled: CompiledRuntimeGraphs) -> F8RuntimeGraph:
-        mon_edges: list[F8Edge] = []
-        for n in list(compiled.global_graph.nodes or []):
+    def _build_studio_runtime_graph(self, compiled: CompiledRuntimeGraphs) -> F8RuntimeGraph:
+        """
+        Build the studio runtime graph without installing a monitor node.
+
+        Remote state monitoring is handled by `RemoteStateWatcher` (Studio-side KV subscription).
+        """
+        studio_sub = compiled.per_service.get(self.studio_service_id)
+        base_nodes: list[F8RuntimeNode] = list(getattr(studio_sub, "nodes", None) or []) if studio_sub is not None else []
+        base_edges: list[F8Edge] = list(getattr(studio_sub, "edges", None) or []) if studio_sub is not None else []
+        return F8RuntimeGraph(
+            graphId=str(getattr(compiled.global_graph, "graphId", "") or "studio"),
+            revision=str(getattr(compiled.global_graph, "revision", "") or "1"),
+            meta={"source": "studio"},
+            services=[],
+            nodes=[*base_nodes],
+            edges=[*base_edges],
+        )
+
+    async def _apply_remote_state_watches_async(self, compiled: CompiledRuntimeGraphs) -> None:
+        w = self._remote_state_watcher
+        if w is None:
+            return
+        targets: list[WatchTarget] = []
+        for n in list(getattr(compiled.global_graph, "nodes", None) or []):
             try:
-                from_sid = str(getattr(n, "serviceId", "") or "")
-                if not from_sid:
-                    continue
-                from_sid = ensure_token(from_sid, label="fromServiceId")
-                from_nid = ensure_token(str(getattr(n, "nodeId", "") or ""), label="nodeId")
+                sid = ensure_token(str(getattr(n, "serviceId", "") or ""), label="service_id")
+                nid = ensure_token(str(getattr(n, "nodeId", "") or ""), label="node_id")
             except Exception:
                 continue
-
             fields: list[str] = []
             for sf in list(getattr(n, "stateFields", None) or []):
                 try:
-                    field_name = str(getattr(sf, "name", "") or "").strip()
+                    name = str(getattr(sf, "name", "") or "").strip()
                 except Exception:
-                    field_name = ""
-                if not field_name:
-                    continue
-                try:
-                    access = getattr(sf, "access", None)
-                except Exception:
-                    access = None
-                # Only monitor readable state (rw/ro). Write-only has no fanout by design.
-                if access not in (F8StateAccess.rw, F8StateAccess.ro):
-                    continue
-                fields.append(field_name)
-
-            # Always monitor identity fields even if a node spec/stateFields list is stale.
+                    name = ""
+                if name:
+                    fields.append(name)
             if "svcId" not in fields:
                 fields.append("svcId")
             try:
@@ -400,42 +402,8 @@ class PyStudioServiceBridge(QtCore.QObject):
                 op_class = ""
             if op_class and "operatorId" not in fields:
                 fields.append("operatorId")
-
-            for field_name in fields:
-                mon_edges.append(
-                    F8Edge(
-                        edgeId=f"mon_{from_sid}_{from_nid}_{field_name}".replace(".", "_"),
-                        fromServiceId=from_sid,
-                        fromOperatorId=from_nid,
-                        fromPort=field_name,
-                        toServiceId=self.studio_service_id,
-                        toOperatorId=_MONITOR_NODE_ID,
-                        toPort=_encode_remote_state_key(service_id=from_sid, node_id=from_nid, field=field_name),
-                        kind=F8EdgeKindEnum.state,
-                        strategy=F8EdgeStrategyEnum.latest,
-                    )
-                )
-
-        studio_sub = compiled.per_service.get(self.studio_service_id)
-        base_nodes: list[F8RuntimeNode] = list(getattr(studio_sub, "nodes", None) or []) if studio_sub is not None else []
-        base_edges: list[F8Edge] = list(getattr(studio_sub, "edges", None) or []) if studio_sub is not None else []
-
-        return F8RuntimeGraph(
-            graphId=str(getattr(compiled.global_graph, "graphId", "") or "studio_monitor"),
-            revision=str(getattr(compiled.global_graph, "revision", "") or "1"),
-            meta={"source": "studio"},
-            services=[],
-            nodes=[
-                *base_nodes,
-                F8RuntimeNode(
-                    nodeId=_MONITOR_NODE_ID,
-                    serviceId=self.studio_service_id,
-                    serviceClass=SERVICE_CLASS,
-                    operatorClass="f8.monitor_state",
-                ),
-            ],
-            edges=[*base_edges, *mon_edges],
-        )
+            targets.append(WatchTarget(service_id=sid, node_id=nid, fields=tuple(fields)))
+        await w.apply_targets(targets)
 
     def is_service_running(self, service_id: str) -> bool:
         sid = str(service_id or "").strip()
@@ -911,9 +879,9 @@ class PyStudioServiceBridge(QtCore.QObject):
             except Exception:
                 pass
 
-    async def _install_monitor_graph_async(self, *, compiled: CompiledRuntimeGraphs | None = None) -> None:
+    async def _install_studio_graph_async(self, *, compiled: CompiledRuntimeGraphs | None = None) -> None:
         """
-        Reinstall the studio monitor graph from the last compiled graphs (best-effort).
+        Reinstall the studio runtime graph from the last compiled graphs (best-effort).
         """
         compiled = self._pick_compiled(compiled, self._last_compiled)
         if compiled is None:
@@ -923,13 +891,17 @@ class PyStudioServiceBridge(QtCore.QObject):
         try:
             if self._svc is None or self._svc.bus is None:
                 return
-            studio_graph = self._build_studio_monitor_graph(compiled)
+            studio_graph = self._build_studio_runtime_graph(compiled)
             await self._svc.bus.set_rungraph(studio_graph)
         except Exception as exc:
             try:
-                self.log.emit(f"install monitor graph failed: {exc}")
+                self.log.emit(f"install studio graph failed: {exc}")
             except Exception:
                 pass
+        try:
+            await self._apply_remote_state_watches_async(compiled)
+        except Exception:
+            pass
 
     @QtCore.Slot(str)
     def start_service_and_deploy(
@@ -947,7 +919,7 @@ class PyStudioServiceBridge(QtCore.QObject):
         self.start_service(sid, service_class=service_class)
 
         async def _do() -> None:
-            await self._install_monitor_graph_async(compiled=compiled)
+            await self._install_studio_graph_async(compiled=compiled)
             await self._deploy_service_rungraph_async(sid, compiled=compiled)
             await self._set_service_active_async(sid, True)
 
@@ -976,7 +948,7 @@ class PyStudioServiceBridge(QtCore.QObject):
         async def _do() -> None:
             # Give restart a moment to come back; readiness wait inside deploy handles most cases.
             await asyncio.sleep(0.3)
-            await self._install_monitor_graph_async(compiled=compiled)
+            await self._install_studio_graph_async(compiled=compiled)
             await self._deploy_service_rungraph_async(sid, compiled=compiled)
             await self._set_service_active_async(sid, True)
 
@@ -1333,6 +1305,39 @@ class PyStudioServiceBridge(QtCore.QObject):
             self.log.emit(f"studio runtime start failed: {exc}")
             self._svc = None
 
+        # Studio-side remote KV watcher (monitors all remote node state and mirrors into UI).
+        if self._remote_state_watcher is None:
+            async def _on_state(
+                service_id: str,
+                node_id: str,
+                field: str,
+                value: Any,
+                ts_ms: int,
+                meta: dict[str, Any],
+            ) -> None:
+                _ = meta
+                try:
+                    self.ui_command.emit(
+                        UiCommand(
+                            node_id=str(node_id),
+                            command="state.update",
+                            payload={"serviceId": str(service_id), "field": str(field), "value": value},
+                            ts_ms=int(ts_ms),
+                        )
+                    )
+                except Exception:
+                    return
+
+            try:
+                self._remote_state_watcher = RemoteStateWatcher(
+                    nats_url=nats_url,
+                    studio_service_id=self.studio_service_id,
+                    on_state=_on_state,
+                )
+                await self._remote_state_watcher.start()
+            except Exception:
+                self._remote_state_watcher = None
+
         # Re-apply current desired lifecycle to any already-known managed services.
         try:
             await self._set_managed_active_async(bool(self._managed_active))
@@ -1340,6 +1345,12 @@ class PyStudioServiceBridge(QtCore.QObject):
             pass
 
     async def _stop_async(self) -> None:
+        try:
+            if self._remote_state_watcher is not None:
+                await self._remote_state_watcher.stop()
+        except Exception:
+            pass
+        self._remote_state_watcher = None
         try:
             if self._svc is not None:
                 await self._svc.stop()
@@ -1409,14 +1420,19 @@ class PyStudioServiceBridge(QtCore.QObject):
                 except Exception:
                     pass
 
-        # Install monitoring graph into studio serviceId.
+        # Install studio runtime graph (studio operators + edges).
         if self._svc is None or self._svc.bus is None:
             return
         try:
-            studio_graph = self._build_studio_monitor_graph(compiled)
+            studio_graph = self._build_studio_runtime_graph(compiled)
             await self._svc.bus.set_rungraph(studio_graph)
         except Exception as exc:
-            self.log.emit(f"install monitor graph failed: {exc}")
+            self.log.emit(f"install studio graph failed: {exc}")
+
+        try:
+            await self._apply_remote_state_watches_async(compiled)
+        except Exception:
+            pass
 
     async def _ensure_nc(self) -> Any | None:
         """

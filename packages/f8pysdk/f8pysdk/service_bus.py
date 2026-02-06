@@ -832,7 +832,7 @@ class ServiceBus:
         Apply a state update locally (cache + listeners + node callback) without writing to KV.
 
         This is useful for endpoint-only / fan-in paths where we want UI updates but do not
-        want to persist synthetic state fields (eg. monitor fan-in keys) to the local bucket.
+        want to persist synthetic state fields (eg. aggregated/fan-in keys) to the local bucket.
         """
         node_id = ensure_token(node_id, label="node_id")
         field = str(field)
@@ -868,7 +868,7 @@ class ServiceBus:
 
         access = self._state_access_by_node_field.get((str(node_id), str(field)))
         # If we have an applied graph, unknown fields are rejected by default.
-        # Nodes may opt into dynamic fields (eg. monitor) via `allow_unknown_state_fields=True`.
+        # Nodes may opt into dynamic fields (eg. fan-in aggregators) via `allow_unknown_state_fields=True`.
         if self._graph is not None and access is None and not allow_unknown:
             raise StateWriteError(
                 "UNKNOWN_FIELD",
@@ -947,6 +947,57 @@ class ServiceBus:
             pass
 
         return value
+
+    @staticmethod
+    def _coerce_inbound_ts_ms(ts_raw: Any, *, default: int) -> int:
+        """
+        Best-effort coercion of inbound timestamps to milliseconds.
+
+        We accept a few common cases:
+        - missing/invalid -> `default`
+        - seconds since epoch -> convert to ms (heuristic by magnitude)
+        - microseconds/nanoseconds since epoch -> downscale to ms (heuristic)
+        """
+        try:
+            if ts_raw is None:
+                return int(default)
+            # Handle float seconds (common in ad-hoc scripts).
+            if isinstance(ts_raw, float):
+                ts = int(ts_raw)
+            elif isinstance(ts_raw, str):
+                ts = int(ts_raw.strip() or "0")
+            else:
+                ts = int(ts_raw)
+        except Exception:
+            return int(default)
+
+        if ts <= 0:
+            return int(default)
+
+        # Heuristic: epoch seconds are ~1e9, epoch ms are ~1e12 (2026).
+        # Use a conservative threshold to avoid misclassifying historical ms.
+        if ts < 100_000_000_000:
+            # Interpret as seconds.
+            return int(ts * 1000)
+
+        # Heuristic: epoch microseconds ~1e15, nanoseconds ~1e18.
+        if ts >= 100_000_000_000_000_000:
+            return int(ts // 1_000_000)
+        if ts >= 100_000_000_000_000:
+            return int(ts // 1000)
+
+        return int(ts)
+
+    @staticmethod
+    def _extract_ts_field(payload: dict[str, Any]) -> Any:
+        # Back-compat: tolerate alternative keys used by ad-hoc writers.
+        if "ts" in payload:
+            return payload.get("ts")
+        if "ts_ms" in payload:
+            return payload.get("ts_ms")
+        if "tsMs" in payload:
+            return payload.get("tsMs")
+        return None
 
     async def _deliver_state_local(
         self, node_id: str, field: str, value: Any, ts_ms: int, meta_dict: dict[str, Any]
@@ -1107,11 +1158,7 @@ class ServiceBus:
             return None
         if isinstance(payload, dict) and "value" in payload:
             v = payload.get("value")
-            ts_raw = payload.get("ts")
-            try:
-                ts = int(ts_raw) if ts_raw is not None else 0
-            except Exception:
-                ts = 0
+            ts = self._coerce_inbound_ts_ms(self._extract_ts_field(payload), default=0)
             self._state_cache[(node_id, field)] = (v, ts)
             if self._debug_state:
                 print(
@@ -1146,11 +1193,7 @@ class ServiceBus:
             return True, raw, 0
         if isinstance(payload, dict) and "value" in payload:
             v = payload.get("value")
-            ts_raw = payload.get("ts")
-            try:
-                ts = int(ts_raw) if ts_raw is not None else 0
-            except Exception:
-                ts = 0
+            ts = self._coerce_inbound_ts_ms(self._extract_ts_field(payload), default=0)
             self._state_cache[(node_id, field)] = (v, ts)
             if self._debug_state:
                 print(
@@ -1176,14 +1219,10 @@ class ServiceBus:
             meta_dict = dict(payload)
             v = payload.get("value")
             actor = str(payload.get("actor") or "")
-            ts_raw = payload.get("ts")
-            try:
-                ts = int(ts_raw) if ts_raw is not None else 0
-            except Exception:
-                ts = 0
+            ts = self._coerce_inbound_ts_ms(self._extract_ts_field(payload), default=now_ms())
         else:
             v = payload
-            ts = 0
+            ts = now_ms()
 
         # Enforce read-only state: ignore external writes to RO fields.
         if actor and actor != self.service_id:
@@ -1227,7 +1266,18 @@ class ServiceBus:
         node = self._nodes.get(node_id)
         if node is None:
             return
-        await node.on_state(field, v, ts_ms=ts)
+        if self._debug_state:
+            try:
+                v_s = repr(v)
+                if len(v_s) > 160:
+                    v_s = v_s[:157] + "..."
+                print(
+                    "state_debug[%s] kv_update deliver node=%s field=%s ts=%s value=%s"
+                    % (self.service_id, node_id, field, str(ts), v_s)
+                )
+            except Exception:
+                pass
+        await self._deliver_state_local(node_id, field, v, int(ts), meta_dict)
 
     # ---- rungraph -------------------------------------------------------
     async def set_rungraph(self, graph: F8RuntimeGraph) -> None:
@@ -1314,6 +1364,10 @@ class ServiceBus:
                     await r
             except Exception:
                 continue
+        # Cross-state watches and initial sync are intentionally installed AFTER
+        # rungraph hooks so local runtime nodes are registered first. This avoids
+        # dropping initial remote values due to missing nodes/fields.
+        await self._sync_cross_state_watches()
 
     async def _seed_builtin_identity_state(self, graph: F8RuntimeGraph) -> None:
         """
@@ -1473,7 +1527,7 @@ class ServiceBus:
         self._intra_data_out = intra
         self._intra_data_in = intra_in
 
-        # Intra-service state fanout: local state edges (used for monitoring/fan-in).
+        # Intra-service state fanout: local state edges (used for fan-in/UI reflection).
         intra_state_out: dict[tuple[str, str], list[tuple[str, str, F8Edge]]] = {}
         for edge in graph.edges:
             if edge.kind != F8EdgeKindEnum.state:
@@ -1526,7 +1580,65 @@ class ServiceBus:
                 )
 
         await self._sync_subscriptions(set(cross_in.keys()))
-        await self._sync_cross_state_watches(graph)
+        self._update_cross_state_bindings(graph)
+        await self._stop_unused_cross_state_watches()
+
+    def _update_cross_state_bindings(self, graph: F8RuntimeGraph) -> None:
+        """
+        Build cross-state binding tables from the current graph without starting watches.
+
+        Watches are started after rungraph hooks register nodes (see `_apply_rungraph_bytes`).
+        """
+        want: dict[tuple[str, str], list[tuple[str, str, F8Edge]]] = {}
+        targets: set[tuple[str, str]] = set()
+        for edge in graph.edges:
+            if edge.kind != F8EdgeKindEnum.state:
+                continue
+            if str(edge.fromServiceId) == str(edge.toServiceId):
+                continue
+            if str(edge.toServiceId) != self.service_id:
+                continue
+            peer = str(edge.fromServiceId or "").strip()
+            try:
+                peer = ensure_token(peer, label="fromServiceId")
+            except Exception:
+                continue
+
+            if not edge.toOperatorId or not edge.fromOperatorId:
+                continue
+
+            local_node = str(edge.toOperatorId)
+            local_field = str(edge.toPort)
+            remote_node = str(edge.fromOperatorId)
+            remote_field = str(edge.fromPort)
+            remote_key = kv_key_node_state(node_id=remote_node, field=remote_field)
+            want.setdefault((peer, remote_key), []).append((local_node, local_field, edge))
+            targets.add((local_node, local_field))
+
+        self._cross_state_in_by_key = want
+        self._cross_state_targets = targets
+
+    async def _stop_unused_cross_state_watches(self) -> None:
+        """
+        Stop KV watches that are no longer needed based on current bindings.
+        """
+        want = self._cross_state_in_by_key
+        for k, watch in list(self._remote_state_watches.items()):
+            if k in want:
+                continue
+            try:
+                watcher, task = watch
+                try:
+                    task.cancel()
+                except Exception:
+                    pass
+                try:
+                    await watcher.stop()
+                except Exception:
+                    pass
+            except Exception:
+                pass
+            self._remote_state_watches.pop(k, None)
 
     # ---- data routing ---------------------------------------------------
     async def emit_data(self, node_id: str, port: str, value: Any, *, ts_ms: int | None = None) -> None:
@@ -1782,70 +1894,28 @@ class ServiceBus:
         return
 
     # ---- cross-state ----------------------------------------------------
-    async def _sync_cross_state_watches(self, graph: F8RuntimeGraph) -> None:
+    async def _sync_cross_state_watches(self) -> None:
         """
         Cross-state binding via remote KV watch (read remote, apply to local).
         """
-        want: dict[tuple[str, str], list[tuple[str, str, F8Edge]]] = {}
-        targets: set[tuple[str, str]] = set()
-        for edge in graph.edges:
-            if edge.kind != F8EdgeKindEnum.state:
-                continue
-            if str(edge.fromServiceId) == str(edge.toServiceId):
-                continue
-            if str(edge.toServiceId) != self.service_id:
-                continue
-            peer = str(edge.fromServiceId or "").strip()
-            try:
-                peer = ensure_token(peer, label="fromServiceId")
-            except Exception:
-                continue
+        # NOTE: bindings are computed in `_rebuild_routes` so `stateValues` application
+        # can skip cross-state target fields.
+        want = self._cross_state_in_by_key
 
-            if not edge.toOperatorId or not edge.fromOperatorId:
-                continue
-
-            local_node = str(edge.toOperatorId)
-            local_field = str(edge.toPort)
-            remote_node = str(edge.fromOperatorId)
-            remote_field = str(edge.fromPort)
-            remote_key = kv_key_node_state(node_id=remote_node, field=remote_field)
-            want.setdefault((peer, remote_key), []).append((local_node, local_field, edge))
-            targets.add((local_node, local_field))
-
-        # Stop watches no longer needed.
-        for k, watch in list(self._remote_state_watches.items()):
-            if k in want:
-                continue
-            try:
-                watcher, task = watch
-                try:
-                    task.cancel()
-                except Exception:
-                    pass
-                try:
-                    await watcher.stop()
-                except Exception:
-                    pass
-            except Exception:
-                pass
-            self._remote_state_watches.pop(k, None)
-
-        self._cross_state_in_by_key = want
-        self._cross_state_targets = targets
-
-        # Start new watches.
-        for k in want.keys():
-            if k in self._remote_state_watches:
-                continue
-            peer, remote_key = k
+        # Start missing watches and perform best-effort initial sync for every watched key.
+        for peer, remote_key in want.keys():
             bucket = kv_bucket_for_service(peer)
 
-            async def _cb(key: str, val: bytes, *, _peer: str = peer) -> None:
-                await self._on_remote_state_kv(_peer, key, val, is_initial=False)
+            if (peer, remote_key) not in self._remote_state_watches:
+                async def _cb(key: str, val: bytes, *, _peer: str = peer) -> None:
+                    await self._on_remote_state_kv(_peer, key, val, is_initial=False)
 
-            self._remote_state_watches[k] = await self._transport.kv_watch_in_bucket(bucket, remote_key, cb=_cb)
-            # Initial sync: fetch current value once so edges work even if the upstream
-            # doesn't change after deploy.
+                self._remote_state_watches[(peer, remote_key)] = await self._transport.kv_watch_in_bucket(
+                    bucket, remote_key, cb=_cb
+                )
+
+            # Initial sync: fetch current value once so new targets receive the current value
+            # even if the upstream doesn't change after deploy.
             try:
                 raw = await self._transport.kv_get_in_bucket(bucket, remote_key)
                 if raw:
@@ -1868,10 +1938,30 @@ class ServiceBus:
             payload = {}
         if isinstance(payload, dict):
             v = payload.get("value")
-            ts = int(payload.get("ts") or now_ms())
+            ts = self._coerce_inbound_ts_ms(self._extract_ts_field(payload), default=now_ms())
         else:
             v = payload
             ts = now_ms()
+
+        if self._debug_state:
+            try:
+                v_s = repr(v)
+                if len(v_s) > 160:
+                    v_s = v_s[:157] + "..."
+                print(
+                    "state_debug[%s] cross_state_in peer=%s key=%s ts=%s initial=%s value=%s targets=%s"
+                    % (
+                        self.service_id,
+                        str(peer_service_id),
+                        str(key),
+                        str(ts),
+                        "1" if bool(is_initial) else "0",
+                        v_s,
+                        str(len(targets)),
+                    )
+                )
+            except Exception:
+                pass
 
         for local_node_id, local_field, _edge in targets:
             access = self._state_access_by_node_field.get((str(local_node_id), str(local_field)))
@@ -1926,6 +2016,31 @@ class ServiceBus:
                     ctx=StateWriteContext(origin=StateWriteOrigin.external, source="cross_state"),
                 )
                 v2 = self._coerce_state_value(v2)
+
+                # Skip duplicates (common when KV watch emits the current value and we
+                # also perform an explicit initial `kv_get`).
+                try:
+                    cached = self._state_cache.get((str(local_node_id), str(local_field)))
+                    if cached is not None and int(ts) <= int(cached[1]) and cached[0] == v2:
+                        if self._debug_state:
+                            try:
+                                print(
+                                    "state_debug[%s] cross_state_skip_duplicate to=%s.%s ts=%s peer=%s remote_key=%s"
+                                    % (
+                                        self.service_id,
+                                        str(local_node_id),
+                                        str(local_field),
+                                        str(ts),
+                                        str(peer_service_id),
+                                        str(key),
+                                    )
+                                )
+                            except Exception:
+                                pass
+                        continue
+                except Exception:
+                    pass
+
                 if access is None:
                     await self.apply_state_local(
                         str(local_node_id),
@@ -1944,6 +2059,25 @@ class ServiceBus:
                         source="cross_state",
                         meta=meta_out,
                     )
+                if self._debug_state:
+                    try:
+                        v2s = repr(v2)
+                        if len(v2s) > 160:
+                            v2s = v2s[:157] + "..."
+                        print(
+                            "state_debug[%s] cross_state_apply to=%s.%s ts=%s peer=%s remote_key=%s value=%s"
+                            % (
+                                self.service_id,
+                                str(local_node_id),
+                                str(local_field),
+                                str(ts),
+                                str(peer_service_id),
+                                str(key),
+                                v2s,
+                            )
+                        )
+                    except Exception:
+                        pass
                 try:
                     self._cross_state_last_ts[(str(local_node_id), str(local_field))] = int(ts)
                 except Exception:
