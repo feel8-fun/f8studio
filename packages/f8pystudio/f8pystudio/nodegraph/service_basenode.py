@@ -493,6 +493,12 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             return None
         return getattr(viewer, "_f8_graph", None) if viewer is not None else None
 
+    def _viewer_safe(self) -> Any | None:
+        try:
+            return self.viewer()
+        except RuntimeError:
+            return None
+
     def _ensure_graph_property_hook(self) -> None:
         if self._graph_prop_hooked:
             return
@@ -1665,7 +1671,13 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         border_rect = QtCore.QRectF(rect.left(), rect.top(), rect.width(), rect.height())
 
         pen = QtGui.QPen(border_color, border_width)
-        pen.setCosmetic(self.viewer().get_zoom() < 0.0)
+        v = self._viewer_safe()
+        zoom = None
+        try:
+            zoom = float(v.get_zoom()) if v is not None else None
+        except Exception:
+            zoom = None
+        pen.setCosmetic(bool(zoom is not None and zoom < 0.0))
         path = QtGui.QPainterPath()
         path.addRoundedRect(border_rect, radius, radius)
         painter.setBrush(QtCore.Qt.NoBrush)
@@ -1715,7 +1727,13 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         border_rect = QtCore.QRectF(rect.left(), rect.top(), rect.width(), rect.height())
 
         pen = QtGui.QPen(border_color, border_width)
-        pen.setCosmetic(self.viewer().get_zoom() < 0.0)
+        v = self._viewer_safe()
+        zoom = None
+        try:
+            zoom = float(v.get_zoom()) if v is not None else None
+        except Exception:
+            zoom = None
+        pen.setCosmetic(bool(zoom is not None and zoom < 0.0))
         painter.setBrush(QtCore.Qt.NoBrush)
         painter.setPen(pen)
         painter.drawRoundedRect(border_rect, radius, radius)
@@ -2693,9 +2711,13 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         if ITEM_CACHE_MODE is QtWidgets.QGraphicsItem.ItemCoordinateCache:
             return
 
+        v = self._viewer_safe()
+        if v is None:
+            return
+
         rect = self.sceneBoundingRect()
-        l = self.viewer().mapToGlobal(self.viewer().mapFromScene(rect.topLeft()))
-        r = self.viewer().mapToGlobal(self.viewer().mapFromScene(rect.topRight()))
+        l = v.mapToGlobal(v.mapFromScene(rect.topLeft()))
+        r = v.mapToGlobal(v.mapFromScene(rect.topRight()))
         # width is the node width in screen
         width = r.x() - l.x()
 
