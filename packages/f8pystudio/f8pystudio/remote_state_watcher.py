@@ -97,7 +97,14 @@ class RemoteStateWatcher:
         )
         self._started = False
         self._watches: dict[tuple[str, str], Any] = {}  # (bucket, key_pattern) -> (watcher, task)
-        self._last_by_key: dict[tuple[str, str, str], int] = {}  # (serviceId,nodeId,field) -> ts_ms
+        # Dedupe applied updates per (serviceId,nodeId,field).
+        #
+        # Important: do not treat `ts_ms` as a total order for UI updates. Many
+        # runtime nodes propagate upstream timestamps, so "switching back" to an
+        # older upstream sample can legitimately decrease ts while still
+        # representing the latest KV write. The UI should reflect the KV's
+        # current value in that case.
+        self._last_by_key: dict[tuple[str, str, str], tuple[int, Any]] = {}  # -> (ts_ms, last_value)
 
     async def start(self) -> None:
         if self._started:
@@ -204,9 +211,19 @@ class RemoteStateWatcher:
 
         k = (str(service_id), str(node_id), str(field))
         last = self._last_by_key.get(k)
-        if last is not None and int(ts) <= int(last):
-            return
-        self._last_by_key[k] = int(ts)
+        if last is not None:
+            last_ts, last_v = last
+            # If the *value* didn't change, suppress duplicate UI updates even if ts changes.
+            # If the value changed, always apply (even when ts goes backwards).
+            try:
+                if v == last_v:
+                    if int(ts) > int(last_ts):
+                        self._last_by_key[k] = (int(ts), last_v)
+                    return
+            except Exception:
+                # If comparison fails for any reason, fall back to applying.
+                pass
+        self._last_by_key[k] = (int(ts), v)
 
         try:
             r = self._on_state(str(service_id), str(node_id), str(field), v, int(ts), meta)

@@ -7,8 +7,11 @@ import os
 import platform
 import re
 import shlex
+import shutil
 import subprocess
 import sys
+import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -34,6 +37,59 @@ def _normalize_path_str(s: str) -> str:
         # Allow Windows-style paths in env/config (e.g. build\\bin\\foo.exe).
         s = s.replace("\\", "/")
     return s
+
+
+def _truthy_env(name: str, *, default: bool = False) -> bool:
+    v = os.environ.get(name)
+    if v is None:
+        return bool(default)
+    s = str(v).strip().lower()
+    if s in ("", "0", "false", "no", "off", "disable", "disabled"):
+        return False
+    return True
+
+
+def _prepare_isolated_conan_generators_dir(generators_dir: Path) -> Path | None:
+    """
+    Work around Conan PowerShell runenv scripts writing shared files under
+    build/generators (eg. deactivate_conanrunenv-*.ps1). When multiple services
+    start concurrently, those Out-File writes can race.
+
+    Returns a temp directory that contains a copy of generators_dir, or None on
+    failure/disabled.
+    """
+    if not _is_windows():
+        return None
+    if not generators_dir.is_dir():
+        return None
+    if not _truthy_env("F8_CONAN_RUNENV_ISOLATE", default=True):
+        return None
+
+    try:
+        base = Path(tempfile.gettempdir()).resolve()
+    except Exception:
+        base = None  # type: ignore[assignment]
+    if base is None:
+        return None
+
+    try:
+        # Use a short, unique dir name to avoid long path issues on Windows.
+        stamp = int(time.time() * 1000)
+        out = Path(tempfile.mkdtemp(prefix=f"f8_conan_gen_{os.getpid()}_{stamp}_", dir=str(base)))
+    except Exception:
+        return None
+
+    try:
+        # Copy the whole generators folder to preserve relative-path assumptions in conanrun.ps1.
+        # This folder is usually small (scripts + env files).
+        shutil.copytree(str(generators_dir), str(out), dirs_exist_ok=True)
+        return out
+    except Exception:
+        try:
+            shutil.rmtree(str(out), ignore_errors=True)
+        except Exception:
+            pass
+        return None
 
 
 def _possible_filenames(exe: str) -> list[str]:
@@ -280,13 +336,25 @@ def _exec_with_optional_conan_runenv(*, exe_path: Path, passthrough_args: list[s
 
     if auto_runenv and generators.is_dir():
         if _is_windows():
-            runenv = generators / "conanrun.ps1"
+            runenv_root = _prepare_isolated_conan_generators_dir(generators) or generators
+            runenv = runenv_root / "conanrun.ps1"
             if runenv.is_file():
                 def _ps_quote(s: str) -> str:
                     # PowerShell single-quoted strings escape quotes by doubling them.
                     return "'" + s.replace("'", "''") + "'"
 
                 # Replace current process with PowerShell -> source runenv -> exec exe.
+                cleanup = ""
+                try:
+                    if runenv_root != generators:
+                        cleanup_dir = str(runenv_root)
+                        cleanup = (
+                            f"; $code=$LASTEXITCODE; "
+                            f"try {{ Remove-Item -LiteralPath {_ps_quote(cleanup_dir)} -Recurse -Force -ErrorAction SilentlyContinue }} catch {{}}; "
+                            f"exit $code"
+                        )
+                except Exception:
+                    cleanup = ""
                 cmd = [
                     "powershell.exe",
                     "-NoProfile",
@@ -294,7 +362,8 @@ def _exec_with_optional_conan_runenv(*, exe_path: Path, passthrough_args: list[s
                     "Bypass",
                     "-Command",
                     f". {_ps_quote(str(runenv))}; & {_ps_quote(str(exe_path))} "
-                    + " ".join(_ps_quote(a) for a in passthrough_args),
+                    + " ".join(_ps_quote(a) for a in passthrough_args)
+                    + cleanup,
                 ]
                 os.execvp(cmd[0], cmd)
         else:
@@ -509,7 +578,19 @@ def _run_describe(
                 def _ps_quote(s: str) -> str:
                     return "'" + s.replace("'", "''") + "'"
 
-                runenv = generators / "conanrun.ps1"
+                runenv_root = _prepare_isolated_conan_generators_dir(generators) or generators
+                runenv = runenv_root / "conanrun.ps1"
+                cleanup = ""
+                try:
+                    if runenv_root != generators:
+                        cleanup_dir = str(runenv_root)
+                        cleanup = (
+                            f"; $code=$LASTEXITCODE; "
+                            f"try {{ Remove-Item -LiteralPath {_ps_quote(cleanup_dir)} -Recurse -Force -ErrorAction SilentlyContinue }} catch {{}}; "
+                            f"exit $code"
+                        )
+                except Exception:
+                    cleanup = ""
                 cmd = [
                     "powershell.exe",
                     "-NoProfile",
@@ -517,7 +598,8 @@ def _run_describe(
                     "Bypass",
                     "-Command",
                     f". {_ps_quote(str(runenv))}; & {_ps_quote(str(exe_path))} --describe "
-                    + " ".join(_ps_quote(a) for a in extra_args),
+                    + " ".join(_ps_quote(a) for a in extra_args)
+                    + cleanup,
                 ]
                 proc = subprocess.run(cmd, cwd=str(repo_root), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
             elif not _is_windows() and (generators / "conanrun.sh").is_file():
