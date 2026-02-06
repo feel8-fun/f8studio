@@ -43,19 +43,6 @@ def kv_key_node_state(*, node_id: str, field: str) -> str:
         raise ValueError("field must be non-empty")
     return f"nodes.{node_id}.state.{field}"
 
-
-def edge_subject(receiver_service_id: str, edge_id: str) -> str:
-    """
-    Legacy cross-instance data edge subject.
-
-    Prefer `data_subject(from_service_id, from_node_id, port_id)` so fan-out
-    publishes once per output port and receivers subscribe independently.
-    """
-    receiver_service_id = ensure_token(receiver_service_id, label="receiver_service_id")
-    edge_id = ensure_token(edge_id, label="edge_id")
-    return f"svc.{receiver_service_id}.edges.{edge_id}"
-
-
 def data_subject(from_service_id: str, *, from_node_id: str, port_id: str) -> str:
     """
     Cross-instance data bus subject for an output port.
@@ -67,18 +54,6 @@ def data_subject(from_service_id: str, *, from_node_id: str, port_id: str) -> st
     from_node_id = ensure_token(from_node_id, label="from_node_id")
     port_id = ensure_token(port_id, label="port_id")
     return f"svc.{from_service_id}.nodes.{from_node_id}.data.{port_id}"
-
-
-def cmd_subject(service_id: str, cmd: str) -> str:
-    """
-    Command subject for a service instance.
-
-    Examples:
-    - `svc.<serviceId>.cmd.run` (execute once)
-    """
-    service_id = ensure_token(service_id, label="service_id")
-    cmd = ensure_token(cmd, label="cmd")
-    return f"svc.{service_id}.cmd.{cmd}"
 
 def cmd_channel_subject(service_id: str) -> str:
     """

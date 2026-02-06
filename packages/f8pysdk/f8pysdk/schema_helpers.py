@@ -14,39 +14,6 @@ from .generated import (
     F8ComplexTypeKind,
 )
 
-OPERATOR_KEY_SEP = "|"
-
-
-def operator_key(service_class: str, operator_class: str) -> str:
-    """
-    Build a globally-unique operator key from (serviceClass, operatorClass).
-
-    This is the canonical identifier used by registries and editors.
-    """
-    service_class = str(service_class or "").strip()
-    operator_class = str(operator_class or "").strip()
-    if not service_class:
-        raise ValueError("service_class must be non-empty")
-    if not operator_class:
-        raise ValueError("operator_class must be non-empty")
-    return f"{service_class}{OPERATOR_KEY_SEP}{operator_class}"
-
-
-def split_operator_key(key: str) -> tuple[str, str]:
-    """
-    Split an operator key back into (serviceClass, operatorClass).
-    """
-    k = str(key or "")
-    if OPERATOR_KEY_SEP not in k:
-        raise ValueError(f"Invalid operator key (missing '{OPERATOR_KEY_SEP}'): {k}")
-    service_class, operator_class = k.split(OPERATOR_KEY_SEP, 1)
-    service_class = service_class.strip()
-    operator_class = operator_class.strip()
-    if not service_class or not operator_class:
-        raise ValueError(f"Invalid operator key: {k}")
-    return service_class, operator_class
-
-
 def schema_type(schema: F8DataTypeSchema) -> str:
     inner = schema.root
     value = inner.type
