@@ -502,7 +502,7 @@ nlohmann::json AudioCapService::describe() {
       {"stateFields",
        json::array({
            state_field("active", schema_boolean(), "rw", "Active", "Enable/disable capture", true),
-           state_field("audioShmName", schema_string(), "ro"),
+           state_field("audioShmName", schema_string(), "ro", "Audio SHM Name", "Name of the audio shared memory segment", true),
            state_field("audioDevice", schema_string(), "ro"),
            state_field("audioSampleRate", schema_integer(), "ro"),
            state_field("audioChannels", schema_integer(), "ro"),
