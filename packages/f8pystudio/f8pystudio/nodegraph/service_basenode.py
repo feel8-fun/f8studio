@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 import json
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Protocol
 
 from .node_base import F8StudioBaseNode
 
@@ -38,6 +39,91 @@ from ..command_ui_protocol import CommandUiHandler, CommandUiSource
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class _StateFieldInfo:
+    name: str
+    label: str
+    tooltip: str
+    show_on_node: bool
+    access: Any
+    access_str: str
+    required: bool
+    ui_control: str
+    ui_language: str
+    value_schema: Any
+
+
+class _StateFieldLike(Protocol):
+    name: str
+    label: str | None
+    description: str | None
+    showOnNode: bool
+    access: Any
+    required: bool
+    uiControl: str | None
+    uiLanguage: str | None
+    valueSchema: Any
+
+
+def _state_field_info(field: Any) -> _StateFieldInfo | None:
+    try:
+        f = field  # fast-path for typed objects.
+        name = str(f.name or "").strip()
+    except Exception:
+        name = str(getattr(field, "name", "") or "").strip()
+    if not name:
+        return None
+
+    try:
+        show_on_node = bool(field.showOnNode)
+    except Exception:
+        show_on_node = bool(getattr(field, "showOnNode", False))
+
+    try:
+        label = str(field.label or "").strip() or name
+    except Exception:
+        label = str(getattr(field, "label", "") or "").strip() or name
+    try:
+        tooltip = str(field.description or "").strip() or name
+    except Exception:
+        tooltip = str(getattr(field, "description", "") or "").strip() or name
+    try:
+        ui_control = str(field.uiControl or "").strip().lower()
+    except Exception:
+        ui_control = str(getattr(field, "uiControl", "") or "").strip().lower()
+    try:
+        ui_language = str(field.uiLanguage or "")
+    except Exception:
+        ui_language = str(getattr(field, "uiLanguage", "") or "")
+    try:
+        value_schema = field.valueSchema
+    except Exception:
+        value_schema = getattr(field, "valueSchema", None)
+    try:
+        access = field.access
+    except Exception:
+        access = getattr(field, "access", None)
+    access_value = getattr(access, "value", access) if access is not None else ""
+    access_str = str(access_value or "").strip().lower()
+    try:
+        required = bool(field.required)
+    except Exception:
+        required = bool(getattr(field, "required", False))
+
+    return _StateFieldInfo(
+        name=name,
+        label=label,
+        tooltip=tooltip,
+        show_on_node=show_on_node,
+        access=access,
+        access_str=access_str,
+        required=required,
+        ui_control=ui_control,
+        ui_language=ui_language,
+        value_schema=value_schema,
+    )
+
+
 class _F8ElideToolButton(QtWidgets.QToolButton):
     def __init__(self, parent: QtWidgets.QWidget | None = None):
         super().__init__(parent)
@@ -50,6 +136,31 @@ class _F8ElideToolButton(QtWidgets.QToolButton):
     def resizeEvent(self, event):  # type: ignore[override]
         super().resizeEvent(event)
         self._apply_elide()
+
+    def event(self, event):  # type: ignore[override]
+        # Tooltips on embedded widgets inside a QGraphicsProxyWidget can pick up
+        # an unexpected palette/style (showing as a black box). Force the
+        # tooltip to be shown with the global/default styling by passing
+        # widget=None.
+        try:
+            if event.type() == QtCore.QEvent.ToolTip:
+                tip = str(self.toolTip() or "").strip()
+                if not tip:
+                    return True
+                pos = None
+                gp = getattr(event, "globalPos", None)
+                if callable(gp):
+                    pos = gp()
+                else:
+                    gpf = getattr(event, "globalPosition", None)
+                    if callable(gpf):
+                        pos = gpf().toPoint()
+                if pos is not None:
+                    QtWidgets.QToolTip.showText(pos, tip, None)
+                    return True
+        except Exception:
+            pass
+        return super().event(event)
 
     def _apply_elide(self) -> None:
         try:
@@ -123,38 +234,39 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
     def _build_state_port(self):
 
         for s in self.effective_state_fields():
-            if not s.showOnNode:
+            info = _state_field_info(s)
+            if info is None or not info.show_on_node:
                 continue
 
-            if getattr(s, "access", None) in [F8StateAccess.rw, F8StateAccess.wo]:
+            if info.access in [F8StateAccess.rw, F8StateAccess.wo] or info.access_str in {"rw", "wo"}:
                 self.add_input(
-                    f"[S]{s.name}",
+                    f"[S]{info.name}",
                     color=STATE_PORT_COLOR,
                     painter_func=draw_square_port,
                 )
 
-            if getattr(s, "access", None) in [F8StateAccess.rw, F8StateAccess.ro]:
+            if info.access in [F8StateAccess.rw, F8StateAccess.ro] or info.access_str in {"rw", "ro"}:
                 self.add_output(
-                    f"{s.name}[S]",
+                    f"{info.name}[S]",
                     color=STATE_PORT_COLOR,
                     painter_func=draw_square_port,
                 )
 
     def _build_state_properties(self) -> None:
         for s in self.effective_state_fields() or []:
-            name = str(getattr(s, "name", "") or "").strip()
-            if not name:
+            info = _state_field_info(s)
+            if info is None:
                 continue
-            if self.has_property(name):  # type: ignore[attr-defined]
+            if self.has_property(info.name):  # type: ignore[attr-defined]
                 continue
             try:
-                default_value = schema_default(s.valueSchema)
+                default_value = schema_default(info.value_schema)
             except Exception:
                 default_value = None
-            widget_type, items, prop_range = self._state_widget_for_schema(getattr(s, "valueSchema", None))
-            tooltip = str(getattr(s, "description", "") or "").strip() or None
+            widget_type, items, prop_range = self._state_widget_for_schema(info.value_schema)
+            tooltip = info.tooltip or None
             self.create_property(
-                name,
+                info.name,
                 default_value,
                 items=items,
                 range=prop_range,
@@ -220,16 +332,13 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
             desired_outputs[f"{p.name}[D]"] = {"color": DATA_PORT_COLOR}
 
         for s in list(self.effective_state_fields() or []):
-            if not getattr(s, "showOnNode", False):
+            info = _state_field_info(s)
+            if info is None or not info.show_on_node:
                 continue
-            name = str(getattr(s, "name", "") or "").strip()
-            if not name:
-                continue
-            access = getattr(s, "access", None)
-            if access in [F8StateAccess.rw, F8StateAccess.wo]:
-                desired_inputs[f"[S]{name}"] = {"color": STATE_PORT_COLOR, "painter_func": draw_square_port}
-            if access in [F8StateAccess.rw, F8StateAccess.ro]:
-                desired_outputs[f"{name}[S]"] = {"color": STATE_PORT_COLOR, "painter_func": draw_square_port}
+            if info.access in [F8StateAccess.rw, F8StateAccess.wo] or info.access_str in {"rw", "wo"}:
+                desired_inputs[f"[S]{info.name}"] = {"color": STATE_PORT_COLOR, "painter_func": draw_square_port}
+            if info.access in [F8StateAccess.rw, F8StateAccess.ro] or info.access_str in {"rw", "ro"}:
+                desired_outputs[f"{info.name}[S]"] = {"color": STATE_PORT_COLOR, "painter_func": draw_square_port}
 
         # Remove ports that no longer exist in spec (disconnect first).
         current_input_names = set(self.inputs().keys())
@@ -1053,18 +1162,17 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         hi = max(maxs) if maxs else None
         return lo, hi
 
-    def _make_state_inline_control(self, state_field: Any) -> QtWidgets.QWidget:
-        name = str(getattr(state_field, "name", "") or "").strip()
-        ui = str(getattr(state_field, "uiControl", "") or "").strip().lower()
-        schema = getattr(state_field, "valueSchema", None)
-        access = getattr(state_field, "access", None)
-        access_s = str(getattr(access, "value", access) or "").strip().lower()
+    def _make_state_inline_control(self, state_field: _StateFieldInfo) -> QtWidgets.QWidget:
+        name = state_field.name
+        ui = state_field.ui_control
+        schema = state_field.value_schema
+        access_s = state_field.access_str
         t = (schema_type(schema) or "") if schema is not None else ""
 
         enum_items = self._schema_enum_items(schema)
         lo, hi = self._schema_numeric_range(schema)
         pool_field = parse_select_pool(ui)
-        field_tooltip = str(getattr(state_field, "description", "") or "").strip()
+        field_tooltip = state_field.tooltip if state_field.tooltip != name else ""
 
         def _common_style(w: QtWidgets.QWidget) -> None:
             # Make controls readable on dark node themes.
@@ -1304,15 +1412,14 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         except AttributeError:
             fields = list(getattr(getattr(node, "spec", None), "stateFields", None) or [])
 
-        show: list[tuple[str, Any]] = []
+        show: list[_StateFieldInfo] = []
         for f in fields:
-            if not getattr(f, "showOnNode", False):
+            info = _state_field_info(f)
+            if info is None or not info.show_on_node:
                 continue
-            n = str(getattr(f, "name", "") or "").strip()
-            if n:
-                show.append((n, f))
+            show.append(info)
 
-        desired = [n for n, _f in show]
+        desired = [info.name for info in show]
 
         # delete stale widgets.
         for n in list(self._state_inline_proxies.keys()):
@@ -1354,21 +1461,21 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             except RuntimeError:
                 pass
 
-        def _ctrl_serial(f: Any) -> str:
+        def _ctrl_serial(info: _StateFieldInfo) -> str:
             """
             Signature for deciding when the control widget must be rebuilt.
             (Exclude label/description; those can be updated in-place.)
             """
             try:
-                vs = getattr(f, "valueSchema", None)
+                vs = info.value_schema
                 root = getattr(vs, "root", None) if vs is not None else None
                 enum_items = list(getattr(root, "enum", None) or []) if root is not None else []
                 return json.dumps(
                     {
-                        "access": str(getattr(getattr(f, "access", None), "value", "") or ""),
-                        "required": bool(getattr(f, "required", False)),
-                        "uiControl": str(getattr(f, "uiControl", "") or ""),
-                        "uiLanguage": str(getattr(f, "uiLanguage", "") or ""),
+                        "access": info.access_str,
+                        "required": info.required,
+                        "uiControl": info.ui_control,
+                        "uiLanguage": info.ui_language,
                         "schemaType": str(schema_type(vs) or ""),
                         "enum": [str(x) for x in enum_items],
                     },
@@ -1379,10 +1486,11 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             except Exception:
                 return ""
 
-        for n, f in show:
+        for info in show:
             # Always keep label/tooltip up to date without rebuilding.
-            label = str(getattr(f, "label", "") or "").strip() or n
-            tip = str(getattr(f, "description", "") or "").strip() or n
+            n = info.name
+            label = info.label or n
+            tip = info.tooltip or n
             btn_existing = self._state_inline_toggles.get(n)
             if btn_existing is not None:
                 try:
@@ -1394,7 +1502,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 except Exception:
                     pass
 
-            ctrl_sig = _ctrl_serial(f)
+            ctrl_sig = _ctrl_serial(info)
             if n in self._state_inline_proxies and ctrl_sig and ctrl_sig == self._state_inline_ctrl_serial.get(n, ""):
                 continue
 
@@ -1405,7 +1513,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             if isinstance(store, dict) and n in store:
                 expanded = bool(store.get(n))
             expanded = bool(self._state_inline_expanded.get(n, expanded))
-            control = self._make_state_inline_control(f)
+            control = self._make_state_inline_control(info)
 
             # Header: toggle button (state name).
             header = QtWidgets.QWidget()
