@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from nats.js.api import StorageType  # type: ignore[import-not-found]
 
 from .runtime_node_registry import RuntimeNodeRegistry
-from .service_bus import DataDeliveryMode, ServiceBus, ServiceBusConfig
+from .service_bus.bus import DataDeliveryMode, ServiceBus, ServiceBusConfig
 from .service_host import ServiceHost, ServiceHostConfig
 
 

@@ -293,7 +293,7 @@ class PyStudioTrackVizRuntimeNode(RuntimeNode):
     async def _get_int_state(self, name: str, *, default: int, minimum: int, maximum: int) -> int:
         v: Any = None
         try:
-            v = await self.get_state(name)
+            v = (await self.get_state(name)).value
         except Exception:
             v = None
         if v is None:

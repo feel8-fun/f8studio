@@ -155,22 +155,22 @@ async def initial_sync_intra_state_edges(bus: "ServiceBus", graph: F8RuntimeGrap
         if access not in (F8StateAccess.rw, F8StateAccess.wo):
             continue
         try:
-            found_from, v_from, _ts_from = await bus.get_state_with_ts(from_node, from_field)
+            from_state = await bus.get_state(from_node, from_field)
         except Exception:
             continue
-        if not found_from:
+        if not from_state.found:
             continue
         try:
-            found_to, v_to, _ts_to = await bus.get_state_with_ts(to_node, to_field)
+            to_state = await bus.get_state(to_node, to_field)
         except Exception:
-            found_to, v_to = False, None
-        if found_to and v_to == v_from:
+            to_state = None
+        if to_state is not None and to_state.found and to_state.value == from_state.value:
             continue
         try:
             await bus._publish_state(
                 to_node,
                 to_field,
-                v_from,
+                from_state.value,
                 origin=StateWriteOrigin.external,
                 source="state_edge_init",
                 meta={"fromNodeId": from_node, "fromField": from_field, "_fanoutHops": 1},

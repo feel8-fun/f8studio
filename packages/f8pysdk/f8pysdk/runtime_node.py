@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, cast
 
 from .capabilities import BusAttachableNode, ComputableNode, DataReceivableNode, LifecycleNode, NodeBus, StatefulNode
+from .service_bus.state_read import StateRead
 
 
 @dataclass
@@ -85,9 +86,9 @@ class RuntimeNode(BusAttachableNode, StatefulNode, DataReceivableNode, Computabl
             return
         await self._bus.publish_state_runtime(self.node_id, field, value, ts_ms=ts_ms)
 
-    async def get_state(self, field: str) -> Any:
+    async def get_state(self, field: str) -> StateRead:
         if self._bus is None:
-            return None
+            return StateRead(found=False, value=None, ts_ms=None)
         return await self._bus.get_state(self.node_id, field)
 
 

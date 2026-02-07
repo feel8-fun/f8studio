@@ -75,6 +75,7 @@ from .lifecycle import (
     start as _start_impl,
     stop as _stop_impl,
 )
+from .state_read import StateRead
 
 
 log = logging.getLogger(__name__)
@@ -429,69 +430,39 @@ class ServiceBus:
     async def _initial_sync_intra_state_edges(self, graph: F8RuntimeGraph) -> None:
         await _initial_sync_intra_state_edges_impl(self, graph)
 
-    async def get_state(self, node_id: str, field: str) -> Any:
+    async def get_state(self, node_id: str, field: str) -> StateRead:
         node_id = ensure_token(node_id, label="node_id")
         field = str(field)
+
         cached = self._state_cache.get((node_id, field))
         if cached is not None:
-            return cached[0]
+            return StateRead(found=True, value=cached[0], ts_ms=cached[1])
+
         key = kv_key_node_state(node_id=node_id, field=field)
         raw = await self._transport.kv_get(key)
         if not raw:
             if self._debug_state:
                 print("state_debug[%s] get_state miss node=%s field=%s" % (self.service_id, node_id, field))
-            return None
+            return StateRead(found=False, value=None, ts_ms=None)
+
         try:
             payload = json.loads(raw.decode("utf-8"))
         except Exception:
-            return None
-        if isinstance(payload, dict) and "value" in payload:
-            v = payload.get("value")
-            ts = self._coerce_inbound_ts_ms(self._extract_ts_field(payload), default=0)
-            self._state_cache[(node_id, field)] = (v, ts)
-            if self._debug_state:
-                print(
-                    "state_debug[%s] get_state kv node=%s field=%s ts=%s" % (self.service_id, node_id, field, str(ts))
-                )
-            return v
-        self._state_cache[(node_id, field)] = (payload, 0)
-        return payload
-
-    async def get_state_with_ts(self, node_id: str, field: str) -> tuple[bool, Any, int | None]:
-        """
-        Return (found, value, ts_ms) for a state key.
-
-        Unlike `get_state`, this can distinguish between "missing" and a stored
-        `None` value because the KV entry payload always includes metadata.
-        """
-        node_id = ensure_token(node_id, label="node_id")
-        field = str(field)
-        cached = self._state_cache.get((node_id, field))
-        if cached is not None:
-            return True, cached[0], cached[1]
-        key = kv_key_node_state(node_id=node_id, field=field)
-        raw = await self._transport.kv_get(key)
-        if not raw:
-            if self._debug_state:
-                print("state_debug[%s] get_state_with_ts miss node=%s field=%s" % (self.service_id, node_id, field))
-            return False, None, None
-        try:
-            payload = json.loads(raw.decode("utf-8"))
-        except Exception:
+            # Preserve old `get_state_with_ts` behavior: treat unparseable values
+            # as "found" and return raw bytes.
             self._state_cache[(node_id, field)] = (raw, 0)
-            return True, raw, 0
+            return StateRead(found=True, value=raw, ts_ms=0)
+
         if isinstance(payload, dict) and "value" in payload:
             v = payload.get("value")
             ts = self._coerce_inbound_ts_ms(self._extract_ts_field(payload), default=0)
             self._state_cache[(node_id, field)] = (v, ts)
             if self._debug_state:
-                print(
-                    "state_debug[%s] get_state_with_ts kv node=%s field=%s ts=%s"
-                    % (self.service_id, node_id, field, str(ts))
-                )
-            return True, v, ts
+                print("state_debug[%s] get_state kv node=%s field=%s ts=%s" % (self.service_id, node_id, field, str(ts)))
+            return StateRead(found=True, value=v, ts_ms=ts)
+
         self._state_cache[(node_id, field)] = (payload, 0)
-        return True, payload, 0
+        return StateRead(found=True, value=payload, ts_ms=0)
 
     # ---- rungraph -------------------------------------------------------
     async def set_rungraph(self, graph: F8RuntimeGraph) -> None:

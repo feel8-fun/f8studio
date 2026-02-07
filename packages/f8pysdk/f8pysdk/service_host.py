@@ -5,7 +5,7 @@ from typing import Any
 
 from .generated import F8EdgeKindEnum, F8JsonValue, F8RuntimeGraph, F8RuntimeNode, F8StateAccess
 from .runtime_node_registry import RuntimeNodeRegistry
-from .service_bus import ServiceBus
+from .service_bus.bus import ServiceBus
 from .service_bus import StateWriteOrigin
 
 
@@ -287,10 +287,11 @@ class ServiceHost:
                 existing_ts = None
                 existing_value = None
                 try:
-                    found, existing_value, existing_ts = await self._bus.get_state_with_ts(node_id, str(k))
+                    st = await self._bus.get_state(node_id, str(k))
                 except Exception:
-                    found = False
-                if found:
+                    st = None
+                if st is not None and st.found:
+                    existing_value, existing_ts = st.value, st.ts_ms
                     try:
                         if existing_value == v:
                             continue
@@ -338,10 +339,11 @@ class ServiceHost:
             existing_ts = None
             existing_value = None
             try:
-                found, existing_value, existing_ts = await self._bus.get_state_with_ts(node_id, str(k))
+                st = await self._bus.get_state(node_id, str(k))
             except Exception:
-                found = False
-            if found:
+                st = None
+            if st is not None and st.found:
+                existing_value, existing_ts = st.value, st.ts_ms
                 try:
                     if existing_value == v:
                         continue

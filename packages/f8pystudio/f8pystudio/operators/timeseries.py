@@ -190,7 +190,7 @@ class PyStudioTimeSeriesRuntimeNode(RuntimeNode):
     async def _get_int_state(self, name: str, *, default: int, minimum: int, maximum: int) -> int:
         v = None
         try:
-            v = await self.get_state(name)
+            v = (await self.get_state(name)).value
         except Exception:
             v = None
         if v is None:
@@ -212,7 +212,7 @@ class PyStudioTimeSeriesRuntimeNode(RuntimeNode):
     async def _get_bool_state(self, name: str, *, default: bool) -> bool:
         v = None
         try:
-            v = await self.get_state(name)
+            v = (await self.get_state(name)).value
         except Exception:
             v = None
         if v is None:
@@ -228,7 +228,7 @@ class PyStudioTimeSeriesRuntimeNode(RuntimeNode):
     async def _get_float_state_optional(self, name: str) -> float | None:
         v = None
         try:
-            v = await self.get_state(name)
+            v = (await self.get_state(name)).value
         except Exception:
             v = None
         if v is None:

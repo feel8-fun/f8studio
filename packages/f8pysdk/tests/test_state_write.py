@@ -19,8 +19,8 @@ from f8pysdk.generated import (  # noqa: E402
 from f8pysdk.nats_naming import kv_key_node_state  # noqa: E402
 from f8pysdk.schema_helpers import string_schema  # noqa: E402
 from f8pysdk.runtime_node import RuntimeNode  # noqa: E402
-from f8pysdk.service_bus import ServiceBus, ServiceBusConfig  # noqa: E402
-from f8pysdk.service_bus import StateWriteContext, StateWriteError, StateWriteOrigin  # noqa: E402
+from f8pysdk.service_bus.bus import ServiceBus, ServiceBusConfig  # noqa: E402
+from f8pysdk.service_bus.state_write import StateWriteContext, StateWriteError, StateWriteOrigin  # noqa: E402
 from f8pysdk.testing import InMemoryCluster, InMemoryTransport, ServiceBusHarness  # noqa: E402
 
 
@@ -144,7 +144,7 @@ class StateWriteTests(unittest.IsolatedAsyncioTestCase):
         await bus_b.set_rungraph(graph)
 
         await bus_a.publish_state_runtime("opA", "out", "v1", ts_ms=1)
-        out = await bus_b.get_state("opB", "input")
+        out = (await bus_b.get_state("opB", "input")).value
         self.assertEqual(out, "v1")
 
     async def test_cross_service_state_new_target_gets_initial_value(self) -> None:
@@ -191,7 +191,7 @@ class StateWriteTests(unittest.IsolatedAsyncioTestCase):
         await bus_b.set_rungraph(graph_v1)
 
         await bus_a.publish_state_runtime("opA", "out", "v1", ts_ms=1)
-        out = await bus_b.get_state("opB", "input")
+        out = (await bus_b.get_state("opB", "input")).value
         self.assertEqual(out, "v1")
 
         # Add a second downstream binding for the same remote key.
@@ -220,7 +220,7 @@ class StateWriteTests(unittest.IsolatedAsyncioTestCase):
         await bus_a.set_rungraph(graph_v2)
         await bus_b.set_rungraph(graph_v2)
 
-        out2 = await bus_b.get_state("opC", "input2")
+        out2 = (await bus_b.get_state("opC", "input2")).value
         self.assertEqual(out2, "v1")
 
     async def test_intra_state_edge_propagation(self) -> None:
@@ -262,11 +262,11 @@ class StateWriteTests(unittest.IsolatedAsyncioTestCase):
         await bus.set_rungraph(graph)
 
         await bus.publish_state_runtime("opA", "out", "v1", ts_ms=1)
-        out = await bus.get_state("opB", "input")
+        out = (await bus.get_state("opB", "input")).value
         self.assertEqual(out, "v1")
 
         await bus.publish_state_runtime("opA", "out", "v2", ts_ms=2)
-        out = await bus.get_state("opB", "input")
+        out = (await bus.get_state("opB", "input")).value
         self.assertEqual(out, "v2")
 
     async def test_intra_state_edge_blocked_by_ro(self) -> None:
@@ -308,7 +308,7 @@ class StateWriteTests(unittest.IsolatedAsyncioTestCase):
         await bus.set_rungraph(graph)
 
         await bus.publish_state_runtime("opA", "out", "v1", ts_ms=1)
-        out = await bus.get_state("opB", "input")
+        out = (await bus.get_state("opB", "input")).value
         self.assertIsNone(out)
 
     async def test_intra_state_edge_initial_sync(self) -> None:
@@ -351,7 +351,7 @@ class StateWriteTests(unittest.IsolatedAsyncioTestCase):
         graph = F8RuntimeGraph(graphId="g1", revision="r1", nodes=[node_a, node_b], edges=[edge])
         await bus.set_rungraph(graph)
 
-        out = await bus.get_state("opB", "input")
+        out = (await bus.get_state("opB", "input")).value
         self.assertEqual(out, "pre")
 
     async def test_rungraph_state_values_apply_and_update(self) -> None:
@@ -372,8 +372,8 @@ class StateWriteTests(unittest.IsolatedAsyncioTestCase):
         graph = F8RuntimeGraph(graphId="g1", revision="r1", nodes=[node], edges=[])
         await bus.set_rungraph(graph)
 
-        v_cfg = await bus.get_state("opA", "cfg")
-        v_mode = await bus.get_state("opA", "mode")
+        v_cfg = (await bus.get_state("opA", "cfg")).value
+        v_mode = (await bus.get_state("opA", "mode")).value
         self.assertEqual(v_cfg, "v1")
         self.assertEqual(v_mode, "m1")
 
@@ -388,8 +388,8 @@ class StateWriteTests(unittest.IsolatedAsyncioTestCase):
         graph2 = F8RuntimeGraph(graphId="g1", revision="r2", nodes=[node2], edges=[])
         await bus.set_rungraph(graph2)
 
-        v_cfg = await bus.get_state("opA", "cfg")
-        v_mode = await bus.get_state("opA", "mode")
+        v_cfg = (await bus.get_state("opA", "cfg")).value
+        v_mode = (await bus.get_state("opA", "mode")).value
         self.assertEqual(v_cfg, "v2")
         self.assertEqual(v_mode, "m2")
 
@@ -419,9 +419,9 @@ class StateWriteTests(unittest.IsolatedAsyncioTestCase):
         graph = F8RuntimeGraph(graphId="g1", revision="r1", nodes=[service_node, op_node], edges=[])
         await bus.set_rungraph(graph)
 
-        svc_id = await bus.get_state("svcA", "svcId")
-        op_svc_id = await bus.get_state("opA", "svcId")
-        op_id = await bus.get_state("opA", "operatorId")
+        svc_id = (await bus.get_state("svcA", "svcId")).value
+        op_svc_id = (await bus.get_state("opA", "svcId")).value
+        op_id = (await bus.get_state("opA", "operatorId")).value
         self.assertEqual(svc_id, "svcA")
         self.assertEqual(op_svc_id, "svcA")
         self.assertEqual(op_id, "opA")

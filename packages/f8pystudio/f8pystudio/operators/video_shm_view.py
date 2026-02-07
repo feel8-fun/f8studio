@@ -160,7 +160,7 @@ class PyStudioVideoShmViewRuntimeNode(RuntimeNode):
     async def _get_int_state(self, name: str, *, default: int, minimum: int, maximum: int) -> int:
         v: Any = None
         try:
-            v = await self.get_state(name)
+            v = (await self.get_state(name)).value
         except Exception:
             v = None
         if v is None:
@@ -178,7 +178,7 @@ class PyStudioVideoShmViewRuntimeNode(RuntimeNode):
     async def _get_str_state(self, name: str, *, default: str) -> str:
         v: Any = None
         try:
-            v = await self.get_state(name)
+            v = (await self.get_state(name)).value
         except Exception:
             v = None
         if v is None:

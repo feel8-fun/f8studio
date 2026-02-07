@@ -4,7 +4,8 @@ from typing import Any, Protocol, runtime_checkable, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..generated import F8RuntimeGraph
-    from ..service_bus import ServiceBus
+    from ..service_bus.bus import ServiceBus
+    from ..service_bus.state_read import StateRead
 
 
 @runtime_checkable
@@ -230,7 +231,7 @@ class StateIOBus(Protocol):
 
     async def publish_state_runtime(self, node_id: str, field: str, value: Any, *, ts_ms: int | None = None) -> None: ...
 
-    async def get_state(self, node_id: str, field: str) -> Any: ...
+    async def get_state(self, node_id: str, field: str) -> "StateRead": ...
 
 
 @runtime_checkable
