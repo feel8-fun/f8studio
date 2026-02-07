@@ -22,10 +22,6 @@ class F8StudioNodeViewer(NodeViewer):
         self._origin_pos = None
         self._previous_pos = None
 
-    @property
-    def f8_graph(self) -> Any | None:
-        return self._f8_graph
-
         self._shortcut_search = QtWidgets.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Tab), self)
         self._shortcut_search.setContext(QtCore.Qt.WidgetShortcut)
         self._shortcut_search.activated.connect(self._open_node_search)  # type: ignore[attr-defined]
@@ -37,6 +33,10 @@ class F8StudioNodeViewer(NodeViewer):
         self._shortcut_backspace = QtWidgets.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Backspace), self)
         self._shortcut_backspace.setContext(QtCore.Qt.WidgetShortcut)
         self._shortcut_backspace.activated.connect(self._delete_selected_nodes)  # type: ignore[attr-defined]
+
+    @property
+    def f8_graph(self) -> Any | None:
+        return self._f8_graph
 
     def set_graph(self, graph: Any) -> None:
         self._f8_graph = graph
