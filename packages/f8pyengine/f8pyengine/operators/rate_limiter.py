@@ -14,7 +14,7 @@ from f8pysdk import (
     number_schema,
 )
 from f8pysdk.nats_naming import ensure_token
-from f8pysdk.runtime_node import RuntimeNode
+from f8pysdk.runtime_node import OperatorNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from ..constants import SERVICE_CLASS
@@ -47,7 +47,7 @@ def _clamp(v: float, lo: float, hi: float) -> float:
     return v
 
 
-class RateLimiterRuntimeNode(RuntimeNode):
+class RateLimiterRuntimeNode(OperatorNode):
     """
     Rate limiter for a normalized signal (typically 0..1).
 

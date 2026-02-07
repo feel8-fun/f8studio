@@ -14,7 +14,7 @@ from f8pysdk import (
     string_schema,
 )
 from f8pysdk.nats_naming import ensure_token
-from f8pysdk.runtime_node import RuntimeNode
+from f8pysdk.runtime_node import OperatorNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from ..constants import SERVICE_CLASS
@@ -237,7 +237,7 @@ class EnvelopeTracker:
         return float(filt.update(value, alpha=alpha))
 
 
-class EnvelopeRuntimeNode(RuntimeNode):
+class EnvelopeRuntimeNode(OperatorNode):
     """
     Tracks upper/lower envelopes of a signal and outputs a normalized value (0..1).
     """

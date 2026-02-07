@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .generated import F8EdgeKindEnum, F8JsonValue, F8RuntimeGraph, F8RuntimeNode, F8StateAccess
-from .runtime_node import RuntimeNode
+from .runtime_node import OperatorNode, RuntimeNode
 from .runtime_node_registry import RuntimeNodeRegistry
 from .service_bus.bus import ServiceBus
 from .service_bus import StateWriteOrigin
@@ -68,7 +68,7 @@ class ServiceHost:
         self._registry = registry or RuntimeNodeRegistry.instance()
 
         self._service_node: RuntimeNode | None = None
-        self._operator_nodes: dict[str, RuntimeNode] = {}
+        self._operator_nodes: dict[str, OperatorNode] = {}
         self._bus.register_rungraph_hook(self)
 
     async def start(self) -> None:
@@ -158,6 +158,8 @@ class ServiceHost:
                 node = None
             if node is None:
                 continue
+            if not isinstance(node, OperatorNode):
+                continue
             # Make runtime node metadata match the rungraph snapshot explicitly.
             # This keeps change detection deterministic and avoids "ghost fields".
             try:
@@ -210,7 +212,7 @@ class ServiceHost:
         _ = graph
 
     @staticmethod
-    def _needs_recreate(node: RuntimeNode, snapshot: F8RuntimeNode) -> bool:
+    def _needs_recreate(node: OperatorNode, snapshot: F8RuntimeNode) -> bool:
         """
         Return True if the local runtime node should be re-created for the given snapshot.
 

@@ -14,7 +14,7 @@ from f8pysdk import (
     string_schema,
 )
 from f8pysdk.nats_naming import ensure_token
-from f8pysdk.runtime_node import RuntimeNode
+from f8pysdk.runtime_node import OperatorNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from ..constants import SERVICE_CLASS
@@ -91,7 +91,7 @@ _CURVE_FN: dict[str, Callable[[float], float]] = {
 }
 
 
-class RangeMapRuntimeNode(RuntimeNode):
+class RangeMapRuntimeNode(OperatorNode):
     """
     Clip input to [inMin, inMax], remap to [outMin, outMax] with optional curve.
     """

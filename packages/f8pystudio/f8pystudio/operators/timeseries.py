@@ -16,7 +16,7 @@ from f8pysdk import (
     number_schema,
 )
 from f8pysdk.nats_naming import ensure_token
-from f8pysdk.runtime_node import RuntimeNode
+from f8pysdk.runtime_node import OperatorNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from ..constants import SERVICE_CLASS
@@ -28,7 +28,7 @@ OPERATOR_CLASS = "f8.timeseries"
 RENDERER_CLASS = "pystudio_timeseries"
 
 
-class PyStudioTimeSeriesRuntimeNode(RuntimeNode):
+class PyStudioTimeSeriesRuntimeNode(OperatorNode):
     """
     Studio-side runtime node for time-series plotting.
 

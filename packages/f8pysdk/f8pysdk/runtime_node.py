@@ -3,7 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, cast
 
-from .capabilities import BusAttachableNode, ComputableNode, DataReceivableNode, LifecycleNode, NodeBus, StatefulNode
+from .capabilities import (
+    BusAttachableNode,
+    ComputableNode,
+    DataReceivableNode,
+    ExecutableNode,
+    LifecycleNode,
+    NodeBus,
+    StatefulNode,
+)
 from .service_bus.state_read import StateRead
 
 
@@ -25,8 +33,6 @@ class RuntimeNode(BusAttachableNode, StatefulNode, DataReceivableNode, Computabl
     data_in_ports: list[str] = field(default_factory=list)
     data_out_ports: list[str] = field(default_factory=list)
     state_fields: list[str] = field(default_factory=list)
-    exec_in_ports: list[str] = field(default_factory=list)
-    exec_out_ports: list[str] = field(default_factory=list)
 
     _bus: NodeBus | None = field(default=None, init=False, repr=False)
 
@@ -112,9 +118,17 @@ class ServiceNode(RuntimeNode):
 
 
 @dataclass
-class OperatorNode(RuntimeNode):
+class OperatorNode(RuntimeNode, ExecutableNode):
     """
     Marker base class for operator nodes.
 
     Operator nodes are the executable/functional units within a service graph.
     """
+
+    exec_in_ports: list[str] = field(default_factory=list)
+    exec_out_ports: list[str] = field(default_factory=list)
+
+    async def on_exec(self, exec_id: str | int, in_port: str | None = None) -> list[str]:
+        _ = exec_id
+        _ = in_port
+        raise NotImplementedError(f"{type(self).__name__}.on_exec() is not implemented")

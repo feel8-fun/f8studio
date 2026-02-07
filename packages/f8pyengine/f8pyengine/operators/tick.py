@@ -15,7 +15,7 @@ from f8pysdk import (
     integer_schema,
 )
 from f8pysdk.nats_naming import ensure_token
-from f8pysdk.runtime_node import RuntimeNode
+from f8pysdk.runtime_node import OperatorNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from f8pysdk.executors.exec_flow import EntrypointContext
@@ -25,7 +25,7 @@ from ..constants import SERVICE_CLASS
 OPERATOR_CLASS = "f8.tick"
 
 
-class TickRuntimeNode(RuntimeNode):
+class TickRuntimeNode(OperatorNode):
     """
     Source operator that periodically emits exec triggers.
 

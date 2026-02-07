@@ -14,7 +14,7 @@ from f8pysdk import (
     string_schema,
 )
 from f8pysdk.nats_naming import ensure_token
-from f8pysdk.runtime_node import RuntimeNode
+from f8pysdk.runtime_node import OperatorNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from ..constants import SERVICE_CLASS
@@ -48,7 +48,7 @@ def _normalize_method(value: Any, *, default: str = "EMA") -> str:
     return default
 
 
-class AxisEnvelopeRuntimeNode(RuntimeNode):
+class AxisEnvelopeRuntimeNode(OperatorNode):
     """
     Convert 2D oscillation (x,y) into normalized amplitudes along major/minor axes.
 

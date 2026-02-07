@@ -5,11 +5,11 @@ from collections.abc import Callable
 from typing import Any, ClassVar
 
 from .generated import F8OperatorSpec, F8RuntimeNode, F8ServiceDescribe, F8ServiceSpec, F8StateAccess, F8StateSpec
-from .runtime_node import RuntimeNode, ServiceNode
+from .runtime_node import OperatorNode, RuntimeNode, ServiceNode
 from .schema_helpers import string_schema
 
 
-OperatorFactory = Callable[[str, F8RuntimeNode, dict[str, Any]], RuntimeNode]
+OperatorFactory = Callable[[str, F8RuntimeNode, dict[str, Any]], OperatorNode]
 ServiceFactory = Callable[[str, F8RuntimeNode, dict[str, Any]], RuntimeNode]
 
 
@@ -254,11 +254,11 @@ class RuntimeNodeRegistry:
         if reg is None:
             if service_class not in self._by_service_service:
                 raise ServiceNotRegistered(service_class)
-            return RuntimeNode(node_id=str(node_id))
+            return OperatorNode(node_id=str(node_id))
 
         factory = reg.get(str(operator_class))
         if factory is None:
-            return RuntimeNode(node_id=str(node_id))
+            return OperatorNode(node_id=str(node_id))
         return factory(str(node_id), node, dict(initial_state or {}))
 
     def load_modules(self, modules: list[str]) -> None:

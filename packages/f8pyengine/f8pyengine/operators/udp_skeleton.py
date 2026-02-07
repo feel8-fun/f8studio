@@ -22,7 +22,7 @@ from f8pysdk import (
 )
 from f8pysdk.capabilities import NodeBus
 from f8pysdk.nats_naming import ensure_token
-from f8pysdk.runtime_node import RuntimeNode
+from f8pysdk.runtime_node import OperatorNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from f8pysdk.time_utils import now_ms
 
@@ -61,7 +61,7 @@ class _UdpProtocol(asyncio.DatagramProtocol):
                 pass
 
 
-class UdpSkeletonRuntimeNode(RuntimeNode):
+class UdpSkeletonRuntimeNode(OperatorNode):
     """
     UDP skeleton receiver.
 

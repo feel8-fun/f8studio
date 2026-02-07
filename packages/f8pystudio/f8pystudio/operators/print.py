@@ -15,7 +15,7 @@ from f8pysdk import (
     integer_schema,
 )
 from f8pysdk.nats_naming import ensure_token
-from f8pysdk.runtime_node import RuntimeNode
+from f8pysdk.runtime_node import OperatorNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from ..constants import SERVICE_CLASS
@@ -25,7 +25,7 @@ OPERATOR_CLASS = "f8.print"
 RENDERER_CLASS = "pystudio_print"
 
 
-class PyStudioPrintRuntimeNode(RuntimeNode):
+class PyStudioPrintRuntimeNode(OperatorNode):
     """
     Studio-side runtime node for `f8.print`.
 

@@ -17,7 +17,7 @@ from f8pysdk import (
 )
 from f8pysdk.capabilities import ClosableNode
 from f8pysdk.nats_naming import ensure_token
-from f8pysdk.runtime_node import RuntimeNode
+from f8pysdk.runtime_node import OperatorNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from ..constants import SERVICE_CLASS
@@ -51,7 +51,7 @@ DEFAULT_CODE = (
 )
 
 
-class PythonScriptRuntimeNode(RuntimeNode, ClosableNode):
+class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
     """
     Execute user-provided python code with lifecycle hooks:
 

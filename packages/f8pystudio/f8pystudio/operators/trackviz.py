@@ -17,7 +17,7 @@ from f8pysdk import (
     integer_schema,
 )
 from f8pysdk.nats_naming import ensure_token
-from f8pysdk.runtime_node import RuntimeNode
+from f8pysdk.runtime_node import OperatorNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from ..constants import SERVICE_CLASS
@@ -36,7 +36,7 @@ class _Sample:
     kind: str = "track"  # "track" | "match" | other
 
 
-class PyStudioTrackVizRuntimeNode(RuntimeNode):
+class PyStudioTrackVizRuntimeNode(OperatorNode):
     """
     Studio-side node that visualizes tracking results.
 

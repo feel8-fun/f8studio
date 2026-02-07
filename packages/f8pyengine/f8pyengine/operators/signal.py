@@ -14,7 +14,7 @@ from f8pysdk import (
     number_schema,
 )
 from f8pysdk.nats_naming import ensure_token
-from f8pysdk.runtime_node import RuntimeNode
+from f8pysdk.runtime_node import OperatorNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from ..constants import SERVICE_CLASS
@@ -86,7 +86,7 @@ class _PhaseAccumulator:
         return float(self._phase)
 
 
-class PhaseRuntimeNode(RuntimeNode):
+class PhaseRuntimeNode(OperatorNode):
     """
     Exec-driven phase source: on exec, advances and emits a normalized phase (0..1).
 
@@ -184,7 +184,7 @@ PhaseRuntimeNode.SPEC = F8OperatorSpec(
 )
 
 
-class SineRuntimeNode(RuntimeNode):
+class SineRuntimeNode(OperatorNode):
     """
     Exec-driven sine source (not a graph source): on exec, emits a numeric sample.
     """
@@ -335,7 +335,7 @@ SineRuntimeNode.SPEC = F8OperatorSpec(
 )
 
 
-class TempestRuntimeNode(RuntimeNode):
+class TempestRuntimeNode(OperatorNode):
     """
     Exec-driven tempest source (not a graph source): on exec, emits a numeric sample.
 

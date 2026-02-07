@@ -14,7 +14,7 @@ from f8pysdk import (
     string_schema,
 )
 from f8pysdk.nats_naming import ensure_token
-from f8pysdk.runtime_node import RuntimeNode
+from f8pysdk.runtime_node import OperatorNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from f8pysdk.shm import video_shm_name
 
@@ -31,7 +31,7 @@ def _default_video_shm_name(service_id: str) -> str:
     return video_shm_name(s) if s else ""
 
 
-class PyStudioVideoShmViewRuntimeNode(RuntimeNode):
+class PyStudioVideoShmViewRuntimeNode(OperatorNode):
     """
     Studio-only visualization node: view a Video SHM (BGRA32) in a Qt widget.
 

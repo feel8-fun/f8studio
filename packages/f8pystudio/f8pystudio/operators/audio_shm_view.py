@@ -14,7 +14,7 @@ from f8pysdk import (
     string_schema,
 )
 from f8pysdk.nats_naming import ensure_token
-from f8pysdk.runtime_node import RuntimeNode
+from f8pysdk.runtime_node import OperatorNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from f8pysdk.shm import audio_shm_name
 
@@ -31,7 +31,7 @@ def _default_audio_shm_name(service_id: str) -> str:
     return audio_shm_name(s) if s else ""
 
 
-class PyStudioAudioShmViewRuntimeNode(RuntimeNode):
+class PyStudioAudioShmViewRuntimeNode(OperatorNode):
     """
     Studio-only visualization node: view an Audio SHM (ring buffer) waveform.
 

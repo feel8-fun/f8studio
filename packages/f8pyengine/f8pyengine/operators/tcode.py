@@ -14,7 +14,7 @@ from f8pysdk import (
     string_schema,
 )
 from f8pysdk.nats_naming import ensure_token
-from f8pysdk.runtime_node import RuntimeNode
+from f8pysdk.runtime_node import OperatorNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from ..constants import SERVICE_CLASS
@@ -48,7 +48,7 @@ def _js_round(value: float) -> int:
     return -int(math.floor(abs(value) + 0.5))
 
 
-class TCodeRuntimeNode(RuntimeNode):
+class TCodeRuntimeNode(OperatorNode):
     """
     Assembles a TCode v0.3 command string from normalized axis values (0..1).
 
