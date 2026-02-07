@@ -18,6 +18,7 @@ from f8pysdk.runtime_node import RuntimeNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from ..constants import SERVICE_CLASS
+from ._ports import exec_out_ports
 
 OPERATOR_CLASS = "f8.rate_limiter"
 
@@ -67,7 +68,7 @@ class RateLimiterRuntimeNode(RuntimeNode):
             state_fields=[s.name for s in (node.stateFields or [])],
         )
         self._initial_state = dict(initial_state or {})
-        self._exec_out_ports = list(getattr(node, "execOutPorts", None) or []) or ["exec"]
+        self._exec_out_ports = exec_out_ports(node, default=["exec"])
 
         self._in_min = float(_coerce_number(self._initial_state.get("inMin")) or 0.0)
         self._in_max = float(_coerce_number(self._initial_state.get("inMax")) or 1.0)
@@ -263,4 +264,3 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
     reg.register(SERVICE_CLASS, OPERATOR_CLASS, _factory, overwrite=True)
     reg.register_operator_spec(RateLimiterRuntimeNode.SPEC, overwrite=True)
     return reg
-

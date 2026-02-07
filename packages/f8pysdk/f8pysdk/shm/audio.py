@@ -113,6 +113,10 @@ class AudioShmReader:
             self._shm = None
 
     @property
+    def has_event(self) -> bool:
+        return self._event is not None
+
+    @property
     def buf(self) -> memoryview:
         if not self._shm:
             raise RuntimeError("AudioShmReader is not open")

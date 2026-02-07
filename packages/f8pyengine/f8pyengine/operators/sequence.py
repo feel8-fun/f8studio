@@ -12,6 +12,7 @@ from f8pysdk.runtime_node import RuntimeNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from ..constants import SERVICE_CLASS
+from ._ports import exec_out_ports
 
 OPERATOR_CLASS = "f8.sequence"
 
@@ -30,7 +31,7 @@ class SequenceRuntimeNode(RuntimeNode):
             data_out_ports=[p.name for p in (node.dataOutPorts or [])],
             state_fields=[s.name for s in (node.stateFields or [])],
         )
-        self._exec_out_ports = list(getattr(node, "execOutPorts", None) or [])
+        self._exec_out_ports = exec_out_ports(node)
 
     async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
         return list(self._exec_out_ports)

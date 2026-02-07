@@ -18,6 +18,7 @@ from f8pysdk.runtime_node import RuntimeNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from ..constants import SERVICE_CLASS
+from ._ports import exec_out_ports
 
 OPERATOR_CLASS: Final[str] = "f8.tcode"
 
@@ -62,7 +63,7 @@ class TCodeRuntimeNode(RuntimeNode):
             state_fields=[s.name for s in (node.stateFields or [])],
         )
         self._initial_state = dict(initial_state or {})
-        self._exec_out_ports = list(getattr(node, "execOutPorts", None) or []) or ["exec"]
+        self._exec_out_ports = exec_out_ports(node, default=["exec"])
 
     async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
         return list(self._exec_out_ports)

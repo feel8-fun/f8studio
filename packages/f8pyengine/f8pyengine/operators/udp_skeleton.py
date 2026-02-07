@@ -27,6 +27,7 @@ from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from f8pysdk.time_utils import now_ms
 
 from ..constants import SERVICE_CLASS
+from ._ports import exec_out_ports
 
 OPERATOR_CLASS = "f8.udp_skeleton"
 
@@ -80,7 +81,7 @@ class UdpSkeletonRuntimeNode(RuntimeNode):
             state_fields=[s.name for s in (node.stateFields or [])],
         )
         self._initial_state = dict(initial_state or {})
-        self._exec_out_ports = list(getattr(node, "execOutPorts", None) or []) or ["exec"]
+        self._exec_out_ports = exec_out_ports(node, default=["exec"])
 
         self._lock = asyncio.Lock()
         self._models_lock = asyncio.Lock()
@@ -267,9 +268,13 @@ class UdpSkeletonRuntimeNode(RuntimeNode):
                     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 except OSError:
                     pass
-                if hasattr(socket, "SO_REUSEPORT"):
+                try:
+                    reuseport = socket.SO_REUSEPORT
+                except Exception:
+                    reuseport = None
+                if reuseport is not None:
                     try:
-                        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+                        sock.setsockopt(socket.SOL_SOCKET, reuseport, 1)
                     except OSError:
                         pass
             sock.bind((cfg.bind_address, cfg.port))

@@ -300,7 +300,7 @@ class detecttrackerServiceNode(ServiceNode):
             node_id=ensure_token(node_id, label="node_id"),
             data_in_ports=[],
             data_out_ports=["detections", "telemetry"],
-            state_fields=[s.name for s in (getattr(node, "stateFields", None) or [])],
+            state_fields=[s.name for s in (node.stateFields or [])],
         )
         self._initial_state = dict(initial_state or {})
         self._active = True
@@ -523,7 +523,7 @@ class detecttrackerServiceNode(ServiceNode):
             if not idx:
                 msg = (
                     "Model index is empty. "
-                    f"weightsDir={self._weights_dir!s} (exists={self._weights_dir.exists() if hasattr(self._weights_dir,'exists') else 'unknown'}), "
+                    f"weightsDir={self._weights_dir!s} (exists={self._weights_dir.exists()}), "
                     f"yamlCount={len(yamls)}, cwd={cwd!s}. "
                     "If you expect models here, ensure the path is correct and 'pyyaml' is installed in the detect_tracker runtime environment."
                 )
@@ -606,7 +606,7 @@ class detecttrackerServiceNode(ServiceNode):
         await self.set_state("loadedModel", f"{spec.model_id} ({spec.task})")
         await self.set_state("ortActiveProviders", json.dumps(det.active_providers))
         warn_parts: list[str] = []
-        warn = str(getattr(det, "provider_warning", "") or "").strip()
+        warn = str(det.provider_warning or "").strip()
         if warn:
             warn_parts.append(warn)
 
@@ -810,7 +810,7 @@ class detecttrackerServiceNode(ServiceNode):
                 if self._telemetry.should_emit(now_ms):
                     shm_has_event = False
                     try:
-                        shm_has_event = bool(getattr(self._shm, "_event", None) is not None)
+                        shm_has_event = bool(self._shm.has_event) if self._shm is not None else False
                     except Exception:
                         shm_has_event = False
                     tel = self._telemetry.summary(

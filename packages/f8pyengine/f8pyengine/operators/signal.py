@@ -18,6 +18,7 @@ from f8pysdk.runtime_node import RuntimeNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from ..constants import SERVICE_CLASS
+from ._ports import exec_out_ports
 
 
 SINE_OPERATOR_CLASS = "f8.sine"
@@ -100,7 +101,7 @@ class PhaseRuntimeNode(RuntimeNode):
             state_fields=[s.name for s in (node.stateFields or [])],
         )
         self._initial_state = dict(initial_state or {})
-        self._exec_out_ports = list(getattr(node, "execOutPorts", None) or []) or ["exec"]
+        self._exec_out_ports = exec_out_ports(node, default=["exec"])
 
         init_phase = _coerce_number(self._initial_state.get("phase", 0.0))
         init_last = self._initial_state.get("__lastTimeS", None)
@@ -196,7 +197,7 @@ class SineRuntimeNode(RuntimeNode):
             state_fields=[s.name for s in (node.stateFields or [])],
         )
         self._initial_state = dict(initial_state or {})
-        self._exec_out_ports = list(getattr(node, "execOutPorts", None) or [])
+        self._exec_out_ports = exec_out_ports(node)
 
         init_phase = _coerce_number(self._initial_state.get("__phase", 0.0))
         init_last = self._initial_state.get("__lastTimeS", None)
@@ -349,7 +350,7 @@ class TempestRuntimeNode(RuntimeNode):
             state_fields=[s.name for s in (node.stateFields or [])],
         )
         self._initial_state = dict(initial_state or {})
-        self._exec_out_ports = list(getattr(node, "execOutPorts", None) or []) or ["exec"]
+        self._exec_out_ports = exec_out_ports(node, default=["exec"])
 
         init_phase = _coerce_number(self._initial_state.get("__phase", 0.0))
         init_last = self._initial_state.get("__lastTimeS", None)

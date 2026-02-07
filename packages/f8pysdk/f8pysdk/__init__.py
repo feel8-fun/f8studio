@@ -10,7 +10,7 @@ try:
     from .schema_helpers import *  # type: ignore
 
     def _proxy_getattr(self, name):
-        return getattr(self.root, name)
+        return self.root.__getattribute__(name)
 
     F8DataTypeSchema.__getattr__ = _proxy_getattr  # type: ignore[name-defined]
     F8JsonValue.__getattr__ = _proxy_getattr  # type: ignore[name-defined]

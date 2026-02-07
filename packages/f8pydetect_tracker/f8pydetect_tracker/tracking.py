@@ -15,22 +15,30 @@ def _create_tracker(kind: TrackerKind) -> Any | None:
         return None
     import cv2  # type: ignore
 
-    def _try(fn_name: str) -> Any | None:
-        fn = getattr(cv2, fn_name, None)
-        if callable(fn):
-            return fn()
-        legacy = getattr(cv2, "legacy", None)
-        fn2 = getattr(legacy, fn_name, None) if legacy is not None else None
-        if callable(fn2):
-            return fn2()
-        return None
-
     if kind == "csrt":
-        trk = _try("TrackerCSRT_create")
+        try:
+            trk = cv2.TrackerCSRT_create()
+        except Exception:
+            try:
+                trk = cv2.legacy.TrackerCSRT_create()
+            except Exception:
+                trk = None
     elif kind == "kcf":
-        trk = _try("TrackerKCF_create")
+        try:
+            trk = cv2.TrackerKCF_create()
+        except Exception:
+            try:
+                trk = cv2.legacy.TrackerKCF_create()
+            except Exception:
+                trk = None
     elif kind == "mosse":
-        trk = _try("TrackerMOSSE_create")
+        try:
+            trk = cv2.TrackerMOSSE_create()
+        except Exception:
+            try:
+                trk = cv2.legacy.TrackerMOSSE_create()
+            except Exception:
+                trk = None
     else:
         trk = None
     return trk

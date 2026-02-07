@@ -111,10 +111,14 @@ def _clamp_xyxy(xyxy: tuple[int, int, int, int], *, size: tuple[int, int]) -> tu
 def _create_csrt_tracker() -> Any:
     import cv2  # type: ignore
 
-    if hasattr(cv2, "TrackerCSRT_create"):
+    try:
         return cv2.TrackerCSRT_create()
-    if hasattr(cv2, "legacy") and hasattr(cv2.legacy, "TrackerCSRT_create"):
+    except Exception:
+        pass
+    try:
         return cv2.legacy.TrackerCSRT_create()
+    except Exception:
+        pass
     raise SystemExit(
         "OpenCV CSRT tracker not available. Install opencv-contrib-python (or opencv-contrib-python-headless)."
     )
@@ -123,22 +127,21 @@ def _create_csrt_tracker() -> Any:
 def _create_tracker(kind: Literal["csrt", "kcf", "mosse"]) -> Any:
     import cv2  # type: ignore
 
-    def _try(fn_name: str) -> Any | None:
-        fn = getattr(cv2, fn_name, None)
-        if callable(fn):
-            return fn()
-        legacy = getattr(cv2, "legacy", None)
-        fn2 = getattr(legacy, fn_name, None) if legacy is not None else None
-        if callable(fn2):
-            return fn2()
-        return None
-
     if kind == "csrt":
-        trk = _try("TrackerCSRT_create")
+        try:
+            trk = cv2.TrackerCSRT_create()
+        except Exception:
+            trk = cv2.legacy.TrackerCSRT_create()
     elif kind == "kcf":
-        trk = _try("TrackerKCF_create")
+        try:
+            trk = cv2.TrackerKCF_create()
+        except Exception:
+            trk = cv2.legacy.TrackerKCF_create()
     elif kind == "mosse":
-        trk = _try("TrackerMOSSE_create")
+        try:
+            trk = cv2.TrackerMOSSE_create()
+        except Exception:
+            trk = cv2.legacy.TrackerMOSSE_create()
     else:
         raise SystemExit(f"Unsupported tracker: {kind}")
 
@@ -283,7 +286,10 @@ class _UltralyticsDetector(_Detector):
             kwargs["device"] = device
         result = self._model(frame_bgr, **kwargs)[0]
 
-        boxes = getattr(result, "boxes", None)
+        try:
+            boxes = result.boxes
+        except Exception:
+            boxes = None
         if boxes is None:
             return []
 
@@ -453,7 +459,10 @@ def _load_detector(
 
 
 def _get_class_names(model: Any, fallback: list[str] | None) -> dict[int, str]:
-    names = getattr(model, "names", None)
+    try:
+        names = model.names
+    except Exception:
+        names = None
     if isinstance(names, dict):
         return {int(k): str(v) for k, v in names.items()}
     if isinstance(names, (list, tuple)):

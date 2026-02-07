@@ -220,12 +220,19 @@ class EnvelopeTracker:
         if self.method != "SMA":
             return
         for filt in (self.upper_filter, self.lower_filter):
-            if hasattr(filt, "set_window"):
+            if filt is None:
+                continue
+            try:
                 filt.set_window(self.sma_window)
+            except Exception:
+                continue
 
     def _update_filter(self, filt, value: float, alpha: float) -> float:
-        if self.method == "SMA" and hasattr(filt, "set_window"):
-            filt.set_window(self.sma_window)
+        if self.method == "SMA":
+            try:
+                filt.set_window(self.sma_window)
+            except Exception:
+                pass
             return float(filt.update(value))
         return float(filt.update(value, alpha=alpha))
 

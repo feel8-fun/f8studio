@@ -249,14 +249,20 @@ def _create_tracker(kind: str) -> Any | None:
         return None
     try:
         if k == "csrt":
-            fn = getattr(cv2, "TrackerCSRT_create", None) or getattr(getattr(cv2, "legacy", None), "TrackerCSRT_create", None)
-            return fn() if callable(fn) else None
+            try:
+                return cv2.TrackerCSRT_create()
+            except Exception:
+                return cv2.legacy.TrackerCSRT_create()
         if k == "kcf":
-            fn = getattr(cv2, "TrackerKCF_create", None) or getattr(getattr(cv2, "legacy", None), "TrackerKCF_create", None)
-            return fn() if callable(fn) else None
+            try:
+                return cv2.TrackerKCF_create()
+            except Exception:
+                return cv2.legacy.TrackerKCF_create()
         if k == "mosse":
-            fn = getattr(cv2, "TrackerMOSSE_create", None) or getattr(getattr(cv2, "legacy", None), "TrackerMOSSE_create", None)
-            return fn() if callable(fn) else None
+            try:
+                return cv2.TrackerMOSSE_create()
+            except Exception:
+                return cv2.legacy.TrackerMOSSE_create()
     except Exception:
         return None
     return None
@@ -398,7 +404,7 @@ class TemplateTrackerServiceNode(ServiceNode):
             node_id=ensure_token(node_id, label="node_id"),
             data_in_ports=[],
             data_out_ports=["tracking", "telemetry"],
-            state_fields=[s.name for s in (getattr(node, "stateFields", None) or [])],
+            state_fields=[s.name for s in (node.stateFields or [])],
         )
         self._initial_state = dict(initial_state or {})
         self._task: asyncio.Task[object] | None = None
@@ -875,7 +881,7 @@ class TemplateTrackerServiceNode(ServiceNode):
                 if self._telemetry.should_emit(int(ts_ms)):
                     shm_has_event = False
                     try:
-                        shm_has_event = bool(getattr(self._shm, "_event", None) is not None)
+                        shm_has_event = bool(self._shm.has_event) if self._shm is not None else False
                     except Exception:
                         shm_has_event = False
                     tel = self._telemetry.summary(
