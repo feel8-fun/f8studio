@@ -10,7 +10,10 @@ def _resource_tracker_unregister_shared_memory(shm: SharedMemory) -> None:
     try:
         from multiprocessing import resource_tracker  # type: ignore
 
-        rt_name = getattr(shm, "_name", None) or ("/" + str(shm.name).lstrip("/"))
+        try:
+            rt_name = str(shm._name)  # type: ignore[attr-defined]
+        except Exception:
+            rt_name = "/" + str(shm.name).lstrip("/")
         resource_tracker.unregister(rt_name, "shared_memory")
     except Exception:
         return

@@ -4,9 +4,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from .generated import F8EdgeKindEnum, F8JsonValue, F8RuntimeGraph, F8RuntimeNode, F8StateAccess
+from .runtime_node import RuntimeNode
 from .runtime_node_registry import RuntimeNodeRegistry
 from .service_bus.bus import ServiceBus
 from .service_bus import StateWriteOrigin
+from .service_bus.state_write import StateWriteSource
 
 
 def _unwrap_json_value(v: Any) -> Any:
@@ -18,23 +20,18 @@ def _unwrap_json_value(v: Any) -> Any:
     except Exception:
         pass
     try:
-        root = getattr(v, "root", None)
-        if root is not None:
-            return root
+        return v.root
     except Exception:
         pass
     return v
 
 
 def _rungraph_ts(graph: F8RuntimeGraph) -> int:
-    meta = getattr(graph, "meta", None)
-    if isinstance(meta, dict):
-        try:
-            return int(meta.get("ts") or 0)
-        except Exception:
-            return 0
+    meta = graph.meta
+    if meta is None:
+        return 0
     try:
-        return int(getattr(meta, "ts", 0) or 0)
+        return int(meta.ts or 0)
     except Exception:
         return 0
 
@@ -70,8 +67,8 @@ class ServiceHost:
         self._config = config
         self._registry = registry or RuntimeNodeRegistry.instance()
 
-        self._service_node: Any | None = None
-        self._operator_nodes: dict[str, Any] = {}
+        self._service_node: RuntimeNode | None = None
+        self._operator_nodes: dict[str, RuntimeNode] = {}
         self._bus.register_rungraph_hook(self)
 
     async def start(self) -> None:
@@ -161,6 +158,16 @@ class ServiceHost:
                 node = None
             if node is None:
                 continue
+            # Make runtime node metadata match the rungraph snapshot explicitly.
+            # This keeps change detection deterministic and avoids "ghost fields".
+            try:
+                node.data_in_ports = [str(p.name) for p in (n.dataInPorts or [])]
+                node.data_out_ports = [str(p.name) for p in (n.dataOutPorts or [])]
+                node.state_fields = [str(s.name) for s in (n.stateFields or [])]
+                node.exec_in_ports = [str(x) for x in (n.execInPorts or [])]
+                node.exec_out_ports = [str(x) for x in (n.execOutPorts or [])]
+            except Exception:
+                pass
             self._operator_nodes[node_id] = node
             try:
                 self._bus.register_node(node)
@@ -173,17 +180,17 @@ class ServiceHost:
         # Cross-service state edges: downstream fields are driven by upstream KV,
         # so they must not be overwritten by rungraph reconciliation defaults.
         cross_state_targets: set[tuple[str, str]] = set()
-        for e in list(getattr(graph, "edges", None) or []):
+        for e in graph.edges:
             try:
-                if getattr(e, "kind", None) != F8EdgeKindEnum.state:
+                if e.kind != F8EdgeKindEnum.state:
                     continue
                 # Only cross-service edges targeting this service.
-                if str(getattr(e, "fromServiceId", "")) == str(getattr(e, "toServiceId", "")):
+                if str(e.fromServiceId) == str(e.toServiceId):
                     continue
-                if str(getattr(e, "toServiceId", "")) != str(self._bus.service_id):
+                if str(e.toServiceId) != str(self._bus.service_id):
                     continue
-                to_node = str(getattr(e, "toOperatorId", "") or "").strip()
-                to_field = str(getattr(e, "toPort", "") or "").strip()
+                to_node = str(e.toOperatorId or "").strip()
+                to_field = str(e.toPort or "").strip()
                 if not to_node or not to_field:
                     continue
                 cross_state_targets.add((to_node, to_field))
@@ -203,59 +210,40 @@ class ServiceHost:
         _ = graph
 
     @staticmethod
-    def _needs_recreate(node: Any, snapshot: F8RuntimeNode) -> bool:
+    def _needs_recreate(node: RuntimeNode, snapshot: F8RuntimeNode) -> bool:
         """
         Return True if the local runtime node should be re-created for the given snapshot.
 
         Nodes are cached by nodeId; without this check, editing ports in Studio can
         yield a rungraph that routes to ports the old instance doesn't expose.
         """
-        try:
-            desired_in = [str(p.name) for p in list(getattr(snapshot, "dataInPorts", None) or [])]
-        except Exception:
-            desired_in = []
-        try:
-            desired_out = [str(p.name) for p in list(getattr(snapshot, "dataOutPorts", None) or [])]
-        except Exception:
-            desired_out = []
-        try:
-            desired_state = [str(sf.name) for sf in list(getattr(snapshot, "stateFields", None) or [])]
-        except Exception:
-            desired_state = []
-        try:
-            current_in = [str(x) for x in list(getattr(node, "data_in_ports", None) or [])]
-        except Exception:
-            current_in = []
-        try:
-            current_out = [str(x) for x in list(getattr(node, "data_out_ports", None) or [])]
-        except Exception:
-            current_out = []
-        try:
-            current_state = [str(x) for x in list(getattr(node, "state_fields", None) or [])]
-        except Exception:
-            current_state = []
+        desired_in = [str(p.name) for p in (snapshot.dataInPorts or [])]
+        desired_out = [str(p.name) for p in (snapshot.dataOutPorts or [])]
+        desired_state = [str(sf.name) for sf in (snapshot.stateFields or [])]
+
+        current_in = [str(x) for x in list(node.data_in_ports or [])]
+        current_out = [str(x) for x in list(node.data_out_ports or [])]
+        current_state = [str(x) for x in list(node.state_fields or [])]
 
         if current_in != desired_in or current_out != desired_out or current_state != desired_state:
             return True
 
-        # Best-effort exec port change detection (common pattern in runtime nodes).
-        desired_exec_out = list(getattr(snapshot, "execOutPorts", None) or [])
-        try:
-            cur_exec_out = list(getattr(node, "_exec_out_ports", None) or [])
-        except Exception:
-            cur_exec_out = []
-        if cur_exec_out and [str(x) for x in cur_exec_out] != [str(x) for x in desired_exec_out]:
+        desired_exec_in = [str(x) for x in (snapshot.execInPorts or [])]
+        desired_exec_out = [str(x) for x in (snapshot.execOutPorts or [])]
+        current_exec_in = [str(x) for x in list(node.exec_in_ports or [])]
+        current_exec_out = [str(x) for x in list(node.exec_out_ports or [])]
+        if current_exec_in != desired_exec_in or current_exec_out != desired_exec_out:
             return True
 
         return False
 
     @staticmethod
     def _node_initial_state(n: F8RuntimeNode) -> dict[str, Any]:
-        values = getattr(n, "stateValues", None) or {}
         out: dict[str, Any] = {}
-        if not isinstance(values, dict):
+        values = n.stateValues or {}
+        if not values:
             return out
-        for k, v in values.items():
+        for k, v in dict(values).items():
             out[str(k)] = _unwrap_json_value(v)
         return out
 
@@ -271,19 +259,13 @@ class ServiceHost:
         """
         for n in nodes:
             node_id = str(n.nodeId)
-            try:
-                access_by_name = {str(sf.name): sf.access for sf in list(getattr(n, "stateFields", None) or [])}
-            except Exception:
-                access_by_name = {}
+            access_by_name = {str(sf.name): sf.access for sf in (n.stateFields or [])}
             for k, v in self._node_initial_state(n).items():
                 if skip_fields and (node_id, str(k)) in skip_fields:
                     continue
                 # Never seed/overwrite read-only state from rungraph; it is runtime-owned.
-                try:
-                    if access_by_name.get(str(k)) == F8StateAccess.ro:
-                        continue
-                except Exception:
-                    pass
+                if access_by_name.get(str(k)) == F8StateAccess.ro:
+                    continue
                 existing_ts = None
                 existing_value = None
                 try:
@@ -303,15 +285,15 @@ class ServiceHost:
                     except Exception:
                         continue
                 try:
-                    await self._bus._publish_state(
-                        node_id,
-                        str(k),
-                        v,
-                        ts_ms=(int(rungraph_ts) if rungraph_ts > 0 else None),
-                        origin=StateWriteOrigin.rungraph,
-                        source="rungraph",
-                        meta={"rungraphReconcile": True},
-                    )
+                        await self._bus._publish_state(
+                            node_id,
+                            str(k),
+                            v,
+                            ts_ms=(int(rungraph_ts) if rungraph_ts > 0 else None),
+                            origin=StateWriteOrigin.rungraph,
+                            source=StateWriteSource.rungraph,
+                            meta={"rungraphReconcile": True},
+                        )
                 except Exception:
                     continue
 
@@ -361,7 +343,7 @@ class ServiceHost:
                     v,
                     ts_ms=(int(rungraph_ts) if rungraph_ts > 0 else None),
                     origin=StateWriteOrigin.rungraph,
-                    source="rungraph",
+                    source=StateWriteSource.rungraph,
                     meta={"rungraphReconcile": True, "serviceNode": True},
                 )
             except Exception:

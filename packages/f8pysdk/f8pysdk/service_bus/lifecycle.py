@@ -7,12 +7,19 @@ from typing import Any, TYPE_CHECKING
 from ..capabilities import LifecycleNode
 from ..time_utils import now_ms
 from .state_write import StateWriteOrigin
+from .state_write import StateWriteSource
 
 if TYPE_CHECKING:
     from .bus import ServiceBus
 
 
-async def set_active(bus: "ServiceBus", active: bool, *, source: str | None = None, meta: dict[str, Any] | None = None) -> None:
+async def set_active(
+    bus: "ServiceBus",
+    active: bool,
+    *,
+    source: StateWriteSource | str | None = None,
+    meta: dict[str, Any] | None = None,
+) -> None:
     """
     Set service active state.
 
@@ -125,7 +132,7 @@ async def notify_after_stop(bus: "ServiceBus") -> None:
 
 
 async def apply_active(
-    bus: "ServiceBus", active: bool, *, persist: bool, source: str | None, meta: dict[str, Any] | None
+    bus: "ServiceBus", active: bool, *, persist: bool, source: StateWriteSource | str | None, meta: dict[str, Any] | None
 ) -> None:
     active = bool(active)
 
@@ -138,7 +145,7 @@ async def apply_active(
             "active",
             bool(active),
             origin=StateWriteOrigin.runtime,
-            source=source or "runtime",
+            source=source or StateWriteSource.runtime,
             meta={"lifecycle": True, **(dict(meta or {}))},
         )
 

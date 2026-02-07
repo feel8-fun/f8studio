@@ -6,7 +6,7 @@ from typing import Any, TYPE_CHECKING
 
 from ..generated import F8Edge, F8EdgeKindEnum, F8StateAccess, F8RuntimeGraph
 from ..nats_naming import ensure_token, kv_bucket_for_service, kv_key_node_state
-from .state_write import StateWriteContext, StateWriteOrigin
+from .state_write import StateWriteContext, StateWriteOrigin, StateWriteSource
 from ..time_utils import now_ms
 
 if TYPE_CHECKING:
@@ -98,13 +98,22 @@ async def sync_cross_state_watches(bus: "ServiceBus") -> None:
         try:
             raw = await bus._transport.kv_get_in_bucket(bucket, remote_key)
             if raw:
-                await on_remote_state_kv(bus, peer, remote_key, raw, is_initial=True)
+                # Phase 1 (strong sync): apply remote values without triggering
+                # intra-service fanout yet. After all cross-state targets are
+                # materialized, we run a single ordered intra init sync.
+                await on_remote_state_kv(bus, peer, remote_key, raw, is_initial=True, no_fanout=True)
         except Exception:
             pass
 
 
 async def on_remote_state_kv(
-    bus: "ServiceBus", peer_service_id: str, key: str, value: bytes, *, is_initial: bool
+    bus: "ServiceBus",
+    peer_service_id: str,
+    key: str,
+    value: bytes,
+    *,
+    is_initial: bool,
+    no_fanout: bool = False,
 ) -> None:
     parsed = bus._parse_state_key(key)
     if not parsed:
@@ -151,12 +160,6 @@ async def on_remote_state_kv(
             continue
         try:
             meta_in = payload if isinstance(payload, dict) else {}
-            try:
-                hops = int(meta_in.get("_fanoutHops") or 0) + 1
-            except Exception:
-                hops = 1
-            if hops >= 8:
-                continue
 
             # Cross-service state edges are directional bindings: downstream follows
             # upstream. We only guard against out-of-order remote updates.
@@ -186,16 +189,18 @@ async def on_remote_state_kv(
             meta_out = {
                 "peerServiceId": str(peer_service_id),
                 "remoteKey": str(key),
-                "_fanoutHops": hops,
+                "_noStateFanout": True if bool(no_fanout) else False,
                 **{k: vv for k, vv in dict(meta_in).items() if k not in ("value", "actor", "ts", "source")},
             }
+            if not bool(no_fanout):
+                meta_out.pop("_noStateFanout", None)
             v2 = await bus._validate_state_update(
                 node_id=str(local_node_id),
                 field=str(local_field),
                 value=v,
                 ts_ms=int(ts),
-                meta={"source": "cross_state", **meta_out},
-                ctx=StateWriteContext(origin=StateWriteOrigin.external, source="cross_state"),
+                meta={"source": StateWriteSource.state_edge_cross.value, **meta_out},
+                ctx=StateWriteContext(origin=StateWriteOrigin.external, source=StateWriteSource.state_edge_cross),
             )
             v2 = bus._coerce_state_value(v2)
 
@@ -246,7 +251,7 @@ async def on_remote_state_kv(
                     v2,
                     ts_ms=ts,
                     origin=StateWriteOrigin.external,
-                    source="cross_state",
+                    source=StateWriteSource.state_edge_cross,
                     meta=meta_out,
                 )
             if bus._debug_state:

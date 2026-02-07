@@ -84,7 +84,7 @@ async def pull_data(bus: "ServiceBus", node_id: str, port: str, *, ctx_id: str |
     if is_stale(edge, last_seen_ts):
         return None
 
-    strategy = getattr(edge, "strategy", None) if edge is not None else None
+    strategy = edge.strategy if edge is not None else F8EdgeStrategyEnum.latest
     if not isinstance(strategy, F8EdgeStrategyEnum):
         strategy = F8EdgeStrategyEnum.latest
 
@@ -147,8 +147,6 @@ async def compute_and_buffer_for_input(
             src = bus._nodes.get(str(from_node))
             if src is None:
                 continue
-            if not hasattr(src, "compute_output"):
-                continue
             try:
                 if isinstance(src, ComputableNode):
                     v = await src.compute_output(str(from_port), ctx_id=ctx_id)
@@ -210,7 +208,7 @@ def is_stale(edge: F8Edge | None, ts_ms: int) -> bool:
     if edge is None:
         return False
     try:
-        timeout = getattr(edge, "timeoutMs", None)
+        timeout = edge.timeoutMs
         if timeout is None:
             return False
         t = int(timeout)
@@ -274,9 +272,7 @@ def buffer_input(
     max_n = 256
     if buf.edge is not None:
         try:
-            qs = getattr(buf.edge, "queueSize", None)
-            if qs is not None:
-                max_n = max(1, int(qs))
+            max_n = max(1, int(buf.edge.queueSize))
         except Exception:
             max_n = 256
     if len(buf.queue) > max_n:
@@ -336,4 +332,3 @@ async def unsubscribe_subject(bus: "ServiceBus", handle: Any) -> None:
 
     if handle in bus._custom_subs:
         bus._custom_subs.remove(handle)
-

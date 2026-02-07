@@ -456,35 +456,35 @@ class TemplateTrackerServiceNode(ServiceNode):
         name = str(field or "").strip()
 
         if name == "active":
-            self._active = _coerce_bool(await self.get_state("active"), default=self._active)
+            self._active = _coerce_bool(await self.get_state_value("active"), default=self._active)
         elif name == "sourceServiceId":
-            self._source_service_id = _coerce_str(await self.get_state("sourceServiceId"), default=self._source_service_id)
+            self._source_service_id = _coerce_str(await self.get_state_value("sourceServiceId"), default=self._source_service_id)
             await self._maybe_reopen_shm()
         elif name == "shmName":
-            self._shm_name = _coerce_str(await self.get_state("shmName"), default=self._shm_name)
+            self._shm_name = _coerce_str(await self.get_state_value("shmName"), default=self._shm_name)
             await self._maybe_reopen_shm()
         elif name == "trackerKind":
-            v = _coerce_str(await self.get_state("trackerKind"), default=self._tracker_kind).lower()
+            v = _coerce_str(await self.get_state_value("trackerKind"), default=self._tracker_kind).lower()
             self._tracker_kind = v if v in ("none", "csrt", "kcf", "mosse") else "csrt"
             self._reset_tracker()
         elif name == "matchMethod":
-            self._match_method = _coerce_str(await self.get_state("matchMethod"), default=self._match_method)
+            self._match_method = _coerce_str(await self.get_state_value("matchMethod"), default=self._match_method)
         elif name == "matchThreshold":
-            self._match_threshold = _coerce_float(await self.get_state("matchThreshold"), default=self._match_threshold, minimum=0.0, maximum=1.0)
+            self._match_threshold = _coerce_float(await self.get_state_value("matchThreshold"), default=self._match_threshold, minimum=0.0, maximum=1.0)
         elif name == "searchMarginPx":
-            self._search_margin_px = _coerce_int(await self.get_state("searchMarginPx"), default=self._search_margin_px, minimum=0, maximum=100000)
+            self._search_margin_px = _coerce_int(await self.get_state_value("searchMarginPx"), default=self._search_margin_px, minimum=0, maximum=100000)
         elif name == "reacquireIntervalMs":
-            self._reacquire_interval_ms = _coerce_int(await self.get_state("reacquireIntervalMs"), default=self._reacquire_interval_ms, minimum=0, maximum=60000)
+            self._reacquire_interval_ms = _coerce_int(await self.get_state_value("reacquireIntervalMs"), default=self._reacquire_interval_ms, minimum=0, maximum=60000)
         elif name == "telemetryIntervalMs" or name == "telemetryWindowMs":
             self._telemetry.set_config(
                 interval_ms=_coerce_int(
-                    await self.get_state("telemetryIntervalMs"),
+                    await self.get_state_value("telemetryIntervalMs"),
                     default=int(self._initial_state.get("telemetryIntervalMs") or 1000),
                     minimum=0,
                     maximum=60000,
                 ),
                 window_ms=_coerce_int(
-                    await self.get_state("telemetryWindowMs"),
+                    await self.get_state_value("telemetryWindowMs"),
                     default=int(self._initial_state.get("telemetryWindowMs") or 2000),
                     minimum=100,
                     maximum=60000,
@@ -510,34 +510,34 @@ class TemplateTrackerServiceNode(ServiceNode):
         raise ValueError(f"unknown call: {call}")
 
     async def _ensure_config_loaded(self) -> None:
-        self._active = _coerce_bool(await self.get_state("active"), default=bool(self._initial_state.get("active", True)))
-        self._tracker_kind = _coerce_str(await self.get_state("trackerKind"), default=str(self._initial_state.get("trackerKind") or "csrt")).lower()
-        self._match_method = _coerce_str(await self.get_state("matchMethod"), default=str(self._initial_state.get("matchMethod") or "TM_CCOEFF_NORMED"))
+        self._active = _coerce_bool(await self.get_state_value("active"), default=bool(self._initial_state.get("active", True)))
+        self._tracker_kind = _coerce_str(await self.get_state_value("trackerKind"), default=str(self._initial_state.get("trackerKind") or "csrt")).lower()
+        self._match_method = _coerce_str(await self.get_state_value("matchMethod"), default=str(self._initial_state.get("matchMethod") or "TM_CCOEFF_NORMED"))
         self._match_threshold = _coerce_float(
-            await self.get_state("matchThreshold"),
+            await self.get_state_value("matchThreshold"),
             default=float(self._initial_state.get("matchThreshold") or 0.75),
             minimum=0.0,
             maximum=1.0,
         )
-        self._search_margin_px = _coerce_int(await self.get_state("searchMarginPx"), default=int(self._initial_state.get("searchMarginPx") or 200), minimum=0)
+        self._search_margin_px = _coerce_int(await self.get_state_value("searchMarginPx"), default=int(self._initial_state.get("searchMarginPx") or 200), minimum=0)
         self._reacquire_interval_ms = _coerce_int(
-            await self.get_state("reacquireIntervalMs"),
+            await self.get_state_value("reacquireIntervalMs"),
             default=int(self._initial_state.get("reacquireIntervalMs") or 500),
             minimum=0,
             maximum=60000,
         )
 
-        self._source_service_id = _coerce_str(await self.get_state("sourceServiceId"), default=str(self._initial_state.get("sourceServiceId") or ""))
-        self._shm_name = _coerce_str(await self.get_state("shmName"), default=str(self._initial_state.get("shmName") or ""))
+        self._source_service_id = _coerce_str(await self.get_state_value("sourceServiceId"), default=str(self._initial_state.get("sourceServiceId") or ""))
+        self._shm_name = _coerce_str(await self.get_state_value("shmName"), default=str(self._initial_state.get("shmName") or ""))
 
         self._telemetry.set_config(
-            interval_ms=_coerce_int(await self.get_state("telemetryIntervalMs"), default=int(self._initial_state.get("telemetryIntervalMs") or 1000), minimum=0),
-            window_ms=_coerce_int(await self.get_state("telemetryWindowMs"), default=int(self._initial_state.get("telemetryWindowMs") or 2000), minimum=100),
+            interval_ms=_coerce_int(await self.get_state_value("telemetryIntervalMs"), default=int(self._initial_state.get("telemetryIntervalMs") or 1000), minimum=0),
+            window_ms=_coerce_int(await self.get_state_value("telemetryWindowMs"), default=int(self._initial_state.get("telemetryWindowMs") or 2000), minimum=100),
         )
         await self._load_template_from_state()
 
     async def _load_template_from_state(self) -> None:
-        b64 = _coerce_str(await self.get_state("templatePngB64"), default=str(self._initial_state.get("templatePngB64") or ""))
+        b64 = _coerce_str(await self.get_state_value("templatePngB64"), default=str(self._initial_state.get("templatePngB64") or ""))
         if b64 == self._template_b64:
             return
         self._template_b64 = b64

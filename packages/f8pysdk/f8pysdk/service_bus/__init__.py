@@ -10,7 +10,7 @@ Convenience re-exports (historical API):
 
 from .bus import DataDeliveryMode, ServiceBus, ServiceBusConfig
 from .state_read import StateRead
-from .state_write import StateWriteContext, StateWriteError, StateWriteOrigin
+from .state_write import StateWriteContext, StateWriteError, StateWriteOrigin, StateWriteSource
 
 __all__ = [
     "DataDeliveryMode",
@@ -20,4 +20,5 @@ __all__ = [
     "StateWriteContext",
     "StateWriteError",
     "StateWriteOrigin",
+    "StateWriteSource",
 ]

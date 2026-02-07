@@ -73,7 +73,7 @@ class PyStudioPrintRuntimeNode(RuntimeNode):
         while True:
             throttle = None
             try:
-                throttle = (await self.get_state("throttleMs")).value
+                throttle = await self.get_state_value("throttleMs")
             except Exception:
                 throttle = None
             if throttle is None:

@@ -17,6 +17,7 @@ from f8pysdk import (
     F8RuntimeNode,
     F8RuntimeService,
 )
+from f8pysdk.rungraph_validation import validate_state_edges_or_raise
 from f8pysdk.schema_helpers import boolean_schema
 from f8pysdk.schema_helpers import string_schema
 from f8pysdk.nats_naming import ensure_token
@@ -288,13 +289,16 @@ def compile_global_runtime_graph(
                     )
                 )
 
-    return F8RuntimeGraph(
+    graph = F8RuntimeGraph(
         graphId=gid,
         revision=rev,
         services=list(runtime_services.values()),
         nodes=runtime_nodes,
         edges=edges,
     )
+    # Studio-level validation: reject global cyclic state loops early.
+    validate_state_edges_or_raise(graph, forbid_cycles=True, forbid_multi_upstream=True)
+    return graph
 
 
 def split_runtime_graph_by_service(graph: F8RuntimeGraph) -> dict[str, F8RuntimeGraph]:

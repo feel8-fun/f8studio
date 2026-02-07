@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import importlib
 from collections.abc import Callable
-from typing import Any
+from typing import Any, ClassVar
 
-from .generated import F8RuntimeNode
+from .generated import F8OperatorSpec, F8RuntimeNode, F8ServiceDescribe, F8ServiceSpec, F8StateAccess, F8StateSpec
 from .runtime_node import RuntimeNode, ServiceNode
+from .schema_helpers import string_schema
 
 
 OperatorFactory = Callable[[str, F8RuntimeNode, dict[str, Any]], RuntimeNode]
@@ -35,10 +36,12 @@ class RuntimeNodeRegistry:
     when applying a rungraph. It is not a network registry.
     """
 
+    _instance: ClassVar["RuntimeNodeRegistry | None"] = None
+
     @staticmethod
     def instance() -> "RuntimeNodeRegistry":
         # Singleton instance accessor.
-        if not hasattr(RuntimeNodeRegistry, "_instance"):
+        if RuntimeNodeRegistry._instance is None:
             RuntimeNodeRegistry._instance = RuntimeNodeRegistry()
         return RuntimeNodeRegistry._instance
     
@@ -47,9 +50,8 @@ class RuntimeNodeRegistry:
         self._by_service_operator: dict[str, dict[str, OperatorFactory]] = {}
         self._by_service_service: dict[str, ServiceFactory] = {}
         # Optional: service/operator specs for `--describe` style discovery.
-        # Kept generic to avoid importing pydantic models on import of this module.
-        self._service_specs: dict[str, Any] = {}
-        self._operator_specs: dict[str, dict[str, Any]] = {}
+        self._service_specs: dict[str, F8ServiceSpec] = {}
+        self._operator_specs: dict[str, dict[str, F8OperatorSpec]] = {}
 
     def services(self) -> list[str]:
         keys = set(self._by_service_operator.keys())
@@ -59,23 +61,23 @@ class RuntimeNodeRegistry:
         return sorted(keys)
 
     # ---- specs (optional) ----------------------------------------------
-    def register_service_spec(self, spec: Any, *, overwrite: bool = False) -> None:
+    def register_service_spec(self, spec: F8ServiceSpec, *, overwrite: bool = False) -> None:
         """
         Register a `F8ServiceSpec` for discovery / `--describe`.
         """
-        service_class = str(getattr(spec, "serviceClass", "") or "").strip()
+        service_class = str(spec.serviceClass or "").strip()
         if not service_class:
             raise ValueError("spec.serviceClass must be non-empty")
         if service_class in self._service_specs and not overwrite:
             raise OperatorAlreadyRegistered(f"service spec already registered for {service_class}")
         self._service_specs[service_class] = spec
 
-    def register_operator_spec(self, spec: Any, *, overwrite: bool = False) -> None:
+    def register_operator_spec(self, spec: F8OperatorSpec, *, overwrite: bool = False) -> None:
         """
         Register a `F8OperatorSpec` for discovery / `--describe`.
         """
-        service_class = str(getattr(spec, "serviceClass", "") or "").strip()
-        operator_class = str(getattr(spec, "operatorClass", "") or "").strip()
+        service_class = str(spec.serviceClass or "").strip()
+        operator_class = str(spec.operatorClass or "").strip()
         if not service_class:
             raise ValueError("spec.serviceClass must be non-empty")
         if not operator_class:
@@ -88,14 +90,14 @@ class RuntimeNodeRegistry:
             raise OperatorAlreadyRegistered(f"operator spec already registered for {service_class}/{operator_class}")
         reg[operator_class] = spec
 
-    def service_spec(self, service_class: str) -> Any | None:
+    def service_spec(self, service_class: str) -> F8ServiceSpec | None:
         return self._service_specs.get(str(service_class or "").strip())
 
-    def operator_specs(self, service_class: str) -> list[Any]:
+    def operator_specs(self, service_class: str) -> list[F8OperatorSpec]:
         reg = self._operator_specs.get(str(service_class or "").strip()) or {}
         return list(reg.values())
 
-    def describe(self, service_class: str) -> Any:
+    def describe(self, service_class: str) -> F8ServiceDescribe:
         """
         Build a `F8ServiceDescribe` payload for the given serviceClass.
         """
@@ -107,25 +109,16 @@ class RuntimeNodeRegistry:
             raise ServiceNotRegistered(service_class)
         operators = list((self._operator_specs.get(service_class) or {}).values())
         self._inject_builtin_identity_state_fields(service, operators)
-        # Lazy import to keep runtime module light by default.
-        from .generated import F8ServiceDescribe  # type: ignore[import-not-found]
-
         return F8ServiceDescribe(service=service, operators=operators)
 
     @staticmethod
-    def _inject_builtin_identity_state_fields(service_spec: Any, operator_specs: list[Any]) -> None:
+    def _inject_builtin_identity_state_fields(service_spec: F8ServiceSpec, operator_specs: list[F8OperatorSpec]) -> None:
         """
         Inject readonly identity fields into specs so graphs can route them like normal state.
 
         - `svcId`: current service instance id
         - `operatorId`: runtime node id (operator id)
         """
-        try:
-            from .generated import F8StateAccess, F8StateSpec  # type: ignore[import-not-found]
-            from .schema_helpers import string_schema
-        except Exception:
-            return
-
         builtin_all = [
             F8StateSpec(
                 name="svcId",
@@ -147,12 +140,9 @@ class RuntimeNodeRegistry:
             ),
         ]
 
-        def _apply(spec: Any, extra: list[Any]) -> None:
-            try:
-                fields = list(getattr(spec, "stateFields", None) or [])
-            except Exception:
-                return
-            existing = {str(getattr(sf, "name", "") or "") for sf in fields}
+        def _apply(spec: F8ServiceSpec | F8OperatorSpec, extra: list[F8StateSpec]) -> None:
+            fields = list(spec.stateFields or [])
+            existing = {str(sf.name) for sf in fields}
             added = False
             for sf in [*builtin_all, *extra]:
                 if sf.name in existing:
@@ -160,10 +150,7 @@ class RuntimeNodeRegistry:
                 fields.append(sf)
                 added = True
             if added:
-                try:
-                    setattr(spec, "stateFields", fields)
-                except Exception:
-                    pass
+                spec.stateFields = fields
 
         _apply(service_spec, [])
         for op in list(operator_specs or []):

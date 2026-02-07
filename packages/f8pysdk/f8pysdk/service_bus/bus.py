@@ -63,7 +63,7 @@ from .rungraph_apply import (
     set_rungraph as _set_rungraph_impl,
     validate_rungraph_or_raise as _validate_rungraph_or_raise_impl,
 )
-from .state_write import StateWriteContext, StateWriteError, StateWriteOrigin
+from .state_write import StateWriteContext, StateWriteError, StateWriteOrigin, StateWriteSource
 from .lifecycle import (
     announce_ready as _announce_ready_impl,
     apply_active as _apply_active_impl,
@@ -140,9 +140,9 @@ class ServiceBus:
                 NatsTransportConfig(
                     url=str(config.nats_url),
                     kv_bucket=str(bucket),
-                    kv_storage=getattr(config, "kv_storage", None),
-                    delete_bucket_on_connect=bool(getattr(config, "delete_bucket_on_start", False)),
-                    delete_bucket_on_close=bool(getattr(config, "delete_bucket_on_stop", False)),
+                    kv_storage=config.kv_storage,
+                    delete_bucket_on_connect=bool(config.delete_bucket_on_start),
+                    delete_bucket_on_close=bool(config.delete_bucket_on_stop),
                 )
             )
         else:
@@ -233,7 +233,13 @@ class ServiceBus:
     def active(self) -> bool:
         return bool(self._active)
 
-    async def set_active(self, active: bool, *, source: str | None = None, meta: dict[str, Any] | None = None) -> None:
+    async def set_active(
+        self,
+        active: bool,
+        *,
+        source: StateWriteSource | str | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> None:
         await _set_active_impl(self, active, source=source, meta=meta)
 
     def register_node(self, node: _ServiceBusNode) -> None:
@@ -282,7 +288,7 @@ class ServiceBus:
         await _notify_after_stop_impl(self)
 
     async def _apply_active(
-        self, active: bool, *, persist: bool, source: str | None, meta: dict[str, Any] | None
+        self, active: bool, *, persist: bool, source: StateWriteSource | str | None, meta: dict[str, Any] | None
     ) -> None:
         await _apply_active_impl(self, active, persist=persist, source=source, meta=meta)
 
@@ -324,7 +330,7 @@ class ServiceBus:
         *,
         origin: StateWriteOrigin,
         ts_ms: int | None = None,
-        source: str | None = None,
+        source: StateWriteSource | str | None = None,
         meta: dict[str, Any] | None = None,
         deliver_local: bool = True,
     ) -> None:
@@ -399,12 +405,6 @@ class ServiceBus:
         targets = self._intra_state_out.get((str(node_id), str(field))) or []
         if not targets:
             return
-        try:
-            hops = int(meta_dict.get("_fanoutHops") or 0)
-        except Exception:
-            hops = 0
-        if hops >= 8:
-            return
         for to_node, to_field, _edge in list(targets):
             if str(to_node) == str(node_id) and str(to_field) == str(field):
                 continue
@@ -418,8 +418,8 @@ class ServiceBus:
                     value,
                     ts_ms=ts_ms,
                     origin=StateWriteOrigin.external,
-                    source="state_edge",
-                    meta={"fromNodeId": str(node_id), "fromField": str(field), "_fanoutHops": hops + 1},
+                    source=StateWriteSource.state_edge_intra,
+                    meta={"fromNodeId": str(node_id), "fromField": str(field)},
                 )
             except Exception:
                 continue

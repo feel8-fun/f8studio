@@ -74,7 +74,7 @@ class TCodeRuntimeNode(RuntimeNode):
 
         interval_ms = _coerce_number(await self.pull("intervalMs", ctx_id=ctx_id))
         if interval_ms is None:
-            interval_ms = await self.get_state("intervalMs")
+            interval_ms = await self.get_state_value("intervalMs")
             if interval_ms is None:
                 interval_ms = self._initial_state.get("intervalMs", 20)
         interval_i = max(1, _js_round(float(interval_ms)))

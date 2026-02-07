@@ -94,12 +94,10 @@ class ServiceCliTemplate(ABC):
             payload = json.dumps(self.describe_json(), ensure_ascii=False, indent=1)
             try:
                 # On Windows, the console encoding may be cp1252 and crash on unicode.
-                reconfigure = getattr(sys.stdout, "reconfigure", None)
-                if callable(reconfigure):
-                    try:
-                        reconfigure(encoding="utf-8", errors="replace")
-                    except Exception:
-                        pass
+                try:
+                    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+                except Exception:
+                    pass
                 print(payload)
             except UnicodeEncodeError:
                 try:

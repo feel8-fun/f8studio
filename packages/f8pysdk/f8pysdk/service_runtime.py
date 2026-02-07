@@ -68,7 +68,7 @@ class ServiceRuntimeConfig:
 
     @property
     def publish_all_data(self) -> bool:
-        return bool(getattr(self.bus, "publish_all_data", True))
+        return bool(self.bus.publish_all_data)
 
     @property
     def kv_storage(self) -> StorageType:
@@ -76,11 +76,11 @@ class ServiceRuntimeConfig:
 
     @property
     def delete_bucket_on_start(self) -> bool:
-        return bool(getattr(self.bus, "delete_bucket_on_start", False))
+        return bool(self.bus.delete_bucket_on_start)
 
     @property
     def delete_bucket_on_stop(self) -> bool:
-        return bool(getattr(self.bus, "delete_bucket_on_stop", False))
+        return bool(self.bus.delete_bucket_on_stop)
 
 
 class ServiceRuntime:
@@ -97,7 +97,7 @@ class ServiceRuntime:
         self._config = config
         self._registry = registry or RuntimeNodeRegistry.instance()
 
-        for module in list(getattr(config, "registry_modules", ()) or ()):
+        for module in config.registry_modules:
             try:
                 self._registry.load_modules([str(module)])
             except Exception:

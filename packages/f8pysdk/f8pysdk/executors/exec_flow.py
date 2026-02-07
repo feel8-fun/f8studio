@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..generated import F8EdgeDirection, F8EdgeKindEnum, F8RuntimeGraph, F8RuntimeNode
-from ..capabilities import ComputableNode, EntrypointNode, ExecutableNode
+from ..capabilities import BusAttachableNode, ComputableNode, EntrypointNode, ExecutableNode
 from ..nats_naming import ensure_token
 from ..service_bus.bus import ServiceBus
 from ..time_utils import now_ms
@@ -104,8 +104,8 @@ class ExecFlowExecutor:
             await self._restart_entrypoint_if_needed(graph)
 
     # ---- node registry --------------------------------------------------
-    def register_node(self, node: Any) -> None:
-        node_id = ensure_token(getattr(node, "node_id", ""), label="node_id")
+    def register_node(self, node: BusAttachableNode) -> None:
+        node_id = ensure_token(str(node.node_id), label="node_id")
         self._nodes[node_id] = node
 
     def unregister_node(self, node_id: str) -> None:
@@ -120,7 +120,7 @@ class ExecFlowExecutor:
         return self._nodes.get(node_id)
 
     def current_entrypoint_node_id(self) -> str | None:
-        return getattr(self._entrypoint_ctx, "node_id", None) if self._entrypoint_ctx else None
+        return self._entrypoint_ctx.node_id if self._entrypoint_ctx else None
 
     # ---- rungraph -------------------------------------------------------
     async def apply_rungraph(self, graph: F8RuntimeGraph) -> None:
@@ -132,10 +132,10 @@ class ExecFlowExecutor:
 
     def _rebuild_half_out_ports(self, graph: F8RuntimeGraph) -> None:
         out: dict[str, set[str]] = {}
-        for edge in list(getattr(graph, "edges", None) or []):
+        for edge in graph.edges:
             if edge.kind != F8EdgeKindEnum.data:
                 continue
-            if getattr(edge, "direction", None) != F8EdgeDirection.out:
+            if edge.direction != F8EdgeDirection.out:
                 continue
             if str(edge.fromServiceId) != self._service_id:
                 continue
@@ -243,7 +243,7 @@ class ExecFlowExecutor:
 
     async def _restart_entrypoint_if_needed(self, graph: F8RuntimeGraph) -> None:
         new_source = self._entrypoint_node_id(graph)
-        cur = getattr(self._entrypoint_ctx, "node_id", None) if self._entrypoint_ctx else None
+        cur = self._entrypoint_ctx.node_id if self._entrypoint_ctx else None
         if new_source == cur:
             return
         await self.stop_entrypoint()

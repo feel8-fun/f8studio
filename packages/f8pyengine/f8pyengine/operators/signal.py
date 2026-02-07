@@ -127,7 +127,7 @@ class PhaseRuntimeNode(RuntimeNode):
 
         hz = in_hz
         if hz is None:
-            hz = await self.get_state("hz")
+            hz = await self.get_state_value("hz")
             if hz is None:
                 hz = self._initial_state.get("hz", 1.0)
 
@@ -224,22 +224,22 @@ class SineRuntimeNode(RuntimeNode):
 
         hz = in_hz
         if hz is None:
-            hz = await self.get_state("hz")
+            hz = await self.get_state_value("hz")
             if hz is None:
                 hz = self._initial_state.get("hz", 1.0)
         amp = in_amp
         if amp is None:
-            amp = await self.get_state("amp")
+            amp = await self.get_state_value("amp")
             if amp is None:
                 amp = self._initial_state.get("amp", 1.0)
         offset = in_offset
         if offset is None:
-            offset = await self.get_state("offset")
+            offset = await self.get_state_value("offset")
             if offset is None:
                 offset = self._initial_state.get("offset", 0.0)
         phase = in_phase
         if phase is None:
-            phase = await self.get_state("phaseOffset")
+            phase = await self.get_state_value("phaseOffset")
             if phase is None:
                 phase = self._initial_state.get("phaseOffset", 0.0)
 
@@ -378,27 +378,27 @@ class TempestRuntimeNode(RuntimeNode):
 
         frequency_hz = in_frequency_hz
         if frequency_hz is None:
-            frequency_hz = await self.get_state("frequencyHz")
+            frequency_hz = await self.get_state_value("frequencyHz")
             if frequency_hz is None:
                 frequency_hz = self._initial_state.get("frequencyHz", 1.0)
         amplitude = in_amplitude
         if amplitude is None:
-            amplitude = await self.get_state("amplitude")
+            amplitude = await self.get_state_value("amplitude")
             if amplitude is None:
                 amplitude = self._initial_state.get("amplitude", 1.0)
         phase_offset = in_phase_offset
         if phase_offset is None:
-            phase_offset = await self.get_state("phaseOffset")
+            phase_offset = await self.get_state_value("phaseOffset")
             if phase_offset is None:
                 phase_offset = self._initial_state.get("phaseOffset", 0.0)
         eccentricity = in_eccentricity
         if eccentricity is None:
-            eccentricity = await self.get_state("eccentricity")
+            eccentricity = await self.get_state_value("eccentricity")
             if eccentricity is None:
                 eccentricity = self._initial_state.get("eccentricity", 0.0)
         dc_offset = in_dc_offset
         if dc_offset is None:
-            dc_offset = await self.get_state("dcOffset")
+            dc_offset = await self.get_state_value("dcOffset")
             if dc_offset is None:
                 dc_offset = self._initial_state.get("dcOffset", 0.0)
 

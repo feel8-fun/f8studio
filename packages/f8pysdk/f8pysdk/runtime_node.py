@@ -25,6 +25,8 @@ class RuntimeNode(BusAttachableNode, StatefulNode, DataReceivableNode, Computabl
     data_in_ports: list[str] = field(default_factory=list)
     data_out_ports: list[str] = field(default_factory=list)
     state_fields: list[str] = field(default_factory=list)
+    exec_in_ports: list[str] = field(default_factory=list)
+    exec_out_ports: list[str] = field(default_factory=list)
 
     _bus: NodeBus | None = field(default=None, init=False, repr=False)
 
@@ -90,6 +92,14 @@ class RuntimeNode(BusAttachableNode, StatefulNode, DataReceivableNode, Computabl
         if self._bus is None:
             return StateRead(found=False, value=None, ts_ms=None)
         return await self._bus.get_state(self.node_id, field)
+
+    async def get_state_value(self, field: str) -> Any:
+        """
+        Convenience wrapper that returns only the state value.
+
+        Prefer this in operators that don't care about (found, ts_ms).
+        """
+        return (await self.get_state(field)).value
 
 
 @dataclass

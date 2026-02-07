@@ -61,7 +61,7 @@ class NatsTransport:
         async with self._lock:
             if self._nc is not None:
                 return
-            url = str(getattr(self._config, "url", "") or "nats://127.0.0.1:4222").strip()
+            url = str(self._config.url or "nats://127.0.0.1:4222").strip()
             last_log = 0.0
             attempt = 0
 
@@ -105,7 +105,7 @@ class NatsTransport:
                     await asyncio.sleep(min(2.0, 0.2 * attempt))
                     continue
             self._js = self._nc.jetstream()
-            if bool(getattr(self._config, "delete_bucket_on_connect", False)) and self._js is not None:
+            if bool(self._config.delete_bucket_on_connect) and self._js is not None:
                 try:
                     await self._js.delete_key_value(str(self._config.kv_bucket))
                 except Exception:
@@ -137,7 +137,7 @@ class NatsTransport:
                 except Exception:
                     pass
 
-            if bool(getattr(self._config, "delete_bucket_on_close", False)) and self._js is not None:
+            if bool(self._config.delete_bucket_on_close) and self._js is not None:
                 try:
                     await self._js.delete_key_value(str(self._config.kv_bucket))
                 except Exception:
@@ -178,7 +178,7 @@ class NatsTransport:
                 raise
             return None
         try:
-            return bytes(getattr(msg, "data", b"") or b"")
+            return bytes(msg.data or b"")  # type: ignore[attr-defined]
         except Exception:
             return None
 
@@ -198,7 +198,7 @@ class NatsTransport:
             if cb is None:
                 return
             try:
-                await cb(str(getattr(msg, "subject", subject)), bytes(getattr(msg, "data", b"") or b""))
+                await cb(str(msg.subject or subject), bytes(msg.data or b""))  # type: ignore[attr-defined]
             except Exception:
                 return
 
@@ -253,7 +253,7 @@ class NatsTransport:
         if entry is None:
             return None
         try:
-            return bytes(getattr(entry, "value", b"") or b"")
+            return bytes(entry.value or b"")  # type: ignore[attr-defined]
         except Exception:
             return None
 
@@ -277,8 +277,8 @@ class NatsTransport:
                 if entry is None:
                     continue
                 try:
-                    k = str(getattr(entry, "key", "") or "")
-                    v = bytes(getattr(entry, "value", b"") or b"")
+                    k = str(entry.key or "")  # type: ignore[attr-defined]
+                    v = bytes(entry.value or b"")  # type: ignore[attr-defined]
                 except Exception:
                     continue
                 if not k:
@@ -324,8 +324,8 @@ class NatsTransport:
                 if entry is None:
                     continue
                 try:
-                    k = str(getattr(entry, "key", "") or "")
-                    v = bytes(getattr(entry, "value", b"") or b"")
+                    k = str(entry.key or "")  # type: ignore[attr-defined]
+                    v = bytes(entry.value or b"")  # type: ignore[attr-defined]
                 except Exception:
                     continue
                 if not k:
@@ -353,7 +353,7 @@ class NatsTransport:
         if entry is None:
             return None
         try:
-            return bytes(getattr(entry, "value", b"") or b"")
+            return bytes(entry.value or b"")  # type: ignore[attr-defined]
         except Exception:
             return None
 

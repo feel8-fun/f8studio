@@ -23,7 +23,7 @@ def schema_type(schema: F8DataTypeSchema) -> str:
 
 
 def schema_default(schema: F8DataTypeSchema) -> any:
-    return getattr(schema.root, "default", None)
+    return schema.root.default
 
 
 def number_schema(

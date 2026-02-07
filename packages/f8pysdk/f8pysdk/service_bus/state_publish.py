@@ -7,7 +7,7 @@ from typing import Any, TYPE_CHECKING
 
 from ..generated import F8StateAccess
 from ..nats_naming import ensure_token, kv_key_node_state
-from .state_write import StateWriteContext, StateWriteError, StateWriteOrigin
+from .state_write import StateWriteContext, StateWriteError, StateWriteOrigin, StateWriteSource
 from ..time_utils import now_ms
 
 if TYPE_CHECKING:
@@ -63,17 +63,14 @@ def coerce_state_value(value: Any) -> Any:
 
     # Pydantic v2 models/root models.
     try:
-        model_dump = getattr(value, "model_dump", None)
-        if callable(model_dump):
-            dumped = model_dump(mode="json")
-            return coerce_state_value(dumped)
+        dumped = value.model_dump(mode="json")  # type: ignore[attr-defined]
+        return coerce_state_value(dumped)
     except Exception:
         pass
 
     # Generic RootModel-like `root` attribute.
     try:
-        if hasattr(value, "root"):
-            return coerce_state_value(getattr(value, "root"))
+        return coerce_state_value(value.root)  # type: ignore[attr-defined]
     except Exception:
         pass
 
@@ -162,7 +159,7 @@ async def publish_state(
     *,
     origin: StateWriteOrigin,
     ts_ms: int | None = None,
-    source: str | None = None,
+    source: StateWriteSource | str | None = None,
     meta: dict[str, Any] | None = None,
     deliver_local: bool = True,
 ) -> None:
@@ -194,6 +191,22 @@ async def publish_state(
     payload = _build_state_payload(update)
 
     key = kv_key_node_state(node_id=node_id, field=field)
+    # Value-dedupe: avoid republishing identical values.
+    #
+    # This is important for intra-service state edges: a graph may contain
+    # cycles, and without dedupe a value can loop until hop-limit cutoff.
+    existing = bus._state_cache.get((node_id, field))
+    if existing is not None:
+        try:
+            if existing[0] == update.value:
+                if bus._debug_state:
+                    print(
+                        "state_debug[%s] publish_state dedupe node=%s field=%s"
+                        % (bus.service_id, node_id, field)
+                    )
+                return
+        except Exception:
+            pass
     if bus._debug_state:
         print(
             "state_debug[%s] publish_state node=%s field=%s ts=%s origin=%s source=%s"
@@ -216,6 +229,6 @@ async def publish_state_runtime(
         field,
         value,
         origin=StateWriteOrigin.runtime,
-        source="runtime",
+        source=StateWriteSource.runtime,
         ts_ms=ts_ms,
     )

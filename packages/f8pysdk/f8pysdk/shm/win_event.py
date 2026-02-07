@@ -66,7 +66,7 @@ class Win32Event:
     def close(self) -> None:
         if os.name != "nt":
             return
-        if getattr(self, "_handle", 0):
+        if self._handle:
             _CloseHandle(self._handle)
             self._handle = 0
 
@@ -81,4 +81,3 @@ class Win32Event:
             return
         _SetEvent(self._handle)
         _ResetEvent(self._handle)
-

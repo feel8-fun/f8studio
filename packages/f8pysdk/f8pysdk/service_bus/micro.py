@@ -10,7 +10,7 @@ from nats.micro.service import EndpointConfig  # type: ignore[import-not-found]
 from ..capabilities import CommandableNode
 from ..generated import F8RuntimeGraph
 from ..nats_naming import cmd_channel_subject, ensure_token, new_id, svc_endpoint_subject, svc_micro_name
-from .state_write import StateWriteError, StateWriteOrigin
+from .state_write import StateWriteError, StateWriteOrigin, StateWriteSource
 from ..time_utils import now_ms
 
 if TYPE_CHECKING:
@@ -85,7 +85,7 @@ class _ServiceBusMicroEndpoints:
     async def _set_active_req(self, req: Any, active: bool, *, cmd: str) -> None:
         req_id, _raw, _args, meta = self._parse_envelope(req.data)
         want_active = bool(active)
-        await self._bus.set_active(want_active, source="cmd", meta={"cmd": cmd, **meta})
+        await self._bus.set_active(want_active, source=StateWriteSource.cmd, meta={"cmd": cmd, **meta})
         await self._respond(req, req_id=req_id, ok=True, result={"active": self._bus.active})
 
     async def _activate(self, req: Any) -> None:
@@ -157,7 +157,7 @@ class _ServiceBusMicroEndpoints:
             await self._respond(req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "invalid nodeId"})
             return
 
-        source = "endpoint"
+        source = StateWriteSource.endpoint
         user_meta = dict(meta)
         user_meta.pop("source", None)
         user_meta.pop("origin", None)
@@ -214,7 +214,7 @@ class _ServiceBusMicroEndpoints:
         except Exception as exc:
             await self._respond(req, req_id=req_id, ok=False, error={"code": "INTERNAL", "message": str(exc)})
             return
-        await self._respond(req, req_id=req_id, ok=True, result={"graphId": str(getattr(graph, "graphId", "") or "")})
+        await self._respond(req, req_id=req_id, ok=True, result={"graphId": str(graph.graphId)})
 
     async def _register_endpoints(self) -> None:
         micro = self._micro

@@ -79,13 +79,13 @@ class SerialOutRuntimeNode(RuntimeNode):
         await self._close_serial()
 
     async def _read_cfg_from_state(self) -> _SerialConfig:
-        port = await self.get_state("port")
+        port = await self.get_state_value("port")
         if port is None:
             port = self._initial_state.get("port", "COM3")
-        baudrate = await self.get_state("baudrate")
+        baudrate = await self.get_state_value("baudrate")
         if baudrate is None:
             baudrate = self._initial_state.get("baudrate", 115200)
-        enabled = await self.get_state("enabled")
+        enabled = await self.get_state_value("enabled")
         if enabled is None:
             enabled = self._initial_state.get("enabled", True)
 

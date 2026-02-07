@@ -100,7 +100,8 @@ class TickRuntimeNode(RuntimeNode):
 
             try:
                 while not self._stop.is_set():
-                    tick_ms = await self.get_state("tickMs")
+                    tick_ms = await self.get_state_value("tickMs")
+                    print(f"tick_ms: {tick_ms}")
                     if tick_ms is None:
                         tick_ms = self._initial_state.get("tickMs", 100)
                     try:
@@ -108,7 +109,7 @@ class TickRuntimeNode(RuntimeNode):
                     except Exception:
                         ms = 100
 
-                    want_hires = await self.get_state("hiResTimer")
+                    want_hires = await self.get_state_value("hiResTimer")
                     if want_hires is None:
                         want_hires = self._initial_state.get("hiResTimer", False)
                     want_hires_bool = False

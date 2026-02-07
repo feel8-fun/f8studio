@@ -366,7 +366,7 @@ class detecttrackerServiceNode(ServiceNode):
         await self._ensure_config_loaded()
 
         if name == "weightsDir":
-            raw = _coerce_str(await self.get_state("weightsDir"), default=str(self._weights_dir))
+            raw = _coerce_str(await self.get_state_value("weightsDir"), default=str(self._weights_dir))
             p = Path(raw).expanduser()
             if not p.is_absolute():
                 # Resolve relative to cwd first.
@@ -387,54 +387,54 @@ class detecttrackerServiceNode(ServiceNode):
             await self._publish_model_index()
             await self._reset_detector()
         elif name == "modelId":
-            self._model_id = _coerce_str(await self.get_state("modelId"), default=self._model_id)
+            self._model_id = _coerce_str(await self.get_state_value("modelId"), default=self._model_id)
             await self._reset_detector()
         elif name == "modelYamlPath":
-            self._model_yaml_path = _coerce_str(await self.get_state("modelYamlPath"), default=self._model_yaml_path)
+            self._model_yaml_path = _coerce_str(await self.get_state_value("modelYamlPath"), default=self._model_yaml_path)
             await self._reset_detector()
         elif name == "ortProvider":
-            v = _coerce_str(await self.get_state("ortProvider"), default=str(self._ort_provider)).lower()
+            v = _coerce_str(await self.get_state_value("ortProvider"), default=str(self._ort_provider)).lower()
             self._ort_provider = v if v in ("auto", "cuda", "cpu") else "auto"
             await self._reset_detector()
         elif name == "trackerKind":
-            v = _coerce_str(await self.get_state("trackerKind"), default=str(self._tracker_kind)).lower()
+            v = _coerce_str(await self.get_state_value("trackerKind"), default=str(self._tracker_kind)).lower()
             self._tracker_kind = v if v in ("none", "csrt", "kcf", "mosse") else "kcf"
             self._need_reinit_trackers = True
         elif name == "detectEveryN":
-            self._detect_every_n = _coerce_int(await self.get_state("detectEveryN"), default=self._detect_every_n, minimum=1, maximum=10_000)
+            self._detect_every_n = _coerce_int(await self.get_state_value("detectEveryN"), default=self._detect_every_n, minimum=1, maximum=10_000)
         elif name == "maxTargets":
-            self._max_targets = _coerce_int(await self.get_state("maxTargets"), default=self._max_targets, minimum=1, maximum=1000)
+            self._max_targets = _coerce_int(await self.get_state_value("maxTargets"), default=self._max_targets, minimum=1, maximum=1000)
         elif name == "iouMatch":
-            self._iou_match = _coerce_float(await self.get_state("iouMatch"), default=self._iou_match, minimum=0.0, maximum=1.0)
+            self._iou_match = _coerce_float(await self.get_state_value("iouMatch"), default=self._iou_match, minimum=0.0, maximum=1.0)
         elif name == "mismatchIou":
-            self._mismatch_iou = _coerce_float(await self.get_state("mismatchIou"), default=self._mismatch_iou, minimum=0.0, maximum=1.0)
+            self._mismatch_iou = _coerce_float(await self.get_state_value("mismatchIou"), default=self._mismatch_iou, minimum=0.0, maximum=1.0)
         elif name == "mismatchPatience":
-            self._mismatch_patience = _coerce_int(await self.get_state("mismatchPatience"), default=self._mismatch_patience, minimum=1, maximum=1000)
+            self._mismatch_patience = _coerce_int(await self.get_state_value("mismatchPatience"), default=self._mismatch_patience, minimum=1, maximum=1000)
         elif name == "maxAge":
-            self._max_age = _coerce_int(await self.get_state("maxAge"), default=self._max_age, minimum=1, maximum=100_000)
+            self._max_age = _coerce_int(await self.get_state_value("maxAge"), default=self._max_age, minimum=1, maximum=100_000)
         elif name == "reinitOnDetect":
-            self._reinit_on_detect = _coerce_bool(await self.get_state("reinitOnDetect"), default=self._reinit_on_detect)
+            self._reinit_on_detect = _coerce_bool(await self.get_state_value("reinitOnDetect"), default=self._reinit_on_detect)
         elif name == "confThreshold":
-            self._conf_override = _coerce_float(await self.get_state("confThreshold"), default=self._conf_override)
+            self._conf_override = _coerce_float(await self.get_state_value("confThreshold"), default=self._conf_override)
             await self._reset_detector()
         elif name == "iouThreshold":
-            self._iou_override = _coerce_float(await self.get_state("iouThreshold"), default=self._iou_override)
+            self._iou_override = _coerce_float(await self.get_state_value("iouThreshold"), default=self._iou_override)
             await self._reset_detector()
         elif name == "sourceServiceId":
-            self._source_service_id = _coerce_str(await self.get_state("sourceServiceId"), default=self._source_service_id)
+            self._source_service_id = _coerce_str(await self.get_state_value("sourceServiceId"), default=self._source_service_id)
             await self._maybe_reopen_shm()
         elif name == "shmName":
-            self._shm_name = _coerce_str(await self.get_state("shmName"), default=self._shm_name)
+            self._shm_name = _coerce_str(await self.get_state_value("shmName"), default=self._shm_name)
             await self._maybe_reopen_shm()
         elif name == "telemetryIntervalMs":
             self._telemetry.set_config(
-                interval_ms=_coerce_int(await self.get_state("telemetryIntervalMs"), default=self._telemetry.interval_ms, minimum=0, maximum=60000),
+                interval_ms=_coerce_int(await self.get_state_value("telemetryIntervalMs"), default=self._telemetry.interval_ms, minimum=0, maximum=60000),
                 window_ms=self._telemetry.window_ms,
             )
         elif name == "telemetryWindowMs":
             self._telemetry.set_config(
                 interval_ms=self._telemetry.interval_ms,
-                window_ms=_coerce_int(await self.get_state("telemetryWindowMs"), default=self._telemetry.window_ms, minimum=100, maximum=60000),
+                window_ms=_coerce_int(await self.get_state_value("telemetryWindowMs"), default=self._telemetry.window_ms, minimum=100, maximum=60000),
             )
 
     async def _ensure_config_loaded(self) -> None:
@@ -442,7 +442,7 @@ class detecttrackerServiceNode(ServiceNode):
             return
 
         raw_weights = _coerce_str(
-            await self.get_state("weightsDir"),
+            await self.get_state_value("weightsDir"),
             default=str(self._initial_state.get("weightsDir") or _default_weights_dir()),
         )
         p = Path(raw_weights).expanduser()
@@ -460,34 +460,34 @@ class detecttrackerServiceNode(ServiceNode):
         else:
             p = p.resolve()
         self._weights_dir = p
-        self._model_id = _coerce_str(await self.get_state("modelId"), default=str(self._initial_state.get("modelId") or ""))
+        self._model_id = _coerce_str(await self.get_state_value("modelId"), default=str(self._initial_state.get("modelId") or ""))
         self._model_yaml_path = _coerce_str(
-            await self.get_state("modelYamlPath"), default=str(self._initial_state.get("modelYamlPath") or "")
+            await self.get_state_value("modelYamlPath"), default=str(self._initial_state.get("modelYamlPath") or "")
         )
-        v = _coerce_str(await self.get_state("ortProvider"), default=str(self._initial_state.get("ortProvider") or "auto")).lower()
+        v = _coerce_str(await self.get_state_value("ortProvider"), default=str(self._initial_state.get("ortProvider") or "auto")).lower()
         self._ort_provider = v if v in ("auto", "cuda", "cpu") else "auto"
 
-        v = _coerce_str(await self.get_state("trackerKind"), default=str(self._initial_state.get("trackerKind") or "kcf")).lower()
+        v = _coerce_str(await self.get_state_value("trackerKind"), default=str(self._initial_state.get("trackerKind") or "kcf")).lower()
         self._tracker_kind = v if v in ("none", "csrt", "kcf", "mosse") else "kcf"
 
-        self._detect_every_n = _coerce_int(await self.get_state("detectEveryN"), default=int(self._initial_state.get("detectEveryN") or 5), minimum=1)
-        self._max_targets = _coerce_int(await self.get_state("maxTargets"), default=int(self._initial_state.get("maxTargets") or 5), minimum=1, maximum=1000)
-        self._iou_match = _coerce_float(await self.get_state("iouMatch"), default=float(self._initial_state.get("iouMatch") or 0.3), minimum=0.0, maximum=1.0)
-        self._mismatch_iou = _coerce_float(await self.get_state("mismatchIou"), default=float(self._initial_state.get("mismatchIou") or 0.2), minimum=0.0, maximum=1.0)
-        self._mismatch_patience = _coerce_int(await self.get_state("mismatchPatience"), default=int(self._initial_state.get("mismatchPatience") or 3), minimum=1)
-        self._max_age = _coerce_int(await self.get_state("maxAge"), default=int(self._initial_state.get("maxAge") or 30), minimum=1)
-        self._reinit_on_detect = _coerce_bool(await self.get_state("reinitOnDetect"), default=bool(self._initial_state.get("reinitOnDetect", True)))
-        self._conf_override = _coerce_float(await self.get_state("confThreshold"), default=float(self._initial_state.get("confThreshold") or -1.0))
-        self._iou_override = _coerce_float(await self.get_state("iouThreshold"), default=float(self._initial_state.get("iouThreshold") or -1.0))
+        self._detect_every_n = _coerce_int(await self.get_state_value("detectEveryN"), default=int(self._initial_state.get("detectEveryN") or 5), minimum=1)
+        self._max_targets = _coerce_int(await self.get_state_value("maxTargets"), default=int(self._initial_state.get("maxTargets") or 5), minimum=1, maximum=1000)
+        self._iou_match = _coerce_float(await self.get_state_value("iouMatch"), default=float(self._initial_state.get("iouMatch") or 0.3), minimum=0.0, maximum=1.0)
+        self._mismatch_iou = _coerce_float(await self.get_state_value("mismatchIou"), default=float(self._initial_state.get("mismatchIou") or 0.2), minimum=0.0, maximum=1.0)
+        self._mismatch_patience = _coerce_int(await self.get_state_value("mismatchPatience"), default=int(self._initial_state.get("mismatchPatience") or 3), minimum=1)
+        self._max_age = _coerce_int(await self.get_state_value("maxAge"), default=int(self._initial_state.get("maxAge") or 30), minimum=1)
+        self._reinit_on_detect = _coerce_bool(await self.get_state_value("reinitOnDetect"), default=bool(self._initial_state.get("reinitOnDetect", True)))
+        self._conf_override = _coerce_float(await self.get_state_value("confThreshold"), default=float(self._initial_state.get("confThreshold") or -1.0))
+        self._iou_override = _coerce_float(await self.get_state_value("iouThreshold"), default=float(self._initial_state.get("iouThreshold") or -1.0))
 
-        self._source_service_id = _coerce_str(await self.get_state("sourceServiceId"), default=str(self._initial_state.get("sourceServiceId") or ""))
-        self._shm_name = _coerce_str(await self.get_state("shmName"), default=str(self._initial_state.get("shmName") or ""))
+        self._source_service_id = _coerce_str(await self.get_state_value("sourceServiceId"), default=str(self._initial_state.get("sourceServiceId") or ""))
+        self._shm_name = _coerce_str(await self.get_state_value("shmName"), default=str(self._initial_state.get("shmName") or ""))
         self._telemetry.set_config(
             interval_ms=_coerce_int(
-                await self.get_state("telemetryIntervalMs"), default=int(self._initial_state.get("telemetryIntervalMs") or 1000), minimum=0, maximum=60000
+                await self.get_state_value("telemetryIntervalMs"), default=int(self._initial_state.get("telemetryIntervalMs") or 1000), minimum=0, maximum=60000
             ),
             window_ms=_coerce_int(
-                await self.get_state("telemetryWindowMs"), default=int(self._initial_state.get("telemetryWindowMs") or 2000), minimum=100, maximum=60000
+                await self.get_state_value("telemetryWindowMs"), default=int(self._initial_state.get("telemetryWindowMs") or 2000), minimum=100, maximum=60000
             ),
         )
 

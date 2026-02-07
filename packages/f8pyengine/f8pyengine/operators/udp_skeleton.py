@@ -194,17 +194,17 @@ class UdpSkeletonRuntimeNode(RuntimeNode):
                 return int(default)
 
     async def _read_cfg_from_state(self) -> _UdpConfig | None:
-        bind_address = await self.get_state("bindAddress")
+        bind_address = await self.get_state_value("bindAddress")
         if bind_address is None:
             bind_address = self._initial_state.get("bindAddress", "0.0.0.0")
-        port = await self.get_state("port")
+        port = await self.get_state_value("port")
         if port is None:
             port = self._initial_state.get("port", 39540)
-        max_queue = await self.get_state("maxQueue")
+        max_queue = await self.get_state_value("maxQueue")
         if max_queue is None:
             max_queue = self._initial_state.get("maxQueue", 512)
 
-        reuse_address = await self.get_state("reuseAddress")
+        reuse_address = await self.get_state_value("reuseAddress")
         if reuse_address is None:
             reuse_address = self._initial_state.get("reuseAddress", False)
 

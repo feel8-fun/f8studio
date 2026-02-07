@@ -43,7 +43,7 @@ class PyEngineServiceNode(ServiceNode):
         name = str(field or "").strip()
         if name != "dataDelivery":
             return
-        raw = await self.get_state("dataDelivery")
+        raw = await self.get_state_value("dataDelivery")
         if raw is None:
             raw = value
         if raw is None:

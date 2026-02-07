@@ -186,7 +186,7 @@ class PyStudioAudioShmViewRuntimeNode(RuntimeNode):
     async def _get_int_state(self, name: str, *, default: int, minimum: int, maximum: int) -> int:
         v: Any = None
         try:
-            v = (await self.get_state(name)).value
+            v = await self.get_state_value(name)
         except Exception:
             v = None
         if v is None:
@@ -204,7 +204,7 @@ class PyStudioAudioShmViewRuntimeNode(RuntimeNode):
     async def _get_str_state(self, name: str, *, default: str) -> str:
         v: Any = None
         try:
-            v = (await self.get_state(name)).value
+            v = await self.get_state_value(name)
         except Exception:
             v = None
         if v is None:

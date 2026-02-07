@@ -144,7 +144,7 @@ class PythonScriptRuntimeNode(RuntimeNode, ClosableNode):
                 pass
 
         async def _get_state(field: str) -> Any:
-            return await self.get_state(str(field))
+            return await self.get_state_value(str(field))
 
         return {
             "nodeId": self.node_id,
