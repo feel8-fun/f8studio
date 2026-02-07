@@ -112,7 +112,7 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
 
     def _build_state_properties(self) -> None:
         for s in self.effective_state_fields() or []:
-            name = str(getattr(s, "name", "") or "").strip()
+            name = str(s.name or "").strip()
             if not name:
                 continue
             try:
@@ -124,8 +124,8 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
                 default_value = schema_default(s.valueSchema)
             except Exception:
                 default_value = None
-            widget_type, items, prop_range = self._state_widget_for_schema(getattr(s, "valueSchema", None))
-            tooltip = str(getattr(s, "description", "") or "").strip() or None
+            widget_type, items, prop_range = self._state_widget_for_schema(s.valueSchema)
+            tooltip = str(s.description or "").strip() or None
             try:
                 self.create_property(
                     name,
@@ -153,7 +153,8 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
 
         # enum choice.
         try:
-            enum_items = list(getattr(getattr(value_schema, "root", None), "enum", None) or [])
+            root = value_schema.root
+            enum_items = list(root.enum or [])
         except Exception:
             enum_items = []
         if enum_items:
@@ -193,17 +194,17 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
         desired_inputs: dict[str, dict[str, Any]] = {}
         desired_outputs: dict[str, dict[str, Any]] = {}
 
-        for p in list(getattr(self.spec, "execInPorts", None) or []):
+        for p in list(self.spec.execInPorts or []):
             desired_inputs[f"[E]{p}"] = {"color": EXEC_PORT_COLOR, "painter_func": draw_exec_port}
-        for p in list(getattr(self.spec, "execOutPorts", None) or []):
+        for p in list(self.spec.execOutPorts or []):
             desired_outputs[f"{p}[E]"] = {"color": EXEC_PORT_COLOR, "painter_func": draw_exec_port}
 
-        for p in list(getattr(self.spec, "dataInPorts", None) or []):
+        for p in list(self.spec.dataInPorts or []):
             try:
                 desired_inputs[f"[D]{p.name}"] = {"color": DATA_PORT_COLOR}
             except Exception:
                 continue
-        for p in list(getattr(self.spec, "dataOutPorts", None) or []):
+        for p in list(self.spec.dataOutPorts or []):
             try:
                 desired_outputs[f"{p.name}[D]"] = {"color": DATA_PORT_COLOR}
             except Exception:
@@ -211,9 +212,9 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
 
         for s in list(self.effective_state_fields() or []):
             try:
-                if not getattr(s, "showOnNode", False):
+                if not bool(s.showOnNode):
                     continue
-                name = str(getattr(s, "name", "") or "").strip()
+                name = str(s.name or "").strip()
                 if not name:
                     continue
                 desired_inputs[f"[S]{name}"] = {"color": STATE_PORT_COLOR, "painter_func": draw_square_port}
@@ -275,7 +276,10 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
             valid_in_views = {p.view for p in self.input_ports()}
             valid_out_views = {p.view for p in self.output_ports()}
 
-            input_items = getattr(view, "_input_items", None)
+            try:
+                input_items = view._input_items
+            except Exception:
+                input_items = None
             if isinstance(input_items, dict):
                 for port_item in list(input_items.keys()):
                     if port_item in valid_in_views:
@@ -292,7 +296,10 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
                     except Exception:
                         pass
 
-            output_items = getattr(view, "_output_items", None)
+            try:
+                output_items = view._output_items
+            except Exception:
+                output_items = None
             if isinstance(output_items, dict):
                 for port_item in list(output_items.keys()):
                     if port_item in valid_out_views:
@@ -336,6 +343,9 @@ class _LegacyF8StudioOperatorNodeItem(AbstractNodeItem):
         # setting `view._container_item`; keep it always defined to avoid crashes
         # during interactive moves before binding.
         self._container_item = None
+        self._cmd_proxy = None
+        self._cmd_widget = None
+        self._cmd_buttons = []
 
         pixmap = QtGui.QPixmap(ICON_NODE_BASE)
         if pixmap.size().height() > NodeEnum.ICON_SIZE.value:
@@ -1442,7 +1452,7 @@ class F8StudioOperatorNodeItem(F8StudioServiceNodeItem):
         Clamp the node's top-left position so the entire node stays within
         its service container bounds (in scene coordinates).
         """
-        container = getattr(self, "_container_item", None)
+        container = self._container_item
         if container is None:
             return proposed_pos
 
@@ -1472,7 +1482,7 @@ class F8StudioOperatorNodeItem(F8StudioServiceNodeItem):
 
     def _ensure_inline_command_widget(self) -> None:  # type: ignore[override]
         # Operators don't expose service commands; ensure any previous command proxy is removed.
-        proxy = getattr(self, "_cmd_proxy", None)
+        proxy = self._cmd_proxy
         if proxy is not None:
             try:
                 proxy.setWidget(None)

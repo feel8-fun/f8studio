@@ -17,6 +17,7 @@ from .container_basenode import F8StudioContainerBaseNode
 from .operator_basenode import F8StudioOperatorBaseNode
 
 from .viewer import F8StudioNodeViewer
+from .service_bridge_protocol import ServiceBridge
 from .session import last_session_path
 
 from ..constants import SERVICE_CLASS as _CANVAS_SERVICE_CLASS_
@@ -66,7 +67,7 @@ class F8StudioGraph(NodeGraph):
         self.property_changed.connect(self._on_property_changed)  # type: ignore[attr-defined]
 
         # Optional bridge used by UI widgets to control local service processes.
-        self._service_bridge: Any | None = None
+        self._service_bridge: ServiceBridge | None = None
         # Debounced reclaim timers for removed service instances (serviceId -> QTimer).
         self._reclaim_timers: dict[str, QtCore.QTimer] = {}
 
@@ -74,14 +75,16 @@ class F8StudioGraph(NodeGraph):
         self.nodes_deleted.connect(self._on_nodes_deleted)  # type: ignore[attr-defined]
 
         # Continuous move events during dragging.
-        if hasattr(self._viewer, "moving_nodes"):
+        try:
             self._viewer.moving_nodes.connect(self._on_nodes_moving)  # type: ignore[attr-defined]
+        except Exception:
+            pass
 
-    def set_service_bridge(self, bridge: Any | None) -> None:
+    def set_service_bridge(self, bridge: ServiceBridge | None) -> None:
         self._service_bridge = bridge
 
     @property
-    def service_bridge(self) -> Any | None:
+    def service_bridge(self) -> ServiceBridge | None:
         return self._service_bridge
 
     @staticmethod
@@ -146,7 +149,7 @@ class F8StudioGraph(NodeGraph):
 
             # Apply UI overrides (eg. showOnNode) so we can strip connections
             # referencing ports that will not be created.
-            state_fields = list(getattr(spec, "stateFields", None) or [])
+            state_fields = list(spec.stateFields or [])
             ui = node_data.get("f8_ui")
             state_ui = None
             if isinstance(ui, dict):
@@ -155,7 +158,7 @@ class F8StudioGraph(NodeGraph):
                 allowed_keys = {"showOnNode", "uiControl", "uiLanguage", "label", "description"}
                 patched = []
                 for f in state_fields:
-                    name = str(getattr(f, "name", "") or "").strip()
+                    name = str(f.name or "").strip()
                     ov = state_ui.get(name) if name else None
                     if not isinstance(ov, dict) or not ov:
                         patched.append(f)
@@ -168,25 +171,26 @@ class F8StudioGraph(NodeGraph):
                 state_fields = patched
 
             ports: set[str] = set()
-            for p in list(getattr(spec, "execInPorts", None) or []):
-                ports.add(f"[E]{p}")
-            for p in list(getattr(spec, "execOutPorts", None) or []):
-                ports.add(f"{p}[E]")
-            for p in list(getattr(spec, "dataInPorts", None) or []):
+            if isinstance(spec, F8OperatorSpec):
+                for p in list(spec.execInPorts or []):
+                    ports.add(f"[E]{p}")
+                for p in list(spec.execOutPorts or []):
+                    ports.add(f"{p}[E]")
+            for p in list(spec.dataInPorts or []):
                 try:
                     ports.add(f"[D]{p.name}")
                 except Exception:
                     continue
-            for p in list(getattr(spec, "dataOutPorts", None) or []):
+            for p in list(spec.dataOutPorts or []):
                 try:
                     ports.add(f"{p.name}[D]")
                 except Exception:
                     continue
             for s in state_fields:
                 try:
-                    if not getattr(s, "showOnNode", False):
+                    if not bool(s.showOnNode):
                         continue
-                    name = str(getattr(s, "name", "") or "").strip()
+                    name = str(s.name or "").strip()
                     if not name:
                         continue
                     ports.add(f"[S]{name}")
@@ -256,12 +260,10 @@ class F8StudioGraph(NodeGraph):
             if v is None:
                 return None
             try:
-                vv = getattr(v, "value", None)
-                if vv is not None:
-                    return str(vv)
-            except Exception:
-                pass
-            try:
+                import enum
+
+                if isinstance(v, enum.Enum):
+                    return str(v.value)
                 return str(v)
             except Exception:
                 return None
@@ -280,7 +282,10 @@ class F8StudioGraph(NodeGraph):
             if node_cls is None:
                 continue
 
-            template_spec = _coerce_spec(getattr(node_cls, "SPEC_TEMPLATE", None))
+            try:
+                template_spec = _coerce_spec(node_cls.SPEC_TEMPLATE)  # type: ignore[attr-defined]
+            except Exception:
+                template_spec = None
             session_spec_raw = node_data.get("f8_spec")
             if not isinstance(session_spec_raw, dict) or template_spec is None:
                 continue
@@ -513,7 +518,7 @@ class F8StudioGraph(NodeGraph):
         # Seed identity state into UI properties early (these are runtime-owned readonly
         # fields; the runtime compiler skips ro values so they won't be deployed).
         try:
-            spec = getattr(node, "spec", None)
+            spec = node.spec  # type: ignore[attr-defined]
         except Exception:
             spec = None
         try:
@@ -695,11 +700,11 @@ class F8StudioGraph(NodeGraph):
         for n in list(nodes or []):
             try:
                 # Reclaim applies to *service instance nodes* (containers + standalone services).
-                spec = getattr(n, "spec", None)
+                spec = n.spec
                 if not isinstance(spec, F8ServiceSpec):
                     continue
-                sid = str(getattr(n, "id", "") or "").strip()
-                svc_class = str(getattr(spec, "serviceClass", "") or "")
+                sid = str(n.id or "").strip()
+                svc_class = str(spec.serviceClass or "")
                 if sid and sid != STUDIO_SERVICE_ID and svc_class != _CANVAS_SERVICE_CLASS_:
                     service_ids.add(sid)
             except Exception:
@@ -713,7 +718,7 @@ class F8StudioGraph(NodeGraph):
             node = nodes[0]
             node_id = ""
             try:
-                node_id = str(getattr(node, "id", "") or "")
+                node_id = str(node.id or "")
             except Exception:
                 node_id = ""
             r = super().delete_node(node, push_undo=push_undo)
@@ -737,11 +742,11 @@ class F8StudioGraph(NodeGraph):
         before: set[str] = set()
         for n in self.all_nodes():
             try:
-                spec = getattr(n, "spec", None)
+                spec = n.spec
                 if not isinstance(spec, F8ServiceSpec):
                     continue
-                sid = str(getattr(n, "id", "") or "").strip()
-                svc_class = str(getattr(spec, "serviceClass", "") or "")
+                sid = str(n.id or "").strip()
+                svc_class = str(spec.serviceClass or "")
                 if sid and sid != STUDIO_SERVICE_ID and svc_class != _CANVAS_SERVICE_CLASS_:
                     before.add(sid)
             except Exception:
@@ -760,7 +765,7 @@ class F8StudioGraph(NodeGraph):
         try:
             n = self.get_node_by_id(sid)
             # Any service instance node with this id keeps the service alive.
-            if n is not None and isinstance(getattr(n, "spec", None), F8ServiceSpec):
+            if n is not None and isinstance(n.spec, F8ServiceSpec):
                 return True
         except Exception:
             pass
@@ -769,7 +774,7 @@ class F8StudioGraph(NodeGraph):
             if not self._is_operator_node(n):
                 continue
             try:
-                if str(getattr(n, "svcId", "") or "") == sid:
+                if str(n.svcId or "") == sid:
                     return True
             except Exception:
                 continue
@@ -819,7 +824,10 @@ class F8StudioGraph(NodeGraph):
 
     @staticmethod
     def _is_operator_node(node: Any) -> bool:
-        return hasattr(node, "spec") and isinstance(node.spec, F8OperatorSpec)  # type: ignore[attr-defined]
+        try:
+            return isinstance(node.spec, F8OperatorSpec)
+        except Exception:
+            return False
 
     @staticmethod
     def _is_container_node(node: Any) -> bool:

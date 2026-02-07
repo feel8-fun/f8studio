@@ -15,8 +15,16 @@ class F8StudioNodesPaletteWidget(NodesPaletteWidget):
         Hide nodes from the palette while keeping them registered.
         """
         try:
-            spec = getattr(node_cls, "SPEC_TEMPLATE", None)
-            tags = getattr(spec, "tags", None) if spec is not None else None
+            try:
+                spec = node_cls.SPEC_TEMPLATE
+            except Exception:
+                spec = None
+            if spec is None:
+                return False
+            try:
+                tags = spec.tags
+            except Exception:
+                tags = None
             if isinstance(tags, (list, tuple, set)):
                 if any(str(t).strip().lower() == "__hidden__" for t in tags):
                     return True

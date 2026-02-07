@@ -36,6 +36,19 @@ def _raw_port_name(name: str) -> str:
             n = n[: -len(suffix)]
     return n.strip()
 
+def _port_name(port: Any) -> str:
+    """
+    NodeGraphQt `Port` typically exposes `name()` (method).
+    """
+    try:
+        return str(port.name() or "")
+    except Exception:
+        pass
+    try:
+        return str(port.name or "")
+    except Exception:
+        return ""
+
 
 def export_runtime_graph(
     node_graph: Any,
@@ -68,20 +81,17 @@ def export_runtime_graph(
 
     id_map: dict[Any, str] = {}
     for n in all_nodes:
-        spec = getattr(n, "spec", None)
-        if spec is None:
+        try:
+            spec = n.spec
+        except Exception:
             continue
         try:
-            node_id = ensure_token(str(getattr(n, "id", "") or uuid.uuid4().hex).replace(".", "_"), label="nodeId")
+            node_id = ensure_token(str(n.id or uuid.uuid4().hex).replace(".", "_"), label="nodeId")
         except Exception:
             node_id = uuid.uuid4().hex
         id_map[n] = node_id
 
         sid = None
-        try:
-            sid = getattr(n, "serviceId", None)
-        except Exception:
-            sid = None
         if not sid:
             try:
                 sid = n.get_property("serviceId")
@@ -90,9 +100,8 @@ def export_runtime_graph(
         sid_s = str(sid or "").strip()
         node_service_ids[n] = sid_s or service_id
 
-        service_class = str(getattr(spec, "serviceClass", "") or "").strip()
-        operator_class = getattr(spec, "operatorClass", None)
-        operator_class = str(operator_class).strip() if operator_class is not None else None
+        service_class = str(spec.serviceClass or "").strip()
+        operator_class = str(spec.operatorClass).strip() if spec.operatorClass is not None else None
         is_service_node = operator_class is None
         node_is_service[n] = is_service_node
 
@@ -104,23 +113,20 @@ def export_runtime_graph(
                 node_id = node_service_ids[n] or uuid.uuid4().hex
             id_map[n] = node_id
 
-        exec_in = list(getattr(spec, "execInPorts", None) or [])
-        exec_out = list(getattr(spec, "execOutPorts", None) or [])
-        data_in = list(getattr(spec, "dataInPorts", None) or [])
-        data_out = list(getattr(spec, "dataOutPorts", None) or [])
-        state_fields = list(getattr(spec, "stateFields", None) or [])
+        exec_in = list(spec.execInPorts or [])
+        exec_out = list(spec.execOutPorts or [])
+        data_in = list(spec.dataInPorts or [])
+        data_out = list(spec.dataOutPorts or [])
+        state_fields = list(spec.stateFields or [])
 
         state_values: dict[str, Any] = {}
         for f in state_fields:
-            name = str(getattr(f, "name", "") or "").strip()
+            name = str(f.name or "").strip()
             if not name:
                 continue
             # Do not include read-only state values in the rungraph snapshot.
-            try:
-                if getattr(f, "access", None) == F8StateAccess.ro:
-                    continue
-            except Exception:
-                pass
+            if f.access == F8StateAccess.ro:
+                continue
             try:
                 state_values[name] = n.get_property(name)
             except Exception:
@@ -149,7 +155,7 @@ def export_runtime_graph(
             outs = []
         for out_port in outs:
             try:
-                out_name = str(getattr(out_port, "name", "") or "")
+                out_name = _port_name(out_port)
             except Exception:
                 out_name = ""
             kind = _port_kind(out_name)
@@ -171,7 +177,7 @@ def export_runtime_graph(
                 if not from_id or not to_id:
                     continue
                 try:
-                    in_name = str(getattr(in_port, "name", "") or "")
+                    in_name = _port_name(in_port)
                 except Exception:
                     in_name = ""
 

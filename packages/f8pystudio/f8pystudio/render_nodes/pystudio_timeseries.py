@@ -9,6 +9,7 @@ from NodeGraphQt.nodes.base_node import NodeBaseWidget
 from ..nodegraph.operator_basenode import F8StudioOperatorBaseNode
 from ..color_table import series_colors
 from ..nodegraph.viz_operator_nodeitem import F8StudioVizOperatorNodeItem
+from ..ui_bus import UiCommand
 
 import pyqtgraph as pg  # type: ignore[import-not-found]
 
@@ -234,65 +235,76 @@ class PyStudioTimeSeriesNode(F8StudioOperatorBaseNode):
             port.border_color = rgb
             port.view.setToolTip(str(name))
 
-    def apply_ui_command(self, cmd: Any) -> None:
-        try:
-            if str(getattr(cmd, "command", "")) != "timeseries.set":
-                return
-            payload = getattr(cmd, "payload", {}) or {}
-            window_ms = payload.get("windowMs")
-            now_ms = payload.get("nowMs")
-            show_legend = payload.get("showLegend")
-            min_val = payload.get("minVal")
-            max_val = payload.get("maxVal")
-            series = payload.get("series")
-            colors_raw = payload.get("colors")
-            if not (isinstance(series, dict) and series):
-                # Backwards compatibility (single series).
-                points = list(payload.get("points") or [])
-                series = {"value": points}
-            if isinstance(colors_raw, dict):
-                colors = {}
-                for k, v in colors_raw.items():
-                    if not isinstance(k, str):
-                        continue
-                    if isinstance(v, (list, tuple)) and len(v) >= 3:
-                        try:
-                            colors[k] = (int(v[0]), int(v[1]), int(v[2]))
-                        except Exception:
-                            continue
-            else:
-                # Derive colors from current spec order when runtime didn't provide them.
-                try:
-                    spec = getattr(self, "spec", None)
-                    ports = list(getattr(spec, "dataInPorts", None) or []) if spec is not None else []
-                    colors = series_colors([str(getattr(p, "name", "") or "") for p in ports])
-                except Exception:
-                    colors = {}
-        except Exception:
+    def apply_ui_command(self, cmd: UiCommand) -> None:
+        if str(cmd.command) != "timeseries.set":
             return
         try:
+            payload = dict(cmd.payload or {})
+        except Exception:
+            return
+
+        window_ms = payload.get("windowMs")
+        now_ms = payload.get("nowMs")
+        show_legend = payload.get("showLegend")
+        min_val = payload.get("minVal")
+        max_val = payload.get("maxVal")
+        series = payload.get("series")
+        colors_raw = payload.get("colors")
+
+        if not (isinstance(series, dict) and series):
+            # Backwards compatibility (single series).
+            points = list(payload.get("points") or [])
+            series = {"value": points}
+
+        colors: dict[str, tuple[int, int, int]] = {}
+        if isinstance(colors_raw, dict):
+            for k, v in colors_raw.items():
+                if not isinstance(k, str):
+                    continue
+                if isinstance(v, (list, tuple)) and len(v) >= 3:
+                    try:
+                        colors[k] = (int(v[0]), int(v[1]), int(v[2]))
+                    except Exception:
+                        continue
+        else:
+            # Derive colors from current spec order when runtime didn't provide them.
+            try:
+                ports = list(self.spec.dataInPorts or [])
+            except Exception:
+                ports = []
+            try:
+                colors = series_colors([str(p.name) for p in ports])
+            except Exception:
+                colors = {}
+
+        y_min: float | None = None
+        y_max: float | None = None
+        try:
+            if min_val is not None:
+                y_min = float(min_val)
+        except Exception:
+            y_min = None
+        try:
+            if max_val is not None:
+                y_max = float(max_val)
+        except Exception:
+            y_max = None
+
+        try:
             w = self.get_widget("__timeseries")
-            if w and hasattr(w, "set_series_map"):
-                y_min = None
-                y_max = None
-                try:
-                    if min_val is not None:
-                        y_min = float(min_val)
-                except Exception:
-                    y_min = None
-                try:
-                    if max_val is not None:
-                        y_max = float(max_val)
-                except Exception:
-                    y_max = None
-                w.set_series_map(
-                    series,
-                    colors=colors,
-                    window_ms=window_ms,
-                    now_ms=now_ms,
-                    show_legend=bool(show_legend) if show_legend is not None else None,
-                    y_min=y_min,
-                    y_max=y_max,
-                )
+        except Exception:
+            return
+        if not w:
+            return
+        try:
+            w.set_series_map(
+                series,
+                colors=colors,
+                window_ms=window_ms,
+                now_ms=now_ms,
+                show_legend=bool(show_legend) if show_legend is not None else None,
+                y_min=y_min,
+                y_max=y_max,
+            )
         except Exception:
             return

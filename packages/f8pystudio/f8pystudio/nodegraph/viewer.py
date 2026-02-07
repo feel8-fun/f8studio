@@ -18,6 +18,13 @@ class F8StudioNodeViewer(NodeViewer):
         super().__init__(parent=parent, undo_stack=undo_stack)
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
         self._f8_graph: Any | None = None
+        self.MMB_state = False
+        self._origin_pos = None
+        self._previous_pos = None
+
+    @property
+    def f8_graph(self) -> Any | None:
+        return self._f8_graph
 
         self._shortcut_search = QtWidgets.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Tab), self)
         self._shortcut_search.setContext(QtCore.Qt.WidgetShortcut)
@@ -59,7 +66,7 @@ class F8StudioNodeViewer(NodeViewer):
     def mouseMoveEvent(self, event):
         # Force MMB to pan only (no ALT+MMB zoom).
         try:
-            if getattr(self, "MMB_state", False):
+            if self.MMB_state and self._previous_pos is not None:
                 previous_pos = self.mapToScene(self._previous_pos)
                 current_pos = self.mapToScene(event.pos())
                 delta = previous_pos - current_pos

@@ -1,4 +1,5 @@
 from NodeGraphQt import NodeObject, BaseNode
+from typing import ClassVar
 
 # from .internal.base import F8BaseRenderNode
 
@@ -18,10 +19,12 @@ from .pystudio_template_tracker import PyStudioTemplateTrackerNode
 class RenderNodeRegistry:
     """Registry for renderer classes keyed by rendererClass."""
 
+    _instance: ClassVar["RenderNodeRegistry | None"] = None
+
     @staticmethod
     def instance() -> "RenderNodeRegistry":
         # Singleton instance accessor.
-        if not hasattr(RenderNodeRegistry, "_instance"):
+        if RenderNodeRegistry._instance is None:
             RenderNodeRegistry._instance = RenderNodeRegistry()
         return RenderNodeRegistry._instance
 

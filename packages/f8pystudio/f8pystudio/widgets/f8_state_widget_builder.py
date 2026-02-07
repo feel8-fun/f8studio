@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import enum
 from typing import Any, Callable
 
 from NodeGraphQt.custom_widgets.properties_bin.node_property_factory import NodePropertyWidgetFactory
@@ -17,51 +18,89 @@ from .f8_prop_value_widgets import F8DoubleSpinBoxPropWidget, F8IntSpinBoxPropWi
 
 
 def effective_state_fields(node: Any) -> list[Any]:
-    fn = getattr(node, "effective_state_fields", None)
-    return list(fn() or []) if callable(fn) else []
+    try:
+        return list(node.effective_state_fields() or [])
+    except Exception:
+        return []
 
 
 def state_field_schema(node: Any, prop_name: str) -> Any | None:
     fields = effective_state_fields(node)
     if not fields:
-        spec = getattr(node, "spec", None)
-        fields = list(getattr(spec, "stateFields", None) or [])
+        try:
+            spec = node.spec
+        except Exception:
+            spec = None
+        if spec is not None:
+            try:
+                fields = list(spec.stateFields or [])
+            except Exception:
+                fields = []
     for f in fields:
-        if str(getattr(f, "name", "") or "").strip() == str(prop_name or "").strip():
-            return getattr(f, "valueSchema", None)
+        try:
+            if str(f.name or "").strip() == str(prop_name or "").strip():
+                return f.valueSchema
+        except Exception:
+            continue
     return None
 
 
 def state_field_access(node: Any, prop_name: str) -> F8StateAccess | None:
     fields = effective_state_fields(node)
     if not fields:
-        spec = getattr(node, "spec", None)
-        fields = list(getattr(spec, "stateFields", None) or [])
+        try:
+            spec = node.spec
+        except Exception:
+            spec = None
+        if spec is not None:
+            try:
+                fields = list(spec.stateFields or [])
+            except Exception:
+                fields = []
     for f in fields:
-        if str(getattr(f, "name", "") or "").strip() == str(prop_name or "").strip():
-            a = getattr(f, "access", None)
-            return a if isinstance(a, F8StateAccess) else None
+        try:
+            if str(f.name or "").strip() == str(prop_name or "").strip():
+                a = f.access
+                return a if isinstance(a, F8StateAccess) else None
+        except Exception:
+            continue
     return None
 
 
 def state_field_ui_control(node: Any, prop_name: str) -> str:
     fields = effective_state_fields(node)
     if not fields:
-        spec = getattr(node, "spec", None)
-        fields = list(getattr(spec, "stateFields", None) or [])
+        try:
+            spec = node.spec
+        except Exception:
+            spec = None
+        if spec is not None:
+            try:
+                fields = list(spec.stateFields or [])
+            except Exception:
+                fields = []
     for f in fields:
-        if str(getattr(f, "name", "") or "").strip() == str(prop_name or "").strip():
-            return str(getattr(f, "uiControl", "") or "").strip().lower()
+        try:
+            if str(f.name or "").strip() == str(prop_name or "").strip():
+                return str(f.uiControl or "").strip().lower()
+        except Exception:
+            continue
     return ""
 
 
 def schema_type_any(schema: Any) -> str:
     try:
-        inner = getattr(schema, "root", schema)
-        t = getattr(inner, "type", None)
-        if hasattr(t, "value"):
+        try:
+            inner = schema.root
+        except Exception:
+            inner = schema
+        try:
+            t = inner.type
+        except Exception:
+            t = None
+        if isinstance(t, enum.Enum):
             return str(t.value)
-        return str(t)
+        return str(t or "")
     except Exception:
         return ""
 
@@ -69,11 +108,15 @@ def schema_type_any(schema: Any) -> str:
 def schema_enum_items(schema: Any) -> list[str]:
     if schema is None:
         return []
-    root = getattr(schema, "root", None)
-    enum = getattr(root, "enum", None)
-    if not enum:
+    try:
+        root = schema.root
+    except Exception:
         return []
-    return [str(x) for x in list(enum)]
+    try:
+        enum_items = list(root.enum or [])
+    except Exception:
+        return []
+    return [str(x) for x in enum_items]
 
 
 def schema_numeric_range(schema: Any) -> tuple[float | None, float | None]:
@@ -81,26 +124,59 @@ def schema_numeric_range(schema: Any) -> tuple[float | None, float | None]:
         return None, None
     mins: list[float] = []
     maxs: list[float] = []
+    try:
+        root = schema.root
+    except Exception:
+        root = None
 
-    def _pick(attr: str) -> Any:
-        v = getattr(schema, attr, None)
-        if v is not None:
-            return v
-        root = getattr(schema, "root", None)
-        return getattr(root, attr, None) if root is not None else None
-
-    for k in ("minimum", "exclusiveMinimum"):
+    def _maybe_add_min(v: Any) -> None:
+        if v is None:
+            return
         try:
-            v = _pick(k)
-            if v is not None:
-                mins.append(float(v))
+            mins.append(float(v))
         except Exception:
             pass
-    for k in ("maximum", "exclusiveMaximum"):
+
+    def _maybe_add_max(v: Any) -> None:
+        if v is None:
+            return
         try:
-            v = _pick(k)
-            if v is not None:
-                maxs.append(float(v))
+            maxs.append(float(v))
+        except Exception:
+            pass
+
+    try:
+        _maybe_add_min(schema.minimum)
+    except Exception:
+        pass
+    try:
+        _maybe_add_min(schema.exclusiveMinimum)
+    except Exception:
+        pass
+    try:
+        _maybe_add_max(schema.maximum)
+    except Exception:
+        pass
+    try:
+        _maybe_add_max(schema.exclusiveMaximum)
+    except Exception:
+        pass
+
+    if root is not None:
+        try:
+            _maybe_add_min(root.minimum)
+        except Exception:
+            pass
+        try:
+            _maybe_add_min(root.exclusiveMinimum)
+        except Exception:
+            pass
+        try:
+            _maybe_add_max(root.maximum)
+        except Exception:
+            pass
+        try:
+            _maybe_add_max(root.exclusiveMaximum)
         except Exception:
             pass
     lo = min(mins) if mins else None

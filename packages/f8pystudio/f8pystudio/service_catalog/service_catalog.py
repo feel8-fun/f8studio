@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 from pathlib import Path
+from typing import ClassVar
 
 from f8pysdk import F8OperatorSpec, F8ServiceSpec
 
@@ -23,10 +24,12 @@ class ServiceCatalog:
       but provides a single entry-point for callers that treat them as a bundle.
     """
 
+    _instance: ClassVar["ServiceCatalog | None"] = None
+
     @staticmethod
     def instance() -> "ServiceCatalog":
         # Singleton instance accessor.
-        if not hasattr(ServiceCatalog, "_instance"):
+        if ServiceCatalog._instance is None:
             ServiceCatalog._instance = ServiceCatalog()
         return ServiceCatalog._instance
 

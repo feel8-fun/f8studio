@@ -152,8 +152,8 @@ def _describe_entry(service_dir: Path, entry: F8ServiceEntry) -> dict[str, Any] 
 
     try:
         launch = entry.launch
-        describe_args = list(getattr(entry, "describeArgs", None) or ["--describe"])
-        timeout_ms = int(getattr(entry, "timeoutMs", 4000) or 4000)
+        describe_args = list(entry.describeArgs or ["--describe"])
+        timeout_ms = int(entry.timeoutMs or 4000)
     except Exception:
         return None
 
@@ -166,7 +166,7 @@ def _describe_entry(service_dir: Path, entry: F8ServiceEntry) -> dict[str, Any] 
 
     cwd = service_dir
     try:
-        wd = str(getattr(launch, "workdir", "./") or "./")
+        wd = str(launch.workdir or "./")
         wd_path = Path(wd).expanduser()
         if not wd_path.is_absolute():
             wd_path = (service_dir / wd_path).resolve()
@@ -276,7 +276,7 @@ def _describe_entry(service_dir: Path, entry: F8ServiceEntry) -> dict[str, Any] 
 
     # Optional stability check: if entry.serviceClass is provided, it must match describe output.
     try:
-        entry_service_class = str(getattr(entry, "serviceClass", "") or "").strip()
+        entry_service_class = str(entry.serviceClass or "").strip()
         described_service_class = str((data.get("service") or {}).get("serviceClass") or "").strip()
         if entry_service_class and described_service_class and entry_service_class != described_service_class:
             logger.error(

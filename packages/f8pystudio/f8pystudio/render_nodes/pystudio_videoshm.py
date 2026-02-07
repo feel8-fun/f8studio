@@ -10,6 +10,7 @@ from f8pysdk.shm import VideoShmReader
 
 from ..nodegraph.operator_basenode import F8StudioOperatorBaseNode
 from ..nodegraph.viz_operator_nodeitem import F8StudioVizOperatorNodeItem
+from ..ui_bus import UiCommand
 
 
 class _VideoShmPane(QtWidgets.QWidget):
@@ -164,16 +165,14 @@ class PyStudioVideoShmNode(F8StudioOperatorBaseNode):
         except Exception:
             pass
 
-    def apply_ui_command(self, cmd: Any) -> None:
-        try:
-            c = str(getattr(cmd, "command", "") or "")
-        except Exception:
-            return
+    def apply_ui_command(self, cmd: UiCommand) -> None:
+        c = str(cmd.command or "")
         if c == "videoshm.detach":
             try:
                 w = self.get_widget("__videoshm")
-                if w and hasattr(w, "detach"):
-                    w.detach()
+                if not w:
+                    return
+                w.detach()
             except Exception:
                 pass
             return
@@ -181,14 +180,15 @@ class PyStudioVideoShmNode(F8StudioOperatorBaseNode):
         if c != "videoshm.set":
             return
         try:
-            payload = getattr(cmd, "payload", {}) or {}
+            payload = dict(cmd.payload or {})
             shm_name = str(payload.get("shmName") or "").strip()
             throttle_ms = int(payload.get("throttleMs") or 33)
         except Exception:
             return
         try:
             w = self.get_widget("__videoshm")
-            if w and hasattr(w, "set_config"):
-                w.set_config(shm_name=shm_name, throttle_ms=throttle_ms)
+            if not w:
+                return
+            w.set_config(shm_name=shm_name, throttle_ms=throttle_ms)
         except Exception:
             return

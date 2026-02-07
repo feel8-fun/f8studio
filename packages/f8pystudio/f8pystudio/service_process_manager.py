@@ -31,6 +31,14 @@ class ServiceProcessManager:
         self._procs: dict[str, subprocess.Popen[Any]] = {}  # service_id -> process
         self._threads: dict[str, threading.Thread] = {}  # service_id -> reader thread
 
+    def service_ids(self) -> list[str]:
+        """
+        Return the service IDs currently tracked by this process manager.
+
+        Note: a tracked process may have already exited; `is_running(...)` is the source of truth.
+        """
+        return list(self._procs.keys())
+
     def _start_reader(self, *, service_id: str, proc: subprocess.Popen[Any], on_output: Any | None) -> None:
         if on_output is None:
             return
@@ -88,7 +96,10 @@ class ServiceProcessManager:
         p = self._procs.get(sid)
         if p is None:
             return True
-        pid = getattr(p, "pid", None)
+        try:
+            pid = p.pid
+        except Exception:
+            pid = None
 
         # Best-effort graceful terminate, then ensure the whole process tree is gone.
         try:
@@ -104,13 +115,17 @@ class ServiceProcessManager:
         # On Windows, `terminate()` only kills the parent process; explicitly kill the tree.
         if os.name == "nt" and pid:
             try:
+                creationflags = subprocess.CREATE_NO_WINDOW
+            except Exception:
+                creationflags = 0
+            try:
                 subprocess.run(
                     ["taskkill", "/PID", str(int(pid)), "/T", "/F"],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     timeout=2,
                     check=False,
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                    creationflags=creationflags,
                 )
             except Exception:
                 pass
@@ -198,7 +213,7 @@ class ServiceProcessManager:
         env.setdefault("PYTHONUNBUFFERED", "1")
         env.setdefault("PYTHONIOENCODING", "utf-8")
 
-        workdir = Path(getattr(launch, "workdir", "./") or "./").expanduser()
+        workdir = Path(str(launch.workdir or "./")).expanduser()
         if not workdir.is_absolute():
             workdir = (service_dir / workdir).resolve()
         else:
@@ -216,7 +231,11 @@ class ServiceProcessManager:
         self._procs[service_id] = p
         try:
             if on_output is not None:
-                on_output(service_id, f"[proc] started pid={getattr(p, 'pid', '?')} cmd={' '.join(cmd)}\n")
+                try:
+                    pid_txt = str(p.pid)
+                except Exception:
+                    pid_txt = "?"
+                on_output(service_id, f"[proc] started pid={pid_txt} cmd={' '.join(cmd)}\n")
         except Exception:
             pass
         self._start_reader(service_id=service_id, proc=p, on_output=on_output)

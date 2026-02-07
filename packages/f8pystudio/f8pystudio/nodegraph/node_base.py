@@ -27,7 +27,7 @@ class F8StudioBaseNode(BaseNode):
         self._last_ui_serial: str = ""
         self.set_model(F8StudioNodeModel())
 
-        template = getattr(self.__class__, "SPEC_TEMPLATE", None)
+        template = type(self).SPEC_TEMPLATE
         if template is None:
             raise RuntimeError(f"{self.__class__.__name__} must define `SPEC_TEMPLATE`.")
 
@@ -61,19 +61,13 @@ class F8StudioBaseNode(BaseNode):
         """
         super().update_model()
 
-        if not isinstance(getattr(self.model, "f8_sys", None), dict):
+        if not isinstance(self.model.f8_sys, dict):
             self.model.f8_sys = {}
-        if not isinstance(getattr(self.model, "f8_ui", None), dict):
+        if not isinstance(self.model.f8_ui, dict):
             self.model.f8_ui = {}
 
     def ui_overrides(self) -> dict[str, object]:
-        try:
-            v = getattr(self.model, "f8_ui", None)
-            if isinstance(v, dict):
-                return v
-        except Exception:
-            pass
-        return {}
+        return self.model.f8_ui if isinstance(self.model.f8_ui, dict) else {}
 
     def set_ui_overrides(self, value: dict[str, object] | None, *, rebuild: bool = True) -> None:
         self.model.set_property("f8_ui", value or {})
@@ -85,8 +79,8 @@ class F8StudioBaseNode(BaseNode):
         """
         Return state fields with UI overrides applied (showOnNode/uiControl/etc).
         """
-        spec = getattr(self, "spec", None)
-        fields = list(getattr(spec, "stateFields", None) or []) if spec is not None else []
+        spec = self.spec
+        fields = list(spec.stateFields or [])
         ui = self.ui_overrides()
         state_over = ui.get("stateFields") if isinstance(ui, dict) else None
         if not isinstance(state_over, dict) or not state_over or not fields:
@@ -95,7 +89,7 @@ class F8StudioBaseNode(BaseNode):
         allowed_keys = {"showOnNode", "uiControl", "uiLanguage", "label", "description"}
         out = []
         for f in fields:
-            name = str(getattr(f, "name", "") or "").strip()
+            name = str(f.name or "").strip()
             ov = state_over.get(name) if name else None
             if not isinstance(ov, dict) or not ov:
                 out.append(f)
@@ -115,8 +109,8 @@ class F8StudioBaseNode(BaseNode):
         Currently only supports overriding `showOnNode` when `editableCommands`
         is false (UI-only customization).
         """
-        spec = getattr(self, "spec", None)
-        cmds = list(getattr(spec, "commands", None) or []) if spec is not None else []
+        spec = self.spec
+        cmds = list(spec.commands or [])
         if not cmds:
             return cmds
         ui = self.ui_overrides()
@@ -127,7 +121,7 @@ class F8StudioBaseNode(BaseNode):
         allowed_keys = {"showOnNode"}
         out = []
         for c in cmds:
-            name = str(getattr(c, "name", "") or "").strip()
+            name = str(c.name or "").strip()
             ov = cmd_over.get(name) if name else None
             if not isinstance(ov, dict) or not ov:
                 out.append(c)
@@ -141,9 +135,7 @@ class F8StudioBaseNode(BaseNode):
 
     def _ui_serial(self) -> str:
         try:
-            ui = getattr(self.model, "f8_ui", None)
-            if not isinstance(ui, dict):
-                ui = {}
+            ui = self.model.f8_ui if isinstance(self.model.f8_ui, dict) else {}
             return json.dumps(ui, ensure_ascii=False, sort_keys=True, default=str)
         except Exception:
             return ""
@@ -165,7 +157,7 @@ class F8StudioBaseNode(BaseNode):
         """
         Runtime view of the persisted model spec (pydantic object).
         """
-        spec = getattr(self.model, "f8_spec", None)
+        spec = self.model.f8_spec
         if not isinstance(spec, (F8OperatorSpec, F8ServiceSpec)):
             raise RuntimeError(f"{self.__class__.__name__} model is missing `f8_spec`.")
         return spec
@@ -175,7 +167,7 @@ class F8StudioBaseNode(BaseNode):
         self.set_spec(value, rebuild=True)
 
     def update(self):
-        current = getattr(self.model, "f8_spec", None)
+        current = self.model.f8_spec
         has_spec = isinstance(current, (F8OperatorSpec, F8ServiceSpec))
         if has_spec and current is not self._last_spec_obj:
             self._last_spec_obj = current
@@ -187,7 +179,7 @@ class F8StudioBaseNode(BaseNode):
         if not has_spec:
             self._last_ui_serial = ui_serial
         else:
-            last_ui_serial = getattr(self, "_last_ui_serial", "")
+            last_ui_serial = self._last_ui_serial
             if ui_serial != last_ui_serial:
                 self._last_ui_serial = ui_serial
                 self.sync_from_spec()

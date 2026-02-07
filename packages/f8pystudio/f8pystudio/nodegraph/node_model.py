@@ -62,7 +62,7 @@ class F8StudioNodeModel(NodeModel):
         if isinstance(spec, (F8OperatorSpec, F8ServiceSpec)):
             node_dict["f8_spec"] = spec.model_dump(mode="json")
 
-        if isinstance(getattr(self, "f8_ui", None), dict) and self.f8_ui:
+        if isinstance(self.f8_ui, dict) and self.f8_ui:
             node_dict["f8_ui"] = self.f8_ui
 
         return {node_id: node_dict}

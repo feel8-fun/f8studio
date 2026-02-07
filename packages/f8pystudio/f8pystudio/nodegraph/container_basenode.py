@@ -14,6 +14,7 @@ from f8pysdk import F8ServiceSpec
 from f8pysdk.schema_helpers import schema_default, schema_type
 from .node_base import F8StudioBaseNode
 from .service_process_toolbar import ServiceProcessToolbar
+from .viewer import F8StudioNodeViewer
 
 
 class F8StudioContainerBaseNode(F8StudioBaseNode):
@@ -44,7 +45,7 @@ class F8StudioContainerBaseNode(F8StudioBaseNode):
 
     def _build_state_properties(self) -> None:
         for s in self.effective_state_fields() or []:
-            name = str(getattr(s, "name", "") or "").strip()
+            name = str(s.name or "").strip()
             if not name:
                 continue
             try:
@@ -56,8 +57,8 @@ class F8StudioContainerBaseNode(F8StudioBaseNode):
                 default_value = schema_default(s.valueSchema)
             except Exception:
                 default_value = None
-            widget_type, items, prop_range = self._state_widget_for_schema(getattr(s, "valueSchema", None))
-            tooltip = str(getattr(s, "description", "") or "").strip() or None
+            widget_type, items, prop_range = self._state_widget_for_schema(s.valueSchema)
+            tooltip = str(s.description or "").strip() or None
             try:
                 self.create_property(
                     name,
@@ -81,7 +82,8 @@ class F8StudioContainerBaseNode(F8StudioBaseNode):
             t = ""
 
         try:
-            enum_items = list(getattr(getattr(value_schema, "root", None), "enum", None) or [])
+            root = value_schema.root
+            enum_items = list(root.enum or [])
         except Exception:
             enum_items = []
         if enum_items:
@@ -149,38 +151,46 @@ class F8StudioContainerNodeItem(AbstractNodeItem):
     def _ensure_service_toolbar(self, viewer: Any | None) -> None:
         if self._svc_toolbar_proxy is not None:
             return
-        service_id = str(getattr(self, "id", "") or "").strip()
+        service_id = str(self.id or "").strip()
         if not service_id:
             return
 
         def _get_bridge() -> Any | None:
             try:
-                g = getattr(viewer, "_f8_graph", None)
-                return getattr(g, "service_bridge", None) if g is not None else None
+                if not isinstance(viewer, F8StudioNodeViewer):
+                    return None
+                g = viewer.f8_graph
+                return g.service_bridge if g is not None else None
             except Exception:
                 return None
 
         def _get_service_class() -> str:
             try:
-                g = getattr(viewer, "_f8_graph", None)
+                if not isinstance(viewer, F8StudioNodeViewer):
+                    return ""
+                g = viewer.f8_graph
                 if g is None:
                     return ""
                 n = g.get_node_by_id(service_id)
-                spec = getattr(n, "spec", None)
-                return str(getattr(spec, "serviceClass", "") or "")
+                spec = n.spec
+                return str(spec.serviceClass or "")
             except Exception:
                 return ""
 
         def _get_node() -> Any | None:
             try:
-                g = getattr(viewer, "_f8_graph", None)
+                if not isinstance(viewer, F8StudioNodeViewer):
+                    return None
+                g = viewer.f8_graph
                 return g.get_node_by_id(service_id) if g is not None else None
             except Exception:
                 return None
 
         def _get_compiled_graphs() -> Any | None:
             try:
-                g = getattr(viewer, "_f8_graph", None)
+                if not isinstance(viewer, F8StudioNodeViewer):
+                    return None
+                g = viewer.f8_graph
                 if g is None:
                     return None
                 from .runtime_compiler import compile_runtime_graphs_from_studio
@@ -206,7 +216,7 @@ class F8StudioContainerNodeItem(AbstractNodeItem):
             self._svc_toolbar_proxy = None
 
     def _position_service_toolbar(self) -> None:
-        proxy = getattr(self, "_svc_toolbar_proxy", None)
+        proxy = self._svc_toolbar_proxy
         if proxy is None:
             return
         try:

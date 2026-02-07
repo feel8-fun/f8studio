@@ -67,6 +67,36 @@ from ..command_ui_protocol import CommandUiHandler, CommandUiSource
 logger = logging.getLogger(__name__)
 
 
+def _model_extra(obj: Any) -> dict[str, Any]:
+    try:
+        extra = obj.model_extra
+    except Exception:
+        try:
+            extra = obj.__pydantic_extra__
+        except Exception:
+            return {}
+    if not isinstance(extra, dict):
+        return {}
+    return dict(extra)
+
+
+def _extra_bool(obj: Any, key: str, default: bool = False) -> bool:
+    try:
+        extra = _model_extra(obj)
+        if key in extra:
+            return bool(extra.get(key))
+    except Exception:
+        pass
+    return bool(default)
+
+
+def _get_node_spec(node: Any) -> Any | None:
+    try:
+        return node.spec
+    except Exception:
+        return None
+
+
 def _to_jsonable(value: Any) -> Any:
     """
     Best-effort conversion to JSON-serializable primitives (dict/list/str/num/bool/None).
@@ -78,22 +108,26 @@ def _to_jsonable(value: Any) -> Any:
     if isinstance(value, dict):
         return {str(k): _to_jsonable(v) for k, v in value.items()}
     # Enum-like: use `.value` if present.
-    if hasattr(value, "value") and not isinstance(value, (bytes, bytearray)):
+    if not isinstance(value, (bytes, bytearray)):
         try:
-            return _to_jsonable(getattr(value, "value"))
+            return _to_jsonable(value.value)
         except Exception:
             pass
     # Pydantic models (BaseModel / RootModel).
-    if hasattr(value, "model_dump"):
+    try:
+        dump = value.model_dump(mode="json")
+    except Exception:
         try:
-            return _to_jsonable(value.model_dump(mode="json"))
+            dump = value.model_dump()
         except Exception:
-            try:
-                return _to_jsonable(value.model_dump())
-            except Exception:
-                pass
+            dump = None
+    if dump is not None:
+        return _to_jsonable(dump)
     # RootModel inner `.root`.
-    root = getattr(value, "root", None)
+    try:
+        root = value.root
+    except Exception:
+        root = None
     if root is not None:
         return _to_jsonable(root)
     return str(value)
@@ -104,19 +138,19 @@ def _schema_to_json_obj(schema: Any) -> Any:
         return None
     if isinstance(schema, (dict, list, str, int, float, bool)) or schema is None:
         return schema
-    if hasattr(schema, "model_dump"):
-        try:
-            return schema.model_dump(mode="json")
-        except Exception:
-            pass
-    root = getattr(schema, "root", None)
+    try:
+        return schema.model_dump(mode="json")
+    except Exception:
+        pass
+    try:
+        root = schema.root
+    except Exception:
+        root = None
     if root is not None:
-        if hasattr(root, "model_dump"):
-            try:
-                return root.model_dump(mode="json")
-            except Exception:
-                pass
-        return root
+        try:
+            return root.model_dump(mode="json")
+        except Exception:
+            return root
     return str(schema)
 
 
@@ -565,13 +599,16 @@ class _F8EditDataPortDialog(QtWidgets.QDialog):
     def __init__(self, parent=None, *, title: str, port: F8DataPortSpec):
         super().__init__(parent)
         self.setWindowTitle(title)
-        self._schema = getattr(port, "valueSchema", None) or _schema_from_json_obj({"type": "any"})
+        try:
+            self._schema = port.valueSchema or _schema_from_json_obj({"type": "any"})
+        except Exception:
+            self._schema = _schema_from_json_obj({"type": "any"})
 
-        self._name = QtWidgets.QLineEdit(str(getattr(port, "name", "") or ""))
+        self._name = QtWidgets.QLineEdit(str(port.name or ""))
         self._name.setClearButtonEnabled(True)
         self._required = QtWidgets.QCheckBox()
-        self._required.setChecked(bool(getattr(port, "required", True)))
-        self._desc = QtWidgets.QPlainTextEdit(str(getattr(port, "description", "") or ""))
+        self._required.setChecked(bool(port.required))
+        self._desc = QtWidgets.QPlainTextEdit(str(port.description or ""))
 
         self._schema_summary = QtWidgets.QLabel("")
         self._schema_summary.setStyleSheet("color: #888;")
@@ -625,28 +662,34 @@ class _F8EditStateFieldDialog(QtWidgets.QDialog):
     def __init__(self, parent=None, *, title: str, field: F8StateSpec, ui_only: bool = False):
         super().__init__(parent)
         self.setWindowTitle(title)
-        self._schema = getattr(field, "valueSchema", None) or _schema_from_json_obj({"type": "any"})
+        try:
+            self._schema = field.valueSchema or _schema_from_json_obj({"type": "any"})
+        except Exception:
+            self._schema = _schema_from_json_obj({"type": "any"})
         self._ui_only = bool(ui_only)
 
-        self._name = QtWidgets.QLineEdit(str(getattr(field, "name", "") or ""))
+        self._name = QtWidgets.QLineEdit(str(field.name or ""))
         self._name.setClearButtonEnabled(True)
 
         self._access = QtWidgets.QComboBox()
         self._access.addItems([e.value for e in F8StateAccess])
-        self._access.setCurrentText(str(getattr(getattr(field, "access", None), "value", "rw") or "rw"))
+        try:
+            self._access.setCurrentText(str(field.access.value))
+        except Exception:
+            self._access.setCurrentText("rw")
 
         self._required = QtWidgets.QCheckBox()
-        self._required.setChecked(bool(getattr(field, "required", False)))
+        self._required.setChecked(bool(field.required))
 
         self._show_on_node = QtWidgets.QCheckBox()
-        self._show_on_node.setChecked(bool(getattr(field, "showOnNode", False)))
+        self._show_on_node.setChecked(bool(field.showOnNode))
 
-        self._label = QtWidgets.QLineEdit(str(getattr(field, "label", "") or ""))
+        self._label = QtWidgets.QLineEdit(str(field.label or ""))
         self._label.setClearButtonEnabled(True)
-        self._desc = QtWidgets.QPlainTextEdit(str(getattr(field, "description", "") or ""))
-        self._ui_control = QtWidgets.QLineEdit(str(getattr(field, "uiControl", "") or ""))
+        self._desc = QtWidgets.QPlainTextEdit(str(field.description or ""))
+        self._ui_control = QtWidgets.QLineEdit(str(field.uiControl or ""))
         self._ui_control.setClearButtonEnabled(True)
-        self._ui_lang = QtWidgets.QLineEdit(str(getattr(field, "uiLanguage", "") or ""))
+        self._ui_lang = QtWidgets.QLineEdit(str(field.uiLanguage or ""))
         self._ui_lang.setClearButtonEnabled(True)
 
         self._schema_summary = QtWidgets.QLabel("")
@@ -774,7 +817,10 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
         self._load_from_spec()
 
     def _load_from_spec(self) -> None:
-        spec = getattr(self._node, "spec", None)
+        try:
+            spec = self._node.spec
+        except Exception:
+            spec = None
         is_operator = isinstance(spec, F8OperatorSpec)
         self._sec_exec_in.setVisible(is_operator)
         self._sec_exec_out.setVisible(is_operator)
@@ -787,10 +833,26 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
         if spec is None:
             return
 
-        self._editable_data_in = bool(getattr(spec, "editableDataInPorts", False))
-        self._editable_data_out = bool(getattr(spec, "editableDataOutPorts", False))
-        self._editable_exec_in = bool(getattr(spec, "editableExecInPorts", False)) if is_operator else False
-        self._editable_exec_out = bool(getattr(spec, "editableExecOutPorts", False)) if is_operator else False
+        try:
+            self._editable_data_in = bool(spec.editableDataInPorts)  # type: ignore[attr-defined]
+        except Exception:
+            self._editable_data_in = _extra_bool(spec, "editableDataInPorts", False)
+        try:
+            self._editable_data_out = bool(spec.editableDataOutPorts)  # type: ignore[attr-defined]
+        except Exception:
+            self._editable_data_out = _extra_bool(spec, "editableDataOutPorts", False)
+        if is_operator:
+            try:
+                self._editable_exec_in = bool(spec.editableExecInPorts)  # type: ignore[attr-defined]
+            except Exception:
+                self._editable_exec_in = _extra_bool(spec, "editableExecInPorts", False)
+            try:
+                self._editable_exec_out = bool(spec.editableExecOutPorts)  # type: ignore[attr-defined]
+            except Exception:
+                self._editable_exec_out = _extra_bool(spec, "editableExecOutPorts", False)
+        else:
+            self._editable_exec_in = False
+            self._editable_exec_out = False
 
         self._sec_exec_in.set_add_visible(bool(self._editable_exec_in))
         self._sec_exec_out.set_add_visible(bool(self._editable_exec_out))
@@ -798,14 +860,14 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
         self._sec_data_out.set_add_visible(bool(self._editable_data_out))
 
         if is_operator:
-            for name in list(getattr(spec, "execInPorts", None) or []):
+            for name in list(spec.execInPorts or []):
                 self._sec_exec_in.add_row(self._make_exec_row(str(name), is_in=True))
-            for name in list(getattr(spec, "execOutPorts", None) or []):
+            for name in list(spec.execOutPorts or []):
                 self._sec_exec_out.add_row(self._make_exec_row(str(name), is_in=False))
 
-        for p in list(getattr(spec, "dataInPorts", None) or []):
+        for p in list(spec.dataInPorts or []):
             self._sec_data_in.add_row(self._make_data_row(p, is_in=True))
-        for p in list(getattr(spec, "dataOutPorts", None) or []):
+        for p in list(spec.dataOutPorts or []):
             self._sec_data_out.add_row(self._make_data_row(p, is_in=False))
 
     def _make_exec_row(self, name: str, *, is_in: bool) -> _F8SpecNameRow:
@@ -819,7 +881,7 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
         return row
 
     def _make_data_row(self, port: F8DataPortSpec, *, is_in: bool) -> _F8SpecNameRow:
-        row = _F8SpecNameRow(name=str(getattr(port, "name", "") or ""), placeholder="port name")
+        row = _F8SpecNameRow(name=str(port.name or ""), placeholder="port name")
         row.setProperty("_port", port)
         row.edit_clicked.connect(lambda: self._edit_data(row))
         row.delete_clicked.connect(lambda: self._delete_row(row))
@@ -831,9 +893,13 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
         return row
 
     def _data_tooltip(self, port: F8DataPortSpec) -> str:
-        req = bool(getattr(port, "required", True))
-        desc = str(getattr(port, "description", "") or "").strip()
-        t = _schema_type(getattr(port, "valueSchema", None))
+        req = bool(port.required)
+        desc = str(port.description or "").strip()
+        try:
+            vs = port.valueSchema
+        except Exception:
+            vs = None
+        t = _schema_type(vs)
         parts = [f"required={req}", f"type={t or 'unknown'}"]
         if desc:
             parts.append(desc)
@@ -863,7 +929,7 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
             return
         new_port = dlg.port()
         row.setProperty("_port", new_port)
-        row.name_edit.setText(str(getattr(new_port, "name", "") or ""))
+        row.name_edit.setText(str(new_port.name or ""))
         row.setToolTip(self._data_tooltip(new_port))
         self._commit()
 
@@ -913,7 +979,10 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
         self._edit_data(row)
 
     def _commit(self) -> None:
-        spec = getattr(self._node, "spec", None)
+        try:
+            spec = self._node.spec
+        except Exception:
+            spec = None
         if spec is None:
             return
 
@@ -921,11 +990,11 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
         exec_out: list[str] = []
         if isinstance(spec, F8OperatorSpec):
             for r in self._sec_exec_in.rows():
-                name = str(getattr(r, "name_edit").text() or "").strip()
+                name = str(r.name_edit.text() or "").strip()
                 if name:
                     exec_in.append(name)
             for r in self._sec_exec_out.rows():
-                name = str(getattr(r, "name_edit").text() or "").strip()
+                name = str(r.name_edit.text() or "").strip()
                 if name:
                     exec_out.append(name)
 
@@ -933,11 +1002,11 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
         data_out: list[F8DataPortSpec] = []
         for r in self._sec_data_in.rows():
             port = r.property("_port")
-            if isinstance(port, F8DataPortSpec) and str(getattr(port, "name", "") or "").strip():
+            if isinstance(port, F8DataPortSpec) and str(port.name or "").strip():
                 data_in.append(port)
         for r in self._sec_data_out.rows():
             port = r.property("_port")
-            if isinstance(port, F8DataPortSpec) and str(getattr(port, "name", "") or "").strip():
+            if isinstance(port, F8DataPortSpec) and str(port.name or "").strip():
                 data_out.append(port)
 
         spec2 = _spec_set_ports(spec, data_in=data_in, data_out=data_out, exec_in=exec_in, exec_out=exec_out)
@@ -953,19 +1022,22 @@ class _F8EditCommandParamDialog(QtWidgets.QDialog):
     def __init__(self, parent=None, *, title: str, param: F8CommandParam, ui_only: bool = False):
         super().__init__(parent)
         self.setWindowTitle(title)
-        self._schema = getattr(param, "valueSchema", None) or _schema_from_json_obj({"type": "any"})
+        try:
+            self._schema = param.valueSchema or _schema_from_json_obj({"type": "any"})
+        except Exception:
+            self._schema = _schema_from_json_obj({"type": "any"})
         self._ui_only = bool(ui_only)
 
-        self._name = QtWidgets.QLineEdit(str(getattr(param, "name", "") or ""))
+        self._name = QtWidgets.QLineEdit(str(param.name or ""))
         self._name.setClearButtonEnabled(True)
 
         self._required = QtWidgets.QCheckBox()
-        self._required.setChecked(bool(getattr(param, "required", False)))
+        self._required.setChecked(bool(param.required))
 
-        self._label = QtWidgets.QLineEdit(str(getattr(param, "label", "") or ""))
+        self._label = QtWidgets.QLineEdit(str(param.label or ""))
         self._label.setClearButtonEnabled(True)
-        self._desc = QtWidgets.QPlainTextEdit(str(getattr(param, "description", "") or ""))
-        self._ui_control = QtWidgets.QLineEdit(str(getattr(param, "uiControl", "") or ""))
+        self._desc = QtWidgets.QPlainTextEdit(str(param.description or ""))
+        self._ui_control = QtWidgets.QLineEdit(str(param.uiControl or ""))
         self._ui_control.setClearButtonEnabled(True)
 
         self._schema_summary = QtWidgets.QLabel("")
@@ -1032,13 +1104,13 @@ class _F8EditCommandDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle(title)
         self._ui_only = bool(ui_only)
-        self._params: list[F8CommandParam] = list(getattr(cmd, "params", None) or [])
+        self._params: list[F8CommandParam] = list(cmd.params or [])
 
-        self._name = QtWidgets.QLineEdit(str(getattr(cmd, "name", "") or ""))
+        self._name = QtWidgets.QLineEdit(str(cmd.name or ""))
         self._name.setClearButtonEnabled(True)
-        self._desc = QtWidgets.QPlainTextEdit(str(getattr(cmd, "description", "") or ""))
+        self._desc = QtWidgets.QPlainTextEdit(str(cmd.description or ""))
         self._show_on_node = QtWidgets.QCheckBox()
-        self._show_on_node.setChecked(bool(getattr(cmd, "showOnNode", False)))
+        self._show_on_node.setChecked(bool(cmd.showOnNode))
 
         form = QtWidgets.QFormLayout()
         form.addRow("Name", self._name)
@@ -1083,8 +1155,8 @@ class _F8EditCommandDialog(QtWidgets.QDialog):
     def _refresh_params_list(self) -> None:
         self._params_list.clear()
         for p in self._params:
-            name = str(getattr(p, "name", "") or "")
-            req = bool(getattr(p, "required", False))
+            name = str(p.name or "")
+            req = bool(p.required)
             item = QtWidgets.QListWidgetItem(f"{name}{' *' if req else ''}")
             item.setData(QtCore.Qt.UserRole, p)
             self._params_list.addItem(item)
@@ -1102,7 +1174,7 @@ class _F8EditCommandDialog(QtWidgets.QDialog):
         if dlg.exec_() != QtWidgets.QDialog.Accepted:
             return
         p = dlg.param()
-        if not str(getattr(p, "name", "") or "").strip():
+        if not str(p.name or "").strip():
             return
         self._params.append(p)
         self._refresh_params_list()
@@ -1239,11 +1311,20 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
         self._load()
 
     def _bridge(self) -> Any | None:
-        g = getattr(self._node, "graph", None)
-        return getattr(g, "service_bridge", None) if g is not None else None
+        try:
+            g = self._node.graph
+        except Exception:
+            return None
+        try:
+            return g.service_bridge
+        except Exception:
+            return None
 
     def _service_id(self) -> str:
-        return str(getattr(self._node, "id", "") or "").strip()
+        try:
+            return str(self._node.id or "").strip()
+        except Exception:
+            return ""
 
     def _ensure_bridge_process_hook(self) -> None:
         if self._bridge_proc_hooked:
@@ -1262,11 +1343,8 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
         sid = self._service_id()
         if bridge is None or not sid:
             return False
-        fn = getattr(bridge, "is_service_running", None)
-        if not callable(fn):
-            return False
         try:
-            return bool(fn(sid))
+            return bool(bridge.is_service_running(sid))
         except Exception:
             return False
 
@@ -1288,23 +1366,34 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
         self._ensure_bridge_process_hook()
         self._sec.clear()
         self._cmd_rows = {}
-        spec = getattr(self._node, "spec", None)
+        try:
+            spec = self._node.spec
+        except Exception:
+            spec = None
         if not isinstance(spec, F8ServiceSpec):
             self._sec.set_add_visible(False)
             return
-        editable = bool(getattr(spec, "editableCommands", False))
+        try:
+            editable = bool(spec.editableCommands)  # type: ignore[attr-defined]
+        except Exception:
+            editable = _extra_bool(spec, "editableCommands", False)
         self._sec.set_add_visible(bool(editable))
 
         running = self._is_service_running()
-        eff = getattr(self._node, "effective_commands", None)
-        cmds = list(eff() or []) if callable(eff) else list(getattr(spec, "commands", None) or [])
+        try:
+            cmds = list(self._node.effective_commands() or [])
+        except Exception:
+            cmds = list(spec.commands or [])
         for c in cmds:
-            name = str(getattr(c, "name", "") or "")
+            try:
+                name = str(c.name or "")
+            except Exception:
+                name = ""
             if not name:
                 continue
             row = _F8CommandRow(
                 name=name,
-                description=str(getattr(c, "description", "") or ""),
+                description=str(c.description or ""),
                 allow_edit=True,
                 allow_delete=editable,
             )
@@ -1319,11 +1408,11 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
             self._sec.add_row(row)
 
     def _prompt_command_args(self, cmd: F8Command) -> dict[str, Any] | None:
-        params = list(getattr(cmd, "params", None) or [])
+        params = list(cmd.params or [])
         if not params:
             return {}
         dlg = QtWidgets.QDialog(self)
-        dlg.setWindowTitle(str(getattr(cmd, "name", "") or "Command"))
+        dlg.setWindowTitle(str(cmd.name or "Command"))
         form = QtWidgets.QFormLayout()
         form.setContentsMargins(12, 12, 12, 12)
         form.setSpacing(8)
@@ -1332,22 +1421,25 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
         widgets: dict[str, QtWidgets.QWidget] = {}
 
         for p in params:
-            pname = str(getattr(p, "name", "") or "").strip()
+            pname = str(p.name or "").strip()
             if not pname:
                 continue
-            required = bool(getattr(p, "required", False))
-            ui = str(getattr(p, "uiControl", "") or "").strip().lower()
-            schema = getattr(p, "valueSchema", None)
+            required = bool(p.required)
+            ui = str(p.uiControl or "").strip().lower()
+            schema = p.valueSchema
             t = _schema_type(schema) if schema is not None else ""
             enum_items = _schema_enum_items(schema) if schema is not None else []
             lo, hi = _schema_numeric_range(schema) if schema is not None else (None, None)
             if isinstance(schema, F8DataTypeSchema):
                 default_value = schema_default(schema)
             else:
-                default_value = getattr(getattr(schema, "root", None), "default", None)
+                try:
+                    default_value = schema.root.default
+                except Exception:
+                    default_value = None
 
             label = f"{pname} *" if required else pname
-            tooltip = str(getattr(p, "description", "") or "").strip()
+            tooltip = str(p.description or "").strip()
 
             if enum_items or ui in {"select", "dropdown", "dropbox", "combo", "combobox"}:
                 combo = F8OptionCombo()
@@ -1405,10 +1497,10 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
             args: dict[str, Any] = {}
             missing: list[str] = []
             for p in params:
-                pname = str(getattr(p, "name", "") or "").strip()
+                pname = str(p.name or "").strip()
                 if not pname or pname not in editors:
                     continue
-                required = bool(getattr(p, "required", False))
+                required = bool(p.required)
                 v = editors[pname]()
                 if isinstance(v, str) and v.strip() == "":
                     v = None
@@ -1423,12 +1515,19 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
             return args
 
     def _invoke_command(self, name: str) -> None:
-        spec = getattr(self._node, "spec", None)
+        try:
+            spec = self._node.spec
+        except Exception:
+            spec = None
         if not isinstance(spec, F8ServiceSpec):
             return
         cmd = None
-        for c in list(getattr(spec, "commands", None) or []):
-            if str(getattr(c, "name", "") or "").strip() == str(name or "").strip():
+        for c in list(spec.commands or []):
+            try:
+                cname = str(c.name or "").strip()
+            except Exception:
+                continue
+            if cname == str(name or "").strip():
                 cmd = c
                 break
         if cmd is None:
@@ -1461,28 +1560,35 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
         if bridge is None or not sid:
             return
         args = {}
-        params = list(getattr(cmd, "params", None) or [])
+        params = list(cmd.params or [])
         if params:
             args = self._prompt_command_args(cmd)
             if args is None:
                 return
         try:
-            bridge.invoke_remote_command(sid, str(getattr(cmd, "name", "") or ""), args or {})
+            bridge.invoke_remote_command(sid, str(cmd.name or ""), args or {})
         except Exception as e:
             QtWidgets.QMessageBox.warning(self, "Command failed", str(e))
 
     def _add_command(self) -> None:
-        spec = getattr(self._node, "spec", None)
+        try:
+            spec = self._node.spec
+        except Exception:
+            spec = None
         if not isinstance(spec, F8ServiceSpec):
             return
-        if not bool(getattr(spec, "editableCommands", False)):
+        try:
+            editable = bool(spec.editableCommands)  # type: ignore[attr-defined]
+        except Exception:
+            editable = _extra_bool(spec, "editableCommands", False)
+        if not editable:
             return
         cmd = F8Command(name="", description=None, showOnNode=False, params=[])
         dlg = _F8EditCommandDialog(self, title="Add command", cmd=cmd, ui_only=False)
         if dlg.exec_() != QtWidgets.QDialog.Accepted:
             return
         new_cmd = dlg.command()
-        if not str(getattr(new_cmd, "name", "") or "").strip():
+        if not str(new_cmd.name or "").strip():
             return
         spec2 = _spec_add_command(spec, cmd=new_cmd)
         if spec2 is not spec:
@@ -1492,14 +1598,24 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
         self._load()
 
     def _edit_command(self, name: str) -> None:
-        spec = getattr(self._node, "spec", None)
+        try:
+            spec = self._node.spec
+        except Exception:
+            spec = None
         if not isinstance(spec, F8ServiceSpec):
             return
-        editable = bool(getattr(spec, "editableCommands", False))
-        cmds = list(getattr(spec, "commands", None) or [])
+        try:
+            editable = bool(spec.editableCommands)  # type: ignore[attr-defined]
+        except Exception:
+            editable = _extra_bool(spec, "editableCommands", False)
+        cmds = list(spec.commands or [])
         idx = -1
         for i, c in enumerate(cmds):
-            if str(getattr(c, "name", "") or "").strip() == str(name or "").strip():
+            try:
+                cname = str(c.name or "").strip()
+            except Exception:
+                continue
+            if cname == str(name or "").strip():
                 idx = i
                 break
         if idx < 0:
@@ -1508,12 +1624,16 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
         # Apply current UI override to dialog initial state (best-effort).
         init_cmd = cmds[idx]
         if not editable:
-            eff = getattr(self._node, "effective_commands", None)
-            if callable(eff):
-                for c in list(eff() or []):
-                    if str(getattr(c, "name", "") or "").strip() == str(name or "").strip():
-                        init_cmd = c
-                        break
+            try:
+                for c in list(self._node.effective_commands() or []):
+                    try:
+                        if str(c.name or "").strip() == str(name or "").strip():
+                            init_cmd = c
+                            break
+                    except Exception:
+                        continue
+            except Exception:
+                pass
         dlg = _F8EditCommandDialog(self, title="Edit command", cmd=init_cmd, ui_only=not editable)
         if dlg.exec_() != QtWidgets.QDialog.Accepted:
             return
@@ -1525,7 +1645,7 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
             if self._on_apply:
                 self._on_apply()
         else:
-            self._apply_command_ui_override(str(getattr(init_cmd, "name", "") or ""), bool(getattr(edited, "showOnNode", False)))
+            self._apply_command_ui_override(str(init_cmd.name or ""), bool(edited.showOnNode))
         self._load()
 
     def _apply_command_ui_override(self, name: str, show_on_node: bool) -> None:
@@ -1533,15 +1653,25 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
         if not n:
             return
         node = self._node
-        spec = getattr(node, "spec", None)
+        try:
+            spec = node.spec
+        except Exception:
+            spec = None
         base_show = _base_command_show_on_node(spec, name=n)
         _set_command_show_on_node_override(node, name=n, show_on_node=bool(show_on_node), base_show_on_node=bool(base_show))
 
     def _delete_command(self, name: str) -> None:
-        spec = getattr(self._node, "spec", None)
+        try:
+            spec = self._node.spec
+        except Exception:
+            spec = None
         if not isinstance(spec, F8ServiceSpec):
             return
-        if not bool(getattr(spec, "editableCommands", False)):
+        try:
+            editable = bool(spec.editableCommands)  # type: ignore[attr-defined]
+        except Exception:
+            editable = _extra_bool(spec, "editableCommands", False)
+        if not editable:
             return
         n = str(name or "").strip()
         if QtWidgets.QMessageBox.question(self, "Delete command", f"Delete '{n}'?") != QtWidgets.QMessageBox.Yes:
@@ -1662,22 +1792,36 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         node = self._node
         if node is None:
             return
-        spec = getattr(node, "spec", None)
+        spec = _get_node_spec(node)
         if spec is None:
             return
 
         # Find current effective field + base field.
-        eff_fields = _effective_state_fields(node) or list(getattr(spec, "stateFields", None) or [])
+        eff_fields = _effective_state_fields(node)
+        if not eff_fields:
+            try:
+                eff_fields = list(spec.stateFields or [])
+            except Exception:
+                eff_fields = []
         current = None
         for f in eff_fields:
-            if str(getattr(f, "name", "") or "").strip() == name:
-                current = f
-                break
+            try:
+                if str(f.name or "").strip() == name:
+                    current = f
+                    break
+            except Exception:
+                continue
         if current is None:
             return
 
-        editable = bool(getattr(spec, "editableStateFields", False))
-        required = bool(getattr(current, "required", False))
+        try:
+            editable = bool(spec.editableStateFields)  # type: ignore[attr-defined]
+        except Exception:
+            editable = _extra_bool(spec, "editableStateFields", False)
+        try:
+            required = bool(current.required)
+        except Exception:
+            required = False
         ui_only = (not editable) or required
 
         # If UI-only, we still want to allow editing UI fields (showOnNode/uiControl/etc).
@@ -1697,17 +1841,21 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         node = self._node
         if node is None:
             return
-        spec = getattr(node, "spec", None)
+        spec = _get_node_spec(node)
         if not isinstance(spec, (F8ServiceSpec, F8OperatorSpec)):
             return
-        if not bool(getattr(spec, "editableStateFields", False)):
+        try:
+            editable = bool(spec.editableStateFields)  # type: ignore[attr-defined]
+        except Exception:
+            editable = _extra_bool(spec, "editableStateFields", False)
+        if not editable:
             return
         field = F8StateSpec(name="", valueSchema=_schema_from_json_obj({"type": "any"}), access=F8StateAccess.rw)
         dlg = _F8EditStateFieldDialog(self, title="Add state field", field=field, ui_only=False)
         if dlg.exec_() != QtWidgets.QDialog.Accepted:
             return
         new_field = dlg.field()
-        if not str(getattr(new_field, "name", "") or "").strip():
+        if not str(new_field.name or "").strip():
             return
         self._apply_state_field_spec_add(new_field)
         self._refresh()
@@ -1719,16 +1867,28 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         node = self._node
         if node is None:
             return
-        spec = getattr(node, "spec", None)
+        spec = _get_node_spec(node)
         if not isinstance(spec, (F8ServiceSpec, F8OperatorSpec)):
             return
-        if not bool(getattr(spec, "editableStateFields", False)):
+        try:
+            editable = bool(spec.editableStateFields)  # type: ignore[attr-defined]
+        except Exception:
+            editable = _extra_bool(spec, "editableStateFields", False)
+        if not editable:
             return
         # required fields are protected
-        eff = _effective_state_fields(node) or list(getattr(spec, "stateFields", None) or [])
+        eff = _effective_state_fields(node)
+        if not eff:
+            try:
+                eff = list(spec.stateFields or [])
+            except Exception:
+                eff = []
         for f in eff:
-            if str(getattr(f, "name", "") or "").strip() == name and bool(getattr(f, "required", False)):
-                return
+            try:
+                if str(f.name or "").strip() == name and bool(f.required):
+                    return
+            except Exception:
+                continue
         if QtWidgets.QMessageBox.question(self, "Delete state field", f"Delete '{name}'?") != QtWidgets.QMessageBox.Yes:
             return
         self._apply_state_field_spec_delete(name)
@@ -1738,7 +1898,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         node = self._node
         if node is None:
             return
-        spec = getattr(node, "spec", None)
+        spec = _get_node_spec(node)
         if spec is None:
             return
         spec2 = _spec_replace_state_field(spec, old_name=old_name, new_field=new_field)
@@ -1750,7 +1910,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         node = self._node
         if node is None:
             return
-        spec = getattr(node, "spec", None)
+        spec = _get_node_spec(node)
         if spec is None:
             return
         spec2 = _spec_add_state_field(spec, field=new_field)
@@ -1762,7 +1922,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         node = self._node
         if node is None:
             return
-        spec = getattr(node, "spec", None)
+        spec = _get_node_spec(node)
         if spec is None:
             return
         spec2 = _spec_delete_state_field(spec, name=name)
@@ -1774,7 +1934,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         node = self._node
         if node is None:
             return
-        spec = getattr(node, "spec", None)
+        spec = _get_node_spec(node)
         base = _find_base_state_field(spec, name=name) if spec is not None else None
         _set_state_field_ui_override(node, field_name=name, base=base or edited, edited=edited)
 
@@ -1782,12 +1942,10 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         node = self._node
         if node is None:
             return
-        fn = getattr(node, "sync_from_spec", None)
-        if callable(fn):
-            try:
-                fn()
-            except Exception:
-                pass
+        try:
+            node.sync_from_spec()
+        except Exception:
+            return
 
     def _read_node(self, node):
         """
@@ -1826,15 +1984,29 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
             prop_window = self.__tab_windows[tab]
             if tab == "State" and isinstance(prop_window, _F8StateStackContainer):
                 # Build the State tab from stateFields so we can attach edit/delete/add UI.
-                spec = getattr(node, "spec", None)
-                editable_state = bool(getattr(spec, "editableStateFields", False)) if spec is not None else False
+                spec = _get_node_spec(node)
+                if spec is None:
+                    editable_state = False
+                else:
+                    try:
+                        editable_state = bool(spec.editableStateFields)  # type: ignore[attr-defined]
+                    except Exception:
+                        editable_state = _extra_bool(spec, "editableStateFields", False)
                 prop_window.set_add_visible(bool(editable_state))
                 # Map property values.
                 values = dict(model.custom_properties)
                 # Order by effective state fields (applies UI overrides).
-                eff_fields = _effective_state_fields(node) or (list(getattr(spec, "stateFields", None) or []) if spec is not None else [])
+                eff_fields = _effective_state_fields(node)
+                if not eff_fields and spec is not None:
+                    try:
+                        eff_fields = list(spec.stateFields or [])
+                    except Exception:
+                        eff_fields = []
                 for f in eff_fields:
-                    name = str(getattr(f, "name", "") or "").strip()
+                    try:
+                        name = str(f.name or "").strip()
+                    except Exception:
+                        name = ""
                     if not name:
                         continue
                     if name not in values:
@@ -1861,13 +2033,25 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                         except Exception:
                             pass
                     # Delete is only allowed when editableStateFields and not required.
-                    allow_delete = bool(editable_state and not bool(getattr(f, "required", False)))
+                    try:
+                        required = bool(f.required)
+                    except Exception:
+                        required = False
+                    allow_delete = bool(editable_state and not required)
+                    try:
+                        label_txt = str(f.label or "").strip()
+                    except Exception:
+                        label_txt = ""
+                    try:
+                        desc_txt = str(f.description or "").strip()
+                    except Exception:
+                        desc_txt = ""
                     prop_window.add_widget(
                         name=name,
                         widget=widget,
                         value=value,
-                        label=(str(getattr(f, "label", "") or "").strip() or name).replace("_", " "),
-                        tooltip=str(getattr(f, "description", "") or "").strip() or tooltip,
+                        label=(label_txt or name).replace("_", " "),
+                        tooltip=desc_txt or tooltip,
                         allow_delete=allow_delete,
                     )
                     widget.value_changed.connect(self._on_property_changed)
@@ -1890,10 +2074,10 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                         widget.set_items(common_props[prop_name]["items"])
                     if "range" in common_props[prop_name].keys():
                         prop_range = common_props[prop_name]["range"]
-                        if hasattr(widget, "set_min") and hasattr(widget, "set_max"):
+                        try:
                             widget.set_min(prop_range[0])
                             widget.set_max(prop_range[1])
-                        else:
+                        except Exception:
                             try:
                                 widget.setMinimum(prop_range[0])
                                 widget.setMaximum(prop_range[1])
@@ -1908,10 +2092,10 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
 
                 # Python script operator: replace `code` editor with a dialog-backed widget.
                 try:
-                    spec = getattr(node, "spec", None)
+                    spec = _get_node_spec(node)
                     if (
                         isinstance(spec, F8OperatorSpec)
-                        and str(getattr(spec, "operatorClass", "") or "") == "f8.python_script"
+                        and str(spec.operatorClass or "") == "f8.python_script"
                         and str(prop_name) == "code"
                     ):
                         widget = _F8CodePropWidget(title=f"{node.name()} — Code")
@@ -1925,9 +2109,12 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                 if isinstance(widget, (F8PropOptionCombo, F8PropBoolSwitch)):
                     desc = ""
                     for f in _effective_state_fields(node):
-                        if str(getattr(f, "name", "") or "").strip() == str(prop_name):
-                            desc = str(getattr(f, "description", "") or "").strip()
-                            break
+                        try:
+                            if str(f.name or "").strip() == str(prop_name):
+                                desc = str(f.description or "").strip()
+                                break
+                        except Exception:
+                            continue
                     if desc:
                         try:
                             widget.set_context_tooltip(desc)
@@ -1962,9 +2149,12 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
 
             widget.value_changed.connect(self._on_property_changed)
 
-        spec = getattr(node, "spec", None)
+        spec = _get_node_spec(node)
         if isinstance(spec, F8OperatorSpec):
-            svc_id = getattr(node, "svcId", "")  # type: ignore[attr-defined]
+            try:
+                svc_id = str(node.svcId or "")  # type: ignore[attr-defined]
+            except Exception:
+                svc_id = ""
             sys_widget = PropLabel()
             sys_widget.set_name("__sys_svcId")
             prop_window.add_widget(
@@ -1993,9 +2183,9 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
             if not prop_widgets:
                 # I prefer to hide the tab but in older version of pyside this
                 # attribute doesn't exist we'll just remove.
-                if hasattr(self.__tab, "setTabVisible"):
+                try:
                     self.__tab.setTabVisible(tab_index[tab_name], False)
-                else:
+                except Exception:
                     self.__tab.removeTab(tab_index[tab_name])
                 continue
             if current_idx is None:
@@ -2253,12 +2443,24 @@ def _is_json_state_value(node: Any, prop_name: str) -> bool:
     """
     True if the property is a state field whose schema is object/array/any.
     """
-    spec = getattr(node, "spec", None)
-    fields = list(getattr(spec, "stateFields", None) or [])
+    spec = _get_node_spec(node)
+    if spec is None:
+        return False
+    try:
+        fields = list(spec.stateFields or [])
+    except Exception:
+        fields = []
     for f in fields:
-        if str(getattr(f, "name", "") or "").strip() != prop_name:
+        try:
+            if str(f.name or "").strip() != prop_name:
+                continue
+        except Exception:
             continue
-        return _schema_type(getattr(f, "valueSchema", None)) in {"object", "array", "any"}
+        try:
+            vs = f.valueSchema
+        except Exception:
+            vs = None
+        return _schema_type(vs) in {"object", "array", "any"}
     return False
 
 

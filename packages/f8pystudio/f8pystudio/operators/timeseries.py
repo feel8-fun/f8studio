@@ -165,7 +165,7 @@ class PyStudioTimeSeriesRuntimeNode(RuntimeNode):
 
         any_points = any(bool(v) for v in (self._series or {}).values())
         if changed or any_points:
-            preferred = list(getattr(self, "data_in_ports", None) or [])
+            preferred = list(self.data_in_ports or [])
             keys = list(self._series.keys())
             ordered_keys = [k for k in preferred if k in self._series] + [k for k in keys if k not in set(preferred)]
             colors = series_colors(ordered_keys)

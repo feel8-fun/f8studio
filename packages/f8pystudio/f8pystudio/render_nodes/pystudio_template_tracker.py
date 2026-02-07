@@ -19,7 +19,13 @@ class PyStudioTemplateTrackerNode(F8StudioServiceBaseNode, CommandUiHandler):
         source: CommandUiSource,
     ) -> bool:
         del source
-        call = str(getattr(cmd, "name", "") or "").strip()
+        if isinstance(cmd, dict):
+            call = str(cmd.get("name") or "").strip()
+        else:
+            try:
+                call = str(cmd.name or "").strip()
+            except Exception:
+                call = ""
         if call != "captureFrame":
             return False
         self._open_template_capture_dialog(parent=parent)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import ClassVar
 
 from pydantic import ValidationError
 
@@ -10,10 +11,12 @@ from f8pysdk import F8ServiceSpec, F8ServiceSchemaVersion
 class ServiceSpecRegistry:
     """In-memory registry for validated F8ServiceSpec templates."""
 
+    _instance: ClassVar["ServiceSpecRegistry | None"] = None
+
     @staticmethod
     def instance() -> "ServiceSpecRegistry":
         # Singleton instance accessor.
-        if not hasattr(ServiceSpecRegistry, "_instance"):
+        if ServiceSpecRegistry._instance is None:
             ServiceSpecRegistry._instance = ServiceSpecRegistry()
         return ServiceSpecRegistry._instance
 

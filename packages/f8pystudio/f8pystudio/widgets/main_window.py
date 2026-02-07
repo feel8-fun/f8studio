@@ -13,7 +13,7 @@ from ..nodegraph.session import last_session_path
 from ..nodegraph.runtime_compiler import compile_runtime_graphs_from_studio
 from ..pystudio_service_bridge import PyStudioServiceBridge, PyStudioServiceBridgeConfig
 from ..pystudio_node_registry import SERVICE_CLASS as STUDIO_SERVICE_CLASS
-from ..ui_bus import UiCommandApplier
+from ..ui_bus import UiCommand, UiCommandApplier
 from .node_property_widgets import F8StudioPropertiesBinWidget
 from .palette_widget import F8StudioNodesPaletteWidget
 from .service_log_widget import ServiceLogDock
@@ -41,6 +41,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         self._setup_docks()
         self._setup_menu()
         self._setup_toolbar()
+        self._applying_runtime_state = False
 
         self._bridge = PyStudioServiceBridge(PyStudioServiceBridgeConfig(), parent=self)
         self._bridge.ui_command.connect(self._on_ui_command)  # type: ignore[attr-defined]
@@ -51,7 +52,6 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
             self.studio_graph.set_service_bridge(self._bridge)
         except Exception:
             pass
-        self._applying_runtime_state = False
         self.studio_graph.property_changed.connect(self._on_ui_property_changed)  # type: ignore[attr-defined]
 
         QtCore.QTimer.singleShot(0, self._auto_load_session)
@@ -192,7 +192,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
     def _deploy_run_monitor_action(self) -> None:
         # Deploy implies global active by default.
         try:
-            if hasattr(self, "_active_toggle") and not self._active_toggle.isChecked():
+            if not self._active_toggle.isChecked():
                 self._active_toggle.setChecked(True)
         except Exception:
             pass
@@ -216,10 +216,9 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
                     node.set_property(field, value, push_undo=False)
                     # If this node is currently shown in the Properties dock, also refresh the widget value.
                     try:
-                        prop_editor = getattr(self, "_prop_editor", None)
-                        editor = prop_editor.get_property_editor_widget(node) if prop_editor is not None else None
+                        editor = self._prop_editor.get_property_editor_widget(node)
                         w = editor.get_widget(field) if editor is not None else None
-                        if w is not None and hasattr(w, "set_value"):
+                        if w is not None:
                             try:
                                 w.blockSignals(True)
                             except Exception:
@@ -238,34 +237,22 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         except Exception:
             return
 
-    def _on_ui_command(self, cmd: Any) -> None:
-        try:
-            command = getattr(cmd, "command", None)
-        except Exception:
-            command = None
-            
-        if str(command) == "state.update":
-            try:
-                payload = getattr(cmd, "payload", None) or {}
-                field = str(payload.get("field") or "")
-                value = payload.get("value")
-                ts_ms = getattr(cmd, "ts_ms", None)
-                service_id = str(payload.get("serviceId") or "")
-                node_id = str(getattr(cmd, "node_id", "") or "")
-            except Exception:
-                return
+    def _on_ui_command(self, cmd: UiCommand) -> None:
+        if str(cmd.command) == "state.update":
+            payload = dict(cmd.payload or {})
+            field = str(payload.get("field") or "")
+            value = payload.get("value")
+            service_id = str(payload.get("serviceId") or "")
+            node_id = str(cmd.node_id or "")
             if node_id and field:
-                self._on_runtime_state_updated(service_id, node_id, field, value, ts_ms)
+                self._on_runtime_state_updated(service_id, node_id, field, value, cmd.ts_ms)
             return
-        
-        try:
-            node_id = getattr(cmd, "node_id", None)
-        except Exception:
-            node_id = None
+
+        node_id = str(cmd.node_id or "").strip()
         if not node_id:
             return
         try:
-            node = self.studio_graph.get_node_by_id(str(node_id))
+            node = self.studio_graph.get_node_by_id(node_id)
         except Exception:
             node = None
         if node is None:
@@ -283,21 +270,21 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         if self._applying_runtime_state:
             return
         try:
-            spec = getattr(node, "spec", None)
+            spec = node.spec
         except Exception:
             spec = None
         if not isinstance(spec, (F8OperatorSpec, F8ServiceSpec)):
             return
-        service_class = str(getattr(spec, "serviceClass", "") or "")
+        service_class = str(spec.serviceClass or "")
         # Only state fields are propagated.
         try:
-            state_names = {str(getattr(s, "name", "")) for s in (spec.stateFields or [])}
+            state_names = {str(s.name or "") for s in (spec.stateFields or [])}
         except Exception:
             state_names = set()
         if str(name) not in state_names:
             return
         try:
-            node_id = str(getattr(node, "id", "") or "")
+            node_id = str(node.id or "")
         except Exception:
             node_id = ""
         if not node_id:
@@ -312,7 +299,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
             service_id = node_id
         else:
             try:
-                service_id = str(getattr(node, "svcId", "") or "")
+                service_id = str(node.svcId or "")
             except Exception:
                 service_id = ""
         if not service_id:

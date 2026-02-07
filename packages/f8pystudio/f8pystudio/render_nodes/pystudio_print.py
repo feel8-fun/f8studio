@@ -8,6 +8,7 @@ from NodeGraphQt.nodes.base_node import NodeBaseWidget
 
 from ..nodegraph.operator_basenode import F8StudioOperatorBaseNode
 from ..nodegraph.viz_operator_nodeitem import F8StudioVizOperatorNodeItem
+from ..ui_bus import UiCommand
 
 
 class _JsonHighlighter(QtGui.QSyntaxHighlighter):
@@ -282,7 +283,7 @@ class _PrintPreviewWidget(NodeBaseWidget):
             self._block = False
 
     def on_value_changed(self, *args, **kwargs):
-        if getattr(self, "_block", False):
+        if self._block:
             return
         return super().on_value_changed(*args, **kwargs)
 
@@ -311,17 +312,18 @@ class PyStudioPrintNode(F8StudioOperatorBaseNode):
             txt = str(value)
         try:
             w = self.get_widget("__print_preview")
-            if w and hasattr(w, "set_preview_text"):
-                w.set_preview_text(txt)
+            if not w:
+                return
+            w.set_preview_text(txt)
         except Exception:
             return
 
-    def apply_ui_command(self, cmd: Any) -> None:
+    def apply_ui_command(self, cmd: UiCommand) -> None:
+        if str(cmd.command) != "preview.update":
+            return
         try:
-            if str(getattr(cmd, "command", "")) != "preview.update":
-                return
-            payload = getattr(cmd, "payload", {}) or {}
-            value = payload.get("value")
+            payload = dict(cmd.payload or {})
         except Exception:
             return
+        value = payload.get("value")
         self.set_preview(value)

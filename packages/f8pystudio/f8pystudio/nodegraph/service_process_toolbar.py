@@ -8,6 +8,8 @@ from ..constants import STUDIO_SERVICE_ID
 
 import qtawesome as qta
 
+from .service_bridge_protocol import ServiceBridge
+
 
 class ServiceProcessToolbar(QtWidgets.QWidget):
     """
@@ -21,7 +23,7 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
         parent=None,
         *,
         service_id: str,
-        get_bridge: Callable[[], Any | None],
+        get_bridge: Callable[[], ServiceBridge | None],
         get_node: Callable[[], Any | None] | None = None,
         get_service_class: Callable[[], str] | None = None,
         get_compiled_graphs: Callable[[], Any | None] | None = None,
@@ -122,9 +124,10 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
 
         self.refresh()
 
-    def _bridge(self) -> Any | None:
+    def _bridge(self) -> ServiceBridge | None:
         try:
-            return self._get_bridge()
+            b = self._get_bridge()
+            return b if b is not None else None
         except Exception:
             return None
 
@@ -155,25 +158,18 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
         n = self._node()
         if n is not None:
             try:
-                # NodeGraphQt BaseNode exposes `disabled()` (method), not a bool attribute.
-                dis = getattr(n, "disabled", None)
-                if callable(dis):
-                    return bool(dis())
-                if dis is not None:
-                    return bool(dis)
+                return bool(n.disabled())
             except Exception:
                 pass
             try:
-                v = getattr(n, "view", None)
-                if v is not None and hasattr(v, "disabled"):
-                    return bool(getattr(v, "disabled"))
+                return bool(n.view.disabled)
             except Exception:
                 pass
         # Fallback: use the view item directly.
         item = self._node_item()
         if item is not None:
             try:
-                return bool(getattr(item, "disabled"))
+                return bool(item.disabled)
             except Exception:
                 pass
         return False
@@ -182,17 +178,13 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
         n = self._node()
         if n is not None:
             try:
-                fn = getattr(n, "set_disabled", None)
-                if callable(fn):
-                    fn(bool(disabled))
-                    return
+                n.set_disabled(bool(disabled))
+                return
             except Exception:
                 pass
             # Prefer setting backend node state (persists in session); also try the view.
             try:
-                v = getattr(n, "view", None)
-                if v is not None and hasattr(v, "disabled"):
-                    setattr(v, "disabled", bool(disabled))
+                n.view.disabled = bool(disabled)
             except Exception:
                 pass
         # Fallback: disable the view item directly (local-only).
@@ -200,7 +192,7 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
         if item is None:
             return
         try:
-            setattr(item, "disabled", bool(disabled))
+            item.disabled = bool(disabled)
         except Exception:
             return
 

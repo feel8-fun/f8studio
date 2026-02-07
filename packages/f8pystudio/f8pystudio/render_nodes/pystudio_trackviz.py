@@ -8,6 +8,7 @@ from NodeGraphQt.nodes.base_node import NodeBaseWidget
 
 from ..nodegraph.operator_basenode import F8StudioOperatorBaseNode
 from ..nodegraph.viz_operator_nodeitem import F8StudioVizOperatorNodeItem
+from ..ui_bus import UiCommand
 
 import pyqtgraph as pg  # type: ignore[import-not-found]
 
@@ -355,7 +356,7 @@ class _TrackVizWidget(NodeBaseWidget):
             self._block = False
 
     def on_value_changed(self, *args, **kwargs):
-        if getattr(self, "_block", False):
+        if self._block:
             return
         return super().on_value_changed(*args, **kwargs)
 
@@ -375,16 +376,17 @@ class PyStudioTrackVizNode(F8StudioOperatorBaseNode):
         except Exception:
             pass
 
-    def apply_ui_command(self, cmd: Any) -> None:
+    def apply_ui_command(self, cmd: UiCommand) -> None:
+        if str(cmd.command) != "trackviz.set":
+            return
         try:
-            if str(getattr(cmd, "command", "")) != "trackviz.set":
-                return
-            payload = getattr(cmd, "payload", {}) or {}
+            payload = dict(cmd.payload or {})
         except Exception:
             return
         try:
             w = self.get_widget("__trackviz")
-            if w and hasattr(w, "set_scene"):
-                w.set_scene(dict(payload))
+            if not w:
+                return
+            w.set_scene(dict(payload))
         except Exception:
             return

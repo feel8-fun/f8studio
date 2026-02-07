@@ -51,42 +51,39 @@ def _port_name(port: Any) -> str:
     """
     NodeGraphQt `Port` exposes `name()` (method), not `.name` (attribute).
     """
-    name_attr = getattr(port, "name", None)
-    if callable(name_attr):
-        try:
-            return str(name_attr() or "")
-        except Exception:
-            return ""
-    return str(name_attr or "")
+    try:
+        return str(port.name() or "")
+    except Exception:
+        return ""
 
 
 def _node_name(node: Any) -> str:
     """
     NodeGraphQt `BaseNode` exposes `name()` (method), not `.name` (attribute).
     """
-    name_attr = getattr(node, "name", None)
-    if callable(name_attr):
-        try:
-            return str(name_attr() or "")
-        except Exception:
-            return ""
-    return str(name_attr or "")
+    try:
+        return str(node.name() or "")
+    except Exception:
+        return ""
 
 
 def _runtime_node_id(node: Any) -> str:
-    return ensure_token(str(getattr(node, "id")), label="node_id")
+    return ensure_token(str(node.id), label="node_id")
 
 
 def _runtime_service_id(node: Any) -> str:
-    spec = getattr(node, "spec", None)
+    try:
+        spec = node.spec
+    except Exception:
+        spec = None
     # Containers represent service instances themselves: their id is the serviceId.
     if isinstance(spec, F8ServiceSpec):
-        return ensure_token(str(getattr(node, "id")), label="service_id")
+        return ensure_token(str(node.id), label="service_id")
     # Studio operators belong to a fixed local service id.
-    if isinstance(spec, F8OperatorSpec) and str(getattr(spec, "serviceClass", "")) == STUDIO_SERVICE_CLASS:
+    if isinstance(spec, F8OperatorSpec) and str(spec.serviceClass or "") == STUDIO_SERVICE_CLASS:
         return STUDIO_SERVICE_ID
     # Operators are bound to a container: svcId points at the container id.
-    return ensure_token(str(getattr(node, "svcId")), label="service_id")
+    return ensure_token(str(node.svcId), label="service_id")
 
 
 @dataclass(frozen=True)
@@ -117,7 +114,10 @@ def compile_global_runtime_graph(
 
     def add_runtime_service(node: Any) -> None:
         service_id = _runtime_service_id(node)
-        spec = getattr(node, "spec", None)
+        try:
+            spec = node.spec
+        except Exception:
+            spec = None
         if not isinstance(spec, F8ServiceSpec):
             return
         meta: dict[str, Any] = {}
@@ -127,7 +127,7 @@ def compile_global_runtime_graph(
         runtime_services[service_id] = F8RuntimeService(
             serviceId=service_id,
             serviceClass=str(spec.serviceClass),
-            label=str(getattr(spec, "label", None) or "") or None,
+            label=str(spec.label or "") or None,
             meta=meta,
         )
 
@@ -139,8 +139,7 @@ def compile_global_runtime_graph(
     # If the canvas contains studio operators, ensure the studio service instance exists.
     try:
         has_studio_ops = any(
-            isinstance(getattr(n, "spec", None), F8OperatorSpec)
-            and str(getattr(getattr(n, "spec", None), "serviceClass", "")) == STUDIO_SERVICE_CLASS
+            isinstance(n.spec, F8OperatorSpec) and str(n.spec.serviceClass or "") == STUDIO_SERVICE_CLASS
             for n in operators
         )
     except Exception:
@@ -162,7 +161,10 @@ def compile_global_runtime_graph(
     svc_map: dict[Any, str] = {}
     kind_map: dict[Any, str] = {}
     for n in port_nodes:
-        spec = getattr(n, "spec", None)
+        try:
+            spec = n.spec
+        except Exception:
+            spec = None
         if isinstance(spec, F8OperatorSpec):
             kind_map[n] = "operator"
         elif isinstance(spec, F8ServiceSpec):
@@ -176,17 +178,14 @@ def compile_global_runtime_graph(
         svc_map[n] = service_id
 
         state_values: dict[str, Any] = {}
-        for f in list(getattr(spec, "stateFields", None) or []):
-            name = str(getattr(f, "name", "") or "").strip()
+        for f in list(spec.stateFields or []):
+            name = str(f.name or "").strip()
             if not name:
                 continue
             # Do not include read-only state values in the rungraph snapshot.
             # These are runtime-owned and may be updated internally (eg. telemetry).
-            try:
-                if getattr(f, "access", None) == F8StateAccess.ro:
-                    continue
-            except Exception:
-                pass
+            if f.access == F8StateAccess.ro:
+                continue
             try:
                 if name not in n.model.properties and name not in n.model.custom_properties:
                     continue
@@ -194,15 +193,12 @@ def compile_global_runtime_graph(
             except Exception:
                 continue
 
-        state_fields = list(getattr(spec, "stateFields", None) or [])
+        state_fields = list(spec.stateFields or [])
 
         # Built-in identity fields (readonly) for cross-process routing/commands.
         # - svcId: service instance id
         # - operatorId: operator/node id (operators only; service/container nodes omit it)
-        try:
-            existing = {str(getattr(sf, "name", "") or "") for sf in state_fields}
-        except Exception:
-            existing = set()
+        existing = {str(sf.name or "") for sf in state_fields}
         if "svcId" not in existing:
             state_fields.append(
                 F8StateSpec(
@@ -227,10 +223,7 @@ def compile_global_runtime_graph(
             )
         if isinstance(spec, F8ServiceSpec):
             # Runtime-level lifecycle state (service-scoped), persisted in KV by the runtime.
-            try:
-                has_active = any(str(getattr(sf, "name", "") or "") == "active" for sf in state_fields)
-            except Exception:
-                has_active = False
+            has_active = any(str(sf.name or "") == "active" for sf in state_fields)
             if not has_active:
                 state_fields.append(
                     F8StateSpec(
@@ -249,10 +242,10 @@ def compile_global_runtime_graph(
                 serviceId=service_id,
                 serviceClass=str(spec.serviceClass),
                 operatorClass=(str(spec.operatorClass) if isinstance(spec, F8OperatorSpec) else None),
-                execInPorts=[str(p) for p in list(getattr(spec, "execInPorts", None) or [])],
-                execOutPorts=[str(p) for p in list(getattr(spec, "execOutPorts", None) or [])],
-                dataInPorts=list(getattr(spec, "dataInPorts", None) or []),
-                dataOutPorts=list(getattr(spec, "dataOutPorts", None) or []),
+                execInPorts=([str(p) for p in list(spec.execInPorts or [])] if isinstance(spec, F8OperatorSpec) else []),
+                execOutPorts=([str(p) for p in list(spec.execOutPorts or [])] if isinstance(spec, F8OperatorSpec) else []),
+                dataInPorts=list(spec.dataInPorts or []),
+                dataOutPorts=list(spec.dataOutPorts or []),
                 stateFields=state_fields,
                 stateValues=state_values or None,
             )
@@ -354,36 +347,33 @@ def compile_runtime_graphs_from_studio(studio_graph: Any) -> CompiledRuntimeGrap
     """
     def _is_disabled(n: Any) -> bool:
         try:
-            if hasattr(n, "disabled"):
-                d = getattr(n, "disabled")
-                if callable(d):
-                    return bool(d())
-                return bool(d)
+            return bool(n.view.disabled)
         except Exception:
-            pass
-        try:
-            v = getattr(n, "view", None)
-            if v is not None and hasattr(v, "disabled"):
-                return bool(getattr(v, "disabled"))
-        except Exception:
-            pass
+            return False
         return False
 
     all_nodes = [n for n in list(studio_graph.all_nodes() or []) if not _is_disabled(n)]
-    if not hasattr(studio_graph, "_is_container_node") or not hasattr(studio_graph, "_is_operator_node"):
-        raise TypeError("studio_graph must be an F8StudioGraph (missing type predicates).")
+    try:
+        is_container_node = studio_graph._is_container_node
+        is_operator_node = studio_graph._is_operator_node
+    except Exception as exc:
+        raise TypeError("studio_graph must be an F8StudioGraph (missing type predicates).") from exc
 
-    services = [n for n in all_nodes if studio_graph._is_container_node(n)]  # type: ignore[attr-defined]
-    operators = [n for n in all_nodes if studio_graph._is_operator_node(n)]  # type: ignore[attr-defined]
+    services = [n for n in all_nodes if is_container_node(n)]
+    operators = [n for n in all_nodes if is_operator_node(n)]
 
     # Standalone single-node services (non-container F8ServiceSpec nodes).
-    service_nodes = [
-        n
-        for n in all_nodes
-        if hasattr(n, "spec")
-        and isinstance(getattr(n, "spec", None), F8ServiceSpec)
-        and not studio_graph._is_container_node(n)  # type: ignore[attr-defined]
-    ]
+    service_nodes: list[Any] = []
+    for n in all_nodes:
+        try:
+            spec = n.spec
+        except Exception:
+            continue
+        if not isinstance(spec, F8ServiceSpec):
+            continue
+        if is_container_node(n):
+            continue
+        service_nodes.append(n)
 
     global_graph = compile_global_runtime_graph(
         services=services,

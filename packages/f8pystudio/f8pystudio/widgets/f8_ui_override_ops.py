@@ -8,28 +8,31 @@ STATEFIELD_UI_KEYS: tuple[str, ...] = ("showOnNode", "uiControl", "uiLanguage", 
 
 
 def get_ui_overrides(node: Any) -> dict[str, Any]:
-    fn = getattr(node, "ui_overrides", None)
-    if callable(fn):
-        try:
-            return dict(fn() or {})
-        except Exception:
-            return {}
-    return {}
+    try:
+        return dict(node.ui_overrides() or {})
+    except Exception:
+        return {}
 
 
 def set_ui_overrides(node: Any, ui: dict[str, Any], *, rebuild: bool) -> None:
-    fn = getattr(node, "set_ui_overrides", None)
-    if callable(fn):
-        fn(ui, rebuild=bool(rebuild))
+    try:
+        node.set_ui_overrides(ui, rebuild=bool(rebuild))
+    except Exception:
+        return
 
 
 def _diff_state_ui(base: F8StateSpec, edited: F8StateSpec) -> dict[str, Any]:
     patch: dict[str, Any] = {}
-    for k in STATEFIELD_UI_KEYS:
-        bv = getattr(base, k, None)
-        ev = getattr(edited, k, None)
-        if ev != bv:
-            patch[k] = ev
+    if edited.showOnNode != base.showOnNode:
+        patch["showOnNode"] = edited.showOnNode
+    if edited.uiControl != base.uiControl:
+        patch["uiControl"] = edited.uiControl
+    if edited.uiLanguage != base.uiLanguage:
+        patch["uiLanguage"] = edited.uiLanguage
+    if edited.label != base.label:
+        patch["label"] = edited.label
+    if edited.description != base.description:
+        patch["description"] = edited.description
     return patch
 
 
@@ -93,16 +96,26 @@ def base_command_show_on_node(spec: Any, *, name: str) -> bool:
     if not isinstance(spec, F8ServiceSpec):
         return False
     n = str(name or "").strip()
-    for c in list(getattr(spec, "commands", None) or []):
-        if str(getattr(c, "name", "") or "").strip() == n:
-            return bool(getattr(c, "showOnNode", False))
+    for c in list(spec.commands or []):
+        try:
+            if str(c.name or "").strip() == n:
+                return bool(c.showOnNode)
+        except Exception:
+            continue
     return False
 
 
 def find_base_state_field(spec: Any, *, name: str) -> F8StateSpec | None:
     n = str(name or "").strip()
-    for f in list(getattr(spec, "stateFields", None) or []):
-        if str(getattr(f, "name", "") or "").strip() == n and isinstance(f, F8StateSpec):
-            return f
+    try:
+        fields = list(spec.stateFields or [])
+    except Exception:
+        fields = []
+    for f in fields:
+        try:
+            if str(f.name or "").strip() == n and isinstance(f, F8StateSpec):
+                return f
+        except Exception:
+            continue
     return None
 

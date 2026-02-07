@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import enum
 import logging
 import json
 from dataclasses import dataclass
@@ -33,10 +34,54 @@ from NodeGraphQt.qgraphics.port import CustomPortItem, PortItem
 
 from .port_painter import draw_exec_port, draw_square_port, EXEC_PORT_COLOR, DATA_PORT_COLOR, STATE_PORT_COLOR
 from .service_process_toolbar import ServiceProcessToolbar
+from .service_bridge_protocol import ServiceBridge
+from .viewer import F8StudioNodeViewer
 from ..widgets.f8_editor_widgets import F8ImageB64Editor, F8OptionCombo, F8Switch, F8ValueBar, parse_select_pool
 from ..command_ui_protocol import CommandUiHandler, CommandUiSource
 
 logger = logging.getLogger(__name__)
+
+
+def _port_name(port: Any) -> str:
+    """
+    NodeGraphQt Port exposes `name()` (method).
+    """
+    try:
+        return str(port.name() or "")
+    except Exception:
+        pass
+    try:
+        return str(port.name or "")
+    except Exception:
+        return ""
+
+
+def _model_extra(obj: Any) -> dict[str, Any]:
+    """
+    Best-effort access to pydantic v2 extra fields without RTTI (`getattr`).
+    """
+    try:
+        extra = obj.model_extra
+        return extra if isinstance(extra, dict) else {}
+    except Exception:
+        pass
+    try:
+        extra = obj.__pydantic_extra__
+        return extra if isinstance(extra, dict) else {}
+    except Exception:
+        return {}
+
+
+def _service_exec_ports(spec: F8ServiceSpec) -> tuple[list[str], list[str]]:
+    """
+    F8ServiceSpec doesn't declare exec ports, but it allows extra fields.
+    """
+    extra = _model_extra(spec)
+    in_raw = extra.get("execInPorts")
+    out_raw = extra.get("execOutPorts")
+    exec_in = [str(x) for x in list(in_raw or [])] if isinstance(in_raw, (list, tuple)) else []
+    exec_out = [str(x) for x in list(out_raw or [])] if isinstance(out_raw, (list, tuple)) else []
+    return exec_in, exec_out
 
 
 @dataclass(frozen=True)
@@ -54,49 +99,67 @@ class _StateFieldInfo:
 
 
 def _state_field_info(field: Any) -> _StateFieldInfo | None:
-    try:
-        f = field  # fast-path for typed objects.
-        name = str(f.name or "").strip()
-    except Exception:
-        name = str(getattr(field, "name", "") or "").strip()
+    if isinstance(field, dict):
+        name = str(field.get("name") or "").strip()
+    else:
+        try:
+            name = str(field.name or "").strip()
+        except Exception:
+            return None
     if not name:
         return None
 
-    try:
-        show_on_node = bool(field.showOnNode)
-    except Exception:
-        show_on_node = bool(getattr(field, "showOnNode", False))
+    if isinstance(field, dict):
+        show_on_node = bool(field.get("showOnNode") or False)
+    else:
+        try:
+            show_on_node = bool(field.showOnNode)
+        except Exception:
+            show_on_node = False
 
-    try:
-        label = str(field.label or "").strip() or name
-    except Exception:
-        label = str(getattr(field, "label", "") or "").strip() or name
-    try:
-        tooltip = str(field.description or "").strip() or name
-    except Exception:
-        tooltip = str(getattr(field, "description", "") or "").strip() or name
-    try:
-        ui_control = str(field.uiControl or "").strip().lower()
-    except Exception:
-        ui_control = str(getattr(field, "uiControl", "") or "").strip().lower()
-    try:
-        ui_language = str(field.uiLanguage or "")
-    except Exception:
-        ui_language = str(getattr(field, "uiLanguage", "") or "")
-    try:
-        value_schema = field.valueSchema
-    except Exception:
-        value_schema = getattr(field, "valueSchema", None)
-    try:
-        access = field.access
-    except Exception:
-        access = getattr(field, "access", None)
-    access_value = getattr(access, "value", access) if access is not None else ""
+    if isinstance(field, dict):
+        label = str(field.get("label") or "").strip() or name
+        tooltip = str(field.get("description") or "").strip() or name
+        ui_control = str(field.get("uiControl") or "").strip().lower()
+        ui_language = str(field.get("uiLanguage") or "")
+        value_schema = field.get("valueSchema")
+        access = field.get("access")
+        required = bool(field.get("required") or False)
+    else:
+        try:
+            label = str(field.label or "").strip() or name
+        except Exception:
+            label = name
+        try:
+            tooltip = str(field.description or "").strip() or name
+        except Exception:
+            tooltip = name
+        try:
+            ui_control = str(field.uiControl or "").strip().lower()
+        except Exception:
+            ui_control = ""
+        try:
+            ui_language = str(field.uiLanguage or "")
+        except Exception:
+            ui_language = ""
+        try:
+            value_schema = field.valueSchema
+        except Exception:
+            value_schema = None
+        try:
+            access = field.access
+        except Exception:
+            access = None
+        try:
+            required = bool(field.required)
+        except Exception:
+            required = False
+
+    if isinstance(access, enum.Enum):
+        access_value = access.value
+    else:
+        access_value = access if access is not None else ""
     access_str = str(access_value or "").strip().lower()
-    try:
-        required = bool(field.required)
-    except Exception:
-        required = bool(getattr(field, "required", False))
 
     return _StateFieldInfo(
         name=name,
@@ -136,13 +199,13 @@ class _F8ElideToolButton(QtWidgets.QToolButton):
                 if not tip:
                     return True
                 pos = None
-                gp = getattr(event, "globalPos", None)
-                if callable(gp):
-                    pos = gp()
-                else:
-                    gpf = getattr(event, "globalPosition", None)
-                    if callable(gpf):
-                        pos = gpf().toPoint()
+                try:
+                    pos = event.globalPos()
+                except Exception:
+                    try:
+                        pos = event.globalPosition().toPoint()
+                    except Exception:
+                        pos = None
                 if pos is not None:
                     QtWidgets.QToolTip.showText(pos, tip, None)
                     return True
@@ -191,14 +254,15 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
         """
         Services may optionally expose exec ports (extra schema fields).
         """
-        for p in list(getattr(self.spec, "execInPorts", None) or []):
+        exec_in, exec_out = _service_exec_ports(self.spec)
+        for p in exec_in:
             self.add_input(
                 f"[E]{p}",
                 color=EXEC_PORT_COLOR,
                 painter_func=draw_exec_port,
             )
 
-        for p in list(getattr(self.spec, "execOutPorts", None) or []):
+        for p in exec_out:
             self.add_output(
                 f"{p}[E]",
                 color=EXEC_PORT_COLOR,
@@ -273,8 +337,11 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
         t = schema_type(value_schema) or ""
 
         # enum choice.
-        root = getattr(value_schema, "root", None)
-        enum_items = list(getattr(root, "enum", None) or []) if root is not None else []
+        try:
+            root = value_schema.root
+            enum_items = list(root.enum or [])
+        except Exception:
+            enum_items = []
         if enum_items:
             return NodePropWidgetEnum.QCOMBO_BOX.value, [str(x) for x in enum_items], None
 
@@ -309,14 +376,15 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
         desired_inputs: dict[str, dict[str, Any]] = {}
         desired_outputs: dict[str, dict[str, Any]] = {}
 
-        for p in list(getattr(self.spec, "execInPorts", None) or []):
+        exec_in, exec_out = _service_exec_ports(self.spec)
+        for p in exec_in:
             desired_inputs[f"[E]{p}"] = {"color": EXEC_PORT_COLOR, "painter_func": draw_exec_port}
-        for p in list(getattr(self.spec, "execOutPorts", None) or []):
+        for p in exec_out:
             desired_outputs[f"{p}[E]"] = {"color": EXEC_PORT_COLOR, "painter_func": draw_exec_port}
 
-        for p in list(getattr(self.spec, "dataInPorts", None) or []):
+        for p in list(self.spec.dataInPorts or []):
             desired_inputs[f"[D]{p.name}"] = {"color": DATA_PORT_COLOR}
-        for p in list(getattr(self.spec, "dataOutPorts", None) or []):
+        for p in list(self.spec.dataOutPorts or []):
             desired_outputs[f"{p.name}[D]"] = {"color": DATA_PORT_COLOR}
 
         for s in list(self.effective_state_fields() or []):
@@ -382,7 +450,10 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
             valid_in_views = {p.view for p in self.input_ports()}
             valid_out_views = {p.view for p in self.output_ports()}
 
-            input_items = getattr(view, "_input_items", None)
+            try:
+                input_items = view._input_items
+            except Exception:
+                input_items = None
             if isinstance(input_items, dict):
                 for port_item in list(input_items.keys()):
                     if port_item in valid_in_views:
@@ -399,7 +470,10 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
                     except RuntimeError:
                         pass
 
-            output_items = getattr(view, "_output_items", None)
+            try:
+                output_items = view._output_items
+            except Exception:
+                output_items = None
             if isinstance(output_items, dict):
                 for port_item in list(output_items.keys()):
                     if port_item in valid_out_views:
@@ -469,6 +543,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         self._cmd_proxy: QtWidgets.QGraphicsProxyWidget | None = None
         self._cmd_widget: QtWidgets.QWidget | None = None
         self._cmd_buttons: list[QtWidgets.QAbstractButton] = []
+        self._svc_toolbar_proxy: QtWidgets.QGraphicsProxyWidget | None = None
         self._ports_end_y: float | None = None
 
     def _backend_node(self) -> Any | None:
@@ -478,7 +553,10 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         g = self._graph()
         if g is None:
             return None
-        node_id = str(getattr(self, "id", "") or "").strip()
+        try:
+            node_id = str(self.id or "").strip()
+        except Exception:
+            node_id = ""
         if not node_id:
             return None
         try:
@@ -487,11 +565,10 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             return None
 
     def _graph(self) -> Any | None:
-        try:
-            viewer = self.viewer()
-        except RuntimeError:
+        viewer = self._viewer_safe()
+        if not isinstance(viewer, F8StudioNodeViewer):
             return None
-        return getattr(viewer, "_f8_graph", None) if viewer is not None else None
+        return viewer.f8_graph
 
     def _viewer_safe(self) -> Any | None:
         try:
@@ -512,9 +589,12 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             return
         self._graph_prop_hooked = True
 
-    def _bridge(self) -> Any | None:
+    def _bridge(self) -> ServiceBridge | None:
         g = self._graph()
-        return getattr(g, "service_bridge", None) if g is not None else None
+        try:
+            return g.service_bridge if g is not None else None
+        except Exception:
+            return None
 
     def _ensure_bridge_process_hook(self) -> None:
         if self._bridge_proc_hooked:
@@ -534,11 +614,8 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         sid = self._service_id()
         if bridge is None or not sid:
             return False
-        fn = getattr(bridge, "is_service_running", None)
-        if not callable(fn):
-            return False
         try:
-            return bool(fn(sid))
+            return bool(bridge.is_service_running(sid))
         except Exception:
             return False
 
@@ -560,7 +637,10 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
 
     def _service_id(self) -> str:
         # For service nodes, nodeId == serviceId.
-        return str(getattr(self, "id", "") or "").strip()
+        try:
+            return str(self.id or "").strip()
+        except Exception:
+            return ""
 
     def _invoke_command(self, cmd: Any) -> None:
         """
@@ -569,7 +649,13 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         - no params: fire immediately
         - has params: show dialog to collect args
         """
-        call = str(getattr(cmd, "name", "") or "").strip()
+        if isinstance(cmd, dict):
+            call = str(cmd.get("name") or "").strip()
+        else:
+            try:
+                call = str(cmd.name or "").strip()
+            except Exception:
+                call = ""
         if not call:
             return
         bridge = self._bridge()
@@ -603,7 +689,13 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 except Exception:
                     node_id = ""
                 logger.exception("handle_command_ui failed nodeId=%s", node_id)
-        params = list(getattr(cmd, "params", None) or [])
+        if isinstance(cmd, dict):
+            params = list(cmd.get("params") or [])
+        else:
+            try:
+                params = list(cmd.params or [])
+            except Exception:
+                params = []
 
         if not params:
             try:
@@ -621,8 +713,18 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             logger.exception("invoke_remote_command failed serviceId=%s call=%s", sid, call)
 
     def _prompt_command_args(self, cmd: Any) -> dict[str, Any] | None:
-        call = str(getattr(cmd, "name", "") or "").strip() or "Command"
-        params = list(getattr(cmd, "params", None) or [])
+        if isinstance(cmd, dict):
+            call = str(cmd.get("name") or "").strip() or "Command"
+            params = list(cmd.get("params") or [])
+        else:
+            try:
+                call = str(cmd.name or "").strip() or "Command"
+            except Exception:
+                call = "Command"
+            try:
+                params = list(cmd.params or [])
+            except Exception:
+                params = []
         if not params:
             return {}
 
@@ -640,12 +742,35 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         editors: dict[str, tuple[QtWidgets.QWidget, callable]] = {}
 
         for p in params:
-            name = str(getattr(p, "name", "") or "").strip()
+            if isinstance(p, dict):
+                name = str(p.get("name") or "").strip()
+                required = bool(p.get("required") or False)
+                ui = str(p.get("uiControl") or "").strip().lower()
+                schema = p.get("valueSchema")
+                desc_raw = p.get("description") or ""
+            else:
+                try:
+                    name = str(p.name or "").strip()
+                except Exception:
+                    name = ""
+                try:
+                    required = bool(p.required)
+                except Exception:
+                    required = False
+                try:
+                    ui = str(p.uiControl or "").strip().lower()
+                except Exception:
+                    ui = ""
+                try:
+                    schema = p.valueSchema
+                except Exception:
+                    schema = None
+                try:
+                    desc_raw = p.description or ""
+                except Exception:
+                    desc_raw = ""
             if not name:
                 continue
-            required = bool(getattr(p, "required", False))
-            ui = str(getattr(p, "uiControl", "") or "").strip().lower()
-            schema = getattr(p, "valueSchema", None)
             t = schema_type(schema) if schema is not None else ""
             t = t or ""
 
@@ -657,7 +782,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 default_value = None
 
             label = f"{name} *" if required else name
-            tooltip = str(getattr(p, "description", "") or "").strip()
+            tooltip = str(desc_raw or "").strip()
 
             def _with_tooltip(w: QtWidgets.QWidget) -> QtWidgets.QWidget:
                 if tooltip:
@@ -806,10 +931,20 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             args: dict[str, Any] = {}
             missing: list[str] = []
             for p in params:
-                pname = str(getattr(p, "name", "") or "").strip()
+                if isinstance(p, dict):
+                    pname = str(p.get("name") or "").strip()
+                    required = bool(p.get("required") or False)
+                else:
+                    try:
+                        pname = str(p.name or "").strip()
+                    except Exception:
+                        pname = ""
+                    try:
+                        required = bool(p.required)
+                    except Exception:
+                        required = False
                 if not pname or pname not in editors:
                     continue
-                required = bool(getattr(p, "required", False))
                 _w, getter = editors[pname]
                 try:
                     v = getter()
@@ -833,23 +968,51 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         node = self._backend_node()
         if node is None:
             return
-        spec = getattr(node, "spec", None)
-        eff = getattr(node, "effective_commands", None)
-        if callable(eff):
-            cmds = list(eff() or [])
-        else:
-            cmds = list(getattr(spec, "commands", None) or []) if spec is not None else []
-        visible_cmds = [c for c in cmds if bool(getattr(c, "showOnNode", False))]
+        try:
+            spec = node.spec
+        except Exception:
+            spec = None
+
+        try:
+            cmds = list(node.effective_commands() or [])
+        except Exception:
+            if spec is None:
+                cmds = []
+            else:
+                try:
+                    cmds = list(spec.commands or [])
+                except Exception:
+                    cmds = []
+
+        visible_cmds: list[Any] = []
+        for c in cmds:
+            if isinstance(c, dict):
+                show = bool(c.get("showOnNode") or False)
+            else:
+                try:
+                    show = bool(c.showOnNode)
+                except Exception:
+                    show = False
+            if show:
+                visible_cmds.append(c)
         enabled = self._is_service_running()
 
         # Rebuild only when command list / enabled state changes.
         try:
+            def _cmd_name_desc(cmd: Any) -> tuple[str, str]:
+                if isinstance(cmd, dict):
+                    return str(cmd.get("name") or ""), str(cmd.get("description") or "")
+                try:
+                    return str(cmd.name or ""), str(cmd.description or "")
+                except Exception:
+                    return "", ""
+
             serial = json.dumps(
                 {
                     "cmds": [
                         {
-                            "name": str(getattr(c, "name", "") or ""),
-                            "desc": str(getattr(c, "description", "") or ""),
+                            "name": _cmd_name_desc(c)[0],
+                            "desc": _cmd_name_desc(c)[1],
                         }
                         for c in visible_cmds
                     ],
@@ -893,7 +1056,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 self._cmd_buttons = []
             return
 
-        if self._cmd_proxy is not None and serial and serial == str(getattr(self, "_cmd_serial", "") or ""):
+        if self._cmd_proxy is not None and serial and serial == str(self._cmd_serial or ""):
             # Keep enable state in sync (service running can change without spec changes).
             for b in list(self._cmd_buttons or []):
                 try:
@@ -915,7 +1078,11 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
 
         self._cmd_buttons = []
         for i, c in enumerate(visible_cmds):
-            b = QtWidgets.QPushButton(str(getattr(c, "name", "") or ""))
+            try:
+                btn_label = str(c.name or "")
+            except Exception:
+                btn_label = ""
+            b = QtWidgets.QPushButton(btn_label)
             b.setMinimumHeight(24)
             b.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
             b.setEnabled(bool(enabled))
@@ -945,7 +1112,10 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 }
                 """
             )
-            desc = str(getattr(c, "description", "") or "").strip()
+            try:
+                desc = str(c.description or "").strip()
+            except Exception:
+                desc = ""
             if not enabled:
                 b.setToolTip((desc + "\n" if desc else "") + "Service not running")
             elif desc:
@@ -985,7 +1155,10 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         widgets; since our inline widgets are custom QWidgets, we mirror updates
         here to get the same "two-way binding" behavior.
         """
-        if str(getattr(node, "id", "") or "") != str(getattr(self, "id", "") or ""):
+        try:
+            if str(node.id or "") != str(self.id or ""):
+                return
+        except Exception:
             return
         key = str(name or "").strip()
         if not key:
@@ -998,7 +1171,11 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         try:
             updater(value)
         except Exception:
-            logger.exception("inline state updater failed nodeId=%s key=%s", getattr(self, "id", ""), key)
+            try:
+                node_id = str(self.id or "")
+            except Exception:
+                node_id = ""
+            logger.exception("inline state updater failed nodeId=%s key=%s", node_id, key)
         self._refresh_option_pool_for_changed_field(key)
 
     def _refresh_option_pool_for_changed_field(self, changed_field: str) -> None:
@@ -1132,26 +1309,43 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
     def _schema_enum_items(value_schema: Any) -> list[str]:
         if value_schema is None:
             return []
-        root = getattr(value_schema, "root", None)
-        enum = getattr(root, "enum", None)
-        if not enum:
-            return []
-        return [str(x) for x in list(enum)]
+        try:
+            root = value_schema.root
+            enum_items = list(root.enum or [])
+        except Exception:
+            enum_items = []
+        return [str(x) for x in enum_items]
 
     @staticmethod
     def _schema_numeric_range(value_schema: Any) -> tuple[float | None, float | None]:
         if value_schema is None:
             return None, None
+        try:
+            root = value_schema.root
+        except Exception:
+            return None, None
         mins: list[float] = []
         maxs: list[float] = []
-        for k in ("minimum", "exclusiveMinimum"):
-            v = getattr(value_schema, k, None)
-            if v is not None:
-                mins.append(float(v))
-        for k in ("maximum", "exclusiveMaximum"):
-            v = getattr(value_schema, k, None)
-            if v is not None:
-                maxs.append(float(v))
+        try:
+            if root.minimum is not None:
+                mins.append(float(root.minimum))
+        except Exception:
+            pass
+        try:
+            if root.exclusiveMinimum is not None:
+                mins.append(float(root.exclusiveMinimum))
+        except Exception:
+            pass
+        try:
+            if root.maximum is not None:
+                maxs.append(float(root.maximum))
+        except Exception:
+            pass
+        try:
+            if root.exclusiveMaximum is not None:
+                maxs.append(float(root.exclusiveMaximum))
+        except Exception:
+            pass
         lo = min(mins) if mins else None
         hi = max(maxs) if maxs else None
         return lo, hi
@@ -1403,8 +1597,18 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             return
         try:
             fields = list(node.effective_state_fields() or [])
-        except AttributeError:
-            fields = list(getattr(getattr(node, "spec", None), "stateFields", None) or [])
+        except Exception:
+            try:
+                spec = node.spec
+            except Exception:
+                spec = None
+            if spec is None:
+                fields = []
+            else:
+                try:
+                    fields = list(spec.stateFields or [])
+                except Exception:
+                    fields = []
 
         show: list[_StateFieldInfo] = []
         for f in fields:
@@ -1462,8 +1666,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             """
             try:
                 vs = info.value_schema
-                root = getattr(vs, "root", None) if vs is not None else None
-                enum_items = list(getattr(root, "enum", None) or []) if root is not None else []
+                enum_items = self._schema_enum_items(vs)
                 return json.dumps(
                     {
                         "access": info.access_str,
@@ -1901,7 +2104,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             if not port_height:
                 port_height = port.boundingRect().height()
             # State labels are displayed via the collapsible header button, not port text.
-            if self._port_group(str(getattr(port, "name", "") or "")) == "state":
+            if self._port_group(_port_name(port)) == "state":
                 continue
             t_width = text.boundingRect().width()
             if text.isVisible() and t_width > p_input_text_width:
@@ -1913,7 +2116,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 port_width = port.boundingRect().width()
             if not port_height:
                 port_height = port.boundingRect().height()
-            if self._port_group(str(getattr(port, "name", "") or "")) == "state":
+            if self._port_group(_port_name(port)) == "state":
                 continue
             t_width = text.boundingRect().width()
             if text.isVisible() and t_width > p_output_text_width:
@@ -1927,8 +2130,9 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 try:
                     if not p.isVisible():
                         continue
-                    if self._port_group(p.name) == kind:
-                        out.append(str(p.name))
+                    pname = _port_name(p)
+                    if self._port_group(pname) == kind:
+                        out.append(pname)
                 except Exception:
                     continue
             return out
@@ -2280,30 +2484,43 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             pass
 
         node = self._backend_node()
-        spec = getattr(node, "spec", None) if node is not None else None
+        if node is None:
+            spec = None
+        else:
+            try:
+                spec = node.spec
+            except Exception:
+                spec = None
         try:
             eff_states = list(node.effective_state_fields() or []) if node is not None else []
         except Exception:
-            eff_states = list(getattr(spec, "stateFields", None) or []) if spec is not None else []
+            if spec is None:
+                eff_states = []
+            else:
+                try:
+                    eff_states = list(spec.stateFields or [])
+                except Exception:
+                    eff_states = []
 
         # Build ordered port name lists per group.
         exec_in_names: list[str] = []
         exec_out_names: list[str] = []
-        if spec is not None:
-            for p in list(getattr(spec, "execInPorts", None) or []):
+        if isinstance(spec, F8ServiceSpec):
+            exec_in, exec_out = _service_exec_ports(spec)
+            for p in exec_in:
                 exec_in_names.append(f"[E]{p}")
-            for p in list(getattr(spec, "execOutPorts", None) or []):
+            for p in exec_out:
                 exec_out_names.append(f"{p}[E]")
 
         data_in_names: list[str] = []
         data_out_names: list[str] = []
         if spec is not None:
-            for p in list(getattr(spec, "dataInPorts", None) or []):
+            for p in list(spec.dataInPorts or []):
                 try:
                     data_in_names.append(f"[D]{p.name}")
                 except Exception:
                     continue
-            for p in list(getattr(spec, "dataOutPorts", None) or []):
+            for p in list(spec.dataOutPorts or []):
                 try:
                     data_out_names.append(f"{p.name}[D]")
                 except Exception:
@@ -2311,42 +2528,39 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
 
         state_names: list[str] = []
         for s in eff_states:
-            try:
-                if not getattr(s, "showOnNode", False):
-                    continue
-                nm = str(getattr(s, "name", "") or "").strip()
-                if nm:
-                    state_names.append(nm)
-            except Exception:
+            info = _state_field_info(s)
+            if info is None or not info.show_on_node:
                 continue
+            if info.name:
+                state_names.append(info.name)
 
         # Fallback when spec is unavailable: keep insertion order but grouped.
         if not exec_in_names:
-            exec_in_names = [str(p.name) for p in self._input_items.keys() if self._port_group(p.name) == "exec"]
+            exec_in_names = [_port_name(p) for p in self._input_items.keys() if self._port_group(_port_name(p)) == "exec"]
         if not exec_out_names:
-            exec_out_names = [str(p.name) for p in self._output_items.keys() if self._port_group(p.name) == "exec"]
+            exec_out_names = [_port_name(p) for p in self._output_items.keys() if self._port_group(_port_name(p)) == "exec"]
         if not data_in_names:
-            data_in_names = [str(p.name) for p in self._input_items.keys() if self._port_group(p.name) == "data"]
+            data_in_names = [_port_name(p) for p in self._input_items.keys() if self._port_group(_port_name(p)) == "data"]
         if not data_out_names:
-            data_out_names = [str(p.name) for p in self._output_items.keys() if self._port_group(p.name) == "data"]
+            data_out_names = [_port_name(p) for p in self._output_items.keys() if self._port_group(_port_name(p)) == "data"]
         if not state_names:
             # Infer state rows from existing ports.
             tmp: list[str] = []
             for p in self._input_items.keys():
-                n = str(p.name)
+                n = _port_name(p)
                 if n.startswith("[S]"):
                     tmp.append(n[3:])
             for p in self._output_items.keys():
-                n = str(p.name)
+                n = _port_name(p)
                 if n.endswith("[S]"):
                     tmp.append(n[:-3])
             state_names = [x for x in list(OrderedDict.fromkeys(tmp).keys()) if x]
 
-        other_in_names = [str(p.name) for p in self._input_items.keys() if self._port_group(p.name) == "other"]
-        other_out_names = [str(p.name) for p in self._output_items.keys() if self._port_group(p.name) == "other"]
+        other_in_names = [_port_name(p) for p in self._input_items.keys() if self._port_group(_port_name(p)) == "other"]
+        other_out_names = [_port_name(p) for p in self._output_items.keys() if self._port_group(_port_name(p)) == "other"]
 
-        inputs_by_name = {str(p.name): p for p in self.inputs if p.isVisible()}
-        outputs_by_name = {str(p.name): p for p in self.outputs if p.isVisible()}
+        inputs_by_name = {_port_name(p): p for p in self.inputs if p.isVisible()}
+        outputs_by_name = {_port_name(p): p for p in self.outputs if p.isVisible()}
 
         # Determine base port geometry.
         port_width = 0.0
@@ -2519,13 +2733,13 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         # update port text items in visibility.
         for port, text in self._input_items.items():
             if port.isVisible():
-                if self._port_group(str(getattr(port, "name", "") or "")) == "state":
+                if self._port_group(_port_name(port)) == "state":
                     text.setVisible(False)
                 else:
                     text.setVisible(port.display_name)
         for port, text in self._output_items.items():
             if port.isVisible():
-                if self._port_group(str(getattr(port, "name", "") or "")) == "state":
+                if self._port_group(_port_name(port)) == "state":
                     text.setVisible(False)
                 else:
                     text.setVisible(port.display_name)
@@ -2611,33 +2825,28 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             self._position_service_toolbar()
 
     def _ensure_service_toolbar(self, viewer: Any | None) -> None:
-        if getattr(self, "_svc_toolbar_proxy", None) is not None:
+        if self._svc_toolbar_proxy is not None:
             return
-        service_id = str(getattr(self, "id", "") or "").strip()
+        try:
+            service_id = str(self.id or "").strip()
+        except Exception:
+            service_id = ""
         if not service_id:
             return
 
         def _resolve_graph() -> Any | None:
             # Prefer the viewer passed by NodeGraphQt (more reliable than self.viewer() during init).
             try:
-                g = getattr(viewer, "_f8_graph", None) if viewer is not None else None
-                if g is not None:
-                    return g
+                if isinstance(viewer, F8StudioNodeViewer) and viewer.f8_graph is not None:
+                    return viewer.f8_graph
             except Exception:
                 pass
-            try:
-                v = self.viewer()
-            except Exception:
-                v = None
-            try:
-                return getattr(v, "_f8_graph", None) if v is not None else None
-            except Exception:
-                return None
+            return self._graph()
 
-        def _get_bridge() -> Any | None:
+        def _get_bridge() -> ServiceBridge | None:
             g = _resolve_graph()
             try:
-                return getattr(g, "service_bridge", None) if g is not None else None
+                return g.service_bridge if g is not None else None
             except Exception:
                 return None
 
@@ -2655,8 +2864,8 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 n = _get_node() or self._backend_node()
                 if n is None:
                     return ""
-                spec = getattr(n, "spec", None)
-                return str(getattr(spec, "serviceClass", "") or "")
+                spec = n.spec
+                return str(spec.serviceClass or "")
             except Exception:
                 return ""
 
@@ -2688,7 +2897,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             self._svc_toolbar_proxy = None
 
     def _position_service_toolbar(self) -> None:
-        proxy = getattr(self, "_svc_toolbar_proxy", None)
+        proxy = self._svc_toolbar_proxy
         if proxy is None:
             return
         try:

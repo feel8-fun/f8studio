@@ -210,7 +210,7 @@ class PyStudioServiceBridge(QtCore.QObject):
 
         # Best-effort stop all launched processes.
         try:
-            for sid in list(getattr(self._proc_mgr, "_procs", {}).keys()):
+            for sid in list(self._proc_mgr.service_ids()):
                 self._proc_mgr.stop(sid)
         except Exception:
             pass
@@ -341,8 +341,13 @@ class PyStudioServiceBridge(QtCore.QObject):
         """
         deadline = time.monotonic() + float(timeout_s or 0.0)
         while True:
-            if self._svc is not None and getattr(self._svc, "bus", None) is not None:
-                return True
+            svc = self._svc
+            if svc is not None:
+                try:
+                    if svc.bus is not None:
+                        return True
+                except Exception:
+                    pass
             if time.monotonic() >= deadline:
                 try:
                     self.log.emit("studio runtime not ready (timeout)")
@@ -364,11 +369,29 @@ class PyStudioServiceBridge(QtCore.QObject):
         Remote state monitoring is handled by `RemoteStateWatcher` (Studio-side KV subscription).
         """
         studio_sub = compiled.per_service.get(self.studio_service_id)
-        base_nodes: list[F8RuntimeNode] = list(getattr(studio_sub, "nodes", None) or []) if studio_sub is not None else []
-        base_edges: list[F8Edge] = list(getattr(studio_sub, "edges", None) or []) if studio_sub is not None else []
+        if studio_sub is None:
+            base_nodes = []
+            base_edges = []
+        else:
+            try:
+                base_nodes = list(studio_sub.nodes or [])
+            except Exception:
+                base_nodes = []
+            try:
+                base_edges = list(studio_sub.edges or [])
+            except Exception:
+                base_edges = []
+        try:
+            graph_id = str(compiled.global_graph.graphId or "studio")
+        except Exception:
+            graph_id = "studio"
+        try:
+            revision = str(compiled.global_graph.revision or "1")
+        except Exception:
+            revision = "1"
         return F8RuntimeGraph(
-            graphId=str(getattr(compiled.global_graph, "graphId", "") or "studio"),
-            revision=str(getattr(compiled.global_graph, "revision", "") or "1"),
+            graphId=graph_id,
+            revision=revision,
             meta={"source": "studio"},
             services=[],
             nodes=[*base_nodes],
@@ -380,16 +403,24 @@ class PyStudioServiceBridge(QtCore.QObject):
         if w is None:
             return
         targets: list[WatchTarget] = []
-        for n in list(getattr(compiled.global_graph, "nodes", None) or []):
+        try:
+            nodes = list(compiled.global_graph.nodes or [])
+        except Exception:
+            nodes = []
+        for n in nodes:
             try:
-                sid = ensure_token(str(getattr(n, "serviceId", "") or ""), label="service_id")
-                nid = ensure_token(str(getattr(n, "nodeId", "") or ""), label="node_id")
+                sid = ensure_token(str(n.serviceId or ""), label="service_id")
+                nid = ensure_token(str(n.nodeId or ""), label="node_id")
             except Exception:
                 continue
             fields: list[str] = []
-            for sf in list(getattr(n, "stateFields", None) or []):
+            try:
+                state_fields = list(n.stateFields or [])
+            except Exception:
+                state_fields = []
+            for sf in state_fields:
                 try:
-                    name = str(getattr(sf, "name", "") or "").strip()
+                    name = str(sf.name or "").strip()
                 except Exception:
                     name = ""
                 if name:
@@ -397,7 +428,7 @@ class PyStudioServiceBridge(QtCore.QObject):
             if "svcId" not in fields:
                 fields.append("svcId")
             try:
-                op_class = str(getattr(n, "operatorClass", "") or "").strip()
+                op_class = str(n.operatorClass or "").strip()
             except Exception:
                 op_class = ""
             if op_class and "operatorId" not in fields:
@@ -479,7 +510,10 @@ class PyStudioServiceBridge(QtCore.QObject):
             msg = await nc.request(svc_endpoint_subject(sid, "status"), payload, timeout=0.4)
         except Exception:
             return None
-        raw = bytes(getattr(msg, "data", b"") or b"")
+        try:
+            raw = bytes(msg.data or b"")
+        except Exception:
+            raw = b""
         if not raw:
             return None
         try:
@@ -565,7 +599,10 @@ class PyStudioServiceBridge(QtCore.QObject):
         for _ in range(2):
             try:
                 msg = await nc.request(svc_endpoint_subject(sid, cmd), payload, timeout=0.5)
-                data = bytes(getattr(msg, "data", b"") or b"")
+                try:
+                    data = bytes(msg.data or b"")
+                except Exception:
+                    data = b""
                 if data:
                     try:
                         resp = json.loads(data.decode("utf-8"))
@@ -617,7 +654,10 @@ class PyStudioServiceBridge(QtCore.QObject):
         for _ in range(2):
             try:
                 msg = await nc.request(subject, payload, timeout=0.4)
-                raw = bytes(getattr(msg, "data", b"") or b"")
+                try:
+                    raw = bytes(msg.data or b"")
+                except Exception:
+                    raw = b""
                 if not raw:
                     continue
                 try:
@@ -1009,14 +1049,11 @@ class PyStudioServiceBridge(QtCore.QObject):
             if isinstance(v, dict):
                 return {str(k): _coerce_json_value(x) for k, x in v.items()}
             try:
-                model_dump = getattr(v, "model_dump", None)
-                if callable(model_dump):
-                    return _coerce_json_value(model_dump(mode="json"))
+                return _coerce_json_value(v.model_dump(mode="json"))
             except Exception:
                 pass
             try:
-                if hasattr(v, "root"):
-                    return _coerce_json_value(getattr(v, "root"))
+                return _coerce_json_value(v.root)
             except Exception:
                 pass
             return v
@@ -1040,7 +1077,10 @@ class PyStudioServiceBridge(QtCore.QObject):
             for _ in range(3):
                 try:
                     msg = await nc.request(subject, payload, timeout=0.5)
-                    raw = bytes(getattr(msg, "data", b"") or b"")
+                    try:
+                        raw = bytes(msg.data or b"")
+                    except Exception:
+                        raw = b""
                     if not raw:
                         continue
                     try:
@@ -1109,14 +1149,11 @@ class PyStudioServiceBridge(QtCore.QObject):
             if isinstance(v, dict):
                 return {str(k): _coerce_json_value(x) for k, x in v.items()}
             try:
-                model_dump = getattr(v, "model_dump", None)
-                if callable(model_dump):
-                    return _coerce_json_value(model_dump(mode="json"))
+                return _coerce_json_value(v.model_dump(mode="json"))
             except Exception:
                 pass
             try:
-                if hasattr(v, "root"):
-                    return _coerce_json_value(getattr(v, "root"))
+                return _coerce_json_value(v.root)
             except Exception:
                 pass
             return v
@@ -1139,7 +1176,10 @@ class PyStudioServiceBridge(QtCore.QObject):
             ).encode("utf-8")
             try:
                 msg = await nc.request(subject, payload, timeout=float(timeout_s))
-                raw = bytes(getattr(msg, "data", b"") or b"")
+                try:
+                    raw = bytes(msg.data or b"")
+                except Exception:
+                    raw = b""
                 if not raw:
                     try:
                         self._remote_command_response.emit(str(req_id), None, "empty response")
@@ -1213,14 +1253,11 @@ class PyStudioServiceBridge(QtCore.QObject):
             if isinstance(v, dict):
                 return {str(k): _coerce_json_value(x) for k, x in v.items()}
             try:
-                model_dump = getattr(v, "model_dump", None)
-                if callable(model_dump):
-                    return _coerce_json_value(model_dump(mode="json"))
+                return _coerce_json_value(v.model_dump(mode="json"))
             except Exception:
                 pass
             try:
-                if hasattr(v, "root"):
-                    return _coerce_json_value(getattr(v, "root"))
+                return _coerce_json_value(v.root)
             except Exception:
                 pass
             return v
@@ -1244,7 +1281,10 @@ class PyStudioServiceBridge(QtCore.QObject):
             ).encode("utf-8")
             try:
                 msg = await nc.request(subject, payload, timeout=1.5)
-                raw = bytes(getattr(msg, "data", b"") or b"")
+                try:
+                    raw = bytes(msg.data or b"")
+                except Exception:
+                    raw = b""
                 if not raw:
                     self.log.emit(f"command {call} failed serviceId={service_id}: empty response")
                     return
@@ -1477,7 +1517,10 @@ class PyStudioServiceBridge(QtCore.QObject):
             for _ in range(3):
                 try:
                     msg = await nc.request(subject, payload, timeout=0.5)
-                    data = bytes(getattr(msg, "data", b"") or b"")
+                    try:
+                        data = bytes(msg.data or b"")
+                    except Exception:
+                        data = b""
                     if data:
                         try:
                             resp = json.loads(data.decode("utf-8"))

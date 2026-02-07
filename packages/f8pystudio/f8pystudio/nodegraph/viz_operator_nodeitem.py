@@ -15,6 +15,37 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
     - data/exec/other ports are aligned alongside the widget region (no port rows)
     """
 
+    @staticmethod
+    def _port_name(port) -> str:
+        try:
+            return str(port.name() or "")
+        except Exception:
+            try:
+                return str(port.name or "")
+            except Exception:
+                return ""
+
+    @staticmethod
+    def _state_field_name_if_visible(state_field) -> str | None:
+        """
+        Best-effort, explicit access for both dict-style and pydantic/dataclass specs.
+        """
+        if isinstance(state_field, dict):
+            if not bool(state_field.get("showOnNode") or False):
+                return None
+            name = str(state_field.get("name") or "").strip()
+            return name or None
+        try:
+            if not bool(state_field.showOnNode):
+                return None
+        except Exception:
+            return None
+        try:
+            name = str(state_field.name or "").strip()
+        except Exception:
+            return None
+        return name or None
+
     def _calc_size_horizontal(self):  # type: ignore[override]
         # width, height from node name text.
         text_w = self._text_item.boundingRect().width()
@@ -50,14 +81,9 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
         except Exception:
             eff_states = []
         for s in eff_states:
-            try:
-                if not getattr(s, "showOnNode", False):
-                    continue
-                nm = str(getattr(s, "name", "") or "").strip()
-                if nm:
-                    state_names.append(nm)
-            except Exception:
-                continue
+            nm = self._state_field_name_if_visible(s)
+            if nm:
+                state_names.append(nm)
 
         if state_names:
             for sname in state_names:
@@ -109,10 +135,8 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
         Override a couple of fields for viz nodes:
         - minVal/maxVal: allow blank (auto) via QLineEdit (stores None/float)
         """
-        try:
-            name = str(getattr(state_field, "name", "") or "").strip()
-        except Exception:
-            name = ""
+        nm = self._state_field_name_if_visible(state_field)
+        name = nm or ""
         if name not in {"minVal", "maxVal"}:
             return super()._make_state_inline_control(state_field)
 
@@ -196,25 +220,32 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
             pass
 
         node = self._backend_node()
-        spec = getattr(node, "spec", None) if node is not None else None
+        if node is None:
+            spec = None
+        else:
+            try:
+                spec = node.spec
+            except Exception:
+                spec = None
         try:
             eff_states = list(node.effective_state_fields() or []) if node is not None else []
         except Exception:
-            eff_states = list(getattr(spec, "stateFields", None) or []) if spec is not None else []
+            if spec is None:
+                eff_states = []
+            else:
+                try:
+                    eff_states = list(spec.stateFields or [])
+                except Exception:
+                    eff_states = []
 
         state_names: list[str] = []
         for s in eff_states:
-            try:
-                if not getattr(s, "showOnNode", False):
-                    continue
-                nm = str(getattr(s, "name", "") or "").strip()
-                if nm:
-                    state_names.append(nm)
-            except Exception:
-                continue
+            nm = self._state_field_name_if_visible(s)
+            if nm:
+                state_names.append(nm)
 
-        inputs_by_name = {str(p.name): p for p in self.inputs if p.isVisible()}
-        outputs_by_name = {str(p.name): p for p in self.outputs if p.isVisible()}
+        inputs_by_name = {self._port_name(p): p for p in self.inputs if p.isVisible()}
+        outputs_by_name = {self._port_name(p): p for p in self.outputs if p.isVisible()}
 
         port_width = 0.0
         port_height = 0.0
@@ -319,7 +350,7 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
             try:
                 if not p.isVisible():
                     continue
-                if self._port_group(str(getattr(p, "name", "") or "")) == "state":
+                if self._port_group(self._port_name(p)) == "state":
                     continue
                 in_ports.append(p)
             except Exception:
@@ -328,7 +359,7 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
             try:
                 if not p.isVisible():
                     continue
-                if self._port_group(str(getattr(p, "name", "") or "")) == "state":
+                if self._port_group(self._port_name(p)) == "state":
                     continue
                 out_ports.append(p)
             except Exception:

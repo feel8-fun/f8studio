@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import ClassVar
 
 from pydantic import ValidationError
 
@@ -16,10 +17,12 @@ class OperatorSpecRegistry:
     - keep a global union registry for NodeGraphQt node construction
     """
 
+    _instance: ClassVar["OperatorSpecRegistry | None"] = None
+
     @staticmethod
     def instance() -> "OperatorSpecRegistry":
         # Singleton instance accessor.
-        if not hasattr(OperatorSpecRegistry, "_instance"):
+        if OperatorSpecRegistry._instance is None:
             OperatorSpecRegistry._instance = OperatorSpecRegistry()
         return OperatorSpecRegistry._instance
 
