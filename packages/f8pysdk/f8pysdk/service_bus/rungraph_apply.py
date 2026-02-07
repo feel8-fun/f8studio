@@ -108,6 +108,22 @@ async def apply_rungraph_state_values(bus: "ServiceBus", graph: F8RuntimeGraph) 
     """
     Materialize per-node `stateValues` into KV (and dispatch locally).
     """
+    def _unwrap_json_value(v: object) -> object:
+        if v is None:
+            return None
+        # F8JsonValue is a pydantic RootModel wrapper around JSON primitives/containers.
+        try:
+            from ..generated import F8JsonValue  # local import to keep module import light
+
+            if isinstance(v, F8JsonValue):
+                return v.root
+        except Exception:
+            pass
+        try:
+            return v.root  # type: ignore[attr-defined]
+        except Exception:
+            return v
+
     for n in list(graph.nodes or []):
         if str(n.serviceId) != bus.service_id:
             continue
@@ -130,7 +146,7 @@ async def apply_rungraph_state_values(bus: "ServiceBus", graph: F8RuntimeGraph) 
                 await bus._publish_state(
                     node_id,
                     field,
-                    v,
+                    _unwrap_json_value(v),
                     origin=StateWriteOrigin.rungraph,
                     source=StateWriteSource.rungraph,
                     meta={"via": "rungraph", "_noStateFanout": True},

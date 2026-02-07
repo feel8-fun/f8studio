@@ -101,7 +101,6 @@ class TickRuntimeNode(OperatorNode):
             try:
                 while not self._stop.is_set():
                     tick_ms = await self.get_state_value("tickMs")
-                    print(f"tick_ms: {tick_ms}")
                     if tick_ms is None:
                         tick_ms = self._initial_state.get("tickMs", 100)
                     try:
