@@ -571,7 +571,7 @@ LovenseMockServerRuntimeNode.SPEC = F8OperatorSpec(
             name="printEnabled",
             label="Print Incoming",
             description="Print received commands to stdout (debug).",
-            valueSchema=boolean_schema(default=True),
+            valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
             showOnNode=False,
         ),
