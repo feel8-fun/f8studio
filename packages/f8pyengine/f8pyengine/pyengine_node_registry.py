@@ -29,6 +29,7 @@ from .operators.tcode import register_operator as register_tcode_operator
 from .operators.python_script import register_operator as register_python_script_operator
 from .operators.lovense_mock_server import register_operator as register_lovense_mock_server_operator
 from .operators.lovense_wave import register_operator as register_lovense_wave_operators
+from .operators.mix_silence_fill import register_operator as register_mix_silence_fill_operator
 from .pyengine_service_node import PyEngineServiceNode
 
 
@@ -87,4 +88,5 @@ def register_pyengine_specs(registry: RuntimeNodeRegistry | None = None) -> Runt
     register_python_script_operator(reg)
     register_lovense_mock_server_operator(reg)
     register_lovense_wave_operators(reg)
+    register_mix_silence_fill_operator(reg)
     return reg
