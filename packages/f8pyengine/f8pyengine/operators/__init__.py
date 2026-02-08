@@ -13,6 +13,8 @@ from .smooth_filter import SmoothFilterRuntimeNode
 from .range_map import RangeMapRuntimeNode
 from .rate_limiter import RateLimiterRuntimeNode
 from .lovense_mock_server import LovenseMockServerRuntimeNode
+from .lovense_wave import LovenseThrustingWaveRuntimeNode
+from .lovense_wave import LovenseVibrationWaveRuntimeNode
 
 __all__ = [
     "PrintRuntimeNode",
@@ -28,4 +30,6 @@ __all__ = [
     "RangeMapRuntimeNode",
     "RateLimiterRuntimeNode",
     "LovenseMockServerRuntimeNode",
+    "LovenseThrustingWaveRuntimeNode",
+    "LovenseVibrationWaveRuntimeNode",
 ]

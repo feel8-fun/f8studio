@@ -159,6 +159,7 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
             bind_address=str(_unwrap_json_value(self._initial_state.get("bindAddress")) or "127.0.0.1"),
             port=self._parse_port(_unwrap_json_value(self._initial_state.get("port")), default=30010),
         )
+        self._print_enabled = self._parse_bool(_unwrap_json_value(self._initial_state.get("printEnabled")), default=True)
         self._print_raw = self._parse_bool(_unwrap_json_value(self._initial_state.get("printRaw")), default=False)
         self._print_pretty = self._parse_bool(_unwrap_json_value(self._initial_state.get("printPretty")), default=False)
 
@@ -212,6 +213,8 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
             return self._parse_bool(value, default=False)
         if name == "printPretty":
             return self._parse_bool(value, default=False)
+        if name == "printEnabled":
+            return self._parse_bool(value, default=True)
         return value
 
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
@@ -237,6 +240,9 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
             return
         if name == "printPretty":
             self._print_pretty = self._parse_bool(_unwrap_json_value(value), default=False)
+            return
+        if name == "printEnabled":
+            self._print_enabled = self._parse_bool(_unwrap_json_value(value), default=True)
             return
 
     async def _restart_server(self) -> None:
@@ -296,7 +302,7 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
         except Exception:
             return
 
-    async def _safe_write_event(self, entry: dict[str, Any]) -> None:
+    async def _safe_write_event(self, entry: dict[str, Any]) -> dict[str, Any] | None:
         async with self._event_lock:
             self._seq += 1
             seq = int(self._seq)
@@ -307,7 +313,8 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
         try:
             await self.set_state("event", event)
         except Exception:
-            return
+            return None
+        return event
 
     async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
@@ -388,15 +395,28 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
 
         payload = payload_any if isinstance(payload_any, dict) else {"value": payload_any}
         entry = self._build_entry(raw=payload, payload=payload, remote=self._peer(writer))
-        await self._safe_write_event(entry)
+        published_event = await self._safe_write_event(entry)
 
-        if self._print_raw:
-            if self._print_pretty:
-                print(f"[{self.node_id}:lovense_mock_server] raw={json.dumps(payload, ensure_ascii=False, indent=2)}")
+        if self._print_enabled:
+            if self._print_raw:
+                event_to_print = published_event if isinstance(published_event, dict) else entry
+                if self._print_pretty:
+                    print(
+                        f"[{self.node_id}:lovense_mock_server] "
+                        f"event={json.dumps(event_to_print, ensure_ascii=False, indent=2)}"
+                    )
+                else:
+                    print(
+                        f"[{self.node_id}:lovense_mock_server] "
+                        f"event={json.dumps(event_to_print, ensure_ascii=False)}"
+                    )
             else:
-                print(f"[{self.node_id}:lovense_mock_server] raw={json.dumps(payload, ensure_ascii=False)}")
-        else:
-            print(f"[{self.node_id}:lovense_mock_server] {entry.get('summary')}")
+                event_id = ""
+                seq = ""
+                if isinstance(published_event, dict):
+                    event_id = str(published_event.get("eventId") or "")
+                    seq = str(published_event.get("seq") or "")
+                print(f"[{self.node_id}:lovense_mock_server] seq={seq} id={event_id} summary={entry.get('summary')}")
 
         if payload.get("command") == "GetToys":
             toy_map = _build_toy_map()
@@ -546,6 +566,14 @@ LovenseMockServerRuntimeNode.SPEC = F8OperatorSpec(
             valueSchema=integer_schema(default=30010, minimum=1, maximum=65535),
             access=F8StateAccess.rw,
             showOnNode=True,
+        ),
+        F8StateSpec(
+            name="printEnabled",
+            label="Print Incoming",
+            description="Print received commands to stdout (debug).",
+            valueSchema=boolean_schema(default=True),
+            access=F8StateAccess.rw,
+            showOnNode=False,
         ),
         F8StateSpec(
             name="printRaw",
