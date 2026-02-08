@@ -2217,6 +2217,14 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
             pass
         self.reload()
 
+    def _refresh(self) -> None:
+        """
+        Backwards-compatible alias for triggering a node sync + UI reload.
+
+        Some editor actions (eg. state field schema edits) still call `_refresh()`.
+        """
+        self._on_spec_applied()
+
     def reload(self) -> None:
         """
         Coalesce multiple reload requests into a single UI rebuild.

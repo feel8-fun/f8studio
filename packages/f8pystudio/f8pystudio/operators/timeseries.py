@@ -303,7 +303,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
                     description="Maximum number of points kept in memory.",
                     valueSchema=integer_schema(default=200, minimum=10, maximum=5000),
                     access=F8StateAccess.rw,
-                    showOnNode=True,
+                    showOnNode=False,
                 ),
                 F8StateSpec(
                     name="windowMs",
@@ -311,7 +311,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
                     description="Only keep data within this time window.",
                     valueSchema=integer_schema(default=10000, minimum=100, maximum=600000),
                     access=F8StateAccess.rw,
-                    showOnNode=True,
+                    showOnNode=False,
                 ),
                 F8StateSpec(
                     name="throttleMs",
@@ -319,7 +319,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
                     description="UI refresh interval in milliseconds.",
                     valueSchema=integer_schema(default=100, minimum=0, maximum=60000),
                     access=F8StateAccess.rw,
-                    showOnNode=True,
+                    showOnNode=False,
                 ),
                 F8StateSpec(
                     name="showLegend",
@@ -327,7 +327,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
                     description="Toggle plot legend visibility.",
                     valueSchema=boolean_schema(default=False),
                     access=F8StateAccess.rw,
-                    showOnNode=True,
+                    showOnNode=False,
                 ),
                 F8StateSpec(
                     name="minVal",
@@ -335,7 +335,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
                     description="Fixed y-axis minimum (leave empty for auto).",
                     valueSchema=number_schema(default=None),
                     access=F8StateAccess.rw,
-                    showOnNode=True,
+                    showOnNode=False,
                 ),
                 F8StateSpec(
                     name="maxVal",
@@ -343,7 +343,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
                     description="Fixed y-axis maximum (leave empty for auto).",
                     valueSchema=number_schema(default=None),
                     access=F8StateAccess.rw,
-                    showOnNode=True,
+                    showOnNode=False,
                 ),
             ],
         ),

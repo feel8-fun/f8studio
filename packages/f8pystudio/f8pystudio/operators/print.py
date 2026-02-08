@@ -142,7 +142,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
                     description="UI refresh interval in milliseconds (0 = refresh every tick).",
                     valueSchema=integer_schema(default=100, minimum=0, maximum=60000),
                     access=F8StateAccess.rw,
-                    showOnNode=True,
+                    showOnNode=False,
                 ),
             ],
         ),

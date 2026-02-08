@@ -62,7 +62,7 @@ class SerialOutRuntimeNode(OperatorNode):
         if value is None:
             await self._emit_status(written_bytes=0)
             return []
-        print("SerialOutRuntimeNode.on_exec: value =", value)
+        # print("SerialOutRuntimeNode.on_exec: value =", value)
         data = self._to_bytes(value)
         if not data:
             await self._emit_status(written_bytes=0)

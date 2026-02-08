@@ -70,7 +70,7 @@ class TCodeRuntimeNode(OperatorNode):
 
     async def compute_output(self, port: str, ctx_id: str | int | None = None) -> Any:
         port_s = str(port)
-        if port_s not in ("tcode", "f8/transform/tcode"):
+        if port_s != "tcode":
             return None
 
         interval_ms = _coerce_number(await self.pull("intervalMs", ctx_id=ctx_id))
@@ -130,11 +130,6 @@ TCodeRuntimeNode.SPEC = F8OperatorSpec(
     ],
     dataOutPorts=[
         F8DataPortSpec(name="tcode", description="TCode v0.3 command string", valueSchema=string_schema()),
-        F8DataPortSpec(
-            name="f8/transform/tcode",
-            description="TCode v0.3 command string (alias port id).",
-            valueSchema=string_schema(),
-        ),
     ],
     stateFields=[
         F8StateSpec(
@@ -143,7 +138,7 @@ TCodeRuntimeNode.SPEC = F8OperatorSpec(
             description="Default interval appended as `I###` when `intervalMs` input is not provided.",
             valueSchema=number_schema(default=20, minimum=1, maximum=50000),
             access=F8StateAccess.rw,
-            showOnNode=False,
+            showOnNode=True,
         )
     ],
 )
