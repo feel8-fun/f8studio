@@ -35,6 +35,7 @@ async def _http_post_json(*, host: str, port: int, path: str, payload: dict[str,
     req = (
         f"POST {path} HTTP/1.1\r\n"
         f"Host: {host}:{port}\r\n"
+        "Connection: close\r\n"
         "Content-Type: application/json\r\n"
         f"Content-Length: {len(body)}\r\n"
         "\r\n"
@@ -103,6 +104,18 @@ class LovenseMockServerNodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ev1.get("seq"), 1)
         self.assertEqual((ev1.get("summary") or {}).get("type"), "vibration_pattern")
 
+        # Ping should NOT land in state.
+        code, _ = await _http_post_json(
+            host="127.0.0.1",
+            port=port,
+            path="/command",
+            payload={"type": "ping"},
+        )
+        self.assertEqual(code, 200)
+        ev_after_ping = (await bus.get_state("lov1", "event")).value
+        self.assertIsInstance(ev_after_ping, dict)
+        self.assertEqual(ev_after_ping.get("seq"), 1)
+
         # Redeploy rungraph (same ports/state): node instance should be preserved.
         graph_v2 = F8RuntimeGraph(graphId="g1", revision="r2", nodes=[op], edges=[])
         await bus.set_rungraph(graph_v2)
@@ -128,4 +141,3 @@ class LovenseMockServerNodeTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

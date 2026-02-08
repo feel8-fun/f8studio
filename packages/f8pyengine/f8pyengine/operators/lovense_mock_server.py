@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import json
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import parse_qsl
 
 from f8pysdk import (
     F8OperatorSchemaVersion,
@@ -28,6 +31,7 @@ OPERATOR_CLASS = "f8.lovense_mock_server"
 
 _MAX_BODY_BYTES = 1024 * 1024
 _MAX_HEADER_BYTES = 32 * 1024
+_WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 
 @dataclass(frozen=True)
@@ -48,26 +52,151 @@ def _build_toy_map() -> dict[str, dict[str, Any]]:
     # Keep numeric-ish keys for stable order when consumers use Object.values(...) on the JSON object.
     return {
         "0": {
-            "nickName": "Feel8 Lush",
+            "nickName": "Mock Lush",
             "name": "lush",
             "id": "MOCK_LUSH_0",
             "battery": 100,
+            "fVersion": 0,
+            "hVersion": 0,
             "version": "3",
+            "connected": True,
             "status": "1",
+            "domain": "127.0.0.1",
+            "port": None,  # filled per-response
+            "isHttps": False,
+            "platform": "mock",
         },
         "1": {
-            "nickName": "Feel8 Solace",
+            "nickName": "Mock Solace",
             "name": "solace",
             "id": "MOCK_SOLACE_1",
             "battery": 100,
+            "fVersion": 0,
+            "hVersion": 0,
             "version": "1",
+            "connected": True,
             "status": "1",
+            "domain": "127.0.0.1",
+            "port": None,  # filled per-response
+            "isHttps": False,
+            "platform": "mock",
         },
     }
 
 
+def _build_get_toys_response(*, toy_map: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    toys_string = json.dumps(toy_map, ensure_ascii=False, separators=(",", ":"))
+    all_toys_by_id: dict[str, Any] = {}
+    for toy in list(toy_map.values()):
+        try:
+            toy_id = str(toy.get("id") or "")
+        except Exception:
+            toy_id = ""
+        if toy_id:
+            all_toys_by_id[toy_id] = toy
+
+    return {
+        # Unity-friendly
+        "code": 0,
+        "type": "GetToys",
+        "message": "OK",
+        "data": {
+            "toys": toys_string,
+            "allToys": all_toys_by_id,
+            "appType": "remote",
+            "platform": "pc",
+            "gameAppId": "",
+        },
+        # RPGM-friendly
+        "ok": True,
+        "data2": {"toys": toys_string, "toysMap": toy_map},
+        # Convenience/debug
+        "toys": toy_map,
+    }
+
+
+def _json_dumps_compact(obj: Any) -> bytes:
+    return json.dumps(obj, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8")
+
+
+def _parse_body_text(body_text: str, content_type: str) -> Any:
+    trimmed = str(body_text or "").strip()
+    ct = str(content_type or "").lower()
+
+    # Try JSON if it looks like JSON, regardless of content-type.
+    if (
+        "application/json" in ct
+        or trimmed.startswith("{")
+        or trimmed.startswith("[")
+        or trimmed.startswith('"')
+    ):
+        return json.loads(trimmed)
+
+    if "application/x-www-form-urlencoded" in ct:
+        obj: dict[str, str] = {}
+        for k, v in list(parse_qsl(trimmed, keep_blank_values=True)):
+            obj[str(k)] = str(v)
+        return obj
+
+    return trimmed
+
+
+def _normalize_payload(value: Any) -> dict[str, Any]:
+    current: Any = value
+    for _ in range(3):
+        if isinstance(current, str):
+            s = current.strip()
+            looks_json = (s.startswith("{") and s.endswith("}")) or (s.startswith("[") and s.endswith("]")) or (
+                s.startswith('"') and s.endswith('"')
+            )
+            if looks_json:
+                try:
+                    current = json.loads(s)
+                    continue
+                except Exception:
+                    return {"value": current}
+            return {"value": current}
+
+        if isinstance(current, list):
+            if len(current) == 1 and isinstance(current[0], dict):
+                current = current[0]
+                continue
+            return {"array": current}
+
+        if isinstance(current, dict):
+            data = current.get("data")
+            if isinstance(data, str):
+                s = data.strip()
+                if (s.startswith("{") and s.endswith("}")) or (s.startswith("[") and s.endswith("]")):
+                    try:
+                        current = json.loads(s)
+                        continue
+                    except Exception:
+                        pass
+            return current
+
+        break
+
+    return {"value": current}
+
+
 def _summarize_command(payload: dict[str, Any]) -> dict[str, Any]:
-    cmd = payload.get("command")
+    cmd_any = payload.get("command")
+    if cmd_any is None:
+        cmd_any = payload.get("cmd")
+    if cmd_any is None:
+        cmd_any = payload.get("type")
+    if cmd_any is None:
+        cmd_any = payload.get("request")
+    if cmd_any is None:
+        cmd_any = payload.get("method")
+
+    cmd = str(cmd_any or "")
+    if cmd == "ping":
+        return {"type": "ping"}
+    if cmd == "pong":
+        return {"type": "pong"}
+
     api_ver = payload.get("apiVer")
 
     if cmd == "Pattern":
@@ -84,6 +213,7 @@ def _summarize_command(payload: dict[str, Any]) -> dict[str, Any]:
         action = str(payload.get("action") or "")
         thrusting: int | None = None
         depth: int | None = None
+        all_v: int | None = None
         if action.startswith("Thrusting:") and ",Depth:" in action:
             try:
                 left, right = action.split(",Depth:", 1)
@@ -93,10 +223,18 @@ def _summarize_command(payload: dict[str, Any]) -> dict[str, Any]:
                 thrusting = None
                 depth = None
 
-        if action == "Stop":
-            typ = "stop"
-        elif thrusting is not None and depth is not None:
+        if action.startswith("All:"):
+            try:
+                all_v = int(action.split("All:", 1)[1])
+            except Exception:
+                all_v = None
+
+        if thrusting is not None and depth is not None:
             typ = "solace_thrusting"
+        elif all_v is not None:
+            typ = "all_vibrate"
+        elif action == "Stop":
+            typ = "stop"
         else:
             typ = "function"
 
@@ -107,17 +245,19 @@ def _summarize_command(payload: dict[str, Any]) -> dict[str, Any]:
             "action": action,
             "thrusting": thrusting,
             "depth": depth,
+            "all": all_v,
             "loopRunningSec": payload.get("loopRunningSec"),
             "loopPauseSec": payload.get("loopPauseSec"),
             "apiVer": api_ver,
         }
 
     if cmd == "GetToys":
-        return {"type": "get_toys", "apiVer": api_ver}
+        return {"type": "get_toys", "apiVer": api_ver if api_ver is not None else 1}
     if cmd == "PatternV2":
         return {"type": "pattern_v2", "apiVer": api_ver}
 
     return {"type": "other", "command": cmd, "apiVer": api_ver}
+
 
 def _unwrap_json_value(value: Any) -> Any:
     if value is None:
@@ -156,10 +296,13 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
         self._event_lock = asyncio.Lock()
         self._server: asyncio.AbstractServer | None = None
         self._cfg: _ServerConfig = _ServerConfig(
-            bind_address=str(_unwrap_json_value(self._initial_state.get("bindAddress")) or "127.0.0.1"),
+            bind_address=str(_unwrap_json_value(self._initial_state.get("bindAddress")) or "0.0.0.0"),
             port=self._parse_port(_unwrap_json_value(self._initial_state.get("port")), default=30010),
         )
-        self._print_enabled = self._parse_bool(_unwrap_json_value(self._initial_state.get("printEnabled")), default=True)
+        self._print_enabled = self._parse_bool(_unwrap_json_value(self._initial_state.get("printEnabled")), default=False)
+        self._print_headers = self._parse_bool(_unwrap_json_value(self._initial_state.get("printHeaders")), default=False)
+        self._print_body = self._parse_bool(_unwrap_json_value(self._initial_state.get("printBody")), default=False)
+        self._print_responses = self._parse_bool(_unwrap_json_value(self._initial_state.get("printResponses")), default=False)
         self._print_raw = self._parse_bool(_unwrap_json_value(self._initial_state.get("printRaw")), default=False)
         self._print_pretty = self._parse_bool(_unwrap_json_value(self._initial_state.get("printPretty")), default=False)
 
@@ -214,7 +357,13 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
         if name == "printPretty":
             return self._parse_bool(value, default=False)
         if name == "printEnabled":
-            return self._parse_bool(value, default=True)
+            return self._parse_bool(value, default=False)
+        if name == "printHeaders":
+            return self._parse_bool(value, default=False)
+        if name == "printBody":
+            return self._parse_bool(value, default=False)
+        if name == "printResponses":
+            return self._parse_bool(value, default=False)
         return value
 
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
@@ -242,7 +391,16 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
             self._print_pretty = self._parse_bool(_unwrap_json_value(value), default=False)
             return
         if name == "printEnabled":
-            self._print_enabled = self._parse_bool(_unwrap_json_value(value), default=True)
+            self._print_enabled = self._parse_bool(_unwrap_json_value(value), default=False)
+            return
+        if name == "printHeaders":
+            self._print_headers = self._parse_bool(_unwrap_json_value(value), default=False)
+            return
+        if name == "printBody":
+            self._print_body = self._parse_bool(_unwrap_json_value(value), default=False)
+            return
+        if name == "printResponses":
+            self._print_responses = self._parse_bool(_unwrap_json_value(value), default=False)
             return
 
     async def _restart_server(self) -> None:
@@ -318,10 +476,14 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
 
     async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
-            await self._handle_client_inner(reader, writer)
+            # Basic keep-alive loop: handle multiple requests per TCP connection.
+            while True:
+                keep = await self._handle_one_request(reader, writer)
+                if not keep:
+                    break
         except Exception:
             try:
-                await self._write_json(writer, status=500, obj={"ok": False, "error": "server_error"})
+                await self._write_json(writer, status=500, obj={"ok": False, "error": "server_error"}, keep_alive=False)
             except Exception:
                 pass
         finally:
@@ -331,25 +493,29 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
             except Exception:
                 pass
 
-    async def _handle_client_inner(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+    async def _handle_one_request(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> bool:
         header_bytes = await self._read_until(reader, b"\r\n\r\n", limit=_MAX_HEADER_BYTES)
+        if header_bytes == b"__header_overrun__":
+            await self._write_json(writer, status=413, obj={"ok": False, "error": "headers_too_large"}, keep_alive=False)
+            return False
         if not header_bytes:
-            return
+            return False
         if not header_bytes.endswith(b"\r\n\r\n"):
-            await self._write_json(writer, status=413, obj={"ok": False, "error": "headers_too_large"})
-            return
+            await self._write_json(writer, status=413, obj={"ok": False, "error": "headers_too_large"}, keep_alive=False)
+            return False
         header_text = header_bytes.decode("utf-8", errors="replace")
         lines = header_text.split("\r\n")
         if not lines or not lines[0]:
-            await self._write_json(writer, status=400, obj={"ok": False, "error": "bad_request"})
-            return
+            await self._write_json(writer, status=400, obj={"ok": False, "error": "bad_request"}, keep_alive=False)
+            return False
         request_line = lines[0].strip()
         parts = request_line.split(" ")
         if len(parts) < 2:
-            await self._write_json(writer, status=400, obj={"ok": False, "error": "bad_request"})
-            return
+            await self._write_json(writer, status=400, obj={"ok": False, "error": "bad_request"}, keep_alive=False)
+            return False
         method = parts[0].upper()
         path = parts[1]
+        proto = parts[2] if len(parts) >= 3 else "HTTP/1.1"
 
         headers: dict[str, str] = {}
         for raw_line in lines[1:]:
@@ -358,44 +524,120 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
             k, v = raw_line.split(":", 1)
             headers[k.strip().lower()] = v.strip()
 
+        path_s = str(path or "")
+        conn = str(headers.get("connection") or "").strip().lower()
+        # HTTP/1.1 defaults to keep-alive unless "Connection: close".
+        keep_alive = (proto.upper().startswith("HTTP/1.1")) and conn != "close"
+        if conn == "keep-alive":
+            keep_alive = True
+
+        # WebSocket (some SDKs use /v1).
+        if (
+            path_s == "/v1"
+            and headers.get("upgrade", "").lower() == "websocket"
+            and "sec-websocket-key" in headers
+        ):
+            if self._print_enabled and self._print_headers:
+                try:
+                    print(
+                        f"[{self.node_id}:lovense_mock_server] WS upgrade {path_s} "
+                        f"headers={json.dumps(self._pick_headers(headers), ensure_ascii=False, separators=(',', ':'))}"
+                    )
+                except Exception:
+                    pass
+            await self._handle_websocket_v1(reader, writer, headers)
+            return False
+
         if method == "OPTIONS":
-            await self._write_json(writer, status=204, obj=None)
-            return
+            await self._write_json(writer, status=204, obj=None, keep_alive=keep_alive)
+            return keep_alive
 
         if method != "POST" or path != "/command":
-            await self._write_text(writer, status=404, text="Not Found")
-            return
+            await self._write_text(writer, status=404, text="Not Found", keep_alive=keep_alive)
+            return keep_alive
 
-        content_length = 0
-        if "content-length" in headers:
+        content_type = headers.get("content-type", "")
+        body_text = await self._read_body_text(reader, headers)
+        if self._print_enabled and self._print_headers:
             try:
-                content_length = int(headers["content-length"])
+                picked = self._pick_headers(headers)
+                print(
+                    f"[{self.node_id}:lovense_mock_server] "
+                    f"headers={json.dumps(picked, ensure_ascii=False, separators=(',', ':'))}"
+                )
+                if content_type and not picked.get("content-type"):
+                    print(f"[{self.node_id}:lovense_mock_server] content-type={str(content_type)}")
             except Exception:
-                content_length = 0
-        if content_length < 0 or content_length > _MAX_BODY_BYTES:
-            await self._write_json(writer, status=413, obj={"ok": False, "error": "payload_too_large"})
-            return
-
-        body = b""
-        if content_length > 0:
-            body = await reader.readexactly(content_length)
-        elif content_length == 0:
-            body = b""
-        else:
-            await self._write_json(writer, status=400, obj={"ok": False, "error": "bad_request"})
-            return
-
+                pass
+        if self._print_enabled and self._print_body:
+            try:
+                text = str(body_text or "")
+                if len(text) > 2000:
+                    head = text[:2000]
+                    print(f"[{self.node_id}:lovense_mock_server] bodyText={head}...(truncated {len(text) - 2000})")
+                else:
+                    print(f"[{self.node_id}:lovense_mock_server] bodyText={text}")
+            except Exception:
+                pass
         try:
-            payload_any = json.loads(body.decode("utf-8"))
-        except Exception:
-            entry = self._build_entry(raw="__invalid_json__", payload=None, remote=self._peer(writer))
+            raw_payload = _parse_body_text(body_text, content_type)
+        except Exception as exc:
+            ts_ms = int(now_ms())
+            entry = {
+                "tsMs": ts_ms,
+                "ts": _now_iso(ts_ms),
+                "remote": self._peer(writer),
+                "path": str(path_s),
+                "error": "parse_failed",
+                "message": str(exc),
+                "contentType": str(content_type),
+                "bodyText": str(body_text),
+            }
             await self._safe_write_event(entry)
-            await self._write_json(writer, status=400, obj={"ok": False, "error": "invalid_json"})
-            return
+            await self._write_json(writer, status=400, obj={"ok": False, "error": "parse_failed"}, keep_alive=keep_alive)
+            return keep_alive
 
-        payload = payload_any if isinstance(payload_any, dict) else {"value": payload_any}
-        entry = self._build_entry(raw=payload, payload=payload, remote=self._peer(writer))
-        published_event = await self._safe_write_event(entry)
+        normalized = _normalize_payload(raw_payload)
+        summary = _summarize_command(normalized)
+
+        ts_ms = int(now_ms())
+        entry: dict[str, Any] = {
+            "tsMs": ts_ms,
+            "ts": _now_iso(ts_ms),
+            "remote": self._peer(writer),
+            "path": str(path_s),
+            "raw": raw_payload,
+            "summary": dict(summary),
+            "contentType": str(content_type),
+            "bodyText": str(body_text),
+            "normalized": dict(normalized),
+        }
+
+        typ = str(summary.get("type") or "")
+
+        # keep-alive traffic should not land in state.
+        if typ in ("ping", "pong"):
+            if typ == "ping":
+                resp_obj = {"type": "pong"}
+                if self._print_enabled and self._print_responses:
+                    try:
+                        print(f"[{self.node_id}:lovense_mock_server] resp status=200 body={_json_dumps_compact(resp_obj).decode('utf-8', errors='replace')}")
+                    except Exception:
+                        pass
+                await self._write_json(writer, status=200, obj=resp_obj, keep_alive=keep_alive)
+            else:
+                resp_obj = {"ok": True}
+                if self._print_enabled and self._print_responses:
+                    try:
+                        print(f"[{self.node_id}:lovense_mock_server] resp status=200 body={_json_dumps_compact(resp_obj).decode('utf-8', errors='replace')}")
+                    except Exception:
+                        pass
+                await self._write_json(writer, status=200, obj=resp_obj, keep_alive=keep_alive)
+            return keep_alive
+
+        published_event: dict[str, Any] | None = None
+        if typ in ("vibration_pattern", "solace_thrusting", "all_vibrate", "stop", "function", "pattern_v2"):
+            published_event = await self._safe_write_event(entry)
 
         if self._print_enabled:
             if self._print_raw:
@@ -408,7 +650,7 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
                 else:
                     print(
                         f"[{self.node_id}:lovense_mock_server] "
-                        f"event={json.dumps(event_to_print, ensure_ascii=False)}"
+                        f"event={json.dumps(event_to_print, ensure_ascii=False, separators=(',', ':'))}"
                     )
             else:
                 event_id = ""
@@ -418,12 +660,28 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
                     seq = str(published_event.get("seq") or "")
                 print(f"[{self.node_id}:lovense_mock_server] seq={seq} id={event_id} summary={entry.get('summary')}")
 
-        if payload.get("command") == "GetToys":
+        if typ == "get_toys":
             toy_map = _build_toy_map()
-            await self._write_json(writer, status=200, obj={"data": {"toys": json.dumps(toy_map, ensure_ascii=False)}})
-            return
+            for toy in list(toy_map.values()):
+                try:
+                    toy["port"] = int(self._cfg.port)
+                except Exception:
+                    pass
+            resp_obj = _build_get_toys_response(toy_map=toy_map)
+            if self._print_enabled and self._print_responses:
+                try:
+                    dumped = _json_dumps_compact(resp_obj).decode("utf-8", errors="replace")
+                    if len(dumped) > 2000:
+                        print(f"[{self.node_id}:lovense_mock_server] resp status=200 body={dumped[:2000]}...(truncated {len(dumped) - 2000})")
+                    else:
+                        print(f"[{self.node_id}:lovense_mock_server] resp status=200 body={dumped}")
+                except Exception:
+                    pass
+            await self._write_json(writer, status=200, obj=resp_obj, keep_alive=keep_alive)
+            return keep_alive
 
-        await self._write_json(writer, status=200, obj={"ok": True})
+        await self._write_json(writer, status=200, obj={"ok": True}, keep_alive=keep_alive)
+        return keep_alive
 
     def _peer(self, writer: asyncio.StreamWriter) -> str:
         try:
@@ -437,21 +695,17 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
                 return ""
         return ""
 
-    def _build_entry(self, *, raw: Any, payload: dict[str, Any] | None, remote: str) -> dict[str, Any]:
-        ts_ms = now_ms()
-        summary: dict[str, Any] = {"type": "unknown"}
-        if payload is not None:
-            try:
-                summary = _summarize_command(payload)
-            except Exception:
-                summary = {"type": "unknown"}
+    def _pick_headers(self, headers: dict[str, str]) -> dict[str, Any]:
+        # Match scripts/lovense-mock-server.js: print a conservative subset.
+        h = dict(headers or {})
         return {
-            "tsMs": int(ts_ms),
-            "ts": _now_iso(int(ts_ms)),
-            "remote": str(remote or ""),
-            "path": "/command",
-            "raw": raw,
-            "summary": summary,
+            "content-type": h.get("content-type"),
+            "content-length": h.get("content-length"),
+            "user-agent": h.get("user-agent"),
+            "accept": h.get("accept"),
+            "accept-encoding": h.get("accept-encoding"),
+            "connection": h.get("connection"),
+            "upgrade": h.get("upgrade"),
         }
 
     async def _read_until(self, reader: asyncio.StreamReader, marker: bytes, *, limit: int) -> bytes:
@@ -472,26 +726,218 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
             return data[: int(limit)]
         return bytes(data)
 
-    async def _write_text(self, writer: asyncio.StreamWriter, *, status: int, text: str) -> None:
+    async def _read_body_text(self, reader: asyncio.StreamReader, headers: dict[str, str]) -> str:
+        # Prefer Content-Length.
+        content_length: int | None = None
+        if "content-length" in headers:
+            try:
+                content_length = int(headers["content-length"])
+            except Exception:
+                content_length = None
+        if content_length is not None:
+            if content_length < 0 or content_length > _MAX_BODY_BYTES:
+                return ""
+            if content_length == 0:
+                return ""
+            body = await reader.readexactly(int(content_length))
+            return body.decode("utf-8", errors="replace")
+
+        # Minimal chunked support.
+        if headers.get("transfer-encoding", "").lower() == "chunked":
+            body = bytearray()
+            while True:
+                line = await reader.readline()
+                if not line:
+                    break
+                try:
+                    size_str = line.decode("ascii", errors="ignore").split(";", 1)[0].strip()
+                    size = int(size_str, 16)
+                except Exception:
+                    break
+                if size == 0:
+                    _ = await reader.readline()
+                    break
+                if len(body) + size > _MAX_BODY_BYTES:
+                    break
+                chunk = await reader.readexactly(size)
+                body.extend(chunk)
+                _ = await reader.readexactly(2)  # CRLF
+            return bytes(body).decode("utf-8", errors="replace")
+
+        # Fallback: best-effort short read.
+        body = bytearray()
+        # Read until idle (handles clients that omit content-length but keep the socket open).
+        while len(body) < _MAX_BODY_BYTES:
+            try:
+                chunk = await asyncio.wait_for(reader.read(4096), timeout=0.05)
+            except asyncio.TimeoutError:
+                break
+            except Exception:
+                break
+            if not chunk:
+                break
+            body.extend(chunk)
+            # Stop once we have "something" and there's no immediate additional data.
+            if len(body) >= _MAX_BODY_BYTES:
+                break
+        return bytes(body).decode("utf-8", errors="replace")
+
+    async def _handle_websocket_v1(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, headers: dict[str, str]
+    ) -> None:
+        key = str(headers.get("sec-websocket-key") or "").strip()
+        if not key:
+            await self._write_text(writer, status=400, text="Bad Request", keep_alive=False)
+            return
+        accept = base64.b64encode(hashlib.sha1((key + _WS_GUID).encode("utf-8")).digest()).decode("ascii")
+        resp = "\r\n".join(
+            [
+                "HTTP/1.1 101 Switching Protocols",
+                "Upgrade: websocket",
+                "Connection: Upgrade",
+                f"Sec-WebSocket-Accept: {accept}",
+                "\r\n",
+            ]
+        )
+        writer.write(resp.encode("utf-8"))
+        await writer.drain()
+
+        toy_map = _build_toy_map()
+        for toy in list(toy_map.values()):
+            try:
+                toy["port"] = int(self._cfg.port)
+            except Exception:
+                pass
+        await self._ws_send_text(writer, json.dumps({"type": "access-granted"}, ensure_ascii=False))
+        await self._ws_send_text(writer, json.dumps({"type": "toy-list", "data": {"toys": toy_map}}, ensure_ascii=False))
+
+        buf = bytearray()
+        while True:
+            chunk = await reader.read(4096)
+            if not chunk:
+                break
+            buf.extend(chunk)
+            frames, buf = self._ws_try_parse_frames(buf)
+            for opcode, payload in frames:
+                if opcode == 0x8:
+                    await self._ws_send_close(writer)
+                    return
+                if opcode == 0x9:
+                    await self._ws_send_pong(writer, payload)
+                    continue
+                if opcode != 0x1:
+                    continue
+                text = payload.decode("utf-8", errors="replace")
+                try:
+                    msg = json.loads(text)
+                except Exception:
+                    continue
+                if not isinstance(msg, dict):
+                    continue
+                t = msg.get("type") or msg.get("command") or msg.get("cmd")
+                t_s = str(t or "")
+                if t_s == "ping":
+                    await self._ws_send_text(writer, json.dumps({"type": "pong"}))
+                if t_s == "access":
+                    await self._ws_send_text(writer, json.dumps({"type": "access-granted"}))
+
+    def _ws_try_parse_frames(self, data: bytearray) -> tuple[list[tuple[int, bytes]], bytearray]:
+        buf = bytes(data)
+        offset = 0
+        out: list[tuple[int, bytes]] = []
+        while len(buf) - offset >= 2:
+            b0 = buf[offset]
+            b1 = buf[offset + 1]
+            fin = (b0 & 0x80) != 0
+            opcode = b0 & 0x0F
+            masked = (b1 & 0x80) != 0
+            ln = b1 & 0x7F
+            pos = offset + 2
+            if ln == 126:
+                if len(buf) - pos < 2:
+                    break
+                ln = int.from_bytes(buf[pos : pos + 2], "big")
+                pos += 2
+            elif ln == 127:
+                if len(buf) - pos < 8:
+                    break
+                hi = int.from_bytes(buf[pos : pos + 4], "big")
+                lo = int.from_bytes(buf[pos + 4 : pos + 8], "big")
+                if hi != 0:
+                    break
+                ln = lo
+                pos += 8
+            if masked:
+                if len(buf) - pos < 4:
+                    break
+                mask = buf[pos : pos + 4]
+                pos += 4
+            else:
+                mask = None
+            if len(buf) - pos < ln:
+                break
+            payload = buf[pos : pos + ln]
+            pos += ln
+            offset = pos
+            if mask is not None:
+                payload = bytes(payload[i] ^ mask[i % 4] for i in range(len(payload)))
+            if not fin:
+                continue
+            out.append((int(opcode), bytes(payload)))
+        remain = bytearray(buf[offset:])
+        return out, remain
+
+    async def _ws_send_text(self, writer: asyncio.StreamWriter, text: str) -> None:
+        payload = str(text).encode("utf-8")
+        header = bytearray()
+        header.append(0x81)
+        ln = len(payload)
+        if ln < 126:
+            header.append(ln)
+        elif ln < 65536:
+            header.append(126)
+            header.extend(int(ln).to_bytes(2, "big"))
+        else:
+            header.append(127)
+            header.extend((0).to_bytes(4, "big"))
+            header.extend(int(ln).to_bytes(4, "big"))
+        writer.write(bytes(header) + payload)
+        await writer.drain()
+
+    async def _ws_send_pong(self, writer: asyncio.StreamWriter, payload: bytes) -> None:
+        p = bytes(payload or b"")
+        header = bytearray([0x8A, len(p)])
+        writer.write(bytes(header) + p)
+        await writer.drain()
+
+    async def _ws_send_close(self, writer: asyncio.StreamWriter) -> None:
+        writer.write(b"\x88\x00")
+        await writer.drain()
+
+    async def _write_text(self, writer: asyncio.StreamWriter, *, status: int, text: str, keep_alive: bool) -> None:
         body = (text or "").encode("utf-8")
-        headers = self._response_headers(content_type="text/plain; charset=utf-8", content_length=len(body))
+        headers = self._response_headers(
+            content_type="text/plain; charset=utf-8", content_length=len(body), keep_alive=keep_alive
+        )
         status_line = f"HTTP/1.1 {status} {self._status_text(status)}\r\n"
         writer.write(status_line.encode("ascii") + headers + b"\r\n" + body)
         await writer.drain()
 
-    async def _write_json(self, writer: asyncio.StreamWriter, *, status: int, obj: Any | None) -> None:
+    async def _write_json(
+        self, writer: asyncio.StreamWriter, *, status: int, obj: Any | None, keep_alive: bool
+    ) -> None:
         if obj is None:
             body = b""
             content_type = "application/json; charset=utf-8"
         else:
-            body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+            body = _json_dumps_compact(obj)
             content_type = "application/json; charset=utf-8"
-        headers = self._response_headers(content_type=content_type, content_length=len(body))
+        headers = self._response_headers(content_type=content_type, content_length=len(body), keep_alive=keep_alive)
         status_line = f"HTTP/1.1 {status} {self._status_text(status)}\r\n"
         writer.write(status_line.encode("ascii") + headers + b"\r\n" + body)
         await writer.drain()
 
-    def _response_headers(self, *, content_type: str, content_length: int) -> bytes:
+    def _response_headers(self, *, content_type: str, content_length: int, keep_alive: bool) -> bytes:
         lines = [
             f"Content-Type: {content_type}",
             f"Content-Length: {int(content_length)}",
@@ -499,8 +945,11 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
             "Access-Control-Allow-Origin: *",
             "Access-Control-Allow-Methods: POST, OPTIONS",
             "Access-Control-Allow-Headers: Content-Type, Accept",
-            "Connection: close",
         ]
+        # Match Node's behavior more closely: do not force keep-alive via header.
+        # Only explicitly request close when we intend to close.
+        if not keep_alive:
+            lines.append("Connection: close")
         return ("\r\n".join(lines) + "\r\n").encode("utf-8")
 
     def _status_text(self, status: int) -> str:
@@ -555,7 +1004,7 @@ LovenseMockServerRuntimeNode.SPEC = F8OperatorSpec(
             name="bindAddress",
             label="Bind Address",
             description="Local address to bind (use 0.0.0.0 to accept other hosts on your LAN).",
-            valueSchema=string_schema(default="127.0.0.1"),
+            valueSchema=string_schema(default="0.0.0.0"),
             access=F8StateAccess.rw,
             showOnNode=True,
         ),
@@ -571,6 +1020,30 @@ LovenseMockServerRuntimeNode.SPEC = F8OperatorSpec(
             name="printEnabled",
             label="Print Incoming",
             description="Print received commands to stdout (debug).",
+            valueSchema=boolean_schema(default=False),
+            access=F8StateAccess.rw,
+            showOnNode=False,
+        ),
+        F8StateSpec(
+            name="printHeaders",
+            label="Print Headers",
+            description="Print selected request headers to stdout (debug).",
+            valueSchema=boolean_schema(default=False),
+            access=F8StateAccess.rw,
+            showOnNode=False,
+        ),
+        F8StateSpec(
+            name="printBody",
+            label="Print Body",
+            description="Print request body text to stdout (debug).",
+            valueSchema=boolean_schema(default=False),
+            access=F8StateAccess.rw,
+            showOnNode=False,
+        ),
+        F8StateSpec(
+            name="printResponses",
+            label="Print Responses",
+            description="Print response JSON bodies to stdout (debug).",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
             showOnNode=False,
