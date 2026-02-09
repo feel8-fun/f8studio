@@ -365,6 +365,8 @@ PythonScriptRuntimeNode.SPEC = F8OperatorSpec(
             name="code",
             label="Code",
             description="Python source code defining onStart(ctx), onMsg(ctx, inputs), onStop(ctx).",
+            uiControl="code",
+            uiLanguage="python",
             valueSchema=string_schema(default=DEFAULT_CODE),
             access=F8StateAccess.rw,
             showOnNode=False,
@@ -385,7 +387,7 @@ PythonScriptRuntimeNode.SPEC = F8OperatorSpec(
 def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
     reg = registry or RuntimeNodeRegistry.instance()
 
-    def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
+    def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> OperatorNode:
         return PythonScriptRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
 
     reg.register(SERVICE_CLASS, OPERATOR_CLASS, _factory, overwrite=True)

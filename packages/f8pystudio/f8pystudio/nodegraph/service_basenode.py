@@ -37,7 +37,9 @@ from .service_process_toolbar import ServiceProcessToolbar
 from .service_bridge_protocol import ServiceBridge
 from .viewer import F8StudioNodeViewer
 from ..widgets.f8_editor_widgets import F8ImageB64Editor, F8OptionCombo, F8Switch, F8ValueBar, parse_select_pool
+from ..widgets.f8_prop_value_widgets import F8CodeEditorDialog
 from ..command_ui_protocol import CommandUiHandler, CommandUiSource
+import qtawesome as qta
 
 logger = logging.getLogger(__name__)
 
@@ -1411,6 +1413,45 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
 
         # Create control.
         read_only = access_s == "ro"
+
+        if ui in {"code"}:
+            btn = QtWidgets.QToolButton()
+            btn.setAutoRaise(True)
+            btn.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+            btn.setText("Edit…")
+            try:
+                btn.setIcon(qta.icon("fa5s.code", color="white"))
+            except Exception:
+                pass
+            btn.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+            if field_tooltip:
+                btn.setToolTip(field_tooltip)
+
+            def _apply_value(v: Any) -> None:
+                s = "" if v is None else str(v)
+                n = len(s.splitlines()) if s else 0
+                tip = field_tooltip or ""
+                if n:
+                    tip2 = f"{n} line" if n == 1 else f"{n} lines"
+                    btn.setToolTip((tip + "\n" if tip else "") + tip2)
+
+            def _on_click() -> None:
+                current = _get_node_value()
+                dlg = F8CodeEditorDialog(
+                    None,
+                    title=f"{self.name} — {state_field.label}",
+                    code="" if current is None else str(current),
+                )
+                if dlg.exec() != QtWidgets.QDialog.Accepted:
+                    return
+                _set_node_value(dlg.code(), push_undo=True)
+
+            btn.clicked.connect(_on_click)  # type: ignore[attr-defined]
+            _apply_value(_get_node_value())
+            self._state_inline_updaters[name] = _apply_value
+            if read_only:
+                btn.setDisabled(True)
+            return btn
 
         is_image_b64 = t == "string" and (ui in {"image", "image_b64", "img"} or "b64" in name.lower())
         if is_image_b64:

@@ -15,6 +15,7 @@ from .f8_editor_widgets import (
     parse_select_pool,
 )
 from .f8_prop_value_widgets import F8DoubleSpinBoxPropWidget, F8IntSpinBoxPropWidget, F8NumberPropLineEdit
+from .f8_prop_value_widgets import F8CodeButtonPropWidget
 
 
 def effective_state_fields(node: Any) -> list[Any]:
@@ -207,6 +208,15 @@ def build_state_value_widget(
     )
     if is_image_b64:
         widget = F8PropImageB64()
+        widget.set_name(prop_name)
+        return widget
+
+    if ui_control in {"code"}:
+        try:
+            title = f"{node.name()} — {prop_name}"
+        except Exception:
+            title = f"Edit {prop_name}"
+        widget = F8CodeButtonPropWidget(title=title)
         widget.set_name(prop_name)
         return widget
 

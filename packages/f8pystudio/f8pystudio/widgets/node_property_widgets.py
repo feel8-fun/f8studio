@@ -27,6 +27,7 @@ from f8pysdk.schema_helpers import schema_default
 
 from .f8_prop_value_widgets import (
     F8CodePropWidget as _F8CodePropWidget,
+    F8CodeButtonPropWidget as _F8CodeButtonPropWidget,
     F8JsonPropTextEdit as _F8JsonPropTextEdit,
 )
 from .f8_editor_widgets import (
@@ -2090,15 +2091,17 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                     widget = _F8JsonPropTextEdit()
                     widget.set_name(prop_name)
 
-                # Python script operator: replace `code` editor with a dialog-backed widget.
+                # Dialog-backed code editor (eg. python_script code).
                 try:
+                    ui_control = _state_field_ui_control(node, prop_name)
                     spec = _get_node_spec(node)
-                    if (
+                    is_legacy_python_script_code = (
                         isinstance(spec, F8OperatorSpec)
                         and str(spec.operatorClass or "") == "f8.python_script"
                         and str(prop_name) == "code"
-                    ):
-                        widget = _F8CodePropWidget(title=f"{node.name()} — Code")
+                    )
+                    if ui_control == "code" or is_legacy_python_script_code:
+                        widget = _F8CodeButtonPropWidget(title=f"{node.name()} — {prop_name}")
                         widget.set_name(prop_name)
                 except Exception:
                     pass

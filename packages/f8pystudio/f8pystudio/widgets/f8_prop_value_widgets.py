@@ -4,6 +4,7 @@ import json
 from typing import Any, Callable
 
 from qtpy import QtCore, QtGui, QtWidgets
+import qtawesome as qta
 
 
 class F8CodeEditorDialog(QtWidgets.QDialog):
@@ -79,6 +80,53 @@ class F8CodePropWidget(QtWidgets.QWidget):
             if head:
                 preview = f"{preview} — {head[:80]}"
         self._preview.setText(preview)
+
+    def _on_edit_clicked(self) -> None:
+        dlg = F8CodeEditorDialog(self, title=self._title, code=self.get_value())
+        if dlg.exec() != QtWidgets.QDialog.Accepted:
+            return
+        code = dlg.code()
+        self.set_value(code)
+        self.value_changed.emit(self.get_name(), code)
+
+
+class F8CodeButtonPropWidget(QtWidgets.QWidget):
+    """
+    A single "Edit…" button that opens a code editor dialog.
+    """
+
+    value_changed = QtCore.Signal(str, object)
+
+    def __init__(self, parent=None, *, title: str = "Edit Code"):
+        super().__init__(parent)
+        self._name = ""
+        self._value = ""
+        self._title = str(title or "Edit Code")
+
+        self._btn = QtWidgets.QPushButton("Edit…")
+        try:
+            self._btn.setIcon(qta.icon("fa5s.code", color="white"))
+        except Exception:
+            pass
+        self._btn.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+        self._btn.clicked.connect(self._on_edit_clicked)  # type: ignore[attr-defined]
+
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self._btn, 1)
+
+    def set_name(self, name: str) -> None:
+        self._name = str(name or "")
+
+    def get_name(self) -> str:
+        return self._name
+
+    def get_value(self) -> str:
+        return str(self._value or "")
+
+    def set_value(self, value: Any) -> None:
+        self._value = str(value or "")
 
     def _on_edit_clicked(self) -> None:
         dlg = F8CodeEditorDialog(self, title=self._title, code=self.get_value())
