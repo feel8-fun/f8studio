@@ -54,6 +54,8 @@ onnx = { features = ["py313", "sdk", "onnx", "vision", "template_tracker"], solv
 [tasks]
 engine = "python -m f8pyengine.main"
 studio = "python -m f8pystudio.main"
+studio_live = "python -m f8pystudio.main --discovery-live"
 detect_tracker = "python -m f8pydetect_tracker.main"
 template_tracker = "python -m f8pytemplate_tracker.main"
 sdk_tests = 'python -m unittest discover -s packages/f8pysdk/tests -p "test_*.py"'
+update_describes = "python scripts/update_static_describes.py"

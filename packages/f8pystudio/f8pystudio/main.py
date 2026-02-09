@@ -17,9 +17,17 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(description="F8PyStudio")
     parser.add_argument("--describe", action="store_true", help="Output the service description in JSON format")
+    parser.add_argument(
+        "--discovery-live",
+        action="store_true",
+        help="Disable static describe.json/inline describe fast-paths; always run describe subprocesses.",
+    )
     args = parser.parse_args(argv)
 
     from .pystudio_program import PyStudioProgram
+
+    if args.discovery_live:
+        os.environ["F8_DISCOVERY_DISABLE_STATIC_DESCRIBE"] = "1"
 
     prog = PyStudioProgram()
     if args.describe:

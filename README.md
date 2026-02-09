@@ -29,6 +29,13 @@ Fresh workspace for the API-first, NATS-only architecture. Current focus is cont
 ## SHM tools
 - Audio waveform viewer: `pixi run -e default python scripts/audioshm_viewer.py --service-id audiocap --use-event`
 
+## Service discovery (startup speed)
+Studio service discovery can avoid spawning `pixi run ... --describe` by using a static `describe.json` in each service directory (e.g. `services/f8/engine/describe.json`).
+
+- Regenerate all: `pixi run -e default update_describes`
+- Regenerate one: `pixi run -e default update_describes -- --service-class f8.pyengine`
+- Force live discovery (ignore `describe.json`): `pixi run -e default studio_live`
+
 ## Audio capture
 - List recording devices: `build/bin/f8audiocap_service.exe --list-devices`
 - Capture system mix (Windows): `build/bin/f8audiocap_service.exe --service-id audiocap --mode capture --backend wasapi`
