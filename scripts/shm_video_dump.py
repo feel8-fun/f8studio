@@ -23,8 +23,8 @@ def main() -> int:
     try:
         import numpy as np  # type: ignore
         import cv2  # type: ignore
-    except Exception as e:
-        print(f"Missing dependency: {e}", file=sys.stderr)
+    except ModuleNotFoundError as e:
+        print(f"Missing dependency: {e.name}", file=sys.stderr)
         print("Install: pixi install (or pip install numpy opencv-python)", file=sys.stderr)
         return 2
 
@@ -77,8 +77,9 @@ def main() -> int:
         try:
             if reader:
                 reader.close()
-        except Exception:
-            pass
+        except OSError as exc:
+            # Ignore close failures (resource already released)
+            print(f"[shm] warning: close failed: {exc}", file=sys.stderr)
 
     if dumped < int(args.frames):
         print(f"[shm] timeout; dumped={dumped}", file=sys.stderr)

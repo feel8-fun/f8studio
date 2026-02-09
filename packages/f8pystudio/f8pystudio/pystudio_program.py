@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from .pystudio_node_registry import SERVICE_CLASS, register_pystudio_specs
+
+logger = logging.getLogger(__name__)
 
 
 class PyStudioProgram:
@@ -26,7 +29,7 @@ class PyStudioProgram:
             for op in reg.operator_specs(SERVICE_CLASS):
                 sc.register_operator(op)
         except Exception:
-            pass
+            logger.exception("Failed to ensure pystudio specs in catalog")
 
     @staticmethod
     def build_node_classes() -> list[type]:
@@ -77,19 +80,13 @@ class PyStudioProgram:
         try:
             timing_lines = last_discovery_timing_lines()
             for line in timing_lines:
-                try:
-                    mainwin._bridge.log.emit(str(line))  # type: ignore[attr-defined]
-                except Exception:
-                    pass
+                mainwin._bridge.log.emit(str(line))  # type: ignore[attr-defined]
             # Avoid double-printing errors: timings output can already include them.
             if not any("discovery errors:" in str(x) for x in timing_lines):
                 for line in last_discovery_error_lines():
-                    try:
-                        mainwin._bridge.log.emit(str(line))  # type: ignore[attr-defined]
-                    except Exception:
-                        pass
+                    mainwin._bridge.log.emit(str(line))  # type: ignore[attr-defined]
         except Exception:
-            pass
+            logger.exception("Failed to emit discovery logs to studio log dock")
         return int(app.exec_() or 0)
 
     def describe_json_text(self) -> str:

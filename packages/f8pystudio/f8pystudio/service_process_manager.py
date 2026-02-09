@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import threading
@@ -8,8 +9,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .error_reporting import ExceptionLogOnce, fingerprint_exception
 from .service_catalog.discovery import load_service_entry
 from .service_catalog.service_catalog import ServiceCatalog
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -30,6 +34,7 @@ class ServiceProcessManager:
     def __init__(self) -> None:
         self._procs: dict[str, subprocess.Popen[Any]] = {}  # service_id -> process
         self._threads: dict[str, threading.Thread] = {}  # service_id -> reader thread
+        self._exception_log_once = ExceptionLogOnce()
 
     def service_ids(self) -> list[str]:
         """
@@ -53,9 +58,21 @@ class ServiceProcessManager:
                         break
                     try:
                         on_output(str(service_id), str(line))
-                    except Exception:
+                    except Exception as exc:
+                        fp = fingerprint_exception(context="service_process_manager.on_output", exc=exc)
+                        if self._exception_log_once.should_log(fp):
+                            try:
+                                logger.error("Service output callback raised (service_id=%s)", service_id, exc_info=exc)
+                            except Exception:
+                                pass
                         continue
-            except Exception:
+            except Exception as exc:
+                fp = fingerprint_exception(context="service_process_manager.reader_thread", exc=exc)
+                if self._exception_log_once.should_log(fp):
+                    try:
+                        logger.error("Service output reader thread failed (service_id=%s)", service_id, exc_info=exc)
+                    except Exception:
+                        pass
                 return
 
         t = threading.Thread(target=_run, name=f"svc-log:{service_id}", daemon=True)

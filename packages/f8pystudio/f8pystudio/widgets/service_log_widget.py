@@ -5,6 +5,8 @@ from dataclasses import dataclass
 
 from qtpy import QtCore, QtGui, QtWidgets
 
+from ..error_reporting import ExceptionLogOnce, report_exception
+
 
 @dataclass(frozen=True)
 class _Rule:
@@ -98,6 +100,7 @@ class ServiceLogDock(QtWidgets.QDockWidget):
 
         self._views: dict[str, ServiceLogView] = {}
         self._service_names: dict[str, str] = {}  # serviceId -> serviceName/serviceClass
+        self._exception_log_once = ExceptionLogOnce()
 
     def set_service_name(self, service_id: str, service_name: str) -> None:
         sid = str(service_id or "").strip()
@@ -142,3 +145,17 @@ class ServiceLogDock(QtWidgets.QDockWidget):
     def append(self, service_id: str, line: str) -> None:
         view = self._ensure_tab(service_id)
         view.append_line(line)
+
+    def report_exception(self, service_id: str, context: str, exc: BaseException, *, level: str = "ERROR") -> None:
+        sid = str(service_id or "").strip() or "studio"
+
+        def _emit(line: str) -> None:
+            self.append(sid, line)
+
+        report_exception(
+            _emit,
+            context=str(context or "").strip(),
+            exc=exc,
+            level=level,
+            log_once=self._exception_log_once,
+        )

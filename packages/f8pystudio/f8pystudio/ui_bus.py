@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Protocol, runtime_checkable
+
+from .error_reporting import ExceptionLogOnce, fingerprint_exception
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -13,6 +18,7 @@ class UiCommand:
 
 
 _ui_sink: Callable[[UiCommand], None] | None = None
+_exception_log_once = ExceptionLogOnce()
 
 
 @runtime_checkable
@@ -34,5 +40,11 @@ def emit_ui_command(node_id: str, command: str, payload: dict[str, Any], *, ts_m
         return
     try:
         sink(UiCommand(node_id=str(node_id), command=str(command), payload=dict(payload), ts_ms=ts_ms))
-    except Exception:
+    except Exception as exc:
+        fp = fingerprint_exception(context="ui_bus.emit_ui_command", exc=exc)
+        if _exception_log_once.should_log(fp):
+            try:
+                logger.error("UI command sink raised", exc_info=exc)
+            except Exception:
+                pass
         return

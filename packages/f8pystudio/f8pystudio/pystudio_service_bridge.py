@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import threading
 import time
 from dataclasses import dataclass
@@ -16,12 +17,15 @@ from f8pysdk.nats_transport import NatsTransport, NatsTransportConfig
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from f8pysdk.service_ready import wait_service_ready
 from f8pysdk.service_bus import StateWriteOrigin
+from .error_reporting import ExceptionLogOnce, report_exception
 from .nodegraph.runtime_compiler import CompiledRuntimeGraphs
 from .pystudio_service import PyStudioService, PyStudioServiceConfig
 from .service_process_manager import ServiceProcessConfig, ServiceProcessManager
 from .pystudio_node_registry import SERVICE_CLASS, STUDIO_SERVICE_ID
 from .remote_state_watcher import RemoteStateWatcher, WatchTarget
 from .ui_bus import UiCommand
+
+logger = logging.getLogger(__name__)
 
 
 class _AsyncThread:
@@ -137,6 +141,7 @@ class PyStudioServiceBridge(QtCore.QObject):
         self._cfg = config
         self._async = _AsyncThread()
         self._proc_mgr = ServiceProcessManager()
+        self._exception_log_once = ExceptionLogOnce()
         self._managed_service_ids: set[str] = set()
         self._managed_service_classes: dict[str, str] = {}  # serviceId -> serviceClass
         self._managed_active: bool = True
@@ -156,7 +161,26 @@ class PyStudioServiceBridge(QtCore.QObject):
 
         try:
             self._remote_command_response.connect(self._on_remote_command_response)  # type: ignore[attr-defined]
+        except Exception as exc:
+            self._report_exception("connect remote_command_response failed", exc)
+
+    def _emit_log_line(self, line: str) -> None:
+        try:
+            self.log.emit(str(line))
         except Exception:
+            logger.exception("bridge.log.emit failed")
+
+    def _report_exception(self, context: str, exc: BaseException) -> None:
+        report_exception(
+            self._emit_log_line,
+            context=str(context or "").strip(),
+            exc=exc,
+            log_once=self._exception_log_once,
+        )
+        try:
+            logger.error("%s", str(context or "").strip(), exc_info=exc)
+        except Exception:
+            # Logging must never crash the bridge.
             pass
 
     @QtCore.Slot(str, object, object)
@@ -166,8 +190,8 @@ class PyStudioServiceBridge(QtCore.QObject):
             return
         try:
             cb(result if isinstance(result, dict) else None, str(err) if err else None)
-        except Exception:
-            return
+        except Exception as exc:
+            self._report_exception("remote command response callback failed", exc)
 
     @property
     def studio_service_id(self) -> str:
@@ -190,12 +214,16 @@ class PyStudioServiceBridge(QtCore.QObject):
             self._managed_active = True
         try:
             self._async.submit(self._set_managed_active_async(bool(self._managed_active)))
-        except Exception:
+        except Exception as exc:
+            self._report_exception("submit set_managed_active failed", exc)
             return
 
     def start(self) -> None:
         self._async.start()
-        self._async.submit(self._start_async())
+        try:
+            self._async.submit(self._start_async())
+        except Exception as exc:
+            self._report_exception("submit start failed", exc)
 
     def stop(self) -> None:
         try:
@@ -204,8 +232,8 @@ class PyStudioServiceBridge(QtCore.QObject):
                 fut.result(timeout=2)
             except Exception:
                 pass
-        except Exception:
-            pass
+        except Exception as exc:
+            self._report_exception("submit stop failed", exc)
         self._async.stop()
 
         # Best-effort stop all launched processes.

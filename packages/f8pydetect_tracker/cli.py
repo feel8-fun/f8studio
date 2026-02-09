@@ -108,17 +108,33 @@ def _clamp_xyxy(xyxy: tuple[int, int, int, int], *, size: tuple[int, int]) -> tu
     return x1, y1, x2, y2
 
 
+def _create_tracker_api(cv2: Any, factory_func: str) -> Any:
+    """Try to create tracker from standard API, fallback to legacy API."""
+    # Try standard API first
+    if hasattr(cv2, factory_func):
+        try:
+            factory = getattr(cv2, factory_func)
+            return factory()
+        except (AttributeError, TypeError) as exc:
+            pass  # Fall through to legacy API
+    
+    # Try legacy API
+    if hasattr(cv2, "legacy") and hasattr(cv2.legacy, factory_func):
+        try:
+            factory = getattr(cv2.legacy, factory_func)
+            return factory()
+        except (AttributeError, TypeError) as exc:
+            pass
+    
+    return None
+
+
 def _create_csrt_tracker() -> Any:
     import cv2  # type: ignore
 
-    try:
-        return cv2.TrackerCSRT_create()
-    except Exception:
-        pass
-    try:
-        return cv2.legacy.TrackerCSRT_create()
-    except Exception:
-        pass
+    trk = _create_tracker_api(cv2, "TrackerCSRT_create")
+    if trk is not None:
+        return trk
     raise SystemExit(
         "OpenCV CSRT tracker not available. Install opencv-contrib-python (or opencv-contrib-python-headless)."
     )
@@ -128,20 +144,11 @@ def _create_tracker(kind: Literal["csrt", "kcf", "mosse"]) -> Any:
     import cv2  # type: ignore
 
     if kind == "csrt":
-        try:
-            trk = cv2.TrackerCSRT_create()
-        except Exception:
-            trk = cv2.legacy.TrackerCSRT_create()
+        trk = _create_tracker_api(cv2, "TrackerCSRT_create")
     elif kind == "kcf":
-        try:
-            trk = cv2.TrackerKCF_create()
-        except Exception:
-            trk = cv2.legacy.TrackerKCF_create()
+        trk = _create_tracker_api(cv2, "TrackerKCF_create")
     elif kind == "mosse":
-        try:
-            trk = cv2.TrackerMOSSE_create()
-        except Exception:
-            trk = cv2.legacy.TrackerMOSSE_create()
+        trk = _create_tracker_api(cv2, "TrackerMOSSE_create")
     else:
         raise SystemExit(f"Unsupported tracker: {kind}")
 

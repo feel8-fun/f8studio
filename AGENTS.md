@@ -48,3 +48,33 @@ Avoid: Do not use __dict__ manipulation to bypass explicit attribute definition.
 Zen of Python: Do not write "clever" dynamic code when simple, verbose code suffices.
 
 Method Dispatch: If a class has methods, call them directly (obj.save()). Do not dispatch calls via string mapping (getattr(obj, action_string)()) unless you are implementing a specific Command Pattern requested by the user.
+
+## 🧯 Exception Handling Policy (No More Silent Failures)
+
+### Goals
+- Prevent full-app/service crashes **only at true safety boundaries** (UI event loop, plugin/custom user code, background worker threads).
+- Make failures **actionable**: every caught exception must produce a useful error message + traceback somewhere developers can see.
+- Avoid debugging time sinks caused by swallowed exceptions.
+
+### Rules (Required)
+1. **No silent `except`:**
+   - ❌ `except Exception: pass/return/continue`
+   - ✅ `except SomeSpecificError as exc: ...` (handle) **or** log + re-raise.
+2. **No bare `except:`** (unless you are intentionally catching `BaseException` at a *process shutdown boundary* and still re-raising or exiting).
+3. **Catch the narrowest exception type possible.**
+   - Examples: `ValueError`, `TypeError`, `OSError`, `asyncio.TimeoutError`, `KeyError`.
+4. **Never “guess the API” via multiple try/except fallbacks.**
+   - If you don’t know how to call something, let it raise (TypeError/AttributeError) and fix it precisely.
+5. **If you must catch `Exception` (boundary only), you must report it:**
+   - Include **context** (what operation failed), **exception type/message**, and **traceback**.
+   - Prefer `logger.exception("...")` and/or the Studio’s log collector widget.
+6. **High-frequency loops must not spam logs.**
+   - Use a dedupe/suppression mechanism: **same error logs once** (or at a controlled interval), while still tracking repeats internally if needed.
+
+### Practical guidance
+- Prefer “fail fast” inside core logic; reserve broad catching for:
+  - UI callbacks / Qt slots
+  - background threads / async tasks
+  - executing user-provided/custom code
+  - external I/O boundaries (network/serial/process), where you can add retries *with explicit criteria* (not try-random-things)
+- When converting/validating input, use explicit checks and raise `ValueError` with a clear message instead of swallowing parse errors.

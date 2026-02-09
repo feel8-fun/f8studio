@@ -4,6 +4,8 @@ import asyncio
 import base64
 import hashlib
 import json
+import logging
+import traceback
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import parse_qsl
@@ -28,6 +30,8 @@ from f8pysdk.time_utils import now_ms
 from ..constants import SERVICE_CLASS
 
 OPERATOR_CLASS = "f8.lovense_mock_server"
+
+logger = logging.getLogger(__name__)
 
 _MAX_BODY_BYTES = 1024 * 1024
 _MAX_HEADER_BYTES = 32 * 1024
@@ -187,7 +191,7 @@ def _normalize_payload(value: Any) -> dict[str, Any]:
                 try:
                     current = json.loads(s)
                     continue
-                except Exception:
+                except json.JSONDecodeError:
                     return {"value": current}
             return {"value": current}
 
@@ -205,7 +209,7 @@ def _normalize_payload(value: Any) -> dict[str, Any]:
                     try:
                         current = json.loads(s)
                         continue
-                    except Exception:
+                    except json.JSONDecodeError:
                         pass
             return current
 
@@ -256,14 +260,14 @@ def _summarize_command(payload: dict[str, Any]) -> dict[str, Any]:
                 left, right = action.split(",Depth:", 1)
                 thrusting = int(left.split("Thrusting:", 1)[1])
                 depth = int(right)
-            except Exception:
+            except (IndexError, ValueError):
                 thrusting = None
                 depth = None
 
         if action.startswith("All:"):
             try:
                 all_v = int(action.split("All:", 1)[1])
-            except Exception:
+            except (IndexError, ValueError):
                 all_v = None
 
         if thrusting is not None and depth is not None:
@@ -312,7 +316,7 @@ def _unwrap_json_value(value: Any) -> Any:
         return value
     try:
         return value.root
-    except Exception:
+    except AttributeError:
         return value
 
 

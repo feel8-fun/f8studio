@@ -67,16 +67,16 @@ def _prepare_isolated_conan_generators_dir(generators_dir: Path) -> Path | None:
 
     try:
         base = Path(tempfile.gettempdir()).resolve()
-    except Exception:
-        base = None  # type: ignore[assignment]
-    if base is None:
+    except (OSError, RuntimeError):
+        # Cannot determine temp directory - feature disabled
         return None
 
     try:
         # Use a short, unique dir name to avoid long path issues on Windows.
         stamp = int(time.time() * 1000)
         out = Path(tempfile.mkdtemp(prefix=f"f8_conan_gen_{os.getpid()}_{stamp}_", dir=str(base)))
-    except Exception:
+    except (OSError, FileExistsError):
+        # Cannot create temp directory - feature disabled
         return None
 
     try:
@@ -84,11 +84,9 @@ def _prepare_isolated_conan_generators_dir(generators_dir: Path) -> Path | None:
         # This folder is usually small (scripts + env files).
         shutil.copytree(str(generators_dir), str(out), dirs_exist_ok=True)
         return out
-    except Exception:
-        try:
-            shutil.rmtree(str(out), ignore_errors=True)
-        except Exception:
-            pass
+    except (OSError, FileExistsError):
+        # Cleanup on failure - ignore errors in rmtree
+        shutil.rmtree(str(out), ignore_errors=True)
         return None
 
 
@@ -158,7 +156,8 @@ def _collect_candidates(
         try:
             if p.is_file():
                 candidates.append(_ExeCandidate(path=p, score=_score_path(repo_root=repo_root, service_dir=service_dir, path=p)))
-        except Exception:
+        except OSError:
+            # Permission denied, path too long, or other filesystem error - skip
             return
 
     # Common (fast) locations.
@@ -177,7 +176,8 @@ def _collect_candidates(
                 try:
                     for p in bd.rglob(name):
                         add_if_exists(p)
-                except Exception:
+                except OSError:
+                    # Permission denied or other filesystem error - skip this pattern
                     continue
 
     # Fallback: search service bin tree (only if needed). This supports packaged layouts like bin/linux-x64/<exe>.
@@ -188,7 +188,8 @@ def _collect_candidates(
                 try:
                     for p in svc_bin.rglob(name):
                         add_if_exists(p)
-                except Exception:
+                except OSError:
+                    # Permission denied or other filesystem error - skip
                     continue
 
     return candidates
@@ -218,7 +219,8 @@ def _default_build_dirs(repo_root: Path) -> list[Path]:
     def add(p: Path) -> None:
         try:
             p = p.resolve()
-        except Exception:
+        except (OSError, ValueError):
+            # Invalid path or symlink error - skip
             return
         if p in seen:
             return
@@ -234,7 +236,8 @@ def _default_build_dirs(repo_root: Path) -> list[Path]:
             for p in repo_root.glob(pat):
                 if p.is_dir():
                     add(p)
-        except Exception:
+        except OSError:
+            # Glob pattern failed (permission denied or invalid pattern) - skip
             continue
 
     # Also include immediate children of build/ when present (e.g. build/dev, build/linux-release).
@@ -244,7 +247,8 @@ def _default_build_dirs(repo_root: Path) -> list[Path]:
             for child in build_root.iterdir():
                 if child.is_dir():
                     add(child)
-    except Exception:
+    except OSError:
+        # Directory iteration failed (permission denied) - skip
         pass
 
     # Include immediate children of out/build/ when present (e.g. out/build/debug).
@@ -254,7 +258,8 @@ def _default_build_dirs(repo_root: Path) -> list[Path]:
             for child in out_build.iterdir():
                 if child.is_dir():
                     add(child)
-    except Exception:
+    except OSError:
+        # Directory iteration failed (permission denied) - skip
         pass
 
     return candidates

@@ -79,7 +79,8 @@ def read_audio_header(buf: memoryview) -> Optional[AudioShmHeader]:
         return None
     try:
         fields = _AUDIO_HEADER_STRUCT.unpack_from(buf, 0)
-    except Exception:
+    except struct.error:
+        # Buffer format mismatch - expected AudioSHM header format
         return None
     return AudioShmHeader(
         magic=fields[0],
@@ -102,7 +103,8 @@ def read_chunk_header(buf: memoryview, offset: int) -> Optional[AudioChunkHeader
         return None
     try:
         fields = _CHUNK_HEADER_STRUCT.unpack_from(buf, offset)
-    except Exception:
+    except struct.error:
+        # Buffer format mismatch at offset - expected chunk header format
         return None
     return AudioChunkHeader(seq=fields[0], ts_ms=fields[1], frames=fields[2])
 
@@ -298,8 +300,9 @@ def main() -> int:
     finally:
         try:
             reader.close()
-        except Exception:
-            pass
+        except OSError as exc:
+            # Ignore close failures (resource already released, etc.)
+            print(f"[audioshm] warning: close failed: {exc}", file=sys.stderr)
     return 0
 
 

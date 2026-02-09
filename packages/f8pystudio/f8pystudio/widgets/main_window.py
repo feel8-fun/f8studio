@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import Any, Iterable
 
 from qtpy import QtCore, QtGui, QtWidgets
@@ -53,8 +54,8 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         self._bridge.start()
         try:
             self.studio_graph.set_service_bridge(self._bridge)
-        except Exception:
-            pass
+        except Exception as exc:
+            self._log_dock.report_exception("studio", "studio_graph.set_service_bridge failed", exc)
         self.studio_graph.property_changed.connect(self._on_ui_property_changed)  # type: ignore[attr-defined]
 
         QtCore.QTimer.singleShot(0, self._auto_load_session)
@@ -205,8 +206,8 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         self._auto_save_session()
         try:
             self._bridge.stop()
-        except Exception:
-            pass
+        except Exception as exc:
+            self._log_dock.report_exception("studio", "bridge.stop failed", exc)
         super().closeEvent(event)
 
     def _auto_load_session(self) -> None:
@@ -215,10 +216,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
             if loaded:
                 logger.info("Loaded session from %s", loaded)
         except Exception as exc:
-            try:
-                self._log_dock.append("studio", f"[session] auto-load failed: {exc}\n")
-            except Exception:
-                pass
+            self._log_dock.report_exception("studio", "session auto-load failed", exc)
             logger.exception("Auto-load session failed")
 
     def _auto_save_session(self) -> None:
@@ -230,6 +228,10 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
             self._exit_autosaved = True
             logger.info("Saved session to %s", saved)
         except Exception:
+            try:
+                self._log_dock.append("studio", "[session] auto-save failed\n")
+            except Exception:
+                pass
             logger.exception("Auto-save session failed")
 
     def _save_session_action(self) -> None:
@@ -263,6 +265,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
             self._log_dock.append("studio", f"[session] loaded: {p}\n")
         except Exception as exc:
             self._log_dock.append("studio", f"[session] load failed: {exc}\n")
+            self._log_dock.report_exception("studio", f"session load failed ({p})", exc)
             QtWidgets.QMessageBox.warning(self, "Load failed", f"Failed to load:\n{p}\n\n{exc}")
 
     def _save_session_as_action(self) -> None:
@@ -287,6 +290,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
             self._log_dock.append("studio", f"[session] saved: {p}\n")
         except Exception as exc:
             self._log_dock.append("studio", f"[session] save failed: {exc}\n")
+            self._log_dock.report_exception("studio", f"session save failed ({p})", exc)
             QtWidgets.QMessageBox.warning(self, "Save failed", f"Failed to save:\n{p}\n\n{exc}")
 
     def _compile_runtime_action(self) -> None:
