@@ -5,6 +5,7 @@ import logging
 from typing import Any, Iterable
 
 from qtpy import QtCore, QtGui, QtWidgets
+import qtawesome as qta
 
 from f8pysdk import F8OperatorSpec, F8ServiceSpec
 
@@ -30,6 +31,8 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         self.resize(1920, 980)
 
         self._session_file = last_session_path()
+        self._session_dialog_dir = str(self._session_file.parent)
+        self._exit_autosaved: bool = False
 
         self.studio_graph = F8StudioGraph()
         self.studio_graph.node_factory.clear_registered_nodes()
@@ -100,12 +103,24 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
 
         menu.addSeparator()
 
+        load_from_action = QtWidgets.QAction("Load Session…", self)
+        load_from_action.setShortcut("Ctrl+Shift+O")
+        load_from_action.triggered.connect(self._load_session_from_action)  # type: ignore[attr-defined]
+        menu.addAction(load_from_action)
+
+        save_as_action = QtWidgets.QAction("Save Session As…", self)
+        save_as_action.setShortcut("Ctrl+Shift+S")
+        save_as_action.triggered.connect(self._save_session_as_action)  # type: ignore[attr-defined]
+        menu.addAction(save_as_action)
+
+        menu.addSeparator()
+
         compile_action = QtWidgets.QAction("Compile Runtime Graph (print)", self)
         compile_action.setShortcut("Ctrl+R")
         compile_action.triggered.connect(self._compile_runtime_action)  # type: ignore[attr-defined]
         menu.addAction(compile_action)
 
-        self._deploy_action = QtGui.QAction("Deploy + Run + Monitor", self)
+        self._deploy_action = QtGui.QAction("Send Graph (Deploy/Run/Monitor)", self)
         self._deploy_action.setShortcut("F5")
         self._deploy_action.triggered.connect(self._deploy_run_monitor_action)  # type: ignore[attr-defined]
         menu.addAction(self._deploy_action)
@@ -115,36 +130,73 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         tb.setMovable(False)
         tb.setToolButtonStyle(QtCore.Qt.ToolButtonIconOnly)
 
-        # Icon button for Deploy + Run + Monitor (F5).
-        deploy_icon = self.style().standardIcon(QtWidgets.QStyle.SP_MediaPlay)
-        self._deploy_action.setIcon(deploy_icon)
-        self._deploy_action.setToolTip("Deploy + Run + Monitor (F5)")
+        # Graph file management.
+        self._open_icon = qta.icon("fa5s.folder-open", color="white")
+        self._save_icon = qta.icon("fa5s.save", color="white")
+        self._play_icon = qta.icon("fa5s.play", color="green")
+        self._pause_icon = qta.icon("fa5s.pause", color="yellow")
+
+        self._load_from_action = QtGui.QAction("Load Session…", self)
+        self._load_from_action.setIcon(self._open_icon)
+        self._load_from_action.setToolTip("Load session from file… (Ctrl+Shift+O)")
+        self._load_from_action.triggered.connect(self._load_session_from_action)  # type: ignore[attr-defined]
+        tb.addAction(self._load_from_action)
+
+        self._save_as_action = QtGui.QAction("Save Session As…", self)
+        self._save_as_action.setIcon(self._save_icon)
+        self._save_as_action.setToolTip("Save session to file… (Ctrl+Shift+S)")
+        self._save_as_action.triggered.connect(self._save_session_as_action)  # type: ignore[attr-defined]
+        tb.addAction(self._save_as_action)
+
+        tb.addSeparator()
+
+        # Send Graph (deploy+run+monitor) (F5).
+        self._send_icon = qta.icon("mdi6.send", color="white")
+        self._deploy_action.setIcon(self._send_icon)
+        self._deploy_action.setToolTip("Send graph to services (deploy + run + monitor) (F5)")
         tb.addAction(self._deploy_action)
 
         tb.addSeparator()
 
-        # Global active/deactive toggle.
-        self._active_toggle = QtWidgets.QCheckBox("Services Active", self)
-        self._active_toggle.setChecked(True)
-        self._active_toggle.setToolTip("Activate/deactivate all managed services (lifecycle control).")
-        self._active_toggle.toggled.connect(self._set_global_active)  # type: ignore[attr-defined]
+        # Global active/deactive toggle (pause means deactivated).
+        self._pause_toggle = QtWidgets.QToolButton(self)
+        self._pause_toggle.setAutoRaise(True)
+        self._pause_toggle.setToolButtonStyle(QtCore.Qt.ToolButtonIconOnly)
+        self._pause_toggle.setCheckable(True)
+        self._pause_toggle.setChecked(False)
+        self._pause_toggle.setIcon(self._play_icon)
+        self._pause_toggle.setToolTip("Services Active (click to Pause/Deactivate all managed services)")
+        self._pause_toggle.toggled.connect(self._on_global_pause_toggled)  # type: ignore[attr-defined]
 
         spacer = QtWidgets.QWidget(self)
         spacer.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
         tb.addWidget(spacer)
-        tb.addWidget(self._active_toggle)
+        tb.addWidget(self._pause_toggle)
 
-    def _set_global_active(self, active: bool) -> None:
+    def _on_global_pause_toggled(self, paused: bool) -> None:
         """
         Global active/deactive for managed services (lifecycle control).
         """
         try:
-            active = bool(active)
+            paused = bool(paused)
         except Exception:
-            active = True
+            paused = False
 
         try:
-            self._bridge.set_managed_active(active)
+            self._pause_toggle.setIcon(self._pause_icon if paused else self._play_icon)
+        except Exception:
+            pass
+        try:
+            self._pause_toggle.setToolTip(
+                "Services Paused (click to Resume/Activate all managed services)"
+                if paused
+                else "Services Active (click to Pause/Deactivate all managed services)"
+            )
+        except Exception:
+            pass
+
+        try:
+            self._bridge.set_managed_active(not paused)
         except Exception:
             pass
         # Note: studio UI ticking is independent; service lifecycle is remote.
@@ -170,8 +222,15 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
             logger.exception("Auto-load session failed")
 
     def _auto_save_session(self) -> None:
-        saved = self.studio_graph.save_last_session()
-        logger.info("Saved session to %s", saved)
+        # Called from both `closeEvent` and `QApplication.aboutToQuit`; guard to avoid double-save on exit.
+        if self._exit_autosaved:
+            return
+        try:
+            saved = self.studio_graph.save_last_session()
+            self._exit_autosaved = True
+            logger.info("Saved session to %s", saved)
+        except Exception:
+            logger.exception("Auto-save session failed")
 
     def _save_session_action(self) -> None:
         path = self.studio_graph.save_last_session()
@@ -183,6 +242,52 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.information(self, "No session", f"No session file found at:\n{self._session_file}")
             return
         QtWidgets.QMessageBox.information(self, "Session loaded", f"Loaded:\n{path}")
+
+    def _load_session_from_action(self) -> None:
+        try:
+            start_dir = str(self._session_dialog_dir or "")
+        except Exception:
+            start_dir = ""
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Load Session",
+            start_dir,
+            "F8 Studio Session (*.json);;JSON (*.json);;All Files (*)",
+        )
+        p = str(path or "").strip()
+        if not p:
+            return
+        try:
+            self.studio_graph.load_session(p)
+            self._session_dialog_dir = str(Path(p).resolve().parent)
+            self._log_dock.append("studio", f"[session] loaded: {p}\n")
+        except Exception as exc:
+            self._log_dock.append("studio", f"[session] load failed: {exc}\n")
+            QtWidgets.QMessageBox.warning(self, "Load failed", f"Failed to load:\n{p}\n\n{exc}")
+
+    def _save_session_as_action(self) -> None:
+        try:
+            start_dir = str(self._session_dialog_dir or "")
+        except Exception:
+            start_dir = ""
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Save Session As",
+            start_dir,
+            "F8 Studio Session (*.json);;JSON (*.json);;All Files (*)",
+        )
+        p = str(path or "").strip()
+        if not p:
+            return
+        if not p.lower().endswith(".json"):
+            p = p + ".json"
+        try:
+            self.studio_graph.save_session(p)
+            self._session_dialog_dir = str(Path(p).resolve().parent)
+            self._log_dock.append("studio", f"[session] saved: {p}\n")
+        except Exception as exc:
+            self._log_dock.append("studio", f"[session] save failed: {exc}\n")
+            QtWidgets.QMessageBox.warning(self, "Save failed", f"Failed to save:\n{p}\n\n{exc}")
 
     def _compile_runtime_action(self) -> None:
         compiled = compile_runtime_graphs_from_studio(self.studio_graph)
@@ -199,8 +304,8 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
     def _deploy_run_monitor_action(self) -> None:
         # Deploy implies global active by default.
         try:
-            if not self._active_toggle.isChecked():
-                self._active_toggle.setChecked(True)
+            if self._pause_toggle.isChecked():
+                self._pause_toggle.setChecked(False)
         except Exception:
             pass
         compiled = compile_runtime_graphs_from_studio(self.studio_graph)
