@@ -37,7 +37,7 @@ from .service_process_toolbar import ServiceProcessToolbar
 from .service_bridge_protocol import ServiceBridge
 from .viewer import F8StudioNodeViewer
 from ..widgets.f8_editor_widgets import F8ImageB64Editor, F8OptionCombo, F8Switch, F8ValueBar, parse_select_pool
-from ..widgets.f8_prop_value_widgets import F8CodeEditorDialog
+from ..widgets.f8_prop_value_widgets import open_code_editor_dialog
 from ..command_ui_protocol import CommandUiHandler, CommandUiSource
 import qtawesome as qta
 
@@ -1437,14 +1437,15 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
 
             def _on_click() -> None:
                 current = _get_node_value()
-                dlg = F8CodeEditorDialog(
+                updated = open_code_editor_dialog(
                     None,
                     title=f"{self.name} — {state_field.label}",
                     code="" if current is None else str(current),
+                    language=state_field.ui_language or "plaintext",
                 )
-                if dlg.exec() != QtWidgets.QDialog.Accepted:
+                if updated is None:
                     return
-                _set_node_value(dlg.code(), push_undo=True)
+                _set_node_value(updated, push_undo=True)
 
             btn.clicked.connect(_on_click)  # type: ignore[attr-defined]
             _apply_value(_get_node_value())

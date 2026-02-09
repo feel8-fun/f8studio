@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any, Callable
 
 from qtpy import QtCore, QtGui, QtWidgets
@@ -33,6 +34,151 @@ class F8CodeEditorDialog(QtWidgets.QDialog):
 
     def code(self) -> str:
         return str(self._edit.toPlainText() or "")
+
+
+class F8MonacoEditorDialog(QtWidgets.QDialog):
+    """
+    Monaco-based editor dialog (syntax highlighting, modern keybindings).
+
+    Monaco assets can be loaded from:
+    - `F8_MONACO_BASE_URL` (recommended for packaged/offline builds)
+    - CDN fallback (default) for dev
+    """
+
+    def __init__(self, parent=None, *, title: str, code: str, language: str = "python"):
+        super().__init__(parent)
+        self.setWindowTitle(str(title or "Edit Code"))
+        self._code: str = str(code or "")
+        self._language: str = str(language or "plaintext").strip() or "plaintext"
+
+        from PySide6 import QtWebEngineWidgets  # type: ignore[import-not-found]
+
+        self._view = QtWebEngineWidgets.QWebEngineView(self)
+        self._view.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.NoContextMenu)
+
+        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Save | QtWidgets.QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self._on_save_clicked)  # type: ignore[attr-defined]
+        buttons.rejected.connect(self.reject)  # type: ignore[attr-defined]
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(self._view, 1)
+        layout.addWidget(buttons)
+
+        self.resize(1020, 720)
+        self._load_page()
+
+    def code(self) -> str:
+        return str(self._code or "")
+
+    def _monaco_base_url(self) -> str:
+        v = str(os.environ.get("F8_MONACO_BASE_URL") or "").strip().rstrip("/")
+        if v:
+            return v
+        return "https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min"
+
+    def _load_page(self) -> None:
+        base = self._monaco_base_url()
+        initial = {"code": self._code, "language": self._language, "theme": "vs-dark"}
+        initial_json = json.dumps(initial, ensure_ascii=False)
+
+        html = f"""
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      html, body, #container {{
+        height: 100%;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: #1e1e1e;
+      }}
+    </style>
+    <script>
+      window.__F8_INITIAL__ = {initial_json};
+    </script>
+    <script src="{base}/vs/loader.js"></script>
+    <script>
+      window._f8_editor = null;
+      window._f8_getValue = function() {{
+        try {{
+          if (!window._f8_editor) return "";
+          return window._f8_editor.getValue();
+        }} catch (e) {{
+          return "";
+        }}
+      }};
+
+      require.config({{ paths: {{ 'vs': '{base}/vs' }} }});
+      require(['vs/editor/editor.main'], function() {{
+        const init = window.__F8_INITIAL__ || {{ code: '', language: 'plaintext', theme: 'vs-dark' }};
+        window._f8_editor = monaco.editor.create(document.getElementById('container'), {{
+          value: String(init.code || ''),
+          language: String(init.language || 'plaintext'),
+          theme: String(init.theme || 'vs-dark'),
+          automaticLayout: true,
+          minimap: {{ enabled: false }},
+          fontLigatures: true,
+          fontSize: 13,
+          tabSize: 4,
+          insertSpaces: true,
+          scrollBeyondLastLine: false,
+          wordWrap: 'off',
+        }});
+      }});
+    </script>
+  </head>
+  <body>
+    <div id="container"></div>
+  </body>
+</html>
+"""
+        self._view.setHtml(html)
+
+    def _on_save_clicked(self) -> None:
+        try:
+            page = self._view.page()
+        except Exception:
+            page = None
+        if page is None:
+            self.accept()
+            return
+
+        def _on_value(value: Any) -> None:
+            try:
+                self._code = "" if value is None else str(value)
+            except Exception:
+                self._code = ""
+            self.accept()
+
+        try:
+            page.runJavaScript("window._f8_getValue && window._f8_getValue();", _on_value)  # type: ignore[call-arg]
+        except Exception:
+            self.accept()
+
+
+def open_code_editor_dialog(
+    parent: QtWidgets.QWidget | None,
+    *,
+    title: str,
+    code: str,
+    language: str,
+) -> str | None:
+    """
+    Open the best available code editor dialog and return updated code, or None if cancelled.
+    """
+    try:
+        dlg = F8MonacoEditorDialog(parent, title=title, code=code, language=language)
+        if dlg.exec() != QtWidgets.QDialog.Accepted:
+            return None
+        return dlg.code()
+    except Exception:
+        dlg2 = F8CodeEditorDialog(parent, title=title, code=code)
+        if dlg2.exec() != QtWidgets.QDialog.Accepted:
+            return None
+        return dlg2.code()
 
 
 class F8CodePropWidget(QtWidgets.QWidget):
@@ -82,12 +228,11 @@ class F8CodePropWidget(QtWidgets.QWidget):
         self._preview.setText(preview)
 
     def _on_edit_clicked(self) -> None:
-        dlg = F8CodeEditorDialog(self, title=self._title, code=self.get_value())
-        if dlg.exec() != QtWidgets.QDialog.Accepted:
+        updated = open_code_editor_dialog(self, title=self._title, code=self.get_value(), language="python")
+        if updated is None:
             return
-        code = dlg.code()
-        self.set_value(code)
-        self.value_changed.emit(self.get_name(), code)
+        self.set_value(updated)
+        self.value_changed.emit(self.get_name(), updated)
 
 
 class F8CodeButtonPropWidget(QtWidgets.QWidget):
@@ -97,11 +242,12 @@ class F8CodeButtonPropWidget(QtWidgets.QWidget):
 
     value_changed = QtCore.Signal(str, object)
 
-    def __init__(self, parent=None, *, title: str = "Edit Code"):
+    def __init__(self, parent=None, *, title: str = "Edit Code", language: str = "python"):
         super().__init__(parent)
         self._name = ""
         self._value = ""
         self._title = str(title or "Edit Code")
+        self._language = str(language or "plaintext").strip() or "plaintext"
 
         self._btn = QtWidgets.QPushButton("Edit…")
         try:
@@ -129,12 +275,11 @@ class F8CodeButtonPropWidget(QtWidgets.QWidget):
         self._value = str(value or "")
 
     def _on_edit_clicked(self) -> None:
-        dlg = F8CodeEditorDialog(self, title=self._title, code=self.get_value())
-        if dlg.exec() != QtWidgets.QDialog.Accepted:
+        updated = open_code_editor_dialog(self, title=self._title, code=self.get_value(), language=self._language)
+        if updated is None:
             return
-        code = dlg.code()
-        self.set_value(code)
-        self.value_changed.emit(self.get_name(), code)
+        self.set_value(updated)
+        self.value_changed.emit(self.get_name(), updated)
 
 
 class F8JsonPropTextEdit(QtWidgets.QTextEdit):

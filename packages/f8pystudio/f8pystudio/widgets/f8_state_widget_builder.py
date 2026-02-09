@@ -89,6 +89,27 @@ def state_field_ui_control(node: Any, prop_name: str) -> str:
     return ""
 
 
+def state_field_ui_language(node: Any, prop_name: str) -> str:
+    fields = effective_state_fields(node)
+    if not fields:
+        try:
+            spec = node.spec
+        except Exception:
+            spec = None
+        if spec is not None:
+            try:
+                fields = list(spec.stateFields or [])
+            except Exception:
+                fields = []
+    for f in fields:
+        try:
+            if str(f.name or "").strip() == str(prop_name or "").strip():
+                return str(f.uiLanguage or "").strip().lower()
+        except Exception:
+            continue
+    return ""
+
+
 def schema_type_any(schema: Any) -> str:
     try:
         try:
@@ -199,6 +220,7 @@ def build_state_value_widget(
     schema = state_field_schema(node, prop_name)
     schema_t = schema_type_any(schema) if schema is not None else ""
     ui_control = state_field_ui_control(node, prop_name)
+    ui_language = state_field_ui_language(node, prop_name)
     enum_items = schema_enum_items(schema) if schema is not None else []
     lo, hi = schema_numeric_range(schema) if schema is not None else (None, None)
     pool_field = parse_select_pool(ui_control)
@@ -216,7 +238,7 @@ def build_state_value_widget(
             title = f"{node.name()} — {prop_name}"
         except Exception:
             title = f"Edit {prop_name}"
-        widget = F8CodeButtonPropWidget(title=title)
+        widget = F8CodeButtonPropWidget(title=title, language=ui_language or "plaintext")
         widget.set_name(prop_name)
         return widget
 

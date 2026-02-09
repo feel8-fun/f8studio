@@ -55,6 +55,7 @@ from .f8_state_widget_builder import (
     state_field_access as _state_field_access,
     state_field_schema as _state_field_schema,
     state_field_ui_control as _state_field_ui_control,
+    state_field_ui_language as _state_field_ui_language,
 )
 from .f8_ui_override_ops import (
     base_command_show_on_node as _base_command_show_on_node,
@@ -2101,7 +2102,8 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                         and str(prop_name) == "code"
                     )
                     if ui_control == "code" or is_legacy_python_script_code:
-                        widget = _F8CodeButtonPropWidget(title=f"{node.name()} — {prop_name}")
+                        ui_language = _state_field_ui_language(node, prop_name)
+                        widget = _F8CodeButtonPropWidget(title=f"{node.name()} — {prop_name}", language=ui_language or "plaintext")
                         widget.set_name(prop_name)
                 except Exception:
                     pass
