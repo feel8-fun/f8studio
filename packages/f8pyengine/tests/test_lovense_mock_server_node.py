@@ -102,7 +102,8 @@ class LovenseMockServerNodeTests(unittest.IsolatedAsyncioTestCase):
         ev1 = (await bus.get_state("lov1", "event")).value
         self.assertIsInstance(ev1, dict)
         self.assertEqual(ev1.get("seq"), 1)
-        self.assertEqual((ev1.get("summary") or {}).get("type"), "vibration_pattern")
+        self.assertEqual(((ev1.get("command") or {}).get("kind") or ""), "vibration_pattern")
+        self.assertIn("Lush", ((ev1.get("toys") or {}).get("names") or []))
 
         # Ping should NOT land in state.
         code, _ = await _http_post_json(
@@ -133,7 +134,8 @@ class LovenseMockServerNodeTests(unittest.IsolatedAsyncioTestCase):
         ev2 = (await bus.get_state("lov1", "event")).value
         self.assertIsInstance(ev2, dict)
         self.assertEqual(ev2.get("seq"), 2)
-        self.assertEqual((ev2.get("summary") or {}).get("type"), "stop")
+        self.assertEqual(((ev2.get("command") or {}).get("kind") or ""), "stop")
+        self.assertIn("Solace Pro", ((ev2.get("toys") or {}).get("names") or []))
 
         if isinstance(node2, LovenseMockServerRuntimeNode):
             await node2.close()

@@ -40,6 +40,34 @@ class _ServerConfig:
     port: int
 
 
+@dataclass(frozen=True)
+class _ToyDefinition:
+    toy_id: str
+    name: str
+    display_name: str
+    short_function_names: list[str]
+    full_function_names: list[str]
+
+
+_TOYS: tuple[_ToyDefinition, ...] = (
+    # Use IDs that resemble real Lovense IDs (examples from the official docs).
+    _ToyDefinition(
+        toy_id="f082c00246fa",
+        name="lush",
+        display_name="Lush",
+        short_function_names=["v"],
+        full_function_names=["Vibrate"],
+    ),
+    _ToyDefinition(
+        toy_id="ff922f7fd345",
+        name="solace",
+        display_name="Solace Pro",
+        short_function_names=["t"],
+        full_function_names=["Thrusting"],
+    ),
+)
+
+
 def _now_iso(ts_ms: int) -> str:
     # ISO format with milliseconds, UTC "Z".
     from datetime import datetime, timezone
@@ -48,28 +76,33 @@ def _now_iso(ts_ms: int) -> str:
     return dt.isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def _build_toy_map() -> dict[str, dict[str, Any]]:
-    # Keep numeric-ish keys for stable order when consumers use Object.values(...) on the JSON object.
-    return {
-        "0": {
-            "nickName": "Mock Lush",
-            "name": "lush",
-            "id": "MOCK_LUSH_0",
-            "battery": 100,
-            "fVersion": 0,
-            "hVersion": 0,
-            "version": "3",
-            "connected": True,
+def _build_api_toys() -> dict[str, dict[str, Any]]:
+    """
+    Canonical `data.toys` payload for the Lovense Local API:
+    a JSON string encoding an object keyed by toy id.
+    """
+    toys: dict[str, dict[str, Any]] = {}
+    for toy in _TOYS:
+        toys[toy.toy_id] = {
+            "id": toy.toy_id,
             "status": "1",
-            "domain": "127.0.0.1",
-            "port": None,  # filled per-response
-            "isHttps": False,
-            "platform": "mock",
-        },
-        "1": {
-            "nickName": "Mock Solace",
-            "name": "solace",
-            "id": "MOCK_SOLACE_1",
+            "version": "",
+            "name": toy.name,
+            "battery": 100,
+            "nickName": "",
+            "shortFunctionNames": list(toy.short_function_names),
+            "fullFunctionNames": list(toy.full_function_names),
+        }
+    return toys
+
+
+def _build_ws_toy_map(*, port: int) -> dict[str, dict[str, Any]]:
+    toys: dict[str, dict[str, Any]] = {}
+    for toy in _TOYS:
+        toys[toy.toy_id] = {
+            "nickName": f"Mock {toy.display_name}",
+            "name": toy.name,
+            "id": toy.toy_id,
             "battery": 100,
             "fVersion": 0,
             "hVersion": 0,
@@ -77,42 +110,43 @@ def _build_toy_map() -> dict[str, dict[str, Any]]:
             "connected": True,
             "status": "1",
             "domain": "127.0.0.1",
-            "port": None,  # filled per-response
+            "port": int(port),
             "isHttps": False,
             "platform": "mock",
-        },
-    }
+        }
+    return toys
 
 
-def _build_get_toys_response(*, toy_map: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    toys_string = json.dumps(toy_map, ensure_ascii=False, separators=(",", ":"))
-    all_toys_by_id: dict[str, Any] = {}
-    for toy in list(toy_map.values()):
-        try:
-            toy_id = str(toy.get("id") or "")
-        except Exception:
-            toy_id = ""
-        if toy_id:
-            all_toys_by_id[toy_id] = toy
-
+def _build_get_toys_response(*, api_toys: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    toys_string = json.dumps(api_toys, ensure_ascii=False, separators=(",", ":"))
     return {
-        # Unity-friendly
-        "code": 0,
-        "type": "GetToys",
-        "message": "OK",
+        # Spec-aligned
+        "code": 200,
+        "type": "OK",
         "data": {
             "toys": toys_string,
-            "allToys": all_toys_by_id,
-            "appType": "remote",
             "platform": "pc",
-            "gameAppId": "",
+            "appType": "remote",
         },
-        # RPGM-friendly
+        # Compatibility extras (some client scripts expect these)
         "ok": True,
-        "data2": {"toys": toys_string, "toysMap": toy_map},
-        # Convenience/debug
-        "toys": toy_map,
+        "message": "OK",
+        "data2": {"toys": toys_string, "toysMap": api_toys},
+        "toys": api_toys,
     }
+
+
+def _build_get_toy_name_response(*, names: list[str]) -> dict[str, Any]:
+    return {"code": 200, "type": "OK", "data": list(names), "ok": True}
+
+
+def _build_ok_response() -> dict[str, Any]:
+    return {"code": 200, "type": "ok", "ok": True}
+
+
+def _build_error_response(*, code: int, message: str) -> dict[str, Any]:
+    # The docs define error `code` meanings; real Lovense Connect sometimes uses type="error".
+    return {"code": int(code), "type": "error", "message": str(message), "ok": False}
 
 
 def _json_dumps_compact(obj: Any) -> bytes:
@@ -199,6 +233,9 @@ def _summarize_command(payload: dict[str, Any]) -> dict[str, Any]:
 
     api_ver = payload.get("apiVer")
 
+    if cmd == "GetToyName":
+        return {"type": "get_toy_name", "apiVer": api_ver if api_ver is not None else 1}
+
     if cmd == "Pattern":
         return {
             "type": "vibration_pattern",
@@ -254,7 +291,16 @@ def _summarize_command(payload: dict[str, Any]) -> dict[str, Any]:
     if cmd == "GetToys":
         return {"type": "get_toys", "apiVer": api_ver if api_ver is not None else 1}
     if cmd == "PatternV2":
-        return {"type": "pattern_v2", "apiVer": api_ver}
+        return {
+            "type": "pattern_v2",
+            "op": payload.get("type"),
+            "toy": payload.get("toy"),
+            "apiVer": api_ver if api_ver is not None else 1,
+        }
+    if cmd == "Position":
+        return {"type": "position", "toy": payload.get("toy"), "value": payload.get("value"), "apiVer": api_ver}
+    if cmd == "Preset":
+        return {"type": "preset", "toy": payload.get("toy"), "name": payload.get("name"), "timeSec": payload.get("timeSec"), "apiVer": api_ver}
 
     return {"type": "other", "command": cmd, "apiVer": api_ver}
 
@@ -305,6 +351,13 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
         self._print_responses = self._parse_bool(_unwrap_json_value(self._initial_state.get("printResponses")), default=False)
         self._print_raw = self._parse_bool(_unwrap_json_value(self._initial_state.get("printRaw")), default=False)
         self._print_pretty = self._parse_bool(_unwrap_json_value(self._initial_state.get("printPretty")), default=False)
+
+        self._event_include_payload = self._parse_bool(
+            _unwrap_json_value(self._initial_state.get("eventIncludePayload")), default=False
+        )
+        self._event_include_request = self._parse_bool(
+            _unwrap_json_value(self._initial_state.get("eventIncludeRequest")), default=False
+        )
 
         self._seq = 0
         self._last_error: str | None = None
@@ -364,6 +417,10 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
             return self._parse_bool(value, default=False)
         if name == "printResponses":
             return self._parse_bool(value, default=False)
+        if name == "eventIncludePayload":
+            return self._parse_bool(value, default=False)
+        if name == "eventIncludeRequest":
+            return self._parse_bool(value, default=False)
         return value
 
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
@@ -401,6 +458,12 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
             return
         if name == "printResponses":
             self._print_responses = self._parse_bool(_unwrap_json_value(value), default=False)
+            return
+        if name == "eventIncludePayload":
+            self._event_include_payload = self._parse_bool(_unwrap_json_value(value), default=False)
+            return
+        if name == "eventIncludeRequest":
+            self._event_include_request = self._parse_bool(_unwrap_json_value(value), default=False)
             return
 
     async def _restart_server(self) -> None:
@@ -601,17 +664,16 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
         summary = _summarize_command(normalized)
 
         ts_ms = int(now_ms())
-        entry: dict[str, Any] = {
-            "tsMs": ts_ms,
-            "ts": _now_iso(ts_ms),
-            "remote": self._peer(writer),
-            "path": str(path_s),
-            "raw": raw_payload,
-            "summary": dict(summary),
-            "contentType": str(content_type),
-            "bodyText": str(body_text),
-            "normalized": dict(normalized),
-        }
+        entry = self._build_event(
+            normalized,
+            summary=summary,
+            ts_ms=ts_ms,
+            remote=self._peer(writer),
+            path=str(path_s),
+            content_type=str(content_type),
+            body_text=str(body_text),
+            headers=headers,
+        )
 
         typ = str(summary.get("type") or "")
 
@@ -636,7 +698,19 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
             return keep_alive
 
         published_event: dict[str, Any] | None = None
-        if typ in ("vibration_pattern", "solace_thrusting", "all_vibrate", "stop", "function", "pattern_v2"):
+        if typ in (
+            "get_toys",
+            "get_toy_name",
+            "vibration_pattern",
+            "solace_thrusting",
+            "all_vibrate",
+            "stop",
+            "function",
+            "pattern_v2",
+            "position",
+            "preset",
+            "other",
+        ):
             published_event = await self._safe_write_event(entry)
 
         if self._print_enabled:
@@ -658,16 +732,12 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
                 if isinstance(published_event, dict):
                     event_id = str(published_event.get("eventId") or "")
                     seq = str(published_event.get("seq") or "")
-                print(f"[{self.node_id}:lovense_mock_server] seq={seq} id={event_id} summary={entry.get('summary')}")
+                cmd_info = entry.get("command") if isinstance(entry, dict) else None
+                print(f"[{self.node_id}:lovense_mock_server] seq={seq} id={event_id} command={cmd_info}")
+
+        resp_obj = self._build_command_response(normalized, summary=summary, ts_ms=ts_ms)
 
         if typ == "get_toys":
-            toy_map = _build_toy_map()
-            for toy in list(toy_map.values()):
-                try:
-                    toy["port"] = int(self._cfg.port)
-                except Exception:
-                    pass
-            resp_obj = _build_get_toys_response(toy_map=toy_map)
             if self._print_enabled and self._print_responses:
                 try:
                     dumped = _json_dumps_compact(resp_obj).decode("utf-8", errors="replace")
@@ -680,8 +750,284 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
             await self._write_json(writer, status=200, obj=resp_obj, keep_alive=keep_alive)
             return keep_alive
 
-        await self._write_json(writer, status=200, obj={"ok": True}, keep_alive=keep_alive)
+        if self._print_enabled and self._print_responses:
+            try:
+                dumped = _json_dumps_compact(resp_obj).decode("utf-8", errors="replace")
+                if len(dumped) > 2000:
+                    print(f"[{self.node_id}:lovense_mock_server] resp status=200 body={dumped[:2000]}...(truncated {len(dumped) - 2000})")
+                else:
+                    print(f"[{self.node_id}:lovense_mock_server] resp status=200 body={dumped}")
+            except Exception:
+                pass
+
+        await self._write_json(writer, status=200, obj=resp_obj, keep_alive=keep_alive)
         return keep_alive
+
+    def _build_event(
+        self,
+        payload: dict[str, Any],
+        *,
+        summary: dict[str, Any],
+        ts_ms: int,
+        remote: str,
+        path: str,
+        content_type: str,
+        body_text: str,
+        headers: dict[str, str],
+    ) -> dict[str, Any]:
+        cmd = self._extract_command_name(payload)
+        api_ver = payload.get("apiVer")
+        toy_info = self._resolve_toy_targets(payload.get("toy"))
+
+        params: dict[str, Any] = {}
+        # Common parameters across commands.
+        if "action" in payload:
+            params["action"] = payload.get("action")
+        if "timeSec" in payload:
+            params["timeSec"] = payload.get("timeSec")
+        if "loopRunningSec" in payload:
+            params["loopRunningSec"] = payload.get("loopRunningSec")
+        if "loopPauseSec" in payload:
+            params["loopPauseSec"] = payload.get("loopPauseSec")
+        if "rule" in payload:
+            params["rule"] = payload.get("rule")
+        if "strength" in payload:
+            params["strength"] = payload.get("strength")
+        if "value" in payload:
+            params["value"] = payload.get("value")
+        if "name" in payload:
+            params["name"] = payload.get("name")
+        if "type" in payload and cmd == "PatternV2":
+            params["type"] = payload.get("type")
+        if "actions" in payload:
+            params["actions"] = payload.get("actions")
+        if "offsetTime" in payload:
+            params["offsetTime"] = payload.get("offsetTime")
+        if "startTime" in payload:
+            params["startTime"] = payload.get("startTime")
+        if "stopPrevious" in payload:
+            params["stopPrevious"] = payload.get("stopPrevious")
+
+        event: dict[str, Any] = {
+            "tsMs": int(ts_ms),
+            "ts": _now_iso(int(ts_ms)),
+            "remote": str(remote or ""),
+            "path": str(path or ""),
+            "command": {
+                "name": cmd,
+                "apiVer": api_ver,
+                "kind": summary.get("type"),
+            },
+            "toys": {
+                "scope": toy_info["scope"],
+                "ids": toy_info["ids"],
+                "names": toy_info["names"],
+                "unknown": toy_info["unknown"],
+            },
+            "params": params,
+        }
+
+        if self._event_include_payload:
+            event["payload"] = dict(payload)
+
+        if self._event_include_request:
+            event["request"] = {
+                "contentType": str(content_type or ""),
+                "headers": self._pick_headers(headers),
+                "bodyText": str(body_text or ""),
+            }
+
+        return event
+
+    def _extract_command_name(self, payload: dict[str, Any]) -> str:
+        cmd_any = payload.get("command")
+        if cmd_any is None:
+            cmd_any = payload.get("cmd")
+        if cmd_any is None:
+            cmd_any = payload.get("type")
+        if cmd_any is None:
+            cmd_any = payload.get("request")
+        if cmd_any is None:
+            cmd_any = payload.get("method")
+        return str(cmd_any or "")
+
+    def _build_command_response(
+        self, payload: dict[str, Any], *, summary: dict[str, Any], ts_ms: int
+    ) -> dict[str, Any]:
+        _ = ts_ms
+        typ = str(summary.get("type") or "")
+        if typ == "get_toys":
+            api_toys = _build_api_toys()
+            return _build_get_toys_response(api_toys=api_toys)
+
+        if typ == "get_toy_name":
+            names = [toy.display_name for toy in _TOYS]
+            return _build_get_toy_name_response(names=names)
+
+        if typ in (
+            "vibration_pattern",
+            "solace_thrusting",
+            "all_vibrate",
+            "stop",
+            "function",
+            "pattern_v2",
+            "position",
+            "preset",
+        ):
+            # Optional targeting: validate toy ids if specified.
+            toy_err = self._validate_toy_targets(payload.get("toy"))
+            if toy_err is not None:
+                return toy_err
+
+            param_err = self._validate_required_params(payload, typ=typ)
+            if param_err is not None:
+                return param_err
+
+            return _build_ok_response()
+
+        # Unknown command: follow the spec error table semantics.
+        cmd = str(payload.get("command") or payload.get("cmd") or payload.get("type") or "")
+        if cmd:
+            return _build_error_response(code=400, message=f"Invalid Command: {cmd}")
+        return _build_error_response(code=400, message="Invalid Command")
+
+    def _validate_toy_targets(self, toy_value: Any) -> dict[str, Any] | None:
+        toy_info = self._resolve_toy_targets(toy_value)
+        if toy_info["scope"] == "all":
+            return None
+        unknown = toy_info["unknown"]
+        if unknown:
+            return _build_error_response(code=401, message=f"Toy Not Found: {unknown[0]}")
+        return None
+
+    def _resolve_toy_targets(self, toy_value: Any) -> dict[str, Any]:
+        """
+        Resolve target toys from `toy` parameter.
+
+        - None / missing: apply to all toys
+        - string: accept both toy id (preferred) and toy name (legacy clients)
+        - list: array of ids/names
+        """
+        if toy_value is None:
+            return {
+                "scope": "all",
+                "ids": [toy.toy_id for toy in _TOYS],
+                "names": [toy.display_name for toy in _TOYS],
+                "unknown": [],
+            }
+
+        tokens: list[str] = []
+        if isinstance(toy_value, str):
+            v = toy_value.strip()
+            if v:
+                tokens = [v]
+        elif isinstance(toy_value, list):
+            for item in toy_value:
+                if isinstance(item, str):
+                    v = item.strip()
+                else:
+                    v = str(item).strip()
+                if v:
+                    tokens.append(v)
+        else:
+            v = str(toy_value).strip()
+            if v:
+                tokens = [v]
+
+        if not tokens:
+            return {
+                "scope": "all",
+                "ids": [toy.toy_id for toy in _TOYS],
+                "names": [toy.display_name for toy in _TOYS],
+                "unknown": [],
+            }
+
+        id_by_token: dict[str, str] = {}
+        display_by_id: dict[str, str] = {}
+        for toy in _TOYS:
+            toy_id = toy.toy_id
+            display_by_id[toy_id] = toy.display_name
+            id_by_token[toy_id.lower()] = toy_id
+            id_by_token[toy.name.lower()] = toy_id
+            id_by_token[toy.display_name.lower()] = toy_id
+            id_by_token[toy.display_name.lower().replace(" ", "")] = toy_id
+
+        out_ids: list[str] = []
+        out_names: list[str] = []
+        unknown: list[str] = []
+        seen: set[str] = set()
+        for token in tokens:
+            t = token.strip()
+            if not t:
+                continue
+            if t.lower() == "all":
+                return {
+                    "scope": "all",
+                    "ids": [toy.toy_id for toy in _TOYS],
+                    "names": [toy.display_name for toy in _TOYS],
+                    "unknown": [],
+                }
+            resolved = id_by_token.get(t.lower())
+            if resolved is None:
+                unknown.append(t)
+                continue
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            out_ids.append(resolved)
+            out_names.append(display_by_id.get(resolved, resolved))
+
+        return {
+            "scope": "selected",
+            "ids": out_ids,
+            "names": out_names,
+            "unknown": unknown,
+        }
+
+    def _validate_required_params(self, payload: dict[str, Any], *, typ: str) -> dict[str, Any] | None:
+        if typ == "function":
+            if not str(payload.get("action") or "").strip():
+                return _build_error_response(code=404, message="Invalid Parameter: action")
+            if payload.get("timeSec") is None:
+                return _build_error_response(code=404, message="Invalid Parameter: timeSec")
+            if payload.get("apiVer") is None:
+                return _build_error_response(code=404, message="Invalid Parameter: apiVer")
+            return None
+        if typ == "position":
+            if payload.get("value") is None:
+                return _build_error_response(code=404, message="Invalid Parameter: value")
+            if payload.get("apiVer") is None:
+                return _build_error_response(code=404, message="Invalid Parameter: apiVer")
+            return None
+        if typ == "vibration_pattern":
+            if not str(payload.get("rule") or "").strip():
+                return _build_error_response(code=404, message="Invalid Parameter: rule")
+            if not str(payload.get("strength") or "").strip():
+                return _build_error_response(code=404, message="Invalid Parameter: strength")
+            if payload.get("timeSec") is None:
+                return _build_error_response(code=404, message="Invalid Parameter: timeSec")
+            if payload.get("apiVer") is None:
+                return _build_error_response(code=404, message="Invalid Parameter: apiVer")
+            return None
+        if typ == "pattern_v2":
+            if not str(payload.get("type") or "").strip():
+                return _build_error_response(code=404, message="Invalid Parameter: type")
+            if payload.get("apiVer") is None:
+                return _build_error_response(code=404, message="Invalid Parameter: apiVer")
+            return None
+        if typ == "preset":
+            if not str(payload.get("name") or "").strip():
+                return _build_error_response(code=404, message="Invalid Parameter: name")
+            if payload.get("timeSec") is None:
+                return _build_error_response(code=404, message="Invalid Parameter: timeSec")
+            if payload.get("apiVer") is None:
+                return _build_error_response(code=404, message="Invalid Parameter: apiVer")
+            return None
+        if typ in ("solace_thrusting", "all_vibrate", "stop"):
+            if payload.get("apiVer") is None:
+                return _build_error_response(code=404, message="Invalid Parameter: apiVer")
+            return None
+        return None
 
     def _peer(self, writer: asyncio.StreamWriter) -> str:
         try:
@@ -802,14 +1148,12 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
         writer.write(resp.encode("utf-8"))
         await writer.drain()
 
-        toy_map = _build_toy_map()
-        for toy in list(toy_map.values()):
-            try:
-                toy["port"] = int(self._cfg.port)
-            except Exception:
-                pass
-        await self._ws_send_text(writer, json.dumps({"type": "access-granted"}, ensure_ascii=False))
-        await self._ws_send_text(writer, json.dumps({"type": "toy-list", "data": {"toys": toy_map}}, ensure_ascii=False))
+        toy_map = _build_ws_toy_map(port=int(self._cfg.port))
+        await self._ws_send_text(writer, json.dumps({"type": "access-granted"}, ensure_ascii=False, separators=(",", ":")))
+        await self._ws_send_text(
+            writer,
+            json.dumps({"type": "toy-list", "data": {"toys": toy_map}}, ensure_ascii=False, separators=(",", ":")),
+        )
 
         buf = bytearray()
         while True:
@@ -837,9 +1181,9 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
                 t = msg.get("type") or msg.get("command") or msg.get("cmd")
                 t_s = str(t or "")
                 if t_s == "ping":
-                    await self._ws_send_text(writer, json.dumps({"type": "pong"}))
+                    await self._ws_send_text(writer, json.dumps({"type": "pong"}, separators=(",", ":")))
                 if t_s == "access":
-                    await self._ws_send_text(writer, json.dumps({"type": "access-granted"}))
+                    await self._ws_send_text(writer, json.dumps({"type": "access-granted"}, separators=(",", ":")))
 
     def _ws_try_parse_frames(self, data: bytearray) -> tuple[list[tuple[int, bytes]], bytearray]:
         buf = bytes(data)
@@ -944,7 +1288,7 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
             "Cache-Control: no-cache, no-store, max-age=0",
             "Access-Control-Allow-Origin: *",
             "Access-Control-Allow-Methods: POST, OPTIONS",
-            "Access-Control-Allow-Headers: Content-Type, Accept",
+            "Access-Control-Allow-Headers: Content-Type, Accept, X-platform, X-Platform",
         ]
         # Match Node's behavior more closely: do not force keep-alive via header.
         # Only explicitly request close when we intend to close.
@@ -1060,6 +1404,22 @@ LovenseMockServerRuntimeNode.SPEC = F8OperatorSpec(
             name="printPretty",
             label="Print Pretty JSON",
             description="Pretty-print JSON when printRaw is enabled (debug).",
+            valueSchema=boolean_schema(default=False),
+            access=F8StateAccess.rw,
+            showOnNode=False,
+        ),
+        F8StateSpec(
+            name="eventIncludePayload",
+            label="Event Include Payload",
+            description="Include the parsed request payload in the `event` state (debug).",
+            valueSchema=boolean_schema(default=False),
+            access=F8StateAccess.rw,
+            showOnNode=False,
+        ),
+        F8StateSpec(
+            name="eventIncludeRequest",
+            label="Event Include Request",
+            description="Include request headers/body in the `event` state (debug).",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
             showOnNode=False,
