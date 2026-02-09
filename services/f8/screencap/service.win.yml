@@ -1,0 +1,10 @@
+schemaVersion: f8serviceEntry/1
+serviceClass: f8.screencap
+label: Screen Capture
+version: 0.0.1
+launch:
+  command: "win/f8screencap_service.exe"
+  args: []
+  env: {}
+  workdir: "./"
+

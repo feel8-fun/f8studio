@@ -49,3 +49,6 @@ else()
     endif()
   endif()
 endif()
+
+# Deploy C++ service artifacts into `services/.../<platform>/` for packaging/runtime use.
+f8_deploy_service_runtime(f8screencap_service "f8/screencap")

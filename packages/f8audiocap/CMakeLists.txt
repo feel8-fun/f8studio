@@ -30,3 +30,6 @@ target_compile_definitions(f8audiocap_service PRIVATE NOMINMAX WIN32_LEAN_AND_ME
 if (WIN32)
   target_link_libraries(f8audiocap_service PRIVATE ole32 uuid avrt)
 endif()
+
+# Deploy C++ service artifacts into `services/.../<platform>/` for packaging/runtime use.
+f8_deploy_service_runtime(f8audiocap_service "f8/audiocap")

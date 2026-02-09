@@ -1,0 +1,10 @@
+schemaVersion: f8serviceEntry/1
+serviceClass: f8.audiocap
+label: Audio Capture
+version: 0.0.1
+launch:
+  command: "win/f8audiocap_service.exe"
+  args: []
+  env: {}
+  workdir: "./"
+

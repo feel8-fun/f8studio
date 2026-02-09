@@ -21,6 +21,7 @@ enable_testing()
 
 # options
 option(BUILD_TESTS "Enable building of tests" OFF)
+option(F8_DEPLOY_SERVICE_CLEAN "Clean services/<svc>/<platform> before deploy" ON)
 
 # Build Output
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR})
@@ -38,6 +39,41 @@ endforeach()
 set(CMAKE_DEBUG_POSTFIX "_d")
 
 find_package(Threads REQUIRED)
+
+set(F8_SERVICES_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/services")
+
+function(f8_deploy_service_runtime target service_rel_dir)
+    if(NOT TARGET ${target})
+        message(WARNING "f8_deploy_service_runtime: target not found: ${target}")
+        return()
+    endif()
+
+    if(WIN32)
+        set(_platform_dir "win")
+    elseif(APPLE)
+        set(_platform_dir "mac")
+    else()
+        set(_platform_dir "linux")
+    endif()
+
+    set(_dest_dir "${F8_SERVICES_ROOT}/${service_rel_dir}/${_platform_dir}")
+    set(_bin_dir "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
+    set(_lib_dir "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}")
+
+    add_custom_command(
+        TARGET ${target}
+        POST_BUILD
+        COMMAND "${CMAKE_COMMAND}"
+            -Dexe="$<TARGET_FILE:${target}>"
+            -Ddest_dir="${_dest_dir}"
+            -Dbin_dir="${_bin_dir}"
+            -Dlib_dir="${_lib_dir}"
+            -Dclean_dest="$<IF:$<BOOL:${F8_DEPLOY_SERVICE_CLEAN}>,1,0>"
+            -P "${PROJECT_SOURCE_DIR}/cmake/deploy_service_runtime.cmake"
+        VERBATIM
+        COMMENT "Deploy ${target} runtime to ${_dest_dir}"
+    )
+endfunction()
 
 add_subdirectory(packages/f8cppsdk)
 add_subdirectory(packages/f8implayer)

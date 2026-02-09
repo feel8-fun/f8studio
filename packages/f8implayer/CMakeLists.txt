@@ -39,3 +39,6 @@ target_link_libraries(f8implayer_service
 )
 
 target_compile_definitions(f8implayer_service PRIVATE IMGUI_IMPL_OPENGL_LOADER_GLAD NOMINMAX WIN32_LEAN_AND_MEAN)
+
+# Deploy C++ service artifacts into `services/.../<platform>/` for packaging/runtime use.
+f8_deploy_service_runtime(f8implayer_service "f8/implayer")

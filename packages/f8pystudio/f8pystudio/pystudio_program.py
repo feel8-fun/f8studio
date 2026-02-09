@@ -4,12 +4,8 @@ import json
 from typing import Any
 
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
-from qtpy import QtWidgets
 
-from .render_nodes import RenderNodeRegistry
-from .service_catalog import ServiceCatalog, load_discovery_into_registries
 from .pystudio_node_registry import SERVICE_CLASS, register_pystudio_specs
-from .widgets.main_window import F8StudioMainWin
 
 
 class PyStudioProgram:
@@ -21,6 +17,8 @@ class PyStudioProgram:
     def _ensure_pystudio_specs_in_catalog() -> None:
         try:
             reg = register_pystudio_specs()
+            from .service_catalog import ServiceCatalog
+
             sc = ServiceCatalog.instance()
             svc = reg.service_spec(SERVICE_CLASS)
             if svc is not None:
@@ -32,6 +30,9 @@ class PyStudioProgram:
 
     @staticmethod
     def build_node_classes() -> list[type]:
+        from .render_nodes import RenderNodeRegistry
+        from .service_catalog import ServiceCatalog
+
         render_node_reg = RenderNodeRegistry.instance()
         service_catalog = ServiceCatalog.instance()
 
@@ -57,6 +58,13 @@ class PyStudioProgram:
         return generated_node_cls
 
     def run(self) -> int:
+        # Local import: keep `--describe` fast and avoid importing Qt at module import time.
+        from qtpy import QtWidgets
+
+        from .widgets.main_window import F8StudioMainWin
+        from .service_catalog import load_discovery_into_registries
+        from .service_catalog.discovery import last_discovery_error_lines, last_discovery_timing_lines
+
         load_discovery_into_registries()
         self._ensure_pystudio_specs_in_catalog()
 
@@ -65,6 +73,23 @@ class PyStudioProgram:
         app = QtWidgets.QApplication([])
         mainwin = F8StudioMainWin(node_classes)
         mainwin.show()
+
+        try:
+            timing_lines = last_discovery_timing_lines()
+            for line in timing_lines:
+                try:
+                    mainwin._bridge.log.emit(str(line))  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+            # Avoid double-printing errors: timings output can already include them.
+            if not any("discovery errors:" in str(x) for x in timing_lines):
+                for line in last_discovery_error_lines():
+                    try:
+                        mainwin._bridge.log.emit(str(line))  # type: ignore[attr-defined]
+                    except Exception:
+                        pass
+        except Exception:
+            pass
         return int(app.exec_() or 0)
 
     def describe_json_text(self) -> str:

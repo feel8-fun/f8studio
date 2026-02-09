@@ -158,9 +158,16 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         super().closeEvent(event)
 
     def _auto_load_session(self) -> None:
-        loaded = self.studio_graph.load_last_session()
-        if loaded:
-            logger.info("Loaded session from %s", loaded)
+        try:
+            loaded = self.studio_graph.load_last_session()
+            if loaded:
+                logger.info("Loaded session from %s", loaded)
+        except Exception as exc:
+            try:
+                self._log_dock.append("studio", f"[session] auto-load failed: {exc}\n")
+            except Exception:
+                pass
+            logger.exception("Auto-load session failed")
 
     def _auto_save_session(self) -> None:
         saved = self.studio_graph.save_last_session()

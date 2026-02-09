@@ -420,8 +420,21 @@ def _fallback_describe_payload(*, service_dir: Path | None) -> dict:
     label = "unknown.service"
     version = "0.0.0"
 
+    def _service_yml_candidates(sd: Path) -> list[Path]:
+        if _is_windows():
+            return [sd / "service.win.yml", sd / "service.yml"]
+        if sys.platform.startswith("darwin"):
+            return [sd / "service.mac.yml", sd / "service.yml"]
+        return [sd / "service.linux.yml", sd / "service.yml"]
+
     if service_dir is not None:
-        svc_yml = service_dir / "service.yml"
+        svc_yml: Path | None = None
+        for cand in _service_yml_candidates(service_dir):
+            if cand.is_file():
+                svc_yml = cand
+                break
+        if svc_yml is None:
+            svc_yml = service_dir / "service.yml"
         try:
             import yaml  # type: ignore[import-not-found]
 
