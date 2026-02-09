@@ -15,7 +15,7 @@ from .f8_editor_widgets import (
     parse_select_pool,
 )
 from .f8_prop_value_widgets import F8DoubleSpinBoxPropWidget, F8IntSpinBoxPropWidget, F8NumberPropLineEdit
-from .f8_prop_value_widgets import F8CodeButtonPropWidget
+from .f8_prop_value_widgets import F8CodeButtonPropWidget, F8InlineCodePropWidget, F8WrapLinePropWidget
 
 
 def effective_state_fields(node: Any) -> list[Any]:
@@ -239,6 +239,16 @@ def build_state_value_widget(
         except Exception:
             title = f"Edit {prop_name}"
         widget = F8CodeButtonPropWidget(title=title, language=ui_language or "plaintext")
+        widget.set_name(prop_name)
+        return widget
+
+    if ui_control in {"wrapline"}:
+        widget = F8WrapLinePropWidget(language=ui_language or "plaintext")
+        widget.set_name(prop_name)
+        return widget
+
+    if ui_control in {"code_inline", "multiline"}:
+        widget = F8InlineCodePropWidget(language=ui_language or "plaintext")
         widget.set_name(prop_name)
         return widget
 

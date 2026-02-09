@@ -1304,7 +1304,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             n = n[:-3]
         n = n.strip()
         if max_chars is not None and max_chars > 0 and len(n) > max_chars:
-            return n[: max(1, max_chars - 1)] + "…"
+            return n[: max(1, max_chars - 1)] + "..."
         return n
 
     @staticmethod
@@ -1368,12 +1368,15 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             # Make controls readable on dark node themes.
             w.setStyleSheet(
                 """
-                QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+                QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QPlainTextEdit, QTextEdit {
                     color: rgb(235, 235, 235);
                     background: rgba(0, 0, 0, 45);
                     border: 1px solid rgba(255, 255, 255, 55);
                     border-radius: 3px;
                     padding: 1px 4px;
+                }
+                QPlainTextEdit, QTextEdit {
+                    selection-background-color: rgb(80, 130, 180);
                 }
                 QComboBox::drop-down { border: 0px; }
                 QComboBox QAbstractItemView {
@@ -1414,11 +1417,159 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         # Create control.
         read_only = access_s == "ro"
 
+        if ui in {"wrapline"}:
+            class _InlineWrapLineEdit(QtWidgets.QPlainTextEdit):
+                def __init__(self, parent: QtWidgets.QWidget | None = None):
+                    super().__init__(parent)
+                    self._prev = ""
+
+                @staticmethod
+                def _normalize(s: str) -> str:
+                    if "\n" not in s and "\r" not in s:
+                        return s.strip()
+                    parts = [p.strip() for p in s.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+                    return " ".join([p for p in parts if p]).strip()
+
+                def focusInEvent(self, event):  # type: ignore[override]
+                    super().focusInEvent(event)
+                    self._prev = str(self.toPlainText() or "")
+
+                def focusOutEvent(self, event):  # type: ignore[override]
+                    super().focusOutEvent(event)
+                    txt_raw = str(self.toPlainText() or "")
+                    txt = self._normalize(txt_raw)
+                    if txt != txt_raw:
+                        with QtCore.QSignalBlocker(self):
+                            self.setPlainText(txt)
+                    if txt != self._prev:
+                        self._prev = txt
+                        _set_node_value(txt, push_undo=True)
+
+                def keyPressEvent(self, event):  # type: ignore[override]
+                    if event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter):
+                        # Commit on enter; do not insert newlines.
+                        txt_raw = str(self.toPlainText() or "")
+                        txt = self._normalize(txt_raw)
+                        if txt != txt_raw:
+                            with QtCore.QSignalBlocker(self):
+                                self.setPlainText(txt)
+                        if txt != self._prev:
+                            self._prev = txt
+                            _set_node_value(txt, push_undo=True)
+                        self.clearFocus()
+                        event.accept()
+                        return
+                    super().keyPressEvent(event)
+
+                def insertFromMimeData(self, source: QtCore.QMimeData) -> None:  # type: ignore[override]
+                    if source is None or not source.hasText():
+                        return super().insertFromMimeData(source)
+                    txt = self._normalize(str(source.text() or ""))
+                    if txt:
+                        self.textCursor().insertText(txt)
+                    return
+
+            edit = _InlineWrapLineEdit()
+            edit.setLineWrapMode(QtWidgets.QPlainTextEdit.LineWrapMode.WidgetWidth)
+            edit.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            edit.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            edit.setTabStopDistance(4 * edit.fontMetrics().horizontalAdvance(" "))
+            try:
+                font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
+                edit.setFont(font)
+            except Exception:
+                pass
+            edit.setMinimumWidth(160)
+            edit.setMinimumHeight(38)
+            edit.setMaximumHeight(64)
+            _common_style(edit)
+            edit.document().setDocumentMargin(4.0)
+            if field_tooltip:
+                edit.setToolTip(field_tooltip)
+
+            def _apply_value(v: Any) -> None:
+                s = "" if v is None else str(v)
+                s2 = _InlineWrapLineEdit._normalize(s)
+                with QtCore.QSignalBlocker(edit):
+                    edit.setPlainText(s2)
+                try:
+                    edit._prev = s2  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+
+            _apply_value(_get_node_value())
+            self._state_inline_updaters[name] = _apply_value
+            if read_only:
+                edit.setDisabled(True)
+            return edit
+
+        if ui in {"code_inline", "multiline"}:
+            class _InlineExprEdit(QtWidgets.QPlainTextEdit):
+                def __init__(self, parent: QtWidgets.QWidget | None = None):
+                    super().__init__(parent)
+                    self._prev = ""
+
+                def focusInEvent(self, event):  # type: ignore[override]
+                    super().focusInEvent(event)
+                    self._prev = str(self.toPlainText() or "")
+
+                def focusOutEvent(self, event):  # type: ignore[override]
+                    super().focusOutEvent(event)
+                    txt = str(self.toPlainText() or "")
+                    if txt != self._prev:
+                        self._prev = txt
+                        _set_node_value(txt, push_undo=True)
+
+                def keyPressEvent(self, event):  # type: ignore[override]
+                    if event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter) and bool(
+                        event.modifiers() & QtCore.Qt.KeyboardModifier.ControlModifier
+                    ):
+                        txt = str(self.toPlainText() or "")
+                        if txt != self._prev:
+                            self._prev = txt
+                            _set_node_value(txt, push_undo=True)
+                        event.accept()
+                        return
+                    super().keyPressEvent(event)
+
+            edit = _InlineExprEdit()
+            edit.setLineWrapMode(QtWidgets.QPlainTextEdit.LineWrapMode.WidgetWidth)
+            edit.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            edit.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            edit.setTabStopDistance(4 * edit.fontMetrics().horizontalAdvance(" "))
+            try:
+                font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
+                edit.setFont(font)
+            except Exception:
+                pass
+            edit.setMinimumWidth(160)
+            edit.setMinimumHeight(44)
+            edit.setMaximumHeight(88)
+            _common_style(edit)
+            edit.document().setDocumentMargin(4.0)
+            if field_tooltip:
+                edit.setToolTip(field_tooltip)
+
+            def _apply_value(v: Any) -> None:
+                s = "" if v is None else str(v)
+                with QtCore.QSignalBlocker(edit):
+                    edit.setPlainText(s)
+                try:
+                    edit._prev = s  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+
+            _apply_value(_get_node_value())
+            self._state_inline_updaters[name] = _apply_value
+            if read_only:
+                edit.setDisabled(True)
+            return edit
+
         if ui in {"code"}:
             btn = QtWidgets.QToolButton()
             btn.setAutoRaise(True)
             btn.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
-            btn.setText("Edit…")
+            btn.setText("Edit...")
             try:
                 btn.setIcon(qta.icon("fa5s.code", color="white"))
             except Exception:
@@ -1439,7 +1590,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 current = _get_node_value()
                 updated = open_code_editor_dialog(
                     None,
-                    title=f"{self.name} — {state_field.label}",
+                    title=f"{self.name} - {state_field.label}",
                     code="" if current is None else str(current),
                     language=state_field.ui_language or "plaintext",
                 )
@@ -2682,7 +2833,29 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                     except Exception:
                         body_h = 0.0
                     try:
-                        panel_proxy.setPos(inner_x, y)
+                        # Center panels using their *actual* width. Some controls
+                        # can enforce minimum sizes that override our target width,
+                        # causing asymmetric margins if we anchor at `inner_x`.
+                        w = panel_proxy.widget()
+                        if w is None:
+                            panel_proxy.setPos(inner_x, y)
+                        else:
+                            panel_w = float(w.width() or 0)
+                            if panel_w <= 0:
+                                panel_w = float(panel_proxy.boundingRect().width() or 0)
+                            if panel_w <= 0:
+                                panel_proxy.setPos(inner_x, y)
+                            else:
+                                panel_x = rect.left() + (rect.width() - panel_w) / 2.0
+                                # Clamp inside the node content area so the right edge
+                                # never gets clipped by the node boundary.
+                                min_x = float(inner_x)
+                                max_x = float(rect.right() - 4.0 - panel_w)
+                                if max_x < min_x:
+                                    panel_x = min_x
+                                else:
+                                    panel_x = max(min_x, min(panel_x, max_x))
+                                panel_proxy.setPos(panel_x, y)
                     except Exception:
                         pass
 

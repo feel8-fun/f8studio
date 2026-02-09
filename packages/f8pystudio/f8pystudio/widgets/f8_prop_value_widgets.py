@@ -183,7 +183,7 @@ def open_code_editor_dialog(
 
 class F8CodePropWidget(QtWidgets.QWidget):
     """
-    Read-only preview with an "Edit…" button that opens a code editor dialog.
+    Read-only preview with an "Edit..." button that opens a code editor dialog.
     """
 
     value_changed = QtCore.Signal(str, object)
@@ -224,7 +224,7 @@ class F8CodePropWidget(QtWidgets.QWidget):
         if lines:
             head = lines[0].strip()
             if head:
-                preview = f"{preview} — {head[:80]}"
+                preview = f"{preview} - {head[:80]}"
         self._preview.setText(preview)
 
     def _on_edit_clicked(self) -> None:
@@ -237,7 +237,7 @@ class F8CodePropWidget(QtWidgets.QWidget):
 
 class F8CodeButtonPropWidget(QtWidgets.QWidget):
     """
-    A single "Edit…" button that opens a code editor dialog.
+    A single "Edit..." button that opens a code editor dialog.
     """
 
     value_changed = QtCore.Signal(str, object)
@@ -249,7 +249,7 @@ class F8CodeButtonPropWidget(QtWidgets.QWidget):
         self._title = str(title or "Edit Code")
         self._language = str(language or "plaintext").strip() or "plaintext"
 
-        self._btn = QtWidgets.QPushButton("Edit…")
+        self._btn = QtWidgets.QPushButton("Edit...")
         try:
             self._btn.setIcon(qta.icon("fa5s.code", color="white"))
         except Exception:
@@ -280,6 +280,170 @@ class F8CodeButtonPropWidget(QtWidgets.QWidget):
             return
         self.set_value(updated)
         self.value_changed.emit(self.get_name(), updated)
+
+
+class F8InlineCodePropWidget(QtWidgets.QPlainTextEdit):
+    """
+    Inline multiline editor used for lightweight expressions (`uiControl=code_inline`).
+
+    Emits `value_changed` on focus-out and on Ctrl+Enter.
+    """
+
+    value_changed = QtCore.Signal(str, object)
+
+    def __init__(self, parent=None, *, language: str = "plaintext"):
+        super().__init__(parent)
+        self._name: str = ""
+        self._prev_text: str = ""
+        self._language = str(language or "plaintext").strip().lower() or "plaintext"
+
+        self.setLineWrapMode(QtWidgets.QPlainTextEdit.LineWrapMode.WidgetWidth)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setTabStopDistance(4 * self.fontMetrics().horizontalAdvance(" "))
+        try:
+            font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
+            self.setFont(font)
+        except Exception:
+            pass
+        self.setMinimumHeight(44)
+        self.setMaximumHeight(96)
+
+    def set_name(self, name: str) -> None:
+        self._name = str(name or "")
+
+    def get_name(self) -> str:
+        return self._name
+
+    def focusInEvent(self, event):  # type: ignore[override]
+        super().focusInEvent(event)
+        self._prev_text = self.toPlainText()
+
+    def focusOutEvent(self, event):  # type: ignore[override]
+        super().focusOutEvent(event)
+        self._emit_if_changed()
+
+    def keyPressEvent(self, event):  # type: ignore[override]
+        try:
+            if event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter) and bool(
+                event.modifiers() & QtCore.Qt.KeyboardModifier.ControlModifier
+            ):
+                self._emit_if_changed(force=True)
+                event.accept()
+                return
+        except Exception:
+            pass
+        super().keyPressEvent(event)
+
+    def _emit_if_changed(self, *, force: bool = False) -> None:
+        text = str(self.toPlainText() or "")
+        if not force and text == self._prev_text:
+            return
+        self._prev_text = text
+        self.value_changed.emit(self.get_name(), text)
+
+    def set_value(self, value: Any) -> None:
+        with QtCore.QSignalBlocker(self):
+            self.setPlainText("" if value is None else str(value))
+        self._prev_text = self.toPlainText()
+
+
+class F8WrapLinePropWidget(QtWidgets.QPlainTextEdit):
+    """
+    Single-line editor that wraps long text.
+
+    Intended for short expressions that must not contain newlines, but can be
+    visually wrapped to fit the node width.
+
+    Emits `value_changed` on focus-out and on Enter/Ctrl+Enter.
+    """
+
+    value_changed = QtCore.Signal(str, object)
+
+    def __init__(self, parent=None, *, language: str = "plaintext"):
+        super().__init__(parent)
+        self._name: str = ""
+        self._prev_text: str = ""
+        self._language = str(language or "plaintext").strip().lower() or "plaintext"
+
+        self.setLineWrapMode(QtWidgets.QPlainTextEdit.LineWrapMode.WidgetWidth)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setTabStopDistance(4 * self.fontMetrics().horizontalAdvance(" "))
+        try:
+            font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
+            self.setFont(font)
+        except Exception:
+            pass
+        self.document().setDocumentMargin(4.0)
+
+        self.setMinimumHeight(38)
+        self.setMaximumHeight(64)
+
+    def set_name(self, name: str) -> None:
+        self._name = str(name or "")
+
+    def get_name(self) -> str:
+        return self._name
+
+    @staticmethod
+    def _normalize(value: str) -> str:
+        s = str(value or "")
+        if "\n" not in s and "\r" not in s:
+            return s
+        parts = [p.strip() for p in s.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+        return " ".join([p for p in parts if p]).strip()
+
+    def focusInEvent(self, event):  # type: ignore[override]
+        super().focusInEvent(event)
+        self._prev_text = str(self.toPlainText() or "")
+
+    def focusOutEvent(self, event):  # type: ignore[override]
+        super().focusOutEvent(event)
+        self._emit_if_changed()
+
+    def keyPressEvent(self, event):  # type: ignore[override]
+        try:
+            is_enter = event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter)
+            if is_enter:
+                # Never insert newlines. Treat Enter as commit.
+                self._emit_if_changed(force=True)
+                try:
+                    self.clearFocus()
+                except Exception:
+                    pass
+                event.accept()
+                return
+        except Exception:
+            pass
+        super().keyPressEvent(event)
+
+    def insertFromMimeData(self, source: QtCore.QMimeData) -> None:  # type: ignore[override]
+        try:
+            txt = ""
+            if source is not None and source.hasText():
+                txt = self._normalize(str(source.text() or ""))
+            if txt:
+                self.textCursor().insertText(txt)
+            return
+        except Exception:
+            return super().insertFromMimeData(source)
+
+    def _emit_if_changed(self, *, force: bool = False) -> None:
+        text = self._normalize(str(self.toPlainText() or ""))
+        if text != str(self.toPlainText() or ""):
+            with QtCore.QSignalBlocker(self):
+                self.setPlainText(text)
+        if not force and text == self._prev_text:
+            return
+        self._prev_text = text
+        self.value_changed.emit(self.get_name(), text)
+
+    def set_value(self, value: Any) -> None:
+        text = self._normalize("" if value is None else str(value))
+        with QtCore.QSignalBlocker(self):
+            self.setPlainText(text)
+        self._prev_text = text
 
 
 class F8JsonPropTextEdit(QtWidgets.QTextEdit):
