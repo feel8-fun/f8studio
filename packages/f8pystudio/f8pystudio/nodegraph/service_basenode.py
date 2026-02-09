@@ -225,6 +225,32 @@ class _F8ElideToolButton(QtWidgets.QToolButton):
             self.setText(self._full_text)
 
 
+class _F8ForceGlobalToolTipFilter(QtCore.QObject):
+    """
+    Force tooltip display via `QToolTip.showText(..., widget=None)` to avoid
+    dark/black tooltip palette issues when widgets are embedded in a
+    `QGraphicsProxyWidget`.
+    """
+
+    def eventFilter(self, watched: QtCore.QObject, event: QtCore.QEvent) -> bool:  # type: ignore[override]
+        if event.type() != QtCore.QEvent.ToolTip:
+            return super().eventFilter(watched, event)
+        if not isinstance(watched, QtWidgets.QWidget):
+            return True
+        tip = str(watched.toolTip() or "").strip()
+        if not tip:
+            return True
+        try:
+            pos = event.globalPos()  # type: ignore[attr-defined]
+        except Exception:
+            try:
+                pos = event.globalPosition().toPoint()  # type: ignore[attr-defined]
+            except Exception:
+                return True
+        QtWidgets.QToolTip.showText(pos, tip, None)
+        return True
+
+
 class F8StudioServiceBaseNode(F8StudioBaseNode):
     """
     Base class for all single-node service (nodes that are intended to live without
@@ -545,6 +571,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         self._cmd_proxy: QtWidgets.QGraphicsProxyWidget | None = None
         self._cmd_widget: QtWidgets.QWidget | None = None
         self._cmd_buttons: list[QtWidgets.QAbstractButton] = []
+        self._tooltip_filters: list[QtCore.QObject] = []
         self._svc_toolbar_proxy: QtWidgets.QGraphicsProxyWidget | None = None
         self._ports_end_y: float | None = None
 
@@ -1085,6 +1112,9 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             except Exception:
                 btn_label = ""
             b = QtWidgets.QPushButton(btn_label)
+            flt = _F8ForceGlobalToolTipFilter(b)
+            b.installEventFilter(flt)
+            self._tooltip_filters.append(flt)
             b.setMinimumHeight(24)
             b.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
             b.setEnabled(bool(enabled))
