@@ -22,6 +22,7 @@ from f8pysdk import (
     string_schema,
 )
 from f8pysdk.capabilities import ClosableNode, NodeBus
+from f8pysdk.json_unwrap import unwrap_json_value as _unwrap_json_value
 from f8pysdk.nats_naming import ensure_token
 from f8pysdk.runtime_node import OperatorNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
@@ -307,17 +308,6 @@ def _summarize_command(payload: dict[str, Any]) -> dict[str, Any]:
         return {"type": "preset", "toy": payload.get("toy"), "name": payload.get("name"), "timeSec": payload.get("timeSec"), "apiVer": api_ver}
 
     return {"type": "other", "command": cmd, "apiVer": api_ver}
-
-
-def _unwrap_json_value(value: Any) -> Any:
-    if value is None:
-        return None
-    if isinstance(value, (str, int, float, bool, list, dict, tuple)):
-        return value
-    try:
-        return value.root
-    except AttributeError:
-        return value
 
 
 class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):

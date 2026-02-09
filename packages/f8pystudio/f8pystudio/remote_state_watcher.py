@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 from f8pysdk.nats_naming import ensure_token, kv_bucket_for_service, kv_key_node_state
+from f8pysdk.service_bus.payload import parse_state_key
 from f8pysdk.nats_transport import NatsTransport, NatsTransportConfig
 from f8pysdk.time_utils import now_ms
 
@@ -14,8 +15,8 @@ def _coerce_inbound_ts_ms(ts_raw: Any, *, default: int) -> int:
     """
     Best-effort coercion of inbound timestamps to milliseconds.
 
-    Mirrors `ServiceBus._coerce_inbound_ts_ms(...)` but kept local to Studio so
-    it can watch arbitrary services without depending on ServiceBus internals.
+    Mirrors `f8pysdk.service_bus.payload.coerce_inbound_ts_ms(...)` but kept local
+    to Studio so it can watch arbitrary services without depending on ServiceBus.
     """
     try:
         if ts_raw is None:
@@ -50,19 +51,6 @@ def _extract_ts_field(payload: dict[str, Any]) -> Any:
     if "tsMs" in payload:
         return payload.get("tsMs")
     return None
-
-
-def _parse_state_key(key: str) -> tuple[str, str] | None:
-    parts = str(key).strip(".").split(".")
-    if len(parts) < 4:
-        return None
-    if parts[0] != "nodes" or parts[2] != "state":
-        return None
-    node_id = parts[1]
-    field = ".".join(parts[3:])
-    if not node_id or not field:
-        return None
-    return node_id, field
 
 
 @dataclass(frozen=True)
@@ -192,7 +180,7 @@ class RemoteStateWatcher:
                 await self._on_kv(t.service_id, key, raw)
 
     async def _on_kv(self, service_id: str, key: str, value: bytes) -> None:
-        parsed = _parse_state_key(key)
+        parsed = parse_state_key(key)
         if not parsed:
             return
         node_id, field = parsed

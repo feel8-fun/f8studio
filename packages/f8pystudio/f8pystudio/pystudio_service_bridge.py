@@ -1038,13 +1038,7 @@ class PyStudioServiceBridge(QtCore.QObject):
             if self._svc is None or self._svc.bus is None:
                 return
             try:
-                await self._svc.bus._publish_state(
-                    node_id,
-                    field,
-                    value,
-                    origin=StateWriteOrigin.external,
-                    source="pystudio",
-                )
+                await self._svc.bus.publish_state_external(node_id, field, value, source="pystudio")
             except Exception:
                 return
 

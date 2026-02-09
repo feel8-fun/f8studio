@@ -13,6 +13,7 @@ if SDK_ROOT not in sys.path:
 from f8pysdk.generated import F8RuntimeGraph, F8RuntimeNode  # noqa: E402
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry  # noqa: E402
 from f8pysdk.service_host import ServiceHost, ServiceHostConfig  # noqa: E402
+from f8pysdk.service_bus.routing_data import buffer_input  # noqa: E402
 from f8pysdk.testing import ServiceBusHarness  # noqa: E402
 from f8pysdk.time_utils import now_ms  # noqa: E402
 
@@ -47,8 +48,8 @@ class MixSilenceFillTests(unittest.IsolatedAsyncioTestCase):
         assert isinstance(node, MixSilenceFillRuntimeNode)
 
         # Feed inputs: A=1, B=0.
-        bus._buffer_input("mix1", "A", 1.0, ts_ms=now_ms(), edge=None, ctx_id=None)
-        bus._buffer_input("mix1", "B", 0.0, ts_ms=now_ms(), edge=None, ctx_id=None)
+        buffer_input(bus, "mix1", "A", 1.0, ts_ms=now_ms(), edge=None, ctx_id=None)
+        buffer_input(bus, "mix1", "B", 0.0, ts_ms=now_ms(), edge=None, ctx_id=None)
 
         out0 = await node.compute_output("out", ctx_id=0)
         self.assertAlmostEqual(float(out0), 1.0, places=6)
@@ -59,11 +60,10 @@ class MixSilenceFillTests(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(float(out1), 0.0, places=6)
 
         # Make A active (big change) -> should switch back to A.
-        bus._buffer_input("mix1", "A", 0.4, ts_ms=now_ms(), edge=None, ctx_id=None)
+        buffer_input(bus, "mix1", "A", 0.4, ts_ms=now_ms(), edge=None, ctx_id=None)
         out2 = await node.compute_output("out", ctx_id=2)
         self.assertAlmostEqual(float(out2), 0.4, places=6)
 
 
 if __name__ == "__main__":
     unittest.main()
-

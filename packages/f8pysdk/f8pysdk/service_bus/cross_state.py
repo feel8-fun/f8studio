@@ -6,6 +6,8 @@ from typing import Any, TYPE_CHECKING
 
 from ..generated import F8Edge, F8EdgeKindEnum, F8StateAccess, F8RuntimeGraph
 from ..nats_naming import ensure_token, kv_bucket_for_service, kv_key_node_state
+from .payload import coerce_inbound_ts_ms, extract_ts_field, parse_state_key
+from .state_publish import coerce_state_value, publish_state, validate_state_update
 from .state_write import StateWriteContext, StateWriteOrigin, StateWriteSource
 from ..time_utils import now_ms
 
@@ -17,7 +19,7 @@ def update_cross_state_bindings(bus: "ServiceBus", graph: F8RuntimeGraph) -> Non
     """
     Build cross-state binding tables from the current graph without starting watches.
 
-    Watches are started after rungraph hooks register nodes (see `ServiceBus._apply_rungraph_bytes`).
+    Watches are started after rungraph hooks register nodes (see `service_bus.rungraph_apply.apply_rungraph`).
     """
     want: dict[tuple[str, str], list[tuple[str, str, F8Edge]]] = {}
     targets: set[tuple[str, str]] = set()
@@ -115,7 +117,7 @@ async def on_remote_state_kv(
     is_initial: bool,
     no_fanout: bool = False,
 ) -> None:
-    parsed = bus._parse_state_key(key)
+    parsed = parse_state_key(key)
     if not parsed:
         return
     remote_node, remote_field = parsed
@@ -129,7 +131,7 @@ async def on_remote_state_kv(
         payload = {}
     if isinstance(payload, dict):
         v = payload.get("value")
-        ts = bus._coerce_inbound_ts_ms(bus._extract_ts_field(payload), default=now_ms())
+        ts = coerce_inbound_ts_ms(extract_ts_field(payload), default=now_ms())
     else:
         v = payload
         ts = now_ms()
@@ -194,7 +196,8 @@ async def on_remote_state_kv(
             }
             if not bool(no_fanout):
                 meta_out.pop("_noStateFanout", None)
-            v2 = await bus._validate_state_update(
+            v2 = await validate_state_update(
+                bus,
                 node_id=str(local_node_id),
                 field=str(local_field),
                 value=v,
@@ -202,7 +205,7 @@ async def on_remote_state_kv(
                 meta={"source": StateWriteSource.state_edge_cross.value, **meta_out},
                 ctx=StateWriteContext(origin=StateWriteOrigin.external, source=StateWriteSource.state_edge_cross),
             )
-            v2 = bus._coerce_state_value(v2)
+            v2 = coerce_state_value(v2)
 
             # Skip duplicates (common when KV watch emits the current value and we
             # also perform an explicit initial `kv_get`).
@@ -245,7 +248,8 @@ async def on_remote_state_kv(
                         pass
                 continue
             else:
-                await bus._publish_state(
+                await publish_state(
+                    bus,
                     str(local_node_id),
                     str(local_field),
                     v2,

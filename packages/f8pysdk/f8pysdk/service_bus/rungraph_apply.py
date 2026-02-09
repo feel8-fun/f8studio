@@ -2,88 +2,112 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from typing import Any, TYPE_CHECKING
 
-from ..generated import F8Edge, F8EdgeKindEnum, F8RuntimeGraph, F8StateAccess
-from ..nats_naming import data_subject, ensure_token, kv_key_node_state
+from ..generated import F8Edge, F8EdgeKindEnum, F8RuntimeGraph, F8RuntimeGraphMeta, F8StateAccess
+from ..json_unwrap import unwrap_json_value
+from ..nats_naming import data_subject
 from .state_write import StateWriteOrigin, StateWriteSource
 from ..time_utils import now_ms
 from ..rungraph_validation import validate_state_edges_or_raise
 
+from .cross_state import (
+    stop_unused_cross_state_watches,
+    sync_cross_state_watches,
+    update_cross_state_bindings,
+)
+from .state_publish import publish_state
 from .routing_data import precreate_input_buffers_for_cross_in, sync_subscriptions
 
 if TYPE_CHECKING:
     from .bus import ServiceBus
 
 
+log = logging.getLogger(__name__)
+
+
+def _with_rungraph_ts(graph: F8RuntimeGraph, ts_ms: int) -> F8RuntimeGraph:
+    meta = graph.meta if graph.meta is not None else F8RuntimeGraphMeta()
+    meta2 = meta.model_copy(deep=True, update={"ts": int(ts_ms)})
+    return graph.model_copy(deep=True, update={"meta": meta2})
+
+
+def _encode_rungraph_bytes(graph: F8RuntimeGraph) -> bytes:
+    payload = graph.model_dump(mode="json", by_alias=True)
+    return json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+
+
+def _log_rungraph_error_once(bus: "ServiceBus", key: str, message: str, exc: BaseException | None = None) -> None:
+    """
+    Log rungraph apply errors once per bus instance to avoid log spam.
+    """
+    if key in bus._rungraph_apply_error_once:
+        return
+    bus._rungraph_apply_error_once.add(key)
+    if exc is None:
+        log.warning("rungraph_apply[%s] %s", bus.service_id, message)
+        return
+    log.error("rungraph_apply[%s] %s", bus.service_id, message, exc_info=exc)
+
+
 async def set_rungraph(bus: "ServiceBus", graph: F8RuntimeGraph) -> None:
     """
-    Publish a full rungraph snapshot for this service.
+    Apply and publish a full rungraph snapshot for this service.
+
+    Invariant: the KV snapshot should represent a successfully-applied (running) rungraph.
     """
-    payload = graph.model_dump(mode="json", by_alias=True)
-    meta = dict(payload.get("meta") or {})
-    meta["ts"] = int(now_ms())
-    payload["meta"] = meta
-    raw = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+    graph2 = _with_rungraph_ts(graph, int(now_ms()))
+    ok = await apply_rungraph(bus, graph2)
+    if not ok:
+        raise RuntimeError("set_rungraph: apply_rungraph failed")
+    raw = _encode_rungraph_bytes(graph2)
     await bus._transport.kv_put(bus._rungraph_key, raw)
-    # Endpoint-only mode: apply immediately (no KV watch).
-    await apply_rungraph_bytes(bus, raw)
 
 
-async def apply_rungraph_bytes(bus: "ServiceBus", raw: bytes) -> None:
-    try:
-        payload = json.loads(raw.decode("utf-8")) if raw else {}
-    except Exception:
-        payload = {}
-    if not isinstance(payload, dict):
-        return
-    try:
-        graph = F8RuntimeGraph.model_validate(payload)
-    except Exception:
-        return
+async def apply_rungraph(bus: "ServiceBus", graph: F8RuntimeGraph) -> bool:
+    """
+    Apply a decoded rungraph model (no JSON encode/decode).
+    """
     try:
         await validate_rungraph_or_raise(bus, graph)
-    except Exception:
-        return
-    try:
-        for n in list(graph.nodes or []):
-            # Service/container nodes use `nodeId == serviceId`.
-            if n.operatorClass is None and str(n.nodeId) != str(n.serviceId):
-                raise ValueError("invalid rungraph: service node requires nodeId == serviceId")
-    except Exception:
-        return
+    except Exception as exc:
+        _log_rungraph_error_once(bus, "rungraph_validate_failed", "rungraph rejected by validation", exc)
+        return False
+
+    # Service/container nodes use `nodeId == serviceId`.
+    for n in list(graph.nodes or []):
+        if n.operatorClass is None and str(n.nodeId) != str(n.serviceId):
+            _log_rungraph_error_once(bus, "rungraph_invalid_service_node", "service node requires nodeId == serviceId")
+            return False
+
+    # Build local node state-access map (used by validators, endpoints, and routing).
+    state_access_by_node_field: dict[tuple[str, str], F8StateAccess] = {}
+    for n in list(graph.nodes or []):
+        if str(n.serviceId or "") != bus.service_id:
+            continue
+        node_id = str(n.nodeId or "").strip()
+        if not node_id:
+            continue
+        for sf in list(n.stateFields or []):
+            name = str(sf.name or "").strip()
+            if not name:
+                continue
+            access = sf.access
+            if isinstance(access, F8StateAccess):
+                state_access_by_node_field[(node_id, name)] = access
 
     bus._graph = graph
     # Reset cross-state ordering on graph changes.
     bus._cross_state_last_ts.clear()
     # Cache local node state access for enforcement and filtering.
-    bus._state_access_by_node_field.clear()
-    try:
-        for n in list(graph.nodes or []):
-            if str(n.serviceId or "") != bus.service_id:
-                continue
-            node_id = str(n.nodeId or "")
-            if not node_id:
-                continue
-            for sf in list(n.stateFields or []):
-                name = str(sf.name or "").strip()
-                if not name:
-                    continue
-                access = sf.access
-                if isinstance(access, F8StateAccess):
-                    bus._state_access_by_node_field[(node_id, name)] = access
-    except Exception:
-        bus._state_access_by_node_field.clear()
+    bus._state_access_by_node_field = state_access_by_node_field
     if bus._debug_state:
-        try:
-            node_count = len(list(graph.nodes or []))
-            edge_count = len(list(graph.edges or []))
-            graph_id = str(graph.graphId or "")
-        except Exception:
-            node_count = 0
-            edge_count = 0
-            graph_id = ""
+        node_count = len(list(graph.nodes or []))
+        edge_count = len(list(graph.edges or []))
+        graph_id = str(graph.graphId or "")
         print("state_debug[%s] rungraph_applied graph=%s nodes=%s edges=%s" % (bus.service_id, graph_id, str(node_count), str(edge_count)))
+
     await rebuild_routes(bus)
     await apply_rungraph_state_values(bus, graph)
     await seed_builtin_identity_state(bus, graph)
@@ -93,36 +117,32 @@ async def apply_rungraph_bytes(bus: "ServiceBus", raw: bytes) -> None:
             r = hook.on_rungraph(graph)
             if asyncio.iscoroutine(r):
                 await r
-        except Exception:
-            continue
+        except Exception as exc:
+            # This is a boundary for user hook code; don't crash the bus.
+            _log_rungraph_error_once(
+                bus,
+                f"rungraph_hook_failed:{hook.__class__.__name__}",
+                f"rungraph hook failed: {hook.__class__.__name__}.on_rungraph",
+                exc,
+            )
     # Cross-state watches and initial sync are intentionally installed AFTER
     # rungraph hooks so local runtime nodes are registered first. This avoids
     # dropping initial remote values due to missing nodes/fields.
-    await bus._sync_cross_state_watches()
+    await sync_cross_state_watches(bus)
     # With strong cross-state sync, materialize remote values first (no fanout),
     # then run a single ordered intra-service init propagation.
     await initial_sync_intra_state_edges(bus, graph)
+    return True
 
 
 async def apply_rungraph_state_values(bus: "ServiceBus", graph: F8RuntimeGraph) -> None:
     """
     Materialize per-node `stateValues` into KV (and dispatch locally).
     """
-    def _unwrap_json_value(v: object) -> object:
-        if v is None:
-            return None
-        # F8JsonValue is a pydantic RootModel wrapper around JSON primitives/containers.
-        try:
-            from ..generated import F8JsonValue  # local import to keep module import light
-
-            if isinstance(v, F8JsonValue):
-                return v.root
-        except Exception:
-            pass
-        try:
-            return v.root  # type: ignore[attr-defined]
-        except Exception:
-            return v
+    try:
+        rungraph_ts = int(graph.meta.ts or 0) if graph.meta is not None else 0
+    except Exception:
+        rungraph_ts = 0
 
     for n in list(graph.nodes or []):
         if str(n.serviceId) != bus.service_id:
@@ -142,14 +162,38 @@ async def apply_rungraph_state_values(bus: "ServiceBus", graph: F8RuntimeGraph) 
                 continue
             if (node_id, field) in bus._cross_state_targets:
                 continue
+            unwrapped = unwrap_json_value(v)
+
+            # Reconcile semantics: only seed rungraph snapshot values if KV doesn't
+            # already have a newer/equal value (by timestamp). This prevents rungraph
+            # deploys from clobbering user/runtime updates.
+            if rungraph_ts > 0:
+                try:
+                    st = await bus.get_state(node_id, field)
+                except Exception:
+                    st = None
+                if st is not None and st.found:
+                    try:
+                        if st.value == unwrapped:
+                            continue
+                    except Exception:
+                        pass
+                    try:
+                        if st.ts_ms is not None and int(st.ts_ms) >= int(rungraph_ts):
+                            continue
+                    except Exception:
+                        continue
+
             try:
-                await bus._publish_state(
+                await publish_state(
+                    bus,
                     node_id,
                     field,
-                    _unwrap_json_value(v),
+                    unwrapped,
                     origin=StateWriteOrigin.rungraph,
                     source=StateWriteSource.rungraph,
-                    meta={"via": "rungraph", "_noStateFanout": True},
+                    ts_ms=(int(rungraph_ts) if rungraph_ts > 0 else None),
+                    meta={"via": "rungraph", "rungraphReconcile": True, "_noStateFanout": True},
                 )
             except Exception:
                 continue
@@ -266,7 +310,8 @@ async def initial_sync_intra_state_edges(bus: "ServiceBus", graph: F8RuntimeGrap
                         pass
 
                 try:
-                    await bus._publish_state(
+                    await publish_state(
+                        bus,
                         to_key[0],
                         to_key[1],
                         from_val,
@@ -300,7 +345,8 @@ async def seed_builtin_identity_state(bus: "ServiceBus", graph: F8RuntimeGraph) 
             continue
         try:
             if bus._state_access_by_node_field.get((node_id, "svcId")) is not None:
-                await bus._publish_state(
+                await publish_state(
+                    bus,
                     node_id,
                     "svcId",
                     str(n.serviceId or bus.service_id),
@@ -311,7 +357,8 @@ async def seed_builtin_identity_state(bus: "ServiceBus", graph: F8RuntimeGraph) 
                     deliver_local=False,
                 )
             if n.operatorClass is not None and bus._state_access_by_node_field.get((node_id, "operatorId")) is not None:
-                await bus._publish_state(
+                await publish_state(
+                    bus,
                     node_id,
                     "operatorId",
                     str(n.nodeId or node_id),
@@ -459,5 +506,5 @@ async def rebuild_routes(bus: "ServiceBus") -> None:
     precreate_input_buffers_for_cross_in(bus, cross_in)
 
     await sync_subscriptions(bus, set(cross_in.keys()))
-    bus._update_cross_state_bindings(graph)
-    await bus._stop_unused_cross_state_watches()
+    update_cross_state_bindings(bus, graph)
+    await stop_unused_cross_state_watches(bus)

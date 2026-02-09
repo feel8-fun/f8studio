@@ -16,6 +16,7 @@ from f8pysdk import (
     integer_schema,
     number_schema,
 )
+from f8pysdk.json_unwrap import unwrap_json_value as _unwrap_json_value
 from f8pysdk.nats_naming import ensure_token
 from f8pysdk.runtime_node import OperatorNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
@@ -49,17 +50,6 @@ def _clamp01(x: float) -> float:
     if x > 1.0:
         return 1.0
     return float(x)
-
-
-def _unwrap_json_value(value: Any) -> Any:
-    if value is None:
-        return None
-    if isinstance(value, (str, int, float, bool, list, dict, tuple)):
-        return value
-    try:
-        return value.root
-    except Exception:
-        return value
 
 
 @dataclass

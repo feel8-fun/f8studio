@@ -3,38 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .generated import F8EdgeKindEnum, F8JsonValue, F8RuntimeGraph, F8RuntimeNode, F8StateAccess
+from .generated import F8RuntimeGraph, F8RuntimeNode
+from .json_unwrap import unwrap_json_value
 from .runtime_node import OperatorNode, RuntimeNode
 from .runtime_node_registry import RuntimeNodeRegistry
 from .service_bus.bus import ServiceBus
-from .service_bus import StateWriteOrigin
-from .service_bus.state_write import StateWriteSource
-
-
-def _unwrap_json_value(v: Any) -> Any:
-    if v is None:
-        return None
-    try:
-        if isinstance(v, F8JsonValue):
-            return v.root
-    except Exception:
-        pass
-    try:
-        return v.root
-    except Exception:
-        pass
-    return v
-
-
-def _rungraph_ts(graph: F8RuntimeGraph) -> int:
-    meta = graph.meta
-    if meta is None:
-        return 0
-    try:
-        return int(meta.ts or 0)
-    except Exception:
-        return 0
-
 
 @dataclass(frozen=True)
 class ServiceHostConfig:
@@ -177,34 +150,6 @@ class ServiceHost:
                 self._operator_nodes.pop(node_id, None)
                 continue
 
-        rungraph_ts = _rungraph_ts(graph)
-
-        # Cross-service state edges: downstream fields are driven by upstream KV,
-        # so they must not be overwritten by rungraph reconciliation defaults.
-        cross_state_targets: set[tuple[str, str]] = set()
-        for e in graph.edges:
-            try:
-                if e.kind != F8EdgeKindEnum.state:
-                    continue
-                # Only cross-service edges targeting this service.
-                if str(e.fromServiceId) == str(e.toServiceId):
-                    continue
-                if str(e.toServiceId) != str(self._bus.service_id):
-                    continue
-                to_node = str(e.toOperatorId or "").strip()
-                to_field = str(e.toPort or "").strip()
-                if not to_node or not to_field:
-                    continue
-                cross_state_targets.add((to_node, to_field))
-            except Exception:
-                continue
-
-        if service_snapshot is not None:
-            await self._seed_service_state_defaults(
-                service_snapshot, rungraph_ts=rungraph_ts, skip_fields=cross_state_targets
-            )
-        await self._seed_state_defaults(want_operator_nodes, rungraph_ts=rungraph_ts, skip_fields=cross_state_targets)
-
     async def on_rungraph(self, graph: F8RuntimeGraph) -> None:
         await self.apply_rungraph(graph)
 
@@ -246,107 +191,5 @@ class ServiceHost:
         if not values:
             return out
         for k, v in dict(values).items():
-            out[str(k)] = _unwrap_json_value(v)
+            out[str(k)] = unwrap_json_value(v)
         return out
-
-    async def _seed_state_defaults(
-        self, nodes: list[F8RuntimeNode], *, rungraph_ts: int = 0, skip_fields: set[tuple[str, str]] | None = None
-    ) -> None:
-        """
-        Seed rungraph-provided initial state values into KV.
-
-        If KV already has a value with a newer/equal timestamp than the rungraph
-        snapshot, prefer the KV value. Otherwise, allow the rungraph snapshot to
-        overwrite older KV state.
-        """
-        for n in nodes:
-            node_id = str(n.nodeId)
-            access_by_name = {str(sf.name): sf.access for sf in (n.stateFields or [])}
-            for k, v in self._node_initial_state(n).items():
-                if skip_fields and (node_id, str(k)) in skip_fields:
-                    continue
-                # Never seed/overwrite read-only state from rungraph; it is runtime-owned.
-                if access_by_name.get(str(k)) == F8StateAccess.ro:
-                    continue
-                existing_ts = None
-                existing_value = None
-                try:
-                    st = await self._bus.get_state(node_id, str(k))
-                except Exception:
-                    st = None
-                if st is not None and st.found:
-                    existing_value, existing_ts = st.value, st.ts_ms
-                    try:
-                        if existing_value == v:
-                            continue
-                    except Exception:
-                        pass
-                    try:
-                        if int(existing_ts or 0) >= int(rungraph_ts or 0):
-                            continue
-                    except Exception:
-                        continue
-                try:
-                        await self._bus._publish_state(
-                            node_id,
-                            str(k),
-                            v,
-                            ts_ms=(int(rungraph_ts) if rungraph_ts > 0 else None),
-                            origin=StateWriteOrigin.rungraph,
-                            source=StateWriteSource.rungraph,
-                            meta={"rungraphReconcile": True},
-                        )
-                except Exception:
-                    continue
-
-    async def _seed_service_state_defaults(
-        self, n: F8RuntimeNode, *, rungraph_ts: int = 0, skip_fields: set[tuple[str, str]] | None = None
-    ) -> None:
-        """
-        Apply rungraph-provided `stateValues` for the service node into KV.
-        """
-        node_id = str(self._bus.service_id)
-        try:
-            access_by_name = {str(sf.name): sf.access for sf in list(n.stateFields or [])}
-        except Exception:
-            access_by_name = {}
-        for k, v in self._node_initial_state(n).items():
-            if skip_fields and (node_id, str(k)) in skip_fields:
-                continue
-            # Never seed/overwrite read-only state from rungraph; it is runtime-owned.
-            if k not in access_by_name:
-                continue
-            
-            if access_by_name[k] == F8StateAccess.ro:
-                continue
-            
-            existing_ts = None
-            existing_value = None
-            try:
-                st = await self._bus.get_state(node_id, str(k))
-            except Exception:
-                st = None
-            if st is not None and st.found:
-                existing_value, existing_ts = st.value, st.ts_ms
-                try:
-                    if existing_value == v:
-                        continue
-                except Exception:
-                    pass
-                try:
-                    if int(existing_ts or 0) >= int(rungraph_ts or 0):
-                        continue
-                except Exception:
-                    continue
-            try:
-                await self._bus._publish_state(
-                    node_id,
-                    str(k),
-                    v,
-                    ts_ms=(int(rungraph_ts) if rungraph_ts > 0 else None),
-                    origin=StateWriteOrigin.rungraph,
-                    source=StateWriteSource.rungraph,
-                    meta={"rungraphReconcile": True, "serviceNode": True},
-                )
-            except Exception:
-                continue

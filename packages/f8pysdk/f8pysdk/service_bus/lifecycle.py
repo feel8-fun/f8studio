@@ -6,11 +6,28 @@ from typing import Any, TYPE_CHECKING
 
 from ..capabilities import LifecycleNode
 from ..time_utils import now_ms
+from .micro import _ServiceBusMicroEndpoints
+from .state_publish import publish_state
 from .state_write import StateWriteOrigin
 from .state_write import StateWriteSource
 
 if TYPE_CHECKING:
     from .bus import ServiceBus
+
+
+async def _ensure_micro_endpoints_started(bus: "ServiceBus") -> None:
+    if bus._micro_endpoints is not None:
+        return
+    endpoints = _ServiceBusMicroEndpoints(bus)
+    bus._micro_endpoints = endpoints
+    await endpoints.start()
+
+
+async def _stop_micro_endpoints(bus: "ServiceBus") -> None:
+    endpoints = bus._micro_endpoints
+    if endpoints is not None:
+        await endpoints.stop()
+    bus._micro_endpoints = None
 
 
 async def set_active(
@@ -36,7 +53,7 @@ async def start(bus: "ServiceBus") -> None:
     # Clear any stale ready flag from a previous run as early as possible.
     await announce_ready(bus, False, reason="starting")
     if bus._micro_endpoints is None:
-        await bus._start_micro_endpoints()
+        await _ensure_micro_endpoints_started(bus)
     await notify_before_ready(bus)
     await announce_ready(bus, True, reason="start")
     await notify_after_ready(bus)
@@ -46,10 +63,7 @@ async def stop(bus: "ServiceBus") -> None:
     await notify_before_stop(bus)
     await announce_ready(bus, False, reason="stop")
 
-    endpoints = bus._micro_endpoints
-    if endpoints is not None:
-        await endpoints.stop()
-    bus._micro_endpoints = None
+    await _stop_micro_endpoints(bus)
 
     for sub in list(bus._custom_subs):
         await sub.unsubscribe()
@@ -140,7 +154,8 @@ async def apply_active(
     bus._active = active
 
     if persist:
-        await bus._publish_state(
+        await publish_state(
+            bus,
             bus.service_id,
             "active",
             bool(active),

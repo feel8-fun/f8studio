@@ -80,11 +80,10 @@ class LovenseWaveNodeTests(unittest.IsolatedAsyncioTestCase):
         phase_before = float(phase)
 
         # Publish a new event and ensure phase keeps accumulating (no reset).
-        await bus._publish_state(
+        await bus.publish_state_external(
             "thr1",
             "lovenseEvent",
             mk_event(thrusting=5, depth=15, event_id="e2"),
-            origin=StateWriteOrigin.external,
             source="test",
         )
         await asyncio.sleep(0.02)
@@ -103,4 +102,3 @@ class LovenseWaveNodeTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -20,6 +20,7 @@ from f8pysdk.nats_naming import kv_key_node_state  # noqa: E402
 from f8pysdk.schema_helpers import string_schema  # noqa: E402
 from f8pysdk.runtime_node import RuntimeNode  # noqa: E402
 from f8pysdk.service_bus.bus import ServiceBus, ServiceBusConfig  # noqa: E402
+from f8pysdk.service_bus.state_publish import validate_state_update  # noqa: E402
 from f8pysdk.service_bus.state_write import StateWriteContext, StateWriteError, StateWriteOrigin  # noqa: E402
 from f8pysdk.testing import InMemoryCluster, InMemoryTransport, ServiceBusHarness  # noqa: E402
 
@@ -51,7 +52,8 @@ class StateWriteTests(unittest.IsolatedAsyncioTestCase):
         bus._state_access_by_node_field[("svc", "status")] = F8StateAccess.ro
         ctx = StateWriteContext(origin=StateWriteOrigin.external, source="endpoint")
         with self.assertRaises(StateWriteError) as cm:
-            await bus._validate_state_update(
+            await validate_state_update(
+                bus,
                 node_id="svc",
                 field="status",
                 value=1,
@@ -67,7 +69,8 @@ class StateWriteTests(unittest.IsolatedAsyncioTestCase):
         bus.register_node(_DummyNode("svc"))
         bus._state_access_by_node_field[("svc", "status")] = F8StateAccess.ro
         ctx = StateWriteContext(origin=StateWriteOrigin.runtime, source="runtime")
-        out = await bus._validate_state_update(
+        out = await validate_state_update(
+            bus,
             node_id="svc",
             field="status",
             value=1,
@@ -82,7 +85,8 @@ class StateWriteTests(unittest.IsolatedAsyncioTestCase):
         bus.register_node(_RejectingNode("svc"))
         ctx = StateWriteContext(origin=StateWriteOrigin.runtime, source="runtime")
         with self.assertRaises(StateWriteError) as cm:
-            await bus._validate_state_update(
+            await validate_state_update(
+                bus,
                 node_id="svc",
                 field="status",
                 value=1,
@@ -427,9 +431,9 @@ class StateWriteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(op_id, "opA")
 
         with self.assertRaises(StateWriteError):
-            await bus._publish_state("opA", "operatorId", "x", origin=StateWriteOrigin.external, source="endpoint", ts_ms=2)
+            await bus.publish_state_external("opA", "operatorId", "x", ts_ms=2)
         with self.assertRaises(StateWriteError):
-            await bus._publish_state("svcA", "svcId", "x", origin=StateWriteOrigin.external, source="endpoint", ts_ms=2)
+            await bus.publish_state_external("svcA", "svcId", "x", ts_ms=2)
 
 
 if __name__ == "__main__":

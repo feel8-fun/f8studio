@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, TYPE_CHECKING
 
 from ..generated import F8StateAccess
+from ..json_unwrap import unwrap_json_value
 from ..nats_naming import ensure_token, kv_key_node_state
 from .state_write import StateWriteContext, StateWriteError, StateWriteOrigin, StateWriteSource
 from ..time_utils import now_ms
@@ -68,11 +69,9 @@ def coerce_state_value(value: Any) -> Any:
     except Exception:
         pass
 
-    # Generic RootModel-like `root` attribute.
-    try:
-        return coerce_state_value(value.root)  # type: ignore[attr-defined]
-    except Exception:
-        pass
+    unwrapped = unwrap_json_value(value)
+    if unwrapped is not value:
+        return coerce_state_value(unwrapped)
 
     return value
 
@@ -90,6 +89,63 @@ def _build_state_payload(update: _StateUpdate) -> dict[str, Any]:
             continue
         payload[k] = v
     return payload
+
+
+async def _route_intra_state_edges(
+    bus: "ServiceBus",
+    *,
+    node_id: str,
+    field: str,
+    value: Any,
+    ts_ms: int,
+    meta_dict: dict[str, Any],
+) -> None:
+    if bool(meta_dict.get("_noStateFanout")):
+        return
+    targets = bus._intra_state_out.get((str(node_id), str(field))) or []
+    if not targets:
+        return
+    for to_node, to_field, _edge in list(targets):
+        if str(to_node) == str(node_id) and str(to_field) == str(field):
+            continue
+        access = bus._state_access_by_node_field.get((str(to_node), str(to_field)))
+        if access not in (F8StateAccess.rw, F8StateAccess.wo):
+            continue
+        try:
+            await publish_state(
+                bus,
+                str(to_node),
+                str(to_field),
+                value,
+                ts_ms=int(ts_ms),
+                origin=StateWriteOrigin.external,
+                source=StateWriteSource.state_edge_intra,
+                meta={"fromNodeId": str(node_id), "fromField": str(field)},
+            )
+        except Exception:
+            continue
+
+
+async def _deliver_state_local(
+    bus: "ServiceBus",
+    node_id: str,
+    field: str,
+    value: Any,
+    ts_ms: int,
+    meta_dict: dict[str, Any],
+) -> None:
+    node = bus._nodes.get(str(node_id))
+    if node is None:
+        return
+    await node.on_state(str(field), value, ts_ms=int(ts_ms))
+    await _route_intra_state_edges(
+        bus,
+        node_id=str(node_id),
+        field=str(field),
+        value=value,
+        ts_ms=int(ts_ms),
+        meta_dict=dict(meta_dict),
+    )
 
 
 async def validate_state_update(
@@ -217,18 +273,5 @@ async def publish_state(
     if deliver_local:
         # Local writes (actor == self.service_id) do not round-trip through the KV watcher.
         # Apply to listeners and the node callback immediately.
-        await bus._deliver_state_local(node_id, field, update.value, int(payload["ts"]), dict(payload))
+        await _deliver_state_local(bus, node_id, field, update.value, int(payload["ts"]), dict(payload))
 
-
-async def publish_state_runtime(
-    bus: "ServiceBus", node_id: str, field: str, value: Any, *, ts_ms: int | None = None
-) -> None:
-    await publish_state(
-        bus,
-        node_id,
-        field,
-        value,
-        origin=StateWriteOrigin.runtime,
-        source=StateWriteSource.runtime,
-        ts_ms=ts_ms,
-    )

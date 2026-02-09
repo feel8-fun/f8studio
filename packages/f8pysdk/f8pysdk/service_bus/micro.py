@@ -11,7 +11,6 @@ from ..capabilities import CommandableNode
 from ..generated import F8RuntimeGraph
 from ..nats_naming import cmd_channel_subject, ensure_token, new_id, svc_endpoint_subject, svc_micro_name
 from .state_write import StateWriteError, StateWriteOrigin, StateWriteSource
-from ..time_utils import now_ms
 
 if TYPE_CHECKING:
     from .bus import ServiceBus
@@ -157,18 +156,16 @@ class _ServiceBusMicroEndpoints:
             await self._respond(req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "invalid nodeId"})
             return
 
-        source = StateWriteSource.endpoint
         user_meta = dict(meta)
         user_meta.pop("source", None)
         user_meta.pop("origin", None)
         try:
-            await self._bus._publish_state(
+            await self._bus.publish_state_external(
                 node_id_s,
                 field_s,
                 value,
-                origin=StateWriteOrigin.external,
-                source=source,
-                meta={"via": "endpoint", **user_meta},
+                source=StateWriteSource.endpoint,
+                meta=user_meta,
             )
         except StateWriteError as exc:
             await self._respond(
@@ -197,20 +194,9 @@ class _ServiceBusMicroEndpoints:
         except Exception as exc:
             await self._respond(req, req_id=req_id, ok=False, error={"code": "INVALID_RUNGRAPH", "message": str(exc)})
             return
-        try:
-            await self._bus._validate_rungraph_or_raise(graph)
-        except Exception as exc:
-            await self._respond(req, req_id=req_id, ok=False, error={"code": "FORBIDDEN_RUNGRAPH", "message": str(exc)})
-            return
 
         try:
-            payload = graph.model_dump(mode="json", by_alias=True)
-            meta_payload = dict(payload.get("meta") or {})
-            meta_payload["ts"] = int(now_ms())
-            payload["meta"] = meta_payload
-            raw_bytes = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
-            await self._bus._transport.kv_put(self._bus._rungraph_key, raw_bytes)
-            await self._bus._apply_rungraph_bytes(raw_bytes)
+            await self._bus.set_rungraph(graph)
         except Exception as exc:
             await self._respond(req, req_id=req_id, ok=False, error={"code": "INTERNAL", "message": str(exc)})
             return
