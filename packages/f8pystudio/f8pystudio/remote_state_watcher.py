@@ -5,8 +5,12 @@ import json
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
-from f8pysdk.nats_naming import ensure_token, kv_bucket_for_service, kv_key_node_state
-from f8pysdk.service_bus.payload import parse_state_key
+from f8pysdk.nats_naming import (
+    ensure_token,
+    kv_bucket_for_service,
+    kv_key_node_state,
+    parse_kv_key_node_state,
+)
 from f8pysdk.nats_transport import NatsTransport, NatsTransportConfig
 from f8pysdk.time_utils import now_ms
 
@@ -180,7 +184,7 @@ class RemoteStateWatcher:
                 await self._on_kv(t.service_id, key, raw)
 
     async def _on_kv(self, service_id: str, key: str, value: bytes) -> None:
-        parsed = parse_state_key(key)
+        parsed = parse_kv_key_node_state(key)
         if not parsed:
             return
         node_id, field = parsed

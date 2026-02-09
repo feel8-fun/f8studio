@@ -5,8 +5,13 @@ import json
 from typing import Any, TYPE_CHECKING
 
 from ..generated import F8Edge, F8EdgeKindEnum, F8StateAccess, F8RuntimeGraph
-from ..nats_naming import ensure_token, kv_bucket_for_service, kv_key_node_state
-from .payload import coerce_inbound_ts_ms, extract_ts_field, parse_state_key
+from ..nats_naming import (
+    ensure_token,
+    kv_bucket_for_service,
+    kv_key_node_state,
+    parse_kv_key_node_state,
+)
+from .payload import coerce_inbound_ts_ms, extract_ts_field
 from .state_publish import coerce_state_value, publish_state, validate_state_update
 from .state_write import StateWriteContext, StateWriteOrigin, StateWriteSource
 from ..time_utils import now_ms
@@ -117,7 +122,7 @@ async def on_remote_state_kv(
     is_initial: bool,
     no_fanout: bool = False,
 ) -> None:
-    parsed = parse_state_key(key)
+    parsed = parse_kv_key_node_state(key)
     if not parsed:
         return
     remote_node, remote_field = parsed

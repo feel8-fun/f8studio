@@ -43,6 +43,24 @@ def kv_key_node_state(*, node_id: str, field: str) -> str:
         raise ValueError("field must be non-empty")
     return f"nodes.{node_id}.state.{field}"
 
+
+def parse_kv_key_node_state(key: str) -> tuple[str, str] | None:
+    """
+    Parse a KV key in the form: nodes.<nodeId>.state.<field...>.
+
+    Inverse of `kv_key_node_state(node_id=..., field=...)`.
+    """
+    parts = str(key).strip(".").split(".")
+    if len(parts) < 4:
+        return None
+    if parts[0] != "nodes" or parts[2] != "state":
+        return None
+    node_id = parts[1]
+    field = ".".join(parts[3:])
+    if not node_id or not field:
+        return None
+    return node_id, field
+
 def data_subject(from_service_id: str, *, from_node_id: str, port_id: str) -> str:
     """
     Cross-instance data bus subject for an output port.

@@ -49,20 +49,3 @@ def extract_ts_field(payload: dict[str, Any]) -> Any:
     if "tsMs" in payload:
         return payload.get("tsMs")
     return None
-
-
-def parse_state_key(key: str) -> tuple[str, str] | None:
-    """
-    Parse a KV key in the form: nodes.<nodeId>.state.<field...>
-    """
-    parts = str(key).strip(".").split(".")
-    if len(parts) < 4:
-        return None
-    if parts[0] != "nodes" or parts[2] != "state":
-        return None
-    node_id = parts[1]
-    field = ".".join(parts[3:])
-    if not node_id or not field:
-        return None
-    return node_id, field
-
