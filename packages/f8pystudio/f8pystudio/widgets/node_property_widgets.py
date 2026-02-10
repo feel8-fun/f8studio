@@ -69,6 +69,48 @@ from ..command_ui_protocol import CommandUiHandler, CommandUiSource
 
 logger = logging.getLogger(__name__)
 
+
+def _apply_read_only_widget(widget: QtWidgets.QWidget) -> None:
+    """
+    Apply a read-only UX without disabling selection/copy.
+
+    For text-based editors, prefer `setReadOnly(True)` over `setDisabled(True)`
+    so users can still select and copy values.
+    """
+    if isinstance(widget, F8PropOptionCombo):
+        widget.set_read_only(True)
+        return
+    if isinstance(widget, F8PropBoolSwitch):
+        widget.set_read_only(True)
+        return
+    if isinstance(widget, _F8CodeButtonPropWidget):
+        widget.set_read_only(True)
+        return
+    if isinstance(widget, QtWidgets.QLineEdit):
+        widget.setEnabled(True)
+        widget.setReadOnly(True)
+        return
+    if isinstance(widget, QtWidgets.QPlainTextEdit):
+        widget.setEnabled(True)
+        widget.setReadOnly(True)
+        return
+    if isinstance(widget, QtWidgets.QTextEdit):
+        widget.setEnabled(True)
+        widget.setReadOnly(True)
+        widget.setTextInteractionFlags(
+            QtCore.Qt.TextInteractionFlag.TextSelectableByMouse | QtCore.Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
+        return
+    if isinstance(widget, QtWidgets.QAbstractSpinBox):
+        widget.setEnabled(True)
+        widget.setReadOnly(True)
+        try:
+            widget.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
+        except Exception:
+            pass
+        return
+    widget.setDisabled(True)
+
 def _model_extra(obj: Any) -> dict[str, Any]:
     try:
         extra = obj.model_extra
@@ -2030,10 +2072,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                         tooltip = common_props[name]["tooltip"]
                     access = _state_field_access(node, name)
                     if access == F8StateAccess.ro:
-                        try:
-                            widget.setDisabled(True)
-                        except Exception:
-                            pass
+                        _apply_read_only_widget(widget)
                     # Delete is only allowed when editableStateFields and not required.
                     try:
                         required = bool(f.required)
@@ -2109,7 +2148,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                     pass
                 access = _state_field_access(node, prop_name)
                 if access == F8StateAccess.ro:
-                    widget.setDisabled(True)
+                    _apply_read_only_widget(widget)
                 # Enrich tooltips for option/switch editors.
                 if isinstance(widget, (F8PropOptionCombo, F8PropBoolSwitch)):
                     desc = ""

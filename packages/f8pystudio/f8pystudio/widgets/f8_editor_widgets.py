@@ -136,6 +136,7 @@ class F8OptionCombo(QtWidgets.QComboBox):
         super().__init__(parent)
         self._values: list[Any] = []
         self._context_tooltip = ""
+        self._read_only = False
         self.setEditable(False)
         self.setInsertPolicy(QtWidgets.QComboBox.NoInsert)
         self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
@@ -147,6 +148,27 @@ class F8OptionCombo(QtWidgets.QComboBox):
         self.currentIndexChanged.connect(self._emit)  # type: ignore[attr-defined]
         self._popup = _F8ComboPopup(self)
         self._popup.valueSelected.connect(self._on_popup_selected)  # type: ignore[attr-defined]
+
+    def set_read_only(self, read_only: bool) -> None:
+        """
+        Read-only mode that keeps text selectable/copyable.
+
+        Unlike disabling the widget, this allows users to select/copy the
+        displayed value while preventing changes.
+        """
+        ro = bool(read_only)
+        self._read_only = ro
+        if ro:
+            self.setEditable(True)
+            le = self.lineEdit()
+            if le is not None:
+                le.setReadOnly(True)
+                le.setTextInteractionFlags(
+                    QtCore.Qt.TextInteractionFlag.TextSelectableByMouse
+                    | QtCore.Qt.TextInteractionFlag.TextSelectableByKeyboard
+                )
+        else:
+            self.setEditable(False)
 
     def set_context_tooltip(self, tooltip: str) -> None:
         self._context_tooltip = str(tooltip or "").strip()
@@ -198,6 +220,8 @@ class F8OptionCombo(QtWidgets.QComboBox):
         return data if data is not None else self.currentText()
 
     def showPopup(self) -> None:  # type: ignore[override]
+        if self._read_only:
+            return
         if not self.isEnabled():
             return
         model = self.model()
@@ -215,6 +239,29 @@ class F8OptionCombo(QtWidgets.QComboBox):
     def hidePopup(self) -> None:  # type: ignore[override]
         if self._popup.isVisible():
             self._popup.hide()
+
+    def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # type: ignore[override]
+        if self._read_only:
+            event.ignore()
+            return
+        super().wheelEvent(event)
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:  # type: ignore[override]
+        if self._read_only:
+            try:
+                if event.key() in (
+                    QtCore.Qt.Key.Key_Up,
+                    QtCore.Qt.Key.Key_Down,
+                    QtCore.Qt.Key.Key_PageUp,
+                    QtCore.Qt.Key.Key_PageDown,
+                    QtCore.Qt.Key.Key_Home,
+                    QtCore.Qt.Key.Key_End,
+                ):
+                    event.ignore()
+                    return
+            except Exception:
+                pass
+        super().keyPressEvent(event)
 
     def _popup_size(self) -> QtCore.QSize:
         model = self.model()
@@ -733,6 +780,9 @@ class F8PropOptionCombo(QtWidgets.QWidget):
     def set_context_tooltip(self, tooltip: str) -> None:
         self._combo.set_context_tooltip(tooltip)
 
+    def set_read_only(self, read_only: bool) -> None:
+        self._combo.set_read_only(bool(read_only))
+
     def _emit(self, v: Any) -> None:
         self.value_changed.emit(self.get_name(), None if v is None else str(v))
 
@@ -769,6 +819,9 @@ class F8PropBoolSwitch(QtWidgets.QWidget):
 
     def set_context_tooltip(self, tooltip: str) -> None:
         self._switch.setToolTip(str(tooltip or ""))
+
+    def set_read_only(self, read_only: bool) -> None:
+        self._switch.setEnabled(not bool(read_only))
 
     def _emit(self, v: Any) -> None:
         self.value_changed.emit(self.get_name(), bool(v))

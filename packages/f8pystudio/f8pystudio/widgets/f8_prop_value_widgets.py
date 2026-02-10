@@ -274,6 +274,9 @@ class F8CodeButtonPropWidget(QtWidgets.QWidget):
     def set_value(self, value: Any) -> None:
         self._value = str(value or "")
 
+    def set_read_only(self, read_only: bool) -> None:
+        self._btn.setEnabled(not bool(read_only))
+
     def _on_edit_clicked(self) -> None:
         updated = open_code_editor_dialog(self, title=self._title, code=self.get_value(), language=self._language)
         if updated is None:
