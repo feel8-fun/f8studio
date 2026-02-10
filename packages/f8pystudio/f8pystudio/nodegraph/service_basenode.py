@@ -299,24 +299,16 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
 
     def _build_data_port(self):
 
-        for p in self.effective_data_in_ports():
-            try:
-                show_on_node = bool(p.showOnNode)
-            except Exception:
-                show_on_node = True
-            if not show_on_node:
+        for p in self.spec.dataInPorts:
+            if not self.data_port_show_on_node(str(p.name or ""), is_in=True):
                 continue
             self.add_input(
                 f"[D]{p.name}",
                 color=DATA_PORT_COLOR,
             )
 
-        for p in self.effective_data_out_ports():
-            try:
-                show_on_node = bool(p.showOnNode)
-            except Exception:
-                show_on_node = True
-            if not show_on_node:
+        for p in self.spec.dataOutPorts:
+            if not self.data_port_show_on_node(str(p.name or ""), is_in=False):
                 continue
             self.add_output(
                 f"{p.name}[D]",
@@ -433,7 +425,7 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
                 except Exception:
                     return False
 
-        for p in list(self.effective_data_in_ports() or []):
+        for p in list(self.spec.dataInPorts or []):
             try:
                 n = str(p.name or "").strip()
             except Exception:
@@ -441,10 +433,7 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
             if not n:
                 continue
             port_name = f"[D]{n}"
-            try:
-                show_on_node = bool(p.showOnNode)
-            except Exception:
-                show_on_node = True
+            show_on_node = self.data_port_show_on_node(n, is_in=True)
             if not show_on_node:
                 try:
                     if _port_has_connections(self.get_input(port_name)):
@@ -454,7 +443,7 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
             if show_on_node:
                 desired_inputs[port_name] = {"color": DATA_PORT_COLOR}
 
-        for p in list(self.effective_data_out_ports() or []):
+        for p in list(self.spec.dataOutPorts or []):
             try:
                 n = str(p.name or "").strip()
             except Exception:
@@ -462,10 +451,7 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
             if not n:
                 continue
             port_name = f"{n}[D]"
-            try:
-                show_on_node = bool(p.showOnNode)
-            except Exception:
-                show_on_node = True
+            show_on_node = self.data_port_show_on_node(n, is_in=False)
             if not show_on_node:
                 try:
                     if _port_has_connections(self.get_output(port_name)):
@@ -2865,21 +2851,13 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             try:
                 existing_in = {_port_name(p) for p in self._input_items.keys()}
                 existing_out = {_port_name(p) for p in self._output_items.keys()}
-                for p in list(node.effective_data_in_ports() or []):
-                    try:
-                        show_on_node = bool(p.showOnNode)
-                    except Exception:
-                        show_on_node = True
+                for p in list(spec.dataInPorts or []):
                     port_name = f"[D]{p.name}"
-                    if show_on_node or port_name in existing_in:
+                    if node.data_port_show_on_node(str(p.name or ""), is_in=True) or port_name in existing_in:
                         data_in_names.append(port_name)
-                for p in list(node.effective_data_out_ports() or []):
-                    try:
-                        show_on_node = bool(p.showOnNode)
-                    except Exception:
-                        show_on_node = True
+                for p in list(spec.dataOutPorts or []):
                     port_name = f"{p.name}[D]"
-                    if show_on_node or port_name in existing_out:
+                    if node.data_port_show_on_node(str(p.name or ""), is_in=False) or port_name in existing_out:
                         data_out_names.append(port_name)
             except Exception:
                 data_in_names = []

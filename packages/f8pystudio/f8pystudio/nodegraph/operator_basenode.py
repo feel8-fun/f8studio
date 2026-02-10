@@ -34,38 +34,6 @@ from .service_basenode import F8StudioServiceNodeItem
 logger = logging.getLogger(__name__)
 
 
-def _state_field_info(field: Any) -> tuple[str, bool, Any, str]:
-    """
-    Best-effort extraction for state-field port decisions.
-
-    Returns (name, show_on_node, access_obj, access_str).
-    """
-    if isinstance(field, dict):
-        name = str(field.get("name") or "").strip()
-        show_on_node = bool(field.get("showOnNode"))
-        access = field.get("access")
-    else:
-        try:
-            name = str(field.name or "").strip()
-        except AttributeError:
-            name = ""
-        try:
-            show_on_node = bool(field.showOnNode)
-        except AttributeError:
-            show_on_node = False
-        try:
-            access = field.access
-        except AttributeError:
-            access = None
-
-    if isinstance(access, F8StateAccess):
-        access_str = str(access.value or "").strip().lower()
-    else:
-        access_str = str(access or "").strip().lower()
-
-    return name, show_on_node, access, access_str
-
-
 class F8StudioOperatorBaseNode(F8StudioBaseNode):
     """
     Base class for all operator nodes (nodes that are intended to live inside
@@ -110,24 +78,16 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
 
     def _build_data_port(self):
 
-        for p in self.effective_data_in_ports():
-            try:
-                show_on_node = bool(p.showOnNode)
-            except Exception:
-                show_on_node = True
-            if not show_on_node:
+        for p in self.spec.dataInPorts:
+            if not self.data_port_show_on_node(str(p.name or ""), is_in=True):
                 continue
             self.add_input(
                 f"[D]{p.name}",
                 color=DATA_PORT_COLOR,
             )
 
-        for p in self.effective_data_out_ports():
-            try:
-                show_on_node = bool(p.showOnNode)
-            except Exception:
-                show_on_node = True
-            if not show_on_node:
+        for p in self.spec.dataOutPorts:
+            if not self.data_port_show_on_node(str(p.name or ""), is_in=False):
                 continue
             self.add_output(
                 f"{p.name}[D]",
@@ -137,18 +97,18 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
     def _build_state_port(self):
 
         for s in self.effective_state_fields():
-            name, show_on_node, access, access_str = _state_field_info(s)
-            if not show_on_node or not name:
+            name = str(s.name or "").strip()
+            if not name or not bool(s.showOnNode):
                 continue
 
-            if access in [F8StateAccess.rw, F8StateAccess.wo] or access_str in {"rw", "wo"}:
+            if s.access in (F8StateAccess.rw, F8StateAccess.wo):
                 self.add_input(
                     f"[S]{name}",
                     color=STATE_PORT_COLOR,
                     painter_func=draw_square_port,
                 )
 
-            if access in [F8StateAccess.rw, F8StateAccess.ro] or access_str in {"rw", "ro"}:
+            if s.access in (F8StateAccess.rw, F8StateAccess.ro):
                 self.add_output(
                     f"{name}[S]",
                     color=STATE_PORT_COLOR,
@@ -255,7 +215,7 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
                 except Exception:
                     return False
 
-        for p in list(self.effective_data_in_ports() or []):
+        for p in list(self.spec.dataInPorts or []):
             try:
                 n = str(p.name or "").strip()
             except Exception:
@@ -263,10 +223,7 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
             if not n:
                 continue
             port_name = f"[D]{n}"
-            try:
-                show_on_node = bool(p.showOnNode)
-            except Exception:
-                show_on_node = True
+            show_on_node = self.data_port_show_on_node(n, is_in=True)
             if not show_on_node:
                 try:
                     if _port_has_connections(self.get_input(port_name)):
@@ -276,7 +233,7 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
             if show_on_node:
                 desired_inputs[port_name] = {"color": DATA_PORT_COLOR}
 
-        for p in list(self.effective_data_out_ports() or []):
+        for p in list(self.spec.dataOutPorts or []):
             try:
                 n = str(p.name or "").strip()
             except Exception:
@@ -284,10 +241,7 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
             if not n:
                 continue
             port_name = f"{n}[D]"
-            try:
-                show_on_node = bool(p.showOnNode)
-            except Exception:
-                show_on_node = True
+            show_on_node = self.data_port_show_on_node(n, is_in=False)
             if not show_on_node:
                 try:
                     if _port_has_connections(self.get_output(port_name)):
@@ -298,12 +252,12 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
                 desired_outputs[port_name] = {"color": DATA_PORT_COLOR}
 
         for s in list(self.effective_state_fields() or []):
-            name, show_on_node, access, access_str = _state_field_info(s)
-            if not show_on_node or not name:
+            name = str(s.name or "").strip()
+            if not name or not bool(s.showOnNode):
                 continue
-            if access in [F8StateAccess.rw, F8StateAccess.wo] or access_str in {"rw", "wo"}:
+            if s.access in (F8StateAccess.rw, F8StateAccess.wo):
                 desired_inputs[f"[S]{name}"] = {"color": STATE_PORT_COLOR, "painter_func": draw_square_port}
-            if access in [F8StateAccess.rw, F8StateAccess.ro] or access_str in {"rw", "ro"}:
+            if s.access in (F8StateAccess.rw, F8StateAccess.ro):
                 desired_outputs[f"{name}[S]"] = {"color": STATE_PORT_COLOR, "painter_func": draw_square_port}
 
         # Remove ports that no longer exist in spec (disconnect first).

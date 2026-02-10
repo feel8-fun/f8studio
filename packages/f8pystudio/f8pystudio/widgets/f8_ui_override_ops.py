@@ -1,25 +1,23 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Protocol
 
-from f8pysdk import F8Command, F8DataPortSpec, F8ServiceSpec, F8StateSpec
-
-STATEFIELD_UI_KEYS: tuple[str, ...] = ("showOnNode", "uiControl", "uiLanguage", "label", "description")
-DATAPORT_UI_KEYS: tuple[str, ...] = ("showOnNode",)
+from f8pysdk import F8OperatorSpec, F8ServiceSpec, F8StateSpec
 
 
-def get_ui_overrides(node: Any) -> dict[str, Any]:
-    try:
-        return dict(node.ui_overrides() or {})
-    except Exception:
-        return {}
+class _UiOverrideNode(Protocol):
+    def ui_overrides(self) -> dict[str, object]: ...
+
+    def set_ui_overrides(self, value: dict[str, object] | None, *, rebuild: bool = True) -> None: ...
 
 
-def set_ui_overrides(node: Any, ui: dict[str, Any], *, rebuild: bool) -> None:
-    try:
-        node.set_ui_overrides(ui, rebuild=bool(rebuild))
-    except Exception:
-        return
+def get_ui_overrides(node: _UiOverrideNode) -> dict[str, Any]:
+    ui = node.ui_overrides()
+    return dict(ui) if isinstance(ui, dict) else {}
+
+
+def set_ui_overrides(node: _UiOverrideNode, ui: dict[str, Any], *, rebuild: bool) -> None:
+    node.set_ui_overrides(ui, rebuild=bool(rebuild))
 
 
 def _diff_state_ui(base: F8StateSpec, edited: F8StateSpec) -> dict[str, Any]:
@@ -37,7 +35,7 @@ def _diff_state_ui(base: F8StateSpec, edited: F8StateSpec) -> dict[str, Any]:
     return patch
 
 
-def set_state_field_ui_override(node: Any, *, field_name: str, base: F8StateSpec, edited: F8StateSpec) -> None:
+def set_state_field_ui_override(node: _UiOverrideNode, *, field_name: str, base: F8StateSpec, edited: F8StateSpec) -> None:
     """
     Persist UI-only overrides for a state field.
 
@@ -64,7 +62,7 @@ def set_state_field_ui_override(node: Any, *, field_name: str, base: F8StateSpec
 
 
 def set_command_show_on_node_override(
-    node: Any,
+    node: _UiOverrideNode,
     *,
     name: str,
     show_on_node: bool,
@@ -93,41 +91,33 @@ def set_command_show_on_node_override(
     set_ui_overrides(node, ui, rebuild=True)
 
 
-def base_command_show_on_node(spec: Any, *, name: str) -> bool:
-    if not isinstance(spec, F8ServiceSpec):
+def base_command_show_on_node(spec: F8ServiceSpec | None, *, name: str) -> bool:
+    if spec is None:
         return False
     n = str(name or "").strip()
+    if not n:
+        return False
     for c in list(spec.commands or []):
-        try:
-            if str(c.name or "").strip() == n:
-                return bool(c.showOnNode)
-        except Exception:
-            continue
+        if str(c.name or "").strip() == n:
+            return bool(c.showOnNode)
     return False
 
 
-def base_data_port_show_on_node(spec: Any, *, name: str, is_in: bool) -> bool:
+def base_data_port_show_on_node(spec: F8ServiceSpec | F8OperatorSpec | None, *, name: str, is_in: bool) -> bool:
     n = str(name or "").strip()
     if not n:
         return True
-    try:
-        ports = list(spec.dataInPorts or []) if bool(is_in) else list(spec.dataOutPorts or [])
-    except Exception:
-        ports = []
+    if spec is None:
+        return True
+    ports = list(spec.dataInPorts or []) if bool(is_in) else list(spec.dataOutPorts or [])
     for p in ports:
-        try:
-            if isinstance(p, F8DataPortSpec) and str(p.name or "").strip() == n:
-                try:
-                    return bool(p.showOnNode)
-                except Exception:
-                    return True
-        except Exception:
-            continue
+        if str(p.name or "").strip() == n:
+            return bool(p.showOnNode)
     return True
 
 
 def set_data_port_show_on_node_override(
-    node: Any,
+    node: _UiOverrideNode,
     *,
     name: str,
     is_in: bool,
@@ -169,17 +159,13 @@ def set_data_port_show_on_node_override(
     set_ui_overrides(node, ui, rebuild=True)
 
 
-def find_base_state_field(spec: Any, *, name: str) -> F8StateSpec | None:
+def find_base_state_field(spec: F8ServiceSpec | F8OperatorSpec | None, *, name: str) -> F8StateSpec | None:
     n = str(name or "").strip()
-    try:
-        fields = list(spec.stateFields or [])
-    except Exception:
-        fields = []
+    if not n or spec is None:
+        return None
+    fields = list(spec.stateFields or [])
     for f in fields:
-        try:
-            if str(f.name or "").strip() == n and isinstance(f, F8StateSpec):
-                return f
-        except Exception:
-            continue
+        if str(f.name or "").strip() == n:
+            return f
     return None
 

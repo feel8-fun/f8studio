@@ -13,6 +13,7 @@ from NodeGraphQt.custom_widgets.properties_bin.node_property_widgets import Prop
 from NodeGraphQt.custom_widgets.properties_bin.prop_widgets_base import PropLabel
 
 from qtpy import QtWidgets, QtCore, QtGui
+import qtawesome as qta
 
 from f8pysdk import (
     F8Command,
@@ -347,6 +348,7 @@ class _F8StateStackContainer(QtWidgets.QWidget):
     edit_state_field_requested = QtCore.Signal(str)
     delete_state_field_requested = QtCore.Signal(str)
     add_state_field_requested = QtCore.Signal()
+    toggle_state_field_show_on_node_requested = QtCore.Signal(str, bool)
 
     class _ElideLabel(QtWidgets.QLabel):
         def __init__(self, text: str, parent: QtWidgets.QWidget | None = None):
@@ -400,12 +402,19 @@ class _F8StateStackContainer(QtWidgets.QWidget):
         self._layout.addWidget(self._header)
 
     def set_add_visible(self, visible: bool) -> None:
-        try:
-            self._btn_add.setVisible(bool(visible))
-        except Exception:
-            pass
+        self._btn_add.setVisible(bool(visible))
 
-    def add_widget(self, name, widget, value, label=None, tooltip=None, *, allow_delete: bool = False):
+    def add_widget(
+        self,
+        name,
+        widget,
+        value,
+        label=None,
+        tooltip=None,
+        *,
+        allow_delete: bool = False,
+        show_on_node: bool = True,
+    ):
         label = label or name
 
         section = QtWidgets.QWidget()
@@ -420,10 +429,7 @@ class _F8StateStackContainer(QtWidgets.QWidget):
 
         label_widget = _F8StateStackContainer._ElideLabel(label)
         f = label_widget.font()
-        try:
-            f.setBold(True)
-        except Exception:
-            pass
+        f.setBold(True)
         label_widget.setFont(f)
 
         edit_btn = QtWidgets.QToolButton()
@@ -441,8 +447,19 @@ class _F8StateStackContainer(QtWidgets.QWidget):
         del_btn.setProperty("_state_field_name", str(name or "").strip())
         del_btn.clicked.connect(self._on_delete_clicked)
 
+        eye_btn = QtWidgets.QToolButton()
+        eye_btn.setAutoRaise(True)
+        eye_btn.setCheckable(True)
+        eye_btn.setChecked(bool(show_on_node))
+        eye_btn.setToolTip("Show on node")
+        icon_name = "fa5s.eye" if bool(show_on_node) else "fa5s.eye-slash"
+        eye_btn.setIcon(qta.icon(icon_name, color="white"))
+        eye_btn.setProperty("_state_field_name", str(name or "").strip())
+        eye_btn.toggled.connect(self._on_eye_toggled)  # type: ignore[attr-defined]
+
         h.addWidget(label_widget, 1)
         h.addWidget(edit_btn, 0)
+        h.addWidget(eye_btn, 0)
         h.addWidget(del_btn, 0)
 
         if tooltip:
@@ -480,6 +497,15 @@ class _F8StateStackContainer(QtWidgets.QWidget):
         if name:
             self.delete_state_field_requested.emit(name)
 
+    def _on_eye_toggled(self, checked: bool) -> None:
+        btn = self.sender()
+        name = str(btn.property("_state_field_name") or "").strip() if btn is not None else ""
+        if not name:
+            return
+        icon_name = "fa5s.eye" if bool(checked) else "fa5s.eye-slash"
+        btn.setIcon(qta.icon(icon_name, color="white"))
+        self.toggle_state_field_show_on_node_requested.emit(name, bool(checked))
+
     def get_widget(self, name):
         return self.__property_widgets.get(name)
 
@@ -490,12 +516,9 @@ class _F8StateStackContainer(QtWidgets.QWidget):
 def _icon_from_style(
     widget: QtWidgets.QWidget, style_icon: QtWidgets.QStyle.StandardPixmap, fallback: str
 ) -> QtGui.QIcon:
-    try:
-        icon = widget.style().standardIcon(style_icon)
-        if not icon.isNull():
-            return icon
-    except Exception:
-        pass
+    icon = widget.style().standardIcon(style_icon)
+    if not icon.isNull():
+        return icon
     icon = QtGui.QIcon.fromTheme(fallback)
     if not icon.isNull():
         return icon
@@ -571,8 +594,9 @@ class _F8SpecNameRow(QtWidgets.QWidget):
     edit_clicked = QtCore.Signal()
     delete_clicked = QtCore.Signal()
     name_committed = QtCore.Signal(str)
+    show_on_node_changed = QtCore.Signal(bool)
 
-    def __init__(self, parent=None, *, name: str, placeholder: str):
+    def __init__(self, parent=None, *, name: str, placeholder: str, show_eye: bool = False):
         super().__init__(parent)
 
         self.name_edit = QtWidgets.QLineEdit(name)
@@ -586,6 +610,13 @@ class _F8SpecNameRow(QtWidgets.QWidget):
         self.edit_btn.setIcon(_icon_from_style(self.edit_btn, QtWidgets.QStyle.SP_FileDialogDetailedView, "document-edit"))
         self.edit_btn.clicked.connect(self.edit_clicked.emit)
 
+        self.eye_btn = QtWidgets.QToolButton()
+        self.eye_btn.setAutoRaise(True)
+        self.eye_btn.setCheckable(True)
+        self.eye_btn.setToolTip("Show on node")
+        self.eye_btn.toggled.connect(self._on_eye_toggled)  # type: ignore[attr-defined]
+        self._update_eye_icon(True)
+
         self.del_btn = QtWidgets.QToolButton()
         self.del_btn.setAutoRaise(True)
         self.del_btn.setToolTip("Delete")
@@ -597,22 +628,29 @@ class _F8SpecNameRow(QtWidgets.QWidget):
         layout.setSpacing(4)
         layout.addWidget(self.name_edit, 1)
         layout.addWidget(self.edit_btn)
+        layout.addWidget(self.eye_btn)
         layout.addWidget(self.del_btn)
+        self.eye_btn.setVisible(bool(show_eye))
+        self.eye_btn.setEnabled(bool(show_eye))
 
     def set_row_editable(self, *, allow_rename: bool, allow_delete: bool, allow_edit: bool = True) -> None:
-        try:
-            self.name_edit.setReadOnly(not bool(allow_rename))
-        except Exception:
-            pass
-        try:
-            self.del_btn.setVisible(bool(allow_delete))
-        except Exception:
-            pass
-        try:
-            self.edit_btn.setVisible(bool(allow_edit))
-            self.edit_btn.setEnabled(bool(allow_edit))
-        except Exception:
-            pass
+        self.name_edit.setReadOnly(not bool(allow_rename))
+        self.del_btn.setVisible(bool(allow_delete))
+        self.edit_btn.setVisible(bool(allow_edit))
+        self.edit_btn.setEnabled(bool(allow_edit))
+
+    def set_show_on_node(self, show: bool) -> None:
+        with QtCore.QSignalBlocker(self.eye_btn):
+            self.eye_btn.setChecked(bool(show))
+        self._update_eye_icon(bool(show))
+
+    def _update_eye_icon(self, show: bool) -> None:
+        icon_name = "fa5s.eye" if bool(show) else "fa5s.eye-slash"
+        self.eye_btn.setIcon(qta.icon(icon_name, color="white"))
+
+    def _on_eye_toggled(self, checked: bool) -> None:
+        self._update_eye_icon(bool(checked))
+        self.show_on_node_changed.emit(bool(checked))
 
     def _emit_commit(self) -> None:
         self.name_committed.emit(str(self.name_edit.text() or "").strip())
@@ -646,20 +684,14 @@ class _F8EditDataPortDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle(title)
         self._ui_only = bool(ui_only)
-        try:
-            self._schema = port.valueSchema or _schema_from_json_obj({"type": "any"})
-        except Exception:
-            self._schema = _schema_from_json_obj({"type": "any"})
+        self._schema = port.valueSchema or _schema_from_json_obj({"type": "any"})
 
         self._name = QtWidgets.QLineEdit(str(port.name or ""))
         self._name.setClearButtonEnabled(True)
         self._required = QtWidgets.QCheckBox()
         self._required.setChecked(bool(port.required))
         self._show_on_node = QtWidgets.QCheckBox()
-        try:
-            self._show_on_node.setChecked(bool(port.showOnNode))
-        except Exception:
-            self._show_on_node.setChecked(True)
+        self._show_on_node.setChecked(bool(port.showOnNode))
         self._desc = QtWidgets.QPlainTextEdit(str(port.description or ""))
 
         self._schema_summary = QtWidgets.QLabel("")
@@ -690,10 +722,7 @@ class _F8EditDataPortDialog(QtWidgets.QDialog):
 
         if self._ui_only:
             for w in (self._name, self._required, schema_btn):
-                try:
-                    w.setEnabled(False)
-                except Exception:
-                    pass
+                w.setEnabled(False)
 
     def _refresh_schema_summary(self) -> None:
         t = _schema_type(self._schema)
@@ -930,25 +959,18 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
             for name in list(spec.execOutPorts or []):
                 self._sec_exec_out.add_row(self._make_exec_row(str(name), is_in=False))
 
-        # Use effective ports so showOnNode UI overrides are reflected in the editor.
         try:
-            eff_data_in = list(self._node.effective_data_in_ports() or [])  # type: ignore[attr-defined]
+            data_in_ports = list(spec.dataInPorts or [])
         except Exception:
-            try:
-                eff_data_in = list(spec.dataInPorts or [])
-            except Exception:
-                eff_data_in = []
+            data_in_ports = []
         try:
-            eff_data_out = list(self._node.effective_data_out_ports() or [])  # type: ignore[attr-defined]
+            data_out_ports = list(spec.dataOutPorts or [])
         except Exception:
-            try:
-                eff_data_out = list(spec.dataOutPorts or [])
-            except Exception:
-                eff_data_out = []
+            data_out_ports = []
 
-        for p in eff_data_in:
+        for p in data_in_ports:
             self._sec_data_in.add_row(self._make_data_row(p, is_in=True))
-        for p in eff_data_out:
+        for p in data_out_ports:
             self._sec_data_out.add_row(self._make_data_row(p, is_in=False))
 
     def _make_exec_row(self, name: str, *, is_in: bool) -> _F8SpecNameRow:
@@ -962,25 +984,37 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
         return row
 
     def _make_data_row(self, port: F8DataPortSpec, *, is_in: bool) -> _F8SpecNameRow:
-        row = _F8SpecNameRow(name=str(port.name or ""), placeholder="port name")
+        row = _F8SpecNameRow(name=str(port.name or ""), placeholder="port name", show_eye=True)
         row.setProperty("_port", port)
         row.edit_clicked.connect(lambda: self._edit_data(row))
         row.delete_clicked.connect(lambda: self._delete_row(row))
         row.name_committed.connect(lambda v: self._rename_data(row, v))
+        row.show_on_node_changed.connect(lambda v: self._toggle_data_show_on_node(row, bool(v)))  # type: ignore[attr-defined]
         row.setToolTip(self._data_tooltip(port))
         row.setProperty("_port_dir", "data_in" if is_in else "data_out")
         editable = bool(self._editable_data_in if is_in else self._editable_data_out)
         # Even when spec ports are not editable, allow opening the dialog to edit UI-only fields (showOnNode).
         row.set_row_editable(allow_rename=editable, allow_delete=editable, allow_edit=True)
+        show = bool(self._node.data_port_show_on_node(str(port.name or ""), is_in=bool(is_in)))  # type: ignore[attr-defined]
+        row.set_show_on_node(bool(show))
         return row
+
+    def _toggle_data_show_on_node(self, row: _F8SpecNameRow, show_on_node: bool) -> None:
+        dir_s = str(row.property("_port_dir") or "")
+        is_in = dir_s == "data_in"
+        port = row.property("_port")
+        name = ""
+        if isinstance(port, F8DataPortSpec):
+            name = str(port.name or "")
+        if not name:
+            name = str(row.name_edit.text() or "").strip()
+        self._apply_data_port_ui_override(name, bool(show_on_node), is_in=bool(is_in))
+        row.set_show_on_node(bool(show_on_node))
 
     def _data_tooltip(self, port: F8DataPortSpec) -> str:
         req = bool(port.required)
         desc = str(port.description or "").strip()
-        try:
-            vs = port.valueSchema
-        except Exception:
-            vs = None
+        vs = port.valueSchema
         t = _schema_type(vs)
         parts = [f"required={req}", f"type={t or 'unknown'}"]
         if desc:
@@ -1010,10 +1044,7 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
             return
         new_port = dlg.port()
         if ui_only:
-            try:
-                show_on_node = bool(new_port.showOnNode)
-            except Exception:
-                show_on_node = True
+            show_on_node = bool(new_port.showOnNode)
             self._apply_data_port_ui_override(str(port.name or ""), bool(show_on_node), is_in=(dir_s == "data_in"))
             self._load_from_spec()
             return
@@ -1026,10 +1057,7 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
         node = self._node
         if node is None:
             return
-        try:
-            spec = node.spec
-        except Exception:
-            spec = None
+        spec = node.spec
         base_show = _base_data_port_show_on_node(spec, name=str(name or "").strip(), is_in=bool(is_in))
         _set_data_port_show_on_node_override(
             node,
@@ -1085,12 +1113,9 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
         self._edit_data(row)
 
     def _commit(self) -> None:
-        try:
-            spec = self._node.spec
-        except Exception:
-            spec = None
-        if spec is None:
+        if self._node is None:
             return
+        spec = self._node.spec
 
         exec_in: list[str] = []
         exec_out: list[str] = []
@@ -2044,6 +2069,21 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         base = _find_base_state_field(spec, name=name) if spec is not None else None
         _set_state_field_ui_override(node, field_name=name, base=base or edited, edited=edited)
 
+    def _toggle_state_field_show_on_node(self, field_name: str, show_on_node: bool) -> None:
+        node = self._node
+        if node is None:
+            return
+        name = str(field_name or "").strip()
+        if not name:
+            return
+        spec = _get_node_spec(node)
+        base = _find_base_state_field(spec, name=name) if spec is not None else None
+        if base is None:
+            base = F8StateSpec(name=name, valueSchema=_schema_from_json_obj({"type": "any"}), access=F8StateAccess.rw)
+        edited = base.model_copy(deep=True)
+        edited.showOnNode = bool(show_on_node)
+        self._apply_state_field_ui_override(name, edited)
+
     def _resync_node_from_spec(self) -> None:
         node = self._node
         if node is None:
@@ -2136,19 +2176,11 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                     if access == F8StateAccess.ro:
                         _apply_read_only_widget(widget)
                     # Delete is only allowed when editableStateFields and not required.
-                    try:
-                        required = bool(f.required)
-                    except Exception:
-                        required = False
+                    required = bool(f.required)
                     allow_delete = bool(editable_state and not required)
-                    try:
-                        label_txt = str(f.label or "").strip()
-                    except Exception:
-                        label_txt = ""
-                    try:
-                        desc_txt = str(f.description or "").strip()
-                    except Exception:
-                        desc_txt = ""
+                    label_txt = str(f.label or "").strip()
+                    desc_txt = str(f.description or "").strip()
+                    show_on_node = bool(f.showOnNode)
                     prop_window.add_widget(
                         name=name,
                         widget=widget,
@@ -2156,6 +2188,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                         label=(label_txt or name).replace("_", " "),
                         tooltip=desc_txt or tooltip,
                         allow_delete=allow_delete,
+                        show_on_node=bool(show_on_node),
                     )
                     widget.value_changed.connect(self._on_property_changed)
                 continue
@@ -2458,22 +2491,16 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         """
         if name in self.__tab_windows.keys():
             raise AssertionError("Tab name {} already taken!".format(name))
-        self.__tab_windows[name] = _F8StateStackContainer(self) if name == "State" else _F8StateContainer(self)
-        if isinstance(self.__tab_windows[name], _F8StateStackContainer):
-            try:
-                self.__tab_windows[name].edit_state_field_requested.connect(self.open_state_field_editor)  # type: ignore[attr-defined]
-            except Exception:
-                pass
-            try:
-                self.__tab_windows[name].delete_state_field_requested.connect(self.delete_state_field)  # type: ignore[attr-defined]
-            except Exception:
-                pass
-            try:
-                self.__tab_windows[name].add_state_field_requested.connect(self.add_state_field)  # type: ignore[attr-defined]
-            except Exception:
-                pass
-        self.__tab.addTab(self.__tab_windows[name], name)
-        return self.__tab_windows[name]
+        window = _F8StateStackContainer(self) if name == "State" else _F8StateContainer(self)
+        self.__tab_windows[name] = window
+        if name == "State":
+            assert isinstance(window, _F8StateStackContainer)
+            window.edit_state_field_requested.connect(self.open_state_field_editor)
+            window.delete_state_field_requested.connect(self.delete_state_field)
+            window.add_state_field_requested.connect(self.add_state_field)
+            window.toggle_state_field_show_on_node_requested.connect(self._toggle_state_field_show_on_node)
+        self.__tab.addTab(window, name)
+        return window
 
     def get_tab_widget(self):
         """

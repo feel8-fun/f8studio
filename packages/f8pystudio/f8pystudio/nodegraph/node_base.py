@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-import json
 import copy
+import json
 from typing import Any
 
 from NodeGraphQt import BaseNode
 
-from f8pysdk import F8DataPortSpec, F8OperatorSpec, F8ServiceSpec
+from f8pysdk import F8OperatorSpec, F8ServiceSpec
 
 from .node_model import F8StudioNodeModel
+
 
 class F8StudioBaseNode(BaseNode):
     """
@@ -95,11 +96,7 @@ class F8StudioBaseNode(BaseNode):
                 out.append(f)
                 continue
             patch = {k: ov.get(k) for k in allowed_keys if k in ov}
-            try:
-                out.append(f.model_copy(update=patch))
-            except Exception:
-                # Best-effort: fallback to original if copy fails.
-                out.append(f)
+            out.append(f.model_copy(update=patch))
         return out
 
     def effective_commands(self):
@@ -127,61 +124,36 @@ class F8StudioBaseNode(BaseNode):
                 out.append(c)
                 continue
             patch = {k: ov.get(k) for k in allowed_keys if k in ov}
-            try:
-                out.append(c.model_copy(update=patch))
-            except Exception:
-                out.append(c)
+            out.append(c.model_copy(update=patch))
         return out
 
-    def _effective_data_ports(self, *, is_in: bool) -> list[F8DataPortSpec]:
-        spec = self.spec
-        try:
-            ports = list(spec.dataInPorts or []) if bool(is_in) else list(spec.dataOutPorts or [])
-        except Exception:
-            ports = []
-        if not ports:
-            return []
+    def data_port_show_on_node(self, name: str, *, is_in: bool) -> bool:
+        """
+        True if the data port should be rendered on the node body.
+
+        Priority: UI override > spec field (if present) > default True.
+        """
+        n = str(name or "").strip()
+        if not n:
+            return True
+
         ui = self.ui_overrides()
         ports_over = ui.get("dataPorts") if isinstance(ui, dict) else None
-        if not isinstance(ports_over, dict) or not ports_over:
-            return ports
-        key = "in" if bool(is_in) else "out"
-        dir_over = ports_over.get(key)
-        if not isinstance(dir_over, dict) or not dir_over:
-            return ports
+        if isinstance(ports_over, dict):
+            key = "in" if bool(is_in) else "out"
+            dir_over = ports_over.get(key)
+            if isinstance(dir_over, dict):
+                ov = dir_over.get(n)
+                if isinstance(ov, dict) and "showOnNode" in ov:
+                    return bool(ov.get("showOnNode"))
 
-        allowed_keys = {"showOnNode"}
-        out: list[F8DataPortSpec] = []
+        spec = self.spec
+        ports = list(spec.dataInPorts or []) if bool(is_in) else list(spec.dataOutPorts or [])
         for p in ports:
-            try:
-                name = str(p.name or "").strip()
-            except Exception:
-                name = ""
-            ov = dir_over.get(name) if name else None
-            if not isinstance(ov, dict) or not ov:
-                out.append(p)
-                continue
-            patch = {k: ov.get(k) for k in allowed_keys if k in ov}
-            if not patch:
-                out.append(p)
-                continue
-            try:
-                out.append(p.model_copy(update=patch))
-            except Exception:
-                out.append(p)
-        return out
+            if str(p.name or "").strip() == n:
+                return bool(p.showOnNode)
 
-    def effective_data_in_ports(self) -> list[F8DataPortSpec]:
-        """
-        Return data input ports with UI overrides applied (showOnNode).
-        """
-        return self._effective_data_ports(is_in=True)
-
-    def effective_data_out_ports(self) -> list[F8DataPortSpec]:
-        """
-        Return data output ports with UI overrides applied (showOnNode).
-        """
-        return self._effective_data_ports(is_in=False)
+        return True
 
     def _ui_serial(self) -> str:
         try:
