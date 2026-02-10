@@ -204,7 +204,7 @@ RangeMapRuntimeNode.SPEC = F8OperatorSpec(
             description="Input range minimum.",
             valueSchema=number_schema(default=0.0),
             access=F8StateAccess.rw,
-            showOnNode=True,
+            showOnNode=False,
         ),
         F8StateSpec(
             name="inMax",
@@ -212,7 +212,7 @@ RangeMapRuntimeNode.SPEC = F8OperatorSpec(
             description="Input range maximum.",
             valueSchema=number_schema(default=1.0),
             access=F8StateAccess.rw,
-            showOnNode=True,
+            showOnNode=False,
         ),
         F8StateSpec(
             name="outMin",
@@ -245,7 +245,7 @@ RangeMapRuntimeNode.SPEC = F8OperatorSpec(
 def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
     reg = registry or RuntimeNodeRegistry.instance()
 
-    def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
+    def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> OperatorNode:
         return RangeMapRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
 
     reg.register(SERVICE_CLASS, OPERATOR_CLASS, _factory, overwrite=True)

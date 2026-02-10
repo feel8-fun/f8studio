@@ -18,6 +18,7 @@ from .operators.serial_out import register_operator as register_serial_out_opera
 from .operators.sequence import register_operator as register_sequence_operator
 from .operators.signal import register_operator as register_signal_operator
 from .operators.print import register_operator as register_print_operator
+from .operators.pull import register_operator as register_pull_operator
 from .operators.tick import register_operator as register_tick_operator
 from .operators.envelope import register_operator as register_envelope_operator
 from .operators.axis_envelope import register_operator as register_axis_envelope_operator
@@ -78,6 +79,7 @@ def register_pyengine_specs(registry: RuntimeNodeRegistry | None = None) -> Runt
     register_sequence_operator(reg)
     register_signal_operator(reg)
     register_print_operator(reg)
+    register_pull_operator(reg)
     register_envelope_operator(reg)
     register_axis_envelope_operator(reg)
     register_smooth_filter_operator(reg)

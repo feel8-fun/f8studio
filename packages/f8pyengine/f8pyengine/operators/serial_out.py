@@ -282,7 +282,7 @@ SerialOutRuntimeNode.SPEC = F8OperatorSpec(
 def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
     reg = registry or RuntimeNodeRegistry.instance()
 
-    def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
+    def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> OperatorNode:
         return SerialOutRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
 
     reg.register(SERVICE_CLASS, OPERATOR_CLASS, _factory, overwrite=True)

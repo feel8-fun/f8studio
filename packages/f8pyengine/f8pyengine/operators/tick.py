@@ -47,7 +47,9 @@ class TickRuntimeNode(OperatorNode):
     async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
         return list(self._exec_out_ports)
 
-    async def validate_state(self, field: str, value: Any, *, ts_ms: int | None = None, meta: dict[str, Any] | None = None) -> Any:
+    async def validate_state(
+        self, field: str, value: Any, *, ts_ms: int | None = None, meta: dict[str, Any] | None = None
+    ) -> Any:
         name = str(field or "").strip()
         if name == "tickMs":
             try:
@@ -201,25 +203,28 @@ TickRuntimeNode.SPEC = F8OperatorSpec(
             name="processingMs",
             description="Per-tick processing time in milliseconds (excluding sleep).",
             valueSchema=integer_schema(default=0, minimum=0),
+            showOnNode=False,
         ),
         F8DataPortSpec(
             name="intervalMs",
             description="Actual interval between tick starts in milliseconds.",
             valueSchema=integer_schema(default=0, minimum=0),
+            showOnNode=False,
         ),
         F8DataPortSpec(
             name="latenessMs",
             description="How late this tick started relative to its scheduled deadline (ms).",
             valueSchema=integer_schema(default=0, minimum=0),
+            showOnNode=False,
         ),
-    ]
+    ],
 )
 
 
 def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
     reg = registry or RuntimeNodeRegistry.instance()
 
-    def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
+    def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> OperatorNode:
         return TickRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
 
     reg.register(SERVICE_CLASS, OPERATOR_CLASS, _factory, overwrite=True)

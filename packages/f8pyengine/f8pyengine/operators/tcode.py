@@ -63,10 +63,6 @@ class TCodeRuntimeNode(OperatorNode):
             state_fields=[s.name for s in (node.stateFields or [])],
         )
         self._initial_state = dict(initial_state or {})
-        self._exec_out_ports = exec_out_ports(node, default=["exec"])
-
-    async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
-        return list(self._exec_out_ports)
 
     async def compute_output(self, port: str, ctx_id: str | int | None = None) -> Any:
         port_s = str(port)
@@ -118,14 +114,21 @@ TCodeRuntimeNode.SPEC = F8OperatorSpec(
     label="TCode",
     description="Generates TCode v0.3 command strings from normalized axis values.",
     tags=["transform", "tcode", "osr", "command", "string"],
-    execInPorts=["exec"],
-    execOutPorts=["exec"],
     dataInPorts=[
-        *[F8DataPortSpec(name=axis, description=f"Axis {axis} (0..1).", valueSchema=number_schema()) for axis in AXES],
+        *[
+            F8DataPortSpec(
+                name=axis,
+                description=f"Axis {axis} (0..1).",
+                valueSchema=number_schema(),
+                showOnNode=True if i == 0 else False,
+            )
+            for i, axis in enumerate(AXES)
+        ],
         F8DataPortSpec(
             name="intervalMs",
             description="Optional interval override in milliseconds (rounded, min 1).",
             valueSchema=number_schema(default=20, minimum=1, maximum=50000),
+            showOnNode=False,
         ),
     ],
     dataOutPorts=[
@@ -147,7 +150,7 @@ TCodeRuntimeNode.SPEC = F8OperatorSpec(
 def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
     reg = registry or RuntimeNodeRegistry.instance()
 
-    def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
+    def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> OperatorNode:
         return TCodeRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
 
     reg.register(SERVICE_CLASS, OPERATOR_CLASS, _factory, overwrite=True)

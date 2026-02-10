@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import math
-import time
 from typing import Any
 
 from f8pysdk import (
@@ -99,7 +97,7 @@ PrintRuntimeNode.SPEC = F8OperatorSpec(
 def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
     reg = registry or RuntimeNodeRegistry.instance()
 
-    def _print_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
+    def _print_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> OperatorNode:
         return PrintRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
 
     reg.register(SERVICE_CLASS, OPERATOR_CLASS, _print_factory, overwrite=True)

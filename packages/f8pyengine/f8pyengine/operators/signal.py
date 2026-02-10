@@ -101,7 +101,6 @@ class PhaseRuntimeNode(OperatorNode):
             state_fields=[s.name for s in (node.stateFields or [])],
         )
         self._initial_state = dict(initial_state or {})
-        self._exec_out_ports = exec_out_ports(node, default=["exec"])
 
         init_phase = _coerce_number(self._initial_state.get("phase", 0.0))
         init_last = self._initial_state.get("__lastTimeS", None)
@@ -109,9 +108,6 @@ class PhaseRuntimeNode(OperatorNode):
             initial_phase=float(init_phase if init_phase is not None else 0.0),
             last_time_s=_float_or(init_last, 0.0) if init_last is not None else None,
         )
-
-    async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
-        return list(self._exec_out_ports)
 
     async def on_lifecycle(self, active: bool, meta: dict[str, Any]) -> None:
         # Freeze/resume without phase jump across deactivate/activate.
@@ -154,10 +150,8 @@ PhaseRuntimeNode.SPEC = F8OperatorSpec(
     operatorClass=PHASE_OPERATOR_CLASS,
     version="0.0.1",
     label="Phase",
-    description="Exec-driven normalized phase accumulator (0..1). Use as a shared phase input for oscillators.",
+    description="Normalized phase accumulator (0..1). Use as a shared phase input for oscillators.",
     tags=["signal", "phase", "waveform", "generator", "oscillator"],
-    execInPorts=["exec"],
-    execOutPorts=["exec"],
     dataInPorts=[
         F8DataPortSpec(name="hz", description="Frequency override (Hz).", valueSchema=number_schema(), required=False),
         F8DataPortSpec(
@@ -186,7 +180,7 @@ PhaseRuntimeNode.SPEC = F8OperatorSpec(
 
 class SineRuntimeNode(OperatorNode):
     """
-    Exec-driven sine source (not a graph source): on exec, emits a numeric sample.
+    Sine source: emits a numeric sample.
     """
 
     def __init__(self, *, node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any] | None = None) -> None:
@@ -197,7 +191,6 @@ class SineRuntimeNode(OperatorNode):
             state_fields=[s.name for s in (node.stateFields or [])],
         )
         self._initial_state = dict(initial_state or {})
-        self._exec_out_ports = exec_out_ports(node)
 
         init_phase = _coerce_number(self._initial_state.get("__phase", 0.0))
         init_last = self._initial_state.get("__lastTimeS", None)
@@ -205,9 +198,6 @@ class SineRuntimeNode(OperatorNode):
             initial_phase=float(init_phase if init_phase is not None else 0.0),
             last_time_s=_float_or(init_last, 0.0) if init_last is not None else None,
         )
-
-    async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
-        return list(self._exec_out_ports)
 
     async def on_lifecycle(self, active: bool, meta: dict[str, Any]) -> None:
         # Freeze/resume without phase jump across deactivate/activate.
@@ -276,25 +266,43 @@ SineRuntimeNode.SPEC = F8OperatorSpec(
     operatorClass=SINE_OPERATOR_CLASS,
     version="0.0.1",
     label="Sine",
-    description="Exec-driven sine generator. Supports either external phase input (phaseIn) or an internal phase accumulator.",
+    description="Sine generator. Supports either external phase input (phaseIn) or an internal phase accumulator.",
     tags=["signal", "sin", "waveform", "generator", "oscillator"],
-    execInPorts=["exec"],
-    execOutPorts=["exec"],
     dataInPorts=[
-        F8DataPortSpec(name="hz", description="Frequency override (Hz).", valueSchema=number_schema(), required=False),
-        F8DataPortSpec(name="amp", description="Amplitude override.", valueSchema=number_schema(), required=False),
-        F8DataPortSpec(name="offset", description="Offset override.", valueSchema=number_schema(), required=False),
+        F8DataPortSpec(
+            name="hz",
+            description="Frequency override (Hz).",
+            valueSchema=number_schema(),
+            required=False,
+            showOnNode=False,
+        ),
+        F8DataPortSpec(
+            name="amp",
+            description="Amplitude override.",
+            valueSchema=number_schema(),
+            required=False,
+            showOnNode=False,
+        ),
+        F8DataPortSpec(
+            name="offset",
+            description="Offset override.",
+            valueSchema=number_schema(),
+            required=False,
+            showOnNode=False,
+        ),
         F8DataPortSpec(
             name="phaseIn",
             description="External phase input (0..1). If set, disables internal phase accumulation.",
             valueSchema=number_schema(),
             required=False,
+            showOnNode=True,
         ),
         F8DataPortSpec(
             name="phaseOffset",
             description="Phase offset override (0..1).",
             valueSchema=number_schema(),
             required=False,
+            showOnNode=False,
         ),
     ],
     dataOutPorts=[F8DataPortSpec(name="value", description="sine output", valueSchema=number_schema())],
@@ -305,7 +313,7 @@ SineRuntimeNode.SPEC = F8OperatorSpec(
             description="Frequency in Hz.",
             valueSchema=number_schema(default=1.0, minimum=0.0, maximum=100.0),
             access=F8StateAccess.rw,
-            showOnNode=True,
+            showOnNode=False,
         ),
         F8StateSpec(
             name="amp",
@@ -313,7 +321,7 @@ SineRuntimeNode.SPEC = F8OperatorSpec(
             description="Amplitude.",
             valueSchema=number_schema(default=0.5, minimum=0.0, maximum=1000.0),
             access=F8StateAccess.rw,
-            showOnNode=True,
+            showOnNode=False,
         ),
         F8StateSpec(
             name="offset",
@@ -321,7 +329,7 @@ SineRuntimeNode.SPEC = F8OperatorSpec(
             description="Vertical offset.",
             valueSchema=number_schema(default=0.5, minimum=-1000.0, maximum=1000.0),
             access=F8StateAccess.rw,
-            showOnNode=True,
+            showOnNode=False,
         ),
         F8StateSpec(
             name="phaseOffset",
@@ -329,7 +337,7 @@ SineRuntimeNode.SPEC = F8OperatorSpec(
             description="Normalized phase offset (0.0 to 1.0).",
             valueSchema=number_schema(default=0.0, minimum=0, maximum=1),
             access=F8StateAccess.rw,
-            showOnNode=True,
+            showOnNode=False,
         ),
     ],
 )
@@ -337,7 +345,7 @@ SineRuntimeNode.SPEC = F8OperatorSpec(
 
 class TempestRuntimeNode(OperatorNode):
     """
-    Exec-driven tempest source (not a graph source): on exec, emits a numeric sample.
+    Tempest source: emits a numeric sample.
 
     Ported from `f8flow/web/.../nodes/tempest.ts`.
     """
@@ -350,7 +358,6 @@ class TempestRuntimeNode(OperatorNode):
             state_fields=[s.name for s in (node.stateFields or [])],
         )
         self._initial_state = dict(initial_state or {})
-        self._exec_out_ports = exec_out_ports(node, default=["exec"])
 
         init_phase = _coerce_number(self._initial_state.get("__phase", 0.0))
         init_last = self._initial_state.get("__lastTimeS", None)
@@ -358,9 +365,6 @@ class TempestRuntimeNode(OperatorNode):
             initial_phase=float(init_phase if init_phase is not None else 0.0),
             last_time_s=_float_or(init_last, 0.0) if init_last is not None else None,
         )
-
-    async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
-        return list(self._exec_out_ports)
 
     async def on_lifecycle(self, active: bool, meta: dict[str, Any]) -> None:
         # Freeze/resume without phase jump across deactivate/activate.
@@ -441,20 +445,35 @@ TempestRuntimeNode.SPEC = F8OperatorSpec(
     label="Tempest",
     description="Generates a tempest waveform using a phase-modulated cosine. Supports external phase input (phaseIn) or internal accumulation.",
     tags=["signal", "waveform", "generator", "oscillator", "tempest"],
-    execInPorts=["exec"],
-    execOutPorts=["exec"],
     dataInPorts=[
-        F8DataPortSpec(name="frequencyHz", description="Frequency override (Hz).", valueSchema=number_schema()),
-        F8DataPortSpec(name="amplitude", description="Amplitude override.", valueSchema=number_schema()),
+        F8DataPortSpec(
+            name="frequencyHz", description="Frequency override (Hz).", valueSchema=number_schema(), showOnNode=False
+        ),
+        F8DataPortSpec(
+            name="amplitude", description="Amplitude override.", valueSchema=number_schema(), showOnNode=False
+        ),
         F8DataPortSpec(
             name="phaseIn",
             description="External phase input (0..1). If set, disables internal phase accumulation.",
             valueSchema=number_schema(),
             required=False,
+            showOnNode=True,
         ),
-        F8DataPortSpec(name="phaseOffset", description="Phase offset override (0..1).", valueSchema=number_schema()),
-        F8DataPortSpec(name="eccentricity", description="Eccentricity override (-1..1).", valueSchema=number_schema()),
-        F8DataPortSpec(name="dcOffset", description="DC offset override.", valueSchema=number_schema()),
+        F8DataPortSpec(
+            name="phaseOffset",
+            description="Phase offset override (0..1).",
+            valueSchema=number_schema(),
+            showOnNode=False,
+        ),
+        F8DataPortSpec(
+            name="eccentricity",
+            description="Eccentricity override (-1..1).",
+            valueSchema=number_schema(),
+            showOnNode=False,
+        ),
+        F8DataPortSpec(
+            name="dcOffset", description="DC offset override.", valueSchema=number_schema(), showOnNode=False
+        ),
     ],
     dataOutPorts=[F8DataPortSpec(name="out", description="tempest output", valueSchema=number_schema())],
     stateFields=[
@@ -464,7 +483,7 @@ TempestRuntimeNode.SPEC = F8OperatorSpec(
             description="Speed of angular progression.",
             valueSchema=number_schema(default=1.0, minimum=0.0, maximum=100.0),
             access=F8StateAccess.rw,
-            showOnNode=True,
+            showOnNode=False,
         ),
         F8StateSpec(
             name="amplitude",
@@ -505,13 +524,13 @@ TempestRuntimeNode.SPEC = F8OperatorSpec(
 def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
     reg = registry or RuntimeNodeRegistry.instance()
 
-    def _sine_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
+    def _sine_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> OperatorNode:
         return SineRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
 
-    def _tempest_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
+    def _tempest_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> OperatorNode:
         return TempestRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
 
-    def _phase_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
+    def _phase_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> OperatorNode:
         return PhaseRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
 
     reg.register(SERVICE_CLASS, SINE_OPERATOR_CLASS, _sine_factory, overwrite=True)

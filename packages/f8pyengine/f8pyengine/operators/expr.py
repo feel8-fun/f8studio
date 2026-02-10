@@ -269,15 +269,11 @@ class ExprRuntimeNode(OperatorNode):
         data_in_ports = [p.name for p in (node.dataInPorts or [])] or ["input"]
         data_out_ports = [p.name for p in (node.dataOutPorts or [])] or ["out"]
         state_fields = [s.name for s in (node.stateFields or [])] or ["code"]
-        exec_in_ports = list(node.execInPorts or []) or ["exec"]
-        exec_out_ports = list(node.execOutPorts or []) or ["exec"]
         super().__init__(
             node_id=ensure_token(node_id, label="node_id"),
             data_in_ports=data_in_ports,
             data_out_ports=data_out_ports,
             state_fields=state_fields,
-            exec_in_ports=exec_in_ports,
-            exec_out_ports=exec_out_ports,
         )
         self._initial_state = dict(initial_state or {})
         self._code = self._normalize_code(self._initial_state.get("code") or "input")
@@ -386,16 +382,6 @@ class ExprRuntimeNode(OperatorNode):
         self._dirty = False
         return out
 
-    async def on_exec(self, exec_id: str | int, in_port: str | None = None) -> list[str]:
-        _ = (exec_id, in_port)
-        out = await self.compute_output("out", ctx_id=exec_id)
-        try:
-            await self.emit("out", out)
-        except Exception:
-            pass
-        ports = list(self.exec_out_ports or [])
-        return ports or ["exec"]
-
 
 ExprRuntimeNode.SPEC = F8OperatorSpec(
     schemaVersion=F8OperatorSchemaVersion.f8operator_1,
@@ -405,10 +391,6 @@ ExprRuntimeNode.SPEC = F8OperatorSpec(
     label="Expr",
     description="Evaluate a small expression using input values (math/logic/extraction).",
     tags=["expr", "math", "logic", "transform", "lightweight"],
-    execInPorts=["exec"],
-    execOutPorts=["exec"],
-    editableExecInPorts=True,
-    editableExecOutPorts=True,
     dataInPorts=[
         F8DataPortSpec(name="input", description="Default input value.", valueSchema=any_schema(), required=False),
     ],

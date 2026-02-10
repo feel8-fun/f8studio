@@ -14,7 +14,7 @@ from f8pysdk import (
     number_schema,
 )
 from f8pysdk.nats_naming import ensure_token
-from f8pysdk.runtime_node import OperatorNode
+from f8pysdk.runtime_node import RuntimeNode, OperatorNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from ..constants import SERVICE_CLASS
@@ -68,7 +68,6 @@ class RateLimiterRuntimeNode(OperatorNode):
             state_fields=[s.name for s in (node.stateFields or [])],
         )
         self._initial_state = dict(initial_state or {})
-        self._exec_out_ports = exec_out_ports(node, default=["exec"])
 
         self._in_min = float(_coerce_number(self._initial_state.get("inMin")) or 0.0)
         self._in_max = float(_coerce_number(self._initial_state.get("inMax")) or 1.0)
@@ -120,9 +119,6 @@ class RateLimiterRuntimeNode(OperatorNode):
         name = str(field or "").strip()
         if name in {"inMin", "inMax", "maxRateUp", "maxRateDown", "maxAccel"}:
             self._apply_state(name, value)
-
-    async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
-        return list(self._exec_out_ports)
 
     def _step(self, x: float) -> float:
         now_s = time.monotonic()
@@ -206,9 +202,9 @@ RateLimiterRuntimeNode.SPEC = F8OperatorSpec(
     label="Rate Limiter",
     description="Limits the rate of change (and optionally acceleration) of an input signal.",
     tags=["signal", "limit", "rate", "slew", "smoothing", "transform"],
-    execInPorts=["exec"],
-    execOutPorts=["exec"],
-    dataInPorts=[F8DataPortSpec(name="value", description="Input value.", valueSchema=number_schema(), required=False)],
+    dataInPorts=[
+        F8DataPortSpec(name="value", description="Input value.", valueSchema=number_schema(), required=False)
+    ],
     dataOutPorts=[F8DataPortSpec(name="value", description="Rate-limited output.", valueSchema=number_schema())],
     stateFields=[
         F8StateSpec(
@@ -217,7 +213,7 @@ RateLimiterRuntimeNode.SPEC = F8OperatorSpec(
             description="Input/output clamp minimum (typical 0).",
             valueSchema=number_schema(default=0.0),
             access=F8StateAccess.rw,
-            showOnNode=True,
+            showOnNode=False,
         ),
         F8StateSpec(
             name="inMax",
@@ -225,7 +221,7 @@ RateLimiterRuntimeNode.SPEC = F8OperatorSpec(
             description="Input/output clamp maximum (typical 1).",
             valueSchema=number_schema(default=1.0),
             access=F8StateAccess.rw,
-            showOnNode=True,
+            showOnNode=False,
         ),
         F8StateSpec(
             name="maxRateUp",
@@ -258,7 +254,7 @@ RateLimiterRuntimeNode.SPEC = F8OperatorSpec(
 def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
     reg = registry or RuntimeNodeRegistry.instance()
 
-    def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
+    def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> OperatorNode:
         return RateLimiterRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
 
     reg.register(SERVICE_CLASS, OPERATOR_CLASS, _factory, overwrite=True)

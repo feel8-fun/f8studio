@@ -507,7 +507,7 @@ UdpSkeletonRuntimeNode.SPEC = F8OperatorSpec(
             description="Local address to bind (use 0.0.0.0 for all).",
             valueSchema=string_schema(default="0.0.0.0"),
             access=F8StateAccess.rw,
-            showOnNode=True,
+            showOnNode=False,
         ),
         F8StateSpec(
             name="port",
@@ -523,7 +523,7 @@ UdpSkeletonRuntimeNode.SPEC = F8OperatorSpec(
             description="Max queued packets before dropping (1..4096).",
             valueSchema=integer_schema(default=512, minimum=1, maximum=4096),
             access=F8StateAccess.rw,
-            showOnNode=True,
+            showOnNode=False,
         ),
         F8StateSpec(
             name="reuseAddress",
@@ -531,7 +531,7 @@ UdpSkeletonRuntimeNode.SPEC = F8OperatorSpec(
             description="Best-effort: allow multiple listeners on same (address, port) if OS supports.",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
-            showOnNode=True,
+            showOnNode=False,
         ),
         F8StateSpec(
             name="cleanupAfterMs",
@@ -539,7 +539,7 @@ UdpSkeletonRuntimeNode.SPEC = F8OperatorSpec(
             description="Remove models that haven't updated for this many ms (<=0 disables cleanup).",
             valueSchema=integer_schema(default=10000, minimum=0, maximum=60_000_000),
             access=F8StateAccess.wo,
-            showOnNode=True,
+            showOnNode=False,
         ),
         F8StateSpec(
             name="selectedKey",
@@ -564,7 +564,7 @@ UdpSkeletonRuntimeNode.SPEC = F8OperatorSpec(
 def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
     reg = registry or RuntimeNodeRegistry.instance()
 
-    def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
+    def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> OperatorNode:
         return UdpSkeletonRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
 
     reg.register(SERVICE_CLASS, OPERATOR_CLASS, _factory, overwrite=True)

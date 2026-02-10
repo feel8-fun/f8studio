@@ -67,7 +67,6 @@ class AxisEnvelopeRuntimeNode(OperatorNode):
             state_fields=[s.name for s in (node.stateFields or [])],
         )
         self._initial_state = dict(initial_state or {})
-        self._exec_out_ports = exec_out_ports(node, default=["exec"])
 
         self._ema_alpha = self._coerce_alpha(self._initial_state.get("ema_alpha"), default=0.2)
         self._method = _normalize_method(self._initial_state.get("method"), default="EMA")
@@ -302,9 +301,6 @@ class AxisEnvelopeRuntimeNode(OperatorNode):
         if name in {"ema_alpha", "method", "rise_alpha", "fall_alpha", "min_span", "sma_window", "margin", "reset_z", "reset_abs_max"}:
             self._apply_state_values({name: value})
 
-    async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
-        return list(self._exec_out_ports)
-
     def _update_center_and_cov(self, x: float, y: float) -> None:
         if self._center_x is None or self._center_y is None:
             self._center_x = float(x)
@@ -454,8 +450,6 @@ AxisEnvelopeRuntimeNode.SPEC = F8OperatorSpec(
     label="Axis Envelope",
     description="Estimate normalized amplitudes along major/minor axes from 2D input.",
     tags=["signal", "envelope", "ellipse", "amplitude", "transform"],
-    execInPorts=["exec"],
-    execOutPorts=["exec"],
     dataInPorts=[
         F8DataPortSpec(name="x", description="X coordinate.", valueSchema=number_schema(), required=False),
         F8DataPortSpec(name="y", description="Y coordinate.", valueSchema=number_schema(), required=False),
@@ -544,7 +538,7 @@ AxisEnvelopeRuntimeNode.SPEC = F8OperatorSpec(
 def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
     reg = registry or RuntimeNodeRegistry.instance()
 
-    def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
+    def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> OperatorNode:
         return AxisEnvelopeRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
 
     reg.register(SERVICE_CLASS, OPERATOR_CLASS, _factory, overwrite=True)
