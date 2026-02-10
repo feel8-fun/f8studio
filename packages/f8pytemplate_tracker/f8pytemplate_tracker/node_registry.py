@@ -84,7 +84,7 @@ def register_template_tracker_specs(registry: RuntimeNodeRegistry | None = None)
         F8StateSpec(
             name="reacquireIntervalMs",
             label="Reacquire Interval (ms)",
-            description="Periodically run template matching while tracking (0 disables).",
+            description="When tracking is lost/unavailable, run template matching at most once per N ms to reacquire (0 disables auto-reacquire).",
             valueSchema=integer_schema(default=500, minimum=0, maximum=60000),
             access=F8StateAccess.rw,
             showOnNode=False,

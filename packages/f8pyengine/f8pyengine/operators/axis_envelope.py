@@ -76,6 +76,11 @@ class AxisEnvelopeRuntimeNode(OperatorNode):
         self._min_span = max(0.0, float(_coerce_number(self._initial_state.get("min_span")) or 0.25))
         self._sma_window = self._coerce_window(self._initial_state.get("sma_window"), default=10)
         self._margin = float(_coerce_number(self._initial_state.get("margin")) or 0.0)
+        # Reset protection:
+        # - reset_z: proportional threshold using normalized distance (sigma units) from the current estimate.
+        # - reset_abs_max: legacy absolute threshold (0 disables); kept for backwards compatibility.
+        self._reset_z = max(0.0, float(_coerce_number(self._initial_state.get("reset_z")) or 8.0))
+        self._reset_abs_max = max(0.0, float(_coerce_number(self._initial_state.get("reset_abs_max")) or 0.0))
 
         self._center_x: float | None = None
         self._center_y: float | None = None
@@ -132,6 +137,102 @@ class AxisEnvelopeRuntimeNode(OperatorNode):
         self._cov_xy = 0.0
         self._cov_yy = 0.0
 
+    def _reset_estimator(self) -> None:
+        self._reset_axis_state()
+        self._major_env.reset()
+        self._minor_env.reset()
+
+    def _is_outlier_single(self, value: float) -> bool:
+        """
+        Proportional outlier detection for 1D mode based on current envelope span.
+
+        Treat as outlier when the sample is far outside the current [lower, upper]
+        range by a large multiple of the span.
+        """
+        reset_z = float(self._reset_z)
+        if reset_z <= 0.0:
+            return False
+        lower = self._major_env.lower
+        upper = self._major_env.upper
+        if lower is None or upper is None:
+            return False
+        span = float(upper - lower)
+        if span <= _EPS:
+            return False
+        mid = 0.5 * (float(upper) + float(lower))
+        z = abs(float(value) - mid) / span
+        return bool(z >= reset_z)
+
+    def _principal_axes_and_vars(self) -> tuple[tuple[float, float], tuple[float, float], float, float]:
+        """
+        Return (major_axis, minor_axis, var_major, var_minor) from current covariance.
+        """
+        sxx = float(self._cov_xx)
+        sxy = float(self._cov_xy)
+        syy = float(self._cov_yy)
+
+        if sxx + syy <= _EPS:
+            return (1.0, 0.0), (0.0, 1.0), 0.0, 0.0
+
+        diff = sxx - syy
+        temp = math.sqrt(max(0.0, diff * diff + 4.0 * sxy * sxy))
+        lambda1 = 0.5 * (sxx + syy + temp)
+        lambda2 = 0.5 * (sxx + syy - temp)
+
+        if abs(sxy) > _EPS:
+            vx = lambda1 - syy
+            vy = sxy
+        else:
+            if sxx >= syy:
+                vx, vy = 1.0, 0.0
+            else:
+                vx, vy = 0.0, 1.0
+
+        norm = math.hypot(vx, vy)
+        if norm <= _EPS:
+            major = (1.0, 0.0)
+        else:
+            major = (vx / norm, vy / norm)
+        minor = (-major[1], major[0])
+        return major, minor, float(max(0.0, lambda1)), float(max(0.0, lambda2))
+
+    def _is_outlier_dual(self, x: float, y: float) -> bool:
+        """
+        Proportional outlier detection in 2D mode using principal-axis z-scores.
+
+        If a single sample lands many sigma away from the current estimate, we reset
+        to avoid poisoning the covariance + envelopes.
+        """
+        reset_z = float(self._reset_z)
+        if reset_z <= 0.0:
+            return False
+        if self._center_x is None or self._center_y is None:
+            return False
+        if float(self._cov_xx) + float(self._cov_yy) <= _EPS:
+            return False
+
+        major_axis, minor_axis, var_major, var_minor = self._principal_axes_and_vars()
+        dx = float(x) - float(self._center_x)
+        dy = float(y) - float(self._center_y)
+        major_value = major_axis[0] * dx + major_axis[1] * dy
+        minor_value = minor_axis[0] * dx + minor_axis[1] * dy
+
+        std_major = math.sqrt(float(var_major) + _EPS)
+        std_minor = math.sqrt(float(var_minor) + _EPS)
+        z_major = abs(float(major_value)) / std_major
+        z_minor = abs(float(minor_value)) / std_minor
+        return bool(max(z_major, z_minor) >= reset_z)
+
+    def _is_outlier_abs_legacy(self, x: float | None, y: float | None) -> bool:
+        limit = float(self._reset_abs_max)
+        if limit <= 0.0:
+            return False
+        if x is not None and abs(float(x)) >= limit:
+            return True
+        if y is not None and abs(float(y)) >= limit:
+            return True
+        return False
+
     def _apply_state_values(self, values: dict[str, Any]) -> None:
         tracker_changed = False
 
@@ -175,6 +276,16 @@ class AxisEnvelopeRuntimeNode(OperatorNode):
             if numeric is not None:
                 self._margin = float(numeric)
 
+        if "reset_z" in values:
+            numeric = _coerce_number(values.get("reset_z"))
+            if numeric is not None:
+                self._reset_z = max(0.0, float(numeric))
+
+        if "reset_abs_max" in values:
+            numeric = _coerce_number(values.get("reset_abs_max"))
+            if numeric is not None:
+                self._reset_abs_max = max(0.0, float(numeric))
+
         if tracker_changed:
             for tracker in (self._major_env, self._minor_env):
                 tracker.set_parameters(
@@ -188,7 +299,7 @@ class AxisEnvelopeRuntimeNode(OperatorNode):
 
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
         name = str(field or "")
-        if name in {"ema_alpha", "method", "rise_alpha", "fall_alpha", "min_span", "sma_window", "margin"}:
+        if name in {"ema_alpha", "method", "rise_alpha", "fall_alpha", "min_span", "sma_window", "margin", "reset_z", "reset_abs_max"}:
             self._apply_state_values({name: value})
 
     async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
@@ -274,6 +385,15 @@ class AxisEnvelopeRuntimeNode(OperatorNode):
             return self._last_outputs.get(port_s)
 
         mode = "dual" if x is not None and y is not None else "single"
+        if self._is_outlier_abs_legacy(x, y):
+            self._reset_estimator()
+            self._last_outputs = {"major": 0.5, "minor": 0.5}
+            self._last_ctx_id = ctx_id
+            self._last_input = (x, y)
+            self._last_mode = mode
+            self._dirty = False
+            return self._last_outputs.get(port_s)
+
         if not self._dirty:
             if ctx_id is not None and ctx_id == self._last_ctx_id and mode == self._last_mode:
                 return self._last_outputs.get(port_s)
@@ -284,14 +404,30 @@ class AxisEnvelopeRuntimeNode(OperatorNode):
             value = x if x is not None else y
             if value is None:
                 return self._last_outputs.get(port_s)
+            if self._is_outlier_single(float(value)):
+                self._reset_estimator()
+                self._last_outputs = {"major": 0.5, "minor": 0.5}
+                self._last_ctx_id = ctx_id
+                self._last_input = (x, y)
+                self._last_mode = mode
+                self._dirty = False
+                return self._last_outputs.get(port_s)
             self._major_env.update(float(value))
             major = self._normalize_with_margin(self._major_env, float(value))
             self._last_outputs = {"major": major, "minor": 0.5}
         else:
+            if self._is_outlier_dual(float(x), float(y)):
+                self._reset_estimator()
+                self._last_outputs = {"major": 0.5, "minor": 0.5}
+                self._last_ctx_id = ctx_id
+                self._last_input = (x, y)
+                self._last_mode = mode
+                self._dirty = False
+                return self._last_outputs.get(port_s)
             self._update_center_and_cov(float(x), float(y))
             if self._center_x is None or self._center_y is None:
                 return self._last_outputs.get(port_s)
-            major_axis, minor_axis = self._principal_axes()
+            major_axis, minor_axis, _var_major, _var_minor = self._principal_axes_and_vars()
             dx = float(x) - self._center_x
             dy = float(y) - self._center_y
             major_value = major_axis[0] * dx + major_axis[1] * dy
@@ -381,6 +517,22 @@ AxisEnvelopeRuntimeNode.SPEC = F8OperatorSpec(
             name="margin",
             label="Margin",
             description="Extra margin added to the envelopes before normalization.",
+            valueSchema=number_schema(default=0.0, minimum=0.0),
+            access=F8StateAccess.rw,
+            showOnNode=False,
+        ),
+        F8StateSpec(
+            name="reset_z",
+            label="Reset Z",
+            description="Proportional outlier threshold. If a sample is >= this many sigma (2D) or spans (1D) away, reset and ignore it (0 disables).",
+            valueSchema=number_schema(default=8.0, minimum=0.0),
+            access=F8StateAccess.rw,
+            showOnNode=False,
+        ),
+        F8StateSpec(
+            name="reset_abs_max",
+            label="Reset Abs Max",
+            description="Legacy absolute outlier threshold; if abs(x) or abs(y) exceeds this value, reset and ignore the sample (0 disables).",
             valueSchema=number_schema(default=0.0, minimum=0.0),
             access=F8StateAccess.rw,
             showOnNode=False,

@@ -3,9 +3,12 @@ from __future__ import annotations
 import ast
 import logging
 import math
+import time
 from dataclasses import dataclass
 from types import CodeType
 from typing import Any
+
+import numpy as np  # type: ignore
 
 from f8pysdk import (
     F8DataPortSpec,
@@ -31,6 +34,8 @@ logger = logging.getLogger(__name__)
 
 _ALLOWED_GLOBAL_FNS: dict[str, Any] = {
     "abs": abs,
+    "float": float,
+    "int": int,
     "min": min,
     "max": max,
     "round": round,
@@ -83,22 +88,22 @@ class _JsonRef:
         s = str(name or "")
         return not s or s.startswith("_")
 
-    def __getattr__(self, name: str) -> "_JsonRef":
+    def __getattr__(self, name: str) -> Any:
         if self._deny_attr(name):
             raise AttributeError(name)
         v = self.value
         if isinstance(v, dict) and name in v:
-            return _JsonRef(v[name])
+            return _wrap_value(v[name])
         raise AttributeError(name)
 
-    def __getitem__(self, key: Any) -> "_JsonRef":
+    def __getitem__(self, key: Any) -> Any:
         v = self.value
         if isinstance(v, dict):
             if isinstance(key, str) and key.startswith("_"):
                 raise KeyError(key)
-            return _JsonRef(v[key])
+            return _wrap_value(v[key])
         if isinstance(v, (list, tuple)):
-            return _JsonRef(v[int(key)])
+            return _wrap_value(v[int(key)])
         raise TypeError(f"not indexable: {type(v).__name__}")
 
     def unwrap(self) -> Any:
@@ -211,6 +216,14 @@ class _ExprValidator(ast.NodeVisitor):
             if fn not in _ALLOWED_MATH_FNS:
                 self.error(f"math call not allowed: math.{fn}")
                 return None
+        # Allow numpy calls: np.<anything>(...) (including chained attributes like np.random.rand(...))
+        elif isinstance(node.func, ast.Attribute):
+            base: ast.AST = node.func.value
+            while isinstance(base, ast.Attribute):
+                base = base.value
+            if not (isinstance(base, ast.Name) and base.id in ("np", "numpy")):
+                self.error("call target not allowed")
+                return None
         else:
             self.error("call target not allowed")
             return None
@@ -233,6 +246,8 @@ def _safe_eval_compiled(code: CodeType, *, names: dict[str, Any]) -> Any:
     safe_globals: dict[str, Any] = {"__builtins__": {}}
     safe_globals.update(_ALLOWED_GLOBAL_FNS)
     safe_globals["math"] = math
+    safe_globals["np"] = np
+    safe_globals["numpy"] = np
     return eval(code, safe_globals, names)  # noqa: S307 (controlled eval)
 
 
@@ -273,6 +288,33 @@ class ExprRuntimeNode(OperatorNode):
         self._last_ctx_id: str | int | None = None
         self._last_out: Any = None
         self._dirty: bool = True
+        self._last_eval_exc_sig: str = ""
+        self._last_eval_exc_log_ts_ms: int = 0
+        self._last_pull_exc_sig: str = ""
+        self._last_pull_exc_log_ts_ms: int = 0
+
+    def _should_log_repeating_error(self, sig: str, *, now_ms: int, kind: str) -> bool:
+        if kind == "eval":
+            if sig != self._last_eval_exc_sig:
+                self._last_eval_exc_sig = sig
+                self._last_eval_exc_log_ts_ms = int(now_ms)
+                return True
+            if (int(now_ms) - int(self._last_eval_exc_log_ts_ms)) >= 5000:
+                self._last_eval_exc_log_ts_ms = int(now_ms)
+                return True
+            return False
+
+        if kind == "pull":
+            if sig != self._last_pull_exc_sig:
+                self._last_pull_exc_sig = sig
+                self._last_pull_exc_log_ts_ms = int(now_ms)
+                return True
+            if (int(now_ms) - int(self._last_pull_exc_log_ts_ms)) >= 5000:
+                self._last_pull_exc_log_ts_ms = int(now_ms)
+                return True
+            return False
+
+        return True
 
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
         _ = ts_ms
@@ -319,8 +361,12 @@ class ExprRuntimeNode(OperatorNode):
         for p in list(self.data_in_ports or []):
             try:
                 pulled[str(p)] = await self.pull(str(p), ctx_id=ctx_id)
-            except Exception:
+            except Exception as exc:
                 pulled[str(p)] = None
+                now_ms = int(time.time() * 1000.0)
+                sig = f"{type(exc).__name__}:{exc}:port={p}"
+                if self._should_log_repeating_error(sig, now_ms=now_ms, kind="pull"):
+                    logger.exception("[%s:expr] pull failed (port=%s)", self.node_id, p)
 
         try:
             if self._compiled is None:
@@ -329,7 +375,10 @@ class ExprRuntimeNode(OperatorNode):
             if isinstance(out, _JsonRef):
                 out = out.unwrap()
         except Exception as exc:
-            logger.warning("[%s:expr] eval failed: %s", self.node_id, exc)
+            now_ms = int(time.time() * 1000.0)
+            sig = f"{type(exc).__name__}:{exc}"
+            if self._should_log_repeating_error(sig, now_ms=now_ms, kind="eval"):
+                logger.warning("[%s:expr] eval failed: %s", self.node_id, exc)
             out = None
 
         self._last_out = out
@@ -372,7 +421,7 @@ ExprRuntimeNode.SPEC = F8OperatorSpec(
         F8StateSpec(
             name="code",
             label="Expr",
-            description="Single-line expression (no statements). Examples: input.center.x ; a+b-c**2",
+            description="Single-line expression (no statements). Available: abs/min/max/round/float/int, math.*, numpy as np. Examples: input.center.x ; a+b-c**2 ; np.clip(x,0,1)",
             uiControl="wrapline",
             uiLanguage="python",
             valueSchema=string_schema(default="input"),

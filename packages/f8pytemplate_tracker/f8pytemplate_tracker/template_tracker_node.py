@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -15,6 +16,9 @@ from f8pysdk.runtime_node import ServiceNode
 from f8pysdk.shm.video import VideoShmReader, default_video_shm_name
 
 from .constants import SERVICE_CLASS
+
+
+logger = logging.getLogger(__name__)
 
 
 def _coerce_int(v: Any, *, default: int, minimum: int | None = None, maximum: int | None = None) -> int:
@@ -432,6 +436,11 @@ class TemplateTrackerServiceNode(ServiceNode):
         self._bbox_xywh: tuple[int, int, int, int] | None = None
         self._last_match_ts_ms: int = 0
         self._force_match = False
+        self._lost_match_armed: bool = True
+        self._tracker_needs_init_from_bbox: bool = False
+        self._last_loop_exc_sig: str = ""
+        self._last_loop_exc_log_ts_ms: int = 0
+        self._last_frame_ts_ms: int = 0
 
         self._last_processed_frame_id: int | None = None
         self._dup_skipped_since_last_processed: int = 0
@@ -442,8 +451,11 @@ class TemplateTrackerServiceNode(ServiceNode):
         try:
             loop = asyncio.get_running_loop()
             self._task = loop.create_task(self._loop(), name=f"template_tracker:loop:{self.node_id}")
+        except RuntimeError:
+            # No running event loop; node will remain idle.
+            logger.exception("TemplateTrackerServiceNode.attach: no running event loop (node_id=%s)", self.node_id)
         except Exception:
-            pass
+            logger.exception("TemplateTrackerServiceNode.attach failed (node_id=%s)", self.node_id)
 
     async def close(self) -> None:
         t = self._task
@@ -472,7 +484,9 @@ class TemplateTrackerServiceNode(ServiceNode):
         elif name == "trackerKind":
             v = _coerce_str(await self.get_state_value("trackerKind"), default=self._tracker_kind).lower()
             self._tracker_kind = v if v in ("none", "csrt", "kcf", "mosse") else "csrt"
-            self._reset_tracker()
+            had_bbox = self._bbox_xywh is not None
+            self._reset_tracker(clear_bbox=False)
+            self._tracker_needs_init_from_bbox = bool(had_bbox and self._tracker_kind != "none")
         elif name == "matchMethod":
             self._match_method = _coerce_str(await self.get_state_value("matchMethod"), default=self._match_method)
         elif name == "matchThreshold":
@@ -550,10 +564,12 @@ class TemplateTrackerServiceNode(ServiceNode):
         self._template_bgr = _decode_png_b64_to_bgr(b64)
         if self._template_bgr is None:
             self._template_gray = None
-            self._reset_tracker()
+            self._reset_tracker(clear_bbox=True)
+            self._lost_match_armed = True
             return
         self._template_gray = cv2.cvtColor(self._template_bgr, cv2.COLOR_BGR2GRAY)
-        self._reset_tracker()
+        self._reset_tracker(clear_bbox=True)
+        self._lost_match_armed = True
 
     def _resolve_shm_name(self) -> str:
         shm = str(self._shm_name or "").strip()
@@ -591,15 +607,18 @@ class TemplateTrackerServiceNode(ServiceNode):
             self._close_shm()
             return False
 
-    def _reset_tracker(self) -> None:
+    def _reset_tracker(self, *, clear_bbox: bool = True) -> None:
         self._tracker = None
-        self._bbox_xywh = None
+        if clear_bbox:
+            self._bbox_xywh = None
+        self._tracker_needs_init_from_bbox = False
 
     async def _clear_template(self) -> None:
         self._template_b64 = ""
         self._template_bgr = None
         self._template_gray = None
-        self._reset_tracker()
+        self._reset_tracker(clear_bbox=True)
+        self._lost_match_armed = True
         try:
             await self.set_state("templatePngB64", "")
         except Exception:
@@ -674,7 +693,8 @@ class TemplateTrackerServiceNode(ServiceNode):
         self._template_b64 = b64
         self._template_bgr = crop
         self._template_gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-        self._reset_tracker()
+        self._reset_tracker(clear_bbox=True)
+        self._lost_match_armed = True
         return {"ok": True, "template": meta}
 
     def _match_template(
@@ -748,6 +768,18 @@ class TemplateTrackerServiceNode(ServiceNode):
         self._bbox_xywh = (x, y, w, h)
         return True, self._bbox_xywh
 
+    def _should_log_loop_exception(self, exc: Exception, *, now_ms: int) -> bool:
+        sig = f"{type(exc).__name__}:{exc}"
+        if sig != self._last_loop_exc_sig:
+            self._last_loop_exc_sig = sig
+            self._last_loop_exc_log_ts_ms = int(now_ms)
+            return True
+        # Same error repeating: log at most once every 5 seconds.
+        if (int(now_ms) - int(self._last_loop_exc_log_ts_ms)) >= 5000:
+            self._last_loop_exc_log_ts_ms = int(now_ms)
+            return True
+        return False
+
     async def _loop(self) -> None:
         while True:
             try:
@@ -776,6 +808,7 @@ class TemplateTrackerServiceNode(ServiceNode):
                 if got is None:
                     continue
                 frame_id, ts_ms, width, height, bgr = got
+                self._last_frame_ts_ms = int(ts_ms)
 
                 if self._last_processed_frame_id is not None and int(frame_id) == int(self._last_processed_frame_id):
                     self._dup_skipped_since_last_processed += 1
@@ -797,15 +830,41 @@ class TemplateTrackerServiceNode(ServiceNode):
                 track_ms = 0.0
 
                 if self._template_gray is None:
-                    self._reset_tracker()
+                    self._reset_tracker(clear_bbox=True)
+                    self._force_match = False
                     status = "no_template"
                 else:
-                    do_match = bool(self._force_match)
+                    t_track0 = time.perf_counter()
+                    if self._tracker is None and self._tracker_needs_init_from_bbox and self._bbox_xywh is not None:
+                        ok_init = self._ensure_tracker_for_bbox(bgr, self._bbox_xywh)
+                        self._tracker_needs_init_from_bbox = False
+                        if not ok_init:
+                            self._reset_tracker(clear_bbox=False)
+
+                    if self._tracker is not None and self._bbox_xywh is not None:
+                        track_ok, _bbox_xywh = self._update_tracker(bgr)
+                        if not track_ok:
+                            # Keep bbox as "last known" to constrain future matching ROI.
+                            self._reset_tracker(clear_bbox=False)
+                    t_track1 = time.perf_counter()
+                    track_ms = (t_track1 - t_track0) * 1000.0
+
+                    force_match = bool(self._force_match)
                     self._force_match = False
-                    if self._bbox_xywh is None or self._tracker is None:
+
+                    if track_ok:
+                        self._lost_match_armed = True
+
+                    do_match = False
+                    if force_match:
                         do_match = True
-                    if self._reacquire_interval_ms > 0 and (ts_ms - self._last_match_ts_ms) >= int(self._reacquire_interval_ms):
-                        do_match = True
+                    elif not track_ok:
+                        # Only try template matching when tracking is lost/unavailable (not while tracking).
+                        if self._reacquire_interval_ms <= 0:
+                            do_match = bool(self._lost_match_armed)
+                            self._lost_match_armed = False
+                        else:
+                            do_match = (int(ts_ms) - int(self._last_match_ts_ms)) >= int(self._reacquire_interval_ms)
 
                     if do_match:
                         t_match0 = time.perf_counter()
@@ -814,21 +873,21 @@ class TemplateTrackerServiceNode(ServiceNode):
                         match_ms = (t_match1 - t_match0) * 1000.0
                         did_match = True
                         self._last_match_ts_ms = int(ts_ms)
-                        if match_bbox is not None and float(match_score) >= float(self._match_threshold):
-                            if self._bbox_xywh is None or _iou_xywh(self._bbox_xywh, match_bbox) < 0.9:
-                                self._reset_tracker()
-                                self._ensure_tracker_for_bbox(bgr, match_bbox)
-                        else:
-                            if self._bbox_xywh is None:
-                                self._reset_tracker()
 
-                    t_track0 = time.perf_counter()
-                    if self._tracker is not None and self._bbox_xywh is not None:
-                        track_ok, _bbox_xywh = self._update_tracker(bgr)
-                        if not track_ok:
-                            self._reset_tracker()
-                    t_track1 = time.perf_counter()
-                    track_ms = (t_track1 - t_track0) * 1000.0
+                        accept = match_bbox is not None and float(match_score) >= float(self._match_threshold)
+                        if accept and match_bbox is not None:
+                            same_target = self._bbox_xywh is not None and _iou_xywh(self._bbox_xywh, match_bbox) >= 0.9
+                            if (not same_target) or (not track_ok):
+                                self._bbox_xywh = match_bbox
+                                self._reset_tracker(clear_bbox=False)
+                                if self._tracker_kind != "none":
+                                    ok_init = self._ensure_tracker_for_bbox(bgr, match_bbox)
+                                    if ok_init:
+                                        track_ok, _bbox_xywh = self._update_tracker(bgr)
+                                        if track_ok:
+                                            self._lost_match_armed = True
+                                    else:
+                                        self._reset_tracker(clear_bbox=False)
 
                     if self._bbox_xywh is not None and track_ok:
                         status = "tracking"
@@ -905,4 +964,7 @@ class TemplateTrackerServiceNode(ServiceNode):
                     await self.set_state("lastError", self._last_error)
                 except Exception:
                     pass
+                now_ms = int(self._last_frame_ts_ms) if int(self._last_frame_ts_ms) > 0 else int(time.time() * 1000.0)
+                if self._should_log_loop_exception(exc, now_ms=now_ms):
+                    logger.exception("TemplateTrackerServiceNode loop error (node_id=%s)", self.node_id)
                 await asyncio.sleep(0.1)
