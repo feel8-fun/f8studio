@@ -99,13 +99,17 @@ class _ServiceBusMicroEndpoints:
         if want_active is None:
             want_active = raw.get("active")
         if want_active is None:
-            await self._respond(req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "missing active"})
+            await self._respond(
+                req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "missing active"}
+            )
             return
         await self._set_active_req(req, bool(want_active), cmd="set_active")
 
     async def _status(self, req: Any) -> None:
         req_id, _raw, _args, _meta = self._parse_envelope(req.data)
-        await self._respond(req, req_id=req_id, ok=True, result={"serviceId": self._bus.service_id, "active": self._bus.active})
+        await self._respond(
+            req, req_id=req_id, ok=True, result={"serviceId": self._bus.service_id, "active": self._bus.active}
+        )
 
     async def _terminate(self, req: Any) -> None:
         req_id, _raw, _args, meta = self._parse_envelope(req.data)
@@ -123,11 +127,15 @@ class _ServiceBusMicroEndpoints:
         req_id, raw, args, meta = self._parse_envelope(req.data)
         call = str(raw.get("call") or "").strip()
         if not call:
-            await self._respond(req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "missing call"})
+            await self._respond(
+                req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "missing call"}
+            )
             return
         service_node = self._bus.get_node(self._bus.service_id)
         if service_node is None or not isinstance(service_node, CommandableNode):
-            await self._respond(req, req_id=req_id, ok=False, error={"code": "UNKNOWN_CALL", "message": f"unknown call: {call}"})
+            await self._respond(
+                req, req_id=req_id, ok=False, error={"code": "UNKNOWN_CALL", "message": f"unknown call: {call}"}
+            )
             return
         try:
             out = await service_node.on_command(call, args, meta=meta)  # type: ignore[misc]
@@ -142,18 +150,24 @@ class _ServiceBusMicroEndpoints:
         field = args.get("field") or raw.get("field")
         value = args.get("value") if "value" in args else raw.get("value")
         if node_id is None or field is None:
-            await self._respond(req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "missing nodeId/field"})
+            await self._respond(
+                req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "missing nodeId/field"}
+            )
             return
         node_id_s = str(node_id).strip()
         field_s = str(field).strip()
         if not node_id_s or not field_s:
-            await self._respond(req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "empty nodeId/field"})
+            await self._respond(
+                req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "empty nodeId/field"}
+            )
             return
 
         try:
             node_id_s = ensure_token(node_id_s, label="node_id")
         except Exception:
-            await self._respond(req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "invalid nodeId"})
+            await self._respond(
+                req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "invalid nodeId"}
+            )
             return
 
         user_meta = dict(meta)
@@ -186,7 +200,9 @@ class _ServiceBusMicroEndpoints:
         if graph_obj is None and isinstance(raw, dict):
             graph_obj = raw if "nodes" in raw and "edges" in raw else None
         if not isinstance(graph_obj, dict):
-            await self._respond(req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "missing graph"})
+            await self._respond(
+                req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "missing graph"}
+            )
             return
 
         try:

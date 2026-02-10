@@ -23,9 +23,11 @@ class F8StudioNodeViewer(NodeViewer):
         super().__init__(parent=parent, undo_stack=undo_stack)
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
         self._f8_graph: Any | None = None
-        self.MMB_state = False
-        self._origin_pos = None
-        self._previous_pos = None
+        # NOTE: NodeGraphQt's NodeViewer already uses internal attributes like
+        # `MMB_state`, `_origin_pos`, `_previous_pos` for selection, tab-search,
+        # and other interactions. Do not overwrite them here.
+        self._f8_mmb_panning: bool = False
+        self._f8_mmb_prev_pos: QtCore.QPoint | None = None
 
         self._shortcut_search = QtWidgets.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Tab), self)
         self._shortcut_search.setContext(QtCore.Qt.WidgetShortcut)
@@ -49,6 +51,25 @@ class F8StudioNodeViewer(NodeViewer):
     def showEvent(self, event):
         super().showEvent(event)
         self.setFocus()
+
+    def focusOutEvent(self, event):  # type: ignore[override]
+        self._cancel_f8_mmb_pan()
+        return super().focusOutEvent(event)
+
+    def leaveEvent(self, event):  # type: ignore[override]
+        # If mouse is released outside the viewport, ensure we don't get stuck.
+        self._cancel_f8_mmb_pan()
+        return super().leaveEvent(event)
+
+    def _cancel_f8_mmb_pan(self) -> None:
+        if not self._f8_mmb_panning:
+            return
+        self._f8_mmb_panning = False
+        self._f8_mmb_prev_pos = None
+        try:
+            self.unsetCursor()
+        except Exception:
+            pass
 
     def _pan_by_pixels(self, dx_px: int, dy_px: int) -> None:
         center_view = QtCore.QPoint(int(self.viewport().width() / 2), int(self.viewport().height() / 2))
@@ -109,42 +130,36 @@ class F8StudioNodeViewer(NodeViewer):
         # Always reserve MMB for canvas pan, regardless of what's under cursor.
         # NodeGraphQt disables MMB pan when clicking on nodes; we want consistent
         # navigation behavior.
-        try:
-            if event.button() == QtCore.Qt.MiddleButton:
-                self.MMB_state = True
-                self._origin_pos = event.pos()
-                self._previous_pos = event.pos()
-                if self._search_widget.isVisible():
-                    self.tab_search_toggle()
-                event.accept()
-                return
-        except Exception:
-            pass
+        if event.button() == QtCore.Qt.MiddleButton:
+            self._f8_mmb_panning = True
+            self._f8_mmb_prev_pos = event.pos()
+            if self._search_widget.isVisible():
+                self.tab_search_toggle()
+            try:
+                self.setCursor(QtCore.Qt.ClosedHandCursor)
+            except Exception:
+                pass
+            event.accept()
+            return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
         # Force MMB to pan only (no ALT+MMB zoom).
-        try:
-            if self.MMB_state and self._previous_pos is not None:
-                previous_pos = self.mapToScene(self._previous_pos)
-                current_pos = self.mapToScene(event.pos())
-                delta = previous_pos - current_pos
-                self._set_viewer_pan(delta.x(), delta.y())
-                self._previous_pos = event.pos()
-                QtWidgets.QGraphicsView.mouseMoveEvent(self, event)
-                return
-        except Exception:
-            pass
+        if self._f8_mmb_panning and self._f8_mmb_prev_pos is not None:
+            previous_pos = self.mapToScene(self._f8_mmb_prev_pos)
+            current_pos = self.mapToScene(event.pos())
+            delta = previous_pos - current_pos
+            self._set_viewer_pan(delta.x(), delta.y())
+            self._f8_mmb_prev_pos = event.pos()
+            event.accept()
+            return
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
-        try:
-            if event.button() == QtCore.Qt.MiddleButton:
-                self.MMB_state = False
-                event.accept()
-                return
-        except Exception:
-            pass
+        if event.button() == QtCore.Qt.MiddleButton:
+            self._cancel_f8_mmb_pan()
+            event.accept()
+            return
         super().mouseReleaseEvent(event)
 
     def _delete_selected_nodes(self) -> None:
