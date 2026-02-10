@@ -69,7 +69,6 @@ from ..command_ui_protocol import CommandUiHandler, CommandUiSource
 
 logger = logging.getLogger(__name__)
 
-
 def _model_extra(obj: Any) -> dict[str, Any]:
     try:
         extra = obj.model_extra
@@ -2246,26 +2245,18 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         self._reload_timer.start(int(self._reload_debounce_ms))
 
     def _clear_tabs(self) -> None:
-        # `removeTab()` does not delete the widget; explicitly detach + delete.
+        # `removeTab()` does not delete the widget.
+        # Avoid `setParent(None)` to prevent transient top-level window flashes.
         while self.__tab.count():
-            try:
-                w = self.__tab.widget(0)
-            except Exception:
-                w = None
-            try:
-                self.__tab.removeTab(0)
-            except Exception:
-                break
+            w = self.__tab.widget(0)
+            self.__tab.removeTab(0)
             if w is None:
                 continue
             try:
-                w.setParent(None)
+                w.setVisible(False)
             except Exception:
-                pass
-            try:
-                w.deleteLater()
-            except Exception:
-                pass
+                logger.exception("Failed to hide tab widget before deleteLater")
+            w.deleteLater()
 
     def _reload_now(self) -> None:
         self._reload_pending = False
@@ -2545,25 +2536,27 @@ class F8StudioSingleNodePropertiesWidget(QtWidgets.QWidget):
         except Exception:
             pass
 
-    def _clear_editor(self) -> None:
-        self._node_id = None
-        if self._editor is not None:
-            try:
-                self._editor.setParent(None)
-            except Exception:
-                pass
-            try:
-                self._editor.deleteLater()
-            except Exception:
-                pass
+    def _clear_editor(self, *, clear_node_id: bool = True) -> None:
+        if clear_node_id:
+            self._node_id = None
+        editor = self._editor
+        if editor is not None:
             self._editor = None
+            self._container_layout.removeWidget(editor)
+            try:
+                editor.setVisible(False)
+            except Exception:
+                logger.exception("Failed to hide editor before deleteLater")
+            editor.deleteLater()
         try:
             self._empty.setVisible(True)
         except Exception:
             pass
 
     def _set_editor(self, editor: F8StudioNodePropEditorWidget) -> None:
-        self._clear_editor()
+        # Preserve the node id that the caller (set_node) just set. We are
+        # swapping the editor widget, not clearing the selection.
+        self._clear_editor(clear_node_id=False)
         self._editor = editor
         try:
             self._empty.setVisible(False)
@@ -2586,14 +2579,14 @@ class F8StudioSingleNodePropertiesWidget(QtWidgets.QWidget):
             # Only clear when explicitly forced (eg. node deleted) or when the
             # panel is currently empty.
             if force_clear or self._editor is None:
-                self._clear_editor()
+                self._clear_editor(clear_node_id=True)
             return
         try:
             node_id = str(node.id or "")
         except Exception:
             node_id = ""
         if not node_id:
-            self._clear_editor()
+            self._clear_editor(clear_node_id=True)
             return
         if self._node_id == node_id and self._editor is not None:
             return
