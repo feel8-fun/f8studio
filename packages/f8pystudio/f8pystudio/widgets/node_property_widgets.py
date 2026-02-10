@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections import defaultdict
 from typing import Any, Callable
 
@@ -2450,6 +2451,259 @@ class F8StudioPropertiesBinWidget(PropertiesBinWidget):
 
     def create_property_editor(self, node):
         return F8StudioNodePropEditorWidget(node=node)
+
+
+class F8StudioSingleNodePropertiesWidget(QtWidgets.QWidget):
+    """
+    Single-node properties panel (no PropertiesBinWidget/QTableWidget).
+
+    NodeGraphQt's PropertiesBinWidget hosts editors inside a QTableWidget, which
+    can scroll-jump on focus/click. Since Studio only needs one active editor,
+    we present a single `F8StudioNodePropEditorWidget` inside a QScrollArea.
+    """
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None, *, node_graph: Any) -> None:
+        super().__init__(parent)
+        self._node_graph = node_graph
+        self._node_id: str | None = None
+        self._editor: F8StudioNodePropEditorWidget | None = None
+        self._block_signal = False
+        self._last_node_click_ts: float = 0.0
+        self._selection_timer = QtCore.QTimer(self)
+        self._selection_timer.setSingleShot(True)
+        self._selection_timer.timeout.connect(self._apply_graph_selection)
+
+        self._scroll = QtWidgets.QScrollArea(self)
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        self._container = QtWidgets.QWidget(self._scroll)
+        self._container.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+        self._container_layout = QtWidgets.QVBoxLayout(self._container)
+        self._container_layout.setContentsMargins(0, 0, 0, 0)
+        self._container_layout.setSpacing(0)
+
+        self._empty = QtWidgets.QLabel("Select a node to view properties.", self._container)
+        self._empty.setAlignment(QtCore.Qt.AlignCenter)
+        self._empty.setStyleSheet("color: rgba(235,235,235,140); padding: 14px;")
+        self._container_layout.addWidget(self._empty, 1)
+
+        self._scroll.setWidget(self._container)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self._scroll, 1)
+
+        self._wire_graph_signals()
+        QtCore.QTimer.singleShot(0, self._sync_container_width)
+
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._sync_container_width()
+
+    def _sync_container_width(self) -> None:
+        """
+        Keep the content widget width aligned to the scroll viewport width.
+
+        This prevents QScrollArea from showing a horizontal scrollbar due to
+        the container/editor having a slightly larger size hint.
+        """
+        try:
+            vp_w = int(self._scroll.viewport().width())
+        except Exception:
+            return
+        if vp_w <= 0:
+            return
+        try:
+            self._container.setMinimumWidth(vp_w)
+        except Exception:
+            pass
+
+    def _wire_graph_signals(self) -> None:
+        g = self._node_graph
+        if g is None:
+            return
+        try:
+            g.node_selected.connect(self._on_node_selected)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        try:
+            g.node_double_clicked.connect(self._on_node_selected)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        try:
+            g.node_selection_changed.connect(self._on_node_selection_changed)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        try:
+            g.nodes_deleted.connect(self._on_nodes_deleted)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        try:
+            g.property_changed.connect(self._on_graph_property_changed)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+    def _clear_editor(self) -> None:
+        self._node_id = None
+        if self._editor is not None:
+            try:
+                self._editor.setParent(None)
+            except Exception:
+                pass
+            try:
+                self._editor.deleteLater()
+            except Exception:
+                pass
+            self._editor = None
+        try:
+            self._empty.setVisible(True)
+        except Exception:
+            pass
+
+    def _set_editor(self, editor: F8StudioNodePropEditorWidget) -> None:
+        self._clear_editor()
+        self._editor = editor
+        try:
+            self._empty.setVisible(False)
+        except Exception:
+            pass
+        self._container_layout.addWidget(editor, 0)
+        self._sync_container_width()
+        try:
+            editor.property_changed.connect(self._on_editor_property_changed)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        try:
+            editor.property_closed.connect(self._on_editor_closed)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+    def set_node(self, node: Any | None, *, force_clear: bool = False) -> None:
+        if node is None:
+            # Avoid transient clear -> re-set flicker caused by selection jitter.
+            # Only clear when explicitly forced (eg. node deleted) or when the
+            # panel is currently empty.
+            if force_clear or self._editor is None:
+                self._clear_editor()
+            return
+        try:
+            node_id = str(node.id or "")
+        except Exception:
+            node_id = ""
+        if not node_id:
+            self._clear_editor()
+            return
+        if self._node_id == node_id and self._editor is not None:
+            return
+        self._node_id = node_id
+        self._set_editor(F8StudioNodePropEditorWidget(self._container, node=node))
+        try:
+            self._scroll.verticalScrollBar().setValue(0)
+        except Exception:
+            pass
+
+    def _on_node_selected(self, node: Any) -> None:
+        self._last_node_click_ts = time.monotonic()
+        self.set_node(node)
+
+    def _on_node_selection_changed(self, selected: list[Any], _deselected: list[Any]) -> None:
+        # NodeGraphQt can emit transient selection updates (eg. deselect then
+        # select). Clicking on embedded widgets inside a node can also cause
+        # selection to briefly clear. Debounce and query the final selection.
+        try:
+            self._selection_timer.start(0)
+        except Exception:
+            # Fallback: behave like the default signal payload.
+            if selected:
+                self.set_node(selected[0])
+
+    def _on_nodes_deleted(self, node_ids: list[str]) -> None:
+        if not self._node_id:
+            return
+        if self._node_id in set(str(x) for x in (node_ids or [])):
+            self.set_node(None, force_clear=True)
+
+    def _on_editor_closed(self, _node_id: str) -> None:
+        # User closed the editor explicitly; clear the view.
+        self.set_node(None, force_clear=True)
+
+    def _apply_graph_selection(self) -> None:
+        """
+        Apply the current graph selection to the properties panel.
+
+        Keep showing the last node when selection is empty.
+
+        Some embedded node controls (eg. inline state expand/collapse) can
+        temporarily clear selection during the click sequence. Clearing the
+        panel on empty selection causes a visible flash. Since Studio only
+        needs a single active properties view, keep the last shown node until
+        another node is selected or the node is deleted.
+        """
+        g = self._node_graph
+        selected_nodes: list[Any] = []
+        if g is not None:
+            try:
+                selected_nodes = list(g.selected_nodes() or [])  # type: ignore[attr-defined]
+            except Exception:
+                selected_nodes = []
+        if selected_nodes:
+            self.set_node(selected_nodes[0])
+            return
+        # No selection: keep current panel content (do not clear).
+        return
+
+    def _on_editor_property_changed(self, node_id: str, prop_name: str, prop_value: Any) -> None:
+        if self._block_signal:
+            return
+        g = self._node_graph
+        if g is None:
+            return
+        nid = str(node_id or "").strip()
+        if not nid:
+            return
+        try:
+            node = g.get_node_by_id(nid)  # type: ignore[attr-defined]
+        except Exception:
+            node = None
+        if node is None:
+            return
+        try:
+            node.set_property(prop_name, prop_value, push_undo=True)
+        except Exception:
+            logger.exception("set_property failed nodeId=%s prop=%s", nid, prop_name)
+
+    def _on_graph_property_changed(self, node: Any, prop_name: str, prop_value: Any) -> None:
+        """
+        Keep UI in sync when node properties are updated externally (runtime sync, undo, etc.).
+        """
+        if self._editor is None or self._node_id is None:
+            return
+        try:
+            if str(node.id or "") != self._node_id:
+                return
+        except Exception:
+            return
+        try:
+            w = self._editor.get_widget(prop_name)
+        except Exception:
+            w = None
+        if w is None:
+            return
+        try:
+            cur = w.get_value()
+        except Exception:
+            cur = None
+        if cur == prop_value:
+            return
+        self._block_signal = True
+        try:
+            w.set_value(prop_value)
+        except Exception:
+            pass
+        finally:
+            self._block_signal = False
 
 
 def _is_json_state_value(node: Any, prop_name: str) -> bool:

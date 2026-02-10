@@ -16,7 +16,7 @@ from ..nodegraph.runtime_compiler import compile_runtime_graphs_from_studio
 from ..pystudio_service_bridge import PyStudioServiceBridge, PyStudioServiceBridgeConfig
 from ..pystudio_node_registry import SERVICE_CLASS as STUDIO_SERVICE_CLASS
 from ..ui_bus import UiCommand, UiCommandApplier
-from .node_property_widgets import F8StudioPropertiesBinWidget
+from .node_property_widgets import F8StudioSingleNodePropertiesWidget
 from .palette_widget import F8StudioNodesPaletteWidget
 from .service_log_widget import ServiceLogDock
 
@@ -75,7 +75,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         self._log_dock.append(service_id, line)
 
     def _setup_docks(self) -> None:
-        prop_editor = F8StudioPropertiesBinWidget(node_graph=self.studio_graph)
+        prop_editor = F8StudioSingleNodePropertiesWidget(node_graph=self.studio_graph)
         self._prop_editor = prop_editor
         prop_dock = QtWidgets.QDockWidget("Properties", self)
         prop_dock.setWidget(prop_editor)

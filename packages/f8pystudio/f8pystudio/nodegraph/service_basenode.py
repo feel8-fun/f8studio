@@ -618,6 +618,52 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             return
         self._graph_prop_hooked = True
 
+    def _select_node_from_embedded_widget(self) -> None:
+        """
+        Ensure node selection + property panel update when clicking embedded widgets.
+
+        QGraphicsProxyWidget-hosted controls (eg. state inline toggle headers)
+        can consume mouse events so the viewer never emits `node_selected`.
+        This makes parts of the node unselectable, and the properties panel will
+        not update. Call this from embedded widget handlers to keep behavior
+        consistent: clicking anywhere on the node selects it and updates props.
+        """
+        node = self._backend_node()
+        g = self._graph()
+        if node is None or g is None:
+            return
+        scene = None
+        try:
+            scene = self.scene()
+        except Exception:
+            scene = None
+
+        try:
+            mods = QtWidgets.QApplication.keyboardModifiers()
+        except Exception:
+            mods = QtCore.Qt.NoModifier
+        multi = bool(mods & (QtCore.Qt.ControlModifier | QtCore.Qt.ShiftModifier))
+
+        if scene is not None and not multi:
+            try:
+                scene.clearSelection()
+            except Exception:
+                pass
+        try:
+            self.setSelected(True)
+        except Exception:
+            pass
+
+        # Drive the studio properties panel (listens to graph signals).
+        try:
+            g.node_selected.emit(node)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        try:
+            g.node_selection_changed.emit([node], [])  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
     def _bridge(self) -> ServiceBridge | None:
         g = self._graph()
         try:
@@ -1998,6 +2044,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
 
             # Connect toggle.
             btn.toggled.connect(lambda v, _n=n: self._on_state_toggle(_n, bool(v)))  # type: ignore[attr-defined]
+            btn.pressed.connect(self._select_node_from_embedded_widget)  # type: ignore[attr-defined]
 
             # Install/replace proxy.
             proxy = self._state_inline_proxies.get(n)
