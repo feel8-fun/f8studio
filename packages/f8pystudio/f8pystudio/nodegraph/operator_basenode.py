@@ -34,6 +34,38 @@ from .service_basenode import F8StudioServiceNodeItem
 logger = logging.getLogger(__name__)
 
 
+def _state_field_info(field: Any) -> tuple[str, bool, Any, str]:
+    """
+    Best-effort extraction for state-field port decisions.
+
+    Returns (name, show_on_node, access_obj, access_str).
+    """
+    if isinstance(field, dict):
+        name = str(field.get("name") or "").strip()
+        show_on_node = bool(field.get("showOnNode"))
+        access = field.get("access")
+    else:
+        try:
+            name = str(field.name or "").strip()
+        except AttributeError:
+            name = ""
+        try:
+            show_on_node = bool(field.showOnNode)
+        except AttributeError:
+            show_on_node = False
+        try:
+            access = field.access
+        except AttributeError:
+            access = None
+
+    if isinstance(access, F8StateAccess):
+        access_str = str(access.value or "").strip().lower()
+    else:
+        access_str = str(access or "").strip().lower()
+
+    return name, show_on_node, access, access_str
+
+
 class F8StudioOperatorBaseNode(F8StudioBaseNode):
     """
     Base class for all operator nodes (nodes that are intended to live inside
@@ -93,19 +125,20 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
     def _build_state_port(self):
 
         for s in self.effective_state_fields():
-            if not s.showOnNode:
+            name, show_on_node, access, access_str = _state_field_info(s)
+            if not show_on_node or not name:
                 continue
 
-            if s.access in [F8StateAccess.rw, F8StateAccess.wo]:
+            if access in [F8StateAccess.rw, F8StateAccess.wo] or access_str in {"rw", "wo"}:
                 self.add_input(
-                    f"[S]{s.name}",
+                    f"[S]{name}",
                     color=STATE_PORT_COLOR,
                     painter_func=draw_square_port,
                 )
 
-            if s.access in [F8StateAccess.rw, F8StateAccess.ro]:
+            if access in [F8StateAccess.rw, F8StateAccess.ro] or access_str in {"rw", "ro"}:
                 self.add_output(
-                    f"{s.name}[S]",
+                    f"{name}[S]",
                     color=STATE_PORT_COLOR,
                     painter_func=draw_square_port,
                 )
@@ -211,16 +244,13 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
                 continue
 
         for s in list(self.effective_state_fields() or []):
-            try:
-                if not bool(s.showOnNode):
-                    continue
-                name = str(s.name or "").strip()
-                if not name:
-                    continue
-                desired_inputs[f"[S]{name}"] = {"color": STATE_PORT_COLOR, "painter_func": draw_square_port}
-                desired_outputs[f"{name}[S]"] = {"color": STATE_PORT_COLOR, "painter_func": draw_square_port}
-            except Exception:
+            name, show_on_node, access, access_str = _state_field_info(s)
+            if not show_on_node or not name:
                 continue
+            if access in [F8StateAccess.rw, F8StateAccess.wo] or access_str in {"rw", "wo"}:
+                desired_inputs[f"[S]{name}"] = {"color": STATE_PORT_COLOR, "painter_func": draw_square_port}
+            if access in [F8StateAccess.rw, F8StateAccess.ro] or access_str in {"rw", "ro"}:
+                desired_outputs[f"{name}[S]"] = {"color": STATE_PORT_COLOR, "painter_func": draw_square_port}
 
         # Remove ports that no longer exist in spec (disconnect first).
         current_input_names = set(self.inputs().keys())
