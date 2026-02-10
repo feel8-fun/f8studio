@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 _MAX_BODY_BYTES = 1024 * 1024
 _MAX_HEADER_BYTES = 32 * 1024
 _WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+_RAW_LOG_MAX_CHARS = 4000
 
 
 @dataclass(frozen=True)
@@ -339,12 +340,9 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
             bind_address=str(_unwrap_json_value(self._initial_state.get("bindAddress")) or "0.0.0.0"),
             port=self._parse_port(_unwrap_json_value(self._initial_state.get("port")), default=30010),
         )
-        self._print_enabled = self._parse_bool(_unwrap_json_value(self._initial_state.get("printEnabled")), default=False)
-        self._print_headers = self._parse_bool(_unwrap_json_value(self._initial_state.get("printHeaders")), default=False)
-        self._print_body = self._parse_bool(_unwrap_json_value(self._initial_state.get("printBody")), default=False)
-        self._print_responses = self._parse_bool(_unwrap_json_value(self._initial_state.get("printResponses")), default=False)
-        self._print_raw = self._parse_bool(_unwrap_json_value(self._initial_state.get("printRaw")), default=False)
-        self._print_pretty = self._parse_bool(_unwrap_json_value(self._initial_state.get("printPretty")), default=False)
+        self._print_enabled = self._parse_bool(
+            _unwrap_json_value(self._initial_state.get("printEnabled")), default=False
+        )
 
         self._event_include_payload = self._parse_bool(
             _unwrap_json_value(self._initial_state.get("eventIncludePayload")), default=False
@@ -399,17 +397,7 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
             if port < 1 or port > 65535:
                 raise ValueError("port must be 1..65535")
             return port
-        if name == "printRaw":
-            return self._parse_bool(value, default=False)
-        if name == "printPretty":
-            return self._parse_bool(value, default=False)
         if name == "printEnabled":
-            return self._parse_bool(value, default=False)
-        if name == "printHeaders":
-            return self._parse_bool(value, default=False)
-        if name == "printBody":
-            return self._parse_bool(value, default=False)
-        if name == "printResponses":
             return self._parse_bool(value, default=False)
         if name == "eventIncludePayload":
             return self._parse_bool(value, default=False)
@@ -435,23 +423,8 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
                 self._cfg = _ServerConfig(bind_address=self._cfg.bind_address, port=port)
                 await self._restart_server()
             return
-        if name == "printRaw":
-            self._print_raw = self._parse_bool(_unwrap_json_value(value), default=False)
-            return
-        if name == "printPretty":
-            self._print_pretty = self._parse_bool(_unwrap_json_value(value), default=False)
-            return
         if name == "printEnabled":
             self._print_enabled = self._parse_bool(_unwrap_json_value(value), default=False)
-            return
-        if name == "printHeaders":
-            self._print_headers = self._parse_bool(_unwrap_json_value(value), default=False)
-            return
-        if name == "printBody":
-            self._print_body = self._parse_bool(_unwrap_json_value(value), default=False)
-            return
-        if name == "printResponses":
-            self._print_responses = self._parse_bool(_unwrap_json_value(value), default=False)
             return
         if name == "eventIncludePayload":
             self._event_include_payload = self._parse_bool(_unwrap_json_value(value), default=False)
@@ -509,7 +482,15 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
     def _set_error(self, msg: str | None) -> None:
         self._last_error = msg
         if msg:
-            print(f"[{self.node_id}:lovense_mock_server] {msg}")
+            logger.error("[%s:lovense_mock_server] %s", self.node_id, msg)
+
+    def _raw_log(self, direction: str, payload: str) -> None:
+        if not self._print_enabled:
+            return
+        s = str(payload or "")
+        if len(s) > _RAW_LOG_MAX_CHARS:
+            s = f"{s[:_RAW_LOG_MAX_CHARS]}...(truncated {len(s) - _RAW_LOG_MAX_CHARS})"
+        logger.info("[%s:lovense_mock_server] %s(raw) %s", self.node_id, str(direction), s)
 
     async def _safe_set_state(self, field: str, value: Any) -> None:
         try:
@@ -594,14 +575,10 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
             and headers.get("upgrade", "").lower() == "websocket"
             and "sec-websocket-key" in headers
         ):
-            if self._print_enabled and self._print_headers:
-                try:
-                    print(
-                        f"[{self.node_id}:lovense_mock_server] WS upgrade {path_s} "
-                        f"headers={json.dumps(self._pick_headers(headers), ensure_ascii=False, separators=(',', ':'))}"
-                    )
-                except Exception:
-                    pass
+            self._raw_log(
+                "in",
+                f"{request_line}\nheaders={json.dumps(headers, ensure_ascii=False, separators=(',', ':'))}",
+            )
             await self._handle_websocket_v1(reader, writer, headers)
             return False
 
@@ -615,27 +592,11 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
 
         content_type = headers.get("content-type", "")
         body_text = await self._read_body_text(reader, headers)
-        if self._print_enabled and self._print_headers:
-            try:
-                picked = self._pick_headers(headers)
-                print(
-                    f"[{self.node_id}:lovense_mock_server] "
-                    f"headers={json.dumps(picked, ensure_ascii=False, separators=(',', ':'))}"
-                )
-                if content_type and not picked.get("content-type"):
-                    print(f"[{self.node_id}:lovense_mock_server] content-type={str(content_type)}")
-            except Exception:
-                pass
-        if self._print_enabled and self._print_body:
-            try:
-                text = str(body_text or "")
-                if len(text) > 2000:
-                    head = text[:2000]
-                    print(f"[{self.node_id}:lovense_mock_server] bodyText={head}...(truncated {len(text) - 2000})")
-                else:
-                    print(f"[{self.node_id}:lovense_mock_server] bodyText={text}")
-            except Exception:
-                pass
+        self._raw_log(
+            "in",
+            f"{request_line}\nheaders={json.dumps(headers, ensure_ascii=False, separators=(',', ':'))}\n"
+            f"bodyText={str(body_text or '')}",
+        )
         try:
             raw_payload = _parse_body_text(body_text, content_type)
         except Exception as exc:
@@ -675,19 +636,11 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
         if typ in ("ping", "pong"):
             if typ == "ping":
                 resp_obj = {"type": "pong"}
-                if self._print_enabled and self._print_responses:
-                    try:
-                        print(f"[{self.node_id}:lovense_mock_server] resp status=200 body={_json_dumps_compact(resp_obj).decode('utf-8', errors='replace')}")
-                    except Exception:
-                        pass
+                self._raw_log("out", f"status=200 body={_json_dumps_compact(resp_obj).decode('utf-8', errors='replace')}")
                 await self._write_json(writer, status=200, obj=resp_obj, keep_alive=keep_alive)
             else:
                 resp_obj = {"ok": True}
-                if self._print_enabled and self._print_responses:
-                    try:
-                        print(f"[{self.node_id}:lovense_mock_server] resp status=200 body={_json_dumps_compact(resp_obj).decode('utf-8', errors='replace')}")
-                    except Exception:
-                        pass
+                self._raw_log("out", f"status=200 body={_json_dumps_compact(resp_obj).decode('utf-8', errors='replace')}")
                 await self._write_json(writer, status=200, obj=resp_obj, keep_alive=keep_alive)
             return keep_alive
 
@@ -707,52 +660,14 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
         ):
             published_event = await self._safe_write_event(entry)
 
-        if self._print_enabled:
-            if self._print_raw:
-                event_to_print = published_event if isinstance(published_event, dict) else entry
-                if self._print_pretty:
-                    print(
-                        f"[{self.node_id}:lovense_mock_server] "
-                        f"event={json.dumps(event_to_print, ensure_ascii=False, indent=2)}"
-                    )
-                else:
-                    print(
-                        f"[{self.node_id}:lovense_mock_server] "
-                        f"event={json.dumps(event_to_print, ensure_ascii=False, separators=(',', ':'))}"
-                    )
-            else:
-                event_id = ""
-                seq = ""
-                if isinstance(published_event, dict):
-                    event_id = str(published_event.get("eventId") or "")
-                    seq = str(published_event.get("seq") or "")
-                cmd_info = entry.get("command") if isinstance(entry, dict) else None
-                print(f"[{self.node_id}:lovense_mock_server] seq={seq} id={event_id} command={cmd_info}")
-
         resp_obj = self._build_command_response(normalized, summary=summary, ts_ms=ts_ms)
 
         if typ == "get_toys":
-            if self._print_enabled and self._print_responses:
-                try:
-                    dumped = _json_dumps_compact(resp_obj).decode("utf-8", errors="replace")
-                    if len(dumped) > 2000:
-                        print(f"[{self.node_id}:lovense_mock_server] resp status=200 body={dumped[:2000]}...(truncated {len(dumped) - 2000})")
-                    else:
-                        print(f"[{self.node_id}:lovense_mock_server] resp status=200 body={dumped}")
-                except Exception:
-                    pass
+            self._raw_log("out", f"status=200 body={_json_dumps_compact(resp_obj).decode('utf-8', errors='replace')}")
             await self._write_json(writer, status=200, obj=resp_obj, keep_alive=keep_alive)
             return keep_alive
 
-        if self._print_enabled and self._print_responses:
-            try:
-                dumped = _json_dumps_compact(resp_obj).decode("utf-8", errors="replace")
-                if len(dumped) > 2000:
-                    print(f"[{self.node_id}:lovense_mock_server] resp status=200 body={dumped[:2000]}...(truncated {len(dumped) - 2000})")
-                else:
-                    print(f"[{self.node_id}:lovense_mock_server] resp status=200 body={dumped}")
-            except Exception:
-                pass
+        self._raw_log("out", f"status=200 body={_json_dumps_compact(resp_obj).decode('utf-8', errors='replace')}")
 
         await self._write_json(writer, status=200, obj=resp_obj, keep_alive=keep_alive)
         return keep_alive
@@ -1333,7 +1248,7 @@ LovenseMockServerRuntimeNode.SPEC = F8OperatorSpec(
     schemaVersion=F8OperatorSchemaVersion.f8operator_1,
     serviceClass=SERVICE_CLASS,
     operatorClass=OPERATOR_CLASS,
-    version="0.0.1",
+    version="0.0.2",
     label="Lovense Mock Server",
     description="Event-driven input node that mocks the Lovense Local API and publishes received commands as state.",
     tags=["io", "lovense", "http", "server", "event"],
@@ -1356,48 +1271,8 @@ LovenseMockServerRuntimeNode.SPEC = F8OperatorSpec(
         ),
         F8StateSpec(
             name="printEnabled",
-            label="Print Incoming",
-            description="Print received commands to stdout (debug).",
-            valueSchema=boolean_schema(default=False),
-            access=F8StateAccess.rw,
-            showOnNode=False,
-        ),
-        F8StateSpec(
-            name="printHeaders",
-            label="Print Headers",
-            description="Print selected request headers to stdout (debug).",
-            valueSchema=boolean_schema(default=False),
-            access=F8StateAccess.rw,
-            showOnNode=False,
-        ),
-        F8StateSpec(
-            name="printBody",
-            label="Print Body",
-            description="Print request body text to stdout (debug).",
-            valueSchema=boolean_schema(default=False),
-            access=F8StateAccess.rw,
-            showOnNode=False,
-        ),
-        F8StateSpec(
-            name="printResponses",
-            label="Print Responses",
-            description="Print response JSON bodies to stdout (debug).",
-            valueSchema=boolean_schema(default=False),
-            access=F8StateAccess.rw,
-            showOnNode=False,
-        ),
-        F8StateSpec(
-            name="printRaw",
-            label="Print Raw JSON",
-            description="Log full inbound command payloads (debug).",
-            valueSchema=boolean_schema(default=False),
-            access=F8StateAccess.rw,
-            showOnNode=False,
-        ),
-        F8StateSpec(
-            name="printPretty",
-            label="Print Pretty JSON",
-            description="Pretty-print JSON when printRaw is enabled (debug).",
+            label="Print Raw IO",
+            description="If enabled, logs raw incoming requests and outgoing responses (debug).",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
             showOnNode=False,

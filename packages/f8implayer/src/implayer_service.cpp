@@ -360,7 +360,8 @@ void ImPlayerService::tick() {
             *player_,
             [this, &cb, &err, &playlist_snapshot, playlist_index_snapshot, playing, loop_snapshot]() {
               if (gui_ && player_) {
-                gui_->renderOverlay(*player_, cb, err, playlist_snapshot, playlist_index_snapshot, playing, loop_snapshot);
+                gui_->renderOverlay(*player_, cb, err, playlist_snapshot, playlist_index_snapshot, playing,
+                                    loop_snapshot);
                 gui_->clearRepaintFlag();
               }
             },
@@ -1148,20 +1149,22 @@ json ImPlayerService::describe() {
       state_field("active", schema_boolean(), "rw", "Active", "Pause playback when false.", true),
       state_field("loop", schema_boolean(), "rw", "Loop", "Repeat playlist when reaching EOF.", false),
       state_field("mediaUrl", schema_string(), "rw", "Media URL", "URI or file path to open.", true),
-      state_field("volume", schema_number(0.0, 1.0), "rw", "Volume", "0.0-1.0", false, "slider"),
-      state_field("playing", schema_boolean(), "ro", "Playing", "Playback state.", true),
-      state_field("duration", schema_number(), "ro", "Duration", "Duration (seconds)."),
+      state_field("volume", schema_number(0.0, 1.0), "rw", "Volume", "0.0-1.0", true, "slider"),
+      state_field("playing", schema_boolean(), "ro", "Playing", "Playback state.", false),
+      state_field("duration", schema_number(), "ro", "Duration", "Duration (seconds).", true),
       state_field("lastError", schema_string(), "ro", "Last Error", "Last error message."),
       state_field("videoShmName", schema_string(), "ro", "Video SHM", "Shared memory region name.", true),
       state_field("videoShmEvent", schema_string(), "ro", "Video Event", "Optional named event to signal new frames."),
       state_field("videoShmMaxWidth", schema_integer(), "rw", "SHM Max Width", "Downsample limit (0 = auto)."),
       state_field("videoShmMaxHeight", schema_integer(), "rw", "SHM Max Height", "Downsample limit (0 = auto)."),
       state_field("videoShmMaxFps", schema_number(), "rw", "SHM Max FPS", "Copy rate limit (0 = unlimited)."),
-      state_field("decodedWidth", schema_integer(), "ro", "Decoded Width", "Decoded/source video width (on-screen uses this).", true),
-      state_field("decodedHeight", schema_integer(), "ro", "Decoded Height", "Decoded/source video height (on-screen uses this).", true),
-      state_field("videoWidth", schema_integer(), "ro", "Width", "Width of the video frame.", true),
-      state_field("videoHeight", schema_integer(), "ro", "Height", "Height of the video frame.", true),
-      state_field("videoPitch", schema_integer(), "ro", "Pitch", "Pitch of the video frame."),
+      state_field("decodedWidth", schema_integer(), "ro", "Decoded Width",
+                  "Decoded/source video width (on-screen uses this).", false),
+      state_field("decodedHeight", schema_integer(), "ro", "Decoded Height",
+                  "Decoded/source video height (on-screen uses this).", false),
+      state_field("videoWidth", schema_integer(), "ro", "Width", "Width of the video frame.", false),
+      state_field("videoHeight", schema_integer(), "ro", "Height", "Height of the video frame.", false),
+      state_field("videoPitch", schema_integer(), "ro", "Pitch", "Pitch of the video frame.", false),
   });
 
   service["dataOutPorts"] = json::array({
