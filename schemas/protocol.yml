@@ -79,6 +79,10 @@ components:
           type: boolean
           default: true
           description: Whether the port must be connected/provided
+        showOnNode:
+          type: boolean
+          default: true
+          description: If true, render this port on the node body; otherwise only in the inspector.
       required:
         - name
         - valueSchema

@@ -60,8 +60,10 @@ from .f8_state_widget_builder import (
 )
 from .f8_ui_override_ops import (
     base_command_show_on_node as _base_command_show_on_node,
+    base_data_port_show_on_node as _base_data_port_show_on_node,
     find_base_state_field as _find_base_state_field,
     set_command_show_on_node_override as _set_command_show_on_node_override,
+    set_data_port_show_on_node_override as _set_data_port_show_on_node_override,
     set_state_field_ui_override as _set_state_field_ui_override,
 )
 from ..command_ui_protocol import CommandUiHandler, CommandUiSource
@@ -640,9 +642,10 @@ class _F8EditExecPortDialog(QtWidgets.QDialog):
 
 
 class _F8EditDataPortDialog(QtWidgets.QDialog):
-    def __init__(self, parent=None, *, title: str, port: F8DataPortSpec):
+    def __init__(self, parent=None, *, title: str, port: F8DataPortSpec, ui_only: bool = False):
         super().__init__(parent)
         self.setWindowTitle(title)
+        self._ui_only = bool(ui_only)
         try:
             self._schema = port.valueSchema or _schema_from_json_obj({"type": "any"})
         except Exception:
@@ -652,6 +655,11 @@ class _F8EditDataPortDialog(QtWidgets.QDialog):
         self._name.setClearButtonEnabled(True)
         self._required = QtWidgets.QCheckBox()
         self._required.setChecked(bool(port.required))
+        self._show_on_node = QtWidgets.QCheckBox()
+        try:
+            self._show_on_node.setChecked(bool(port.showOnNode))
+        except Exception:
+            self._show_on_node.setChecked(True)
         self._desc = QtWidgets.QPlainTextEdit(str(port.description or ""))
 
         self._schema_summary = QtWidgets.QLabel("")
@@ -664,6 +672,7 @@ class _F8EditDataPortDialog(QtWidgets.QDialog):
         form = QtWidgets.QFormLayout()
         form.addRow("Name", self._name)
         form.addRow("Required", self._required)
+        form.addRow("Show On Node", self._show_on_node)
         form.addRow("Description", self._desc)
 
         schema_row = QtWidgets.QHBoxLayout()
@@ -678,6 +687,13 @@ class _F8EditDataPortDialog(QtWidgets.QDialog):
         layout = QtWidgets.QVBoxLayout(self)
         layout.addLayout(form)
         layout.addWidget(buttons)
+
+        if self._ui_only:
+            for w in (self._name, self._required, schema_btn):
+                try:
+                    w.setEnabled(False)
+                except Exception:
+                    pass
 
     def _refresh_schema_summary(self) -> None:
         t = _schema_type(self._schema)
@@ -698,8 +714,13 @@ class _F8EditDataPortDialog(QtWidgets.QDialog):
     def port(self) -> F8DataPortSpec:
         name = str(self._name.text() or "").strip()
         required = bool(self._required.isChecked())
+        show_on_node = bool(self._show_on_node.isChecked())
         desc = str(self._desc.toPlainText() or "").strip() or None
-        return F8DataPortSpec(name=name, required=required, description=desc, valueSchema=self._schema)
+        port = F8DataPortSpec(name=name, required=required, description=desc, valueSchema=self._schema)
+        try:
+            return port.model_copy(update={"showOnNode": bool(show_on_node)})
+        except Exception:
+            return port
 
 
 class _F8EditStateFieldDialog(QtWidgets.QDialog):
@@ -909,9 +930,25 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
             for name in list(spec.execOutPorts or []):
                 self._sec_exec_out.add_row(self._make_exec_row(str(name), is_in=False))
 
-        for p in list(spec.dataInPorts or []):
+        # Use effective ports so showOnNode UI overrides are reflected in the editor.
+        try:
+            eff_data_in = list(self._node.effective_data_in_ports() or [])  # type: ignore[attr-defined]
+        except Exception:
+            try:
+                eff_data_in = list(spec.dataInPorts or [])
+            except Exception:
+                eff_data_in = []
+        try:
+            eff_data_out = list(self._node.effective_data_out_ports() or [])  # type: ignore[attr-defined]
+        except Exception:
+            try:
+                eff_data_out = list(spec.dataOutPorts or [])
+            except Exception:
+                eff_data_out = []
+
+        for p in eff_data_in:
             self._sec_data_in.add_row(self._make_data_row(p, is_in=True))
-        for p in list(spec.dataOutPorts or []):
+        for p in eff_data_out:
             self._sec_data_out.add_row(self._make_data_row(p, is_in=False))
 
     def _make_exec_row(self, name: str, *, is_in: bool) -> _F8SpecNameRow:
@@ -933,7 +970,8 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
         row.setToolTip(self._data_tooltip(port))
         row.setProperty("_port_dir", "data_in" if is_in else "data_out")
         editable = bool(self._editable_data_in if is_in else self._editable_data_out)
-        row.set_row_editable(allow_rename=editable, allow_delete=editable, allow_edit=editable)
+        # Even when spec ports are not editable, allow opening the dialog to edit UI-only fields (showOnNode).
+        row.set_row_editable(allow_rename=editable, allow_delete=editable, allow_edit=True)
         return row
 
     def _data_tooltip(self, port: F8DataPortSpec) -> str:
@@ -961,21 +999,45 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
 
     def _edit_data(self, row: _F8SpecNameRow) -> None:
         dir_s = str(row.property("_port_dir") or "")
-        if (dir_s == "data_in" and not self._editable_data_in) or (dir_s == "data_out" and not self._editable_data_out):
-            return
+        ui_only = bool((dir_s == "data_in" and not self._editable_data_in) or (dir_s == "data_out" and not self._editable_data_out))
         port = row.property("_port")
         if not isinstance(port, F8DataPortSpec):
             port = F8DataPortSpec(
                 name=row.name_edit.text(), required=True, valueSchema=_schema_from_json_obj({"type": "any"})
             )
-        dlg = _F8EditDataPortDialog(self, title="Edit data port", port=port)
+        dlg = _F8EditDataPortDialog(self, title="Edit data port", port=port, ui_only=ui_only)
         if dlg.exec_() != QtWidgets.QDialog.Accepted:
             return
         new_port = dlg.port()
+        if ui_only:
+            try:
+                show_on_node = bool(new_port.showOnNode)
+            except Exception:
+                show_on_node = True
+            self._apply_data_port_ui_override(str(port.name or ""), bool(show_on_node), is_in=(dir_s == "data_in"))
+            self._load_from_spec()
+            return
         row.setProperty("_port", new_port)
         row.name_edit.setText(str(new_port.name or ""))
         row.setToolTip(self._data_tooltip(new_port))
         self._commit()
+
+    def _apply_data_port_ui_override(self, name: str, show_on_node: bool, *, is_in: bool) -> None:
+        node = self._node
+        if node is None:
+            return
+        try:
+            spec = node.spec
+        except Exception:
+            spec = None
+        base_show = _base_data_port_show_on_node(spec, name=str(name or "").strip(), is_in=bool(is_in))
+        _set_data_port_show_on_node_override(
+            node,
+            name=str(name or "").strip(),
+            is_in=bool(is_in),
+            show_on_node=bool(show_on_node),
+            base_show_on_node=bool(base_show),
+        )
 
     def _rename_data(self, row: _F8SpecNameRow, name: str) -> None:
         dir_s = str(row.property("_port_dir") or "")

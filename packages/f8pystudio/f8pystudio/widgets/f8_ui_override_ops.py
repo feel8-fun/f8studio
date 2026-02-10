@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from f8pysdk import F8Command, F8ServiceSpec, F8StateSpec
+from f8pysdk import F8Command, F8DataPortSpec, F8ServiceSpec, F8StateSpec
 
 STATEFIELD_UI_KEYS: tuple[str, ...] = ("showOnNode", "uiControl", "uiLanguage", "label", "description")
+DATAPORT_UI_KEYS: tuple[str, ...] = ("showOnNode",)
 
 
 def get_ui_overrides(node: Any) -> dict[str, Any]:
@@ -103,6 +104,69 @@ def base_command_show_on_node(spec: Any, *, name: str) -> bool:
         except Exception:
             continue
     return False
+
+
+def base_data_port_show_on_node(spec: Any, *, name: str, is_in: bool) -> bool:
+    n = str(name or "").strip()
+    if not n:
+        return True
+    try:
+        ports = list(spec.dataInPorts or []) if bool(is_in) else list(spec.dataOutPorts or [])
+    except Exception:
+        ports = []
+    for p in ports:
+        try:
+            if isinstance(p, F8DataPortSpec) and str(p.name or "").strip() == n:
+                try:
+                    return bool(p.showOnNode)
+                except Exception:
+                    return True
+        except Exception:
+            continue
+    return True
+
+
+def set_data_port_show_on_node_override(
+    node: Any,
+    *,
+    name: str,
+    is_in: bool,
+    show_on_node: bool,
+    base_show_on_node: bool,
+) -> None:
+    """
+    Persist UI-only overrides for a data port (currently only showOnNode).
+
+    Stores only diffs; if value matches base spec, removes the override entry.
+    """
+    n = str(name or "").strip()
+    if not n:
+        return
+    ui = get_ui_overrides(node)
+    ports_over = ui.get("dataPorts")
+    if not isinstance(ports_over, dict):
+        ports_over = {}
+    key = "in" if bool(is_in) else "out"
+    dir_over = ports_over.get(key)
+    if not isinstance(dir_over, dict):
+        dir_over = {}
+
+    if bool(show_on_node) == bool(base_show_on_node):
+        dir_over.pop(n, None)
+    else:
+        dir_over[n] = {"showOnNode": bool(show_on_node)}
+
+    if dir_over:
+        ports_over[key] = dir_over
+    else:
+        ports_over.pop(key, None)
+
+    if ports_over:
+        ui["dataPorts"] = ports_over
+    else:
+        ui.pop("dataPorts", None)
+
+    set_ui_overrides(node, ui, rebuild=True)
 
 
 def find_base_state_field(spec: Any, *, name: str) -> F8StateSpec | None:

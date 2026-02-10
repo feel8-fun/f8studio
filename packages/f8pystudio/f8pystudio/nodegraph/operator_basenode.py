@@ -110,13 +110,25 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
 
     def _build_data_port(self):
 
-        for p in self.spec.dataInPorts:
+        for p in self.effective_data_in_ports():
+            try:
+                show_on_node = bool(p.showOnNode)
+            except Exception:
+                show_on_node = True
+            if not show_on_node:
+                continue
             self.add_input(
                 f"[D]{p.name}",
                 color=DATA_PORT_COLOR,
             )
 
-        for p in self.spec.dataOutPorts:
+        for p in self.effective_data_out_ports():
+            try:
+                show_on_node = bool(p.showOnNode)
+            except Exception:
+                show_on_node = True
+            if not show_on_node:
+                continue
             self.add_output(
                 f"{p.name}[D]",
                 color=DATA_PORT_COLOR,
@@ -232,16 +244,58 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
         for p in list(self.spec.execOutPorts or []):
             desired_outputs[f"{p}[E]"] = {"color": EXEC_PORT_COLOR, "painter_func": draw_exec_port}
 
-        for p in list(self.spec.dataInPorts or []):
+        def _port_has_connections(port: Any) -> bool:
+            if port is None:
+                return False
             try:
-                desired_inputs[f"[D]{p.name}"] = {"color": DATA_PORT_COLOR}
+                return bool(port.connected_ports())
             except Exception:
-                continue
-        for p in list(self.spec.dataOutPorts or []):
+                try:
+                    return bool(port.connected_ports)
+                except Exception:
+                    return False
+
+        for p in list(self.effective_data_in_ports() or []):
             try:
-                desired_outputs[f"{p.name}[D]"] = {"color": DATA_PORT_COLOR}
+                n = str(p.name or "").strip()
             except Exception:
+                n = ""
+            if not n:
                 continue
+            port_name = f"[D]{n}"
+            try:
+                show_on_node = bool(p.showOnNode)
+            except Exception:
+                show_on_node = True
+            if not show_on_node:
+                try:
+                    if _port_has_connections(self.get_input(port_name)):
+                        show_on_node = True
+                except Exception:
+                    pass
+            if show_on_node:
+                desired_inputs[port_name] = {"color": DATA_PORT_COLOR}
+
+        for p in list(self.effective_data_out_ports() or []):
+            try:
+                n = str(p.name or "").strip()
+            except Exception:
+                n = ""
+            if not n:
+                continue
+            port_name = f"{n}[D]"
+            try:
+                show_on_node = bool(p.showOnNode)
+            except Exception:
+                show_on_node = True
+            if not show_on_node:
+                try:
+                    if _port_has_connections(self.get_output(port_name)):
+                        show_on_node = True
+                except Exception:
+                    pass
+            if show_on_node:
+                desired_outputs[port_name] = {"color": DATA_PORT_COLOR}
 
         for s in list(self.effective_state_fields() or []):
             name, show_on_node, access, access_str = _state_field_info(s)
