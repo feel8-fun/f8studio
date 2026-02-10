@@ -14,6 +14,11 @@ class F8StudioNodeViewer(NodeViewer):
     - `Tab`: open node search
     """
 
+    _PAN_STEP_PX: int = 50
+    _PAN_STEP_PX_FAST: int = 150
+    _ZOOM_TICKS: int = 1
+    _ZOOM_TICKS_FAST: int = 3
+
     def __init__(self, parent=None, undo_stack=None):
         super().__init__(parent=parent, undo_stack=undo_stack)
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
@@ -44,6 +49,60 @@ class F8StudioNodeViewer(NodeViewer):
     def showEvent(self, event):
         super().showEvent(event)
         self.setFocus()
+
+    def _pan_by_pixels(self, dx_px: int, dy_px: int) -> None:
+        center_view = QtCore.QPoint(int(self.viewport().width() / 2), int(self.viewport().height() / 2))
+        scene_center = self.mapToScene(center_view)
+        scene_offset = self.mapToScene(center_view + QtCore.QPoint(dx_px, dy_px))
+        delta = scene_offset - scene_center
+        self._set_viewer_pan(delta.x(), delta.y())
+
+    def _zoom_by_ticks(self, ticks: int) -> None:
+        center_view = QtCore.QPoint(int(self.viewport().width() / 2), int(self.viewport().height() / 2))
+        for _ in range(abs(ticks)):
+            self._set_viewer_zoom(1.0 if ticks > 0 else -1.0, 0.0, center_view)
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        super().keyPressEvent(event)
+
+        # Avoid interfering when Tab search is active (it should generally hold focus,
+        # but be defensive in case focus is still on the viewer).
+        if self._search_widget.isVisible():
+            return
+
+        key = event.key()
+        mods = event.modifiers()
+        fast = bool(mods & QtCore.Qt.ShiftModifier)
+        pan_step = self._PAN_STEP_PX_FAST if fast else self._PAN_STEP_PX
+        zoom_ticks = self._ZOOM_TICKS_FAST if fast else self._ZOOM_TICKS
+
+        # Pan: arrow keys or WASD (grab canvas style).
+        if key in (QtCore.Qt.Key_Left, QtCore.Qt.Key_A):
+            self._pan_by_pixels(-pan_step, 0)
+            event.accept()
+            return
+        if key in (QtCore.Qt.Key_Right, QtCore.Qt.Key_D):
+            self._pan_by_pixels(pan_step, 0)
+            event.accept()
+            return
+        if key in (QtCore.Qt.Key_Up, QtCore.Qt.Key_W):
+            self._pan_by_pixels(0, -pan_step)
+            event.accept()
+            return
+        if key in (QtCore.Qt.Key_Down, QtCore.Qt.Key_S):
+            self._pan_by_pixels(0, pan_step)
+            event.accept()
+            return
+
+        # Zoom: Q/E or PageUp/PageDown.
+        if key in (QtCore.Qt.Key_Q, QtCore.Qt.Key_PageUp):
+            self._zoom_by_ticks(zoom_ticks)
+            event.accept()
+            return
+        if key in (QtCore.Qt.Key_E, QtCore.Qt.Key_PageDown):
+            self._zoom_by_ticks(-zoom_ticks)
+            event.accept()
+            return
 
     def mousePressEvent(self, event):
         self.setFocus()
