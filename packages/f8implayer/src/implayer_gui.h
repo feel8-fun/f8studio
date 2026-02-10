@@ -21,6 +21,9 @@ class ImPlayerGui {
     std::function<void(double position_seconds)> seek;
     std::function<void(double volume01)> set_volume;
     std::function<void(bool loop)> set_loop;
+    std::function<void(const std::string& hwdec)> set_hwdec;
+    std::function<void(int extra_frames)> set_hwdec_extra_frames;
+    std::function<void(const std::string& fbo_format)> set_fbo_format;
 
     std::function<void(int index)> playlist_select;
     std::function<void()> playlist_next;
@@ -45,10 +48,14 @@ class ImPlayerGui {
 
  private:
   std::array<char, 1024> url_buf_{};
+  std::array<char, 32> hwdec_buf_{};
+  std::array<char, 16> hwdec_extra_frames_buf_{};
+  std::array<char, 32> fbo_format_buf_{};
   float volume01_ = 1.0f;
   float seek_pos_ = 0.0f;
   bool seeking_ = false;
   bool show_playlist_ = false;
+  bool show_stats_ = false;
   double last_interaction_time_s_ = 0.0;
   bool started_ = false;
   bool dirty_ = true;

@@ -41,9 +41,9 @@ class ImPlayerService final : public f8::cppsdk::LifecycleNode,
 
     std::size_t video_shm_bytes = f8::cppsdk::shm::kDefaultVideoShmBytes;
     std::uint32_t video_shm_slots = f8::cppsdk::shm::kDefaultVideoShmSlots;
-    std::uint32_t video_shm_max_width = 1920;
-    std::uint32_t video_shm_max_height = 1080;
-    double video_shm_max_fps = 30.0;
+    std::uint32_t video_shm_max_width = 600;
+    std::uint32_t video_shm_max_height = 600;
+    double video_shm_max_fps = 40.0;
 
     int window_width = 1280;
     int window_height = 720;

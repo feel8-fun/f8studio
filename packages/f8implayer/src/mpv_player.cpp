@@ -1,6 +1,7 @@
 #include "mpv_player.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <stdexcept>
@@ -18,6 +19,16 @@ namespace f8::implayer {
 namespace {
 
 constexpr double kDefaultVolumePercent = 100.0;
+constexpr double kEmaAlpha = 0.12;
+constexpr double kStutterThresholdMs = 50.0;
+
+double DurationMs(std::chrono::steady_clock::duration d) {
+  return std::chrono::duration<double, std::milli>(d).count();
+}
+
+std::uint64_t EstimateRgba8Bytes(unsigned width, unsigned height) {
+  return static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height) * 4ULL;
+}
 
 double Clamp01(double value) {
   return std::clamp(value, 0.0, 1.0);
@@ -79,23 +90,42 @@ void MpvPlayer::initializeMpv() {
   if (!mpv_)
     throw std::runtime_error("mpv_create failed");
 
+  // We're using the libmpv render API (mpv_render_context_render) to draw into our
+  // OpenGL FBO, so force the VO to "libmpv" to avoid mpv creating an additional
+  // VO pipeline/window that can duplicate GPU resources.
+  mpv_set_option_string(mpv_, "vo", "libmpv");
+
   mpv_set_option_string(mpv_, "terminal", "no");
   mpv_set_option_string(mpv_, "msg-level", "all=v");
-  mpv_set_option_string(mpv_, "config", "yes");
-  mpv_set_option_string(mpv_, "load-scripts", "yes");
+  // In an embedded player, user/global mpv.conf and Lua scripts can silently
+  // enable expensive GPU pipelines (e.g. gpu-hq, interpolation, deband, shaders),
+  // which makes performance/VRAM usage unpredictable. Keep this deterministic.
+  mpv_set_option_string(mpv_, "config", "no");
+  mpv_set_option_string(mpv_, "load-scripts", "no");
   // Keep the file open at EOF so seeking still works after playback finishes.
   mpv_set_option_string(mpv_, "keep-open", "yes");
   // Enable ytdl_hook.lua (youtube-dl / yt-dlp) when available; mpv will auto-detect the binary.
   mpv_set_option_string(mpv_, "ytdl", "yes");
   mpv_set_option_string(mpv_, "ytdl-format", "best");
 #if defined(_WIN32)
-  mpv_set_option_string(mpv_, "vo", "libmpv");
   // Prefer Windows native audio output. Some builds default to "null" ao when probing fails.
   mpv_set_option_string(mpv_, "ao", "wasapi");
 #endif
   mpv_set_option_string(mpv_, "mute", "no");
   mpv_set_option_string(mpv_, "volume", "100");
+#if defined(_WIN32)
   mpv_set_option_string(mpv_, "hwdec", "auto-safe");
+#else
+  // "auto" is usually required on Linux to actually activate VAAPI/NVDEC when
+  // available. "auto-safe" can be overly conservative and fall back to "no".
+  mpv_set_option_string(mpv_, "hwdec", "auto");
+#endif
+  // Try to keep hardware-decoding surfaces/buffers in check. mpv will still
+  // allocate what it needs, but this can reduce the "extra" queueing.
+  mpv_set_option_string(mpv_, "hwdec-extra-frames", "2");
+  // Default FBO format is platform/content dependent. For SDR content, forcing
+  // rgba8 can reduce VRAM usage. (HDR/10-bit workflows may prefer higher depth.)
+  mpv_set_option_string(mpv_, "fbo-format", "rgba8");
   mpv_set_option_string(mpv_, "video-timing-offset", "0");
 
   if (int err = mpv_initialize(mpv_); err < 0) {
@@ -107,7 +137,20 @@ void MpvPlayer::initializeMpv() {
   mpv_observe_property(mpv_, 0, "time-pos", MPV_FORMAT_DOUBLE);
   mpv_observe_property(mpv_, 0, "duration", MPV_FORMAT_DOUBLE);
   mpv_observe_property(mpv_, 0, "pause", MPV_FORMAT_FLAG);
+  mpv_observe_property(mpv_, 0, "hwdec-current", MPV_FORMAT_STRING);
+  mpv_observe_property(mpv_, 0, "video-params/pixelformat", MPV_FORMAT_STRING);
   mpv_set_wakeup_callback(mpv_, &MpvPlayer::HandleMpvWakeup, this);
+
+  {
+    std::lock_guard<std::mutex> lock(mpvPropsMutex_);
+#if defined(_WIN32)
+    hwdecRequested_ = "auto-safe";
+#else
+    hwdecRequested_ = "auto";
+#endif
+    hwdecExtraFramesRequested_ = 2;
+    fboFormatRequested_ = "rgba8";
+  }
 }
 
 bool MpvPlayer::openMedia(const std::string& source) {
@@ -149,6 +192,45 @@ void MpvPlayer::seek(double positionSeconds) {
   const std::string pos = std::to_string(positionSeconds);
   const char* cmd[] = {"seek", pos.c_str(), "absolute", nullptr};
   mpv_command(mpv_, cmd);
+}
+
+bool MpvPlayer::setHwdec(const std::string& hwdec) {
+  if (!mpv_)
+    return false;
+  const int status = mpv_set_property_string(mpv_, "hwdec", hwdec.c_str());
+  if (status >= 0) {
+    std::lock_guard<std::mutex> lock(mpvPropsMutex_);
+    hwdecRequested_ = hwdec;
+    return true;
+  }
+  return false;
+}
+
+bool MpvPlayer::setHwdecExtraFrames(int extra_frames) {
+  if (!mpv_)
+    return false;
+  if (extra_frames < 0)
+    extra_frames = 0;
+  const std::string v = std::to_string(extra_frames);
+  const int status = mpv_set_property_string(mpv_, "hwdec-extra-frames", v.c_str());
+  if (status >= 0) {
+    std::lock_guard<std::mutex> lock(mpvPropsMutex_);
+    hwdecExtraFramesRequested_ = extra_frames;
+    return true;
+  }
+  return false;
+}
+
+bool MpvPlayer::setFboFormat(const std::string& fbo_format) {
+  if (!mpv_)
+    return false;
+  const int status = mpv_set_property_string(mpv_, "fbo-format", fbo_format.c_str());
+  if (status >= 0) {
+    std::lock_guard<std::mutex> lock(mpvPropsMutex_);
+    fboFormatRequested_ = fbo_format;
+    return true;
+  }
+  return false;
 }
 
 void MpvPlayer::setSharedMemorySink(std::shared_ptr<VideoSharedMemorySink> sink) {
@@ -229,6 +311,11 @@ void MpvPlayer::shutdownGl() {
   videoFboId_ = 0;
   videoTexWidth_ = 0;
   videoTexHeight_ = 0;
+  {
+    std::lock_guard<std::mutex> lock(statsMutex_);
+    stats_.estVideoTargetBytes = 0;
+    stats_.estTotalBytes = stats_.estVideoTargetBytes + stats_.estDownsampleTargetBytes + stats_.estReadbackPboBytes;
+  }
 
   if (downsampleTextureId_)
     glDeleteTextures(1, &downsampleTextureId_);
@@ -238,9 +325,20 @@ void MpvPlayer::shutdownGl() {
   downsampleFboId_ = 0;
   downsampleWidth_ = 0;
   downsampleHeight_ = 0;
+  {
+    std::lock_guard<std::mutex> lock(statsMutex_);
+    stats_.estDownsampleTargetBytes = 0;
+    stats_.estTotalBytes = stats_.estVideoTargetBytes + stats_.estDownsampleTargetBytes + stats_.estReadbackPboBytes;
+  }
 }
 
 bool MpvPlayer::renderVideoFrame() {
+  const auto t0 = std::chrono::steady_clock::now();
+  {
+    std::lock_guard<std::mutex> lock(statsMutex_);
+    stats_.renderCalls += 1;
+  }
+
   if (!initializeGl())
     return false;
   if (!renderContext_ || !glInitialized_)
@@ -248,6 +346,12 @@ bool MpvPlayer::renderVideoFrame() {
 
   if (!renderUpdatePending_.exchange(false, std::memory_order_acq_rel))
     return false;
+
+  {
+    std::lock_guard<std::mutex> lock(statsMutex_);
+    stats_.renderUpdates += 1;
+  }
+
   uint64_t flags = mpv_render_context_update(renderContext_);
   if ((flags & MPV_RENDER_UPDATE_FRAME) == 0)
     return false;
@@ -259,6 +363,11 @@ bool MpvPlayer::renderVideoFrame() {
 
   if (!ensureVideoTargets(width, height))
     return false;
+
+  {
+    std::lock_guard<std::mutex> lock(statsMutex_);
+    stats_.renderFrames += 1;
+  }
 
   GLint prev_fbo = 0;
   GLint prev_viewport[4] = {};
@@ -281,11 +390,29 @@ bool MpvPlayer::renderVideoFrame() {
   glViewport(prev_viewport[0], prev_viewport[1], prev_viewport[2], prev_viewport[3]);
   if (status < 0) {
     spdlog::warn("mpv render failed: {}", mpv_error_string(status));
+    std::lock_guard<std::mutex> lock(statsMutex_);
+    stats_.renderFailures += 1;
     return false;
   }
 
   double shm_copy_ms = 0.0;
   copyFrameToSharedMemory(width, height, shm_copy_ms);
+
+  const double total_ms = DurationMs(std::chrono::steady_clock::now() - t0);
+  {
+    std::lock_guard<std::mutex> lock(statsMutex_);
+    stats_.lastFrameTotalMs = total_ms;
+    if (stats_.emaFrameTotalMs <= 0.0) {
+      stats_.emaFrameTotalMs = total_ms;
+    } else {
+      stats_.emaFrameTotalMs = (1.0 - kEmaAlpha) * stats_.emaFrameTotalMs + kEmaAlpha * total_ms;
+    }
+    stats_.maxFrameTotalMs = std::max(stats_.maxFrameTotalMs, total_ms);
+    if (total_ms >= kStutterThresholdMs) {
+      stats_.stutterCount += 1;
+      stats_.lastStutterMs = total_ms;
+    }
+  }
   return true;
 }
 
@@ -386,6 +513,24 @@ void MpvPlayer::handlePropertyChange(const mpv_event_property& property) {
     const int paused = property.data ? *static_cast<int*>(property.data) : 0;
     if (playingCallback_)
       playingCallback_(paused == 0);
+  } else if (std::strcmp(property.name, "hwdec-current") == 0 && property.format == MPV_FORMAT_STRING) {
+    const char* s = "";
+    if (property.data) {
+      const char* const* p = static_cast<const char* const*>(property.data);
+      if (p && *p)
+        s = *p;
+    }
+    std::lock_guard<std::mutex> lock(mpvPropsMutex_);
+    hwdecCurrent_ = s ? std::string(s) : std::string();
+  } else if (std::strcmp(property.name, "video-params/pixelformat") == 0 && property.format == MPV_FORMAT_STRING) {
+    const char* s = "";
+    if (property.data) {
+      const char* const* p = static_cast<const char* const*>(property.data);
+      if (p && *p)
+        s = *p;
+    }
+    std::lock_guard<std::mutex> lock(mpvPropsMutex_);
+    videoPixelFormat_ = s ? std::string(s) : std::string();
   }
 }
 
@@ -440,6 +585,13 @@ bool MpvPlayer::ensureVideoTargets(unsigned width, unsigned height) {
   if (videoTextureId_ != 0 && videoTexWidth_ == width && videoTexHeight_ == height)
     return true;
 
+  const std::uint64_t old_bytes = EstimateRgba8Bytes(videoTexWidth_, videoTexHeight_);
+  const std::uint64_t new_bytes = EstimateRgba8Bytes(width, height);
+  const bool should_recreate = (videoTextureId_ != 0) && (new_bytes < (old_bytes / 2));
+  if (should_recreate) {
+    glDeleteTextures(1, &videoTextureId_);
+    videoTextureId_ = 0;
+  }
   if (videoTextureId_ == 0)
     glGenTextures(1, &videoTextureId_);
   glBindTexture(GL_TEXTURE_2D, videoTextureId_);
@@ -450,6 +602,10 @@ bool MpvPlayer::ensureVideoTargets(unsigned width, unsigned height) {
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, static_cast<GLint>(width), static_cast<GLint>(height), 0, GL_BGRA,
                GL_UNSIGNED_BYTE, nullptr);
 
+  if (should_recreate && videoFboId_ != 0) {
+    glDeleteFramebuffers(1, &videoFboId_);
+    videoFboId_ = 0;
+  }
   if (videoFboId_ == 0)
     glGenFramebuffers(1, &videoFboId_);
   glBindFramebuffer(GL_FRAMEBUFFER, videoFboId_);
@@ -462,6 +618,11 @@ bool MpvPlayer::ensureVideoTargets(unsigned width, unsigned height) {
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
   videoTexWidth_ = width;
   videoTexHeight_ = height;
+  {
+    std::lock_guard<std::mutex> lock(statsMutex_);
+    stats_.estVideoTargetBytes = EstimateRgba8Bytes(width, height);
+    stats_.estTotalBytes = stats_.estVideoTargetBytes + stats_.estDownsampleTargetBytes + stats_.estReadbackPboBytes;
+  }
   return true;
 }
 
@@ -469,6 +630,13 @@ bool MpvPlayer::ensureDownsampleTargets(unsigned width, unsigned height) {
   if (downsampleTextureId_ != 0 && downsampleWidth_ == width && downsampleHeight_ == height)
     return true;
 
+  const std::uint64_t old_bytes = EstimateRgba8Bytes(downsampleWidth_, downsampleHeight_);
+  const std::uint64_t new_bytes = EstimateRgba8Bytes(width, height);
+  const bool should_recreate = (downsampleTextureId_ != 0) && (new_bytes < (old_bytes / 2));
+  if (should_recreate) {
+    glDeleteTextures(1, &downsampleTextureId_);
+    downsampleTextureId_ = 0;
+  }
   if (downsampleTextureId_ == 0)
     glGenTextures(1, &downsampleTextureId_);
   glBindTexture(GL_TEXTURE_2D, downsampleTextureId_);
@@ -479,6 +647,10 @@ bool MpvPlayer::ensureDownsampleTargets(unsigned width, unsigned height) {
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, static_cast<GLint>(width), static_cast<GLint>(height), 0, GL_BGRA,
                GL_UNSIGNED_BYTE, nullptr);
 
+  if (should_recreate && downsampleFboId_ != 0) {
+    glDeleteFramebuffers(1, &downsampleFboId_);
+    downsampleFboId_ = 0;
+  }
   if (downsampleFboId_ == 0)
     glGenFramebuffers(1, &downsampleFboId_);
   glBindFramebuffer(GL_FRAMEBUFFER, downsampleFboId_);
@@ -491,39 +663,91 @@ bool MpvPlayer::ensureDownsampleTargets(unsigned width, unsigned height) {
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
   downsampleWidth_ = width;
   downsampleHeight_ = height;
+  {
+    std::lock_guard<std::mutex> lock(statsMutex_);
+    stats_.estDownsampleTargetBytes = EstimateRgba8Bytes(width, height);
+    stats_.estTotalBytes = stats_.estVideoTargetBytes + stats_.estDownsampleTargetBytes + stats_.estReadbackPboBytes;
+  }
   return true;
 }
 
 bool MpvPlayer::ensureReadbackPbos(std::size_t bytes) {
   if (bytes == 0)
     return false;
-  if (readbackPbos_[0] == 0 && readbackPbos_[1] == 0) {
+  bool any_pbo = false;
+  for (int i = 0; i < kReadbackPboCount; ++i) {
+    if (readbackPbos_[i] != 0) {
+      any_pbo = true;
+      break;
+    }
+  }
+  if (!any_pbo) {
     glGenBuffers(kReadbackPboCount, readbackPbos_);
     readbackPboSize_ = 0;
     readbackPboIndex_ = 0;
-    readbackPboInUse_[0] = readbackPboInUse_[1] = false;
+    for (int i = 0; i < kReadbackPboCount; ++i) {
+      readbackPboInUse_[i] = false;
+      readbackFences_[i] = nullptr;
+    }
   }
   if (readbackPboSize_ != bytes) {
+    for (int i = 0; i < kReadbackPboCount; ++i) {
+      if (readbackFences_[i]) {
+        glDeleteSync(reinterpret_cast<GLsync>(readbackFences_[i]));
+        readbackFences_[i] = nullptr;
+      }
+    }
     for (int i = 0; i < kReadbackPboCount; ++i) {
       glBindBuffer(GL_PIXEL_PACK_BUFFER, readbackPbos_[i]);
       glBufferData(GL_PIXEL_PACK_BUFFER, static_cast<GLsizeiptr>(bytes), nullptr, GL_STREAM_READ);
     }
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     readbackPboSize_ = bytes;
-    readbackPboInUse_[0] = readbackPboInUse_[1] = false;
+    for (int i = 0; i < kReadbackPboCount; ++i) {
+      readbackPboInUse_[i] = false;
+    }
     readbackPboIndex_ = 0;
+  }
+  {
+    std::lock_guard<std::mutex> lock(statsMutex_);
+    stats_.estReadbackPboBytes = static_cast<std::uint64_t>(readbackPboSize_) * static_cast<std::uint64_t>(kReadbackPboCount);
+    stats_.estTotalBytes = stats_.estVideoTargetBytes + stats_.estDownsampleTargetBytes + stats_.estReadbackPboBytes;
   }
   return true;
 }
 
 void MpvPlayer::destroyReadbackPbos() {
-  if (readbackPbos_[0] || readbackPbos_[1]) {
+  bool any_pbo = false;
+  for (int i = 0; i < kReadbackPboCount; ++i) {
+    if (readbackPbos_[i] != 0) {
+      any_pbo = true;
+      break;
+    }
+  }
+  if (any_pbo) {
+    for (int i = 0; i < kReadbackPboCount; ++i) {
+      if (readbackFences_[i]) {
+        glDeleteSync(reinterpret_cast<GLsync>(readbackFences_[i]));
+        readbackFences_[i] = nullptr;
+      }
+      readbackPboInUse_[i] = false;
+    }
     glDeleteBuffers(kReadbackPboCount, readbackPbos_);
-    readbackPbos_[0] = readbackPbos_[1] = 0;
+    for (int i = 0; i < kReadbackPboCount; ++i) {
+      readbackPbos_[i] = 0;
+    }
   }
   readbackPboSize_ = 0;
   readbackPboIndex_ = 0;
-  readbackPboInUse_[0] = readbackPboInUse_[1] = false;
+  for (int i = 0; i < kReadbackPboCount; ++i) {
+    readbackPboInUse_[i] = false;
+    readbackFences_[i] = nullptr;
+  }
+  {
+    std::lock_guard<std::mutex> lock(statsMutex_);
+    stats_.estReadbackPboBytes = 0;
+    stats_.estTotalBytes = stats_.estVideoTargetBytes + stats_.estDownsampleTargetBytes + stats_.estReadbackPboBytes;
+  }
 }
 
 bool MpvPlayer::shouldCopyToSharedMemory(std::chrono::steady_clock::time_point now) const {
@@ -540,17 +764,29 @@ bool MpvPlayer::shouldCopyToSharedMemory(std::chrono::steady_clock::time_point n
 
 bool MpvPlayer::copyFrameToSharedMemory(unsigned width, unsigned height, double&) {
   auto sink = sharedSink();
-  if (!sink)
+  if (!sink) {
+    std::lock_guard<std::mutex> lock(statsMutex_);
+    stats_.shmSkipNoSink += 1;
     return false;
+  }
   const auto now = std::chrono::steady_clock::now();
-  if (!shouldCopyToSharedMemory(now))
+  if (!shouldCopyToSharedMemory(now)) {
+    std::lock_guard<std::mutex> lock(statsMutex_);
+    stats_.shmSkipInterval += 1;
     return false;
+  }
 
   auto [target_w, target_h] = targetDimensions(width, height);
-  if (target_w == 0 || target_h == 0)
+  if (target_w == 0 || target_h == 0) {
+    std::lock_guard<std::mutex> lock(statsMutex_);
+    stats_.shmSkipTarget += 1;
     return false;
-  if (!sink->ensureConfiguration(target_w, target_h))
+  }
+  if (!sink->ensureConfiguration(target_w, target_h)) {
+    std::lock_guard<std::mutex> lock(statsMutex_);
+    stats_.shmSkipSinkConfig += 1;
     return false;
+  }
   if (!ensureDownsampleTargets(target_w, target_h))
     return false;
 
@@ -565,8 +801,6 @@ bool MpvPlayer::copyFrameToSharedMemory(unsigned width, unsigned height, double&
   glBlitFramebuffer(0, 0, static_cast<GLint>(width), static_cast<GLint>(height), 0, static_cast<GLint>(target_h),
                     static_cast<GLint>(target_w), 0, GL_COLOR_BUFFER_BIT, GL_LINEAR);
 
-  glBindFramebuffer(GL_FRAMEBUFFER, downsampleFboId_);
-
   const std::size_t byte_count = static_cast<std::size_t>(target_w) * target_h * 4;
   if (!ensureReadbackPbos(byte_count)) {
     glBindFramebuffer(GL_READ_FRAMEBUFFER, prev_read);
@@ -574,36 +808,133 @@ bool MpvPlayer::copyFrameToSharedMemory(unsigned width, unsigned height, double&
     return false;
   }
 
-  glPixelStorei(GL_PACK_ALIGNMENT, 1);
   const int current_index = readbackPboIndex_;
-  glBindBuffer(GL_PIXEL_PACK_BUFFER, readbackPbos_[current_index]);
-  glBufferData(GL_PIXEL_PACK_BUFFER, static_cast<GLsizeiptr>(byte_count), nullptr, GL_STREAM_READ);
-  glReadPixels(0, 0, static_cast<GLint>(target_w), static_cast<GLint>(target_h), GL_BGRA, GL_UNSIGNED_BYTE,
-               reinterpret_cast<void*>(0));
-  glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+  const int ready_index = (current_index + kReadbackPboCount - 1) % kReadbackPboCount;
+
+  auto fence_signaled = [&](int index) -> bool {
+    if (!readbackFences_[index])
+      return true;
+    const GLenum r = glClientWaitSync(reinterpret_cast<GLsync>(readbackFences_[index]), 0, 0);
+    return (r == GL_ALREADY_SIGNALED) || (r == GL_CONDITION_SATISFIED);
+  };
+
+  auto consume_pbo = [&](int index) -> bool {
+    if (!readbackPboInUse_[index])
+      return false;
+    if (!fence_signaled(index))
+      return false;
+
+    if (readbackFences_[index]) {
+      glDeleteSync(reinterpret_cast<GLsync>(readbackFences_[index]));
+      readbackFences_[index] = nullptr;
+    }
+
+    const auto t_map0 = std::chrono::steady_clock::now();
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, readbackPbos_[index]);
+    void* mapped = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, static_cast<GLsizeiptr>(byte_count), GL_MAP_READ_BIT);
+    if (!mapped) {
+      glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+      readbackPboInUse_[index] = false;
+      return false;
+    }
+    sink->writeFrame(mapped, target_w * 4);
+    glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+    readbackPboInUse_[index] = false;
+
+    const double map_write_ms = DurationMs(std::chrono::steady_clock::now() - t_map0);
+    {
+      std::lock_guard<std::mutex> lock(statsMutex_);
+      stats_.shmWritten += 1;
+      stats_.shmReadbacksMapped += 1;
+      stats_.lastShmWidth = target_w;
+      stats_.lastShmHeight = target_h;
+      stats_.lastShmMapWriteMs = map_write_ms;
+      if (stats_.emaShmMapWriteMs <= 0.0) {
+        stats_.emaShmMapWriteMs = map_write_ms;
+      } else {
+        stats_.emaShmMapWriteMs = (1.0 - kEmaAlpha) * stats_.emaShmMapWriteMs + kEmaAlpha * map_write_ms;
+      }
+    }
+    return true;
+  };
+
+  bool wrote_frame = false;
+  wrote_frame = consume_pbo(ready_index);
+
+  const bool current_busy = readbackPboInUse_[current_index] && !fence_signaled(current_index);
+  if (!current_busy) {
+    if (readbackPboInUse_[current_index]) {
+      (void)consume_pbo(current_index);
+    }
+
+    const auto t_issue0 = std::chrono::steady_clock::now();
+    glBindFramebuffer(GL_FRAMEBUFFER, downsampleFboId_);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, readbackPbos_[current_index]);
+    glBufferData(GL_PIXEL_PACK_BUFFER, static_cast<GLsizeiptr>(byte_count), nullptr, GL_STREAM_READ);
+    glReadPixels(0, 0, static_cast<GLint>(target_w), static_cast<GLint>(target_h), GL_BGRA, GL_UNSIGNED_BYTE,
+                 reinterpret_cast<void*>(0));
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+
+    if (readbackFences_[current_index]) {
+      glDeleteSync(reinterpret_cast<GLsync>(readbackFences_[current_index]));
+      readbackFences_[current_index] = nullptr;
+    }
+    readbackFences_[current_index] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    readbackPboInUse_[current_index] = true;
+    readbackPboIndex_ = (readbackPboIndex_ + 1) % kReadbackPboCount;
+
+    const double issue_ms = DurationMs(std::chrono::steady_clock::now() - t_issue0);
+    {
+      std::lock_guard<std::mutex> lock(statsMutex_);
+      stats_.shmReadbacksIssued += 1;
+      stats_.lastShmIssueMs = issue_ms;
+      stats_.lastShmWidth = target_w;
+      stats_.lastShmHeight = target_h;
+    }
+  } else {
+    std::lock_guard<std::mutex> lock(statsMutex_);
+    stats_.shmSkipReadbackBusy += 1;
+  }
+
   glBindFramebuffer(GL_READ_FRAMEBUFFER, prev_read);
   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, prev_draw);
 
-  readbackPboInUse_[current_index] = true;
-
-  bool wrote_frame = false;
-  const int ready_index = (current_index + kReadbackPboCount - 1) % kReadbackPboCount;
-  if (readbackPboInUse_[ready_index]) {
-    glBindBuffer(GL_PIXEL_PACK_BUFFER, readbackPbos_[ready_index]);
-    void* mapped = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, static_cast<GLsizeiptr>(byte_count), GL_MAP_READ_BIT);
-    if (mapped) {
-      sink->writeFrame(mapped, target_w * 4);
-      wrote_frame = true;
-      glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
-    }
-    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
-    readbackPboInUse_[ready_index] = false;
-  }
-
-  readbackPboIndex_ = (readbackPboIndex_ + 1) % kReadbackPboCount;
-  if (wrote_frame)
+  if (wrote_frame) {
     lastShmFrameTime_ = now;
+  }
   return wrote_frame;
+}
+
+MpvPlayer::Stats MpvPlayer::statsSnapshot() const {
+  std::lock_guard<std::mutex> lock(statsMutex_);
+  return stats_;
+}
+
+std::string MpvPlayer::hwdecCurrent() const {
+  std::lock_guard<std::mutex> lock(mpvPropsMutex_);
+  return hwdecCurrent_;
+}
+
+std::string MpvPlayer::hwdecRequested() const {
+  std::lock_guard<std::mutex> lock(mpvPropsMutex_);
+  return hwdecRequested_;
+}
+
+int MpvPlayer::hwdecExtraFramesRequested() const {
+  std::lock_guard<std::mutex> lock(mpvPropsMutex_);
+  return hwdecExtraFramesRequested_;
+}
+
+std::string MpvPlayer::fboFormatRequested() const {
+  std::lock_guard<std::mutex> lock(mpvPropsMutex_);
+  return fboFormatRequested_;
+}
+
+std::string MpvPlayer::videoPixelFormat() const {
+  std::lock_guard<std::mutex> lock(mpvPropsMutex_);
+  return videoPixelFormat_;
 }
 
 void MpvPlayer::HandleMpvWakeup(void* userdata) {

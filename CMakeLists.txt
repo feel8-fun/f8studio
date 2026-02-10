@@ -21,6 +21,8 @@ enable_testing()
 
 # options
 option(BUILD_TESTS "Enable building of tests" OFF)
+option(F8_DEPLOY_SERVICE_RUNTIME "Deploy service runtime to services/... after build" ON)
+option(F8_DEPLOY_SERVICE_RUNTIME_POST_BUILD "Run deploy as POST_BUILD step" ON)
 option(F8_DEPLOY_SERVICE_CLEAN "Clean services/<svc>/<platform> before deploy" ON)
 
 # Build Output
@@ -60,19 +62,38 @@ function(f8_deploy_service_runtime target service_rel_dir)
     set(_bin_dir "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
     set(_lib_dir "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}")
 
-    add_custom_command(
-        TARGET ${target}
-        POST_BUILD
-        COMMAND "${CMAKE_COMMAND}"
-            -Dexe="$<TARGET_FILE:${target}>"
-            -Ddest_dir="${_dest_dir}"
-            -Dbin_dir="${_bin_dir}"
-            -Dlib_dir="${_lib_dir}"
-            -Dclean_dest="$<IF:$<BOOL:${F8_DEPLOY_SERVICE_CLEAN}>,1,0>"
-            -P "${PROJECT_SOURCE_DIR}/cmake/deploy_service_runtime.cmake"
-        VERBATIM
-        COMMENT "Deploy ${target} runtime to ${_dest_dir}"
+    set(_deploy_cmd
+        "${CMAKE_COMMAND}"
+        -Dexe="$<TARGET_FILE:${target}>"
+        -Ddest_dir="${_dest_dir}"
+        -Dbin_dir="${_bin_dir}"
+        -Dlib_dir="${_lib_dir}"
+        -Dclean_dest="$<IF:$<BOOL:${F8_DEPLOY_SERVICE_CLEAN}>,1,0>"
+        -P "${PROJECT_SOURCE_DIR}/cmake/deploy_service_runtime.cmake"
     )
+
+    # Always provide a manual deploy target, so developers can disable POST_BUILD
+    # and run deploy explicitly when needed.
+    set(_deploy_target "${target}_deploy_runtime")
+    if(NOT TARGET ${_deploy_target})
+        add_custom_target(
+            ${_deploy_target}
+            COMMAND ${_deploy_cmd}
+            DEPENDS ${target}
+            VERBATIM
+            COMMENT "Deploy ${target} runtime to ${_dest_dir}"
+        )
+    endif()
+
+    if(F8_DEPLOY_SERVICE_RUNTIME AND F8_DEPLOY_SERVICE_RUNTIME_POST_BUILD)
+        add_custom_command(
+            TARGET ${target}
+            POST_BUILD
+            COMMAND ${_deploy_cmd}
+            VERBATIM
+            COMMENT "Deploy ${target} runtime to ${_dest_dir}"
+        )
+    endif()
 endfunction()
 
 add_subdirectory(packages/f8cppsdk)

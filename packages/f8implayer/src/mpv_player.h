@@ -26,6 +26,39 @@ using VideoSharedMemorySink = ::f8::cppsdk::VideoSharedMemorySink;
 
 class MpvPlayer {
  public:
+  struct Stats {
+    std::uint64_t renderCalls = 0;
+    std::uint64_t renderUpdates = 0;
+    std::uint64_t renderFrames = 0;
+    std::uint64_t renderFailures = 0;
+
+    double lastFrameTotalMs = 0.0;
+    double emaFrameTotalMs = 0.0;
+    double maxFrameTotalMs = 0.0;
+    std::uint64_t stutterCount = 0;
+    double lastStutterMs = 0.0;
+
+    std::uint64_t shmWritten = 0;
+    std::uint64_t shmSkipNoSink = 0;
+    std::uint64_t shmSkipInterval = 0;
+    std::uint64_t shmSkipTarget = 0;
+    std::uint64_t shmSkipSinkConfig = 0;
+    std::uint64_t shmSkipReadbackBusy = 0;
+    std::uint64_t shmReadbacksIssued = 0;
+    std::uint64_t shmReadbacksMapped = 0;
+
+    unsigned lastShmWidth = 0;
+    unsigned lastShmHeight = 0;
+    double lastShmIssueMs = 0.0;
+    double lastShmMapWriteMs = 0.0;
+    double emaShmMapWriteMs = 0.0;
+
+    std::uint64_t estVideoTargetBytes = 0;
+    std::uint64_t estDownsampleTargetBytes = 0;
+    std::uint64_t estReadbackPboBytes = 0;
+    std::uint64_t estTotalBytes = 0;
+  };
+
   struct VideoConfig {
     bool offline = false;
     std::uint32_t videoShmMaxWidth = 1920;
@@ -47,6 +80,9 @@ class MpvPlayer {
   void stop();
   void setVolume(double volume01);
   void seek(double positionSeconds);
+  bool setHwdec(const std::string& hwdec);
+  bool setHwdecExtraFrames(int extra_frames);
+  bool setFboFormat(const std::string& fbo_format);
   void setSharedMemorySink(std::shared_ptr<VideoSharedMemorySink> sink);
   void setVideoShmMaxSize(std::uint32_t max_width, std::uint32_t max_height);
   void setVideoShmMaxFps(double max_fps);
@@ -63,6 +99,12 @@ class MpvPlayer {
   unsigned videoFboId() const { return videoFboId_; }
   double positionSeconds() const { return lastPositionSeconds_.load(std::memory_order_relaxed); }
   double durationSeconds() const { return lastDurationSeconds_.load(std::memory_order_relaxed); }
+  Stats statsSnapshot() const;
+  std::string hwdecCurrent() const;
+  std::string hwdecRequested() const;
+  int hwdecExtraFramesRequested() const;
+  std::string fboFormatRequested() const;
+  std::string videoPixelFormat() const;
 
  private:
   void initializeMpv();
@@ -113,6 +155,16 @@ class MpvPlayer {
   std::atomic<double> lastPositionSeconds_{0.0};
   std::atomic<double> lastDurationSeconds_{0.0};
 
+  mutable std::mutex statsMutex_;
+  Stats stats_{};
+
+  mutable std::mutex mpvPropsMutex_;
+  std::string hwdecCurrent_;
+  std::string hwdecRequested_;
+  int hwdecExtraFramesRequested_ = 2;
+  std::string fboFormatRequested_;
+  std::string videoPixelFormat_;
+
   unsigned int videoTextureId_ = 0;
   unsigned int videoFboId_ = 0;
   unsigned videoTexWidth_ = 0;
@@ -121,9 +173,10 @@ class MpvPlayer {
   unsigned int downsampleFboId_ = 0;
   unsigned downsampleWidth_ = 0;
   unsigned downsampleHeight_ = 0;
-  static constexpr int kReadbackPboCount = 2;
+  static constexpr int kReadbackPboCount = 3;
   unsigned int readbackPbos_[kReadbackPboCount] = {};
   bool readbackPboInUse_[kReadbackPboCount] = {};
+  void* readbackFences_[kReadbackPboCount] = {};
   std::size_t readbackPboSize_ = 0;
   int readbackPboIndex_ = 0;
   bool glInitialized_ = false;

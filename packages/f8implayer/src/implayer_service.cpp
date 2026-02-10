@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <chrono>
 #include <cstdint>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -268,6 +270,8 @@ void ImPlayerService::tick() {
   if (!running_.load(std::memory_order_acquire))
     return;
 
+  bool did_present = false;
+
   if (bus_) {
     (void)bus_->drain_main_thread();
   }
@@ -332,6 +336,30 @@ void ImPlayerService::tick() {
           std::lock_guard<std::mutex> lock(state_mu_);
           loop_ = loop;
         };
+        cb.set_hwdec = [this](const std::string& hwdec) {
+          if (!player_)
+            return;
+          if (!player_->setHwdec(hwdec)) {
+            std::lock_guard<std::mutex> lock(state_mu_);
+            last_error_ = "failed to set hwdec=" + hwdec;
+          }
+        };
+        cb.set_hwdec_extra_frames = [this](int extra_frames) {
+          if (!player_)
+            return;
+          if (!player_->setHwdecExtraFrames(extra_frames)) {
+            std::lock_guard<std::mutex> lock(state_mu_);
+            last_error_ = "failed to set hwdec-extra-frames=" + std::to_string(extra_frames);
+          }
+        };
+        cb.set_fbo_format = [this](const std::string& fbo_format) {
+          if (!player_)
+            return;
+          if (!player_->setFboFormat(fbo_format)) {
+            std::lock_guard<std::mutex> lock(state_mu_);
+            last_error_ = "failed to set fbo-format=" + fbo_format;
+          }
+        };
         cb.playlist_select = [this](int index) {
           playlist_play_index(index);
         };
@@ -366,6 +394,7 @@ void ImPlayerService::tick() {
               }
             },
             view);
+        did_present = true;
       }
     }
   }
@@ -407,6 +436,12 @@ void ImPlayerService::tick() {
     if (bus_) {
       (void)f8::cppsdk::publish_data(bus_->nats(), cfg_.service_id, cfg_.service_id, "playback", evt, now);
     }
+  }
+
+  // Avoid a busy-spin when there is nothing to render (e.g. still images),
+  // which otherwise can keep a CPU core hot even with vsync enabled.
+  if (!did_present && !(window_ && window_->needsRedraw()) && !(gui_ && gui_->wantsRepaint())) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
   }
 }
 
