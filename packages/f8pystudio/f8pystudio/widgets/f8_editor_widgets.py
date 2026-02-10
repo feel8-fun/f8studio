@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import base64
 import re
+import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
 from qtpy import QtCore, QtGui, QtWidgets
+
+_COMBO_REOPEN_GUARD_S = 0.05
 
 
 def _strip_data_url_prefix(b64: str) -> tuple[str, str | None]:
@@ -111,6 +114,10 @@ class _F8ComboPopup(QtWidgets.QFrame):
         super().focusOutEvent(event)
         self.hide()
 
+    def hideEvent(self, event: QtGui.QHideEvent) -> None:  # type: ignore[override]
+        super().hideEvent(event)
+        self._combo._block_popup_for(_COMBO_REOPEN_GUARD_S)
+
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:  # type: ignore[override]
         if event.key() in (QtCore.Qt.Key_Escape,):
             self.hide()
@@ -137,6 +144,7 @@ class F8OptionCombo(QtWidgets.QComboBox):
         self._values: list[Any] = []
         self._context_tooltip = ""
         self._read_only = False
+        self._popup_block_until_s: float = 0.0
         self.setEditable(False)
         self.setInsertPolicy(QtWidgets.QComboBox.NoInsert)
         self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
@@ -148,6 +156,10 @@ class F8OptionCombo(QtWidgets.QComboBox):
         self.currentIndexChanged.connect(self._emit)  # type: ignore[attr-defined]
         self._popup = _F8ComboPopup(self)
         self._popup.valueSelected.connect(self._on_popup_selected)  # type: ignore[attr-defined]
+
+    def _block_popup_for(self, seconds: float) -> None:
+        until = time.monotonic() + max(0.0, float(seconds))
+        self._popup_block_until_s = max(self._popup_block_until_s, until)
 
     def set_read_only(self, read_only: bool) -> None:
         """
@@ -222,6 +234,12 @@ class F8OptionCombo(QtWidgets.QComboBox):
     def showPopup(self) -> None:  # type: ignore[override]
         if self._read_only:
             return
+        if time.monotonic() < self._popup_block_until_s:
+            return
+        if self._popup.isVisible():
+            # Toggle behavior: clicking the combobox again collapses the popup.
+            self.hidePopup()
+            return
         if not self.isEnabled():
             return
         model = self.model()
@@ -238,6 +256,7 @@ class F8OptionCombo(QtWidgets.QComboBox):
 
     def hidePopup(self) -> None:  # type: ignore[override]
         if self._popup.isVisible():
+            self._block_popup_for(_COMBO_REOPEN_GUARD_S)
             self._popup.hide()
 
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # type: ignore[override]
@@ -320,6 +339,7 @@ class F8OptionCombo(QtWidgets.QComboBox):
         if row < 0:
             return
         self.setCurrentIndex(row)
+        self.hidePopup()
 
     def _item_tooltip(self, index: int, tooltip: str = "") -> str:
         label = self.itemText(index)

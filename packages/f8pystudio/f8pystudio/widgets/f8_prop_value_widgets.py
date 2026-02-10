@@ -518,6 +518,7 @@ class F8NumberPropLineEdit(QtWidgets.QLineEdit):
         self._min: float | None = None
         self._max: float | None = None
         self.setMinimumWidth(120)
+        self._update_validator()
         self.editingFinished.connect(self._emit_value)
 
     def set_name(self, name: str) -> None:
@@ -531,12 +532,29 @@ class F8NumberPropLineEdit(QtWidgets.QLineEdit):
             self._min = float(v)
         except Exception:
             self._min = None
+        self._update_validator()
 
     def set_max(self, v) -> None:
         try:
             self._max = float(v)
         except Exception:
             self._max = None
+        self._update_validator()
+
+    def _update_validator(self) -> None:
+        if self._data_type is int:
+            vmin = int(self._min) if self._min is not None else -(2**31)
+            vmax = int(self._max) if self._max is not None else (2**31 - 1)
+            self.setValidator(QtGui.QIntValidator(vmin, vmax, self))
+            return
+        vmin = float(self._min) if self._min is not None else -1.0e18
+        vmax = float(self._max) if self._max is not None else 1.0e18
+        dv = QtGui.QDoubleValidator(vmin, vmax, 6, self)
+        try:
+            dv.setNotation(QtGui.QDoubleValidator.Notation.StandardNotation)
+        except Exception:
+            pass
+        self.setValidator(dv)
 
     def get_value(self):
         t = str(self.text() or "").strip()
@@ -556,6 +574,8 @@ class F8NumberPropLineEdit(QtWidgets.QLineEdit):
 
     def set_value(self, value) -> None:
         if value is None:
+            with QtCore.QSignalBlocker(self):
+                self.setText("")
             return
         with QtCore.QSignalBlocker(self):
             self.setText(str(value))
@@ -566,94 +586,4 @@ class F8NumberPropLineEdit(QtWidgets.QLineEdit):
             # invalid -> keep focus and don't emit.
             return
         self.value_changed.emit(self.get_name(), v)
-
-
-class F8IntSpinBoxPropWidget(QtWidgets.QSpinBox):
-    value_changed = QtCore.Signal(str, object)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._name = ""
-        self.setMinimumWidth(120)
-        self.editingFinished.connect(self._emit_value)
-
-    def set_name(self, name: str) -> None:
-        self._name = str(name or "")
-
-    def get_name(self) -> str:
-        return self._name
-
-    def set_min(self, v) -> None:
-        try:
-            self.setMinimum(int(v))
-        except Exception:
-            pass
-
-    def set_max(self, v) -> None:
-        try:
-            self.setMaximum(int(v))
-        except Exception:
-            pass
-
-    def get_value(self):
-        try:
-            return int(self.value())
-        except Exception:
-            return None
-
-    def set_value(self, value) -> None:
-        if value is None:
-            return
-        with QtCore.QSignalBlocker(self):
-            self.setValue(int(value))
-
-    def _emit_value(self) -> None:
-        self.value_changed.emit(self.get_name(), self.get_value())
-
-
-class F8DoubleSpinBoxPropWidget(QtWidgets.QDoubleSpinBox):
-    value_changed = QtCore.Signal(str, object)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._name = ""
-        self.setMinimumWidth(120)
-        try:
-            self.setDecimals(6)
-        except Exception:
-            pass
-        self.editingFinished.connect(self._emit_value)
-
-    def set_name(self, name: str) -> None:
-        self._name = str(name or "")
-
-    def get_name(self) -> str:
-        return self._name
-
-    def set_min(self, v) -> None:
-        try:
-            self.setMinimum(float(v))
-        except Exception:
-            pass
-
-    def set_max(self, v) -> None:
-        try:
-            self.setMaximum(float(v))
-        except Exception:
-            pass
-
-    def get_value(self):
-        try:
-            return float(self.value())
-        except Exception:
-            return None
-
-    def set_value(self, value) -> None:
-        if value is None:
-            return
-        with QtCore.QSignalBlocker(self):
-            self.setValue(float(value))
-
-    def _emit_value(self) -> None:
-        self.value_changed.emit(self.get_name(), self.get_value())
 

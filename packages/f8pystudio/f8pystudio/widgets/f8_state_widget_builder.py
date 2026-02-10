@@ -14,7 +14,7 @@ from .f8_editor_widgets import (
     F8PropValueBar,
     parse_select_pool,
 )
-from .f8_prop_value_widgets import F8DoubleSpinBoxPropWidget, F8IntSpinBoxPropWidget, F8NumberPropLineEdit
+from .f8_prop_value_widgets import F8NumberPropLineEdit
 from .f8_prop_value_widgets import F8CodeButtonPropWidget, F8InlineCodePropWidget, F8WrapLinePropWidget
 
 
@@ -304,24 +304,6 @@ def build_state_value_widget(
 
     if schema is not None and schema_t in {"integer", "number"} and ui_control == "slider":
         widget = F8PropValueBar(data_type=int if schema_t == "integer" else float)
-        widget.set_name(prop_name)
-        if lo is not None:
-            widget.set_min(lo)
-        if hi is not None:
-            widget.set_max(hi)
-        return widget
-
-    if schema is not None and schema_t == "integer" and ui_control in {"spinbox", "int"}:
-        widget = F8IntSpinBoxPropWidget()
-        widget.set_name(prop_name)
-        if lo is not None:
-            widget.set_min(lo)
-        if hi is not None:
-            widget.set_max(hi)
-        return widget
-
-    if schema is not None and schema_t == "number" and ui_control in {"doublespinbox", "float"}:
-        widget = F8DoubleSpinBoxPropWidget()
         widget.set_name(prop_name)
         if lo is not None:
             widget.set_min(lo)

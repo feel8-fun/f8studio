@@ -1576,7 +1576,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             _apply_value(_get_node_value())
             self._state_inline_updaters[name] = _apply_value
             if read_only:
-                edit.setDisabled(True)
+                edit.setReadOnly(True)
             return edit
 
         if ui in {"code_inline", "multiline"}:
@@ -1638,7 +1638,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             _apply_value(_get_node_value())
             self._state_inline_updaters[name] = _apply_value
             if read_only:
-                edit.setDisabled(True)
+                edit.setReadOnly(True)
             return edit
 
         if ui in {"code"}:
@@ -1756,7 +1756,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             if pool_field:
                 self._state_inline_option_pools[name] = pool_field
             if read_only:
-                combo.setDisabled(True)
+                combo.set_read_only(True)
             return combo
 
         if t == "boolean" or ui in {"switch", "toggle"}:
@@ -1793,55 +1793,71 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             return bar
 
         if t == "integer" or ui in {"spinbox", "int"}:
-            spin = QtWidgets.QSpinBox()
-            _common_style(spin)
-            spin.setMinimumWidth(90)
-            if lo is not None:
-                spin.setMinimum(int(lo))
-            if hi is not None:
-                spin.setMaximum(int(hi))
-            spin.valueChanged.connect(lambda v: _set_node_value(int(v), push_undo=False))
-            spin.editingFinished.connect(lambda: _set_node_value(int(spin.value()), push_undo=True))
+            line = QtWidgets.QLineEdit()
+            _common_style(line)
+            line.setMinimumWidth(90)
+            vmin = int(lo) if lo is not None else -(2**31)
+            vmax = int(hi) if hi is not None else (2**31 - 1)
+            line.setValidator(QtGui.QIntValidator(vmin, vmax, line))
+
             def _apply_value(v: Any) -> None:
-                if v is None:
+                s = "" if v is None else str(int(v))
+                with QtCore.QSignalBlocker(line):
+                    line.setText(s)
+
+            def _commit() -> None:
+                txt = str(line.text() or "").strip()
+                if not txt:
+                    _set_node_value(None, push_undo=True)
                     return
-                with QtCore.QSignalBlocker(spin):
-                    try:
-                        spin.setValue(int(v))
-                    except (TypeError, ValueError):
-                        return
+                try:
+                    _set_node_value(int(txt), push_undo=True)
+                except ValueError:
+                    return
 
             _apply_value(_get_node_value())
             self._state_inline_updaters[name] = _apply_value
             if read_only:
-                spin.setDisabled(True)
-            return spin
+                line.setReadOnly(True)
+            else:
+                line.editingFinished.connect(_commit)  # type: ignore[attr-defined]
+            return line
 
         if t == "number" or ui in {"doublespinbox", "float"}:
-            dsp = QtWidgets.QDoubleSpinBox()
-            _common_style(dsp)
-            dsp.setMinimumWidth(90)
-            dsp.setDecimals(6)
-            if lo is not None:
-                dsp.setMinimum(float(lo))
-            if hi is not None:
-                dsp.setMaximum(float(hi))
-            dsp.valueChanged.connect(lambda v: _set_node_value(float(v), push_undo=False))
-            dsp.editingFinished.connect(lambda: _set_node_value(float(dsp.value()), push_undo=True))
+            line = QtWidgets.QLineEdit()
+            _common_style(line)
+            line.setMinimumWidth(90)
+            vmin = float(lo) if lo is not None else -1.0e18
+            vmax = float(hi) if hi is not None else 1.0e18
+            dv = QtGui.QDoubleValidator(vmin, vmax, 6, line)
+            try:
+                dv.setNotation(QtGui.QDoubleValidator.Notation.StandardNotation)
+            except Exception:
+                pass
+            line.setValidator(dv)
+
             def _apply_value(v: Any) -> None:
-                if v is None:
+                s = "" if v is None else str(float(v))
+                with QtCore.QSignalBlocker(line):
+                    line.setText(s)
+
+            def _commit() -> None:
+                txt = str(line.text() or "").strip()
+                if not txt:
+                    _set_node_value(None, push_undo=True)
                     return
-                with QtCore.QSignalBlocker(dsp):
-                    try:
-                        dsp.setValue(float(v))
-                    except (TypeError, ValueError):
-                        return
+                try:
+                    _set_node_value(float(txt), push_undo=True)
+                except ValueError:
+                    return
 
             _apply_value(_get_node_value())
             self._state_inline_updaters[name] = _apply_value
             if read_only:
-                dsp.setDisabled(True)
-            return dsp
+                line.setReadOnly(True)
+            else:
+                line.editingFinished.connect(_commit)  # type: ignore[attr-defined]
+            return line
 
         # default: text input.
         line = QtWidgets.QLineEdit()
@@ -1854,9 +1870,10 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
 
         _apply_value(_get_node_value())
         self._state_inline_updaters[name] = _apply_value
-        line.editingFinished.connect(lambda: _set_node_value(line.text(), push_undo=True))
         if read_only:
-            line.setDisabled(True)
+            line.setReadOnly(True)
+        else:
+            line.editingFinished.connect(lambda: _set_node_value(line.text(), push_undo=True))
         return line
 
     def _ensure_inline_state_widgets(self) -> None:
