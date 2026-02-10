@@ -140,4 +140,3 @@ def is_service_spec(spec: Any) -> bool:
 
 def is_operator_spec(spec: Any) -> bool:
     return isinstance(spec, F8OperatorSpec)
-

@@ -1342,8 +1342,18 @@ class _F8CommandRow(QtWidgets.QWidget):
     invoke_clicked = QtCore.Signal(str)
     edit_clicked = QtCore.Signal(str)
     delete_clicked = QtCore.Signal(str)
+    show_on_node_changed = QtCore.Signal(bool)
 
-    def __init__(self, parent=None, *, name: str, description: str, allow_edit: bool, allow_delete: bool):
+    def __init__(
+        self,
+        parent=None,
+        *,
+        name: str,
+        description: str,
+        allow_edit: bool,
+        allow_delete: bool,
+        show_on_node: bool,
+    ):
         super().__init__(parent)
         self._name = str(name or "")
         self._base_tooltip = str(description or "").strip()
@@ -1351,6 +1361,12 @@ class _F8CommandRow(QtWidgets.QWidget):
         self._btn_invoke = QtWidgets.QPushButton(self._name)
         self._btn_invoke.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         self._btn_invoke.clicked.connect(self._on_invoke_clicked)
+
+        self._eye_btn = QtWidgets.QToolButton()
+        self._eye_btn.setAutoRaise(True)
+        self._eye_btn.setCheckable(True)
+        self._eye_btn.setToolTip("Show on node")
+        self._eye_btn.toggled.connect(self._on_eye_toggled)  # type: ignore[attr-defined]
 
         self._btn_edit = QtWidgets.QToolButton()
         self._btn_edit.setAutoRaise(True)
@@ -1373,11 +1389,27 @@ class _F8CommandRow(QtWidgets.QWidget):
         layout.setSpacing(6)
         layout.addWidget(self._btn_invoke, 1)
         layout.addWidget(self._btn_edit, 0)
+        layout.addWidget(self._eye_btn, 0)
         layout.addWidget(self._btn_del, 0)
 
         if self._base_tooltip:
             self._btn_invoke.setToolTip(self._base_tooltip)
             self._btn_edit.setToolTip("Edit command…\n" + self._base_tooltip)
+
+        self.set_show_on_node(bool(show_on_node))
+
+    def set_show_on_node(self, show: bool) -> None:
+        with QtCore.QSignalBlocker(self._eye_btn):
+            self._eye_btn.setChecked(bool(show))
+        self._update_eye_icon(bool(show))
+
+    def _update_eye_icon(self, show: bool) -> None:
+        icon_name = "fa5s.eye" if bool(show) else "fa5s.eye-slash"
+        self._eye_btn.setIcon(qta.icon(icon_name, color="white"))
+
+    def _on_eye_toggled(self, checked: bool) -> None:
+        self._update_eye_icon(bool(checked))
+        self.show_on_node_changed.emit(bool(checked))
 
     def set_invoke_enabled(self, enabled: bool, *, disabled_reason: str = "Service not running") -> None:
         """
@@ -1522,21 +1554,40 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
                 name = ""
             if not name:
                 continue
+            try:
+                desc = str(c.description or "")
+            except Exception:
+                desc = ""
+            try:
+                show_on_node = bool(c.showOnNode)
+            except Exception:
+                show_on_node = False
             row = _F8CommandRow(
                 name=name,
-                description=str(c.description or ""),
+                description=desc,
                 allow_edit=True,
                 allow_delete=editable,
+                show_on_node=bool(show_on_node),
             )
             row.invoke_clicked.connect(self._invoke_command)
             row.edit_clicked.connect(self._edit_command)
             row.delete_clicked.connect(self._delete_command)
+            row.show_on_node_changed.connect(lambda v, _n=str(name): self._toggle_command_show_on_node(_n, bool(v)))  # type: ignore[attr-defined]
             try:
                 row.set_invoke_enabled(bool(running))
             except Exception:
                 pass
             self._cmd_rows[str(name)] = row
             self._sec.add_row(row)
+
+    def _toggle_command_show_on_node(self, name: str, show_on_node: bool) -> None:
+        n = str(name or "").strip()
+        if not n:
+            return
+        self._apply_command_ui_override(n, bool(show_on_node))
+        row = self._cmd_rows.get(n)
+        if row is not None:
+            row.set_show_on_node(bool(show_on_node))
 
     def _prompt_command_args(self, cmd: F8Command) -> dict[str, Any] | None:
         params = list(cmd.params or [])

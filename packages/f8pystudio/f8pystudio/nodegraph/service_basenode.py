@@ -748,7 +748,10 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             try:
                 b.setEnabled(enabled)
                 if not enabled:
-                    b.setToolTip((b.toolTip() or "").strip() + ("\nService not running" if b.toolTip() else "Service not running"))
+                    b.setToolTip(
+                        (b.toolTip() or "").strip()
+                        + ("\nService not running" if b.toolTip() else "Service not running")
+                    )
             except Exception:
                 continue
         try:
@@ -1120,6 +1123,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
 
         # Rebuild only when command list / enabled state changes.
         try:
+
             def _cmd_name_desc(cmd: Any) -> tuple[str, str]:
                 if isinstance(cmd, dict):
                     return str(cmd.get("name") or ""), str(cmd.get("description") or "")
@@ -1540,6 +1544,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         read_only = access_s == "ro"
 
         if ui in {"wrapline"}:
+
             class _InlineWrapLineEdit(QtWidgets.QPlainTextEdit):
                 def __init__(self, parent: QtWidgets.QWidget | None = None):
                     super().__init__(parent)
@@ -1626,6 +1631,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             return edit
 
         if ui in {"code_inline", "multiline"}:
+
             class _InlineExprEdit(QtWidgets.QPlainTextEdit):
                 def __init__(self, parent: QtWidgets.QWidget | None = None):
                     super().__init__(parent)
@@ -1909,6 +1915,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         line = QtWidgets.QLineEdit()
         line.setMinimumWidth(90)
         _common_style(line)
+
         def _apply_value(v: Any) -> None:
             s = "" if v is None else str(v)
             with QtCore.QSignalBlocker(line):
@@ -2367,11 +2374,43 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             add_w (float): add additional width.
             add_h (float): add additional height.
         """
-        self._width, self._height = self.calc_size(add_w, add_h)
-        if self._width < NodeEnum.WIDTH.value:
-            self._width = NodeEnum.WIDTH.value
-        if self._height < NodeEnum.HEIGHT.value:
-            self._height = NodeEnum.HEIGHT.value
+        old_rect = None
+        try:
+            old_rect = self.boundingRect()
+        except Exception:
+            old_rect = None
+
+        w, h = self.calc_size(add_w, add_h)
+        if w < NodeEnum.WIDTH.value:
+            w = NodeEnum.WIDTH.value
+        if h < NodeEnum.HEIGHT.value:
+            h = NodeEnum.HEIGHT.value
+
+        changed = True
+        try:
+            changed = bool(abs(float(w) - float(self._width)) > 0.01 or abs(float(h) - float(self._height)) > 0.01)
+        except Exception:
+            changed = True
+
+        if changed:    
+            self.prepareGeometryChange()
+        
+        self._width, self._height = float(w), float(h)
+
+        if not changed or old_rect is None:
+            return
+
+        new_rect = self.boundingRect()
+
+        old_scene = self.mapToScene(old_rect).boundingRect()
+        new_scene = self.mapToScene(new_rect).boundingRect()
+        dirty = old_scene.united(new_scene).adjusted(-6, -6, 6, 6)
+        sc = self.scene()
+        if sc is not None:
+            sc.update(dirty)
+        v = self.viewer()
+        if v is not None:
+            v.viewport().update()
 
     def _set_text_color(self, color):
         """
@@ -2498,6 +2537,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         # Calculate port area height with expandable state panels.
         ports_h = 0.0
         if port_height:
+
             def _add_group_rows(rows: int) -> None:
                 nonlocal ports_h
                 if rows <= 0:
@@ -2873,13 +2913,21 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
 
         # Fallback when spec is unavailable: keep insertion order but grouped.
         if not exec_in_names:
-            exec_in_names = [_port_name(p) for p in self._input_items.keys() if self._port_group(_port_name(p)) == "exec"]
+            exec_in_names = [
+                _port_name(p) for p in self._input_items.keys() if self._port_group(_port_name(p)) == "exec"
+            ]
         if not exec_out_names:
-            exec_out_names = [_port_name(p) for p in self._output_items.keys() if self._port_group(_port_name(p)) == "exec"]
+            exec_out_names = [
+                _port_name(p) for p in self._output_items.keys() if self._port_group(_port_name(p)) == "exec"
+            ]
         if not data_in_names:
-            data_in_names = [_port_name(p) for p in self._input_items.keys() if self._port_group(_port_name(p)) == "data"]
+            data_in_names = [
+                _port_name(p) for p in self._input_items.keys() if self._port_group(_port_name(p)) == "data"
+            ]
         if not data_out_names:
-            data_out_names = [_port_name(p) for p in self._output_items.keys() if self._port_group(_port_name(p)) == "data"]
+            data_out_names = [
+                _port_name(p) for p in self._output_items.keys() if self._port_group(_port_name(p)) == "data"
+            ]
         if not state_names:
             # Infer state rows from existing ports.
             tmp: list[str] = []
@@ -2893,8 +2941,12 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                     tmp.append(n[:-3])
             state_names = [x for x in list(OrderedDict.fromkeys(tmp).keys()) if x]
 
-        other_in_names = [_port_name(p) for p in self._input_items.keys() if self._port_group(_port_name(p)) == "other"]
-        other_out_names = [_port_name(p) for p in self._output_items.keys() if self._port_group(_port_name(p)) == "other"]
+        other_in_names = [
+            _port_name(p) for p in self._input_items.keys() if self._port_group(_port_name(p)) == "other"
+        ]
+        other_out_names = [
+            _port_name(p) for p in self._output_items.keys() if self._port_group(_port_name(p)) == "other"
+        ]
 
         inputs_by_name = {_port_name(p): p for p in self.inputs if p.isVisible()}
         outputs_by_name = {_port_name(p): p for p in self.outputs if p.isVisible()}
@@ -2967,7 +3019,9 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                         pass
                     try:
                         if self._state_inline_headers.get(state_key) is not None:
-                            header_h = float(max(port_height, self._state_inline_headers[state_key].sizeHint().height()))
+                            header_h = float(
+                                max(port_height, self._state_inline_headers[state_key].sizeHint().height())
+                            )
                     except Exception:
                         header_h = port_height
                     try:
@@ -3265,7 +3319,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             h = float(proxy.size().height() or 0.0)
         except Exception:
             return
-        
+
         try:
             proxy.setPos(rect.right() - w, rect.top() - h)
         except Exception:
@@ -3330,13 +3384,21 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
 
         # input port text visibility.
         for port, text in self._input_items.items():
-            if port.display_name:
-                text.setVisible(port_text_visible)
+            try:
+                is_state = self._port_group(_port_name(port)) == "state"
+            except Exception:
+                is_state = False
+            should_show = bool(port_text_visible and port.display_name and not is_state)
+            text.setVisible(should_show)
 
         # output port text visibility.
         for port, text in self._output_items.items():
-            if port.display_name:
-                text.setVisible(port_text_visible)
+            try:
+                is_state = self._port_group(_port_name(port)) == "state"
+            except Exception:
+                is_state = False
+            should_show = bool(port_text_visible and port.display_name and not is_state)
+            text.setVisible(should_show)
 
         self._text_item.setVisible(visible)
         self._icon_item.setVisible(visible)

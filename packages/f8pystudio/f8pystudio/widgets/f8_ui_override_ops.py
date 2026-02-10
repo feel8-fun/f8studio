@@ -168,4 +168,3 @@ def find_base_state_field(spec: F8ServiceSpec | F8OperatorSpec | None, *, name: 
         if str(f.name or "").strip() == n:
             return f
     return None
-

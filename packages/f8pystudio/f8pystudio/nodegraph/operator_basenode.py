@@ -1160,13 +1160,17 @@ class _LegacyF8StudioOperatorNodeItem(AbstractNodeItem):
 
         # input port text visibility.
         for port, text in self._input_items.items():
-            if port.display_name:
-                text.setVisible(port_text_visible)
+            full_name = str(port.name or "")
+            is_state = full_name.startswith("[S]") or full_name.endswith("[S]")
+            should_show = bool(port_text_visible and port.display_name and not is_state)
+            text.setVisible(should_show)
 
         # output port text visibility.
         for port, text in self._output_items.items():
-            if port.display_name:
-                text.setVisible(port_text_visible)
+            full_name = str(port.name or "")
+            is_state = full_name.startswith("[S]") or full_name.endswith("[S]")
+            should_show = bool(port_text_visible and port.display_name and not is_state)
+            text.setVisible(should_show)
 
         self._text_item.setVisible(visible)
         self._icon_item.setVisible(visible)
