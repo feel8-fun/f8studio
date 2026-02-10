@@ -124,10 +124,15 @@ class ImPlayerService final : public f8::cppsdk::LifecycleNode,
   std::atomic<bool> playing_{false};
   std::atomic<bool> media_finished_{false};
   std::atomic<bool> eof_reached_{false};
+  std::atomic<bool> stopped_{false};
+  std::atomic<bool> clear_video_requested_{false};
 
   std::int64_t last_state_pub_ms_ = 0;
   std::int64_t last_playback_data_pub_ms_ = 0;
   std::uint64_t last_frame_id_published_ = 0;
+  std::int64_t last_tick_ms_ = 0;
+  double tick_ema_ms_ = 0.0;
+  double tick_ema_fps_ = 0.0;
 
   std::vector<std::string> playlist_;
   int playlist_index_ = -1;

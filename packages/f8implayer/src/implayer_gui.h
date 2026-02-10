@@ -24,6 +24,8 @@ class ImPlayerGui {
     std::function<void(const std::string& hwdec)> set_hwdec;
     std::function<void(int extra_frames)> set_hwdec_extra_frames;
     std::function<void(const std::string& fbo_format)> set_fbo_format;
+    std::function<void()> fit_view;
+    std::function<void()> toggle_fullscreen;
 
     std::function<void(int index)> playlist_select;
     std::function<void()> playlist_next;
@@ -41,7 +43,9 @@ class ImPlayerGui {
 
   void processEvent(SDL_Event* ev);
   void renderOverlay(const MpvPlayer& player, const Callbacks& cb, const std::string& last_error,
-                     const std::vector<std::string>& playlist, int playlist_index, bool playing, bool loop);
+                     const std::vector<std::string>& playlist, int playlist_index, bool playing, bool loop,
+                     double tick_fps_ema, double tick_ms_ema);
+  bool wantsCaptureKeyboard() const;
 
   bool wantsRepaint() const { return dirty_; }
   void clearRepaintFlag() { dirty_ = false; }
@@ -56,6 +60,7 @@ class ImPlayerGui {
   bool seeking_ = false;
   bool show_playlist_ = false;
   bool show_stats_ = false;
+  std::size_t last_playlist_size_ = 0;
   double last_interaction_time_s_ = 0.0;
   bool started_ = false;
   bool dirty_ = true;

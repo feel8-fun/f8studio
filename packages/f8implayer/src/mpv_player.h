@@ -52,6 +52,8 @@ class MpvPlayer {
     double lastShmIssueMs = 0.0;
     double lastShmMapWriteMs = 0.0;
     double emaShmMapWriteMs = 0.0;
+    double shmSinceLastWriteMs = 0.0;
+    std::uint64_t lastShmWriteSteadyNs = 0;
 
     std::uint64_t estVideoTargetBytes = 0;
     std::uint64_t estDownsampleTargetBytes = 0;
@@ -83,6 +85,8 @@ class MpvPlayer {
   bool setHwdec(const std::string& hwdec);
   bool setHwdecExtraFrames(int extra_frames);
   bool setFboFormat(const std::string& fbo_format);
+  void resetVideoOutput();
+  void resetPlaybackState();
   void setSharedMemorySink(std::shared_ptr<VideoSharedMemorySink> sink);
   void setVideoShmMaxSize(std::uint32_t max_width, std::uint32_t max_height);
   void setVideoShmMaxFps(double max_fps);
@@ -121,7 +125,7 @@ class MpvPlayer {
   bool ensureReadbackPbos(std::size_t bytes);
   void destroyReadbackPbos();
   bool copyFrameToSharedMemory(unsigned width, unsigned height, double& copyMs);
-  bool shouldCopyToSharedMemory(std::chrono::steady_clock::time_point now) const;
+  bool shouldCopyToSharedMemory(std::chrono::steady_clock::time_point now);
 
   static void HandleMpvWakeup(void* userdata);
   static void HandleRenderUpdate(void* userdata);
@@ -148,12 +152,18 @@ class MpvPlayer {
 
   mutable std::mutex sinkMutex_;
   std::shared_ptr<VideoSharedMemorySink> sink_;
-  std::chrono::steady_clock::time_point lastShmFrameTime_{};
+
+  // SHM rate-limiter state (render thread).
+  mutable std::mutex shmRateMutex_;
+  bool shm_due_initialized_ = false;
+  std::chrono::steady_clock::time_point shm_next_due_{};
+  std::atomic<bool> shm_rate_reset_{false};
 
   std::atomic<unsigned> videoWidth_{0};
   std::atomic<unsigned> videoHeight_{0};
   std::atomic<double> lastPositionSeconds_{0.0};
   std::atomic<double> lastDurationSeconds_{0.0};
+  std::atomic<bool> eofReached_{false};
 
   mutable std::mutex statsMutex_;
   Stats stats_{};

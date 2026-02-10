@@ -26,6 +26,17 @@ double DurationMs(std::chrono::steady_clock::duration d) {
   return std::chrono::duration<double, std::milli>(d).count();
 }
 
+std::uint64_t steady_now_ns() {
+  return static_cast<std::uint64_t>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+double steady_elapsed_ms(std::uint64_t since_ns, std::uint64_t now_ns) {
+  if (since_ns == 0 || now_ns < since_ns)
+    return 0.0;
+  return static_cast<double>(now_ns - since_ns) / 1e6;
+}
+
 std::uint64_t EstimateRgba8Bytes(unsigned width, unsigned height) {
   return static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height) * 4ULL;
 }
@@ -139,6 +150,7 @@ void MpvPlayer::initializeMpv() {
   mpv_observe_property(mpv_, 0, "pause", MPV_FORMAT_FLAG);
   mpv_observe_property(mpv_, 0, "hwdec-current", MPV_FORMAT_STRING);
   mpv_observe_property(mpv_, 0, "video-params/pixelformat", MPV_FORMAT_STRING);
+  mpv_observe_property(mpv_, 0, "eof-reached", MPV_FORMAT_FLAG);
   mpv_set_wakeup_callback(mpv_, &MpvPlayer::HandleMpvWakeup, this);
 
   {
@@ -157,6 +169,7 @@ bool MpvPlayer::openMedia(const std::string& source) {
   if (!mpv_ || source.empty())
     return false;
   const char* cmd[] = {"loadfile", source.c_str(), nullptr};
+  eofReached_.store(false, std::memory_order_release);
   return mpv_command(mpv_, cmd) >= 0;
 }
 
@@ -177,6 +190,8 @@ void MpvPlayer::stop() {
   if (!mpv_)
     return;
   mpv_command_string(mpv_, "stop");
+  eofReached_.store(false, std::memory_order_release);
+  resetPlaybackState();
 }
 
 void MpvPlayer::setVolume(double volume01) {
@@ -248,6 +263,7 @@ void MpvPlayer::setVideoShmMaxFps(double max_fps) {
     max_fps = 0.0;
   shm_max_fps_.store(max_fps, std::memory_order_relaxed);
   shm_frame_interval_s_.store(max_fps > 0.0 ? (1.0 / max_fps) : 0.0, std::memory_order_relaxed);
+  shm_rate_reset_.store(true, std::memory_order_release);
 }
 
 std::uint32_t MpvPlayer::videoShmMaxWidth() const {
@@ -531,7 +547,37 @@ void MpvPlayer::handlePropertyChange(const mpv_event_property& property) {
     }
     std::lock_guard<std::mutex> lock(mpvPropsMutex_);
     videoPixelFormat_ = s ? std::string(s) : std::string();
+  } else if (std::strcmp(property.name, "eof-reached") == 0 && property.format == MPV_FORMAT_FLAG) {
+    const int v = property.data ? *static_cast<int*>(property.data) : 0;
+    const bool eof = (v != 0);
+    const bool prev = eofReached_.exchange(eof, std::memory_order_acq_rel);
+    if (eof && !prev) {
+      if (playingCallback_)
+        playingCallback_(false);
+      if (finishedCallback_)
+        finishedCallback_();
+    }
   }
+}
+
+void MpvPlayer::resetVideoOutput() {
+  videoWidth_.store(0, std::memory_order_relaxed);
+  videoHeight_.store(0, std::memory_order_relaxed);
+  if (videoFboId_ != 0) {
+    glBindFramebuffer(GL_FRAMEBUFFER, videoFboId_);
+    glViewport(0, 0, static_cast<GLint>(std::max(1U, videoTexWidth_)), static_cast<GLint>(std::max(1U, videoTexHeight_)));
+    glClearColor(0.f, 0.f, 0.f, 1.f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  }
+  destroyReadbackPbos();
+  eofReached_.store(false, std::memory_order_release);
+}
+
+void MpvPlayer::resetPlaybackState() {
+  lastPositionSeconds_.store(0.0, std::memory_order_relaxed);
+  lastDurationSeconds_.store(0.0, std::memory_order_relaxed);
+  eofReached_.store(false, std::memory_order_release);
 }
 
 void MpvPlayer::handleVideoReconfig() {
@@ -750,16 +796,39 @@ void MpvPlayer::destroyReadbackPbos() {
   }
 }
 
-bool MpvPlayer::shouldCopyToSharedMemory(std::chrono::steady_clock::time_point now) const {
+bool MpvPlayer::shouldCopyToSharedMemory(std::chrono::steady_clock::time_point now) {
   if (config_.offline)
     return false;
+  if (shm_rate_reset_.exchange(false, std::memory_order_acq_rel)) {
+    std::lock_guard<std::mutex> lock(shmRateMutex_);
+    shm_due_initialized_ = false;
+  }
+
   const double interval_s = shm_frame_interval_s_.load(std::memory_order_relaxed);
   if (interval_s <= 0.0)
     return true;
-  if (lastShmFrameTime_.time_since_epoch().count() == 0)
+
+  // Leaky-bucket style limiter: schedule a "next due" timestamp and advance it
+  // by fixed intervals. This keeps a stable long-term average even if render/tick
+  // timing jitters. A small early tolerance avoids skipping due to sub-ms drift.
+  constexpr auto kEarlyTolerance = std::chrono::milliseconds(3);
+  const auto interval = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+      std::chrono::duration<double>(interval_s));
+
+  std::lock_guard<std::mutex> lock(shmRateMutex_);
+  if (!shm_due_initialized_) {
+    shm_next_due_ = now;
+    shm_due_initialized_ = true;
     return true;
-  const double elapsed_s = std::chrono::duration<double>(now - lastShmFrameTime_).count();
-  return elapsed_s >= interval_s;
+  }
+  if (now + kEarlyTolerance < shm_next_due_)
+    return false;
+
+  shm_next_due_ += interval;
+  // If we were delayed by more than one interval, resync to avoid bursty catch-up.
+  if (shm_next_due_ + interval < now)
+    shm_next_due_ = now + interval;
+  return true;
 }
 
 bool MpvPlayer::copyFrameToSharedMemory(unsigned width, unsigned height, double&) {
@@ -855,6 +924,7 @@ bool MpvPlayer::copyFrameToSharedMemory(unsigned width, unsigned height, double&
       } else {
         stats_.emaShmMapWriteMs = (1.0 - kEmaAlpha) * stats_.emaShmMapWriteMs + kEmaAlpha * map_write_ms;
       }
+      stats_.lastShmWriteSteadyNs = steady_now_ns();
     }
     return true;
   };
@@ -902,14 +972,21 @@ bool MpvPlayer::copyFrameToSharedMemory(unsigned width, unsigned height, double&
   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, prev_draw);
 
   if (wrote_frame) {
-    lastShmFrameTime_ = now;
+    // Timing is tracked by the limiter based on target FPS. This timestamp is
+    // still useful for UI/debug, so keep it here if needed in the future.
   }
   return wrote_frame;
 }
 
 MpvPlayer::Stats MpvPlayer::statsSnapshot() const {
-  std::lock_guard<std::mutex> lock(statsMutex_);
-  return stats_;
+  Stats out;
+  {
+    std::lock_guard<std::mutex> lock(statsMutex_);
+    out = stats_;
+  }
+  const std::uint64_t now_ns = steady_now_ns();
+  out.shmSinceLastWriteMs = steady_elapsed_ms(out.lastShmWriteSteadyNs, now_ns);
+  return out;
 }
 
 std::string MpvPlayer::hwdecCurrent() const {

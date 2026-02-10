@@ -240,4 +240,28 @@ void SdlVideoWindow::clearBlack() {
   glClear(GL_COLOR_BUFFER_BIT);
 }
 
+bool SdlVideoWindow::isFullscreen() const {
+  if (!window_)
+    return false;
+  const SDL_WindowFlags flags = SDL_GetWindowFlags(window_);
+  return (flags & SDL_WINDOW_FULLSCREEN) != 0;
+}
+
+bool SdlVideoWindow::setFullscreen(bool fullscreen) {
+  if (!window_)
+    return false;
+  if (!SDL_SetWindowFullscreen(window_, fullscreen)) {
+    spdlog::warn("SDL_SetWindowFullscreen failed: {}", SDL_GetError());
+    return false;
+  }
+  (void)SDL_SyncWindow(window_);
+  needs_redraw_ = true;
+  updateDrawableSize();
+  return true;
+}
+
+bool SdlVideoWindow::toggleFullscreen() {
+  return setFullscreen(!isFullscreen());
+}
+
 }  // namespace f8::implayer

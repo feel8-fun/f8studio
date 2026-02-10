@@ -56,6 +56,10 @@ class SdlVideoWindow {
   unsigned drawableWidth() const { return drawable_w_; }
   unsigned drawableHeight() const { return drawable_h_; }
 
+  bool isFullscreen() const;
+  bool setFullscreen(bool fullscreen);
+  bool toggleFullscreen();
+
   SDL_Window* sdlWindow() const { return window_; }
   SDL_GLContext glContext() const { return gl_context_; }
 

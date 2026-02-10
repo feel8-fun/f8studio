@@ -5,6 +5,7 @@
 #include <cctype>
 #include <chrono>
 #include <cstdint>
+#include <unordered_set>
 #include <string>
 #include <thread>
 #include <utility>
@@ -89,6 +90,20 @@ std::string trim_copy(std::string s) {
     s.erase(s.begin());
   while (!s.empty() && is_ws(static_cast<unsigned char>(s.back())))
     s.pop_back();
+  return s;
+}
+
+std::string normalize_url(std::string s) {
+  s = trim_copy(std::move(s));
+  while (s.size() >= 2) {
+    const char a = s.front();
+    const char b = s.back();
+    const bool match_double = (a == '"') && (b == '"');
+    const bool match_single = (a == '\'') && (b == '\'');
+    if (!match_double && !match_single)
+      break;
+    s = trim_copy(s.substr(1, s.size() - 2));
+  }
   return s;
 }
 
@@ -271,6 +286,18 @@ void ImPlayerService::tick() {
     return;
 
   bool did_present = false;
+  const std::int64_t tick_now_ms = f8::cppsdk::now_ms();
+  if (last_tick_ms_ > 0) {
+    const double dt_ms = static_cast<double>(std::max<std::int64_t>(1, tick_now_ms - last_tick_ms_));
+    constexpr double alpha = 0.12;
+    if (tick_ema_ms_ <= 0.0) {
+      tick_ema_ms_ = dt_ms;
+    } else {
+      tick_ema_ms_ = (1.0 - alpha) * tick_ema_ms_ + alpha * dt_ms;
+    }
+    tick_ema_fps_ = tick_ema_ms_ > 0.0 ? (1000.0 / tick_ema_ms_) : 0.0;
+  }
+  last_tick_ms_ = tick_now_ms;
 
   if (bus_) {
     (void)bus_->drain_main_thread();
@@ -294,6 +321,12 @@ void ImPlayerService::tick() {
     std::unique_lock<std::mutex> render_lock(render_mu_, std::try_to_lock);
     if (render_lock.owns_lock()) {
       (void)window_->makeCurrent();
+      const bool want_clear = clear_video_requested_.exchange(false, std::memory_order_acq_rel);
+      bool force_present = false;
+      if (want_clear && player_) {
+        player_->resetVideoOutput();
+        force_present = true;
+      }
       const unsigned vw = player_->videoWidth();
       const unsigned vh = player_->videoHeight();
       if (vw != 0 && vh != 0 && (vw != view_last_video_w_ || vh != view_last_video_h_)) {
@@ -306,7 +339,7 @@ void ImPlayerService::tick() {
       }
 
       const bool updated = player_->renderVideoFrame();
-      if (updated || window_->needsRedraw() || (gui_ && gui_->wantsRepaint())) {
+      if (force_present || updated || window_->needsRedraw() || (gui_ && gui_->wantsRepaint())) {
         ImPlayerGui::Callbacks cb;
         cb.open = [this](const std::string& url) {
           std::string err;
@@ -360,6 +393,16 @@ void ImPlayerService::tick() {
             last_error_ = "failed to set fbo-format=" + fbo_format;
           }
         };
+        cb.fit_view = [this]() {
+          view_zoom_ = 1.0f;
+          view_pan_x_ = 0.0f;
+          view_pan_y_ = 0.0f;
+          view_panning_ = false;
+        };
+        cb.toggle_fullscreen = [this]() {
+          if (window_)
+            (void)window_->toggleFullscreen();
+        };
         cb.playlist_select = [this](int index) {
           playlist_play_index(index);
         };
@@ -388,8 +431,8 @@ void ImPlayerService::tick() {
             *player_,
             [this, &cb, &err, &playlist_snapshot, playlist_index_snapshot, playing, loop_snapshot]() {
               if (gui_ && player_) {
-                gui_->renderOverlay(*player_, cb, err, playlist_snapshot, playlist_index_snapshot, playing,
-                                    loop_snapshot);
+                gui_->renderOverlay(*player_, cb, err, playlist_snapshot, playlist_index_snapshot, playing, loop_snapshot,
+                                    tick_ema_fps_, tick_ema_ms_);
                 gui_->clearRepaintFlag();
               }
             },
@@ -399,7 +442,7 @@ void ImPlayerService::tick() {
     }
   }
 
-  const std::int64_t now = f8::cppsdk::now_ms();
+  const std::int64_t now = tick_now_ms;
   if (now - last_state_pub_ms_ >= 200) {
     publish_dynamic_state();
     last_state_pub_ms_ = now;
@@ -521,7 +564,26 @@ void ImPlayerService::processSdlEvent(const SDL_Event& ev) {
   if (ev.type == SDL_EVENT_KEY_DOWN) {
     if (!player_)
       return;
+    if (gui_ && gui_->wantsCaptureKeyboard())
+      return;
     const SDL_Keycode key = ev.key.key;
+    if (key == SDLK_F) {
+      if (window_)
+        (void)window_->toggleFullscreen();
+      return;
+    }
+    if (key == SDLK_ESCAPE) {
+      if (window_ && window_->isFullscreen())
+        (void)window_->setFullscreen(false);
+      return;
+    }
+    if (key == SDLK_0) {
+      view_zoom_ = 1.0f;
+      view_pan_x_ = 0.0f;
+      view_pan_y_ = 0.0f;
+      view_panning_ = false;
+      return;
+    }
     if (key == SDLK_SPACE) {
       if (playing_.load(std::memory_order_relaxed))
         player_->pause();
@@ -812,13 +874,43 @@ void ImPlayerService::playlist_add(const std::vector<std::string>& items, bool p
   std::string url_to_open;
   {
     std::lock_guard<std::mutex> lock(state_mu_);
-    const bool empty_before = playlist_.empty();
-    for (const auto& s : items) {
-      if (!s.empty())
-        playlist_.push_back(s);
+    const std::string current_url = normalize_url(media_url_);
+
+    std::unordered_set<std::string> seen;
+    std::vector<std::string> next_playlist;
+    next_playlist.reserve(playlist_.size() + items.size());
+
+    for (const auto& existing : playlist_) {
+      const std::string u = normalize_url(existing);
+      if (u.empty())
+        continue;
+      if (!seen.insert(u).second)
+        continue;
+      next_playlist.push_back(u);
     }
+
+    const bool empty_before = next_playlist.empty();
+    for (const auto& raw : items) {
+      const std::string u = normalize_url(raw);
+      if (u.empty())
+        continue;
+      if (!seen.insert(u).second)
+        continue;
+      next_playlist.push_back(u);
+    }
+
+    playlist_ = std::move(next_playlist);
     if (playlist_.empty())
       return;
+
+    if (!current_url.empty()) {
+      for (std::size_t i = 0; i < playlist_.size(); ++i) {
+        if (playlist_[i] == current_url) {
+          playlist_index_ = static_cast<int>(i);
+          break;
+        }
+      }
+    }
     if (empty_before) {
       playlist_index_ = 0;
       url_to_open = playlist_[0];
@@ -920,7 +1012,7 @@ bool ImPlayerService::open_media_internal(const std::string& url, bool keep_play
     err = "player not initialized";
     return false;
   }
-  const std::string u = trim_copy(url);
+  const std::string u = normalize_url(url);
   if (u.empty()) {
     err = "missing url";
     return false;
@@ -935,12 +1027,22 @@ bool ImPlayerService::open_media_internal(const std::string& url, bool keep_play
         playlist_.push_back(u);
         playlist_index_ = 0;
       }
-      if (active_.load(std::memory_order_acquire)) {
-        (void)player_->play();
+      // If the user previously hit Stop, mpv likely unloaded the file. Reload it.
+      if (stopped_.load(std::memory_order_acquire)) {
+        // fallthrough and call mpv loadfile again
       } else {
-        player_->pause();
+        if (eof_reached_.load(std::memory_order_acquire)) {
+          eof_reached_.store(false, std::memory_order_release);
+          media_finished_.store(false, std::memory_order_release);
+          player_->seek(0.0);
+        }
+        if (active_.load(std::memory_order_acquire)) {
+          (void)player_->play();
+        } else {
+          player_->pause();
+        }
+        return true;
       }
-      return true;
     }
   }
 
@@ -951,6 +1053,7 @@ bool ImPlayerService::open_media_internal(const std::string& url, bool keep_play
     return false;
   }
   eof_reached_.store(false, std::memory_order_release);
+  stopped_.store(false, std::memory_order_release);
   {
     std::lock_guard<std::mutex> lock(state_mu_);
     media_url_ = u;
@@ -987,6 +1090,7 @@ bool ImPlayerService::cmd_open(const nlohmann::json& args, std::string& err) {
     if (url.empty() && args.contains("mediaUrl") && args["mediaUrl"].is_string())
       url = args["mediaUrl"].get<std::string>();
   }
+  url = normalize_url(std::move(url));
   return open_media_internal(url, false, err);
 }
 
@@ -994,6 +1098,29 @@ bool ImPlayerService::cmd_play(std::string& err) {
   if (!player_) {
     err = "player not initialized";
     return false;
+  }
+  if (stopped_.load(std::memory_order_acquire)) {
+    std::string url;
+    {
+      std::lock_guard<std::mutex> lock(state_mu_);
+      url = media_url_;
+    }
+    if (url.empty()) {
+      err = "no media loaded";
+      return false;
+    }
+    if (!player_->openMedia(url)) {
+      err = "mpv loadfile failed";
+      return false;
+    }
+    stopped_.store(false, std::memory_order_release);
+    eof_reached_.store(false, std::memory_order_release);
+    player_->seek(0.0);
+  }
+  if (eof_reached_.load(std::memory_order_acquire)) {
+    eof_reached_.store(false, std::memory_order_release);
+    media_finished_.store(false, std::memory_order_release);
+    player_->seek(0.0);
   }
   return player_->play();
 }
@@ -1013,7 +1140,30 @@ bool ImPlayerService::cmd_stop(std::string& err) {
     return false;
   }
   player_->stop();
+  player_->resetPlaybackState();
   eof_reached_.store(false, std::memory_order_release);
+  media_finished_.store(false, std::memory_order_release);
+  stopped_.store(true, std::memory_order_release);
+  bool cleared_now = false;
+  if (window_ && player_) {
+    std::unique_lock<std::mutex> render_lock(render_mu_, std::try_to_lock);
+    if (render_lock.owns_lock()) {
+      (void)window_->makeCurrent();
+      player_->resetVideoOutput();
+      cleared_now = true;
+    }
+  }
+  if (!cleared_now) {
+    clear_video_requested_.store(true, std::memory_order_release);
+  }
+  playing_.store(false, std::memory_order_release);
+  position_seconds_.store(0.0, std::memory_order_release);
+  duration_seconds_.store(0.0, std::memory_order_release);
+  {
+    std::lock_guard<std::mutex> lock(state_mu_);
+    last_error_.clear();
+    video_id_.clear();
+  }
   return true;
 }
 
@@ -1039,7 +1189,7 @@ bool ImPlayerService::cmd_seek(const nlohmann::json& args, std::string& err) {
     err = "missing position";
     return false;
   }
-  if (eof_reached_.load(std::memory_order_acquire)) {
+  if (eof_reached_.load(std::memory_order_acquire) || stopped_.load(std::memory_order_acquire)) {
     std::string url;
     {
       std::lock_guard<std::mutex> lock(state_mu_);
@@ -1056,6 +1206,7 @@ bool ImPlayerService::cmd_seek(const nlohmann::json& args, std::string& err) {
       return false;
     }
     eof_reached_.store(false, std::memory_order_release);
+    stopped_.store(false, std::memory_order_release);
   }
   player_->seek(pos);
   if (active_.load(std::memory_order_acquire)) {

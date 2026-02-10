@@ -4,8 +4,10 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 
 #include <imgui.h>
+#include <IconsFontAwesome6.h>
 
 #include "imgui_backends/imgui_impl_opengl3.h"
 #include "imgui_backends/imgui_impl_sdl3.h"
@@ -61,6 +63,66 @@ bool ImPlayerGui::start(SDL_Window* window, SDL_GLContext gl_context) {
 
   ImGui::StyleColorsDark();
 
+  // Fonts: load CJK + basic emoji. Our default font atlas doesn't include CJK glyphs.
+  // Note: full emoji above U+FFFF requires ImGui built with IMGUI_USE_WCHAR32.
+  const char* base_path = SDL_GetBasePath();
+  std::filesystem::path font_dir;
+  if (base_path && *base_path) {
+    font_dir = std::filesystem::path(base_path) / "font";
+  }
+  // Fallback for dev runs from repo root.
+  if (font_dir.empty() || !std::filesystem::exists(font_dir)) {
+    font_dir = std::filesystem::path("packages") / "f8implayer" / "font";
+  }
+
+  const auto roboto_path = (font_dir / "Roboto-Medium.ttf").string();
+  const auto cjk_path = (font_dir / "wqy-microhei.ttc").string();
+  const auto emoji_path = (font_dir / "NotoEmoji-Medium.ttf").string();
+
+  ImFontConfig cfg;
+  cfg.OversampleH = 2;
+  cfg.OversampleV = 2;
+  cfg.PixelSnapH = false;
+
+  ImFont* base_font = nullptr;
+  if (std::filesystem::exists(roboto_path)) {
+    base_font = io.Fonts->AddFontFromFileTTF(roboto_path.c_str(), 18.0f, &cfg);
+  }
+  if (!base_font) {
+    base_font = io.Fonts->AddFontDefault();
+  }
+
+  ImFontConfig merge_cfg = cfg;
+  merge_cfg.MergeMode = true;
+  merge_cfg.GlyphMinAdvanceX = 12.0f;
+
+  if (std::filesystem::exists(cjk_path)) {
+    io.Fonts->AddFontFromFileTTF(cjk_path.c_str(), 18.0f, &merge_cfg, io.Fonts->GetGlyphRangesChineseFull());
+  }
+
+  // Font Awesome icons (merged into base font).
+  {
+    static const ImWchar fa_ranges[] = {ICON_MIN_FA, ICON_MAX_16_FA, 0};
+    const auto fa_solid_path = (font_dir / FONT_ICON_FILE_NAME_FAS).string();
+    const auto fa_regular_path = (font_dir / FONT_ICON_FILE_NAME_FAR).string();
+    if (std::filesystem::exists(fa_solid_path)) {
+      io.Fonts->AddFontFromFileTTF(fa_solid_path.c_str(), 18.0f, &merge_cfg, fa_ranges);
+    }
+    if (std::filesystem::exists(fa_regular_path)) {
+      io.Fonts->AddFontFromFileTTF(fa_regular_path.c_str(), 18.0f, &merge_cfg, fa_ranges);
+    }
+  }
+
+  if (std::filesystem::exists(emoji_path)) {
+    static const ImWchar ranges[] = {
+        0x2000, 0x206F,  // General punctuation
+        0x2600, 0x27FF,  // Misc symbols + Dingbats (BMP emoji-like)
+        0x2B00, 0x2BFF,  // Misc symbols/arrows
+        0,
+    };
+    io.Fonts->AddFontFromFileTTF(emoji_path.c_str(), 18.0f, &merge_cfg, ranges);
+  }
+
   if (!ImGui_ImplSDL3_InitForOpenGL(window, gl_context)) {
     stop();
     return false;
@@ -91,8 +153,15 @@ void ImPlayerGui::processEvent(SDL_Event* ev) {
   dirty_ = true;
 }
 
+bool ImPlayerGui::wantsCaptureKeyboard() const {
+  if (!started_)
+    return false;
+  return ImGui::GetIO().WantCaptureKeyboard;
+}
+
 void ImPlayerGui::renderOverlay(const MpvPlayer& player, const Callbacks& cb, const std::string& last_error,
-                                const std::vector<std::string>& playlist, int playlist_index, bool playing, bool loop) {
+                                const std::vector<std::string>& playlist, int playlist_index, bool playing, bool loop,
+                                double tick_fps_ema, double tick_ms_ema) {
   if (!started_)
     return;
 
@@ -123,6 +192,10 @@ void ImPlayerGui::renderOverlay(const MpvPlayer& player, const Callbacks& cb, co
   const bool show_controls =
       seeking_ || mouse_in_controls_region || (!playing) || ((now_s - last_interaction_time_s_) <= 1.25);
 
+  if (playlist.size() > 1 && last_playlist_size_ <= 1) {
+    show_playlist_ = true;
+  }
+
   if (show_controls) {
     const float w = std::min(820.0f, vsize.x - 24.0f);
     ImGui::SetNextWindowBgAlpha(0.55f);
@@ -133,53 +206,83 @@ void ImPlayerGui::renderOverlay(const MpvPlayer& player, const Callbacks& cb, co
                              ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
                              ImGuiWindowFlags_AlwaysAutoResize;
     if (ImGui::Begin("##implayer_controls", nullptr, flags)) {
-      if (ImGui::Button(playing ? "Pause" : "Play")) {
+      const char* play_icon = playing ? ICON_FA_PAUSE : ICON_FA_PLAY;
+      ImGui::PushID("playpause");
+      if (ImGui::Button(play_icon)) {
         if (playing) {
           if (cb.pause)
             cb.pause();
-        } else {
+        } else { 
           if (cb.play)
             cb.play();
         }
         dirty_ = true;
       }
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("%s", playing ? "Pause" : "Play");
+      ImGui::PopID();
       ImGui::SameLine();
-      if (ImGui::Button("Stop")) {
+      if (ImGui::Button(ICON_FA_STOP "##stop")) {
         if (cb.stop)
           cb.stop();
         dirty_ = true;
       }
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("%s", "Stop");
       ImGui::SameLine();
-      if (ImGui::Button("Prev")) {
+      if (ImGui::Button(ICON_FA_BACKWARD_STEP "##prev")) {
         if (cb.playlist_prev)
           cb.playlist_prev();
         dirty_ = true;
       }
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("%s", "Previous");
       ImGui::SameLine();
-      if (ImGui::Button("Next")) {
+      if (ImGui::Button(ICON_FA_FORWARD_STEP "##next")) {
         if (cb.playlist_next)
           cb.playlist_next();
         dirty_ = true;
       }
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("%s", "Next");
       ImGui::SameLine();
-      show_playlist_ = show_playlist_ || (playlist.size() > 1);
-      if (ImGui::SmallButton(show_playlist_ ? "List:On" : "List:Off")) {
+      const bool playlist_highlight = show_playlist_;
+      if (playlist_highlight)
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.25f, 0.9f, 0.6f, 1.0f));
+      if (ImGui::SmallButton(ICON_FA_LIST "##list")) {
         show_playlist_ = !show_playlist_;
         dirty_ = true;
       }
+      if (playlist_highlight)
+        ImGui::PopStyleColor();
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("%s", "Playlist");
 
       ImGui::SameLine();
-      if (ImGui::SmallButton(loop ? "Loop:On" : "Loop:Off")) {
+      if (loop)
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.25f, 0.9f, 0.6f, 1.0f));
+      if (ImGui::SmallButton(ICON_FA_REPEAT "##loop")) {
         if (cb.set_loop)
           cb.set_loop(!loop);
         dirty_ = true;
       }
+      if (loop)
+        ImGui::PopStyleColor();
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("%s", "Loop");
 
       ImGui::SameLine();
-      if (ImGui::SmallButton(show_stats_ ? "Stats:On" : "Stats:Off")) {
+      const bool stats_highlight = show_stats_;
+      if (stats_highlight)
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.25f, 0.9f, 0.6f, 1.0f));
+      if (ImGui::SmallButton(ICON_FA_SQUARE_POLL_VERTICAL "##stats")) {
         show_stats_ = !show_stats_;
         dirty_ = true;
       }
+      if (stats_highlight)
+        ImGui::PopStyleColor();
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("%s", "Stats");
 
       ImGui::SameLine();
       ImGui::TextDisabled("%s / %s", format_time(pos).c_str(), (dur > 0.0 ? format_time(dur).c_str() : "--:--"));
@@ -206,6 +309,8 @@ void ImPlayerGui::renderOverlay(const MpvPlayer& player, const Callbacks& cb, co
         ImGui::EndDisabled();
       }
 
+      ImGui::TextDisabled("%s", ICON_FA_VOLUME_HIGH);
+      ImGui::SameLine();
       ImGui::SetNextItemWidth(150);
       if (ImGui::SliderFloat("##volume", &volume01_, 0.0f, 1.0f, "vol=%.2f")) {
         if (cb.set_volume)
@@ -214,10 +319,28 @@ void ImPlayerGui::renderOverlay(const MpvPlayer& player, const Callbacks& cb, co
       }
 
       ImGui::SameLine();
-      if (ImGui::Button("Open")) {
+      if (ImGui::Button(ICON_FA_FILM "##open")) {
         ImGui::OpenPopup("##open_popup");
         dirty_ = true;
       }
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("%s", "Open");
+      ImGui::SameLine();
+      if (ImGui::Button(ICON_FA_UP_RIGHT_AND_DOWN_LEFT_FROM_CENTER "##fit")) {
+        if (cb.fit_view)
+          cb.fit_view();
+        dirty_ = true;
+      }
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("%s", "Fit");
+      ImGui::SameLine();
+      if (ImGui::Button(ICON_FA_MAXIMIZE "##fullscreen")) {
+        if (cb.toggle_fullscreen)
+          cb.toggle_fullscreen();
+        dirty_ = true;
+      }
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("%s", "Fullscreen");
       if (ImGui::BeginPopup("##open_popup")) {
         ImGui::TextUnformatted("URL / filepath:");
         ImGui::SetNextItemWidth(520);
@@ -396,6 +519,7 @@ void ImPlayerGui::renderOverlay(const MpvPlayer& player, const Callbacks& cb, co
       ImGui::Spacing();
       ImGui::TextDisabled("Render");
       ImGui::Separator();
+      ImGui::Text("tick: ema=%.1f fps (%.2f ms)", tick_fps_ema, tick_ms_ema);
       ImGui::Text("calls=%llu updates=%llu frames=%llu failures=%llu", static_cast<unsigned long long>(stats.renderCalls),
                   static_cast<unsigned long long>(stats.renderUpdates), static_cast<unsigned long long>(stats.renderFrames),
                   static_cast<unsigned long long>(stats.renderFailures));
@@ -419,6 +543,7 @@ void ImPlayerGui::renderOverlay(const MpvPlayer& player, const Callbacks& cb, co
                   static_cast<unsigned long long>(stats.shmSkipTarget),
                   static_cast<unsigned long long>(stats.shmSkipSinkConfig),
                   static_cast<unsigned long long>(stats.shmSkipReadbackBusy));
+      ImGui::Text("since last write: %.1f ms", stats.shmSinceLastWriteMs);
 
       ImGui::Spacing();
       ImGui::TextDisabled("GPU (estimated, our targets only)");
@@ -455,6 +580,7 @@ void ImPlayerGui::renderOverlay(const MpvPlayer& player, const Callbacks& cb, co
 
   ImGui::Render();
   ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+  last_playlist_size_ = playlist.size();
 }
 
 }  // namespace f8::implayer
