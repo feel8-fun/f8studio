@@ -67,6 +67,14 @@ std::unordered_map<std::string, std::vector<DataRoute>> parse_cross_service_data
     r.from_service_id = from_sid;
     r.from_node_id = from_nid;
     r.from_port = from_port;
+    if (edge.strategy.has_value() && edge.strategy.value() == generated::F8EdgeStrategyEnum::queue) {
+      r.strategy = EdgeStrategy::kQueue;
+    } else {
+      r.strategy = EdgeStrategy::kLatest;
+    }
+    if (edge.timeoutMs.has_value()) {
+      r.timeout_ms = edge.timeoutMs.value();
+    }
     routes[subject].push_back(std::move(r));
   }
 

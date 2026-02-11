@@ -83,13 +83,37 @@ bool ServiceControlPlaneServer::start() {
   }
 
   microServiceConfig sc{};
-  const auto micro_name = svc_micro_name(sid);
-  sc.Name = micro_name.c_str();
+  micro_name_ = svc_micro_name(sid);
+  const std::string svc_name = cfg_.service_name.empty() ? sid : cfg_.service_name;
+  const std::string svc_class = cfg_.service_class;
+  {
+    std::string desc = "F8 service runtime control plane (";
+    if (!svc_class.empty()) {
+      desc += "serviceClass=" + svc_class + ", ";
+    }
+    desc += "serviceName=" + svc_name + ", serviceId=" + sid + ").";
+    micro_description_ = std::move(desc);
+  }
+  micro_metadata_kv_.clear();
+  micro_metadata_cstrs_.clear();
+  micro_metadata_kv_.push_back("serviceId");
+  micro_metadata_kv_.push_back(sid);
+  micro_metadata_kv_.push_back("serviceName");
+  micro_metadata_kv_.push_back(svc_name);
+  if (!svc_class.empty()) {
+    micro_metadata_kv_.push_back("serviceClass");
+    micro_metadata_kv_.push_back(svc_class);
+  }
+  micro_metadata_cstrs_.reserve(micro_metadata_kv_.size());
+  for (const auto& s : micro_metadata_kv_) {
+    micro_metadata_cstrs_.push_back(s.c_str());
+  }
+
+  sc.Name = micro_name_.c_str();
   sc.Version = "0.0.1";
-  sc.Description = "F8 service runtime control plane (lifecycle + cmd + state + rungraph).";
-  const char* md_kv[] = {"serviceId", sid.c_str()};
-  sc.Metadata.List = md_kv;
-  sc.Metadata.Count = 1;
+  sc.Description = micro_description_.c_str();
+  sc.Metadata.List = micro_metadata_cstrs_.data();
+  sc.Metadata.Count = static_cast<int>(micro_metadata_cstrs_.size() / 2);
   sc.State = this;
 
   microError* err = micro_AddService(&micro_, client_->raw(), &sc);
@@ -305,14 +329,7 @@ void ServiceControlPlaneServer::handle_request(microRequest* msg, const std::str
         respond(msg, env.req_id, false, json(nullptr), err_code, err_msg);
         return;
       }
-      // Persist to KV (mirror python behavior of adding meta.ts).
-      json persisted = graph_obj;
-      if (!persisted.contains("meta") || !persisted["meta"].is_object())
-        persisted["meta"] = json::object();
-      persisted["meta"]["ts"] = now_ms();
-      const auto bytes = persisted.dump();
-      kv_->put(kv_key_rungraph(), bytes.data(), bytes.size());
-      result = json{{"graphId", persisted.value("graphId", "")}};
+      result = json{{"graphId", graph_obj.value("graphId", "")}};
       respond(msg, env.req_id, true, result, "", "");
       return;
     }

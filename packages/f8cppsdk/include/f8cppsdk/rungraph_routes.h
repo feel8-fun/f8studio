@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -8,12 +9,19 @@
 
 namespace f8::cppsdk {
 
+enum class EdgeStrategy {
+  kLatest,
+  kQueue,
+};
+
 struct DataRoute {
   std::string to_node_id;
   std::string to_port;
   std::string from_service_id;
   std::string from_node_id;
   std::string from_port;
+  EdgeStrategy strategy = EdgeStrategy::kLatest;
+  std::int64_t timeout_ms = 0;
 };
 
 // Parse a rungraph JSON object and extract cross-service data routes targeting `to_service_id`.
@@ -24,4 +32,3 @@ std::unordered_map<std::string, std::vector<DataRoute>> parse_cross_service_data
     const nlohmann::json& graph_obj, const std::string& to_service_id);
 
 }  // namespace f8::cppsdk
-

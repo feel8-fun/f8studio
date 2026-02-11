@@ -2,6 +2,7 @@ add_executable(f8cppsdk_tests
   test_main_thread_queue.cpp
   test_protocol_models_parse.cpp
   test_rungraph_routes.cpp
+  test_service_bus_integration.cpp
 )
 
 target_compile_features(f8cppsdk_tests PRIVATE cxx_std_17)

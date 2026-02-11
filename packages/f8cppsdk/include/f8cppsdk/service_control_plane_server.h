@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <nlohmann/json_fwd.hpp>
 
@@ -19,6 +20,8 @@ class ServiceControlPlaneServer {
   struct Config {
     std::string service_id;
     std::string nats_url = "nats://127.0.0.1:4222";
+    std::string service_name;
+    std::string service_class;
   };
 
   ServiceControlPlaneServer(Config cfg, NatsClient* client, KvStore* kv, ServiceControlHandler* handler);
@@ -40,6 +43,10 @@ class ServiceControlPlaneServer {
   ServiceControlHandler* handler_ = nullptr;
 
   microService* micro_ = nullptr;
+  std::string micro_name_;
+  std::string micro_description_;
+  std::vector<std::string> micro_metadata_kv_;
+  std::vector<const char*> micro_metadata_cstrs_;
 };
 
 }  // namespace f8::cppsdk
