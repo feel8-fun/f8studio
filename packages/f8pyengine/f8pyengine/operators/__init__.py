@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .signal import SineRuntimeNode
+from .signal import CosineRuntimeNode
 from .signal import TempestRuntimeNode
 from .tcode import TCodeRuntimeNode
 from .print import PrintRuntimeNode
@@ -17,12 +17,14 @@ from .lovense_wave import LovenseThrustingWaveRuntimeNode
 from .lovense_wave import LovenseVibrationWaveRuntimeNode
 from .mix_silence_fill import MixSilenceFillRuntimeNode
 from .pull import PullRuntimeNode
+from .program_wave import ProgramWaveRuntimeNode
 
 __all__ = [
     "PrintRuntimeNode",
     "PullRuntimeNode",
+    "ProgramWaveRuntimeNode",
     "SerialOutRuntimeNode",
-    "SineRuntimeNode",
+    "CosineRuntimeNode",
     "TCodeRuntimeNode",
     "TempestRuntimeNode",
     "TickRuntimeNode",
