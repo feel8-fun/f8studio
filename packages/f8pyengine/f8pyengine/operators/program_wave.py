@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 import time
 from dataclasses import dataclass
@@ -23,6 +24,8 @@ from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from ..constants import SERVICE_CLASS
 
 OPERATOR_CLASS: Final[str] = "f8.program_wave"
+
+logger = logging.getLogger(__name__)
 
 
 def _coerce_number(value: Any) -> float | None:
@@ -174,12 +177,31 @@ class ProgramWaveRuntimeNode(OperatorNode):
             state_fields=[s.name for s in (node.stateFields or [])],
         )
         self._program: _Program | None = _parse_program((initial_state or {}).get("program"))
+        self._last_error: str | None = None
 
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
         _ = ts_ms
         if str(field) != "program":
             return
         self._program = _parse_program(value)
+
+    def _log_error_once(self, msg: str, *, exc: BaseException | None = None) -> None:
+        s = str(msg or "")
+        if not s or s == self._last_error:
+            return
+        self._last_error = s
+        if exc is None:
+            logger.error("[%s:program_wave] %s", self.node_id, s)
+        else:
+            logger.exception("[%s:program_wave] %s", self.node_id, s, exc_info=exc)
+
+    async def _read_program_state(self) -> _Program | None:
+        try:
+            return _parse_program(await self.get_state_value("program"))
+        except Exception as exc:
+            # Safety boundary: state transport errors should not crash the graph.
+            self._log_error_once(f"failed to read state 'program': {type(exc).__name__}: {exc}", exc=exc)
+            return None
 
     async def compute_output(self, port: str, ctx_id: str | int | None = None) -> Any:
         _ = ctx_id
@@ -189,10 +211,7 @@ class ProgramWaveRuntimeNode(OperatorNode):
 
         program = self._program
         if program is None:
-            try:
-                program = _parse_program(await self.get_state_value("program"))
-            except Exception:
-                program = None
+            program = await self._read_program_state()
             self._program = program
         if program is None:
             if p == "phase":
@@ -261,8 +280,8 @@ ProgramWaveRuntimeNode.SPEC = F8OperatorSpec(
             label="Program",
             description="Dict payload defining tsMs/timeSec/hz/loopRunningSec/loopPauseSec.",
             valueSchema=any_schema(),
-            access=F8StateAccess.rw,
-            showOnNode=False,
+            access=F8StateAccess.wo,
+            showOnNode=True,
             required=True,
         ),
     ],

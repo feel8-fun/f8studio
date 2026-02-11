@@ -12,8 +12,22 @@ Entry wiring lives in `f8pyengine/pyengine_service.py` and is exposed via `f8pye
 
 ### Lovense waveforms
 
-- `Lovense Thrusting Wave` (`operatorClass=f8.lovense_thrusting_wave`): subscribe the mock server's `event` via a state edge into `lovenseEvent`, then tick it via exec to generate a continuous 0..1 thrusting waveform.
-- `Lovense Vibration Wave` (`operatorClass=f8.lovense_vibration_wave`): basic step-sequencer interpretation of Pattern events (`S:<ms>#` + `strength` list), also driven by tick exec.
+Prefer composition over monolithic Lovense wave nodes:
+
+- `Lovense Program Adapter` (`operatorClass=f8.lovense_program_adapter`): converts `lovense_mock_server.event` (state) into:
+  - `program` (ro state, dict) suitable for `Program Wave`
+  - `amplitude` (ro state, 0..1) usable as modulation
+  - `sequence` (ro state, dict) for Pattern -> hz step sequence (optional)
+- `Program Wave` (`operatorClass=f8.program_wave`): produces `phase`, `phaseTurns`, `active`, `done` from a program dict.
+  - Recommended wiring: state edge `lovense_program_adapter.program` -> `program_wave.program`.
+- `Sequence Player` (`operatorClass=f8.sequence_player`): plays a `sequence` dict over time and outputs the current step `value`.
+  - Wiring for Pattern: state edge `lovense_program_adapter.sequence` -> `sequence_player.sequence`.
+- `Cosine` (`operatorClass=f8.cosine`): consumes `phase` (0..1) and generates a waveform sample.
+  - Typical mapping for 0..1 output range: `dc=0.5`, `amp=0.5 * amplitude` (use `f8.expr` or `f8.range_map`).
+
+Pattern->phase wiring example (reusable):
+- `sequence_player.value` (Hz) -> `Phase.hz` (`operatorClass=f8.phase`)
+- `Phase.phase` -> `Cosine.phase`
 
 ### Mix / Fill
 

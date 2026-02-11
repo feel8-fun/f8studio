@@ -27,9 +27,19 @@ OPERATOR_CLASS = "f8.python_script"
 
 
 DEFAULT_CODE = (
-    "# Define hooks: onStart(ctx), onMsg(ctx, inputs), onExec(ctx, execIn, inputs), onStop(ctx)\n"
+    "# Define hooks (any subset is ok):\n"
+    "# - onStart(ctx)\n"
+    "# - onState(ctx, field, value, tsMs=None)      # called on state updates (except 'code')\n"
+    "# - onMsg(ctx, inputs)                        # called on data arrival (push mode) or as fallback for exec\n"
+    "# - onExec(ctx, execIn, inputs)               # called on exec trigger (pull mode)\n"
+    "# - onStop(ctx)\n"
     "# - ctx['state'] is preserved between calls\n"
     "# - ctx['execIn'] is set for exec-triggered calls\n"
+    "# - State helpers:\n"
+    "#   - await ctx['get_state'](field)           # read state value\n"
+    "#   - ctx['set_state'](field, value)          # write state (fire-and-forget)\n"
+    "#   - await ctx['set_state_async'](field, value)\n"
+    "#   Note: for best UI/graph support, add the target state fields on the node (editableStateFields=True).\n"
     "# - inputs is a dict keyed by input port names\n"
     "# Return value protocol:\n"
     "# - onMsg: return {'outputs': {...}} or any value (emits to 'out' if present)\n"
@@ -38,6 +48,10 @@ DEFAULT_CODE = (
     "#   - 'outputs' is a dict mapping dataOutPort -> value\n\n"
     "def onStart(ctx):\n"
     "    ctx['log']('python_script started')\n\n"
+    "def onState(ctx, field, value, tsMs=None):\n"
+    "    # Example: react to a state change.\n"
+    "    # ctx['log'](f'state {field}={value} tsMs={tsMs}')\n"
+    "    return\n\n"
     "def onMsg(ctx, inputs):\n"
     "    msg = inputs.get('msg')\n"
     "    return {'outputs': {'out': msg}}\n\n"
@@ -56,6 +70,7 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
     Execute user-provided python code with lifecycle hooks:
 
     - onStart(ctx): invoked on construction (best-effort) and after recompiles
+    - onState(ctx, field, value, tsMs=None): invoked on state updates (except 'code')
     - onMsg(ctx, inputs): invoked on exec or data arrival
     - onStop(ctx): invoked on close() (best-effort) and before recompiles
     """
@@ -77,6 +92,7 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
         self._started = False
         self._closing = False
         self._last_error: str | None = None
+        self._self_state_writes: dict[str, Any] = {}
 
         self._compile_and_start()
 
@@ -133,10 +149,12 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
                 pass
 
         async def _set_state_async(field: str, value: Any) -> None:
+            self._self_state_writes[str(field)] = value
             await self.set_state(str(field), value)
 
         def _set_state(field: str, value: Any) -> None:
             try:
+                self._self_state_writes[str(field)] = value
                 loop = asyncio.get_running_loop()
                 loop.create_task(
                     _set_state_async(str(field), value), name=f"python_script:set_state:{self.node_id}:{field}"
@@ -167,7 +185,7 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
             self._set_error("compile", exc)
             return {}
         runtime: dict[str, Callable[..., Any]] = {}
-        for hook in ("onStart", "onMsg", "onExec", "onStop"):
+        for hook in ("onStart", "onState", "onMsg", "onExec", "onStop"):
             fn = env.get(hook)
             if callable(fn):
                 runtime[hook] = fn
@@ -233,10 +251,25 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
                 self._started = False
 
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
-        if str(field) != "code":
+        name = str(field)
+        if name == "code":
+            self._code = str(value or "")
+            self._compile_and_start()
             return
-        self._code = str(value or "")
-        self._compile_and_start()
+
+        # Best-effort loop prevention for state writes originating from this node (via ctx['set_state']).
+        if name in self._self_state_writes and self._self_state_writes.get(name) == value:
+            return
+
+        fn = self._runtime.get("onState")
+        if not callable(fn):
+            return
+        try:
+            r = fn(self._ctx, name, value, ts_ms)
+            if inspect.isawaitable(r):
+                await r
+        except Exception as exc:
+            self._set_error("onState", exc)
 
     async def on_data(self, port: str, value: Any, *, ts_ms: int | None = None) -> None:
         # Push-mode: treat incoming data as a message.
@@ -350,7 +383,7 @@ PythonScriptRuntimeNode.SPEC = F8OperatorSpec(
     operatorClass=OPERATOR_CLASS,
     version="0.0.1",
     label="Python Script",
-    description="Execute Python code with onStart/onMsg/onExec/onStop hooks.",
+    description="Execute Python code with onStart/onState/onMsg/onExec/onStop hooks.",
     tags=["script", "python", "programmable"],
     execInPorts=["exec"],
     execOutPorts=["exec"],

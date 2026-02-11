@@ -583,7 +583,25 @@ class F8StudioGraph(NodeGraph):
                 # Nothing to validate against; keep `custom` as-is.
                 continue
 
-            kept = {k: v for k, v in custom.items() if str(k) in allowed}
+            # Session compatibility:
+            # - Some older sessions may persist property keys with different casing
+            #   (eg. user-added "Event" instead of spec field "event").
+            # - Normalize by renaming case-insensitive matches to the canonical spec name.
+            allowed_lower: dict[str, str] = {a.lower(): a for a in allowed}
+
+            kept: dict[str, Any] = {}
+            for k, v in custom.items():
+                key = str(k)
+                if key in allowed:
+                    kept[key] = v
+                    continue
+                canonical = allowed_lower.get(key.lower())
+                if canonical is None:
+                    continue
+                # Prefer existing canonical key if already present.
+                if canonical not in kept:
+                    kept[canonical] = v
+
             if kept != custom:
                 node_data["custom"] = kept
 

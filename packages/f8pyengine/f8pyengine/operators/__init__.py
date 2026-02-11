@@ -13,16 +13,17 @@ from .smooth_filter import SmoothFilterRuntimeNode
 from .range_map import RangeMapRuntimeNode
 from .rate_limiter import RateLimiterRuntimeNode
 from .lovense_mock_server import LovenseMockServerRuntimeNode
-from .lovense_wave import LovenseThrustingWaveRuntimeNode
-from .lovense_wave import LovenseVibrationWaveRuntimeNode
+from .lovense_program_adapter import LovenseProgramAdapterRuntimeNode
 from .mix_silence_fill import MixSilenceFillRuntimeNode
 from .pull import PullRuntimeNode
 from .program_wave import ProgramWaveRuntimeNode
+from .sequence_player import SequencePlayerRuntimeNode
 
 __all__ = [
     "PrintRuntimeNode",
     "PullRuntimeNode",
     "ProgramWaveRuntimeNode",
+    "SequencePlayerRuntimeNode",
     "SerialOutRuntimeNode",
     "CosineRuntimeNode",
     "TCodeRuntimeNode",
@@ -35,7 +36,6 @@ __all__ = [
     "RangeMapRuntimeNode",
     "RateLimiterRuntimeNode",
     "LovenseMockServerRuntimeNode",
-    "LovenseThrustingWaveRuntimeNode",
-    "LovenseVibrationWaveRuntimeNode",
+    "LovenseProgramAdapterRuntimeNode",
     "MixSilenceFillRuntimeNode",
 ]

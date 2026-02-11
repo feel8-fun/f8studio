@@ -1,9 +1,14 @@
 from __future__ import annotations
 import json
+import logging
 
 from NodeGraphQt.base.model import NodeModel
+from NodeGraphQt.errors import NodePropertyError
 
 from f8pysdk import F8OperatorSpec, F8ServiceSpec
+
+
+logger = logging.getLogger(__name__)
 
 
 class F8StudioNodeModel(NodeModel):
@@ -21,6 +26,9 @@ class F8StudioNodeModel(NodeModel):
         self.f8_spec = None
         self.f8_sys = {}
         self.f8_ui = {}
+        self._owner_node: object | None = None
+
+    _unknown_prop_logged: set[str] = set()
 
     @staticmethod
     def _coerce_spec(value: object) -> F8OperatorSpec | F8ServiceSpec | None:
@@ -36,7 +44,19 @@ class F8StudioNodeModel(NodeModel):
 
     def set_property(self, name, value):
         if name == "f8_spec":
+            old = self.f8_spec
             self.f8_spec = self._coerce_spec(value)
+            # Important: during node construction, the template spec is set once.
+            # Subclasses build ports/properties in their __init__. We must NOT
+            # trigger sync_from_spec() on this first assignment, otherwise ports
+            # may be registered twice (causing PortRegistrationError).
+            if old is not None and self.f8_spec is not None:
+                owner = self._owner_node
+                if owner is not None:
+                    try:
+                        owner.sync_from_spec()  # type: ignore[attr-defined]
+                    except Exception:
+                        logger.exception("Failed to sync node after f8_spec update.")
             return
         if name == "f8_ui":
             if isinstance(value, dict):
@@ -45,8 +65,26 @@ class F8StudioNodeModel(NodeModel):
                 self.f8_ui = {}
             else:
                 raise TypeError(f"Unsupported `f8_ui` type: {type(value)!r}")
+            # UI changes affect effective state fields/ports, so resync.
+            if self.f8_spec is not None:
+                owner = self._owner_node
+                if owner is not None:
+                    try:
+                        owner.sync_from_spec()  # type: ignore[attr-defined]
+                    except Exception:
+                        logger.exception("Failed to sync node after f8_ui update.")
             return
-        return super().set_property(name, value)
+        try:
+            return super().set_property(name, value)
+        except NodePropertyError:
+            # Session compatibility: older sessions may reference properties that no longer exist
+            # after node spec/schema changes (eg. a state field label was used as a property name).
+            # Ignore these so sessions still load, and log once per property name.
+            prop = str(name)
+            if prop not in self._unknown_prop_logged:
+                self._unknown_prop_logged.add(prop)
+                logger.warning("Ignoring unknown node property during session load: %r", name)
+            return None
 
     @property
     def to_dict(self):
@@ -57,6 +95,10 @@ class F8StudioNodeModel(NodeModel):
         """
         data = super().to_dict
         ((node_id, node_dict),) = data.items()
+
+        # Never persist runtime-only helpers into session JSON.
+        node_dict.pop("_owner_node", None)
+        node_dict.pop("_unknown_prop_logged", None)
 
         spec = node_dict.get("f8_spec")
         if isinstance(spec, (F8OperatorSpec, F8ServiceSpec)):

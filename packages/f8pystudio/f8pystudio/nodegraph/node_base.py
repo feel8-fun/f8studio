@@ -27,6 +27,9 @@ class F8StudioBaseNode(BaseNode):
         self._last_spec_obj: F8OperatorSpec | F8ServiceSpec | None = None
         self._last_ui_serial: str = ""
         self.set_model(F8StudioNodeModel())
+        # Allow model-level property setters (used by session deserialization) to
+        # trigger a spec/UI-driven rebuild before restoring custom properties.
+        self.model._owner_node = self  # type: ignore[attr-defined]
 
         template = type(self).SPEC_TEMPLATE
         if template is None:
