@@ -56,14 +56,22 @@ class _PhaseAccumulator:
     """
 
     def __init__(self, *, initial_phase: float = 0.0, last_time_s: float | None = None) -> None:
-        self._phase = float(initial_phase) % 1.0
+        self._turns = float(initial_phase) % 1.0
         self._last_time_s: float | None = last_time_s
 
     def set_phase(self, phase: float) -> None:
-        self._phase = float(phase) % 1.0
+        # Preserve integer turns; only override the fractional part.
+        frac = float(phase) % 1.0
+        self._turns = math.floor(float(self._turns)) + frac
+
+    def set_turns(self, turns: float) -> None:
+        self._turns = float(turns)
 
     def phase(self) -> float:
-        return float(self._phase)
+        return float(float(self._turns) % 1.0)
+
+    def turns(self) -> float:
+        return float(self._turns)
 
     def reset_time_base(self) -> None:
         self._last_time_s = None
@@ -81,13 +89,13 @@ class _PhaseAccumulator:
             delta_s = max(0.0, now_s - self._last_time_s)
         self._last_time_s = now_s
 
-        self._phase = (self._phase + hz_f * delta_s) % 1.0
-        return float(self._phase)
+        self._turns = float(self._turns + hz_f * delta_s)
+        return float(self._turns)
 
 
 class PhaseRuntimeNode(OperatorNode):
     """
-    Phase source: on exec, advances and emits a normalized phase (0..1).
+    Phase source: advances and emits a normalized phase (0..1) plus unwrapped turns.
 
     This allows multiple oscillators (sine/tempest/etc.) to share one phase input.
     """
@@ -114,7 +122,7 @@ class PhaseRuntimeNode(OperatorNode):
 
     async def compute_output(self, port: str, ctx_id: str | int | None = None) -> Any:
         p = str(port)
-        if p not in ("phase", "theta"):
+        if p not in ("phase", "phaseTurns"):
             return None
 
         in_hz = _coerce_number(await self.pull("hz", ctx_id=ctx_id))
@@ -133,14 +141,14 @@ class PhaseRuntimeNode(OperatorNode):
         hz_f = max(0.0, hz_f)
 
         if bool(in_reset):
-            self._acc.set_phase(0.0)
+            self._acc.set_turns(0.0)
         if in_phase is not None:
             self._acc.set_phase(in_phase)
-        phase = self._acc.step(hz=hz_f)
+        turns = self._acc.step(hz=hz_f)
 
         if p == "phase":
-            return float(phase)
-        return float(_TWO_PI * phase)
+            return float(float(turns) % 1.0)
+        return float(turns)
 
 
 PhaseRuntimeNode.SPEC = F8OperatorSpec(
@@ -149,7 +157,7 @@ PhaseRuntimeNode.SPEC = F8OperatorSpec(
     operatorClass=PHASE_OPERATOR_CLASS,
     version="0.0.1",
     label="Phase",
-    description="Normalized phase accumulator (0..1). Use as a shared phase input for oscillators.",
+    description="Phase accumulator. Outputs normalized phase (0..1) and unwrapped phase turns.",
     tags=["signal", "phase", "waveform", "generator", "oscillator"],
     dataInPorts=[
         F8DataPortSpec(name="hz", description="Frequency override (Hz).", valueSchema=number_schema(), required=False),
@@ -162,7 +170,7 @@ PhaseRuntimeNode.SPEC = F8OperatorSpec(
     ],
     dataOutPorts=[
         F8DataPortSpec(name="phase", description="Normalized phase (0..1).", valueSchema=number_schema()),
-        F8DataPortSpec(name="theta", description="Phase in radians (0..2π).", valueSchema=number_schema()),
+        F8DataPortSpec(name="phaseTurns", description="Unwrapped phase turns (cycles).", valueSchema=number_schema()),
     ],
     stateFields=[
         F8StateSpec(

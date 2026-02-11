@@ -159,7 +159,8 @@ class ProgramWaveRuntimeNode(OperatorNode):
       loopRunningSec / loopPauseSec: alternating active/pause windows
 
     Outputs:
-      - phase: normalized phase (0..1), advances only during active windows
+      - phaseTurns: unwrapped phase turns (cycles), advances only during active windows
+      - phase: normalized phase (0..1) derived from phaseTurns
       - active: whether we are currently in a running window
       - done: whether the program finished (timeSec elapsed)
       - elapsedSec: elapsed time since start (clamped to >= 0)
@@ -183,7 +184,7 @@ class ProgramWaveRuntimeNode(OperatorNode):
     async def compute_output(self, port: str, ctx_id: str | int | None = None) -> Any:
         _ = ctx_id
         p = str(port or "")
-        if p not in ("phase", "active", "done", "elapsedSec"):
+        if p not in ("phase", "phaseTurns", "active", "done", "elapsedSec"):
             return None
 
         program = self._program
@@ -195,6 +196,8 @@ class ProgramWaveRuntimeNode(OperatorNode):
             self._program = program
         if program is None:
             if p == "phase":
+                return 0.0
+            if p == "phaseTurns":
                 return 0.0
             if p == "active":
                 return False
@@ -220,10 +223,13 @@ class ProgramWaveRuntimeNode(OperatorNode):
             t_for_phase = t_s_nonneg
 
         active_time = _active_time_s(t_for_phase, loop_running_s=program.loop_running_s, loop_pause_s=program.loop_pause_s)
-        phase = float((active_time * float(program.hz)) % 1.0) if float(program.hz) > 0.0 else 0.0
+        phase_turns = float(active_time * float(program.hz)) if float(program.hz) > 0.0 else 0.0
+        phase = float(phase_turns % 1.0)
 
         if p == "phase":
             return float(phase)
+        if p == "phaseTurns":
+            return float(phase_turns)
         if p == "active":
             return bool(active)
         if p == "done":
@@ -243,6 +249,7 @@ ProgramWaveRuntimeNode.SPEC = F8OperatorSpec(
     tags=["signal", "program", "wave", "phase", "lovense"],
     dataInPorts=[],
     dataOutPorts=[
+        F8DataPortSpec(name="phaseTurns", description="Unwrapped phase turns (cycles).", valueSchema=number_schema()),
         F8DataPortSpec(name="phase", description="Normalized phase (0..1).", valueSchema=number_schema()),
         F8DataPortSpec(name="active", description="Whether program is in a running window.", valueSchema=boolean_schema()),
         F8DataPortSpec(name="done", description="Whether program finished (timeSec elapsed).", valueSchema=boolean_schema()),
@@ -271,4 +278,3 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
     reg.register(SERVICE_CLASS, OPERATOR_CLASS, _factory, overwrite=True)
     reg.register_operator_spec(ProgramWaveRuntimeNode.SPEC, overwrite=True)
     return reg
-
