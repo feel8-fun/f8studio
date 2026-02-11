@@ -35,6 +35,17 @@ class PyStudioProgram:
     def build_node_classes() -> list[type]:
         from .render_nodes import RenderNodeRegistry
         from .service_catalog import ServiceCatalog
+        from .nodegraph.missing_operator_basenode import F8StudioMissingOperatorBaseNode
+        from .nodegraph.missing_service_basenode import F8StudioMissingServiceBaseNode
+        from f8pysdk import (
+            F8OperatorSchemaVersion,
+            F8OperatorSpec,
+            F8ServiceSchemaVersion,
+            F8ServiceSpec,
+            F8StateAccess,
+            F8StateSpec,
+        )
+        from f8pysdk.schema_helpers import any_schema, string_schema
 
         render_node_reg = RenderNodeRegistry.instance()
         service_catalog = ServiceCatalog.instance()
@@ -57,6 +68,93 @@ class PyStudioProgram:
                 {"__identifier__": op.serviceClass, "NODE_NAME": op.label, "SPEC_TEMPLATE": op},
             )
             generated_node_cls.append(node_cls)
+
+        # Always register a placeholder node class so sessions can load even if
+        # discovery is missing some operator types.
+        missing_spec = F8OperatorSpec(
+            schemaVersion=F8OperatorSchemaVersion.f8operator_1,
+            serviceClass=SERVICE_CLASS,
+            operatorClass="f8.missing",
+            version="0.0.1",
+            label="Missing Operator",
+            description="Placeholder for an operator node whose type is not registered in this Studio session.",
+            tags=["__missing__"],
+            dataInPorts=[],
+            dataOutPorts=[],
+            execInPorts=[],
+            execOutPorts=[],
+            editableDataInPorts=False,
+            editableDataOutPorts=False,
+            editableExecInPorts=False,
+            editableExecOutPorts=False,
+            editableStateFields=False,
+            stateFields=[
+                F8StateSpec(
+                    name="missingType",
+                    label="Missing Type",
+                    description="Original `type_` string from the session file.",
+                    valueSchema=string_schema(),
+                    access=F8StateAccess.ro,
+                    showOnNode=False,
+                    required=False,
+                ),
+                F8StateSpec(
+                    name="missingSpec",
+                    label="Missing Spec",
+                    description="Original `f8_spec` JSON from the session file.",
+                    valueSchema=any_schema(),
+                    access=F8StateAccess.ro,
+                    showOnNode=False,
+                    required=False,
+                ),
+            ],
+        )
+        missing_node_cls = type(
+            "f8.missing",
+            (F8StudioMissingOperatorBaseNode,),
+            {"__identifier__": SERVICE_CLASS, "NODE_NAME": "Missing", "SPEC_TEMPLATE": missing_spec},
+        )
+        generated_node_cls.append(missing_node_cls)
+
+        missing_service_spec = F8ServiceSpec(
+            schemaVersion=F8ServiceSchemaVersion.f8service_1,
+            serviceClass="f8.missing",
+            version="0.0.1",
+            label="Missing Service",
+            description="Placeholder for a service/container node whose type is not registered in this Studio session.",
+            tags=["__missing__"],
+            rendererClass="default_container",
+            stateFields=[
+                F8StateSpec(
+                    name="missingType",
+                    label="Missing Type",
+                    description="Original `type_` string from the session file.",
+                    valueSchema=string_schema(),
+                    access=F8StateAccess.ro,
+                    showOnNode=False,
+                    required=False,
+                ),
+                F8StateSpec(
+                    name="missingSpec",
+                    label="Missing Spec",
+                    description="Original `f8_spec` JSON from the session file.",
+                    valueSchema=any_schema(),
+                    access=F8StateAccess.ro,
+                    showOnNode=False,
+                    required=False,
+                ),
+            ],
+            editableStateFields=False,
+            editableDataInPorts=False,
+            editableDataOutPorts=False,
+            editableCommands=False,
+        )
+        missing_service_node_cls = type(
+            "f8.missing",
+            (F8StudioMissingServiceBaseNode,),
+            {"__identifier__": "svc", "NODE_NAME": "Missing Service", "SPEC_TEMPLATE": missing_service_spec},
+        )
+        generated_node_cls.append(missing_service_node_cls)
 
         return generated_node_cls
 

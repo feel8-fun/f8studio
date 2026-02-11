@@ -27,6 +27,9 @@ _BASE_OPERATOR_CLS_ = F8StudioOperatorBaseNode
 _BASE_CONTAINER_CLS_ = F8StudioContainerBaseNode
 logger = logging.getLogger(__name__)
 
+_MISSING_OPERATOR_NODE_TYPE = f"{_CANVAS_SERVICE_CLASS_}.f8.missing"
+_MISSING_SERVICE_NODE_TYPE = "svc.f8.missing"
+
 
 def _scene_rect(node: BaseNode) -> QtCore.QRectF | None:
     return node.view.sceneBoundingRect()
@@ -446,8 +449,145 @@ class F8StudioGraph(NodeGraph):
             if missing_types:
                 missing_list = ", ".join(sorted(missing_types))
                 parts.append(f"unregistered node type(s): {missing_list}")
-            msg = "Cannot load session: " + "; ".join(parts) + "."
-            raise NodeCreationError(msg)
+            msg = "Session has missing/unregistered node types: " + "; ".join(parts) + "."
+            # Non-fatal: `load_session()` may coerce these nodes to placeholders.
+            logger.warning(msg)
+
+    def _coerce_missing_session_nodes(self, layout_data: dict) -> dict:
+        """
+        Replace unregistered session node types with placeholder nodes.
+
+        This prevents auto-loading from failing when discovery is incomplete.
+        Connections to these placeholders are later stripped by `_strip_invalid_connections()`.
+        """
+        nodes = layout_data.get("nodes")
+        if not isinstance(nodes, dict):
+            return layout_data
+
+        missing_op_spec = {
+            "schemaVersion": "f8operator/1",
+            "serviceClass": _CANVAS_SERVICE_CLASS_,
+            "operatorClass": "f8.missing",
+            "version": "0.0.1",
+            "label": "Missing Operator",
+            "description": "Placeholder for an operator node whose type is not registered in this Studio session.",
+            "tags": ["__missing__"],
+            "stateFields": [],
+            "editableStateFields": False,
+            "execInPorts": [],
+            "execOutPorts": [],
+            "editableExecInPorts": False,
+            "editableExecOutPorts": False,
+            "dataInPorts": [],
+            "dataOutPorts": [],
+            "editableDataInPorts": False,
+            "editableDataOutPorts": False,
+        }
+        missing_svc_spec = {
+            "schemaVersion": "f8service/1",
+            "serviceClass": "f8.missing",
+            "version": "0.0.1",
+            "label": "Missing Service",
+            "description": "Placeholder for a service/container node whose type is not registered in this Studio session.",
+            "tags": ["__missing__"],
+            "rendererClass": "default_container",
+            "stateFields": [],
+            "editableStateFields": False,
+            "dataInPorts": [],
+            "dataOutPorts": [],
+            "editableDataInPorts": False,
+            "editableDataOutPorts": False,
+            "commands": [],
+            "editableCommands": False,
+        }
+
+        for node_id, node_data in nodes.items():
+            if not isinstance(node_data, dict):
+                continue
+            raw_type = node_data.get("type_")
+            node_type = str(raw_type or "").strip()
+            is_registered = bool(node_type) and node_type in self._node_factory.nodes
+            if is_registered:
+                continue
+
+            raw_spec = node_data.get("f8_spec")
+            spec_is_operator = isinstance(raw_spec, dict) and "operatorClass" in raw_spec
+            placeholder_type = _MISSING_OPERATOR_NODE_TYPE if spec_is_operator else _MISSING_SERVICE_NODE_TYPE
+            placeholder_spec = missing_op_spec if spec_is_operator else missing_svc_spec
+
+            # Preserve original payload for debugging/recovery.
+            f8_sys = node_data.get("f8_sys")
+            if not isinstance(f8_sys, dict):
+                f8_sys = {}
+                node_data["f8_sys"] = f8_sys
+            f8_sys["missingType"] = node_type
+            if isinstance(raw_spec, dict):
+                f8_sys["missingSpec"] = raw_spec
+
+            custom = node_data.get("custom")
+            if not isinstance(custom, dict):
+                custom = {}
+            # Keep only placeholder-safe custom fields so NodeGraphQt doesn't
+            # crash when restoring unknown properties.
+            safe_custom: dict[str, Any] = {"missingType": node_type}
+            try:
+                safe_custom["missingSpec"] = json.dumps(raw_spec, ensure_ascii=False, indent=2, default=str) if raw_spec else ""
+            except Exception:
+                safe_custom["missingSpec"] = str(raw_spec or "")
+            node_data["custom"] = safe_custom
+
+            node_data["type_"] = placeholder_type
+            node_data["f8_spec"] = dict(placeholder_spec)
+            # Make placeholders easy to spot.
+            name = str(node_data.get("name") or "").strip()
+            if not name:
+                node_data["name"] = f"[Missing] {node_type or node_id}"
+
+        return layout_data
+
+    @staticmethod
+    def _strip_unknown_session_custom_properties(layout_data: dict) -> dict:
+        """
+        Drop session custom properties that are not present in the persisted spec.
+
+        NodeGraphQt requires that every key under `custom` is a registered node
+        property. If specs evolve (fields removed/renamed) or a missing node is
+        coerced to a placeholder, leaving stale keys can crash deserialization.
+        """
+        nodes = layout_data.get("nodes")
+        if not isinstance(nodes, dict):
+            return layout_data
+
+        for node_id, node_data in nodes.items():
+            if not isinstance(node_data, dict):
+                continue
+            custom = node_data.get("custom")
+            if not isinstance(custom, dict) or not custom:
+                continue
+            raw_spec = node_data.get("f8_spec")
+            if not isinstance(raw_spec, dict):
+                continue
+
+            allowed: set[str] = set()
+            for sf in list(raw_spec.get("stateFields") or []):
+                if not isinstance(sf, dict):
+                    continue
+                name = str(sf.get("name") or "").strip()
+                if name:
+                    allowed.add(name)
+
+            # Placeholder/debug fields.
+            allowed.update({"missingType", "missingSpec"})
+
+            if not allowed:
+                # Nothing to validate against; keep `custom` as-is.
+                continue
+
+            kept = {k: v for k, v in custom.items() if str(k) in allowed}
+            if kept != custom:
+                node_data["custom"] = kept
+
+        return layout_data
 
     def toggle_node_search(self):
         """
@@ -500,9 +640,11 @@ class F8StudioGraph(NodeGraph):
             with open(file_path) as data_file:
                 layout_data = json.load(data_file)
             self._inject_node_ids(layout_data)
+            layout_data = self._coerce_missing_session_nodes(layout_data)
             self._validate_session_node_types(layout_data)
             layout_data = self._merge_session_specs(layout_data)
             layout_data = self._strip_port_restore_data(layout_data)
+            layout_data = self._strip_unknown_session_custom_properties(layout_data)
             layout_data = self._strip_invalid_connections(layout_data)
             super().deserialize_session(layout_data, clear_session=False, clear_undo_stack=True)
             self._model.session = file_path
