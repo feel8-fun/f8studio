@@ -143,7 +143,11 @@ bool AudioCapService::start() {
     return false;
   }
 
-  bus_ = std::make_unique<f8::cppsdk::ServiceBus>(f8::cppsdk::ServiceBus::Config{cfg_.service_id, cfg_.nats_url, true});
+  f8::cppsdk::ServiceBus::Config bus_cfg;
+  bus_cfg.service_id = cfg_.service_id;
+  bus_cfg.nats_url = cfg_.nats_url;
+  bus_cfg.kv_memory_storage = true;
+  bus_ = std::make_unique<f8::cppsdk::ServiceBus>(bus_cfg);
   bus_->add_lifecycle_node(this);
   bus_->add_stateful_node(this);
   bus_->add_set_state_node(this);

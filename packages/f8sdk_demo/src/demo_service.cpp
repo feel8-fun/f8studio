@@ -20,7 +20,11 @@ DemoService::~DemoService() { stop(); }
 bool DemoService::start() {
   if (running_.load(std::memory_order_acquire)) return true;
 
-  bus_ = std::make_unique<f8::cppsdk::ServiceBus>(f8::cppsdk::ServiceBus::Config{cfg_.service_id, cfg_.nats_url, true});
+  f8::cppsdk::ServiceBus::Config bus_cfg;
+  bus_cfg.service_id = cfg_.service_id;
+  bus_cfg.nats_url = cfg_.nats_url;
+  bus_cfg.kv_memory_storage = true;
+  bus_ = std::make_unique<f8::cppsdk::ServiceBus>(bus_cfg);
   bus_->add_lifecycle_node(this);
   bus_->add_stateful_node(this);
   bus_->add_data_node(this);
@@ -186,4 +190,3 @@ bool DemoService::on_command(const std::string& call, const json& args, const js
 }
 
 }  // namespace f8::sdk_demo
-
