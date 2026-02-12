@@ -410,6 +410,12 @@ void ImPlayerService::tick() {
         cb.playlist_select = [this](int index) {
           playlist_play_index(index);
         };
+        cb.playlist_remove = [this](int index) {
+          playlist_remove_index(index);
+        };
+        cb.playlist_clear = [this]() {
+          playlist_clear();
+        };
         cb.playlist_next = [this]() {
           playlist_next();
         };
@@ -512,6 +518,9 @@ void ImPlayerService::processSdlEvent(const SDL_Event& ev) {
   }
 
   if (ev.type == SDL_EVENT_MOUSE_WHEEL) {
+    if (gui_ && gui_->wantsCaptureMouse()) {
+      return;
+    }
     const float zoom_step = 1.05f;
     if (ev.wheel.y > 0) {
       view_zoom_ *= zoom_step;
@@ -944,6 +953,36 @@ void ImPlayerService::playlist_play_index(int index) {
   }
   std::string err;
   (void)open_media_internal(url, true, err);
+}
+
+void ImPlayerService::playlist_remove_index(int index) {
+  std::lock_guard<std::mutex> lock(state_mu_);
+  if (index < 0 || index >= static_cast<int>(playlist_.size())) {
+    return;
+  }
+
+  const std::size_t i = static_cast<std::size_t>(index);
+  playlist_.erase(playlist_.begin() + static_cast<std::ptrdiff_t>(i));
+  if (playlist_.empty()) {
+    playlist_index_ = -1;
+    return;
+  }
+
+  if (playlist_index_ == index) {
+    // The currently-highlighted item was removed. Keep playback state unchanged and
+    // force the selection to "none" to avoid highlighting the wrong item.
+    playlist_index_ = -1;
+    return;
+  }
+  if (playlist_index_ > index) {
+    playlist_index_ -= 1;
+  }
+}
+
+void ImPlayerService::playlist_clear() {
+  std::lock_guard<std::mutex> lock(state_mu_);
+  playlist_.clear();
+  playlist_index_ = -1;
 }
 
 void ImPlayerService::playlist_next() {

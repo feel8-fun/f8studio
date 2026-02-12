@@ -87,6 +87,8 @@ class ImPlayerService final : public f8::cppsdk::LifecycleNode,
 
   void playlist_add(const std::vector<std::string>& items, bool play_if_idle);
   void playlist_play_index(int index);
+  void playlist_remove_index(int index);
+  void playlist_clear();
   void playlist_next();
   void playlist_prev();
 

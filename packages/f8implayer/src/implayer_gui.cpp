@@ -159,6 +159,12 @@ bool ImPlayerGui::wantsCaptureKeyboard() const {
   return ImGui::GetIO().WantCaptureKeyboard;
 }
 
+bool ImPlayerGui::wantsCaptureMouse() const {
+  if (!started_)
+    return false;
+  return ImGui::GetIO().WantCaptureMouse;
+}
+
 void ImPlayerGui::renderOverlay(const MpvPlayer& player, const Callbacks& cb, const std::string& last_error,
                                 const std::vector<std::string>& playlist, int playlist_index, bool playing, bool loop,
                                 double tick_fps_ema, double tick_ms_ema) {
@@ -564,6 +570,50 @@ void ImPlayerGui::renderOverlay(const MpvPlayer& player, const Callbacks& cb, co
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
     if (ImGui::Begin("##implayer_playlist", nullptr, flags)) {
       ImGui::Text("Playlist (%d)", static_cast<int>(playlist.size()));
+      ImGui::SameLine();
+      const bool can_delete = (playlist_index >= 0) && (playlist_index < static_cast<int>(playlist.size()));
+      if (!can_delete) {
+        ImGui::BeginDisabled();
+      }
+      if (ImGui::SmallButton(ICON_FA_TRASH "##playlist_delete")) {
+        if (cb.playlist_remove) {
+          cb.playlist_remove(playlist_index);
+        }
+        dirty_ = true;
+      }
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("%s", "Delete selected");
+      }
+      if (!can_delete) {
+        ImGui::EndDisabled();
+      }
+
+      ImGui::SameLine();
+      if (ImGui::SmallButton(ICON_FA_BROOM "##playlist_clear")) {
+        ImGui::OpenPopup("##playlist_clear_confirm");
+        dirty_ = true;
+      }
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("%s", "Clear playlist");
+      }
+
+      if (ImGui::BeginPopupModal("##playlist_clear_confirm", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted("Clear playlist?");
+        ImGui::Spacing();
+        if (ImGui::Button("Clear")) {
+          if (cb.playlist_clear) {
+            cb.playlist_clear();
+          }
+          ImGui::CloseCurrentPopup();
+          dirty_ = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel")) {
+          ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+      }
+
       ImGui::Separator();
       for (int i = 0; i < static_cast<int>(playlist.size()); ++i) {
         const bool selected = (i == playlist_index);
