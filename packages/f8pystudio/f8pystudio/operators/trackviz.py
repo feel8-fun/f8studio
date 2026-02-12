@@ -17,11 +17,12 @@ from f8pysdk import (
     integer_schema,
 )
 from f8pysdk.nats_naming import ensure_token
-from f8pysdk.runtime_node import OperatorNode
+from f8pysdk.runtime_node import RuntimeNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from ..constants import SERVICE_CLASS
 from ..ui_bus import emit_ui_command
+from ._viz_base import StudioVizRuntimeNodeBase, viz_sampling_state_fields
 
 
 OPERATOR_CLASS = "f8.trackviz"
@@ -36,7 +37,7 @@ class _Sample:
     kind: str = "track"  # "track" | "match" | other
 
 
-class PyStudioTrackVizRuntimeNode(OperatorNode):
+class PyStudioTrackVizRuntimeNode(StudioVizRuntimeNodeBase):
     """
     Studio-side node that visualizes tracking results.
 
@@ -56,8 +57,8 @@ class PyStudioTrackVizRuntimeNode(OperatorNode):
             data_in_ports=[p.name for p in (node.dataInPorts or [])],
             data_out_ports=[],
             state_fields=[s.name for s in (node.stateFields or [])],
+            initial_state=initial_state,
         )
-        self._initial_state = dict(initial_state or {})
         self._config_loaded = False
 
         self._width: int | None = None
@@ -360,6 +361,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
                     access=F8StateAccess.rw,
                     showOnNode=False,
                 ),
+                *viz_sampling_state_fields(show_on_node=False),
             ],
         ),
         overwrite=True,

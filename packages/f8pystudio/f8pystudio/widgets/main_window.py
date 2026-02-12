@@ -272,6 +272,8 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
 
     def _on_deploy_action_triggered(self) -> None:
         compiled = compile_runtime_graphs_from_studio(self.studio_graph)
+        for warning in list(compiled.warnings or ()):
+            self._log_dock.append("studio", f"[compile][warn] {warning}\n")
         self._bridge.deploy(compiled)
 
     def _on_runtime_state_updated(self, service_id: str, node_id: str, field: str, value: Any, ts_ms: Any) -> None:

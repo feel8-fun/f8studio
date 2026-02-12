@@ -21,6 +21,7 @@ from .service_basenode import F8StudioServiceNodeItem
 from .viewer import F8StudioNodeViewer
 from .service_bridge_protocol import ServiceBridge
 from .session import last_session_path
+from .spec_visibility import is_hidden_spec_node_class
 
 from ..constants import SERVICE_CLASS as _CANVAS_SERVICE_CLASS_
 from ..constants import STUDIO_SERVICE_ID
@@ -29,7 +30,7 @@ _BASE_OPERATOR_CLS_ = F8StudioOperatorBaseNode
 _BASE_CONTAINER_CLS_ = F8StudioContainerBaseNode
 logger = logging.getLogger(__name__)
 
-_MISSING_OPERATOR_NODE_TYPE = f"{_CANVAS_SERVICE_CLASS_}.f8.missing"
+_MISSING_OPERATOR_NODE_TYPE = "svc.f8.missing.f8.missing.operator"
 _MISSING_SERVICE_NODE_TYPE = "svc.f8.missing"
 
 
@@ -496,8 +497,8 @@ class F8StudioGraph(NodeGraph):
 
         missing_op_spec = {
             "schemaVersion": "f8operator/1",
-            "serviceClass": _CANVAS_SERVICE_CLASS_,
-            "operatorClass": "f8.missing",
+            "serviceClass": "svc.f8.missing",
+            "operatorClass": "f8.missing.operator",
             "version": "0.0.1",
             "label": "Missing Operator",
             "description": "Placeholder for an operator node whose type is not registered in this Studio session.",
@@ -645,8 +646,30 @@ class F8StudioGraph(NodeGraph):
         under the mouse; for keyboard shortcuts we want it to open when the
         viewer has focus.
         """
-        self._viewer.tab_search_set_nodes(self._node_factory.names)
+        names = self._node_factory.names
+        nodes = self._node_factory.nodes
+
+        filtered_names: dict[str, list[str]] = {}
+        for node_name, node_types in dict(names or {}).items():
+            kept_types: list[str] = []
+            for node_type in list(node_types or []):
+                node_type_id = str(node_type)
+                node_cls = nodes.get(node_type_id)
+                if node_cls is not None and self._is_hidden_node_class(node_cls):
+                    continue
+                kept_types.append(node_type_id)
+            if kept_types:
+                filtered_names[str(node_name)] = kept_types
+
+        self._viewer.tab_search_set_nodes(filtered_names)
         self._viewer.tab_search_toggle()
+
+    @staticmethod
+    def _is_hidden_node_class(node_cls: Any) -> bool:
+        """
+        Hide nodes tagged with `__hidden__`/`__missing__` from tab search while keeping them registered.
+        """
+        return is_hidden_spec_node_class(node_cls)
 
     def save_last_session(self) -> str:
         """

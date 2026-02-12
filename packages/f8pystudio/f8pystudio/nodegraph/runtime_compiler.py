@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+import logging
 from dataclasses import dataclass
 from typing import Any, Iterable
 from uuid import uuid4
 
 from f8pysdk import (
+    F8DataPortSpec,
     F8Edge,
     F8EdgeDirection,
     F8EdgeKindEnum,
@@ -19,11 +22,18 @@ from f8pysdk import (
 )
 from f8pysdk.rungraph_validation import validate_state_edges_or_raise
 from f8pysdk.schema_helpers import boolean_schema
+from f8pysdk.schema_helpers import integer_schema
+from f8pysdk.schema_helpers import any_schema
 from f8pysdk.schema_helpers import string_schema
 from f8pysdk.nats_naming import ensure_token
 
 from ..pystudio_node_registry import SERVICE_CLASS as STUDIO_SERVICE_CLASS
 from ..pystudio_node_registry import STUDIO_SERVICE_ID
+
+
+logger = logging.getLogger(__name__)
+PYENGINE_SERVICE_CLASS = "f8.pyengine"
+AUTO_PULL_OPERATOR_CLASS = "f8.pull"
 
 
 def _port_kind(name: str) -> F8EdgeKindEnum | None:
@@ -86,10 +96,197 @@ def _runtime_service_id(node: Any) -> str:
     return ensure_token(str(node.svcId), label="service_id")
 
 
+def _stable_id(prefix: str, *parts: str) -> str:
+    raw = "|".join(str(p) for p in parts)
+    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+    return ensure_token(f"{prefix}_{digest}", label="node_id")
+
+
+def _as_int(value: Any, *, default: int, minimum: int, maximum: int) -> int:
+    try:
+        out = int(value) if value is not None else int(default)
+    except (TypeError, ValueError):
+        out = int(default)
+    if out < minimum:
+        out = minimum
+    if out > maximum:
+        out = maximum
+    return out
+
+
+def _unwrap_json_value(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_unwrap_json_value(v) for v in value]
+    if isinstance(value, dict):
+        return {str(k): _unwrap_json_value(v) for k, v in value.items()}
+    try:
+        return _unwrap_json_value(value.root)
+    except Exception:
+        pass
+    try:
+        return _unwrap_json_value(value.model_dump(mode="json"))
+    except Exception:
+        pass
+    return value
+
+
+def _inject_studio_auto_pull_triggers(graph: F8RuntimeGraph) -> tuple[F8RuntimeGraph, list[str]]:
+    """
+    Inject hidden pull trigger nodes for eligible Studio auto-sampling consumers.
+
+    Trigger-only mode:
+    - Keep original source->studio cross edges unchanged.
+    - Add source->f8.pull data edges inside the source pyengine service.
+    """
+    warnings: list[str] = []
+    services_by_id: dict[str, F8RuntimeService] = {str(s.serviceId): s for s in list(graph.services or [])}
+    nodes_by_id: dict[str, F8RuntimeNode] = {str(n.nodeId): n for n in list(graph.nodes or [])}
+
+    by_source: dict[tuple[str, str, str], dict[str, Any]] = {}
+
+    for edge in list(graph.edges or []):
+        if edge.kind != F8EdgeKindEnum.data:
+            continue
+        from_service_id = str(edge.fromServiceId)
+        to_service_id = str(edge.toServiceId)
+        if from_service_id == to_service_id:
+            continue
+        if to_service_id != STUDIO_SERVICE_ID:
+            continue
+        if edge.fromOperatorId is None or edge.toOperatorId is None:
+            continue
+        src_node_id = str(edge.fromOperatorId)
+        src_node = nodes_by_id.get(src_node_id)
+        if src_node is not None and str(src_node.operatorClass or "") == AUTO_PULL_OPERATOR_CLASS:
+            continue
+
+        dst_node_id = str(edge.toOperatorId)
+        dst_node = nodes_by_id.get(dst_node_id)
+        if dst_node is None:
+            continue
+
+        raw_state_values = dict(dst_node.stateValues or {})
+        state_values = {str(k): _unwrap_json_value(v) for k, v in raw_state_values.items()}
+        mode = str(state_values.get("upstreamSamplingMode", "passive") or "").strip().lower()
+        if mode != "auto":
+            continue
+
+        hz = _as_int(state_values.get("upstreamSampleHz", 10), default=10, minimum=1, maximum=120)
+        src_key = (from_service_id, str(edge.fromOperatorId), str(edge.fromPort))
+
+        group = by_source.get(src_key)
+        if group is None:
+            group = {
+                "sample_hz": hz,
+                "consumers": set(),
+            }
+            by_source[src_key] = group
+        group["consumers"].add(dst_node_id)
+        group["sample_hz"] = max(int(group["sample_hz"]), int(hz))
+
+    if not by_source:
+        return graph, warnings
+
+    new_nodes = list(graph.nodes or [])
+    new_edges = list(graph.edges or [])
+
+    injected_edges: list[F8Edge] = []
+
+    for src_key, group in by_source.items():
+        from_service_id, from_node_id, from_port = src_key
+        service = services_by_id.get(from_service_id)
+        service_class = str(service.serviceClass) if service is not None else ""
+        if service_class != PYENGINE_SERVICE_CLASS:
+            consumers_sorted = ", ".join(sorted(str(x) for x in group["consumers"]))
+            warnings.append(
+                f"auto sampling skipped for {from_service_id}.{from_node_id}.{from_port}: "
+                f"source serviceClass={service_class or 'unknown'} (consumers={consumers_sorted})"
+            )
+            continue
+
+        pull_node_id = _stable_id("auto_pull", from_service_id, from_node_id, from_port)
+        sample_hz = int(group["sample_hz"])
+        trigger_port = "value"
+
+        if pull_node_id not in nodes_by_id:
+            pull_node = F8RuntimeNode(
+                nodeId=pull_node_id,
+                serviceId=from_service_id,
+                serviceClass=PYENGINE_SERVICE_CLASS,
+                operatorClass=AUTO_PULL_OPERATOR_CLASS,
+                dataInPorts=[
+                    F8DataPortSpec(
+                        name=trigger_port,
+                        description="auto trigger pull input",
+                        valueSchema=any_schema(),
+                        required=False,
+                    ),
+                ],
+                dataOutPorts=[],
+                execInPorts=[],
+                execOutPorts=[],
+                stateFields=[
+                    F8StateSpec(
+                        name="autoTriggerEnabled",
+                        label="Auto Trigger",
+                        description="Periodically pull all data inputs without exec.",
+                        valueSchema=boolean_schema(default=False),
+                        access=F8StateAccess.rw,
+                        showOnNode=False,
+                    ),
+                    F8StateSpec(
+                        name="autoTriggerHz",
+                        label="Auto Trigger Hz",
+                        description="Periodic pull frequency in Hz.",
+                        valueSchema=integer_schema(default=10, minimum=1, maximum=120),
+                        access=F8StateAccess.rw,
+                        showOnNode=False,
+                    ),
+                ],
+                stateValues={
+                    "autoTriggerEnabled": True,
+                    "autoTriggerHz": sample_hz,
+                },
+            )
+            new_nodes.append(pull_node)
+            nodes_by_id[pull_node_id] = pull_node
+
+        source_to_pull_edge_id = _stable_id("edge_auto_pull_src", from_service_id, from_node_id, from_port)
+        injected_edges.append(
+            F8Edge(
+                edgeId=source_to_pull_edge_id,
+                fromServiceId=from_service_id,
+                fromOperatorId=from_node_id,
+                fromPort=from_port,
+                toServiceId=from_service_id,
+                toOperatorId=pull_node_id,
+                toPort=trigger_port,
+                kind=F8EdgeKindEnum.data,
+                strategy=F8EdgeStrategyEnum.latest,
+                timeoutMs=None,
+                direction=None,
+            )
+        )
+
+    if not injected_edges and not warnings:
+        return graph, warnings
+
+    # Deduplicate by edgeId to make reinjection idempotent.
+    dedup_edges: dict[str, F8Edge] = {}
+    for edge in list(new_edges) + injected_edges:
+        dedup_edges[str(edge.edgeId)] = edge
+
+    patched = graph.model_copy(update={"nodes": new_nodes, "edges": list(dedup_edges.values())})
+    return patched, warnings
+
+
 @dataclass(frozen=True)
 class CompiledRuntimeGraphs:
     global_graph: F8RuntimeGraph
     per_service: dict[str, F8RuntimeGraph]
+    warnings: tuple[str, ...] = ()
 
 
 def compile_global_runtime_graph(
@@ -99,6 +296,7 @@ def compile_global_runtime_graph(
     service_nodes: Iterable[Any] | None = None,
     graph_id: str | None = None,
     revision: str = "1",
+    compile_warnings: list[str] | None = None,
 ) -> F8RuntimeGraph:
     """
     Compile studio nodes into a single global runtime graph.
@@ -322,6 +520,12 @@ def compile_global_runtime_graph(
         nodes=runtime_nodes,
         edges=edges,
     )
+    graph, warnings = _inject_studio_auto_pull_triggers(graph)
+    if warnings:
+        if compile_warnings is not None:
+            compile_warnings.extend(warnings)
+        for warning in warnings:
+            logger.warning("%s", warning)
     # Studio-level validation: reject global cyclic state loops early.
     validate_state_edges_or_raise(graph, forbid_cycles=True, forbid_multi_upstream=True)
     return graph
@@ -407,9 +611,15 @@ def compile_runtime_graphs_from_studio(studio_graph: Any) -> CompiledRuntimeGrap
             continue
         service_nodes.append(n)
 
+    compile_warnings: list[str] = []
     global_graph = compile_global_runtime_graph(
         services=services,
         operators=operators,
         service_nodes=service_nodes,
+        compile_warnings=compile_warnings,
     )
-    return CompiledRuntimeGraphs(global_graph=global_graph, per_service=split_runtime_graph_by_service(global_graph))
+    return CompiledRuntimeGraphs(
+        global_graph=global_graph,
+        per_service=split_runtime_graph_by_service(global_graph),
+        warnings=tuple(compile_warnings),
+    )

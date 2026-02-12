@@ -1,6 +1,7 @@
 from NodeGraphQt import NodesPaletteWidget
 
 from collections import defaultdict
+from ..nodegraph.spec_visibility import is_hidden_spec_node_class
 
 
 class F8StudioNodesPaletteWidget(NodesPaletteWidget):
@@ -14,23 +15,7 @@ class F8StudioNodesPaletteWidget(NodesPaletteWidget):
         """
         Hide nodes from the palette while keeping them registered.
         """
-        try:
-            try:
-                spec = node_cls.SPEC_TEMPLATE
-            except Exception:
-                spec = None
-            if spec is None:
-                return False
-            try:
-                tags = spec.tags
-            except Exception:
-                tags = None
-            if isinstance(tags, (list, tuple, set)):
-                if any(str(t).strip().lower() == "__hidden__" for t in tags):
-                    return True
-        except Exception:
-            pass
-        return False
+        return is_hidden_spec_node_class(node_cls)
 
     def _on_nodes_registered(self, nodes):
         """
@@ -41,11 +26,8 @@ class F8StudioNodesPaletteWidget(NodesPaletteWidget):
         """
         node_types = defaultdict(list)
         for node in nodes:
-            try:
-                if self._is_hidden_node(node):
-                    continue
-            except Exception:
-                pass
+            if self._is_hidden_node(node):
+                continue
             name = node.NODE_NAME
             nid = node.type_
             category = node.__identifier__

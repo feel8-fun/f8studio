@@ -16,19 +16,20 @@ from f8pysdk import (
     number_schema,
 )
 from f8pysdk.nats_naming import ensure_token
-from f8pysdk.runtime_node import OperatorNode
+from f8pysdk.runtime_node import RuntimeNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from ..constants import SERVICE_CLASS
 from ..color_table import series_colors
 from ..ui_bus import emit_ui_command
+from ._viz_base import StudioVizRuntimeNodeBase, viz_sampling_state_fields
 
 
 OPERATOR_CLASS = "f8.timeseries"
 RENDERER_CLASS = "pystudio_timeseries"
 
 
-class PyStudioTimeSeriesRuntimeNode(OperatorNode):
+class PyStudioTimeSeriesRuntimeNode(StudioVizRuntimeNodeBase):
     """
     Studio-side runtime node for time-series plotting.
 
@@ -42,8 +43,8 @@ class PyStudioTimeSeriesRuntimeNode(OperatorNode):
             data_in_ports=[p.name for p in (node.dataInPorts or [])],
             data_out_ports=[],
             state_fields=[s.name for s in (node.stateFields or [])],
+            initial_state=initial_state,
         )
-        self._initial_state = dict(initial_state or {})
         self._refresh_task: asyncio.Task[object] | None = None
         self._config_loaded = False
         self._series: dict[str, list[tuple[int, float]]] = {}
@@ -345,6 +346,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
                     access=F8StateAccess.rw,
                     showOnNode=False,
                 ),
+                *viz_sampling_state_fields(show_on_node=False),
             ],
         ),
         overwrite=True,
