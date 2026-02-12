@@ -192,6 +192,9 @@ def compile_global_runtime_graph(
                 state_values[name] = n.model.get_property(name)
             except Exception:
                 continue
+        # NOTE: values for upstream-driven state fields (bound via state edges)
+        # are filtered out after compiling edges, so state propagation always
+        # takes precedence over this snapshot on repeated deploys.
 
         state_fields = list(spec.stateFields or [])
 
@@ -281,6 +284,36 @@ def compile_global_runtime_graph(
                         direction=None,
                     )
                 )
+
+    # If a state field is upstream-driven (connected via state edge), do not
+    # include its current state value in the rungraph snapshot. This avoids
+    # "deploy races" where the snapshot temporarily overrides the edge-driven
+    # value when redeploying a running graph.
+    upstream_state_by_node: dict[str, set[str]] = {}
+    for e in edges:
+        if e.kind != F8EdgeKindEnum.state:
+            continue
+        if e.toOperatorId is None:
+            continue
+        node_id = str(e.toOperatorId)
+        field = str(e.toPort or "").strip()
+        if not field:
+            continue
+        upstream_state_by_node.setdefault(node_id, set()).add(field)
+
+    if upstream_state_by_node:
+        filtered_nodes: list[F8RuntimeNode] = []
+        for rn in runtime_nodes:
+            bound = upstream_state_by_node.get(str(rn.nodeId))
+            if not bound or not rn.stateValues:
+                filtered_nodes.append(rn)
+                continue
+            new_values = {k: v for k, v in dict(rn.stateValues).items() if str(k) not in bound}
+            if new_values == rn.stateValues:
+                filtered_nodes.append(rn)
+                continue
+            filtered_nodes.append(rn.model_copy(update={"stateValues": new_values or None}))
+        runtime_nodes = filtered_nodes
 
     graph = F8RuntimeGraph(
         graphId=gid,

@@ -9,12 +9,14 @@ from qtpy import QtCore, QtWidgets, QtGui
 from NodeGraphQt import NodeGraph, BaseNode
 from NodeGraphQt.errors import NodeCreationError, NodeDeletionError
 from NodeGraphQt.base.commands import NodeAddedCmd, NodeMovedCmd, NodesRemovedCmd, PortConnectedCmd
+from NodeGraphQt.base.port import Port as NGPort
 import shortuuid
 import logging
 
 from f8pysdk import F8OperatorSpec, F8ServiceSpec
 from .container_basenode import F8StudioContainerBaseNode
 from .operator_basenode import F8StudioOperatorBaseNode
+from .service_basenode import F8StudioServiceNodeItem
 
 from .viewer import F8StudioNodeViewer
 from .service_bridge_protocol import ServiceBridge
@@ -75,6 +77,41 @@ class F8StudioGraph(NodeGraph):
 
         # NodeGraphQt exposes `nodes_deleted` (list[str]), not `node_deleted`.
         self.nodes_deleted.connect(self._on_nodes_deleted)  # type: ignore[attr-defined]
+
+        # Keep inline state widgets in sync with upstream bindings.
+        self.port_connected.connect(self._on_port_connected)  # type: ignore[attr-defined]
+        self.port_disconnected.connect(self._on_port_disconnected)  # type: ignore[attr-defined]
+
+    def _on_port_connected(self, in_port: NGPort, out_port: NGPort) -> None:
+        self._on_port_connection_changed(in_port=in_port, out_port=out_port)
+
+    def _on_port_disconnected(self, in_port: NGPort, out_port: NGPort) -> None:
+        self._on_port_connection_changed(in_port=in_port, out_port=out_port)
+
+    @staticmethod
+    def _is_state_port(port: NGPort) -> bool:
+        name = str(port.name() or "")
+        return name.startswith("[S]") or name.endswith("[S]")
+
+    def _on_port_connection_changed(self, *, in_port: NGPort, out_port: NGPort) -> None:
+        """
+        Refresh inline state read-only state when state edges are connected/disconnected.
+
+        When a state field is upstream-bound via a state edge, Studio should treat it as
+        read-only in the node UI (inline controls).
+        """
+        if not (self._is_state_port(in_port) or self._is_state_port(out_port)):
+            return
+
+        for p in (in_port, out_port):
+            if not self._is_state_port(p):
+                continue
+            node = p.node()
+            view = node.view
+            if not isinstance(view, F8StudioServiceNodeItem):
+                continue
+            view.refresh_inline_state_read_only()
+            view.update()
 
     def set_service_bridge(self, bridge: ServiceBridge | None) -> None:
         self._service_bridge = bridge
@@ -663,6 +700,25 @@ class F8StudioGraph(NodeGraph):
         finally:
             self._loading_session = False
         self._rebind_container_children()
+        # Session load restores connections after nodes are created/drawn, which can
+        # leave inline state widgets with stale editability until the user forces a refresh.
+        # Do a post-load pass to apply the "state-edge => readonly" rule.
+        QtCore.QTimer.singleShot(0, self._refresh_all_inline_state_read_only)
+
+    def _refresh_all_inline_state_read_only(self) -> None:
+        """
+        Apply inline readonly state for all nodes (best-effort).
+
+        Needed after session load because NodeGraphQt can restore connections
+        without triggering interactive port connect signals in our UI layer.
+        """
+        nodes = list(self.all_nodes() or [])
+        for n in nodes:
+            view = n.view
+            if not isinstance(view, F8StudioServiceNodeItem):
+                continue
+            view.refresh_inline_state_read_only()
+            view.update()
 
     def _assign_node_id(self, node: BaseNode) -> BaseNode:
         new_nid = self.new_unique_node_id()

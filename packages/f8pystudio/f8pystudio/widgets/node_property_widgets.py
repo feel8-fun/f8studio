@@ -114,6 +114,60 @@ def _apply_read_only_widget(widget: QtWidgets.QWidget) -> None:
         return
     widget.setDisabled(True)
 
+
+def _set_read_only_widget(widget: QtWidgets.QWidget, *, read_only: bool) -> None:
+    """
+    Best-effort toggle for read-only UX.
+
+    This mirrors `_apply_read_only_widget`, but also supports restoring editability
+    when `read_only=False` (eg. when a state-edge is disconnected).
+    """
+    if read_only:
+        _apply_read_only_widget(widget)
+        return
+
+    if isinstance(widget, F8PropOptionCombo):
+        widget.set_read_only(False)
+        return
+    if isinstance(widget, F8PropBoolSwitch):
+        widget.set_read_only(False)
+        return
+    if isinstance(widget, _F8CodeButtonPropWidget):
+        widget.set_read_only(False)
+        return
+    if isinstance(widget, QtWidgets.QLineEdit):
+        widget.setEnabled(True)
+        widget.setReadOnly(False)
+        return
+    if isinstance(widget, QtWidgets.QPlainTextEdit):
+        widget.setEnabled(True)
+        widget.setReadOnly(False)
+        return
+    if isinstance(widget, QtWidgets.QTextEdit):
+        widget.setEnabled(True)
+        widget.setReadOnly(False)
+        widget.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextEditorInteraction)
+        return
+    if isinstance(widget, QtWidgets.QAbstractSpinBox):
+        widget.setEnabled(True)
+        widget.setReadOnly(False)
+        try:
+            widget.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.UpDownArrows)
+        except Exception:
+            pass
+        return
+    widget.setEnabled(True)
+
+
+def _state_input_is_connected(node: Any, field_name: str) -> bool:
+    name = str(field_name or "").strip()
+    if not name:
+        return False
+    p = node.get_input(f"[S]{name}")
+    if p is None:
+        return False
+    return bool(p.connected_ports())
+
 def _model_extra(obj: Any) -> dict[str, Any]:
     try:
         extra = obj.model_extra
@@ -2224,8 +2278,8 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                     if name in common_props.keys() and "tooltip" in common_props[name].keys():
                         tooltip = common_props[name]["tooltip"]
                     access = _state_field_access(node, name)
-                    if access == F8StateAccess.ro:
-                        _apply_read_only_widget(widget)
+                    read_only = access == F8StateAccess.ro or _state_input_is_connected(node, name)
+                    _set_read_only_widget(widget, read_only=bool(read_only))
                     # Delete is only allowed when editableStateFields and not required.
                     required = bool(f.required)
                     allow_delete = bool(editable_state and not required)
@@ -2694,26 +2748,50 @@ class F8StudioSingleNodePropertiesWidget(QtWidgets.QWidget):
         g = self._node_graph
         if g is None:
             return
+        g.node_selected.connect(self._on_node_selected)  # type: ignore[attr-defined]
+        g.node_double_clicked.connect(self._on_node_selected)  # type: ignore[attr-defined]
+        g.node_selection_changed.connect(self._on_node_selection_changed)  # type: ignore[attr-defined]
+        g.nodes_deleted.connect(self._on_nodes_deleted)  # type: ignore[attr-defined]
+        g.property_changed.connect(self._on_graph_property_changed)  # type: ignore[attr-defined]
+        g.port_connected.connect(self._on_graph_ports_changed)  # type: ignore[attr-defined]
+        g.port_disconnected.connect(self._on_graph_ports_changed)  # type: ignore[attr-defined]
+
+    def _on_graph_ports_changed(self, _in_port: Any, _out_port: Any) -> None:
+        """
+        Toggle read-only state for State-tab widgets when state-edge bindings change.
+        """
         try:
-            g.node_selected.connect(self._on_node_selected)  # type: ignore[attr-defined]
-        except Exception:
-            pass
-        try:
-            g.node_double_clicked.connect(self._on_node_selected)  # type: ignore[attr-defined]
-        except Exception:
-            pass
-        try:
-            g.node_selection_changed.connect(self._on_node_selection_changed)  # type: ignore[attr-defined]
-        except Exception:
-            pass
-        try:
-            g.nodes_deleted.connect(self._on_nodes_deleted)  # type: ignore[attr-defined]
-        except Exception:
-            pass
-        try:
-            g.property_changed.connect(self._on_graph_property_changed)  # type: ignore[attr-defined]
-        except Exception:
-            pass
+            in_name = str(_in_port.name() or "")
+            out_name = str(_out_port.name() or "")
+        except (AttributeError, TypeError):
+            return
+        if not (in_name.startswith("[S]") or in_name.endswith("[S]") or out_name.startswith("[S]") or out_name.endswith("[S]")):
+            return
+        if self._editor is None or self._node_id is None:
+            return
+        g = self._node_graph
+        if g is None:
+            return
+        node = g.get_node_by_id(self._node_id)  # type: ignore[attr-defined]
+        if node is None:
+            return
+        spec = _get_node_spec(node)
+        if spec is None:
+            return
+        eff_fields = _effective_state_fields(node)
+        if not eff_fields:
+            eff_fields = list(spec.stateFields or [])
+
+        for f in eff_fields:
+            name = str(f.name or "").strip()
+            if not name:
+                continue
+            w = self._editor.get_widget(name)
+            if w is None:
+                continue
+            access = _state_field_access(node, name)
+            read_only = access == F8StateAccess.ro or _state_input_is_connected(node, name)
+            _set_read_only_widget(w, read_only=bool(read_only))
 
     def _clear_editor(self, *, clear_node_id: bool = True) -> None:
         if clear_node_id:

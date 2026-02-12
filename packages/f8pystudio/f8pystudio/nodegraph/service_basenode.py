@@ -639,6 +639,84 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         except KeyError:
             return None
 
+    def _inline_state_input_is_connected(self, field_name: str) -> bool:
+        """
+        True if the state field is upstream-driven via a state-edge.
+        """
+        name = str(field_name or "").strip()
+        if not name:
+            return False
+        node = self._backend_node()
+        if node is None:
+            return False
+        p = node.get_input(f"[S]{name}")
+        if p is None:
+            return False
+        return bool(p.connected_ports())
+
+    @staticmethod
+    def _set_inline_state_control_read_only(control: QtWidgets.QWidget, *, read_only: bool) -> None:
+        """
+        Best-effort toggle for inline state controls hosted in the node item.
+
+        Inline controls are created here (not via the property panel), so we
+        avoid relying on NodeGraphQt property widgets.
+        """
+        if isinstance(control, F8OptionCombo):
+            control.set_read_only(bool(read_only))
+            return
+        if isinstance(control, F8Switch):
+            control.setEnabled(not bool(read_only))
+            return
+        if isinstance(control, F8ValueBar):
+            control.setEnabled(not bool(read_only))
+            return
+        if isinstance(control, QtWidgets.QLineEdit):
+            control.setEnabled(True)
+            control.setReadOnly(bool(read_only))
+            return
+        if isinstance(control, QtWidgets.QPlainTextEdit):
+            control.setEnabled(True)
+            control.setReadOnly(bool(read_only))
+            return
+        if isinstance(control, QtWidgets.QTextEdit):
+            control.setEnabled(True)
+            control.setReadOnly(bool(read_only))
+            if read_only:
+                control.setTextInteractionFlags(
+                    QtCore.Qt.TextInteractionFlag.TextSelectableByMouse
+                    | QtCore.Qt.TextInteractionFlag.TextSelectableByKeyboard
+                )
+            else:
+                control.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextEditorInteraction)
+            return
+        # Fallback: disable to prevent edits.
+        control.setEnabled(not bool(read_only))
+
+    def refresh_inline_state_read_only(self) -> None:
+        """
+        Refresh readonly state for already-built inline state controls.
+
+        This is used when a state-edge is connected/disconnected: we want to
+        avoid rebuilding widgets (which can cause flicker / temporary layout
+        glitches) and only toggle editability.
+        """
+        node = self._backend_node()
+        if node is None:
+            return
+        fields = list(node.effective_state_fields() or [])
+
+        for f in fields:
+            info = _state_field_info(f)
+            if info is None or not info.show_on_node:
+                continue
+            name = info.name
+            ctrl = self._state_inline_controls.get(name)
+            if ctrl is None:
+                continue
+            read_only = info.access_str == "ro" or self._inline_state_input_is_connected(name)
+            self._set_inline_state_control_read_only(ctrl, read_only=bool(read_only))
+
     def _graph(self) -> Any | None:
         viewer = self._viewer_safe()
         if not isinstance(viewer, F8StudioNodeViewer):
@@ -1541,7 +1619,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 return None
 
         # Create control.
-        read_only = access_s == "ro"
+        read_only = access_s == "ro" or self._inline_state_input_is_connected(name)
 
         if ui in {"wrapline"}:
 
