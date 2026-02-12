@@ -17,7 +17,7 @@ from ..pystudio_service_bridge import PyStudioServiceBridge, PyStudioServiceBrid
 from ..pystudio_node_registry import SERVICE_CLASS as STUDIO_SERVICE_CLASS
 from ..ui_bus import UiCommand, UiCommandApplier
 from .node_property_widgets import F8StudioSingleNodePropertiesWidget
-from .palette_widget import F8StudioNodesPaletteWidget
+from .node_library_widget import F8StudioNodeLibraryWidget
 from .service_log_widget import ServiceLogDock
 
 logger = logging.getLogger(__name__)
@@ -94,10 +94,10 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         self._log_dock = ServiceLogDock(self)
         self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self._log_dock)
 
-        palette = F8StudioNodesPaletteWidget(node_graph=self.studio_graph)
-        palette_dock = QtWidgets.QDockWidget("Nodes Palette", self)
-        palette_dock.setWidget(palette)
-        self.addDockWidget(QtCore.Qt.RightDockWidgetArea, palette_dock)
+        node_library = F8StudioNodeLibraryWidget(node_graph=self.studio_graph)
+        node_library_dock = QtWidgets.QDockWidget("Node Library", self)
+        node_library_dock.setWidget(node_library)
+        self.addDockWidget(QtCore.Qt.RightDockWidgetArea, node_library_dock)
 
     def _setup_menu(self) -> None:
         menu = self.menuBar().addMenu("Graph")

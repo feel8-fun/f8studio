@@ -20,6 +20,12 @@ def _has_typed_spec_template(obj: object) -> TypeGuard[SupportsSpecTemplate]:
     return isinstance(spec, (F8OperatorSpec, F8ServiceSpec))
 
 
+def typed_spec_template_or_none(node_cls: object) -> SpecTemplate | None:
+    if not _has_typed_spec_template(node_cls):
+        return None
+    return node_cls.SPEC_TEMPLATE
+
+
 def _extract_tags(spec: SpecTemplate) -> list[str]:
     tags_any = spec.tags
     return [str(tag).strip().lower() for tag in list(tags_any or [])]
@@ -29,9 +35,9 @@ def is_hidden_spec_node_class(node_cls: object) -> bool:
     """
     Return True when a node class has `SPEC_TEMPLATE.tags` that marks it hidden.
     """
-    if not _has_typed_spec_template(node_cls):
+    spec = typed_spec_template_or_none(node_cls)
+    if spec is None:
         return False
-    spec = node_cls.SPEC_TEMPLATE
     tags = _extract_tags(spec)
     if not tags:
         return False
