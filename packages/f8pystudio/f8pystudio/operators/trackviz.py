@@ -43,7 +43,7 @@ class PyStudioTrackVizRuntimeNode(OperatorNode):
     Expected input payloads:
     - Multi-target (from f8.detecttracker `detections`):
       { "tsMs": int, "width": int, "height": int, "tracks": [ {id, bbox, keypoints?}, ... ] }
-    - Single-target (from f8.templatetracker `tracking`):
+    - Single-target (from f8.cvkit.templatematch `result` or f8.cvkit.tracking `tracking`):
       { "tsMs": int, "width": int, "height": int, "bbox": [x1,y1,x2,y2] | null }
 
     The runtime node maintains a short history per track id, and emits a UI command
