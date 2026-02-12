@@ -50,6 +50,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         self._bridge = PyStudioServiceBridge(PyStudioServiceBridgeConfig(), parent=self)
         self._bridge.ui_command.connect(self._on_ui_command)  # type: ignore[attr-defined]
         self._bridge.service_output.connect(self._on_service_output)  # type: ignore[attr-defined]
+        self._bridge.service_process_state.connect(self._on_service_process_state)  # type: ignore[attr-defined]
         self._bridge.log.connect(lambda s: self._log_dock.append("studio", str(s) + "\n"))  # type: ignore[attr-defined]
         self._bridge.start()
         try:
@@ -73,6 +74,15 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
             except Exception:
                 pass
         self._log_dock.append(service_id, line)
+
+    @QtCore.Slot(str, bool)
+    def _on_service_process_state(self, service_id: str, running: bool) -> None:
+        if bool(running):
+            return
+        try:
+            self._log_dock.close_service_tab(service_id)
+        except Exception:
+            pass
 
     def _setup_docks(self) -> None:
         prop_editor = F8StudioSingleNodePropertiesWidget(node_graph=self.studio_graph)
@@ -121,9 +131,9 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         compile_action.triggered.connect(self._compile_runtime_action)  # type: ignore[attr-defined]
         menu.addAction(compile_action)
 
-        self._deploy_action = QtGui.QAction("Send Graph (Deploy/Run/Monitor)", self)
+        self._deploy_action = QtGui.QAction("Send Graph", self)
         self._deploy_action.setShortcut("F5")
-        self._deploy_action.triggered.connect(self._deploy_run_monitor_action)  # type: ignore[attr-defined]
+        self._deploy_action.triggered.connect(self._on_deploy_action_triggered)  # type: ignore[attr-defined]
         menu.addAction(self._deploy_action)
 
     def _setup_toolbar(self) -> None:
@@ -134,8 +144,6 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         # Graph file management.
         self._open_icon = qta.icon("fa5s.folder-open", color="white")
         self._save_icon = qta.icon("fa5s.save", color="white")
-        self._play_icon = qta.icon("fa5s.play", color="green")
-        self._pause_icon = qta.icon("fa5s.pause", color="yellow")
 
         self._load_from_action = QtGui.QAction("Load Session…", self)
         self._load_from_action.setIcon(self._open_icon)
@@ -151,56 +159,13 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
 
         tb.addSeparator()
 
-        # Send Graph (deploy+run+monitor) (F5).
+        # Send Graph(F5).
         self._send_icon = qta.icon("mdi6.send", color="white")
         self._deploy_action.setIcon(self._send_icon)
-        self._deploy_action.setToolTip("Send graph to services (deploy + run + monitor) (F5)")
+        self._deploy_action.setToolTip("Send graph to services")
         tb.addAction(self._deploy_action)
 
         tb.addSeparator()
-
-        # Global active/deactive toggle (pause means deactivated).
-        self._pause_toggle = QtWidgets.QToolButton(self)
-        self._pause_toggle.setAutoRaise(True)
-        self._pause_toggle.setToolButtonStyle(QtCore.Qt.ToolButtonIconOnly)
-        self._pause_toggle.setCheckable(True)
-        self._pause_toggle.setChecked(False)
-        self._pause_toggle.setIcon(self._play_icon)
-        self._pause_toggle.setToolTip("Services Active (click to Pause/Deactivate all managed services)")
-        self._pause_toggle.toggled.connect(self._on_global_pause_toggled)  # type: ignore[attr-defined]
-
-        spacer = QtWidgets.QWidget(self)
-        spacer.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-        tb.addWidget(spacer)
-        tb.addWidget(self._pause_toggle)
-
-    def _on_global_pause_toggled(self, paused: bool) -> None:
-        """
-        Global active/deactive for managed services (lifecycle control).
-        """
-        try:
-            paused = bool(paused)
-        except Exception:
-            paused = False
-
-        try:
-            self._pause_toggle.setIcon(self._pause_icon if paused else self._play_icon)
-        except Exception:
-            pass
-        try:
-            self._pause_toggle.setToolTip(
-                "Services Paused (click to Resume/Activate all managed services)"
-                if paused
-                else "Services Active (click to Pause/Deactivate all managed services)"
-            )
-        except Exception:
-            pass
-
-        try:
-            self._bridge.set_managed_active(not paused)
-        except Exception:
-            pass
-        # Note: studio UI ticking is independent; service lifecycle is remote.
 
     def closeEvent(self, event):
         self._auto_save_session()
@@ -305,10 +270,9 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
             print(f"\n--- serviceId={sid} ---")
             print(json.dumps(p, ensure_ascii=False, indent=2, default=str))
 
-    def _deploy_run_monitor_action(self) -> None:
-        # Keep current global pause/resume choice when deploying.
+    def _on_deploy_action_triggered(self) -> None:
         compiled = compile_runtime_graphs_from_studio(self.studio_graph)
-        self._bridge.deploy_run_and_monitor(compiled)
+        self._bridge.deploy(compiled)
 
     def _on_runtime_state_updated(self, service_id: str, node_id: str, field: str, value: Any, ts_ms: Any) -> None:
         """

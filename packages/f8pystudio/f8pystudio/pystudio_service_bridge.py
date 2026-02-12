@@ -243,7 +243,7 @@ class PyStudioServiceBridge(QtCore.QObject):
         except Exception:
             pass
 
-    def deploy_run_and_monitor(self, compiled: CompiledRuntimeGraphs) -> None:
+    def deploy(self, compiled: CompiledRuntimeGraphs) -> None:
         """
         Starts service processes (if not running), deploys per-service graphs,
         installs the studio runtime graph, and enables remote state monitoring.

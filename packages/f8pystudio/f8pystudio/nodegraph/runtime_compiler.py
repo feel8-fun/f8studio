@@ -383,7 +383,6 @@ def compile_runtime_graphs_from_studio(studio_graph: Any) -> CompiledRuntimeGrap
             return bool(n.view.disabled)
         except Exception:
             return False
-        return False
 
     all_nodes = [n for n in list(studio_graph.all_nodes() or []) if not _is_disabled(n)]
     try:
