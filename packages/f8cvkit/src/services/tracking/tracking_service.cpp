@@ -72,6 +72,7 @@ bool TrackingService::start() {
   bus_->add_lifecycle_node(this);
   bus_->add_stateful_node(this);
   bus_->add_data_node(this);
+  bus_->add_command_node(this);
 
   if (!bus_->start()) {
     bus_.reset();
@@ -167,6 +168,7 @@ void TrackingService::on_state(const std::string& node_id, const std::string& fi
 void TrackingService::on_data(const std::string& node_id, const std::string& port, const json& value,
                               std::int64_t ts_ms, const json& meta) {
   (void)ts_ms;
+  (void)meta;
   if (node_id != cfg_.service_id) return;
   if (port != "initBox") return;
   if (!value.is_object()) return;
@@ -177,12 +179,53 @@ void TrackingService::on_data(const std::string& node_id, const std::string& por
   const int h = value.value("h", 0);
   if (w <= 0 || h <= 0) return;
 
-  // Only accept init boxes when not tracking; tracking should disable matching.
-  if (is_tracking_) {
-    return;
+  {
+    std::lock_guard<std::mutex> lock(tracking_mu_);
+
+    // Only accept init boxes when not tracking; tracking should disable matching.
+    if (is_tracking_) {
+      return;
+    }
+
+    pending_init_box_ = cv::Rect(x, y, w, h);
+  }
+}
+
+bool TrackingService::on_command(const std::string& call, const json& args, const json& meta, json& result,
+                                 std::string& error_code, std::string& error_message) {
+  (void)args;
+  error_code.clear();
+  error_message.clear();
+  result = json::object();
+
+  if (call == "stopTracking") {
+    json tracking_meta = json::object();
+    if (meta.is_object()) tracking_meta = meta;
+    tracking_meta["source"] = "command";
+    tracking_meta["call"] = call;
+
+    bool was_tracking = false;
+    {
+      std::lock_guard<std::mutex> lock(tracking_mu_);
+      was_tracking = is_tracking_;
+      stop_tracking_internal(tracking_meta);
+    }
+
+    result["stopped"] = true;
+    result["wasTracking"] = was_tracking;
+    return true;
   }
 
-  pending_init_box_ = cv::Rect(x, y, w, h);
+  error_code = "UNKNOWN_CALL";
+  error_message = "unknown call: " + call;
+  return false;
+}
+
+void TrackingService::stop_tracking_internal(const json& meta) {
+  tracker_.release();
+  bbox_ = cv::Rect();
+  pending_init_box_.reset();
+  set_tracking(false, meta);
 }
 
 void TrackingService::set_shm_name(const std::string& shm_name, const json& meta) {
@@ -227,11 +270,14 @@ bool TrackingService::ensure_video_open() {
 }
 
 void TrackingService::apply_init_box_if_any() {
-  if (is_tracking_) return;
-  if (!pending_init_box_.has_value()) return;
-
-  const auto bbox = pending_init_box_.value();
-  pending_init_box_.reset();
+  cv::Rect bbox;
+  {
+    std::lock_guard<std::mutex> lock(tracking_mu_);
+    if (is_tracking_) return;
+    if (!pending_init_box_.has_value()) return;
+    bbox = pending_init_box_.value();
+    pending_init_box_.reset();
+  }
 
   if (!ensure_video_open()) return;
 
@@ -253,7 +299,12 @@ void TrackingService::apply_init_box_if_any() {
   cv::Mat bgra_mat(static_cast<int>(hdr.height), static_cast<int>(hdr.width), CV_8UC4,
                    const_cast<std::byte*>(frame_bgra_.data()), static_cast<std::size_t>(hdr.pitch));
   cv::Mat bgr;
-  cv::cvtColor(bgra_mat, bgr, cv::COLOR_BGRA2BGR);
+  try {
+    cv::cvtColor(bgra_mat, bgr, cv::COLOR_BGRA2BGR);
+  } catch (const cv::Exception& ex) {
+    publish_state_if_changed("lastError", std::string("opencv cvtColor failed: ") + ex.what(), "runtime", json::object());
+    return;
+  }
 
   // Clamp bbox to frame.
   cv::Rect frame_rect(0, 0, static_cast<int>(hdr.width), static_cast<int>(hdr.height));
@@ -263,21 +314,43 @@ void TrackingService::apply_init_box_if_any() {
     return;
   }
 
-  tracker_ = cv::TrackerCSRT::create();
-  if (tracker_.empty()) {
-    publish_state_if_changed("lastError", "TrackerCSRT::create failed", "runtime", json::object());
-    return;
+  {
+    std::lock_guard<std::mutex> lock(tracking_mu_);
+    if (is_tracking_) return;
+    try {
+      tracker_ = cv::TrackerCSRT::create();
+      if (tracker_.empty()) {
+        publish_state_if_changed("lastError", "TrackerCSRT::create failed", "runtime", json::object());
+        return;
+      }
+      tracker_->init(bgr, bb);
+      bbox_ = bb;
+      set_tracking(true, json::object({{"source", "initBox"}}));
+    } catch (const cv::Exception& ex) {
+      publish_state_if_changed("lastError", std::string("opencv tracker init failed: ") + ex.what(), "runtime",
+                               json::object({{"source", "initBox"}}));
+      stop_tracking_internal(json::object({{"reason", "opencv_exception"}, {"source", "initBox"}}));
+      return;
+    } catch (const std::exception& ex) {
+      publish_state_if_changed("lastError", std::string("tracker init failed: ") + ex.what(), "runtime",
+                               json::object({{"source", "initBox"}}));
+      stop_tracking_internal(json::object({{"reason", "std_exception"}, {"source", "initBox"}}));
+      return;
+    }
   }
-  tracker_->init(bgr, bb);
-  bbox_ = bb;
-
-  set_tracking(true, json::object({{"source", "initBox"}}));
 }
 
 void TrackingService::process_frame_once() {
-  if (!is_tracking_ || tracker_.empty()) {
-    // Not tracking: emit a minimal status so downstream can read isTracking/isNotTracking.
-    return;
+  cv::Ptr<cv::Tracker> tracker;
+  cv::Rect bbox;
+  {
+    std::lock_guard<std::mutex> lock(tracking_mu_);
+    if (!is_tracking_ || tracker_.empty()) {
+      // Not tracking: emit a minimal status so downstream can read isTracking/isNotTracking.
+      return;
+    }
+    tracker = tracker_;
+    bbox = bbox_;
   }
   if (!ensure_video_open()) {
     return;
@@ -308,15 +381,42 @@ void TrackingService::process_frame_once() {
   cv::Mat bgra_mat(static_cast<int>(hdr.height), static_cast<int>(hdr.width), CV_8UC4,
                    const_cast<std::byte*>(frame_bgra_.data()), static_cast<std::size_t>(hdr.pitch));
   cv::Mat bgr;
-  cv::cvtColor(bgra_mat, bgr, cv::COLOR_BGRA2BGR);
-
-  cv::Rect out_bbox = bbox_;
-  const bool ok = tracker_->update(bgr, out_bbox);
-  if (!ok) {
-    set_tracking(false, json::object({{"reason", "update_failed"}}));
+  try {
+    cv::cvtColor(bgra_mat, bgr, cv::COLOR_BGRA2BGR);
+  } catch (const cv::Exception& ex) {
+    publish_state_if_changed("lastError", std::string("opencv cvtColor failed: ") + ex.what(), "runtime", json::object());
+    std::lock_guard<std::mutex> lock(tracking_mu_);
+    stop_tracking_internal(json::object({{"reason", "opencv_exception"}, {"where", "cvtColor"}}));
     return;
   }
-  bbox_ = out_bbox;
+
+  cv::Rect out_bbox = bbox;
+  bool ok = false;
+  try {
+    ok = tracker->update(bgr, out_bbox);
+  } catch (const cv::Exception& ex) {
+    publish_state_if_changed("lastError", std::string("opencv tracker update failed: ") + ex.what(), "runtime",
+                             json::object());
+    std::lock_guard<std::mutex> lock(tracking_mu_);
+    stop_tracking_internal(json::object({{"reason", "opencv_exception"}, {"where", "update"}}));
+    return;
+  } catch (const std::exception& ex) {
+    publish_state_if_changed("lastError", std::string("tracker update failed: ") + ex.what(), "runtime", json::object());
+    std::lock_guard<std::mutex> lock(tracking_mu_);
+    stop_tracking_internal(json::object({{"reason", "std_exception"}, {"where", "update"}}));
+    return;
+  }
+  if (!ok) {
+    std::lock_guard<std::mutex> lock(tracking_mu_);
+    stop_tracking_internal(json::object({{"reason", "update_failed"}}));
+    return;
+  }
+  {
+    std::lock_guard<std::mutex> lock(tracking_mu_);
+    if (!is_tracking_) return;
+    bbox_ = out_bbox;
+  }
+  const cv::Rect emit_bbox = out_bbox;
 
   json out = json::object();
   out["frameId"] = hdr.frame_id;
@@ -324,7 +424,8 @@ void TrackingService::process_frame_once() {
   out["width"] = hdr.width;
   out["height"] = hdr.height;
   out["status"] = "tracking";
-  out["bbox"] = json::array({bbox_.x, bbox_.y, bbox_.x + bbox_.width, bbox_.y + bbox_.height});
+  out["bbox"] = json::array(
+      {emit_bbox.x, emit_bbox.y, emit_bbox.x + emit_bbox.width, emit_bbox.y + emit_bbox.height});
   out["tracker"] = json::object({{"kind", "csrt"}, {"ok", true}});
 
   publish_state_if_changed("lastError", "", "runtime", json::object());
@@ -374,7 +475,11 @@ json TrackingService::describe() {
       state_field("lastError", schema_string(), "ro", "Last Error", "Last error message."),
   });
   service["editableStateFields"] = false;
-  service["commands"] = json::array();
+  service["commands"] = json::array({
+      json{{"name", "stopTracking"},
+           {"description", "Stop current tracking and return to waiting for initBox."},
+           {"showOnNode", true}},
+  });
   service["editableCommands"] = false;
   service["dataInPorts"] = json::array({
       json{{"name", "initBox"}, {"valueSchema", init_box_schema}, {"description", "Init box stream."}, {"required", false}},

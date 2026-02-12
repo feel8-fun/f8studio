@@ -20,7 +20,8 @@ namespace f8::cvkit::tracking {
 
 class TrackingService final : public f8::cppsdk::LifecycleNode,
                               public f8::cppsdk::StatefulNode,
-                              public f8::cppsdk::DataReceivableNode {
+                              public f8::cppsdk::DataReceivableNode,
+                              public f8::cppsdk::CommandableNode {
  public:
   struct Config {
     std::string service_id;
@@ -41,12 +42,14 @@ class TrackingService final : public f8::cppsdk::LifecycleNode,
   void tick();
 
   void on_lifecycle(bool active, const nlohmann::json& meta) override;
-  void on_state(const std::string& node_id, const std::string& field, const nlohmann::json& value, std::int64_t ts_ms,
+   void on_state(const std::string& node_id, const std::string& field, const nlohmann::json& value, std::int64_t ts_ms,
+                 const nlohmann::json& meta) override;
+   void on_data(const std::string& node_id, const std::string& port, const nlohmann::json& value, std::int64_t ts_ms,
                 const nlohmann::json& meta) override;
-  void on_data(const std::string& node_id, const std::string& port, const nlohmann::json& value, std::int64_t ts_ms,
-               const nlohmann::json& meta) override;
+   bool on_command(const std::string& call, const nlohmann::json& args, const nlohmann::json& meta,
+                   nlohmann::json& result, std::string& error_code, std::string& error_message) override;
 
-  static nlohmann::json describe();
+   static nlohmann::json describe();
 
  private:
   using json = nlohmann::json;
@@ -55,14 +58,15 @@ class TrackingService final : public f8::cppsdk::LifecycleNode,
                                 const json& meta);
   void set_shm_name(const std::string& shm_name, const json& meta);
   bool ensure_video_open();
-  void apply_init_box_if_any();
-  void process_frame_once();
-  void set_tracking(bool tracking, const json& meta);
+   void apply_init_box_if_any();
+   void process_frame_once();
+   void set_tracking(bool tracking, const json& meta);
+   void stop_tracking_internal(const json& meta);
 
-  Config cfg_;
-  std::atomic<bool> running_{false};
-  std::atomic<bool> stop_requested_{false};
-  std::atomic<bool> active_{true};
+   Config cfg_;
+   std::atomic<bool> running_{false};
+   std::atomic<bool> stop_requested_{false};
+   std::atomic<bool> active_{true};
   std::unique_ptr<f8::cppsdk::ServiceBus> bus_;
 
   std::mutex state_mu_;
@@ -76,10 +80,11 @@ class TrackingService final : public f8::cppsdk::LifecycleNode,
   std::uint64_t last_frame_id_ = 0;
   std::int64_t last_video_open_attempt_ms_ = 0;
 
-  // Tracking state.
-  cv::Ptr<cv::Tracker> tracker_;
-  cv::Rect bbox_;
-  bool is_tracking_ = false;
+   // Tracking state.
+   std::mutex tracking_mu_;
+   cv::Ptr<cv::Tracker> tracker_;
+   cv::Rect bbox_;
+   bool is_tracking_ = false;
 
   // Init box from template matching.
   std::optional<cv::Rect> pending_init_box_;
