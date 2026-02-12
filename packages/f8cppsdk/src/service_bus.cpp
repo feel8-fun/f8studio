@@ -1004,6 +1004,7 @@ void ServiceBus::apply_rungraph_local(const json& graph_obj, std::string& error_
     }
   }
 
+  std::unordered_map<_NodeFieldKey, std::string, _NodeFieldKeyHash> state_access_snapshot;
   {
     std::lock_guard<std::mutex> lock(state_mu_);
     state_access_ = std::move(state_access);
@@ -1011,6 +1012,7 @@ void ServiceBus::apply_rungraph_local(const json& graph_obj, std::string& error_
     cross_state_in_ = std::move(cross_state_in);
     cross_state_targets_ = std::move(cross_state_targets);
     has_rungraph_ = true;
+    state_access_snapshot = state_access_;
   }
 
   apply_data_routes_from_rungraph(graph_obj);
@@ -1265,6 +1267,126 @@ void ServiceBus::apply_rungraph_local(const json& graph_obj, std::string& error_
       publish_state_local(node_id, field, v, rungraph_ts > 0 ? rungraph_ts : now_ms(), "rungraph",
                           json{{"via", "rungraph"}, {"rungraphReconcile", true}, {"_noStateFanout", true}}, "rungraph",
                           true, false);
+    }
+  }
+
+  // Initial sync for intra-service state edges:
+  // propagate existing root values once so edge-driven targets do not remain stale
+  // until the next upstream change.
+  struct IntraStateKey {
+    std::string node_id;
+    std::string field;
+    bool operator==(const IntraStateKey& other) const { return node_id == other.node_id && field == other.field; }
+  };
+  struct IntraStateKeyHash {
+    std::size_t operator()(const IntraStateKey& k) const noexcept {
+      return std::hash<std::string>{}(k.node_id) ^ (std::hash<std::string>{}(k.field) << 1);
+    }
+  };
+
+  std::unordered_map<IntraStateKey, std::vector<IntraStateKey>, IntraStateKeyHash> out_edges;
+  std::unordered_set<IntraStateKey, IntraStateKeyHash> inbound;
+  std::unordered_set<IntraStateKey, IntraStateKeyHash> nodes_set;
+  std::vector<IntraStateKey> nodes;
+
+  auto add_node = [&](const IntraStateKey& k) {
+    if (nodes_set.find(k) != nodes_set.end()) return;
+    nodes_set.insert(k);
+    nodes.push_back(k);
+  };
+
+  for (const auto& e : graph.edges.value_or(std::vector<F8Edge>{})) {
+    if (e.kind != F8EdgeKindEnum::state) continue;
+    const std::string from_sid = e.fromServiceId;
+    const std::string to_sid = e.toServiceId;
+    if (from_sid != sid || to_sid != sid) continue;
+
+    std::string from_node = e.fromOperatorId.value_or("");
+    if (from_node.empty()) from_node = from_sid;
+    std::string to_node = e.toOperatorId.value_or("");
+    if (to_node.empty()) to_node = sid;
+    const std::string from_field = e.fromPort;
+    const std::string to_field = e.toPort;
+    if (from_node.empty() || to_node.empty() || from_field.empty() || to_field.empty()) continue;
+
+    auto it_access = state_access_snapshot.find({to_node, to_field});
+    if (it_access == state_access_snapshot.end()) continue;
+    if (it_access->second != "rw" && it_access->second != "wo") continue;
+
+    IntraStateKey from_key{from_node, from_field};
+    IntraStateKey to_key{to_node, to_field};
+    out_edges[from_key].push_back(to_key);
+    inbound.insert(to_key);
+    add_node(from_key);
+    add_node(to_key);
+  }
+
+  if (!out_edges.empty()) {
+    std::vector<IntraStateKey> roots;
+    roots.reserve(nodes.size());
+    for (const auto& k : nodes) {
+      if (inbound.find(k) == inbound.end()) {
+        roots.push_back(k);
+      }
+    }
+
+    const std::int64_t init_ts = now_ms();
+    for (const auto& root : roots) {
+      const auto root_state = get_state(root.node_id, root.field);
+      if (!root_state.found) continue;
+
+      std::vector<std::pair<IntraStateKey, json>> queue;
+      queue.push_back({root, root_state.value});
+      std::size_t head = 0;
+      std::unordered_set<IntraStateKey, IntraStateKeyHash> seen;
+
+      while (head < queue.size()) {
+        const auto from_key = queue[head].first;
+        const auto from_value = queue[head].second;
+        ++head;
+
+        if (seen.find(from_key) != seen.end()) continue;
+        seen.insert(from_key);
+
+        const auto it = out_edges.find(from_key);
+        if (it == out_edges.end()) continue;
+
+        for (const auto& to_key : it->second) {
+          if (seen.find(to_key) != seen.end()) continue;
+
+          const auto to_state = get_state(to_key.node_id, to_key.field);
+          if (to_state.found) {
+            bool same = false;
+            try {
+              same = (to_state.value == from_value);
+            } catch (...) {
+              same = false;
+            }
+            if (same) {
+              queue.push_back({to_key, to_state.value});
+              continue;
+            }
+          }
+
+          publish_state_local(
+              to_key.node_id,
+              to_key.field,
+              from_value,
+              init_ts,
+              "state_edge_intra_init",
+              json{{"fromNodeId", from_key.node_id}, {"fromField", from_key.field}},
+              "external",
+              true,
+              true);
+
+          const auto applied_state = get_state(to_key.node_id, to_key.field);
+          if (applied_state.found) {
+            queue.push_back({to_key, applied_state.value});
+          } else {
+            queue.push_back({to_key, from_value});
+          }
+        }
+      }
     }
   }
 

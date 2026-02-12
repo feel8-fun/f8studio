@@ -306,12 +306,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
             print(json.dumps(p, ensure_ascii=False, indent=2, default=str))
 
     def _deploy_run_monitor_action(self) -> None:
-        # Deploy implies global active by default.
-        try:
-            if self._pause_toggle.isChecked():
-                self._pause_toggle.setChecked(False)
-        except Exception:
-            pass
+        # Keep current global pause/resume choice when deploying.
         compiled = compile_runtime_graphs_from_studio(self.studio_graph)
         self._bridge.deploy_run_and_monitor(compiled)
 

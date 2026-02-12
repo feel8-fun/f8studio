@@ -269,8 +269,11 @@ class PyStudioServiceBridge(QtCore.QObject):
 
         # 2) deploy + install monitoring (async)
         self._async.submit(self._deploy_and_monitor_async(compiled))
-        # Deploy implies global active by default.
-        self.set_managed_active(True)
+        # Preserve the current global lifecycle preference across repeated deploys.
+        # Only enforce deactivate here when globally paused; avoid forcing activate
+        # on every F5, which can override rungraph/state-edge driven inactive states.
+        if not bool(self._managed_active):
+            self.set_managed_active(False)
 
     @QtCore.Slot(str)
     def unmanage_service(self, service_id: str) -> None:
