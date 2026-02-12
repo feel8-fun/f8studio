@@ -4,8 +4,11 @@
 #include <atomic>
 #include <chrono>
 #include <cctype>
+#include <cstdlib>
 #include <cstring>
 #include <stdexcept>
+#include <tuple>
+#include <unordered_set>
 #include <utility>
 
 #include <spdlog/spdlog.h>
@@ -22,6 +25,14 @@ namespace f8::cppsdk {
 using json = nlohmann::json;
 
 namespace {
+
+bool state_debug_enabled() {
+  const char* v = std::getenv("F8_STATE_DEBUG");
+  if (v == nullptr) return false;
+  std::string s(v);
+  std::transform(s.begin(), s.end(), s.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+  return (s == "1" || s == "true" || s == "yes" || s == "on");
+}
 
 std::int64_t coerce_inbound_ts_ms(const json& payload, std::int64_t default_ts_ms) {
   auto read_int = [&](const char* key) -> std::optional<std::int64_t> {
@@ -531,6 +542,22 @@ void ServiceBus::stop() {
     (void)kv_set_ready(kv_, cfg_.service_id, false, "stop");
   }
 
+  {
+    std::lock_guard<std::mutex> lock(state_mu_);
+    for (auto& kv : peer_kv_by_service_id_) {
+      try {
+        if (kv.second) {
+          kv.second->stop_watch();
+          kv.second->close();
+        }
+      } catch (...) {
+      }
+    }
+    peer_kv_by_service_id_.clear();
+    cross_state_in_.clear();
+    cross_state_targets_.clear();
+  }
+
   if (ctrl_) {
     try {
       ctrl_->stop();
@@ -558,6 +585,8 @@ void ServiceBus::stop() {
     state_cache_.clear();
     state_access_.clear();
     intra_state_out_.clear();
+    cross_state_in_.clear();
+    cross_state_targets_.clear();
     has_rungraph_ = false;
   }
   try {
@@ -900,6 +929,9 @@ void ServiceBus::apply_rungraph_local(const json& graph_obj, std::string& error_
 
   std::unordered_map<_NodeFieldKey, std::string, _NodeFieldKeyHash> state_access;
   std::unordered_map<_NodeFieldKey, std::vector<_NodeFieldKey>, _NodeFieldKeyHash> intra_state_out;
+  std::unordered_map<_RemoteStateKey, std::vector<_NodeFieldKey>, _RemoteStateKeyHash> cross_state_in;
+  std::unordered_set<_NodeFieldKey, _NodeFieldKeyHash> cross_state_targets;
+  std::vector<std::tuple<std::string, std::string, std::string>> cross_state_initial_reads;
 
   const std::string sid = cfg_.service_id;
 
@@ -942,14 +974,17 @@ void ServiceBus::apply_rungraph_local(const json& graph_obj, std::string& error_
   // Build intra-service state edge fanout table.
   for (const auto& e : graph.edges.value_or(std::vector<F8Edge>{})) {
     if (e.kind != F8EdgeKindEnum::state) continue;
-    if (e.fromServiceId != sid || e.toServiceId != sid) continue;
+    const std::string from_sid = e.fromServiceId;
+    const std::string to_sid = e.toServiceId;
+    if (to_sid != sid) continue;
+
     std::string from_node = e.fromOperatorId.value_or("");
-    if (from_node.empty()) from_node = sid;
+    if (from_node.empty()) from_node = from_sid;
     std::string to_node = e.toOperatorId.value_or("");
     if (to_node.empty()) to_node = sid;
     const std::string from_field = e.fromPort;
     const std::string to_field = e.toPort;
-    if (from_node.empty() || to_node.empty() || from_field.empty() || to_field.empty()) continue;
+    if (from_sid.empty() || to_node.empty() || from_node.empty() || from_field.empty() || to_field.empty()) continue;
 
     // Pre-filter to only writable targets for external propagation to reduce per-update overhead.
     {
@@ -957,17 +992,234 @@ void ServiceBus::apply_rungraph_local(const json& graph_obj, std::string& error_
       if (it_access == state_access.end()) continue;
       if (it_access->second == "ro") continue;
     }
-    intra_state_out[{from_node, from_field}].push_back({to_node, to_field});
+
+    if (from_sid == sid) {
+      // Intra-service state edge.
+      intra_state_out[{from_node, from_field}].push_back({to_node, to_field});
+    } else {
+      // Cross-service state binding (remote KV -> local field).
+      cross_state_in[{from_sid, from_node, from_field}].push_back({to_node, to_field});
+      cross_state_targets.insert({to_node, to_field});
+      cross_state_initial_reads.emplace_back(from_sid, from_node, from_field);
+    }
   }
 
   {
     std::lock_guard<std::mutex> lock(state_mu_);
     state_access_ = std::move(state_access);
     intra_state_out_ = std::move(intra_state_out);
+    cross_state_in_ = std::move(cross_state_in);
+    cross_state_targets_ = std::move(cross_state_targets);
     has_rungraph_ = true;
   }
 
   apply_data_routes_from_rungraph(graph_obj);
+
+  // Ensure peer KV watches are running for any cross-state dependencies.
+  // This mirrors f8pysdk's cross-service state routing (remote KV watch + initial sync).
+  std::unordered_set<std::string> want_peers;
+  for (const auto& t : cross_state_initial_reads) {
+    want_peers.insert(std::get<0>(t));
+  }
+  {
+    std::lock_guard<std::mutex> lock(state_mu_);
+    for (auto it = peer_kv_by_service_id_.begin(); it != peer_kv_by_service_id_.end();) {
+      if (want_peers.find(it->first) != want_peers.end()) {
+        ++it;
+        continue;
+      }
+      try {
+        if (it->second) {
+          it->second->stop_watch();
+          it->second->close();
+        }
+      } catch (...) {
+      }
+      it = peer_kv_by_service_id_.erase(it);
+    }
+  }
+
+  for (const auto& peer : want_peers) {
+    bool has_peer = false;
+    {
+      std::lock_guard<std::mutex> lock(state_mu_);
+      has_peer = (peer_kv_by_service_id_.find(peer) != peer_kv_by_service_id_.end());
+    }
+    if (has_peer) continue;
+
+    auto kv_peer = std::make_unique<KvStore>();
+    KvConfig kvc;
+    kvc.bucket = kv_bucket_for_service(peer);
+    kvc.memory_storage = true;
+    kvc.history = 1;
+    if (!kv_peer->open_or_create(nats_.jetstream(), kvc)) {
+      spdlog::warn("peer KV open failed bucket={} peer={}", kvc.bucket, peer);
+      continue;
+    }
+
+    const bool ok = kv_peer->watch(
+        "nodes.>",
+        [this, peer](const std::string& key, const std::vector<std::uint8_t>& bytes) {
+          constexpr const char* kPrefix = "nodes.";
+          constexpr const char* kStateMarker = ".state.";
+          if (key.rfind(kPrefix, 0) != 0) return;
+          const std::size_t marker = key.find(kStateMarker);
+          if (marker == std::string::npos) return;
+
+          const std::size_t node_begin = std::strlen(kPrefix);
+          const std::size_t node_end = marker;
+          if (node_end <= node_begin) return;
+          const std::string remote_node_id = key.substr(node_begin, node_end - node_begin);
+
+          const std::size_t field_begin = marker + std::strlen(kStateMarker);
+          if (field_begin >= key.size()) return;
+          const std::string remote_field = key.substr(field_begin);
+
+          std::vector<_NodeFieldKey> targets;
+          {
+            std::lock_guard<std::mutex> lock(state_mu_);
+            const auto it = cross_state_in_.find(_RemoteStateKey{peer, remote_node_id, remote_field});
+            if (it == cross_state_in_.end()) return;
+            targets = it->second;
+          }
+          if (targets.empty()) return;
+
+          nlohmann::json payload = nlohmann::json::object();
+          try {
+            const std::string s(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+            payload = nlohmann::json::parse(s, nullptr, false);
+          } catch (...) {
+            return;
+          }
+          if (!payload.is_object()) return;
+
+          const nlohmann::json value = payload.contains("value") ? payload["value"] : nlohmann::json();
+          const std::int64_t ts_ms = coerce_inbound_ts_ms(payload, now_ms());
+          nlohmann::json meta = payload;
+          try {
+            if (meta.is_object()) meta.erase("value");
+          } catch (...) {
+            meta = nlohmann::json::object();
+          }
+          meta["peerServiceId"] = peer;
+          meta["remoteKey"] = key;
+          meta["fromNodeId"] = remote_node_id;
+          meta["fromField"] = remote_field;
+
+          if (state_debug_enabled()) {
+            try {
+              std::string v_s;
+              try {
+                v_s = value.dump();
+              } catch (...) {
+                v_s = "<non_json>";
+              }
+              if (v_s.size() > 160) v_s = v_s.substr(0, 157) + "...";
+              spdlog::info("state_debug[{}] cross_state_watch peer={} key={} ts={} targets={} value={}", cfg_.service_id,
+                           peer, key, ts_ms, targets.size(), v_s);
+            } catch (...) {
+            }
+          }
+
+          for (const auto& t : targets) {
+            publish_state_local(t.node_id, t.field, value, ts_ms, "state_edge_cross", meta, "external", true, true);
+          }
+        },
+        true);
+
+    if (!ok) {
+      kv_peer->close();
+      continue;
+    }
+    {
+      std::lock_guard<std::mutex> lock(state_mu_);
+      peer_kv_by_service_id_[peer] = std::move(kv_peer);
+    }
+    if (state_debug_enabled()) {
+      spdlog::info("state_debug[{}] cross_state_watch_started peer={} bucket={}", cfg_.service_id, peer, kvc.bucket);
+    }
+  }
+
+  // Initial sync for cross-state targets: best-effort pull current remote values once.
+  for (const auto& t : cross_state_initial_reads) {
+    const std::string peer = std::get<0>(t);
+    const std::string remote_node_id = std::get<1>(t);
+    const std::string remote_field = std::get<2>(t);
+    std::unique_ptr<KvStore>* kv_peer_ptr = nullptr;
+    {
+      std::lock_guard<std::mutex> lock(state_mu_);
+      auto it = peer_kv_by_service_id_.find(peer);
+      if (it != peer_kv_by_service_id_.end()) kv_peer_ptr = &it->second;
+    }
+    if (kv_peer_ptr == nullptr || kv_peer_ptr->get() == nullptr) continue;
+
+    std::string remote_key;
+    try {
+      remote_key = kv_key_node_state(remote_node_id, remote_field);
+    } catch (...) {
+      continue;
+    }
+    const auto raw = (*kv_peer_ptr)->get(remote_key);
+    if (!raw.has_value()) {
+      if (state_debug_enabled()) {
+        spdlog::info("state_debug[{}] cross_state_initial_miss peer={} key={}", cfg_.service_id, peer, remote_key);
+      }
+      continue;
+    }
+
+    // Reuse the same parsing path as the watcher callback.
+    constexpr const char* kPrefix = "nodes.";
+    constexpr const char* kStateMarker = ".state.";
+    if (remote_key.rfind(kPrefix, 0) != 0) continue;
+    const std::size_t marker = remote_key.find(kStateMarker);
+    if (marker == std::string::npos) continue;
+
+    nlohmann::json payload = nlohmann::json::object();
+    try {
+      const std::string s(reinterpret_cast<const char*>(raw->data()), raw->size());
+      payload = nlohmann::json::parse(s, nullptr, false);
+    } catch (...) {
+      continue;
+    }
+    if (!payload.is_object()) continue;
+
+    const nlohmann::json value = payload.contains("value") ? payload["value"] : nlohmann::json();
+    const std::int64_t ts_ms = coerce_inbound_ts_ms(payload, now_ms());
+    nlohmann::json meta = payload;
+    try {
+      if (meta.is_object()) meta.erase("value");
+    } catch (...) {
+      meta = nlohmann::json::object();
+    }
+    meta["peerServiceId"] = peer;
+    meta["remoteKey"] = remote_key;
+    meta["fromNodeId"] = remote_node_id;
+    meta["fromField"] = remote_field;
+
+    std::vector<_NodeFieldKey> targets;
+    {
+      std::lock_guard<std::mutex> lock(state_mu_);
+      const auto it = cross_state_in_.find(_RemoteStateKey{peer, remote_node_id, remote_field});
+      if (it != cross_state_in_.end()) targets = it->second;
+    }
+    if (state_debug_enabled()) {
+      try {
+        std::string v_s;
+        try {
+          v_s = value.dump();
+        } catch (...) {
+          v_s = "<non_json>";
+        }
+        if (v_s.size() > 160) v_s = v_s.substr(0, 157) + "...";
+        spdlog::info("state_debug[{}] cross_state_initial_hit peer={} key={} ts={} targets={} value={}", cfg_.service_id,
+                     peer, remote_key, ts_ms, targets.size(), v_s);
+      } catch (...) {
+      }
+    }
+    for (const auto& tgt : targets) {
+      publish_state_local(tgt.node_id, tgt.field, value, ts_ms, "state_edge_cross", meta, "external", true, true);
+    }
+  }
 
   // Apply per-node stateValues (best-effort reconcile using rungraph meta.ts).
   std::int64_t rungraph_ts = 0;
@@ -984,6 +1236,18 @@ void ServiceBus::apply_rungraph_local(const json& graph_obj, std::string& error_
     for (auto it = n.stateValues.begin(); it != n.stateValues.end(); ++it) {
       const std::string field = it.key();
       const json v = it.value();
+
+      // Cross-service state edges are directional: downstream follows upstream.
+      // Do not apply rungraph stateValues to fields that are cross-state targets,
+      // otherwise local UI defaults (often empty) can clobber remote-propagated values.
+      if (cross_state_targets_.find(_NodeFieldKey{node_id, field}) != cross_state_targets_.end()) {
+        if (state_debug_enabled()) {
+          spdlog::info("state_debug[{}] cross_state_skip_rungraph node={}.{} value={}", cfg_.service_id, node_id, field,
+                       v.dump());
+        }
+        continue;
+      }
+
       if (rungraph_ts > 0) {
         const auto existing = get_state(node_id, field);
         if (existing.found) {

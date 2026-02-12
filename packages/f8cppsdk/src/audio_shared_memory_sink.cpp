@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <atomic>
 #include <cstring>
+#include <cstdlib>
+#include <string>
 
 #include <spdlog/spdlog.h>
 
@@ -54,6 +56,14 @@ inline std::uint32_t bytes_per_sample(AudioSharedMemorySink::SampleFormat fmt) {
   }
 }
 
+bool shm_unlink_on_close_enabled() {
+  const char* v = std::getenv("F8_SHM_UNLINK_ON_CLOSE");
+  if (v == nullptr) return false;
+  std::string s(v);
+  std::transform(s.begin(), s.end(), s.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+  return (s == "1" || s == "true" || s == "yes" || s == "on");
+}
+
 }  // namespace
 
 struct AudioSharedMemorySink::Header : AudioShmHeader {};
@@ -88,8 +98,10 @@ bool AudioSharedMemorySink::initialize(const std::string& region_name, std::size
 
   if (!region_.open_or_create(region_name, capacity_bytes)) return false;
 #if !defined(_WIN32)
-  // POSIX SHM names persist until shm_unlink(). Make the creator clean up on shutdown.
-  region_.set_unlink_on_close(true);
+  // POSIX SHM names persist until shm_unlink().
+  // Default is to NOT unlink on close so other processes can still attach/recover.
+  // Opt-in via env var for dev/test cleanup.
+  region_.set_unlink_on_close(shm_unlink_on_close_enabled());
 #endif
 
   sample_rate_ = sample_rate;

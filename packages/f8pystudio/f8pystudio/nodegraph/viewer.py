@@ -175,3 +175,8 @@ class F8StudioNodeViewer(NodeViewer):
         if graph is None:
             return
         graph.toggle_node_search()
+
+    @staticmethod
+    def acyclic_check(start_port, end_port) -> bool:
+        # Disable Acyclic checking
+        return True

@@ -23,6 +23,10 @@ class AudioSharedMemorySink {
                   std::uint16_t channels, SampleFormat format, std::uint32_t frames_per_chunk,
                   std::uint32_t chunk_count);
 
+  // POSIX only: controls whether the creator unlinks the SHM name on close().
+  // Default is false; enabling this can break other processes that want to attach later.
+  void set_unlink_on_close(bool enabled) { region_.set_unlink_on_close(enabled); }
+
   bool write_interleaved_f32(const float* samples, std::uint32_t frames, std::int64_t ts_ms);
 
   const std::string& shm_name() const { return region_.name(); }
@@ -91,4 +95,3 @@ class AudioSharedMemoryReader {
 };
 
 }  // namespace f8::cppsdk
-

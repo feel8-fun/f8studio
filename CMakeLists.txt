@@ -50,6 +50,14 @@ function(f8_deploy_service_runtime target service_rel_dir)
         return()
     endif()
 
+    # Optional third arg: "NO_CLEAN" to allow multiple executables to share one runtime directory.
+    set(_clean_dest "$<IF:$<BOOL:${F8_DEPLOY_SERVICE_CLEAN}>,1,0>")
+    if(ARGC GREATER 2)
+        if("${ARGV2}" STREQUAL "NO_CLEAN")
+            set(_clean_dest "0")
+        endif()
+    endif()
+
     if(WIN32)
         set(_platform_dir "win")
     elseif(APPLE)
@@ -68,7 +76,7 @@ function(f8_deploy_service_runtime target service_rel_dir)
         -Ddest_dir="${_dest_dir}"
         -Dbin_dir="${_bin_dir}"
         -Dlib_dir="${_lib_dir}"
-        -Dclean_dest="$<IF:$<BOOL:${F8_DEPLOY_SERVICE_CLEAN}>,1,0>"
+        -Dclean_dest="${_clean_dest}"
         -P "${PROJECT_SOURCE_DIR}/cmake/deploy_service_runtime.cmake"
     )
 
@@ -97,6 +105,7 @@ function(f8_deploy_service_runtime target service_rel_dir)
 endfunction()
 
 add_subdirectory(packages/f8cppsdk)
+add_subdirectory(packages/f8cvkit)
 add_subdirectory(packages/f8implayer)
 add_subdirectory(packages/f8audiocap)
 add_subdirectory(packages/f8screencap)

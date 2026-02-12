@@ -1,0 +1,9 @@
+schemaVersion: f8serviceEntry/1
+serviceClass: f8.cvkit.templatematch
+label: CVKit Template Match
+version: 0.0.1
+launch:
+  command: "../linux/f8cvkit_template_match_service"
+  args: []
+  env: {}
+  workdir: "./"

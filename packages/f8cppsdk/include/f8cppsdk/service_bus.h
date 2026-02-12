@@ -7,6 +7,7 @@
 #include <functional>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -174,6 +175,24 @@ class ServiceBus final : public ServiceControlHandler {
     }
   };
 
+  struct _RemoteStateKey {
+    std::string peer_service_id;
+    std::string remote_node_id;
+    std::string remote_field;
+    bool operator==(const _RemoteStateKey& other) const {
+      return peer_service_id == other.peer_service_id && remote_node_id == other.remote_node_id &&
+             remote_field == other.remote_field;
+    }
+  };
+  struct _RemoteStateKeyHash {
+    std::size_t operator()(const _RemoteStateKey& k) const noexcept {
+      std::size_t h1 = std::hash<std::string>{}(k.peer_service_id);
+      std::size_t h2 = std::hash<std::string>{}(k.remote_node_id);
+      std::size_t h3 = std::hash<std::string>{}(k.remote_field);
+      return h1 ^ (h2 << 1) ^ (h3 << 2);
+    }
+  };
+
   struct _InputBuffer {
     using JsonPtr = std::shared_ptr<const json>;
 
@@ -210,6 +229,9 @@ class ServiceBus final : public ServiceControlHandler {
   std::unordered_map<_NodeFieldKey, std::pair<json, std::int64_t>, _NodeFieldKeyHash> state_cache_;
   std::unordered_map<_NodeFieldKey, std::string, _NodeFieldKeyHash> state_access_;
   std::unordered_map<_NodeFieldKey, std::vector<_NodeFieldKey>, _NodeFieldKeyHash> intra_state_out_;
+  std::unordered_map<_RemoteStateKey, std::vector<_NodeFieldKey>, _RemoteStateKeyHash> cross_state_in_;
+  std::unordered_set<_NodeFieldKey, _NodeFieldKeyHash> cross_state_targets_;
+  std::unordered_map<std::string, std::unique_ptr<KvStore>> peer_kv_by_service_id_;
   bool has_rungraph_ = false;
 };
 

@@ -4,6 +4,8 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <cstdlib>
+#include <string>
 
 #include <spdlog/spdlog.h>
 
@@ -18,6 +20,14 @@ namespace {
 
 constexpr std::uint32_t kShmMagic = 0xF8A11A01u;
 constexpr std::size_t kMinSlotPayloadBytes = 32 * 32 * 4;
+
+bool shm_unlink_on_close_enabled() {
+  const char* v = std::getenv("F8_SHM_UNLINK_ON_CLOSE");
+  if (v == nullptr) return false;
+  std::string s(v);
+  std::transform(s.begin(), s.end(), s.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+  return (s == "1" || s == "true" || s == "yes" || s == "on");
+}
 
 struct ShmHeader {
   std::uint32_t magic = kShmMagic;
@@ -56,8 +66,10 @@ bool VideoSharedMemorySink::initialize(const std::string& region_name, std::size
     return false;
   }
 #if !defined(_WIN32)
-  // POSIX SHM names persist until shm_unlink(). Make the creator clean up on shutdown.
-  region_.set_unlink_on_close(true);
+  // POSIX SHM names persist until shm_unlink().
+  // Default is to NOT unlink on close so other processes can still attach/recover.
+  // Opt-in via env var for dev/test cleanup.
+  region_.set_unlink_on_close(shm_unlink_on_close_enabled());
 #endif
   slot_count_ = slot_count;
   frame_event_name_ = region_name + "_evt";

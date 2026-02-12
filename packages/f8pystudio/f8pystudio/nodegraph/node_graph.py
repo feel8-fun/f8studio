@@ -65,7 +65,6 @@ class F8StudioGraph(NodeGraph):
         self.uuid_length = kwargs.get("uuid_length", 4)
         self.uuid_generator = shortuuid.ShortUUID()
         self._loading_session = False
-        # self._move = _MoveState()
 
         self.property_changed.connect(self._on_property_changed)  # type: ignore[attr-defined]
 
@@ -76,12 +75,6 @@ class F8StudioGraph(NodeGraph):
 
         # NodeGraphQt exposes `nodes_deleted` (list[str]), not `node_deleted`.
         self.nodes_deleted.connect(self._on_nodes_deleted)  # type: ignore[attr-defined]
-
-        # Continuous move events during dragging.
-        try:
-            self._viewer.moving_nodes.connect(self._on_nodes_moving)  # type: ignore[attr-defined]
-        except Exception:
-            pass
 
     def set_service_bridge(self, bridge: ServiceBridge | None) -> None:
         self._service_bridge = bridge

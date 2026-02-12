@@ -25,6 +25,7 @@
 #include "f8cppsdk/f8_naming.h"
 #include "f8cppsdk/nats_client.h"
 #include "f8cppsdk/service_bus.h"
+#include "f8cppsdk/state_kv.h"
 
 using json = nlohmann::json;
 
@@ -347,6 +348,91 @@ TEST(ServiceBusIntegration, SetStateEndpointWritesKVAndEnforcesAccess) {
 
   bus.stop();
   caller.close();
+  server.stop();
+#endif
+}
+
+TEST(ServiceBusIntegration, CrossServiceStateEdgeMirrorsRemoteKV) {
+#if defined(_WIN32)
+  GTEST_SKIP() << "integration test requires nats-server + fork/exec";
+#else
+  const int port = pick_free_port();
+  ASSERT_GT(port, 0);
+  NatsServerProcess server(port);
+  ASSERT_TRUE(server.start());
+
+  const std::string url = "nats://127.0.0.1:" + std::to_string(port);
+
+  f8::cppsdk::ServiceBus::Config cfg_a;
+  cfg_a.service_id = "svcA";
+  cfg_a.nats_url = url;
+  cfg_a.kv_memory_storage = true;
+  f8::cppsdk::ServiceBus bus_a(cfg_a);
+
+  f8::cppsdk::ServiceBus::Config cfg_b;
+  cfg_b.service_id = "svcB";
+  cfg_b.nats_url = url;
+  cfg_b.kv_memory_storage = true;
+  f8::cppsdk::ServiceBus bus_b(cfg_b);
+
+  RecordingStateNode state_node;
+  bus_b.add_stateful_node(&state_node);
+
+  // Wait for NATS.
+  f8::cppsdk::NatsClient probe;
+  ASSERT_TRUE(wait_until(
+      [&]() { return probe.connect(url); }, [&]() {}, 2000))
+      << "NATS server did not become reachable";
+  probe.close();
+
+  ASSERT_TRUE(bus_a.start());
+  ASSERT_TRUE(bus_b.start());
+
+  // Publish a remote state value BEFORE binding is applied to exercise initial sync.
+  ASSERT_TRUE(f8::cppsdk::kv_set_node_state(bus_a.kv(), "svcA", "op1", "out", "v1", "runtime", json::object(), 1, "runtime"));
+
+  json graph;
+  graph["graphId"] = "g1";
+  graph["revision"] = "r1";
+  graph["nodes"] = json::array({
+      json{{"nodeId", "svcA"}, {"serviceId", "svcA"}, {"serviceClass", "demo"}, {"operatorClass", nullptr}},
+      json{{"nodeId", "op1"}, {"serviceId", "svcA"}, {"serviceClass", "demo"}, {"operatorClass", "OpA"}},
+      json{{"nodeId", "svcB"}, {"serviceId", "svcB"}, {"serviceClass", "demo"}, {"operatorClass", nullptr}},
+      json{{"nodeId", "op2"},
+           {"serviceId", "svcB"},
+           {"serviceClass", "demo"},
+           {"operatorClass", "OpB"},
+           {"stateFields", json::array({json{{"name", "input"}, {"valueSchema", json{{"type", "string"}}}, {"access", "rw"}}})}},
+  });
+  graph["edges"] = json::array({
+      json{{"edgeId", "e1"},
+           {"kind", "state"},
+           {"fromServiceId", "svcA"},
+           {"fromOperatorId", "op1"},
+           {"fromPort", "out"},
+           {"toServiceId", "svcB"},
+           {"toOperatorId", "op2"},
+           {"toPort", "input"},
+           {"strategy", "latest"}},
+  });
+  // Simulate Studio UI default clobbering: downstream stateValues sets input to empty.
+  // Cross-state binding should still win (remote KV), even if rungraph meta.ts is newer.
+  graph["nodes"][3]["stateValues"] = json::object({{"input", ""}});
+
+  std::string err_code;
+  std::string err_msg;
+  ASSERT_TRUE(bus_b.on_set_rungraph(graph, json::object(), err_code, err_msg)) << err_code << ": " << err_msg;
+
+  ASSERT_TRUE(wait_until([&]() { return state_node.count > 0; }, [&]() { (void)bus_b.drain_main_thread(); }, 2000))
+      << "did not receive cross-service state via remote KV watch";
+
+  EXPECT_EQ(state_node.last_node_id, "op2");
+  EXPECT_EQ(state_node.last_field, "input");
+  EXPECT_TRUE(state_node.last_value.is_string());
+  EXPECT_EQ(state_node.last_value.get<std::string>(), "v1");
+
+  bus_a.stop();
+  bus_b.stop();
   server.stop();
 #endif
 }

@@ -15,6 +15,9 @@ class VideoSharedMemorySink {
   ~VideoSharedMemorySink();
 
   bool initialize(const std::string& region_name, std::size_t capacity_bytes, std::uint32_t slot_count = 2);
+  // POSIX only: controls whether the creator unlinks the SHM name on close().
+  // Default is false; enabling this can break other processes that want to attach later.
+  void set_unlink_on_close(bool enabled) { region_.set_unlink_on_close(enabled); }
   bool ensureConfiguration(unsigned width, unsigned height);
   bool writeFrame(const void* data, unsigned stride_bytes);
 
@@ -74,4 +77,3 @@ class VideoSharedMemoryReader {
 };
 
 }  // namespace f8::cppsdk
-

@@ -46,6 +46,9 @@ class F8Build(ConanFile):
                 pass
 
         self.options["sol2"].with_lua = "luajit"
+        # Ensure OpenCV contrib modules are available for CV services.
+        # (e.g. opencv_tracking for CSRT/KCF trackers)
+        self.options["opencv"].tracking = True
 
     def configure(self):
         # When building shared libs, fPIC option is not needed
