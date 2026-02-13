@@ -1,0 +1,40 @@
+schemaVersion: f8onnxModel/1
+model:
+  id: yolo26n-pose
+  displayName: yolo26n pose
+  provider: yolo
+  task: yolo_pose
+  onnxPath: yolo26n-pose.onnx
+input:
+  width: 640
+  height: 640
+thresholds:
+  conf: 0.25
+  iou: 0.45
+labels:
+  classes:
+    - person
+pose:
+  keypoints:
+    - nose
+    - left_eye
+    - right_eye
+    - left_ear
+    - right_ear
+    - left_shoulder
+    - right_shoulder
+    - left_elbow
+    - right_elbow
+    - left_wrist
+    - right_wrist
+    - left_hip
+    - right_hip
+    - left_knee
+    - right_knee
+    - left_ankle
+    - right_ankle
+  dims: 3
+meta:
+  yolo:
+    nc: 1
+    kptCount: 17

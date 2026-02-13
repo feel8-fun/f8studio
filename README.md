@@ -36,6 +36,12 @@ Studio service discovery can avoid spawning `pixi run ... --describe` by using a
 - Regenerate one: `pixi run -e default update_describes -- --service-class f8.pyengine`
 - Force live discovery (ignore `describe.json`): `pixi run -e default studio_live`
 
+## DL services
+- Detector: `pixi run -e onnx dl_detector`
+- Human detector: `pixi run -e onnx dl_humandetector`
+- Classifier: `pixi run -e onnx dl_classifier`
+- Baseline benchmark: `pixi run -e onnx dl_bench -- --model-yaml <yaml> --video <video>`
+
 ## Audio capture
 - List recording devices: `build/bin/f8audiocap_service.exe --list-devices`
 - Capture system mix (Windows): `build/bin/f8audiocap_service.exe --service-id audiocap --mode capture --backend wasapi`

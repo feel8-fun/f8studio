@@ -35,6 +35,7 @@ from .f8_prop_value_widgets import (
 from .f8_editor_widgets import (
     F8OptionCombo,
     F8PropBoolSwitch,
+    F8PropMultiSelect,
     F8PropOptionCombo,
     F8Switch,
     F8ValueBar,
@@ -83,6 +84,9 @@ def _apply_read_only_widget(widget: QtWidgets.QWidget) -> None:
     if isinstance(widget, F8PropOptionCombo):
         widget.set_read_only(True)
         return
+    if isinstance(widget, F8PropMultiSelect):
+        widget.set_read_only(True)
+        return
     if isinstance(widget, F8PropBoolSwitch):
         widget.set_read_only(True)
         return
@@ -127,6 +131,9 @@ def _set_read_only_widget(widget: QtWidgets.QWidget, *, read_only: bool) -> None
         return
 
     if isinstance(widget, F8PropOptionCombo):
+        widget.set_read_only(False)
+        return
+    if isinstance(widget, F8PropMultiSelect):
         widget.set_read_only(False)
         return
     if isinstance(widget, F8PropBoolSwitch):
@@ -2010,13 +2017,22 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
             value (object): new value.
         """
         self.property_changed.emit(self.__node_id, name, value)
-        pool = str(name or "").strip()
-        if pool and pool in self._option_pool_dependents:
-            for w in list(self._option_pool_dependents.get(pool) or []):
-                try:
-                    w.refresh_options()
-                except Exception:
-                    continue
+        self.refresh_option_pool(str(name or ""))
+
+    def refresh_option_pool(self, pool_name: str) -> None:
+        """
+        Refresh option widgets that depend on a given pool state field.
+        """
+        pool = str(pool_name or "").strip()
+        if not pool:
+            return
+        if pool not in self._option_pool_dependents:
+            return
+        for w in list(self._option_pool_dependents.get(pool) or []):
+            try:
+                w.refresh_options()
+            except Exception:
+                continue
 
     def open_state_field_editor(self, field_name: str) -> None:
         """
@@ -2333,7 +2349,8 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
 
                 # Dialog-backed code editor (eg. python_script code).
                 try:
-                    ui_control = _state_field_ui_control(node, prop_name)
+                    ui_control_raw = _state_field_ui_control(node, prop_name)
+                    ui_control = str(ui_control_raw or "").strip().lower()
                     spec = _get_node_spec(node)
                     is_legacy_python_script_code = (
                         isinstance(spec, F8OperatorSpec)
@@ -2350,7 +2367,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                 if access == F8StateAccess.ro:
                     _apply_read_only_widget(widget)
                 # Enrich tooltips for option/switch editors.
-                if isinstance(widget, (F8PropOptionCombo, F8PropBoolSwitch)):
+                if isinstance(widget, (F8PropOptionCombo, F8PropMultiSelect, F8PropBoolSwitch)):
                     desc = ""
                     for f in _effective_state_fields(node):
                         try:
@@ -2935,6 +2952,16 @@ class F8StudioSingleNodePropertiesWidget(QtWidgets.QWidget):
                 return
         except Exception:
             return
+        prop_key = str(prop_name or "").strip()
+        if not prop_key:
+            return
+
+        # Always try pool refresh even if the pool field has no visible editor widget.
+        try:
+            self._editor.refresh_option_pool(prop_key)
+        except Exception:
+            pass
+
         try:
             w = self._editor.get_widget(prop_name)
         except Exception:

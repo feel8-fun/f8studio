@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import re
 import time
 from dataclasses import dataclass
@@ -48,6 +49,18 @@ def parse_select_pool(ui_control: str) -> str | None:
     if not m:
         return None
     return str(m.group(2))
+
+
+def parse_multiselect_pool(ui_control: str) -> str | None:
+    """
+    Parse uiControl patterns for multi-select pools:
+      "multiselect:[poolStateField]"
+    """
+    ui = str(ui_control or "").strip()
+    m = re.match(r"^multiselect\s*:\s*\[([A-Za-z_][A-Za-z0-9_]*)\]\s*$", ui, flags=re.IGNORECASE)
+    if not m:
+        return None
+    return str(m.group(1))
 
 class _F8ComboPopup(QtWidgets.QFrame):
     valueSelected = QtCore.Signal(int)
@@ -805,6 +818,304 @@ class F8PropOptionCombo(QtWidgets.QWidget):
 
     def _emit(self, v: Any) -> None:
         self.value_changed.emit(self.get_name(), None if v is None else str(v))
+
+
+class F8MultiSelect(QtWidgets.QWidget):
+    """
+    Compact multi-select editor.
+
+    Uses a dialog-based checklist instead of QMenu popups because this widget
+    can be embedded inside QGraphicsProxyWidget (NodeGraph), where popup menus
+    are not always reliable.
+    """
+
+    valueChanged = QtCore.Signal(object)
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._values: list[str] = []
+        self._labels: dict[str, str] = {}
+        self._tooltips: dict[str, str] = {}
+        self._selected: list[str] = []
+        self._context_tooltip = ""
+        self._read_only = False
+
+        self._button = QtWidgets.QToolButton()
+        self._button.setToolButtonStyle(QtCore.Qt.ToolButtonTextOnly)
+        self._button.setMinimumHeight(22)
+        self._button.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        self._button.setText("None")
+        self._button.clicked.connect(self._open_dialog)  # type: ignore[attr-defined]
+
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self._button, 1)
+
+    def set_read_only(self, read_only: bool) -> None:
+        self._read_only = bool(read_only)
+        self._button.setEnabled(not self._read_only)
+
+    def set_context_tooltip(self, tooltip: str) -> None:
+        self._context_tooltip = str(tooltip or "").strip()
+        self._refresh_caption()
+
+    def set_options(
+        self,
+        values: list[Any],
+        *,
+        labels: list[str] | None = None,
+        tooltips: list[str] | None = None,
+    ) -> None:
+        self._values = [str(v) for v in list(values)]
+        self._labels = {}
+        self._tooltips = {}
+        labels_list = list(labels) if labels is not None else []
+        tips_list = list(tooltips) if tooltips is not None else []
+        for i, value in enumerate(self._values):
+            if i < len(labels_list):
+                self._labels[value] = str(labels_list[i])
+            if i < len(tips_list):
+                self._tooltips[value] = str(tips_list[i])
+        valid_values = set(self._values)
+        self._selected = [v for v in self._selected if v in valid_values]
+        self._refresh_caption()
+
+    def set_value(self, value: Any) -> None:
+        values = self._normalize_values(value)
+        selected_set = set(values)
+        self._selected = [v for v in self._values if v in selected_set]
+        self._refresh_caption()
+
+    def value(self) -> list[str]:
+        return list(self._selected)
+
+    def _normalize_values(self, value: Any) -> list[str]:
+        raw_values: list[str] = []
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                raw_values = []
+            else:
+                parsed: Any = None
+                try:
+                    parsed = json.loads(text)
+                except Exception:
+                    parsed = None
+                if isinstance(parsed, (list, tuple)):
+                    raw_values = [str(v) for v in parsed]
+                else:
+                    raw_values = [v.strip() for v in text.split(",")]
+        elif isinstance(value, (list, tuple, set)):
+            raw_values = [str(v) for v in value]
+        else:
+            raw_values = []
+        out: list[str] = []
+        seen: set[str] = set()
+        for v in raw_values:
+            name = str(v).strip()
+            if not name or name in seen:
+                continue
+            out.append(name)
+            seen.add(name)
+        return out
+
+    def _resolve_dialog_parent(self) -> QtWidgets.QWidget | None:
+        # Same pattern as F8ImageB64Editor: when embedded in QGraphicsProxyWidget,
+        # resolve to the real window to avoid scene-embedded dialogs.
+        proxy = None
+        try:
+            w: QtWidgets.QWidget | None = self
+            while w is not None and proxy is None:
+                try:
+                    proxy = w.graphicsProxyWidget()
+                except Exception:
+                    proxy = None
+                try:
+                    w = w.parentWidget()
+                except Exception:
+                    w = None
+        except Exception:
+            proxy = None
+        if proxy is not None:
+            try:
+                scene = proxy.scene()
+            except Exception:
+                scene = None
+            if scene is not None:
+                try:
+                    views = scene.views()
+                except Exception:
+                    views = []
+                if views:
+                    view = next((v for v in views if v.isVisible()), views[0])
+                    try:
+                        top = view.window()
+                        if top is not None:
+                            return top
+                    except Exception:
+                        pass
+        try:
+            top = self.window()
+            if top is not None:
+                return top
+        except Exception:
+            pass
+        try:
+            return QtWidgets.QApplication.activeWindow()
+        except Exception:
+            return None
+
+    @staticmethod
+    def _set_list_checked(list_widget: QtWidgets.QListWidget, checked: bool) -> None:
+        state = QtCore.Qt.CheckState.Checked if checked else QtCore.Qt.CheckState.Unchecked
+        for idx in range(list_widget.count()):
+            item = list_widget.item(idx)
+            if item is None:
+                continue
+            item.setCheckState(state)
+
+    def _open_dialog(self) -> None:
+        if self._read_only:
+            return
+        parent = self._resolve_dialog_parent()
+        dlg = QtWidgets.QDialog(parent)
+        dlg.setWindowTitle("Select Classes")
+        dlg.setModal(True)
+        dlg.resize(420, 520)
+
+        list_widget = QtWidgets.QListWidget(dlg)
+        list_widget.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        selected_set = set(self._selected)
+
+        user_role = QtCore.Qt.ItemDataRole.UserRole
+        checked_state = QtCore.Qt.CheckState.Checked
+        unchecked_state = QtCore.Qt.CheckState.Unchecked
+        user_checkable_flag = QtCore.Qt.ItemFlag.ItemIsUserCheckable
+
+        for value in self._values:
+            label = self._labels.get(value, value)
+            item = QtWidgets.QListWidgetItem(label, list_widget)
+            item.setData(user_role, value)
+            item.setFlags(item.flags() | user_checkable_flag)
+            item.setCheckState(checked_state if value in selected_set else unchecked_state)
+            tip = str(self._tooltips.get(value, "")).strip()
+            if tip:
+                item.setToolTip(tip)
+
+        btn_all = QtWidgets.QPushButton("Select All", dlg)
+        btn_all.clicked.connect(lambda: self._set_list_checked(list_widget, True))  # type: ignore[attr-defined]
+        btn_clear = QtWidgets.QPushButton("Clear", dlg)
+        btn_clear.clicked.connect(lambda: self._set_list_checked(list_widget, False))  # type: ignore[attr-defined]
+
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(btn_all)
+        row.addWidget(btn_clear)
+        row.addStretch(1)
+
+        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel, parent=dlg)
+        buttons.accepted.connect(dlg.accept)  # type: ignore[attr-defined]
+        buttons.rejected.connect(dlg.reject)  # type: ignore[attr-defined]
+
+        layout = QtWidgets.QVBoxLayout(dlg)
+        layout.addLayout(row)
+        layout.addWidget(list_widget, 1)
+        layout.addWidget(buttons)
+
+        if dlg.exec() != QtWidgets.QDialog.Accepted:
+            return
+
+        out: list[str] = []
+        for idx in range(list_widget.count()):
+            item = list_widget.item(idx)
+            if item is None:
+                continue
+            if item.checkState() != checked_state:
+                continue
+            value = str(item.data(user_role) or "").strip()
+            if value:
+                out.append(value)
+        self._selected = out
+        self._refresh_caption()
+        self.valueChanged.emit(self.value())
+
+    def _refresh_caption(self) -> None:
+        count = len(self._selected)
+        total = len(self._values)
+        if count <= 0:
+            text = "None"
+        elif count == total and total > 0:
+            text = f"All ({total})"
+        elif count <= 3:
+            labels = [self._labels.get(v, v) for v in self._selected]
+            text = ", ".join(labels)
+        else:
+            text = f"{count} selected"
+        self._button.setText(text)
+
+        selected_labels = [self._labels.get(v, v) for v in self._selected]
+        selected_text = ", ".join(selected_labels) if selected_labels else "None"
+        tip_parts: list[str] = []
+        if self._context_tooltip:
+            tip_parts.append(self._context_tooltip)
+        tip_parts.append(f"Selected: {selected_text}")
+        self._button.setToolTip("\n".join(tip_parts))
+
+
+class F8PropMultiSelect(QtWidgets.QWidget):
+    """
+    PropertiesBin-compatible multi-select editor.
+    """
+
+    value_changed = QtCore.Signal(str, object)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._name = ""
+        self._multi = F8MultiSelect()
+        self._multi.valueChanged.connect(self._emit)  # type: ignore[attr-defined]
+
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self._multi, 1)
+
+        self._pool_field: str | None = None
+        self._pool_resolver: Callable[[str], list[str]] | None = None
+
+    def set_name(self, name: str) -> None:
+        self._name = str(name or "")
+
+    def get_name(self) -> str:
+        return self._name
+
+    def set_items(self, items: list[str]) -> None:
+        self._multi.set_options(list(items), labels=list(items))
+
+    def set_pool(self, pool_field: str, resolver: Callable[[str], list[str]]) -> None:
+        self._pool_field = str(pool_field or "")
+        self._pool_resolver = resolver
+        self.refresh_options()
+
+    def refresh_options(self) -> None:
+        if not self._pool_field or self._pool_resolver is None:
+            return
+        items = self._pool_resolver(self._pool_field)
+        self.set_items(items)
+
+    def set_value(self, value: Any) -> None:
+        self._multi.set_value(value)
+
+    def get_value(self) -> Any:
+        return self._multi.value()
+
+    def set_context_tooltip(self, tooltip: str) -> None:
+        self._multi.set_context_tooltip(tooltip)
+
+    def set_read_only(self, read_only: bool) -> None:
+        self._multi.set_read_only(bool(read_only))
+
+    def _emit(self, v: Any) -> None:
+        out = [str(x) for x in list(v or [])]
+        self.value_changed.emit(self.get_name(), out)
 
 
 class F8PropBoolSwitch(QtWidgets.QWidget):

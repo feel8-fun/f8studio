@@ -1,0 +1,20 @@
+schemaVersion: f8serviceEntry/1
+serviceClass: f8.dl.detector.cpp
+label: DL Detector C++ (Experimental)
+version: 0.0.1
+launch:
+  command: pixi
+  args:
+    - run
+    - -e
+    - default
+    - python
+    - scripts/run_cpp_service.py
+    - --service-dir
+    - services/f8/dl/detector_cpp
+    - --exe
+    - f8dlinfer_detector_service
+    - --env-var
+    - F8DLINFER_DETECTOR_EXE
+  env: {}
+  workdir: "../../../../"

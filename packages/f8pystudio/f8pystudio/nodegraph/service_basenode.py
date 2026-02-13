@@ -36,7 +36,15 @@ from .port_painter import draw_exec_port, draw_square_port, EXEC_PORT_COLOR, DAT
 from .service_process_toolbar import ServiceProcessToolbar
 from .service_bridge_protocol import ServiceBridge
 from .viewer import F8StudioNodeViewer
-from ..widgets.f8_editor_widgets import F8ImageB64Editor, F8OptionCombo, F8Switch, F8ValueBar, parse_select_pool
+from ..widgets.f8_editor_widgets import (
+    F8ImageB64Editor,
+    F8MultiSelect,
+    F8OptionCombo,
+    F8Switch,
+    F8ValueBar,
+    parse_multiselect_pool,
+    parse_select_pool,
+)
 from ..widgets.f8_prop_value_widgets import open_code_editor_dialog
 from ..command_ui_protocol import CommandUiHandler, CommandUiSource
 import qtawesome as qta
@@ -122,7 +130,7 @@ def _state_field_info(field: Any) -> _StateFieldInfo | None:
     if isinstance(field, dict):
         label = str(field.get("label") or "").strip() or name
         tooltip = str(field.get("description") or "").strip() or name
-        ui_control = str(field.get("uiControl") or "").strip().lower()
+        ui_control = str(field.get("uiControl") or "").strip()
         ui_language = str(field.get("uiLanguage") or "")
         value_schema = field.get("valueSchema")
         access = field.get("access")
@@ -137,7 +145,7 @@ def _state_field_info(field: Any) -> _StateFieldInfo | None:
         except Exception:
             tooltip = name
         try:
-            ui_control = str(field.uiControl or "").strip().lower()
+            ui_control = str(field.uiControl or "").strip()
         except Exception:
             ui_control = ""
         try:
@@ -947,7 +955,8 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             if isinstance(p, dict):
                 name = str(p.get("name") or "").strip()
                 required = bool(p.get("required") or False)
-                ui = str(p.get("uiControl") or "").strip().lower()
+                ui_raw = str(p.get("uiControl") or "").strip()
+                ui = ui_raw.lower()
                 schema = p.get("valueSchema")
                 desc_raw = p.get("description") or ""
             else:
@@ -960,8 +969,10 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 except Exception:
                     required = False
                 try:
-                    ui = str(p.uiControl or "").strip().lower()
+                    ui_raw = str(p.uiControl or "").strip()
+                    ui = ui_raw.lower()
                 except Exception:
+                    ui_raw = ""
                     ui = ""
                 try:
                     schema = p.valueSchema
@@ -991,7 +1002,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                     w.setToolTip(tooltip)
                 return w
 
-            pool_field = parse_select_pool(ui)
+            pool_field = parse_select_pool(ui_raw)
             if enum_items or pool_field or ui in {"select", "dropdown", "dropbox", "combo", "combobox"}:
                 combo = F8OptionCombo()
                 if pool_field:
@@ -1408,7 +1419,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             if pool_name != pool:
                 continue
             ctrl = self._state_inline_controls.get(field)
-            if not isinstance(ctrl, F8OptionCombo):
+            if not isinstance(ctrl, (F8OptionCombo, F8MultiSelect)):
                 continue
             try:
                 cur = ctrl.value()
@@ -1558,14 +1569,16 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
 
     def _make_state_inline_control(self, state_field: _StateFieldInfo) -> QtWidgets.QWidget:
         name = state_field.name
-        ui = state_field.ui_control
+        ui_raw = state_field.ui_control
+        ui = str(ui_raw or "").strip().lower()
         schema = state_field.value_schema
         access_s = state_field.access_str
         t = (schema_type(schema) or "") if schema is not None else ""
 
         enum_items = self._schema_enum_items(schema)
         lo, hi = self._schema_numeric_range(schema)
-        pool_field = parse_select_pool(ui)
+        select_pool_field = parse_select_pool(ui_raw)
+        multiselect_pool_field = parse_multiselect_pool(ui_raw)
         field_tooltip = state_field.tooltip if state_field.tooltip != name else ""
 
         def _common_style(w: QtWidgets.QWidget) -> None:
@@ -1617,6 +1630,46 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 return node.get_property(name)
             except KeyError:
                 return None
+
+        def _pool_items(pool_field: str | None) -> list[str]:
+            if not pool_field:
+                return []
+            node = self._backend_node()
+            if node is None:
+                return []
+            try:
+                v = node.get_property(pool_field)
+            except Exception:
+                return []
+            if isinstance(v, (list, tuple)):
+                return [str(x) for x in v]
+            # Allow pools stored as JSON strings (eg. "[]", ["a","b"]).
+            if isinstance(v, str):
+                try:
+                    import json as _json
+
+                    parsed = _json.loads(v)
+                except Exception:
+                    return []
+                if isinstance(parsed, (list, tuple)):
+                    out: list[str] = []
+                    for x in parsed:
+                        if isinstance(x, str):
+                            s = x.strip()
+                            if s:
+                                out.append(s)
+                            continue
+                        if isinstance(x, dict):
+                            # Accept [{id,name,...}] and use id.
+                            s = str(x.get("id") or "").strip()
+                            if s:
+                                out.append(s)
+                            continue
+                        s = str(x).strip()
+                        if s:
+                            out.append(s)
+                    return out
+            return []
 
         # Create control.
         read_only = access_s == "ro" or self._inline_state_input_is_connected(name)
@@ -1825,52 +1878,31 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 img.set_disabled(True)
             return img
 
-        if enum_items or pool_field or ui in {"select", "dropdown", "dropbox", "combo", "combobox"}:
+        if multiselect_pool_field or ui in {"multiselect", "multi_select", "multi-select"}:
+            multi = F8MultiSelect()
+            if field_tooltip:
+                multi.set_context_tooltip(field_tooltip)
+
+            items = _pool_items(multiselect_pool_field) if multiselect_pool_field else list(enum_items)
+            multi.set_options(items, labels=items)
+
+            def _apply_value(v: Any) -> None:
+                multi.set_value(v)
+
+            multi.valueChanged.connect(lambda v: _set_node_value(list(v or []), push_undo=True))  # type: ignore[attr-defined]
+            _apply_value(_get_node_value())
+            self._state_inline_updaters[name] = _apply_value
+            if multiselect_pool_field:
+                self._state_inline_option_pools[name] = multiselect_pool_field
+            if read_only:
+                multi.set_read_only(True)
+            return multi
+
+        if enum_items or select_pool_field or ui in {"select", "dropdown", "dropbox", "combo", "combobox"}:
             combo = F8OptionCombo()
             _common_style(combo)
 
-            def _pool_items() -> list[str]:
-                if not pool_field:
-                    return []
-                node = self._backend_node()
-                if node is None:
-                    return []
-                try:
-                    v = node.get_property(pool_field)
-                except Exception:
-                    return []
-                if isinstance(v, (list, tuple)):
-                    return [str(x) for x in v]
-                # Allow pools stored as JSON strings (eg. "[]", ["a","b"]). This is common for
-                # runtime-updated status fields where schemas are declared as strings.
-                if isinstance(v, str):
-                    try:
-                        import json as _json
-
-                        parsed = _json.loads(v)
-                    except Exception:
-                        return []
-                    if isinstance(parsed, (list, tuple)):
-                        out: list[str] = []
-                        for x in parsed:
-                            if isinstance(x, str):
-                                s = x.strip()
-                                if s:
-                                    out.append(s)
-                                continue
-                            if isinstance(x, dict):
-                                # Accept [{id,name,...}] and use id.
-                                s = str(x.get("id") or "").strip()
-                                if s:
-                                    out.append(s)
-                                continue
-                            s = str(x).strip()
-                            if s:
-                                out.append(s)
-                        return out
-                return []
-
-            items = _pool_items() if pool_field else list(enum_items)
+            items = _pool_items(select_pool_field) if select_pool_field else list(enum_items)
             combo.set_options(items, labels=items)
             if field_tooltip:
                 combo.set_context_tooltip(field_tooltip)
@@ -1883,8 +1915,8 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             )
             _apply_value(_get_node_value())
             self._state_inline_updaters[name] = _apply_value
-            if pool_field:
-                self._state_inline_option_pools[name] = pool_field
+            if select_pool_field:
+                self._state_inline_option_pools[name] = select_pool_field
             if read_only:
                 combo.set_read_only(True)
             return combo

@@ -531,10 +531,14 @@ class detecttrackerServiceNode(ServiceNode):
                     msg += f" modelYamlPath={self._model_yaml_path!s}"
                 await self.set_state("lastError", msg)
         payload = [i.model_id for i in idx]
-        await self.set_state("availableModels", json.dumps(payload, ensure_ascii=False))
-
-        if not self._model_id and idx:
-            self._model_id = idx[0].model_id
+        await self.set_state("availableModels", payload)
+        if idx:
+            available = set(payload)
+            if not self._model_id or self._model_id not in available:
+                self._model_id = idx[0].model_id
+                await self.set_state("modelId", self._model_id)
+        else:
+            self._model_id = ""
             await self.set_state("modelId", self._model_id)
 
     async def _reset_detector(self) -> None:

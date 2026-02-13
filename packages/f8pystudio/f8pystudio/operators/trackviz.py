@@ -44,6 +44,8 @@ class PyStudioTrackVizRuntimeNode(StudioVizRuntimeNodeBase):
     Expected input payloads:
     - Multi-target (from f8.detecttracker `detections`):
       { "tsMs": int, "width": int, "height": int, "tracks": [ {id, bbox, keypoints?}, ... ] }
+    - Multi-target (from f8.dl.detector / f8.dl.humandetector):
+      { "schemaVersion": "f8visionDetections/1", "tsMs": int, "width": int, "height": int, "detections": [ {bbox, keypoints?}, ... ] }
     - Single-target (from f8.cvkit.templatematch `result` or f8.cvkit.tracking `tracking`):
       { "tsMs": int, "width": int, "height": int, "bbox": [x1,y1,x2,y2] | null }
 
@@ -121,6 +123,45 @@ class PyStudioTrackVizRuntimeNode(StudioVizRuntimeNodeBase):
 
         tracks_any = payload.get("tracks")
         tracks: list[dict[str, Any]] = [t for t in tracks_any if isinstance(t, dict)] if isinstance(tracks_any, list) else []
+
+        # New schema support: f8visionDetections/1
+        if not tracks:
+            dets_any = payload.get("detections")
+            if isinstance(dets_any, list):
+                det_tracks: list[dict[str, Any]] = []
+                for i, det in enumerate(dets_any, start=1):
+                    if not isinstance(det, dict):
+                        continue
+                    det_id = i
+                    try:
+                        if det.get("id") is not None:
+                            det_id = int(det.get("id"))
+                    except Exception:
+                        det_id = i
+                    bbox = None
+                    try:
+                        bb = det.get("bbox")
+                        if isinstance(bb, (list, tuple)) and len(bb) == 4 and all(v is not None for v in bb):
+                            x1, y1, x2, y2 = (float(bb[0]), float(bb[1]), float(bb[2]), float(bb[3]))
+                            bbox = (x1, y1, x2, y2)
+                    except Exception:
+                        bbox = None
+                    kps = None
+                    try:
+                        kp = det.get("keypoints")
+                        if isinstance(kp, list):
+                            kps = [x for x in kp if isinstance(x, dict)]
+                    except Exception:
+                        kps = None
+                    det_tracks.append(
+                        {
+                            "id": int(det_id),
+                            "bbox": list(bbox) if bbox is not None else None,
+                            "keypoints": kps,
+                            "kind": "det",
+                        }
+                    )
+                tracks = det_tracks
 
         # Single-target compatibility: accept a top-level bbox and treat it as track id 1.
         if not tracks:
@@ -330,7 +371,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
             dataInPorts=[
                 F8DataPortSpec(
                     name="detections",
-                    description="Tracking payload (e.g. from f8.detecttracker.detections).",
+                    description="Tracking/detection payload (f8.detecttracker or f8visionDetections/1).",
                     valueSchema=any_schema(),
                 ),
             ],

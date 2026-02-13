@@ -12,6 +12,7 @@ from f8pysdk import (
     F8StateAccess,
     F8StateSpec,
     any_schema,
+    array_schema,
     boolean_schema,
     integer_schema,
     number_schema,
@@ -61,7 +62,7 @@ def register_detecttracker_specs(registry: RuntimeNodeRegistry | None = None) ->
             description="Model id selected from weightsDir (ignored if modelYamlPath is set).",
             valueSchema=string_schema(default=""),
             access=F8StateAccess.rw,
-            uiControl="select(availableModels)",
+            uiControl="select:[availableModels]",
             showOnNode=True,
         ),
         F8StateSpec(
@@ -164,8 +165,8 @@ def register_detecttracker_specs(registry: RuntimeNodeRegistry | None = None) ->
         F8StateSpec(
             name="availableModels",
             label="Available Models",
-            description="JSON list of model ids discovered from weightsDir.",
-            valueSchema=string_schema(default="[]"),
+            description="List of model ids discovered from weightsDir.",
+            valueSchema=array_schema(items=string_schema()),
             access=F8StateAccess.ro,
             showOnNode=False,
         ),
@@ -217,8 +218,8 @@ def register_detecttracker_specs(registry: RuntimeNodeRegistry | None = None) ->
             serviceClass=SERVICE_CLASS,
             version="0.0.1",
             label="Detect Tracker",
-            description="ONNXRuntime-based detector + tracker service (single-node source).",
-            tags=["onnx", "vision", "tracker"],
+            description="DEPRECATED: ONNXRuntime detector + tracker service. Prefer f8.dl.detector/f8.dl.humandetector + f8.cvkit.tracking.",
+            tags=["onnx", "vision", "tracker", "deprecated"],
             rendererClass="default_svc",
             stateFields=state_fields,
             dataOutPorts=[

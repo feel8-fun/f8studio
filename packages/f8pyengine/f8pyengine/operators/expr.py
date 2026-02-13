@@ -106,6 +106,18 @@ class _JsonRef:
             return _wrap_value(v[int(key)])
         raise TypeError(f"not indexable: {type(v).__name__}")
 
+    def __iter__(self):
+        v = self.value
+        if isinstance(v, dict):
+            for key in v:
+                yield key
+            return
+        if isinstance(v, (list, tuple)):
+            for item in v:
+                yield _wrap_value(item)
+            return
+        raise TypeError(f"not iterable: {type(v).__name__}")
+
     def unwrap(self) -> Any:
         v = self.value
         if isinstance(v, dict):
@@ -123,6 +135,7 @@ class _ExprValidator(ast.NodeVisitor):
 
     Allows:
     - literals, names, indexing, attribute access (for _JsonRef), arithmetic, boolean ops, comparisons
+    - comprehensions (list/set/dict/generator)
     - calls to a small allowlist: abs/min/max/round, and math.<fn> (where fn is allowlisted)
     """
 
@@ -187,6 +200,12 @@ class _ExprValidator(ast.NodeVisitor):
             ast.In,
             ast.NotIn,
             ast.IfExp,
+            ast.comprehension,
+            ast.ListComp,
+            ast.SetComp,
+            ast.DictComp,
+            ast.GeneratorExp,
+            ast.Store,
             ast.Call,
             ast.keyword,
         )
@@ -403,7 +422,7 @@ ExprRuntimeNode.SPEC = F8OperatorSpec(
         F8StateSpec(
             name="code",
             label="Expr",
-            description="Single-line expression (no statements). Available: abs/min/max/round/float/int, math.*, numpy as np. Examples: input.center.x ; a+b-c**2 ; np.clip(x,0,1)",
+            description="Single-line expression (no statements). Available: abs/min/max/round/float/int, math.*, numpy as np, comprehensions. Examples: input.center.x ; a+b-c**2 ; np.clip(x,0,1) ; [p.x for p in input.points if p.x >= 0]",
             uiControl="wrapline",
             uiLanguage="python",
             valueSchema=string_schema(default="input"),

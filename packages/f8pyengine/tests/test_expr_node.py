@@ -89,6 +89,69 @@ class ExprNodeTests(unittest.IsolatedAsyncioTestCase):
         out = await node.compute_output("out", ctx_id=2)
         self.assertEqual(out, -11)
 
+    async def test_list_comprehension_over_list_input(self) -> None:
+        harness = ServiceBusHarness()
+        bus = harness.create_bus("svcA")
+        reg = RuntimeNodeRegistry.instance()
+        register_operator(reg)
+        _ = ServiceHost(bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=reg)
+
+        op = F8RuntimeNode(
+            nodeId="e3",
+            serviceId="svcA",
+            serviceClass=SERVICE_CLASS,
+            operatorClass=ExprRuntimeNode.SPEC.operatorClass,
+            stateFields=list(ExprRuntimeNode.SPEC.stateFields or []),
+            stateValues={"code": "[x * 2 for x in input if x % 2 == 0]"},
+            dataInPorts=[
+                F8DataPortSpec(name="input", description="", valueSchema=any_schema(), required=False),
+            ],
+            dataOutPorts=[
+                F8DataPortSpec(name="out", description="", valueSchema=any_schema(), required=False),
+            ],
+        )
+        graph = F8RuntimeGraph(graphId="g3", revision="r1", nodes=[op], edges=[])
+        await bus.set_rungraph(graph)
+
+        node = bus.get_node("e3")
+        assert isinstance(node, ExprRuntimeNode)
+
+        buffer_input(bus, "e3", "input", [1, 2, 3, 4], ts_ms=0, edge=None, ctx_id=None)
+        out = await node.compute_output("out", ctx_id=3)
+        self.assertEqual(out, [4, 8])
+
+    async def test_list_comprehension_over_nested_objects(self) -> None:
+        harness = ServiceBusHarness()
+        bus = harness.create_bus("svcA")
+        reg = RuntimeNodeRegistry.instance()
+        register_operator(reg)
+        _ = ServiceHost(bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=reg)
+
+        op = F8RuntimeNode(
+            nodeId="e4",
+            serviceId="svcA",
+            serviceClass=SERVICE_CLASS,
+            operatorClass=ExprRuntimeNode.SPEC.operatorClass,
+            stateFields=list(ExprRuntimeNode.SPEC.stateFields or []),
+            stateValues={"code": "[p.x for p in input.points if p.x >= 0]"},
+            dataInPorts=[
+                F8DataPortSpec(name="input", description="", valueSchema=any_schema(), required=False),
+            ],
+            dataOutPorts=[
+                F8DataPortSpec(name="out", description="", valueSchema=any_schema(), required=False),
+            ],
+        )
+        graph = F8RuntimeGraph(graphId="g4", revision="r1", nodes=[op], edges=[])
+        await bus.set_rungraph(graph)
+
+        node = bus.get_node("e4")
+        assert isinstance(node, ExprRuntimeNode)
+
+        payload = {"points": [{"x": -1}, {"x": 0}, {"x": 2}]}
+        buffer_input(bus, "e4", "input", payload, ts_ms=0, edge=None, ctx_id=None)
+        out = await node.compute_output("out", ctx_id=4)
+        self.assertEqual(out, [0, 2])
+
 
 if __name__ == "__main__":
     unittest.main()

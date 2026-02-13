@@ -1,0 +1,9 @@
+schemaVersion: f8serviceEntry/1
+serviceClass: f8.dl.classifier
+label: DL Classifier
+version: 0.0.1
+launch:
+  command: pixi
+  args: ["run", "-e", "onnx", "dl_classifier"]
+  env: {}
+  workdir: "../../../../"

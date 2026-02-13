@@ -41,6 +41,7 @@ opencv-contrib-python = ">=4.13.0.90"
 
 [feature.onnx.pypi-dependencies]
 f8pydetect_tracker = { path = "packages/f8pydetect_tracker", editable = true }
+f8pydl = { path = "packages/f8pydl", editable = true }
 onnxruntime-gpu = ">=1.17.0"
 pyyaml = ">=6.0.0"
 
@@ -53,5 +54,9 @@ engine = "python -m f8pyengine.main"
 studio = "python -m f8pystudio.main"
 studio_live = "python -m f8pystudio.main --discovery-live"
 detect_tracker = "python -m f8pydetect_tracker.main"
+dl_detector = "python -m f8pydl.main_detector"
+dl_humandetector = "python -m f8pydl.main_humandetector"
+dl_classifier = "python -m f8pydl.main_classifier"
 sdk_tests = 'python -m unittest discover -s packages/f8pysdk/tests -p "test_*.py"'
 update_describes = "python scripts/update_static_describes.py"
+dl_bench = "python scripts/bench_dl_baseline.py"

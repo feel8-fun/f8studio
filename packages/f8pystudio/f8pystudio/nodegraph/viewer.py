@@ -83,8 +83,31 @@ class F8StudioNodeViewer(NodeViewer):
         for _ in range(abs(ticks)):
             self._set_viewer_zoom(1.0 if ticks > 0 else -1.0, 0.0, center_view)
 
+    @staticmethod
+    def _is_text_input_focus(widget: QtWidgets.QWidget | None) -> bool:
+        if widget is None:
+            return False
+        return isinstance(
+            widget,
+            (
+                QtWidgets.QLineEdit,
+                QtWidgets.QTextEdit,
+                QtWidgets.QPlainTextEdit,
+                QtWidgets.QAbstractSpinBox,
+            ),
+        )
+
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        event.setAccepted(False)
         super().keyPressEvent(event)
+
+        # Respect keys already consumed by child/proxy widgets.
+        if event.isAccepted():
+            return
+
+        focus_widget = QtWidgets.QApplication.focusWidget()
+        if self._is_text_input_focus(focus_widget):
+            return
 
         # Avoid interfering when Tab search is active (it should generally hold focus,
         # but be defensive in case focus is still on the viewer).
@@ -93,6 +116,8 @@ class F8StudioNodeViewer(NodeViewer):
 
         key = event.key()
         mods = event.modifiers()
+        if bool(mods & (QtCore.Qt.ControlModifier | QtCore.Qt.AltModifier | QtCore.Qt.MetaModifier)):
+            return
         fast = bool(mods & QtCore.Qt.ShiftModifier)
         pan_step = self._PAN_STEP_PX_FAST if fast else self._PAN_STEP_PX
         zoom_ticks = self._ZOOM_TICKS_FAST if fast else self._ZOOM_TICKS

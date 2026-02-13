@@ -10,8 +10,10 @@ from f8pysdk import F8DataTypeSchema, F8StateAccess
 from .f8_editor_widgets import (
     F8PropBoolSwitch,
     F8PropImageB64,
+    F8PropMultiSelect,
     F8PropOptionCombo,
     F8PropValueBar,
+    parse_multiselect_pool,
     parse_select_pool,
 )
 from .f8_prop_value_widgets import F8NumberPropLineEdit
@@ -83,7 +85,7 @@ def state_field_ui_control(node: Any, prop_name: str) -> str:
     for f in fields:
         try:
             if str(f.name or "").strip() == str(prop_name or "").strip():
-                return str(f.uiControl or "").strip().lower()
+                return str(f.uiControl or "").strip()
         except Exception:
             continue
     return ""
@@ -220,20 +222,22 @@ def build_state_value_widget(
     schema = state_field_schema(node, prop_name)
     schema_t = schema_type_any(schema) if schema is not None else ""
     ui_control = state_field_ui_control(node, prop_name)
+    ui_control_l = str(ui_control or "").strip().lower()
     ui_language = state_field_ui_language(node, prop_name)
     enum_items = schema_enum_items(schema) if schema is not None else []
     lo, hi = schema_numeric_range(schema) if schema is not None else (None, None)
     pool_field = parse_select_pool(ui_control)
+    multi_pool_field = parse_multiselect_pool(ui_control)
 
     is_image_b64 = schema_t == "string" and (
-        ui_control in {"image", "image_b64", "img"} or "b64" in str(prop_name).lower()
+        ui_control_l in {"image", "image_b64", "img"} or "b64" in str(prop_name).lower()
     )
     if is_image_b64:
         widget = F8PropImageB64()
         widget.set_name(prop_name)
         return widget
 
-    if ui_control in {"code"}:
+    if ui_control_l in {"code"}:
         try:
             title = f"{node.name()} — {prop_name}"
         except Exception:
@@ -242,17 +246,62 @@ def build_state_value_widget(
         widget.set_name(prop_name)
         return widget
 
-    if ui_control in {"wrapline"}:
+    if ui_control_l in {"wrapline"}:
         widget = F8WrapLinePropWidget(language=ui_language or "plaintext")
         widget.set_name(prop_name)
         return widget
 
-    if ui_control in {"code_inline", "multiline"}:
+    if ui_control_l in {"code_inline", "multiline"}:
         widget = F8InlineCodePropWidget(language=ui_language or "plaintext")
         widget.set_name(prop_name)
         return widget
 
-    if enum_items or pool_field or ui_control in {"select", "dropdown", "dropbox", "combo", "combobox"}:
+    if multi_pool_field or ui_control_l in {"multiselect", "multi_select", "multi-select"}:
+        widget = F8PropMultiSelect()
+        widget.set_name(prop_name)
+        if multi_pool_field:
+
+            def _pool_resolver(field: str) -> list[str]:
+                try:
+                    v = node.get_property(str(field))
+                except Exception:
+                    return []
+                if isinstance(v, (list, tuple)):
+                    return [str(x) for x in v]
+                if isinstance(v, str):
+                    try:
+                        import json
+
+                        parsed = json.loads(v)
+                    except Exception:
+                        return []
+                    if isinstance(parsed, (list, tuple)):
+                        out: list[str] = []
+                        for x in parsed:
+                            if isinstance(x, str):
+                                s = x.strip()
+                                if s:
+                                    out.append(s)
+                                continue
+                            if isinstance(x, dict):
+                                s = str(x.get("id") or "").strip()
+                                if s:
+                                    out.append(s)
+                                continue
+                            s = str(x).strip()
+                            if s:
+                                out.append(s)
+                        return out
+                return []
+
+            widget.set_pool(multi_pool_field, _pool_resolver)
+            if register_option_pool_dependent is not None:
+                register_option_pool_dependent(multi_pool_field, widget)
+        else:
+            widget.set_items(enum_items)
+        return widget
+
+    if enum_items or pool_field or ui_control_l in {"select", "dropdown", "dropbox", "combo", "combobox"}:
         widget = F8PropOptionCombo()
         widget.set_name(prop_name)
         if pool_field:
@@ -297,12 +346,12 @@ def build_state_value_widget(
             widget.set_items(enum_items)
         return widget
 
-    if schema is not None and (schema_t == "boolean" or ui_control in {"switch", "toggle"}):
+    if schema is not None and (schema_t == "boolean" or ui_control_l in {"switch", "toggle"}):
         widget = F8PropBoolSwitch()
         widget.set_name(prop_name)
         return widget
 
-    if schema is not None and schema_t in {"integer", "number"} and ui_control == "slider":
+    if schema is not None and schema_t in {"integer", "number"} and ui_control_l == "slider":
         widget = F8PropValueBar(data_type=int if schema_t == "integer" else float)
         widget.set_name(prop_name)
         if lo is not None:
