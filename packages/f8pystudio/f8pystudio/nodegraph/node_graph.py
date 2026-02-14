@@ -22,6 +22,10 @@ from .viewer import F8StudioNodeViewer
 from .service_bridge_protocol import ServiceBridge
 from .session import last_session_path
 from .spec_visibility import is_hidden_spec_node_class
+from ..variants.variant_ids import build_variant_node_type, parse_variant_node_type
+from ..variants.variant_repository import load_library
+from ..variants.variant_compose import build_variant_record_from_node
+from ..variants.variant_repository import upsert_variant
 
 from ..constants import SERVICE_CLASS as _CANVAS_SERVICE_CLASS_
 from ..constants import STUDIO_SERVICE_ID
@@ -71,6 +75,7 @@ class F8StudioGraph(NodeGraph):
         # Tab search sends a selected "node type" string. We map display aliases
         # back to actual factory node type ids so menu category paths can be custom.
         self._tab_search_node_type_aliases: dict[str, str] = {}
+        self._variant_menu_node_types: set[str] = set()
 
         self.property_changed.connect(self._on_property_changed)  # type: ignore[attr-defined]
 
@@ -85,6 +90,89 @@ class F8StudioGraph(NodeGraph):
         # Keep inline state widgets in sync with upstream bindings.
         self.port_connected.connect(self._on_port_connected)  # type: ignore[attr-defined]
         self.port_disconnected.connect(self._on_port_disconnected)  # type: ignore[attr-defined]
+
+    def _prompt_variant_metadata(
+        self,
+        *,
+        default_name: str,
+        default_description: str,
+        default_tags: list[str],
+    ) -> tuple[str, str, list[str]] | None:
+        dialog = QtWidgets.QDialog(None)
+        dialog.setWindowTitle("Save Node As Variant")
+        dialog.resize(520, 220)
+
+        name_edit = QtWidgets.QLineEdit(default_name, dialog)
+        desc_edit = QtWidgets.QLineEdit(default_description, dialog)
+        tags_edit = QtWidgets.QLineEdit(", ".join(default_tags), dialog)
+
+        form = QtWidgets.QFormLayout()
+        form.addRow("Name", name_edit)
+        form.addRow("Description", desc_edit)
+        form.addRow("Tags (comma-separated)", tags_edit)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
+            parent=dialog,
+        )
+        buttons.accepted.connect(dialog.accept)  # type: ignore[attr-defined]
+        buttons.rejected.connect(dialog.reject)  # type: ignore[attr-defined]
+
+        layout = QtWidgets.QVBoxLayout(dialog)
+        layout.addLayout(form)
+        layout.addWidget(buttons)
+
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return None
+        name = str(name_edit.text() or "").strip()
+        if not name:
+            return None
+        description = str(desc_edit.text() or "").strip()
+        tags = [s.strip() for s in str(tags_edit.text() or "").split(",")]
+        return name, description, [t for t in tags if t]
+
+    def _save_node_as_variant(self, node: Any) -> None:
+        if node is None:
+            return
+        try:
+            spec = node.spec
+        except AttributeError:
+            return
+        if not isinstance(spec, (F8OperatorSpec, F8ServiceSpec)):
+            return
+        default_name = str(spec.label or node.NODE_NAME or node.name() or "").strip() or "Variant"
+        default_desc = str(spec.description or "").strip()
+        default_tags = [str(t) for t in list(spec.tags or []) if str(t).strip()]
+        values = self._prompt_variant_metadata(
+            default_name=default_name,
+            default_description=default_desc,
+            default_tags=default_tags,
+        )
+        if values is None:
+            return
+        name, description, tags = values
+        record = build_variant_record_from_node(node=node, name=name, description=description, tags=tags)
+        upsert_variant(record)
+        QtWidgets.QMessageBox.information(None, "Variant Saved", f"Saved variant:\n{name}")
+
+    def _on_save_variant_menu_action(self, graph: Any, node: Any) -> None:
+        _ = graph
+        self._save_node_as_variant(node)
+
+    def install_variant_context_menu_for_nodes(self, node_classes: list[type]) -> None:
+        nodes_menu = self.context_nodes_menu()
+        if nodes_menu is None:
+            return
+        for node_cls in list(node_classes or []):
+            node_type = str(node_cls.type_ or "")
+            if not node_type or node_type in self._variant_menu_node_types:
+                continue
+            nodes_menu.add_command(
+                "Save As Variant...",
+                func=self._on_save_variant_menu_action,
+                node_type=node_type,
+            )
+            self._variant_menu_node_types.add(node_type)
 
     def _on_port_connected(self, in_port: NGPort, out_port: NGPort) -> None:
         self._on_port_connection_changed(in_port=in_port, out_port=out_port)
@@ -400,6 +488,13 @@ class F8StudioGraph(NodeGraph):
                 _maybe_override_bool("editableDataInPorts")
                 _maybe_override_bool("editableDataOutPorts")
 
+                # Keep user metadata from persisted snapshots/variants.
+                if "label" in session_spec_raw:
+                    merged["label"] = session_spec_raw.get("label")
+                if "description" in session_spec_raw:
+                    merged["description"] = session_spec_raw.get("description")
+                if "tags" in session_spec_raw:
+                    merged["tags"] = session_spec_raw.get("tags")
                 _maybe_override_list("stateFields", bool(merged.get("editableStateFields", False)))
                 _maybe_override_list("execInPorts", bool(merged.get("editableExecInPorts", False)))
                 _maybe_override_list("execOutPorts", bool(merged.get("editableExecOutPorts", False)))
@@ -415,6 +510,13 @@ class F8StudioGraph(NodeGraph):
                 _maybe_override_bool("editableDataInPorts")
                 _maybe_override_bool("editableDataOutPorts")
 
+                # Keep user metadata from persisted snapshots/variants.
+                if "label" in session_spec_raw:
+                    merged["label"] = session_spec_raw.get("label")
+                if "description" in session_spec_raw:
+                    merged["description"] = session_spec_raw.get("description")
+                if "tags" in session_spec_raw:
+                    merged["tags"] = session_spec_raw.get("tags")
                 _maybe_override_list("stateFields", bool(merged.get("editableStateFields", False)))
                 _maybe_override_list("commands", bool(merged.get("editableCommands", False)))
                 _maybe_override_list("dataInPorts", bool(merged.get("editableDataInPorts", False)))
@@ -794,6 +896,51 @@ class F8StudioGraph(NodeGraph):
             pass
         return node
 
+    @staticmethod
+    def _variant_record(variant_id: str) -> dict[str, Any] | None:
+        vid = str(variant_id or "").strip()
+        if not vid:
+            return None
+        lib = load_library()
+        for v in lib.variants:
+            if str(v.variantId) == vid:
+                return v.model_dump(mode="json")
+        return None
+
+    @staticmethod
+    def _coerce_variant_spec(value: dict[str, Any]) -> F8OperatorSpec | F8ServiceSpec:
+        if "operatorClass" in value:
+            return F8OperatorSpec.model_validate(value)
+        return F8ServiceSpec.model_validate(value)
+
+    def _apply_variant_to_node(
+        self,
+        *,
+        node: BaseNode,
+        variant_id: str,
+        variant_name: str,
+        variant_spec_json: dict[str, Any],
+    ) -> None:
+        spec = self._coerce_variant_spec(variant_spec_json)
+        node.spec = spec  # type: ignore[attr-defined]
+        node.set_ui_overrides({}, rebuild=False)  # type: ignore[attr-defined]
+        node.sync_from_spec()  # type: ignore[attr-defined]
+        if not isinstance(node.model.f8_sys, dict):
+            node.model.f8_sys = {}
+        node.model.f8_sys["variantId"] = str(variant_id)
+        node.model.f8_sys["variantName"] = str(variant_name or "")
+
+    def create_variant_node(
+        self,
+        variant_id: str,
+        *,
+        pos: tuple[float, float] | None = None,
+        selected: bool = True,
+        push_undo: bool = True,
+    ) -> BaseNode | None:
+        node_type = build_variant_node_type(variant_id)
+        return self.create_node(node_type, pos=pos, selected=selected, push_undo=push_undo)
+
     def create_node(self, node_type, name=None, selected=True, color=None, text_color=None, pos=None, push_undo=True):
         """
         Create a new node in the node graph.
@@ -815,6 +962,37 @@ class F8StudioGraph(NodeGraph):
         Returns:
             BaseNode: the created instance of the node.
         """
+        variant_id = parse_variant_node_type(str(node_type))
+        if variant_id:
+            record = self._variant_record(variant_id)
+            if record is None:
+                raise NodeCreationError(f'Can\'t find variant: "{variant_id}"')
+            base_node_type = str(record.get("baseNodeType") or "").strip()
+            if not base_node_type:
+                raise NodeCreationError(f'Variant "{variant_id}" has empty baseNodeType')
+            variant_name = str(record.get("name") or "").strip()
+            variant_spec_json = record.get("spec")
+            if not isinstance(variant_spec_json, dict):
+                raise NodeCreationError(f'Variant "{variant_id}" has invalid spec')
+            node = self.create_node(
+                base_node_type,
+                name=name or variant_name or None,
+                selected=selected,
+                color=color,
+                text_color=text_color,
+                pos=pos,
+                push_undo=push_undo,
+            )
+            if node is None:
+                return None
+            self._apply_variant_to_node(
+                node=node,
+                variant_id=variant_id,
+                variant_name=variant_name,
+                variant_spec_json=variant_spec_json,
+            )
+            return node
+
         node = self._node_factory.create_node_instance(node_type)
         if node:
             node = self._assign_node_id(node)

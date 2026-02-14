@@ -5,20 +5,28 @@ from typing import Any
 
 import json
 
-from qtpy import QtCore, QtWidgets
+from qtpy import QtCore, QtWidgets, QtGui
 from NodeGraphQt import NodesTreeWidget
 from NodeGraphQt.custom_widgets.nodes_tree import _BaseNodeTreeItem, TYPE_CATEGORY, TYPE_NODE
 
 from ..nodegraph.spec_visibility import is_hidden_spec_node_class, typed_spec_template_or_none
 from f8pysdk import F8OperatorSpec, F8ServiceSpec
+from ..variants.variant_ids import build_variant_node_type
+from ..variants.variant_repository import list_variants_for_base
 
 
 class _F8StudioNodesTreeWidget(NodesTreeWidget):
     _ROLE_NODE_ID = int(QtCore.Qt.UserRole + 1)
     _ROLE_NODE_NAME = int(QtCore.Qt.UserRole + 2)
+    _ROLE_BASE_NODE_ID = int(QtCore.Qt.UserRole + 3)
+    _ROLE_VARIANT_ID = int(QtCore.Qt.UserRole + 4)
+    _ROLE_IS_VARIANT = int(QtCore.Qt.UserRole + 5)
 
     def __init__(self, parent: QtWidgets.QWidget | None = None, node_graph: Any | None = None) -> None:
         self._search_text = ""
+        self._search_variants_enabled = False
+        self._on_open_variant_manager: Any | None = None
+        self._node_graph = node_graph
         super().__init__(parent=parent, node_graph=node_graph)
         self.setColumnCount(1)
         self.setHeaderHidden(True)
@@ -46,6 +54,16 @@ class _F8StudioNodesTreeWidget(NodesTreeWidget):
         self._search_text = value
         self.update()
 
+    def set_search_variants_enabled(self, enabled: bool) -> None:
+        val = bool(enabled)
+        if val == self._search_variants_enabled:
+            return
+        self._search_variants_enabled = val
+        self.update()
+
+    def set_open_variant_manager_callback(self, callback: Any | None) -> None:
+        self._on_open_variant_manager = callback
+
     def _build_search_blob(self, *, node_cls: Any, node_name: str, node_id: str) -> str:
         parts: list[str] = [str(node_name), str(node_id)]
         parts.append(str(node_cls.NODE_NAME))
@@ -68,6 +86,30 @@ class _F8StudioNodesTreeWidget(NodesTreeWidget):
         if not query:
             return True
         haystack = self._build_search_blob(node_cls=node_cls, node_name=node_name, node_id=node_id)
+        for token in query.split():
+            if token not in haystack:
+                return False
+        return True
+
+    @staticmethod
+    def _variant_search_blob(variant: Any) -> str:
+        parts = [
+            str(variant.name or ""),
+            str(variant.description or ""),
+            " ".join(str(t) for t in list(variant.tags or [])),
+        ]
+        spec = variant.spec if isinstance(variant.spec, dict) else {}
+        if isinstance(spec, dict):
+            parts.append(str(spec.get("label") or ""))
+            parts.append(str(spec.get("description") or ""))
+            parts.append(" ".join(str(t) for t in list(spec.get("tags") or [])))
+        return " ".join(parts).lower()
+
+    def _variant_matches_search(self, variant: Any) -> bool:
+        query = self._search_text
+        if not query:
+            return True
+        haystack = self._variant_search_blob(variant)
         for token in query.split():
             if token not in haystack:
                 return False
@@ -233,31 +275,86 @@ class _F8StudioNodesTreeWidget(NodesTreeWidget):
         layout.addWidget(close_btn, 0, QtCore.Qt.AlignRight)
         dialog.exec()
 
+    def _open_variant_manager(self, *, base_node_type: str, base_node_name: str) -> None:
+        callback = self._on_open_variant_manager
+        if callable(callback):
+            callback(base_node_type=base_node_type, base_node_name=base_node_name)
+            return
+        try:
+            from .node_variant_manager_dialog import NodeVariantManagerDialog
+
+            dlg = NodeVariantManagerDialog(
+                parent=self.window(),
+                base_node_type=base_node_type,
+                base_node_name=base_node_name,
+                node_graph=self._node_graph,
+            )
+            dlg.exec()
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Open variant manager failed", str(exc))
+
+    def _create_variant_node(self, *, variant_id: str) -> None:
+        graph = self._node_graph
+        if graph is None:
+            return
+        graph.create_variant_node(str(variant_id or ""))
+
     def _on_item_double_clicked(self, item: QtWidgets.QTreeWidgetItem, column: int) -> None:
         if item.type() != TYPE_NODE:
             return
-        node_id = str(item.data(0, self._ROLE_NODE_ID) or "")
+        _ = column
+        is_variant = bool(item.data(0, self._ROLE_IS_VARIANT))
+        if is_variant:
+            variant_id = str(item.data(0, self._ROLE_VARIANT_ID) or "")
+            if variant_id:
+                self._create_variant_node(variant_id=variant_id)
+            return
+        node_id = str(item.data(0, self._ROLE_BASE_NODE_ID) or item.data(0, self._ROLE_NODE_ID) or "")
         node_name = str(item.data(0, self._ROLE_NODE_NAME) or item.text(0))
         if not node_id:
             return
-        _ = column
-        self._show_spec_dialog(node_id=node_id, node_name=node_name)
+        self._open_variant_manager(base_node_type=node_id, base_node_name=node_name)
 
     def _on_context_menu_requested(self, pos: QtCore.QPoint) -> None:
         item = self.itemAt(pos)
         if item is None or item.type() != TYPE_NODE:
             return
-        node_id = str(item.data(0, self._ROLE_NODE_ID) or "")
-        node_name = str(item.data(0, self._ROLE_NODE_NAME) or item.text(0))
-        if not node_id:
+        menu = QtWidgets.QMenu(self)
+        is_variant = bool(item.data(0, self._ROLE_IS_VARIANT))
+        base_node_id = str(item.data(0, self._ROLE_BASE_NODE_ID) or item.data(0, self._ROLE_NODE_ID) or "")
+        base_node_name = str(item.data(0, self._ROLE_NODE_NAME) or item.text(0))
+        if not base_node_id:
             return
 
-        menu = QtWidgets.QMenu(self)
         action_info = menu.addAction("Show Details")
+        action_manage = menu.addAction("Manage Variants...")
+        action_create_variant = None
+        variant_id = str(item.data(0, self._ROLE_VARIANT_ID) or "")
+        if is_variant and variant_id:
+            action_create_variant = menu.addAction("Create Variant Node")
+
+        variants = list_variants_for_base(base_node_id)
+        if variants:
+            variants_menu = menu.addMenu("Variants")
+            variant_actions: dict[QtGui.QAction, str] = {}
+            for v in variants:
+                act = variants_menu.addAction(str(v.name or v.variantId))
+                variant_actions[act] = str(v.variantId)
+        else:
+            variant_actions = {}
+
         chosen = menu.exec(self.viewport().mapToGlobal(pos))
-        if chosen != action_info:
+        if chosen == action_info:
+            self._show_spec_dialog(node_id=base_node_id, node_name=base_node_name)
             return
-        self._show_spec_dialog(node_id=node_id, node_name=node_name)
+        if chosen == action_manage:
+            self._open_variant_manager(base_node_type=base_node_id, base_node_name=base_node_name)
+            return
+        if action_create_variant is not None and chosen == action_create_variant:
+            self._create_variant_node(variant_id=variant_id)
+            return
+        if chosen in variant_actions:
+            self._create_variant_node(variant_id=variant_actions[chosen])
 
     def mimeData(self, items: list[QtWidgets.QTreeWidgetItem]) -> QtCore.QMimeData:  # type: ignore[override]
         node_items = [item for item in items if item.type() == TYPE_NODE and str(item.toolTip(0) or "").strip()]
@@ -268,7 +365,8 @@ class _F8StudioNodesTreeWidget(NodesTreeWidget):
         if self._factory is None:
             return
 
-        node_types_by_category: dict[str, list[tuple[str, str]]] = defaultdict(list)
+        show_variant_children = self._search_variants_enabled and bool(self._search_text)
+        node_types_by_category: dict[str, list[tuple[str, str, list[Any]]]] = defaultdict(list)
         for node_name, node_ids in self._factory.names.items():
             for node_id_any in list(node_ids or []):
                 node_id = str(node_id_any)
@@ -277,12 +375,19 @@ class _F8StudioNodesTreeWidget(NodesTreeWidget):
                     continue
                 if is_hidden_spec_node_class(node_cls):
                     continue
-                if not self._matches_search(node_cls=node_cls, node_name=str(node_name), node_id=node_id):
+                base_match = self._matches_search(node_cls=node_cls, node_name=str(node_name), node_id=node_id)
+                matched_variants: list[Any] = []
+                if show_variant_children:
+                    variants = list_variants_for_base(node_id)
+                    for v in variants:
+                        if self._variant_matches_search(v):
+                            matched_variants.append(v)
+                if not base_match and not matched_variants:
                     continue
                 category = str(node_cls.__identifier__ or "")
                 if not category:
                     category = ".".join(node_id.split(".")[:-1])
-                node_types_by_category[category].append((node_id, str(node_name)))
+                node_types_by_category[category].append((node_id, str(node_name), matched_variants))
 
         self._category_items = {}
         for category in sorted(node_types_by_category.keys()):
@@ -299,12 +404,14 @@ class _F8StudioNodesTreeWidget(NodesTreeWidget):
             category_item = self._category_items.get(category)
             if category_item is None:
                 continue
-            for node_id, node_name in nodes_list:
+            for node_id, node_name, matched_variants in nodes_list:
                 item = _BaseNodeTreeItem(category_item, [node_name], type=TYPE_NODE)
                 item.setToolTip(0, node_id)
                 item.setSizeHint(0, QtCore.QSize(100, 22))
                 item.setData(0, self._ROLE_NODE_ID, node_id)
+                item.setData(0, self._ROLE_BASE_NODE_ID, node_id)
                 item.setData(0, self._ROLE_NODE_NAME, node_name)
+                item.setData(0, self._ROLE_IS_VARIANT, False)
                 category_item.addChild(item)
 
                 node_cls = self._factory.nodes.get(node_id)
@@ -314,6 +421,19 @@ class _F8StudioNodesTreeWidget(NodesTreeWidget):
                         desc = self._spec_description(spec)
                         if desc:
                             item.setToolTip(0, f"{node_id}\n\n{desc}")
+
+                for variant in matched_variants:
+                    variant_node_type = build_variant_node_type(str(variant.variantId))
+                    variant_text = f"{node_name} [Variant] {variant.name}"
+                    variant_item = _BaseNodeTreeItem(item, [variant_text], type=TYPE_NODE)
+                    variant_item.setToolTip(0, variant_node_type)
+                    variant_item.setSizeHint(0, QtCore.QSize(100, 22))
+                    variant_item.setData(0, self._ROLE_NODE_ID, variant_node_type)
+                    variant_item.setData(0, self._ROLE_BASE_NODE_ID, node_id)
+                    variant_item.setData(0, self._ROLE_NODE_NAME, node_name)
+                    variant_item.setData(0, self._ROLE_VARIANT_ID, str(variant.variantId))
+                    variant_item.setData(0, self._ROLE_IS_VARIANT, True)
+                    item.addChild(variant_item)
 
 
 class F8StudioNodeLibraryWidget(QtWidgets.QWidget):
@@ -328,26 +448,41 @@ class F8StudioNodeLibraryWidget(QtWidgets.QWidget):
 
         self._search = QtWidgets.QLineEdit(self)
         self._search.setPlaceholderText("Search nodes (name, tags, description)")
+        self._search_variants = QtWidgets.QCheckBox("Search Variants", self)
+        self._search_variants.setChecked(False)
         self._tree = _F8StudioNodesTreeWidget(self, node_graph=node_graph)
+
+        search_row = QtWidgets.QHBoxLayout()
+        search_row.setContentsMargins(0, 0, 0, 0)
+        search_row.setSpacing(6)
+        search_row.addWidget(self._search, 1)
+        search_row.addWidget(self._search_variants, 0)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(6)
-        layout.addWidget(self._search)
+        layout.addLayout(search_row)
         layout.addWidget(self._tree)
 
         self._search.textChanged.connect(self._on_search_text_changed)  # type: ignore[attr-defined]
+        self._search_variants.toggled.connect(self._on_search_variants_toggled)  # type: ignore[attr-defined]
         if node_graph is not None:
             node_graph.nodes_registered.connect(self._on_nodes_registered)  # type: ignore[attr-defined]
 
     def _on_search_text_changed(self, text: str) -> None:
         self._tree.set_search_text(str(text or ""))
 
+    def _on_search_variants_toggled(self, enabled: bool) -> None:
+        self._tree.set_search_variants_enabled(bool(enabled))
+
     def _on_nodes_registered(self, _nodes: list[Any]) -> None:
         self._tree.update()
 
     def set_category_label(self, category: str, label: str) -> None:
         self._tree.set_category_label(category, label)
+
+    def set_open_variant_manager_callback(self, callback: Any | None) -> None:
+        self._tree.set_open_variant_manager_callback(callback)
 
     def update(self) -> None:
         self._tree.update()
