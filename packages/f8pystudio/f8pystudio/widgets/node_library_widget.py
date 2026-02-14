@@ -22,7 +22,20 @@ class _F8StudioNodesTreeWidget(NodesTreeWidget):
         super().__init__(parent=parent, node_graph=node_graph)
         self.setColumnCount(1)
         self.setHeaderHidden(True)
+        self.setIndentation(12)
+        self.setUniformRowHeights(True)
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.setStyleSheet(
+            "QTreeView::item {"
+            "  margin: 0px;"
+            "  padding-top: 0px;"
+            "  padding-bottom: 0px;"
+            "}"
+            "QTreeView::branch {"
+            "  margin: 0px;"
+            "  padding: 0px;"
+            "}"
+        )
         self.customContextMenuRequested.connect(self._on_context_menu_requested)  # type: ignore[attr-defined]
         self.itemDoubleClicked.connect(self._on_item_double_clicked)  # type: ignore[attr-defined]
 
@@ -277,7 +290,7 @@ class _F8StudioNodesTreeWidget(NodesTreeWidget):
             cat_item = _BaseNodeTreeItem(self, [label], type=TYPE_CATEGORY)
             cat_item.setFirstColumnSpanned(True)
             cat_item.setFlags(QtCore.Qt.ItemIsEnabled)
-            cat_item.setSizeHint(0, QtCore.QSize(100, 26))
+            cat_item.setSizeHint(0, QtCore.QSize(100, 22))
             self.addTopLevelItem(cat_item)
             cat_item.setExpanded(True)
             self._category_items[category] = cat_item
@@ -289,7 +302,7 @@ class _F8StudioNodesTreeWidget(NodesTreeWidget):
             for node_id, node_name in nodes_list:
                 item = _BaseNodeTreeItem(category_item, [node_name], type=TYPE_NODE)
                 item.setToolTip(0, node_id)
-                item.setSizeHint(0, QtCore.QSize(100, 26))
+                item.setSizeHint(0, QtCore.QSize(100, 22))
                 item.setData(0, self._ROLE_NODE_ID, node_id)
                 item.setData(0, self._ROLE_NODE_NAME, node_name)
                 category_item.addChild(item)
