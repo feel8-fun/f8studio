@@ -25,6 +25,7 @@ packages = ["f8pystudio"]
 include = [
     "f8pystudio/render_nodes/web_assets/**/*.html",
     "f8pystudio/render_nodes/web_assets/**/*.js",
+    "f8pystudio/render_nodes/web_assets/**/*.css",
 ]
 
 [tool.uv]

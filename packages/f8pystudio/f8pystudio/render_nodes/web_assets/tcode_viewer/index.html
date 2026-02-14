@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TCode Viewer</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="root">
+      <div id="toolbar">
+        <span class="title">OSR Emulator</span>
+        <span id="modelLabel" class="badge">model: SR6</span>
+        <span id="stateLabel" class="badge">state: loading</span>
+      </div>
+      <div id="canvas"></div>
+    </div>
+    <script src="./osr-emu.bundle.js"></script>
+    <script type="module" src="./viewer.js"></script>
+  </body>
+</html>
