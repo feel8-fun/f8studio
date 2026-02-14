@@ -68,6 +68,9 @@ class F8StudioGraph(NodeGraph):
         self.uuid_length = kwargs.get("uuid_length", 4)
         self.uuid_generator = shortuuid.ShortUUID()
         self._loading_session = False
+        # Tab search sends a selected "node type" string. We map display aliases
+        # back to actual factory node type ids so menu category paths can be custom.
+        self._tab_search_node_type_aliases: dict[str, str] = {}
 
         self.property_changed.connect(self._on_property_changed)  # type: ignore[attr-defined]
 
@@ -649,6 +652,8 @@ class F8StudioGraph(NodeGraph):
         names = self._node_factory.names
         nodes = self._node_factory.nodes
 
+        self._tab_search_node_type_aliases = {}
+        alias_counts: dict[str, int] = {}
         filtered_names: dict[str, list[str]] = {}
         for node_name, node_types in dict(names or {}).items():
             kept_types: list[str] = []
@@ -657,12 +662,37 @@ class F8StudioGraph(NodeGraph):
                 node_cls = nodes.get(node_type_id)
                 if node_cls is not None and self._is_hidden_node_class(node_cls):
                     continue
-                kept_types.append(node_type_id)
+                category = self._tab_search_category_for_node(node_cls=node_cls, node_type_id=node_type_id)
+                node_leaf = node_type_id.split(".")[-1] if "." in node_type_id else node_type_id
+                alias_base = f"{category}.{node_leaf}"
+                count = int(alias_counts.get(alias_base, 0)) + 1
+                alias_counts[alias_base] = count
+                alias_id = alias_base if count == 1 else f"{alias_base}_{count}"
+                self._tab_search_node_type_aliases[alias_id] = node_type_id
+                kept_types.append(alias_id)
             if kept_types:
                 filtered_names[str(node_name)] = kept_types
 
         self._viewer.tab_search_set_nodes(filtered_names)
         self._viewer.tab_search_toggle()
+
+    @staticmethod
+    def _tab_search_category_for_node(*, node_cls: Any | None, node_type_id: str) -> str:
+        if node_cls is not None:
+            identifier = str(node_cls.__identifier__ or "").strip()
+            if identifier:
+                return identifier
+
+        if "." in node_type_id:
+            return ".".join(node_type_id.split(".")[:-1])
+        return "uncategorized"
+
+    def _on_search_triggered(self, node_type: str, pos: tuple[float, float]) -> None:
+        """
+        Resolve tab-search aliases to real node types before creating nodes.
+        """
+        node_type_id = self._tab_search_node_type_aliases.get(str(node_type), str(node_type))
+        self.create_node(node_type_id, pos=pos)
 
     @staticmethod
     def _is_hidden_node_class(node_cls: Any) -> bool:
