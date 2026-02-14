@@ -32,3 +32,21 @@ Pattern->phase wiring example (reusable):
 ### Mix / Fill
 
 `Mix (Silence Fill)` (`operatorClass=f8.mix_silence_fill`) outputs input `A` normally, but when `A` stays nearly-constant for `silenceMs`, it crossfades to `B` as a filler signal.
+
+### Buttplug / Intiface bridge
+
+`Buttplug Bridge` (`operatorClass=f8.buttplug_bridge`) provides a single-node integration to Intiface/Buttplug:
+
+- Connects to `wsUrl` (default `ws://127.0.0.1:12345`)
+- Publishes discovered devices into:
+  - `availableDevices` (`["index|name", ...]`)
+  - `deviceInfos` (full per-device capability map with `stepRange`/`durationRange`)
+- Uses `selectedDevice` to choose the active target device (falls back to first available device)
+- Accepts parallel control inputs:
+  - `vibrate` (0..1)
+  - `rotate` (-1..1)
+  - `oscillate` (0..1)
+  - `position` (0..1) with optional `positionDurationMs`
+  - `stop` (boolean)
+
+Feature-index state fields (`*FeatureIndex`) allow selecting a specific feature per output type; `-1` broadcasts to all matching features.

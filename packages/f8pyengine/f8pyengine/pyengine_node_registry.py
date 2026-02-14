@@ -32,6 +32,7 @@ from .operators.python_script import register_operator as register_python_script
 from .operators.expr import register_operator as register_expr_operator
 from .operators.lovense_mock_server import register_operator as register_lovense_mock_server_operator
 from .operators.lovense_program_adapter import register_operator as register_lovense_program_adapter_operator
+from .operators.buttplug_bridge import register_operator as register_buttplug_bridge_operator
 from .operators.mix_silence_fill import register_operator as register_mix_silence_fill_operator
 from .operators.sequence_player import register_operator as register_sequence_player_operator
 from .pyengine_service_node import PyEngineServiceNode
@@ -93,6 +94,7 @@ def register_pyengine_specs(registry: RuntimeNodeRegistry | None = None) -> Runt
     register_tcode_operator(reg)
     register_python_script_operator(reg)
     register_expr_operator(reg)
+    register_buttplug_bridge_operator(reg)
     register_lovense_mock_server_operator(reg)
     register_lovense_program_adapter_operator(reg)
     register_sequence_player_operator(reg)
