@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import socket
 import struct
 from dataclasses import dataclass
@@ -27,9 +28,9 @@ from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from f8pysdk.time_utils import now_ms
 
 from ..constants import SERVICE_CLASS
-from ._ports import exec_out_ports
 
 OPERATOR_CLASS = "f8.udp_skeleton"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,12 @@ class _UdpConfig:
     port: int
     max_queue: int
     reuse_address: bool
+
+
+@dataclass(frozen=True)
+class _SkeletonEntry:
+    rx_ts_ms: int
+    payload: Any
 
 
 class _UdpProtocol(asyncio.DatagramProtocol):
@@ -69,8 +76,8 @@ class UdpSkeletonRuntimeNode(OperatorNode):
     - Decodes incoming packets (skeleton binary -> dict, or JSON/utf-8, otherwise base64)
     - Maintains a per-model table (key -> latest skeleton + rxTsMs)
     - Removes stale models older than `cleanupAfterMs`
-    - Emits `skeletons` (all latest), `selectedSkeleton`, and `availableKeys`
-    - Passes exec through so you can place it in an exec chain (tick -> udp -> ...)
+    - Synchronizes `availableKeys` state for Studio option pools
+    - Outputs are pull-based via `compute_output(...)`
     """
 
     def __init__(self, *, node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any] | None = None) -> None:
@@ -81,7 +88,6 @@ class UdpSkeletonRuntimeNode(OperatorNode):
             state_fields=[s.name for s in (node.stateFields or [])],
         )
         self._initial_state = dict(initial_state or {})
-        self._exec_out_ports = exec_out_ports(node, default=["exec"])
 
         self._lock = asyncio.Lock()
         self._models_lock = asyncio.Lock()
@@ -97,12 +103,10 @@ class UdpSkeletonRuntimeNode(OperatorNode):
         self._cleanup_after_ms = self._parse_int(self._initial_state.get("cleanupAfterMs", 10000), default=10000)
         self._selected_key = str(self._initial_state.get("selectedKey", "") or "")
 
-        # key -> {"rxTsMs": int, "payload": Any}
-        self._skeletons_by_key: dict[str, dict[str, Any]] = {}
-        self._skeletons_version = 0
-        self._last_emitted_version = -1
-        self._last_emitted_keys: list[str] = []
-        self._last_emitted_selected: tuple[str, int] | None = None  # (key, rxTsMs)
+        self._skeletons_by_key: dict[str, _SkeletonEntry] = {}
+        self._output_version = 0
+        self._last_synced_keys: list[str] = []
+        self._ctx_output_cache: dict[tuple[str, str | int | None], tuple[int, Any]] = {}
 
     def attach(self, bus: Any) -> None:
         super().attach(bus)
@@ -131,15 +135,6 @@ class UdpSkeletonRuntimeNode(OperatorNode):
         except Exception:
             return True
 
-    async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
-        if not self._bus_active():
-            await self._stop_receiver()
-            return list(self._exec_out_ports)
-        await self._ensure_receiver()
-        await self._cleanup_stale()
-        await self._emit_updates(force=True)
-        return list(self._exec_out_ports)
-
     async def compute_output(self, port: str, ctx_id: str | int | None = None) -> Any:
         if not self._bus_active():
             await self._stop_receiver()
@@ -150,16 +145,29 @@ class UdpSkeletonRuntimeNode(OperatorNode):
 
         await self._ensure_receiver()
         await self._cleanup_stale()
+        await self._sync_available_keys_and_selection()
 
+        cache_key = (p, ctx_id)
         async with self._models_lock:
+            current_version = int(self._output_version)
+            cached = self._ctx_output_cache.get(cache_key)
+            if cached is not None and int(cached[0]) == current_version:
+                return cached[1]
+
             keys = sorted(self._skeletons_by_key.keys())
             if p == "skeletons":
-                return [self._skeletons_by_key[k].get("payload") for k in keys]
-            selected_key = str(self._selected_key or "").strip()
-            selected = self._skeletons_by_key.get(selected_key) if selected_key else None
-            return None if selected is None else selected.get("payload")
+                value = [self._skeletons_by_key[k].payload for k in keys]
+            else:
+                selected_key = str(self._selected_key or "").strip()
+                selected = self._skeletons_by_key.get(selected_key) if selected_key else None
+                value = None if selected is None else selected.payload
+            if len(self._ctx_output_cache) > 512:
+                self._ctx_output_cache.clear()
+            self._ctx_output_cache[cache_key] = (current_version, value)
+            return value
 
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
+        _ = ts_ms
         f = str(field)
         if f in ("bindAddress", "port", "maxQueue", "reuseAddress"):
             if self._bus_active():
@@ -170,11 +178,14 @@ class UdpSkeletonRuntimeNode(OperatorNode):
         if f == "cleanupAfterMs":
             self._cleanup_after_ms = self._parse_int(value, default=self._cleanup_after_ms)
             await self._cleanup_stale()
-            await self._emit_updates(force=True)
+            await self._sync_available_keys_and_selection()
             return
         if f == "selectedKey":
-            self._selected_key = str(value or "")
-            await self._emit_updates(force=True)
+            selected_key = str(value or "").strip()
+            if selected_key != self._selected_key:
+                self._selected_key = selected_key
+                self._bump_output_version()
+            await self._sync_available_keys_and_selection()
             return
 
     async def close(self) -> None:
@@ -321,27 +332,44 @@ class UdpSkeletonRuntimeNode(OperatorNode):
         assert self._queue is not None
         q = self._queue
         while True:
-            rx_ts_ms, raw, addr = await q.get()
-            if not self._bus_active():
-                continue
-            self._packet_count += 1
-            payload = self._decode_payload(raw)
-            model_name = self._extract_model_name(payload)
-            key = str(model_name or "").strip()
-            if not key:
-                key = f"{addr[0]}:{addr[1]}"
+            try:
+                rx_ts_ms, raw, addr = await q.get()
+                if not self._bus_active():
+                    continue
+                self._packet_count += 1
+                payload = self._decode_payload(raw)
+                model_name = self._extract_model_name(payload)
+                key = str(model_name or "").strip()
+                if not key:
+                    key = f"{addr[0]}:{addr[1]}"
 
-            entry = {
-                "rxTsMs": int(rx_ts_ms),
-                "payload": payload,
-            }
+                entry = _SkeletonEntry(rx_ts_ms=int(rx_ts_ms), payload=payload)
 
-            async with self._models_lock:
-                self._skeletons_by_key[key] = entry
-                self._skeletons_version += 1
+                keys_changed = False
+                async with self._models_lock:
+                    keys_changed = key not in self._skeletons_by_key
+                    self._skeletons_by_key[key] = entry
+                    self._bump_output_version()
 
-            # Do not emit on packet arrival: keep this node tick/pull-driven.
-            # Cleanup/emission happens in `on_exec` / `compute_output`.
+                if keys_changed:
+                    await self._sync_available_keys_and_selection()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("udp_skeleton drain loop failed nodeId=%s", self.node_id)
+
+    def _bump_output_version(self) -> None:
+        self._output_version += 1
+        if len(self._ctx_output_cache) > 512:
+            self._ctx_output_cache.clear()
+
+    @staticmethod
+    def _normalize_selected_key(keys: list[str], selected_key: str) -> str:
+        if not keys:
+            return ""
+        if selected_key in keys:
+            return selected_key
+        return keys[0]
 
     @staticmethod
     def _extract_model_name(payload: Any) -> str | None:
@@ -428,56 +456,31 @@ class UdpSkeletonRuntimeNode(OperatorNode):
         removed = False
         async with self._models_lock:
             for k, v in list(self._skeletons_by_key.items()):
-                try:
-                    rx = int(v.get("rxTsMs") or 0)
-                except Exception:
-                    rx = 0
+                rx = int(v.rx_ts_ms)
                 if rx and rx < cutoff:
                     self._skeletons_by_key.pop(k, None)
                     removed = True
             if removed:
-                self._skeletons_version += 1
+                self._bump_output_version()
 
         if removed:
-            await self._emit_updates(force=True)
+            await self._sync_available_keys_and_selection()
 
-    async def _emit_updates(self, *, force: bool = False) -> None:
+    async def _sync_available_keys_and_selection(self) -> None:
         async with self._models_lock:
-            version = int(self._skeletons_version)
             keys = sorted(self._skeletons_by_key.keys())
-            skeletons = [self._skeletons_by_key[k].get("payload") for k in keys]
-
             selected_key = str(self._selected_key or "").strip()
-            selected = self._skeletons_by_key.get(selected_key) if selected_key else None
 
-        if keys != self._last_emitted_keys:
-            self._last_emitted_keys = list(keys)
+        if keys != self._last_synced_keys:
+            self._last_synced_keys = list(keys)
             await self.set_state("availableKeys", list(keys))
 
-        if force or version != self._last_emitted_version:
-            self._last_emitted_version = int(version)
-            await self.emit("skeletons", skeletons)
+        next_selected_key = self._normalize_selected_key(keys, selected_key)
 
-        if not selected_key:
-            if force or self._last_emitted_selected is not None:
-                self._last_emitted_selected = None
-                await self.emit("selectedSkeleton", None)
-            return
-
-        if selected is None:
-            if force or self._last_emitted_selected is not None:
-                self._last_emitted_selected = None
-                await self.emit("selectedSkeleton", None)
-            return
-
-        try:
-            rx_ts = int(selected.get("rxTsMs") or 0)
-        except Exception:
-            rx_ts = 0
-        marker = (selected_key, rx_ts)
-        if force or marker != self._last_emitted_selected:
-            self._last_emitted_selected = marker
-            await self.emit("selectedSkeleton", selected.get("payload"))
+        if next_selected_key != self._selected_key:
+            self._selected_key = next_selected_key
+            self._bump_output_version()
+            await self.set_state("selectedKey", next_selected_key)
 
 
 UdpSkeletonRuntimeNode.SPEC = F8OperatorSpec(
@@ -488,8 +491,8 @@ UdpSkeletonRuntimeNode.SPEC = F8OperatorSpec(
     label="UDP Skeleton",
     description="Receives UDP packets and keeps latest skeleton per model key, with TTL cleanup and selection.",
     tags=["io", "udp", "network", "skeleton", "mocap"],
-    execInPorts=["exec"],
-    execOutPorts=["exec"],
+    execInPorts=[],
+    execOutPorts=[],
     dataOutPorts=[
         F8DataPortSpec(
             name="skeletons", description="List of latest payloads (ordered by key).", valueSchema=any_schema()
@@ -546,7 +549,8 @@ UdpSkeletonRuntimeNode.SPEC = F8OperatorSpec(
             label="Selected Key",
             description="If set and matches an available key, outputs `selectedSkeleton`; otherwise None.",
             valueSchema=string_schema(default=""),
-            access=F8StateAccess.wo,
+            access=F8StateAccess.rw,
+            uiControl="options:[availableKeys]",
             showOnNode=True,
         ),
         F8StateSpec(
