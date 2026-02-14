@@ -3,6 +3,7 @@ from .trackviz import PyStudioTrackVizRuntimeNode, register_operator as register
 from .timeseries import PyStudioTimeSeriesRuntimeNode, register_operator as register_timeseries
 from .video_shm_view import PyStudioVideoShmViewRuntimeNode, register_operator as register_video_shm_view
 from .audio_shm_view import PyStudioAudioShmViewRuntimeNode, register_operator as register_audio_shm_view
+from .skeleton3d import PyStudioSkeleton3DRuntimeNode, register_operator as register_skeleton3d
 
 __all__ = [
     "PyStudioPrintRuntimeNode",
@@ -10,6 +11,7 @@ __all__ = [
     "PyStudioTimeSeriesRuntimeNode",
     "PyStudioVideoShmViewRuntimeNode",
     "PyStudioAudioShmViewRuntimeNode",
+    "PyStudioSkeleton3DRuntimeNode",
     "register_operator",
 ]
 
@@ -23,4 +25,5 @@ def register_operator(registry=None):
     reg = register_trackviz(reg)
     reg = register_video_shm_view(reg)
     reg = register_audio_shm_view(reg)
+    reg = register_skeleton3d(reg)
     return reg

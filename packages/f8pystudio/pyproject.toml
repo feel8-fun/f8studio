@@ -22,6 +22,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["f8pystudio"]
+include = [
+    "f8pystudio/render_nodes/web_assets/**/*.html",
+    "f8pystudio/render_nodes/web_assets/**/*.js",
+]
 
 [tool.uv]
 package = true

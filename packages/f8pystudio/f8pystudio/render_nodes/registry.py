@@ -14,6 +14,7 @@ from .pystudio_videoshm import PyStudioVideoShmNode
 from .pystudio_audioshm import PyStudioAudioShmNode
 from .pystudio_trackviz import PyStudioTrackVizNode
 from .pystudio_template_tracker import PyStudioTemplateTrackerNode
+from .pystudio_skeleton3d import PyStudioSkeleton3DNode
 
 
 class RenderNodeRegistry:
@@ -39,6 +40,7 @@ class RenderNodeRegistry:
         self._renderers["pystudio_audioshm"] = PyStudioAudioShmNode
         self._renderers["pystudio_trackviz"] = PyStudioTrackVizNode
         self._renderers["pystudio_template_tracker"] = PyStudioTemplateTrackerNode
+        self._renderers["pystudio_skeleton3d"] = PyStudioSkeleton3DNode
 
     def register(self, renderer_key: str, renderer: type[NodeObject]) -> None:
         if renderer_key in self._renderers:
