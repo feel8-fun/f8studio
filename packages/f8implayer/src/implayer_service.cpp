@@ -5,9 +5,9 @@
 #include <cctype>
 #include <chrono>
 #include <cstdint>
-#include <unordered_set>
 #include <string>
 #include <thread>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -441,8 +441,8 @@ void ImPlayerService::tick() {
             *player_,
             [this, &cb, &err, &playlist_snapshot, playlist_index_snapshot, playing, loop_snapshot]() {
               if (gui_ && player_) {
-                gui_->renderOverlay(*player_, cb, err, playlist_snapshot, playlist_index_snapshot, playing, loop_snapshot,
-                                    tick_ema_fps_, tick_ema_ms_);
+                gui_->renderOverlay(*player_, cb, err, playlist_snapshot, playlist_index_snapshot, playing,
+                                    loop_snapshot, tick_ema_fps_, tick_ema_ms_);
                 gui_->clearRepaintFlag();
               }
             },
@@ -662,19 +662,6 @@ bool ImPlayerService::on_set_state(const std::string& node_id, const std::string
     ok = cmd_set_volume(json{{"volume", value}}, err);
   } else if (f == "position") {
     ok = cmd_seek(json{{"position", value}}, err);
-  } else if (f == "active") {
-    if (!value.is_boolean()) {
-      err = "active must be boolean";
-      ok = false;
-    } else {
-      if (!bus_) {
-        err = "service bus not ready";
-        ok = false;
-      } else {
-        bus_->set_active_local(value.get<bool>(), meta, "endpoint");
-        ok = true;
-      }
-    }
   } else if (f == "loop") {
     if (!value.is_boolean()) {
       err = "loop must be boolean";
@@ -827,6 +814,12 @@ bool ImPlayerService::on_set_rungraph(const nlohmann::json& graph_obj, const nlo
       // Only apply writable fields from rungraph (never seed runtime-owned ro fields).
       if (field != "active" && field != "mediaUrl" && field != "volume" && field != "videoShmMaxWidth" &&
           field != "videoShmMaxHeight" && field != "videoShmMaxFps") {
+        continue;
+      }
+      if (field == "active") {
+        if (bus_ && it.value().is_boolean()) {
+          bus_->set_active_local(it.value().get<bool>(), meta2, "rungraph");
+        }
         continue;
       }
 
@@ -1306,7 +1299,6 @@ void ImPlayerService::publish_static_state() {
     want("serviceClass", cfg_.service_class);
     want("videoShmName", shm_->regionName());
     want("videoShmEvent", shm_->frameEventName());
-    want("active", active_.load());
     want("loop", loop_);
     want("videoShmMaxWidth", cfg_.video_shm_max_width);
     want("videoShmMaxHeight", cfg_.video_shm_max_height);
@@ -1375,18 +1367,18 @@ json ImPlayerService::describe() {
   service["version"] = "0.0.1";
   service["description"] = "C++ MPV-based player service with shared-memory video output.";
   service["stateFields"] = json::array({
-      state_field("active", schema_boolean(), "rw", "Active", "Pause playback when false.", true),
       state_field("loop", schema_boolean(), "rw", "Loop", "Repeat playlist when reaching EOF.", false),
       state_field("mediaUrl", schema_string(), "rw", "Media URL", "URI or file path to open.", true),
-      state_field("volume", schema_number(0.0, 1.0), "rw", "Volume", "0.0-1.0", true, "slider"),
+      state_field("volume", schema_number(0.0, 1.0), "rw", "Volume", "0.0-1.0", true),
       state_field("playing", schema_boolean(), "ro", "Playing", "Playback state.", false),
       state_field("duration", schema_number(), "ro", "Duration", "Duration (seconds).", true),
-      state_field("lastError", schema_string(), "ro", "Last Error", "Last error message."),
+      state_field("lastError", schema_string(), "ro", "Last Error", "Last error message.", false),
       state_field("videoShmName", schema_string(), "ro", "Video SHM", "Shared memory region name.", true),
-      state_field("videoShmEvent", schema_string(), "ro", "Video Event", "Optional named event to signal new frames."),
-      state_field("videoShmMaxWidth", schema_integer(), "rw", "SHM Max Width", "Downsample limit (0 = auto)."),
-      state_field("videoShmMaxHeight", schema_integer(), "rw", "SHM Max Height", "Downsample limit (0 = auto)."),
-      state_field("videoShmMaxFps", schema_number(), "rw", "SHM Max FPS", "Copy rate limit (0 = unlimited)."),
+      state_field("videoShmEvent", schema_string(), "ro", "Video Event", "Optional named event to signal new frames.",
+                  false),
+      state_field("videoShmMaxWidth", schema_integer(), "rw", "SHM Max Width", "Downsample limit (0 = auto).", false),
+      state_field("videoShmMaxHeight", schema_integer(), "rw", "SHM Max Height", "Downsample limit (0 = auto).", false),
+      state_field("videoShmMaxFps", schema_number(), "rw", "SHM Max FPS", "Copy rate limit (0 = unlimited).", false),
       state_field("decodedWidth", schema_integer(), "ro", "Decoded Width",
                   "Decoded/source video width (on-screen uses this).", false),
       state_field("decodedHeight", schema_integer(), "ro", "Decoded Height",
@@ -1401,7 +1393,8 @@ json ImPlayerService::describe() {
            {"valueSchema", schema_object(json{{"videoId", schema_string()}, {"url", schema_string()}},
                                          json::array({"videoId", "url"}))},
            {"description", "Emitted when a new media is opened (videoId + url)."},
-           {"required", false}},
+           {"required", false},
+           {"showOnNode", false}},
       json{{"name", "playback"},
            {"valueSchema", schema_object(json{{"videoId", schema_string()},
                                               {"position", schema_number()},
@@ -1409,11 +1402,13 @@ json ImPlayerService::describe() {
                                               {"playing", schema_boolean()}},
                                          json::array({"videoId", "position"}))},
            {"description", "Playback telemetry stream (position/duration/playing)."},
-           {"required", false}},
+           {"required", false},
+           {"showOnNode", false}},
       json{{"name", "frameId"},
            {"valueSchema", schema_integer()},
            {"description", "Monotonic frame counter for new shm frames."},
-           {"required", false}},
+           {"required", false},
+           {"showOnNode", false}},
   });
   service["commands"] = json::array({
       json{{"name", "open"},

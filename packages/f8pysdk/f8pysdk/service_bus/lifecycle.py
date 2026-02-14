@@ -54,6 +54,14 @@ async def start(bus: "ServiceBus") -> None:
     await announce_ready(bus, False, reason="starting")
     if bus._micro_endpoints is None:
         await _ensure_micro_endpoints_started(bus)
+    # Ensure lifecycle state always exists in KV, even when no service code writes it explicitly.
+    await apply_active(
+        bus,
+        bool(bus._active),
+        persist=True,
+        source=StateWriteSource.system,
+        meta={"bootstrap": True},
+    )
     await notify_before_ready(bus)
     await announce_ready(bus, True, reason="start")
     await notify_after_ready(bus)

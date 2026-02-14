@@ -5,8 +5,8 @@
 #include <thread>
 #include <utility>
 
-#include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
+#include <nlohmann/json.hpp>
 
 #include "f8cppsdk/f8_naming.h"
 #include "f8cppsdk/shm/video.h"
@@ -15,9 +15,9 @@
 #include "f8cppsdk/video_shared_memory_sink.h"
 
 #if defined(_WIN32)
-#include "win32_wgc_capture.h"
 #include "win32_capture_sources.h"
 #include "win32_picker.h"
+#include "win32_wgc_capture.h"
 #else
 #include "linux_x11_capture.h"
 #include "x11_capture_sources.h"
@@ -30,23 +30,33 @@ using json = nlohmann::json;
 
 namespace {
 
-json schema_string() { return json{{"type", "string"}}; }
+json schema_string() {
+  return json{{"type", "string"}};
+}
 json schema_string_enum(std::initializer_list<const char*> items) {
   json s = schema_string();
   s["enum"] = json::array();
   for (const char* it : items) {
-    if (it && *it) s["enum"].push_back(it);
+    if (it && *it)
+      s["enum"].push_back(it);
   }
   return s;
 }
-json schema_number() { return json{{"type", "number"}}; }
-json schema_integer() { return json{{"type", "integer"}}; }
-json schema_boolean() { return json{{"type", "boolean"}}; }
+json schema_number() {
+  return json{{"type", "number"}};
+}
+json schema_integer() {
+  return json{{"type", "integer"}};
+}
+json schema_boolean() {
+  return json{{"type", "boolean"}};
+}
 json schema_object(const json& props, const json& required = json::array()) {
   json obj;
   obj["type"] = "object";
   obj["properties"] = props;
-  if (required.is_array()) obj["required"] = required;
+  if (required.is_array())
+    obj["required"] = required;
   obj["additionalProperties"] = false;
   return obj;
 }
@@ -57,17 +67,23 @@ json state_field(std::string name, const json& value_schema, std::string access,
   sf["name"] = std::move(name);
   sf["valueSchema"] = value_schema;
   sf["access"] = std::move(access);
-  if (!label.empty()) sf["label"] = std::move(label);
-  if (!description.empty()) sf["description"] = std::move(description);
-  if (show_on_node) sf["showOnNode"] = true;
+  if (!label.empty())
+    sf["label"] = std::move(label);
+  if (!description.empty())
+    sf["description"] = std::move(description);
+  if (show_on_node)
+    sf["showOnNode"] = true;
   return sf;
 }
 
-bool is_mode_valid(const std::string& m) { return m == "display" || m == "window" || m == "region"; }
+bool is_mode_valid(const std::string& m) {
+  return m == "display" || m == "window" || m == "region";
+}
 
 json rect_schema() {
-  return schema_object(json{{"x", schema_integer()}, {"y", schema_integer()}, {"w", schema_integer()}, {"h", schema_integer()}},
-                       json::array({"x", "y", "w", "h"}));
+  return schema_object(
+      json{{"x", schema_integer()}, {"y", schema_integer()}, {"w", schema_integer()}, {"h", schema_integer()}},
+      json::array({"x", "y", "w", "h"}));
 }
 
 json size_schema() {
@@ -150,7 +166,9 @@ json size_object_from_csv_best_effort(const std::string& csv) {
 
 ScreenCapService::ScreenCapService(Config cfg) : cfg_(std::move(cfg)) {}
 
-ScreenCapService::~ScreenCapService() { stop(); }
+ScreenCapService::~ScreenCapService() {
+  stop();
+}
 
 void ScreenCapService::on_lifecycle(bool active, const json& meta) {
   set_active_local(active, meta);
@@ -159,7 +177,8 @@ void ScreenCapService::on_lifecycle(bool active, const json& meta) {
 void ScreenCapService::on_state(const std::string& node_id, const std::string& field, const nlohmann::json& value,
                                 std::int64_t ts_ms, const nlohmann::json& meta) {
   (void)ts_ms;
-  if (node_id != cfg_.service_id) return;
+  if (node_id != cfg_.service_id)
+    return;
   std::string ec;
   std::string em;
   nlohmann::json result;
@@ -167,7 +186,8 @@ void ScreenCapService::on_state(const std::string& node_id, const std::string& f
 }
 
 bool ScreenCapService::start() {
-  if (running_.load(std::memory_order_acquire)) return true;
+  if (running_.load(std::memory_order_acquire))
+    return true;
 
   try {
     cfg_.service_id = f8::cppsdk::ensure_token(cfg_.service_id, "service_id");
@@ -234,7 +254,8 @@ bool ScreenCapService::start() {
 
 void ScreenCapService::stop() {
   stop_requested_.store(true, std::memory_order_release);
-  if (!running_.exchange(false, std::memory_order_acq_rel)) return;
+  if (!running_.exchange(false, std::memory_order_acq_rel))
+    return;
 
   if (capture_) {
     capture_.reset();
@@ -249,7 +270,8 @@ void ScreenCapService::stop() {
 }
 
 void ScreenCapService::tick() {
-  if (!running()) return;
+  if (!running())
+    return;
 
   if (bus_) {
     (void)bus_->drain_main_thread();
@@ -280,7 +302,8 @@ void ScreenCapService::tick() {
           std::lock_guard<std::mutex> lock(state_mu_);
           published_state_["window"] = value;
           if (bus_) {
-            f8::cppsdk::kv_set_node_state(bus_->kv(), cfg_.service_id, cfg_.service_id, "window", value, "picker", meta);
+            f8::cppsdk::kv_set_node_state(bus_->kv(), cfg_.service_id, cfg_.service_id, "window", value, "picker",
+                                          meta);
           }
           continue;
         }
@@ -291,15 +314,18 @@ void ScreenCapService::tick() {
 
   // Only run capture after we're "armed" by rungraph deploy or external configuration.
   const bool should_capture = active_.load(std::memory_order_acquire) && armed_.load(std::memory_order_acquire);
-  if (capture_) capture_->set_active(should_capture);
+  if (capture_)
+    capture_->set_active(should_capture);
 
   if (should_capture && capture_restart_.exchange(false, std::memory_order_acq_rel)) {
-    if (capture_) capture_->restart();
+    if (capture_)
+      capture_->restart();
   } else {
     (void)capture_restart_.exchange(false, std::memory_order_acq_rel);
   }
 
-  if (capture_) capture_->tick();
+  if (capture_)
+    capture_->tick();
 
   const auto now = f8::cppsdk::now_ms();
   if (last_state_pub_ms_ == 0 || now - last_state_pub_ms_ >= 250) {
@@ -310,7 +336,8 @@ void ScreenCapService::tick() {
 
 void ScreenCapService::set_active_local(bool active, const json&) {
   active_.store(active, std::memory_order_release);
-  if (capture_) capture_->set_active(active && armed_.load(std::memory_order_acquire));
+  if (capture_)
+    capture_->set_active(active && armed_.load(std::memory_order_acquire));
 }
 
 bool ScreenCapService::on_set_state(const std::string& node_id, const std::string& field, const json& value,
@@ -328,18 +355,7 @@ bool ScreenCapService::on_set_state(const std::string& node_id, const std::strin
   std::string err;
   bool ok = false;
 
-  if (f == "active") {
-    if (!value.is_boolean()) {
-      err = "active must be boolean";
-      ok = false;
-    } else if (!bus_) {
-      err = "service bus not ready";
-      ok = false;
-    } else {
-      bus_->set_active_local(value.get<bool>(), meta, "endpoint");
-      ok = true;
-    }
-  } else if (f == "mode") {
+  if (f == "mode") {
     if (!value.is_string()) {
       err = "mode must be string";
       ok = false;
@@ -412,9 +428,7 @@ bool ScreenCapService::on_set_state(const std::string& node_id, const std::strin
   }
 
   // Any successful capture-config state write arms capture (even if currently inactive).
-  if (f != "active") {
-    armed_.store(true, std::memory_order_release);
-  }
+  armed_.store(true, std::memory_order_release);
 
   if (capture_) {
     capture_->configure(cfg_.mode, cfg_.fps, cfg_.display_id, cfg_.window_id, cfg_.region_csv, cfg_.scale_csv);
@@ -425,10 +439,14 @@ bool ScreenCapService::on_set_state(const std::string& node_id, const std::strin
   {
     std::lock_guard<std::mutex> lock(state_mu_);
     json write_value = value;
-    if (f == "displayId") write_value = cfg_.display_id;
-    if (f == "fps") write_value = cfg_.fps;
-    if (f == "mode") write_value = cfg_.mode;
-    if (f == "windowId") write_value = cfg_.window_id;
+    if (f == "displayId")
+      write_value = cfg_.display_id;
+    if (f == "fps")
+      write_value = cfg_.fps;
+    if (f == "mode")
+      write_value = cfg_.mode;
+    if (f == "windowId")
+      write_value = cfg_.window_id;
 
     // For region/scale, keep both the structured and the original csv (for CLI compatibility).
     if (f == "region") {
@@ -513,18 +531,22 @@ bool ScreenCapService::on_set_rungraph(const json& graph_obj, const json& meta, 
   armed_.store(true, std::memory_order_release);
 
   try {
-    if (!graph_obj.is_object() || !graph_obj.contains("nodes") || !graph_obj["nodes"].is_array()) return true;
+    if (!graph_obj.is_object() || !graph_obj.contains("nodes") || !graph_obj["nodes"].is_array())
+      return true;
 
     const auto nodes = graph_obj["nodes"];
     json service_node;
     for (const auto& n : nodes) {
-      if (!n.is_object()) continue;
+      if (!n.is_object())
+        continue;
       const std::string nid = n.value("nodeId", "");
-      if (nid != cfg_.service_id) continue;
+      if (nid != cfg_.service_id)
+        continue;
       service_node = n;
       break;
     }
-    if (!service_node.is_object() || !service_node.contains("stateValues") || !service_node["stateValues"].is_object()) return true;
+    if (!service_node.is_object() || !service_node.contains("stateValues") || !service_node["stateValues"].is_object())
+      return true;
 
     json meta2 = meta.is_object() ? meta : json::object();
     meta2["via"] = "rungraph";
@@ -533,9 +555,16 @@ bool ScreenCapService::on_set_rungraph(const json& graph_obj, const json& meta, 
     const auto& values = service_node["stateValues"];
     for (auto it = values.begin(); it != values.end(); ++it) {
       const std::string field = it.key();
-      if (field.empty()) continue;
+      if (field.empty())
+        continue;
       if (field != "active" && field != "mode" && field != "fps" && field != "displayId" && field != "windowId" &&
           field != "region" && field != "scale") {
+        continue;
+      }
+      if (field == "active") {
+        if (bus_ && it.value().is_boolean()) {
+          bus_->set_active_local(it.value().get<bool>(), meta2, "rungraph");
+        }
         continue;
       }
       std::string ec, em;
@@ -558,11 +587,12 @@ bool ScreenCapService::on_command(const std::string& call, const json& args, con
     const auto mons = win32::enumerate_monitors();
     json arr = json::array();
     for (const auto& m : mons) {
-      arr.push_back(json{{"displayId", m.id},
-                         {"name", m.name},
-                         {"primary", m.primary},
-                         {"rect", json{{"x", m.rect.x}, {"y", m.rect.y}, {"w", m.rect.w}, {"h", m.rect.h}}},
-                         {"workRect", json{{"x", m.work_rect.x}, {"y", m.work_rect.y}, {"w", m.work_rect.w}, {"h", m.work_rect.h}}}});
+      arr.push_back(json{
+          {"displayId", m.id},
+          {"name", m.name},
+          {"primary", m.primary},
+          {"rect", json{{"x", m.rect.x}, {"y", m.rect.y}, {"w", m.rect.w}, {"h", m.rect.h}}},
+          {"workRect", json{{"x", m.work_rect.x}, {"y", m.work_rect.y}, {"w", m.work_rect.w}, {"h", m.work_rect.h}}}});
     }
     result["displays"] = std::move(arr);
     return true;
@@ -576,11 +606,12 @@ bool ScreenCapService::on_command(const std::string& call, const json& args, con
     }
     json arr = json::array();
     for (const auto& d : displays) {
-      arr.push_back(json{{"displayId", d.id},
-                         {"name", d.name},
-                         {"primary", d.primary},
-                         {"rect", json{{"x", d.rect.x}, {"y", d.rect.y}, {"w", d.rect.w}, {"h", d.rect.h}}},
-                         {"workRect", json{{"x", d.work_rect.x}, {"y", d.work_rect.y}, {"w", d.work_rect.w}, {"h", d.work_rect.h}}}});
+      arr.push_back(json{
+          {"displayId", d.id},
+          {"name", d.name},
+          {"primary", d.primary},
+          {"rect", json{{"x", d.rect.x}, {"y", d.rect.y}, {"w", d.rect.w}, {"h", d.rect.h}}},
+          {"workRect", json{{"x", d.work_rect.x}, {"y", d.work_rect.y}, {"w", d.work_rect.w}, {"h", d.work_rect.h}}}});
     }
     result["displays"] = std::move(arr);
     return true;
@@ -664,7 +695,8 @@ bool ScreenCapService::on_command(const std::string& call, const json& args, con
     if (call == "pickDisplay") {
       win32::Win32Picker::pick_display_async([this](win32::PickDisplayResult r) {
         picker_running_.store(false, std::memory_order_release);
-        if (!r.ok) return;
+        if (!r.ok)
+          return;
         json patch;
         patch["mode"] = "display";
         patch["displayId"] = r.display_id;
@@ -674,7 +706,8 @@ bool ScreenCapService::on_command(const std::string& call, const json& args, con
     } else if (call == "pickWindow") {
       win32::Win32Picker::pick_window_async([this](win32::PickWindowResult r) {
         picker_running_.store(false, std::memory_order_release);
-        if (!r.ok) return;
+        if (!r.ok)
+          return;
         json patch;
         patch["mode"] = "window";
         patch["windowId"] = r.window_id;
@@ -690,7 +723,8 @@ bool ScreenCapService::on_command(const std::string& call, const json& args, con
     } else if (call == "pickRegion") {
       win32::Win32Picker::pick_region_async([this](win32::PickRegionResult r) {
         picker_running_.store(false, std::memory_order_release);
-        if (!r.ok) return;
+        if (!r.ok)
+          return;
         json patch;
         patch["mode"] = "region";
         patch["region"] = json{{"x", r.rect.x}, {"y", r.rect.y}, {"w", r.rect.w}, {"h", r.rect.h}};
@@ -713,9 +747,11 @@ void ScreenCapService::publish_static_state() {
 
   auto set_if_changed = [&](const char* field, const json& v) {
     auto it = published_state_.find(field);
-    if (it != published_state_.end() && it->second == v) return;
+    if (it != published_state_.end() && it->second == v)
+      return;
     published_state_[field] = v;
-    if (bus_) f8::cppsdk::kv_set_node_state(bus_->kv(), cfg_.service_id, cfg_.service_id, field, v, "init", json::object());
+    if (bus_)
+      f8::cppsdk::kv_set_node_state(bus_->kv(), cfg_.service_id, cfg_.service_id, field, v, "init", json::object());
   };
 
   set_if_changed("serviceClass", cfg_.service_class);
@@ -779,7 +815,8 @@ void ScreenCapService::publish_static_state() {
 #endif
     set_if_changed("region", region);
   }
-  set_if_changed("scale", cfg_.scale_csv.empty() ? json{{"w", 0}, {"h", 0}} : size_object_from_csv_best_effort(cfg_.scale_csv));
+  set_if_changed("scale",
+                 cfg_.scale_csv.empty() ? json{{"w", 0}, {"h", 0}} : size_object_from_csv_best_effort(cfg_.scale_csv));
 }
 
 void ScreenCapService::publish_dynamic_state() {
@@ -787,12 +824,13 @@ void ScreenCapService::publish_dynamic_state() {
 
   auto set_if_changed = [&](const char* field, const json& v) {
     auto it = published_state_.find(field);
-    if (it != published_state_.end() && it->second == v) return;
+    if (it != published_state_.end() && it->second == v)
+      return;
     published_state_[field] = v;
-    if (bus_) f8::cppsdk::kv_set_node_state(bus_->kv(), cfg_.service_id, cfg_.service_id, field, v, "tick", json::object());
+    if (bus_)
+      f8::cppsdk::kv_set_node_state(bus_->kv(), cfg_.service_id, cfg_.service_id, field, v, "tick", json::object());
   };
 
-  set_if_changed("active", active_.load(std::memory_order_relaxed));
   set_if_changed("captureRunning", capture_running_.load(std::memory_order_relaxed));
   set_if_changed("lastError", last_error_);
 
@@ -803,7 +841,9 @@ void ScreenCapService::publish_dynamic_state() {
   }
 }
 
-void ScreenCapService::request_capture_restart() { capture_restart_.store(true, std::memory_order_release); }
+void ScreenCapService::request_capture_restart() {
+  capture_restart_.store(true, std::memory_order_release);
+}
 
 json ScreenCapService::describe() {
   json service;
@@ -814,39 +854,53 @@ json ScreenCapService::describe() {
   service["rendererClass"] = "defaultService";
   service["tags"] = json::array({"video", "capture", "shm"});
   service["stateFields"] = json::array({
-      state_field("active", schema_boolean(), "rw", "Active", "Enable/disable capture", true),
-      state_field("videoShmName", schema_string(), "ro", "Video SHM Name", "Shared memory region name", true),
-      state_field("videoShmEvent", schema_string(), "ro", "Video SHM Event", "Shared memory event name"),
-      state_field("mode", schema_string_enum({"display", "window", "region"}), "rw", "Mode", "display|window|region", true),
+      state_field("videoShmName", schema_string(), "ro", "Video SHM", "Shared memory region name", true),
+      state_field("videoShmEvent", schema_string(), "ro", "Video Event", "Shared memory event name", false),
+      state_field("mode", schema_string_enum({"display", "window", "region"}), "rw", "Mode", "display|window|region",
+                  false),
       state_field("fps", schema_number(), "rw", "FPS", "Capture rate", true),
-      state_field("displayId", schema_integer(), "rw", "Display ID", "0..N-1 (see listDisplays)"),
-      state_field("windowId", schema_string(), "rw", "Window ID", "backend-specific (e.g. win32:hwnd:0x... or x11:win:0x...)"),
+      state_field("displayId", schema_integer(), "ro", "Display ID", "0..N-1 (see listDisplays)", false),
+      state_field("windowId", schema_string(), "ro", "Window ID",
+                  "backend-specific (e.g. win32:hwnd:0x... or x11:win:0x...)"),
       state_field("window",
                   schema_object(json{{"backend", schema_string()},
                                      {"id", schema_string()},
                                      {"pid", schema_integer()},
                                      {"title", schema_string()},
                                      {"rect", rect_schema()}}),
-                  "ro", "Window", "Resolved window metadata (best-effort)"),
-      state_field("region", rect_schema(), "rw", "Region", "Virtual desktop coordinates"),
-      state_field("scale", size_schema(), "rw", "Scale", "Optional output size (0 disables)"),
-      state_field("captureRunning", schema_boolean(), "ro", "Capture Running", "Is capture currently running"),
-      state_field("lastError", schema_string(), "ro"),
+                  "ro", "Window", "Resolved window metadata (best-effort)", false),
+      state_field("region", rect_schema(), "ro", "Region", "Virtual desktop coordinates", false),
+      state_field("scale", size_schema(), "ro", "Scale", "Optional output size (0 disables)", false),
+      state_field("captureRunning", schema_boolean(), "ro", "Capture Running", "Is capture currently running", false),
+      state_field("lastError", schema_string(), "ro", "Last Error", "Last error message", false),
       state_field("videoWidth", schema_integer(), "ro", "Video Width", "Width of the video frame in pixels", true),
       state_field("videoHeight", schema_integer(), "ro", "Video Height", "Height of the video frame in pixels", true),
-      state_field("videoPitch", schema_integer(), "ro", "Video Pitch", "Number of bytes per row of the video frame"),
+      state_field("videoPitch", schema_integer(), "ro", "Video Pitch", "Number of bytes per row of the video frame",
+                  false),
   });
   service["editableStateFields"] = false;
   service["commands"] = json::array({
-      json{{"name", "listDisplays"}, {"description", "List displays/monitors (backend-specific)"}, {"showOnNode", true}},
-      json{{"name", "pickDisplay"}, {"description", "Interactive pick a display (hover highlight + click)"}, {"showOnNode", true}},
-      json{{"name", "pickWindow"}, {"description", "Interactive pick a window (hover highlight + click)"}, {"showOnNode", true}},
-      json{{"name", "pickRegion"}, {"description", "Interactive pick a region (click-drag to draw)"}, {"showOnNode", true}},
+      json{{"name", "listDisplays"},
+           {"description", "List displays/monitors (backend-specific)"},
+           {"showOnNode", false}},
+      json{{"name", "pickDisplay"},
+           {"description", "Interactive pick a display (hover highlight + click)"},
+           {"showOnNode", true}},
+      json{{"name", "pickWindow"},
+           {"description", "Interactive pick a window (hover highlight + click)"},
+           {"showOnNode", true}},
+      json{{"name", "pickRegion"},
+           {"description", "Interactive pick a region (click-drag to draw)"},
+           {"showOnNode", true}},
   });
   service["editableCommands"] = false;
   service["dataInPorts"] = json::array();
   service["dataOutPorts"] = json::array({
-      json{{"name", "frameId"}, {"valueSchema", schema_integer()}, {"description", "Monotonic frame counter."}, {"required", false}},
+      json{{"name", "frameId"},
+           {"valueSchema", schema_integer()},
+           {"description", "Monotonic frame counter."},
+           {"required", false},
+           {"showOnNode", false}},
   });
   service["editableDataInPorts"] = false;
   service["editableDataOutPorts"] = false;

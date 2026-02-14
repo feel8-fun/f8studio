@@ -4,9 +4,12 @@ import importlib
 from collections.abc import Callable
 from typing import Any, ClassVar
 
-from .generated import F8OperatorSpec, F8RuntimeNode, F8ServiceDescribe, F8ServiceSpec, F8StateAccess, F8StateSpec
+from .generated import F8OperatorSpec, F8RuntimeNode, F8ServiceDescribe, F8ServiceSpec
 from .runtime_node import OperatorNode, RuntimeNode, ServiceNode
-from .schema_helpers import string_schema
+from .builtin_state_fields import (
+    upsert_builtin_state_fields_for_operator_spec,
+    upsert_builtin_state_fields_for_service_spec,
+)
 
 
 OperatorFactory = Callable[[str, F8RuntimeNode, dict[str, Any]], OperatorNode]
@@ -107,54 +110,19 @@ class RuntimeNodeRegistry:
         service = self._service_specs.get(service_class)
         if service is None:
             raise ServiceNotRegistered(service_class)
-        operators = list((self._operator_specs.get(service_class) or {}).values())
-        self._inject_builtin_identity_state_fields(service, operators)
+        service = service.model_copy(deep=True)
+        operators = [op.model_copy(deep=True) for op in list((self._operator_specs.get(service_class) or {}).values())]
+        self._inject_builtin_state_fields(service, operators)
         return F8ServiceDescribe(service=service, operators=operators)
 
     @staticmethod
-    def _inject_builtin_identity_state_fields(service_spec: F8ServiceSpec, operator_specs: list[F8OperatorSpec]) -> None:
+    def _inject_builtin_state_fields(service_spec: F8ServiceSpec, operator_specs: list[F8OperatorSpec]) -> None:
         """
-        Inject readonly identity fields into specs so graphs can route them like normal state.
-
-        - `svcId`: current service instance id
-        - `operatorId`: runtime node id (operator id)
+        Upsert builtin state fields with SDK-owned definitions.
         """
-        builtin_all = [
-            F8StateSpec(
-                name="svcId",
-                label="Service Id",
-                description="Readonly: current service instance id (svcId).",
-                valueSchema=string_schema(),
-                access=F8StateAccess.ro,
-                showOnNode=False,
-            ),
-        ]
-        builtin_operator_only = [
-            F8StateSpec(
-                name="operatorId",
-                label="Operator Id",
-                description="Readonly: current operator/node id (operatorId).",
-                valueSchema=string_schema(),
-                access=F8StateAccess.ro,
-                showOnNode=False,
-            ),
-        ]
-
-        def _apply(spec: F8ServiceSpec | F8OperatorSpec, extra: list[F8StateSpec]) -> None:
-            fields = list(spec.stateFields or [])
-            existing = {str(sf.name) for sf in fields}
-            added = False
-            for sf in [*builtin_all, *extra]:
-                if sf.name in existing:
-                    continue
-                fields.append(sf)
-                added = True
-            if added:
-                spec.stateFields = fields
-
-        _apply(service_spec, [])
+        upsert_builtin_state_fields_for_service_spec(service_spec)
         for op in list(operator_specs or []):
-            _apply(op, builtin_operator_only)
+            upsert_builtin_state_fields_for_operator_spec(op)
 
     def ensure_service(self, service_class: str) -> dict[str, OperatorFactory]:
         service_class = str(service_class or "").strip()

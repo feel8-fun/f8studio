@@ -20,11 +20,14 @@ from f8pysdk import (
     F8RuntimeNode,
     F8RuntimeService,
 )
+from f8pysdk.builtin_state_fields import (
+    operator_state_fields_with_builtins,
+    service_state_fields_with_builtins,
+)
 from f8pysdk.rungraph_validation import validate_state_edges_or_raise
 from f8pysdk.schema_helpers import boolean_schema
 from f8pysdk.schema_helpers import integer_schema
 from f8pysdk.schema_helpers import any_schema
-from f8pysdk.schema_helpers import string_schema
 from f8pysdk.nats_naming import ensure_token
 
 from ..pystudio_node_registry import SERVICE_CLASS as STUDIO_SERVICE_CLASS
@@ -394,48 +397,10 @@ def compile_global_runtime_graph(
         # are filtered out after compiling edges, so state propagation always
         # takes precedence over this snapshot on repeated deploys.
 
-        state_fields = list(spec.stateFields or [])
-
-        # Built-in identity fields (readonly) for cross-process routing/commands.
-        # - svcId: service instance id
-        # - operatorId: operator/node id (operators only; service/container nodes omit it)
-        existing = {str(sf.name or "") for sf in state_fields}
-        if "svcId" not in existing:
-            state_fields.append(
-                F8StateSpec(
-                    name="svcId",
-                    label="Service Id",
-                    description="Readonly: current service instance id (svcId).",
-                    valueSchema=string_schema(),
-                    access=F8StateAccess.ro,
-                    showOnNode=False,
-                )
-            )
-        if isinstance(spec, F8OperatorSpec) and "operatorId" not in existing:
-            state_fields.append(
-                F8StateSpec(
-                    name="operatorId",
-                    label="Operator Id",
-                    description="Readonly: current operator/node id (operatorId).",
-                    valueSchema=string_schema(),
-                    access=F8StateAccess.ro,
-                    showOnNode=False,
-                )
-            )
         if isinstance(spec, F8ServiceSpec):
-            # Runtime-level lifecycle state (service-scoped), persisted in KV by the runtime.
-            has_active = any(str(sf.name or "") == "active" for sf in state_fields)
-            if not has_active:
-                state_fields.append(
-                    F8StateSpec(
-                        name="active",
-                        label="Active",
-                        description="Service lifecycle state (activate/deactivate).",
-                        valueSchema=boolean_schema(default=True),
-                        access=F8StateAccess.rw,
-                        showOnNode=True,
-                    )
-                )
+            state_fields = service_state_fields_with_builtins(list(spec.stateFields or []))
+        else:
+            state_fields = operator_state_fields_with_builtins(list(spec.stateFields or []))
 
         runtime_nodes.append(
             F8RuntimeNode(

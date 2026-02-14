@@ -15,6 +15,7 @@ from pathlib import Path
 import yaml
 
 from f8pysdk import F8ServiceDescribe, F8ServiceEntry
+from f8pysdk.builtin_state_fields import normalize_describe_payload_dict
 
 from .service_catalog import ServiceCatalog
 
@@ -482,6 +483,7 @@ def _describe_entry(service_dir: Path, entry: F8ServiceEntry) -> dict[str, Any] 
 
     if not isinstance(data, dict):
         return None
+    data = normalize_describe_payload_dict(data)
 
     try:
         payload = F8ServiceDescribe.model_validate(data)

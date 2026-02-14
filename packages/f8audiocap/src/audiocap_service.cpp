@@ -397,16 +397,7 @@ void AudioCapService::set_active_local(bool active, const nlohmann::json& meta) 
   if (cfg_.mode == "capture" && wasapi_) {
     wasapi_->set_paused(!active);
   }
-  {
-    std::lock_guard<std::mutex> lock(state_mu_);
-    auto it = published_state_.find("active");
-    if (it == published_state_.end() || it->second != active) {
-      published_state_["active"] = active;
-      if (bus_) {
-        f8::cppsdk::kv_set_node_state(bus_->kv(), cfg_.service_id, cfg_.service_id, "active", active, "cmd", meta);
-      }
-    }
-  }
+  (void)meta;
 }
 
 void AudioCapService::on_lifecycle(bool active, const nlohmann::json& meta) { set_active_local(active, meta); }
@@ -424,15 +415,9 @@ void AudioCapService::on_state(const std::string& node_id, const std::string& fi
 bool AudioCapService::on_set_state(const std::string& node_id, const std::string& field, const nlohmann::json& value,
                                    const nlohmann::json& meta, std::string& error_code, std::string& error_message) {
   (void)node_id;
-  if (field == "active") {
-    if (!value.is_boolean()) {
-      error_code = "invalid";
-      error_message = "active expects boolean";
-      return false;
-    }
-    set_active_local(value.get<bool>(), meta);
-    return true;
-  }
+  (void)field;
+  (void)value;
+  (void)meta;
   error_code = "not_supported";
   error_message = "field not supported";
   return false;
@@ -490,7 +475,6 @@ void AudioCapService::publish_dynamic_state() {
       f8::cppsdk::kv_set_node_state(bus_->kv(), cfg_.service_id, cfg_.service_id, field, v, "tick", json::object());
     }
   };
-  set_if_changed("active", active_.load(std::memory_order_relaxed));
   if (shm_) set_if_changed("writeSeq", static_cast<std::uint64_t>(shm_->write_seq()));
 }
 
@@ -505,18 +489,17 @@ nlohmann::json AudioCapService::describe() {
       {"tags", json::array({"audio", "capture", "shm"})},
       {"stateFields",
        json::array({
-           state_field("active", schema_boolean(), "rw", "Active", "Enable/disable capture", true),
-           state_field("audioShmName", schema_string(), "ro", "Audio SHM Name", "Name of the audio shared memory segment", true),
-           state_field("audioDevice", schema_string(), "ro"),
-           state_field("audioSampleRate", schema_integer(), "ro"),
-           state_field("audioChannels", schema_integer(), "ro"),
-           state_field("audioFormat", schema_string(), "ro"),
-           state_field("audioFramesPerChunk", schema_integer(), "ro"),
-           state_field("audioChunkCount", schema_integer(), "ro"),
-           state_field("writeSeq", schema_integer(), "ro"),
-           state_field("mode", schema_string(), "rw"),
-           state_field("toneHz", schema_number(), "rw"),
-           state_field("gain", schema_number(), "rw"),
+           state_field("audioShmName", schema_string(), "ro", "Audio SHM", "Name of the audio shared memory segment", true),
+           state_field("audioDevice", schema_string(), "ro", "Audio Device", "Name of the audio capture device in use", false),
+           state_field("audioSampleRate", schema_integer(), "ro", "Audio Sample Rate", "Sample rate of the audio capture device", false),
+           state_field("audioChannels", schema_integer(), "ro", "Audio Channels", "Number of audio channels", false),
+           state_field("audioFormat", schema_string(), "ro", "Audio Format", "Format of the audio data", false),
+           state_field("audioFramesPerChunk", schema_integer(), "ro", "Audio Frames Per Chunk", "Number of audio frames per chunk", false),
+           state_field("audioChunkCount", schema_integer(), "ro", "Audio Chunk Count", "Number of audio chunks", false),
+           state_field("writeSeq", schema_integer(), "ro", "Write Sequence", "Sequence number of the last written audio chunk", false),
+           state_field("mode", schema_string(), "rw", "Mode", "Current mode of the audio capture service", false),
+           state_field("toneHz", schema_number(), "rw", "Tone Frequency", "Frequency of the generated tone", false),
+           state_field("gain", schema_number(), "rw", "Gain", "Gain applied to the audio signal", false),
        })},
       {"editableStateFields", false},
       {"commands", json::array()},

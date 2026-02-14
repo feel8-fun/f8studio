@@ -10,6 +10,7 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
+#include "f8cppsdk/describe_builtins.h"
 #include "tracking_service.h"
 
 namespace {
@@ -34,7 +35,9 @@ int main(int argc, char** argv) {
     return 0;
   }
   if (result.count("describe")) {
-    std::cout << f8::cvkit::tracking::TrackingService::describe().dump(1) << "\n";
+    const auto payload =
+        f8::cppsdk::normalize_describe_with_builtin_state_fields(f8::cvkit::tracking::TrackingService::describe());
+    std::cout << payload.dump(1) << "\n";
     return 0;
   }
 

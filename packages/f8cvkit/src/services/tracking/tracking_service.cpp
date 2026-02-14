@@ -80,7 +80,6 @@ bool TrackingService::start() {
   }
 
   publish_state_if_changed("serviceClass", cfg_.service_class, "init", json::object());
-  publish_state_if_changed("active", active_.load(std::memory_order_acquire), "init", json::object());
   publish_state_if_changed("shmName", "", "init", json::object());
   publish_state_if_changed("isTracking", false, "init", json::object());
   publish_state_if_changed("isNotTracking", true, "init", json::object());
@@ -147,18 +146,13 @@ void TrackingService::publish_state_if_changed(const std::string& field, const j
 
 void TrackingService::on_lifecycle(bool active, const json& meta) {
   active_.store(active, std::memory_order_release);
-  publish_state_if_changed("active", active, "lifecycle", meta);
+  (void)meta;
 }
 
 void TrackingService::on_state(const std::string& node_id, const std::string& field, const json& value,
                                std::int64_t ts_ms, const json& meta) {
   (void)ts_ms;
   if (node_id != cfg_.service_id) return;
-  if (field == "active" && value.is_boolean()) {
-    active_.store(value.get<bool>(), std::memory_order_release);
-    publish_state_if_changed("active", active_.load(std::memory_order_acquire), "state", json::object());
-    return;
-  }
   if (field == "shmName" && value.is_string()) {
     set_shm_name(value.get<std::string>(), meta);
     return;
@@ -468,11 +462,10 @@ json TrackingService::describe() {
   service["rendererClass"] = "defaultService";
   service["tags"] = json::array({"cv", "tracking"});
   service["stateFields"] = json::array({
-      state_field("active", schema_boolean(), "rw", "Active", "Enable/disable tracking.", true),
-      state_field("shmName", schema_string(), "rw", "SHM Name", "Optional SHM name override (e.g. shm.xxx.video).", true),
-      state_field("isTracking", schema_boolean(), "ro", "Is Tracking", "True when tracker is running."),
+      state_field("shmName", schema_string(), "rw", "Video SHM", "Optional SHM name override (e.g. shm.xxx.video).", true),
+      state_field("isTracking", schema_boolean(), "ro", "Is Tracking", "True when tracker is running.", true),
       state_field("isNotTracking", schema_boolean(), "ro", "Is Not Tracking", "Negation of isTracking.", true),
-      state_field("lastError", schema_string(), "ro", "Last Error", "Last error message."),
+      state_field("lastError", schema_string(), "ro", "Last Error", "Last error message.", true),
   });
   service["editableStateFields"] = false;
   service["commands"] = json::array({

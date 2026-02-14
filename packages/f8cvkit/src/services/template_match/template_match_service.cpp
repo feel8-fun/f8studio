@@ -206,7 +206,6 @@ bool TemplateMatchService::start() {
   }
 
   publish_state_if_changed("serviceClass", cfg_.service_class, "init", json::object());
-  publish_state_if_changed("active", active_.load(std::memory_order_acquire), "init", json::object());
   publish_state_if_changed("templatePngB64", "", "init", json::object());
   publish_state_if_changed("matchThreshold", match_threshold_, "init", json::object());
   publish_state_if_changed("matchingIntervalMs", matching_interval_ms_, "init", json::object());
@@ -271,18 +270,13 @@ void TemplateMatchService::publish_state_if_changed(const std::string& field, co
 
 void TemplateMatchService::on_lifecycle(bool active, const json& meta) {
   active_.store(active, std::memory_order_release);
-  publish_state_if_changed("active", active, "lifecycle", meta);
+  (void)meta;
 }
 
 void TemplateMatchService::on_state(const std::string& node_id, const std::string& field, const json& value,
                                     std::int64_t ts_ms, const json& meta) {
   (void)ts_ms;
   if (node_id != cfg_.service_id) return;
-  if (field == "active" && value.is_boolean()) {
-    active_.store(value.get<bool>(), std::memory_order_release);
-    publish_state_if_changed("active", active_.load(std::memory_order_acquire), "state", json::object());
-    return;
-  }
   if (field == "templatePngB64" && value.is_string()) {
     set_template_png_b64(value.get<std::string>(), meta);
     return;
@@ -595,13 +589,12 @@ json TemplateMatchService::describe() {
   service["rendererClass"] = "pystudio_template_tracker";
   service["tags"] = json::array({"cv", "template_match"});
   service["stateFields"] = json::array({
-      state_field("active", schema_boolean(), "rw", "Active", "Enable/disable matching.", true),
-      state_field("templatePngB64", schema_string(), "rw", "Template PNG (Base64)", "PNG bytes encoded as base64."),
+      state_field("templatePngB64", schema_string(), "rw", "Template PNG (Base64)", "PNG bytes encoded as base64.", false),
       state_field("matchThreshold", schema_number(0.5, 0.0, 1.0), "rw", "Match Threshold", "0..1 score threshold.", true),
       state_field("matchingIntervalMs", schema_integer(200, 0, 60000), "rw", "Matching Interval (ms)",
-                  "Minimum milliseconds between template matching passes.", true),
-      state_field("shmName", schema_string(), "rw", "SHM Name", "Optional SHM name override (e.g. shm.xxx.video).", true),
-      state_field("lastError", schema_string(), "ro", "Last Error", "Last error message."),
+                  "Minimum milliseconds between template matching passes.", false),
+      state_field("shmName", schema_string(), "rw", "Video SHM", "Optional SHM name override (e.g. shm.xxx.video).", true),
+      state_field("lastError", schema_string(), "ro", "Last Error", "Last error message.", false),
   });
   service["editableStateFields"] = false;
   service["commands"] = json::array({
@@ -616,7 +609,7 @@ json TemplateMatchService::describe() {
                 json{{"name", "maxWidth"}, {"valueSchema", schema_integer()}, {"required", false}},
                 json{{"name", "maxHeight"}, {"valueSchema", schema_integer()}, {"required", false}},
             })}},
-      json{{"name", "ping"}, {"description", "Health check."}},
+      json{{"name", "ping"}, {"description", "Health check."}, {"showOnNode", false}},
   });
   service["editableCommands"] = false;
   service["dataInPorts"] = json::array();

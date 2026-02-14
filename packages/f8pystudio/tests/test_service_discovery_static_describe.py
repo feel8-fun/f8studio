@@ -81,6 +81,9 @@ class ServiceDiscoveryStaticDescribeTests(unittest.TestCase):
             catalog = ServiceCatalog.instance()
             spec = catalog.services.get("f8.tests.svc")
             self.assertIsNotNone(spec.launch)
+            state_field_names = [str(x.name) for x in list(spec.stateFields or [])]
+            self.assertIn("active", state_field_names)
+            self.assertIn("svcId", state_field_names)
             # Inherited from discovery entry and absolutized.
             if spec.launch is not None:
                 self.assertEqual(str(Path(spec.launch.workdir).resolve()), str(service_dir.resolve()))
@@ -88,4 +91,3 @@ class ServiceDiscoveryStaticDescribeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

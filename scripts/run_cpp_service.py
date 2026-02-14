@@ -14,6 +14,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -502,6 +503,12 @@ def _normalize_describe_payload(*, payload: dict, service_dir: Path | None) -> d
     def _schema_string() -> dict:
         return {"type": "string"}
 
+    def _schema_boolean(*, default_value: bool | None = None) -> dict:
+        schema: dict[str, Any] = {"type": "boolean"}
+        if default_value is not None:
+            schema["default"] = bool(default_value)
+        return schema
+
     def _state_field(*, name: str, value_schema: dict, access: str, label: str, description: str, show_on_node: bool) -> dict:
         return {
             "name": str(name),
@@ -512,60 +519,67 @@ def _normalize_describe_payload(*, payload: dict, service_dir: Path | None) -> d
             "showOnNode": bool(show_on_node),
         }
 
-    def _ensure_state_field(obj: dict, *, name: str, access: str, label: str, description: str, show_on_node: bool) -> None:
+    def _upsert_builtin_state_fields(obj: dict, *, is_service: bool) -> None:
         fields = obj.get("stateFields")
-        if not isinstance(fields, list):
-            fields = []
-        have = {str(x.get("name") or "") for x in fields if isinstance(x, dict)}
-        if name in have:
-            obj["stateFields"] = fields
-            return
-        fields.append(
+        filtered: list[dict[str, Any]] = []
+        if isinstance(fields, list):
+            blocked = {"svcId", "operatorId"}
+            if is_service:
+                blocked = {"active", "svcId"}
+            for item in fields:
+                if not isinstance(item, dict):
+                    continue
+                field_name = str(item.get("name") or "").strip()
+                if field_name in blocked:
+                    continue
+                filtered.append(dict(item))
+
+        if is_service:
+            filtered.append(
+                _state_field(
+                    name="active",
+                    value_schema=_schema_boolean(default_value=True),
+                    access="rw",
+                    label="Active",
+                    description="Service lifecycle state (activate/deactivate).",
+                    show_on_node=True,
+                )
+            )
+        filtered.append(
             _state_field(
-                name=name,
+                name="svcId",
                 value_schema=_schema_string(),
-                access=access,
-                label=label,
-                description=description,
-                show_on_node=show_on_node,
+                access="ro",
+                label="Service Id",
+                description="Readonly: current service instance id (svcId).",
+                show_on_node=False,
             )
         )
-        obj["stateFields"] = fields
+        if not is_service:
+            filtered.append(
+                _state_field(
+                    name="operatorId",
+                    value_schema=_schema_string(),
+                    access="ro",
+                    label="Operator Id",
+                    description="Readonly: current operator/node id (operatorId).",
+                    show_on_node=False,
+                )
+            )
+        obj["stateFields"] = filtered
 
-    # Built-in identity fields (match f8pysdk behavior):
-    # - svcId: for all nodes
-    # - operatorId: operator nodes only
+    # Built-in fields (force SDK definitions):
+    # - service: active + svcId
+    # - operator: svcId + operatorId
     try:
-        _ensure_state_field(
-            payload["service"],
-            name="svcId",
-            access="ro",
-            label="Service Id",
-            description="Readonly: current service instance id (svcId).",
-            show_on_node=False,
-        )
+        _upsert_builtin_state_fields(payload["service"], is_service=True)
     except Exception:
         pass
     try:
         for op in list(payload.get("operators") or []):
             if not isinstance(op, dict):
                 continue
-            _ensure_state_field(
-                op,
-                name="svcId",
-                access="ro",
-                label="Service Id",
-                description="Readonly: current service instance id (svcId).",
-                show_on_node=False,
-            )
-            _ensure_state_field(
-                op,
-                name="operatorId",
-                access="ro",
-                label="Operator Id",
-                description="Readonly: current operator/node id (operatorId).",
-                show_on_node=False,
-            )
+            _upsert_builtin_state_fields(op, is_service=False)
     except Exception:
         pass
 
@@ -584,7 +598,8 @@ def _run_describe(
     Return describe payload dict. Never raises; falls back to minimal YAML-derived payload.
     """
     if exe_path is None:
-        return _fallback_describe_payload(service_dir=service_dir)
+        payload = _fallback_describe_payload(service_dir=service_dir)
+        return _normalize_describe_payload(payload=payload, service_dir=service_dir)
 
     exe_dir = exe_path.parent
     build_root = exe_dir.parent if exe_dir.name.lower() == "bin" else exe_dir
@@ -646,7 +661,8 @@ def _run_describe(
                 check=False,
             )
     except Exception:
-        return _fallback_describe_payload(service_dir=service_dir)
+        payload = _fallback_describe_payload(service_dir=service_dir)
+        return _normalize_describe_payload(payload=payload, service_dir=service_dir)
 
     combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
     obj = _extract_last_json_obj(combined)
@@ -664,7 +680,8 @@ def _run_describe(
             wrapped = {"schemaVersion": "f8describe/1", "service": obj, "operators": []}
             return _normalize_describe_payload(payload=wrapped, service_dir=service_dir)
 
-    return _fallback_describe_payload(service_dir=service_dir)
+    payload = _fallback_describe_payload(service_dir=service_dir)
+    return _normalize_describe_payload(payload=payload, service_dir=service_dir)
 
 
 def main(argv: list[str]) -> int:

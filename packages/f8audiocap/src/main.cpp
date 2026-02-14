@@ -13,6 +13,7 @@
 #include <spdlog/spdlog.h>
 
 #include "audiocap_service.h"
+#include "f8cppsdk/describe_builtins.h"
 #include "f8cppsdk/shm/sizing.h"
 
 namespace {
@@ -46,7 +47,9 @@ int main(int argc, char** argv) {
     return 0;
   }
   if (result.count("describe")) {
-    std::cout << f8::audiocap::AudioCapService::describe().dump(1) << "\n";
+    const auto payload =
+        f8::cppsdk::normalize_describe_with_builtin_state_fields(f8::audiocap::AudioCapService::describe());
+    std::cout << payload.dump(1) << "\n";
     return 0;
   }
 

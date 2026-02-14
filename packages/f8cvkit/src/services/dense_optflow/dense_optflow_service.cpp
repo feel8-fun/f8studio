@@ -69,7 +69,6 @@ bool DenseOptflowService::start() {
   }
 
   publish_state_if_changed("serviceClass", cfg_.service_class, "init", json::object());
-  publish_state_if_changed("active", active_.load(std::memory_order_acquire), "init", json::object());
   publish_state_if_changed("lastError", "", "init", json::object());
   publish_state_if_changed("lastResult", json::object(), "init", json::object());
 
@@ -110,7 +109,7 @@ void DenseOptflowService::publish_state_if_changed(const std::string& field, con
 
 void DenseOptflowService::on_lifecycle(bool active, const json& meta) {
   active_.store(active, std::memory_order_release);
-  publish_state_if_changed("active", active, "lifecycle", meta);
+  (void)meta;
 }
 
 void DenseOptflowService::on_state(const std::string& node_id, const std::string& field, const json& value,
@@ -118,10 +117,8 @@ void DenseOptflowService::on_state(const std::string& node_id, const std::string
   (void)ts_ms;
   (void)meta;
   if (node_id != cfg_.service_id) return;
-  if (field == "active" && value.is_boolean()) {
-    active_.store(value.get<bool>(), std::memory_order_release);
-    publish_state_if_changed("active", active_.load(std::memory_order_acquire), "state", json::object());
-  }
+  (void)field;
+  (void)value;
 }
 
 void DenseOptflowService::on_data(const std::string& node_id, const std::string& port, const json& value,
@@ -190,7 +187,6 @@ json DenseOptflowService::describe() {
   service["rendererClass"] = "defaultService";
   service["tags"] = json::array({"cv", "optical_flow"});
   service["stateFields"] = json::array({
-      state_field("active", schema_boolean(), "rw", "Active", "Enable/disable service processing.", true),
       state_field("lastError", schema_string(), "ro", "Last Error", "Last error message."),
       state_field("lastResult",
                   schema_object(json{{"prevPath", schema_string()}, {"nextPath", schema_string()}, {"meanMag", schema_number()}},

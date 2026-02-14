@@ -4,6 +4,8 @@
 #include <cxxopts.hpp>
 #include <nlohmann/json.hpp>
 
+#include "f8cppsdk/describe_builtins.h"
+
 int main(int argc, char** argv) {
   cxxopts::Options options("f8dlinfer_detector_service", "Experimental DL inference C++ service skeleton");
   options.add_options()
@@ -33,9 +35,11 @@ int main(int argc, char** argv) {
         {nlohmann::json{{"name", "detections"}, {"valueSchema", nlohmann::json{{"type", "any"}}}}});
 
     nlohmann::json payload;
+    payload["schemaVersion"] = "f8describe/1";
     payload["service"] = svc;
     payload["operators"] = nlohmann::json::array();
-    std::cout << payload.dump(1) << "\n";
+    const nlohmann::json normalized = f8::cppsdk::normalize_describe_with_builtin_state_fields(payload);
+    std::cout << normalized.dump(1) << "\n";
     return 0;
   }
 

@@ -10,6 +10,7 @@
 #include <cxxopts.hpp>
 #include <nlohmann/json.hpp>
 
+#include "f8cppsdk/describe_builtins.h"
 #include "implayer_service.h"
 
 namespace {
@@ -44,7 +45,9 @@ extern "C" SDL_AppResult SDLCALL SDL_AppInit(void** appstate, int argc, char* ar
   }
 
   if (result.count("describe")) {
-    std::cout << f8::implayer::ImPlayerService::describe().dump(1) << "\n";
+    const auto payload =
+        f8::cppsdk::normalize_describe_with_builtin_state_fields(f8::implayer::ImPlayerService::describe());
+    std::cout << payload.dump(1) << "\n";
     return SDL_APP_SUCCESS;
   }
 

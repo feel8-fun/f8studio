@@ -530,6 +530,10 @@ bool ServiceBus::start() {
     (void)kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, "svcId", cfg_.service_id, "system",
                             json{{"builtin", true}}, 0, "system");
   } catch (...) {}
+  try {
+    (void)kv_set_node_state(kv_, cfg_.service_id, cfg_.service_id, "active", active_.load(std::memory_order_acquire),
+                            "system", json{{"builtin", true}, {"bootstrap", true}}, 0, "runtime");
+  } catch (...) {}
 
   // Announce readiness after endpoints are up.
   (void)kv_set_ready(kv_, cfg_.service_id, true, "start");
