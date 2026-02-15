@@ -429,7 +429,7 @@ class UdpSkeletonRuntimeNode(OperatorNode):
                 return None
             (bone_count,) = struct.unpack_from("<i", data, offset)
             offset += 4
-            if bone_count < 0 or bone_count > 4096:
+            if bone_count < 0 or bone_count > 100000:
                 return None
 
             bones: list[dict[str, Any]] = []
@@ -439,9 +439,47 @@ class UdpSkeletonRuntimeNode(OperatorNode):
                     return None
                 x, y, z, qw, qx, qy, qz = struct.unpack_from("<fffffff", data, offset)
                 offset += 7 * 4
-                bones.append({"name": name, "pos": (x, y, z), "rot": (qw, qx, qy, qz)})
+                bones.append({"name": name, "pos": [x, y, z], "rot": [qw, qx, qy, qz]})
 
-            return {"modelName": model_name, "timestampMs": int(timestamp_ms), "schema": schema, "bones": bones}
+            trailer: dict[str, Any] | None = None
+            trailer_size = 30
+            if offset + trailer_size <= len(data) and data[offset : offset + 4] == b"LMEX":
+                ext_ver, frame_id, chunk_i, chunk_n, total_bones, character_id = struct.unpack_from(
+                    "<HQiiii", data, offset + 4
+                )
+                trailer = {
+                    "magic": "LMEX",
+                    "extVersion": int(ext_ver),
+                    "frameId": int(frame_id),
+                    "chunkIndex": int(chunk_i),
+                    "chunkCount": int(chunk_n),
+                    "totalBoneCount": int(total_bones),
+                    "characterId": int(character_id),
+                }
+
+                ext_offset = offset + trailer_size
+                anim_header_size = 12
+                if ext_offset + anim_header_size <= len(data) and data[ext_offset : ext_offset + 4] == b"ANIM":
+                    normalized_time = struct.unpack_from("<f", data, ext_offset + 4)[0]
+                    layer_index = struct.unpack_from("<i", data, ext_offset + 8)[0]
+                    clip_name, next_offset = UdpSkeletonRuntimeNode._read_aligned_string(data, ext_offset + 12)
+                    pose_key, _ = UdpSkeletonRuntimeNode._read_aligned_string(data, next_offset)
+                    trailer["anim"] = {
+                        "normalizedTime": normalized_time,
+                        "layerIndex": int(layer_index),
+                        "clipName": clip_name,
+                        "poseKey": pose_key,
+                    }
+
+            return {
+                "type": "skeleton_binary",
+                "modelName": model_name,
+                "timestampMs": int(timestamp_ms),
+                "schema": schema,
+                "boneCount": int(bone_count),
+                "bones": bones,
+                "trailer": trailer,
+            }
         except (struct.error, UnicodeDecodeError, ValueError):
             return None
 
