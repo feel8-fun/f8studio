@@ -24,7 +24,6 @@ option(BUILD_TESTS "Enable building of tests" OFF)
 option(F8_DEPLOY_SERVICE_RUNTIME "Deploy service runtime to services/... after build" ON)
 option(F8_DEPLOY_SERVICE_RUNTIME_POST_BUILD "Run deploy as POST_BUILD step" ON)
 option(F8_DEPLOY_SERVICE_CLEAN "Clean services/<svc>/<platform> before deploy" ON)
-option(F8_ENABLE_DLINFER "Build experimental f8dlinfer C++ package" OFF)
 
 # Build Output
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR})
@@ -111,9 +110,6 @@ add_subdirectory(packages/f8implayer)
 add_subdirectory(packages/f8audiocap)
 add_subdirectory(packages/f8screencap)
 add_subdirectory(packages/f8sdk_demo)
-if(F8_ENABLE_DLINFER)
-    add_subdirectory(packages/f8dlinfer)
-endif()
 
 if (BUILD_TESTS)
     if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
