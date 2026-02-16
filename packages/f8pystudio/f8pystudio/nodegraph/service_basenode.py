@@ -45,7 +45,7 @@ from ..widgets.f8_editor_widgets import (
     parse_multiselect_pool,
     parse_select_pool,
 )
-from ..widgets.f8_prop_value_widgets import open_code_editor_dialog
+from ..widgets.f8_prop_value_widgets import open_code_editor_dialog, open_code_editor_window
 from ..command_ui_protocol import CommandUiHandler, CommandUiSource
 import qtawesome as qta
 
@@ -628,6 +628,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         self._tooltip_filters: list[QtCore.QObject] = []
         self._svc_toolbar_proxy: QtWidgets.QGraphicsProxyWidget | None = None
         self._ports_end_y: float | None = None
+        self._open_code_editors: list[QtWidgets.QDialog] = []
 
     def _backend_node(self) -> Any | None:
         """
@@ -1847,15 +1848,43 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
 
             def _on_click() -> None:
                 current = _get_node_value()
-                updated = open_code_editor_dialog(
-                    None,
-                    title=f"{self.name} - {state_field.label}",
-                    code="" if current is None else str(current),
-                    language=state_field.ui_language or "plaintext",
-                )
-                if updated is None:
-                    return
-                _set_node_value(updated, push_undo=True)
+
+                def _on_saved(updated: str) -> None:
+                    _set_node_value(updated, push_undo=True)
+
+                try:
+                    dlg = open_code_editor_window(
+                        None,
+                        title=f"{self.name} - {state_field.label}",
+                        code="" if current is None else str(current),
+                        language=state_field.ui_language or "plaintext",
+                        on_saved=_on_saved,
+                    )
+                    self._open_code_editors.append(dlg)
+
+                    def _cleanup() -> None:
+                        alive: list[QtWidgets.QDialog] = []
+                        for w in self._open_code_editors:
+                            if w is None:
+                                continue
+                            try:
+                                _ = w.isVisible()
+                                alive.append(w)
+                            except RuntimeError:
+                                continue
+                        self._open_code_editors = alive
+
+                    dlg.destroyed.connect(_cleanup)  # type: ignore[attr-defined]
+                except Exception:
+                    updated = open_code_editor_dialog(
+                        None,
+                        title=f"{self.name} - {state_field.label}",
+                        code="" if current is None else str(current),
+                        language=state_field.ui_language or "plaintext",
+                    )
+                    if updated is None:
+                        return
+                    _set_node_value(updated, push_undo=True)
 
             btn.clicked.connect(_on_click)  # type: ignore[attr-defined]
             _apply_value(_get_node_value())

@@ -8,10 +8,25 @@ from qtpy import QtCore, QtGui, QtWidgets
 import qtawesome as qta
 
 
+def _ask_save_before_close(parent: QtWidgets.QWidget) -> QtWidgets.QMessageBox.StandardButton:
+    return QtWidgets.QMessageBox.question(
+        parent,
+        "Unsaved Changes",
+        "You have unsaved changes. Save before closing?",
+        QtWidgets.QMessageBox.StandardButton.Yes
+        | QtWidgets.QMessageBox.StandardButton.No
+        | QtWidgets.QMessageBox.StandardButton.Cancel,
+        QtWidgets.QMessageBox.StandardButton.Yes,
+    )
+
+
 class F8CodeEditorDialog(QtWidgets.QDialog):
+    code_saved = QtCore.Signal(str)
+
     def __init__(self, parent=None, *, title: str, code: str):
         super().__init__(parent)
         self.setWindowTitle(title)
+        self._close_on_save = True
 
         self._edit = QtWidgets.QPlainTextEdit()
         self._edit.setTabStopDistance(4 * self.fontMetrics().horizontalAdvance(" "))
@@ -23,8 +38,17 @@ class F8CodeEditorDialog(QtWidgets.QDialog):
         self._edit.setPlainText(str(code or ""))
 
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Save | QtWidgets.QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept)
+        buttons.accepted.connect(self._on_save_clicked)
         buttons.rejected.connect(self.reject)
+        self._save_button = buttons.button(QtWidgets.QDialogButtonBox.Save)
+        self._save_button.setEnabled(False)
+
+        self._last_saved_code = str(code or "")
+        self._edit.textChanged.connect(self._on_text_changed)
+
+        self._save_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+S"), self)
+        self._save_shortcut.setContext(QtCore.Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self._save_shortcut.activated.connect(self._on_save_clicked)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(self._edit, 1)
@@ -34,6 +58,115 @@ class F8CodeEditorDialog(QtWidgets.QDialog):
 
     def code(self) -> str:
         return str(self._edit.toPlainText() or "")
+
+    def _on_save_clicked(self) -> None:
+        if not self._save_button.isEnabled():
+            return
+        text = self.code()
+        self.code_saved.emit(text)
+        self._last_saved_code = text
+        self._save_button.setEnabled(False)
+        if self._close_on_save:
+            self.accept()
+
+    def _on_text_changed(self) -> None:
+        self._save_button.setEnabled(self.code() != self._last_saved_code)
+
+    def set_close_on_save(self, close_on_save: bool) -> None:
+        self._close_on_save = bool(close_on_save)
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # type: ignore[override]
+        if not self._save_button.isEnabled():
+            event.accept()
+            return
+        answer = _ask_save_before_close(self)
+        if answer == QtWidgets.QMessageBox.StandardButton.Yes:
+            text = self.code()
+            self.code_saved.emit(text)
+            self._last_saved_code = text
+            self._save_button.setEnabled(False)
+            event.accept()
+            return
+        if answer == QtWidgets.QMessageBox.StandardButton.No:
+            event.accept()
+            return
+        event.ignore()
+
+
+class _EditorUiBridge(QtCore.QObject):
+    dirty_changed = QtCore.Signal(bool)
+    save_requested = QtCore.Signal()
+    close_requested = QtCore.Signal()
+
+    @QtCore.Slot(bool)
+    def notify_dirty(self, dirty: bool) -> None:
+        self.dirty_changed.emit(bool(dirty))
+
+    @QtCore.Slot()
+    def request_save(self) -> None:
+        self.save_requested.emit()
+
+    @QtCore.Slot()
+    def request_close(self) -> None:
+        self.close_requested.emit()
+
+
+class _PythonEditorAssistBridge(QtCore.QObject):
+    completion_ready = QtCore.Signal(str, object)
+    hover_ready = QtCore.Signal(str, object)
+
+    @QtCore.Slot(str, str, int, int)
+    def request_completions(self, request_id: str, code: str, line: int, column: int) -> None:
+        result: list[dict[str, str]] = []
+        try:
+            import jedi  # type: ignore[import-not-found]
+
+            script = jedi.Script(code=str(code or ""))
+            completions = script.complete(line=max(1, int(line)), column=max(0, int(column)))
+            for item in completions[:200]:
+                try:
+                    detail = str(item.description or "")
+                except Exception:
+                    detail = ""
+                try:
+                    item_type = str(item.type or "")
+                except Exception:
+                    item_type = ""
+                result.append(
+                    {
+                        "label": str(item.name or ""),
+                        "insertText": str(item.name or ""),
+                        "detail": detail,
+                        "kind": item_type,
+                    }
+                )
+        except Exception:
+            result = []
+        self.completion_ready.emit(str(request_id), result)
+
+    @QtCore.Slot(str, str, int, int)
+    def request_hover(self, request_id: str, code: str, line: int, column: int) -> None:
+        result: dict[str, str] = {}
+        try:
+            import jedi  # type: ignore[import-not-found]
+
+            script = jedi.Script(code=str(code or ""))
+            names = script.help(line=max(1, int(line)), column=max(0, int(column)))
+            if names:
+                desc = ""
+                try:
+                    desc = str(names[0].description or "")
+                except Exception:
+                    desc = ""
+                doc = ""
+                try:
+                    doc = str(names[0].docstring(raw=True) or "")
+                except Exception:
+                    doc = ""
+                result = {"description": desc, "docstring": doc}
+        except Exception:
+            result = {}
+        self.hover_ready.emit(str(request_id), result)
 
 
 class F8MonacoEditorDialog(QtWidgets.QDialog):
@@ -45,20 +178,46 @@ class F8MonacoEditorDialog(QtWidgets.QDialog):
     - CDN fallback (default) for dev
     """
 
+    code_saved = QtCore.Signal(str)
+
     def __init__(self, parent=None, *, title: str, code: str, language: str = "python"):
         super().__init__(parent)
         self.setWindowTitle(str(title or "Edit Code"))
         self._code: str = str(code or "")
+        self._dirty: bool = False
+        self._close_on_save: bool = True
         self._language: str = str(language or "plaintext").strip() or "plaintext"
+        self._python_assist_enabled: bool = self._is_python_assist_enabled()
 
-        from PySide6 import QtWebEngineWidgets  # type: ignore[import-not-found]
+        from PySide6 import QtWebChannel, QtWebEngineWidgets  # type: ignore[import-not-found]
 
         self._view = QtWebEngineWidgets.QWebEngineView(self)
         self._view.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.NoContextMenu)
+        self._ui_bridge = _EditorUiBridge(self)
+        self._assist_bridge: _PythonEditorAssistBridge | None = None
+        self._web_channel: Any = QtWebChannel.QWebChannel(self._view.page())
+        self._web_channel.registerObject("f8EditorUi", self._ui_bridge)
+        if self._python_assist_enabled and self._language.lower() == "python":
+            self._assist_bridge = _PythonEditorAssistBridge(self)
+            self._web_channel.registerObject("pyAssist", self._assist_bridge)
+        self._view.page().setWebChannel(self._web_channel)
 
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Save | QtWidgets.QDialogButtonBox.Cancel)
         buttons.accepted.connect(self._on_save_clicked)  # type: ignore[attr-defined]
         buttons.rejected.connect(self.reject)  # type: ignore[attr-defined]
+        self._save_button = buttons.button(QtWidgets.QDialogButtonBox.Save)
+        self._save_button.setEnabled(False)
+
+        self._ui_bridge.dirty_changed.connect(self._on_dirty_changed)  # type: ignore[attr-defined]
+        self._ui_bridge.save_requested.connect(self._on_save_clicked)  # type: ignore[attr-defined]
+        self._ui_bridge.close_requested.connect(self.close)  # type: ignore[attr-defined]
+
+        self._save_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+S"), self)
+        self._save_shortcut.setContext(QtCore.Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self._save_shortcut.activated.connect(self._on_save_clicked)
+        self._close_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Esc"), self)
+        self._close_shortcut.setContext(QtCore.Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self._close_shortcut.activated.connect(self.close)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(self._view, 1)
@@ -78,7 +237,12 @@ class F8MonacoEditorDialog(QtWidgets.QDialog):
 
     def _load_page(self) -> None:
         base = self._monaco_base_url()
-        initial = {"code": self._code, "language": self._language, "theme": "vs-dark"}
+        initial = {
+            "code": self._code,
+            "language": self._language,
+            "theme": "vs-dark",
+            "pythonAssistEnabled": bool(self._python_assist_enabled),
+        }
         initial_json = json.dumps(initial, ensure_ascii=False)
 
         html = f"""
@@ -99,15 +263,51 @@ class F8MonacoEditorDialog(QtWidgets.QDialog):
     <script>
       window.__F8_INITIAL__ = {initial_json};
     </script>
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
     <script src="{base}/vs/loader.js"></script>
     <script>
       window._f8_editor = null;
+      window._f8_editorUi = null;
+      window._f8_pyAssist = null;
+      window._f8_pendingCompletions = Object.create(null);
+      window._f8_pendingHovers = Object.create(null);
+      window._f8_lastDirty = false;
+      window._f8_savedValue = '';
       window._f8_getValue = function() {{
         try {{
           if (!window._f8_editor) return "";
           return window._f8_editor.getValue();
         }} catch (e) {{
           return "";
+        }}
+      }};
+      window._f8_isDirty = function() {{
+        try {{
+          if (!window._f8_editor) return false;
+          return window._f8_editor.getValue() !== String(window._f8_savedValue || '');
+        }} catch (e) {{
+          return false;
+        }}
+      }};
+      window._f8_notifyDirty = function() {{
+        try {{
+          const dirty = Boolean(window._f8_isDirty());
+          if (dirty === window._f8_lastDirty) return;
+          window._f8_lastDirty = dirty;
+          if (window._f8_editorUi && window._f8_editorUi.notify_dirty) {{
+            window._f8_editorUi.notify_dirty(dirty);
+          }}
+        }} catch (e) {{
+        }}
+      }};
+      window._f8_markSaved = function() {{
+        try {{
+          window._f8_savedValue = window._f8_getValue();
+          window._f8_lastDirty = false;
+          if (window._f8_editorUi && window._f8_editorUi.notify_dirty) {{
+            window._f8_editorUi.notify_dirty(false);
+          }}
+        }} catch (e) {{
         }}
       }};
 
@@ -127,6 +327,123 @@ class F8MonacoEditorDialog(QtWidgets.QDialog):
           scrollBeyondLastLine: false,
           wordWrap: 'off',
         }});
+        window._f8_savedValue = String(init.code || '');
+        window._f8_lastDirty = false;
+        window._f8_editor.onDidChangeModelContent(function() {{
+          window._f8_notifyDirty();
+        }});
+        window._f8_editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, function() {{
+          if (window._f8_editorUi && window._f8_editorUi.request_save) {{
+            window._f8_editorUi.request_save();
+          }}
+        }});
+        window._f8_editor.addCommand(monaco.KeyCode.Escape, function() {{
+          if (window._f8_editorUi && window._f8_editorUi.request_close) {{
+            window._f8_editorUi.request_close();
+          }}
+        }});
+
+        function _monacoKind(kind) {{
+          const k = String(kind || '').toLowerCase();
+          if (k === 'function' || k === 'method') return monaco.languages.CompletionItemKind.Function;
+          if (k === 'class') return monaco.languages.CompletionItemKind.Class;
+          if (k === 'module') return monaco.languages.CompletionItemKind.Module;
+          if (k === 'property') return monaco.languages.CompletionItemKind.Property;
+          if (k === 'param') return monaco.languages.CompletionItemKind.Variable;
+          if (k === 'keyword') return monaco.languages.CompletionItemKind.Keyword;
+          return monaco.languages.CompletionItemKind.Text;
+        }}
+
+        function _setupPythonAssist(channel) {{
+          if (String(init.language || '').toLowerCase() !== 'python') return;
+          if (!Boolean(init.pythonAssistEnabled)) return;
+          const assist = channel && channel.objects ? channel.objects.pyAssist : null;
+          window._f8_pyAssist = assist || null;
+          if (!assist) return;
+
+          assist.completion_ready.connect(function(requestId, items) {{
+            const id = String(requestId || '');
+            const resolver = window._f8_pendingCompletions[id];
+            if (!resolver) return;
+            delete window._f8_pendingCompletions[id];
+            const src = Array.isArray(items) ? items : [];
+            const out = [];
+            for (const item of src) {{
+              const label = String((item && item.label) || '');
+              if (!label) continue;
+              const insertText = String((item && item.insertText) || label);
+              const detail = String((item && item.detail) || '');
+              const kind = _monacoKind((item && item.kind) || '');
+              out.push({{ label, insertText, detail, kind }});
+            }}
+            resolver({{ suggestions: out }});
+          }});
+
+          assist.hover_ready.connect(function(requestId, payload) {{
+            const id = String(requestId || '');
+            const resolver = window._f8_pendingHovers[id];
+            if (!resolver) return;
+            delete window._f8_pendingHovers[id];
+            const obj = payload || {{}};
+            const description = String(obj.description || '');
+            const doc = String(obj.docstring || '');
+            const blocks = [];
+            if (description) blocks.push({{ value: '```python\\n' + description + '\\n```' }});
+            if (doc) blocks.push({{ value: doc }});
+            resolver(blocks.length ? {{ contents: blocks }} : null);
+          }});
+
+          monaco.languages.registerCompletionItemProvider('python', {{
+            triggerCharacters: ['.', '_'],
+            provideCompletionItems: function(model, position) {{
+              return new Promise(function(resolve) {{
+                try {{
+                  const id = String(crypto.randomUUID ? crypto.randomUUID() : Math.random());
+                  window._f8_pendingCompletions[id] = resolve;
+                  const code = model.getValue();
+                  assist.request_completions(id, code, Number(position.lineNumber), Number(position.column - 1));
+                  setTimeout(function() {{
+                    if (window._f8_pendingCompletions[id]) {{
+                      delete window._f8_pendingCompletions[id];
+                      resolve({{ suggestions: [] }});
+                    }}
+                  }}, 350);
+                }} catch (e) {{
+                  resolve({{ suggestions: [] }});
+                }}
+              }});
+            }}
+          }});
+
+          monaco.languages.registerHoverProvider('python', {{
+            provideHover: function(model, position) {{
+              return new Promise(function(resolve) {{
+                try {{
+                  const id = String(crypto.randomUUID ? crypto.randomUUID() : Math.random());
+                  window._f8_pendingHovers[id] = resolve;
+                  const code = model.getValue();
+                  assist.request_hover(id, code, Number(position.lineNumber), Number(position.column - 1));
+                  setTimeout(function() {{
+                    if (window._f8_pendingHovers[id]) {{
+                      delete window._f8_pendingHovers[id];
+                      resolve(null);
+                    }}
+                  }}, 350);
+                }} catch (e) {{
+                  resolve(null);
+                }}
+              }});
+            }}
+          }});
+        }}
+
+        if (typeof QWebChannel !== 'undefined' && window.qt && qt.webChannelTransport) {{
+          new QWebChannel(qt.webChannelTransport, function(channel) {{
+            window._f8_editorUi = channel.objects.f8EditorUi || null;
+            window._f8_notifyDirty();
+            _setupPythonAssist(channel);
+          }});
+        }}
       }});
     </script>
   </head>
@@ -138,12 +455,18 @@ class F8MonacoEditorDialog(QtWidgets.QDialog):
         self._view.setHtml(html)
 
     def _on_save_clicked(self) -> None:
+        if not self._dirty:
+            return
+        self._save_current(close_after=self._close_on_save)
+
+    def _save_current(self, *, close_after: bool) -> None:
         try:
             page = self._view.page()
         except Exception:
             page = None
         if page is None:
-            self.accept()
+            if close_after:
+                self.accept()
             return
 
         def _on_value(value: Any) -> None:
@@ -151,12 +474,46 @@ class F8MonacoEditorDialog(QtWidgets.QDialog):
                 self._code = "" if value is None else str(value)
             except Exception:
                 self._code = ""
-            self.accept()
+            self._set_dirty(False)
+            self.code_saved.emit(self._code)
+            if close_after:
+                self.accept()
 
         try:
             page.runJavaScript("window._f8_getValue && window._f8_getValue();", _on_value)  # type: ignore[call-arg]
+            page.runJavaScript("window._f8_markSaved && window._f8_markSaved();")
         except Exception:
-            self.accept()
+            pass
+
+    @staticmethod
+    def _is_python_assist_enabled() -> bool:
+        raw = str(os.environ.get("F8_MONACO_PY_ASSIST") or "").strip().lower()
+        return raw in {"1", "true", "yes", "on", "enable", "enabled"}
+
+    @QtCore.Slot(bool)
+    def _on_dirty_changed(self, dirty: bool) -> None:
+        self._set_dirty(bool(dirty))
+
+    def _set_dirty(self, dirty: bool) -> None:
+        self._dirty = bool(dirty)
+        self._save_button.setEnabled(self._dirty)
+
+    def set_close_on_save(self, close_on_save: bool) -> None:
+        self._close_on_save = bool(close_on_save)
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # type: ignore[override]
+        if not self._dirty:
+            event.accept()
+            return
+        answer = _ask_save_before_close(self)
+        if answer == QtWidgets.QMessageBox.StandardButton.Yes:
+            self._save_current(close_after=True)
+            event.ignore()
+            return
+        if answer == QtWidgets.QMessageBox.StandardButton.No:
+            event.accept()
+            return
+        event.ignore()
 
 
 def open_code_editor_dialog(
@@ -181,6 +538,50 @@ def open_code_editor_dialog(
         return dlg2.code()
 
 
+def open_code_editor_window(
+    parent: QtWidgets.QWidget | None,
+    *,
+    title: str,
+    code: str,
+    language: str,
+    on_saved: Callable[[str], None],
+) -> QtWidgets.QDialog:
+    dlg: QtWidgets.QDialog
+    try:
+        # Always create as a top-level window (no Qt parent) so it behaves as an
+        # independent editor window in the OS window manager/task switcher.
+        dlg = F8MonacoEditorDialog(None, title=title, code=code, language=language)
+    except Exception:
+        dlg = F8CodeEditorDialog(None, title=title, code=code)
+
+    dlg.setModal(False)
+    dlg.setWindowModality(QtCore.Qt.WindowModality.NonModal)
+    dlg.setWindowFlag(QtCore.Qt.WindowType.Window, True)
+    dlg.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, True)
+    if isinstance(dlg, F8MonacoEditorDialog):
+        dlg.set_close_on_save(False)
+        dlg.code_saved.connect(on_saved)  # type: ignore[arg-type]
+    elif isinstance(dlg, F8CodeEditorDialog):
+        dlg.set_close_on_save(False)
+        dlg.code_saved.connect(on_saved)  # type: ignore[arg-type]
+
+    # Best-effort initial placement near caller without making it a child window.
+    if parent is not None:
+        try:
+            anchor = parent.window() if parent.window() is not None else parent
+            center = anchor.frameGeometry().center()
+            frame = dlg.frameGeometry()
+            frame.moveCenter(center)
+            dlg.move(frame.topLeft())
+        except Exception:
+            pass
+
+    dlg.show()
+    dlg.raise_()
+    dlg.activateWindow()
+    return dlg
+
+
 class F8CodePropWidget(QtWidgets.QWidget):
     """
     Read-only preview with an "Edit..." button that opens a code editor dialog.
@@ -193,12 +594,13 @@ class F8CodePropWidget(QtWidgets.QWidget):
         self._name = ""
         self._value = ""
         self._title = str(title or "Edit Code")
+        self._editor_window: QtWidgets.QDialog | None = None
 
         self._preview = QtWidgets.QLineEdit()
         self._preview.setReadOnly(True)
         self._preview.setClearButtonEnabled(False)
 
-        self._btn = QtWidgets.QPushButton("Edit…")
+        self._btn = QtWidgets.QPushButton("Edit...")
         self._btn.clicked.connect(self._on_edit_clicked)
 
         layout = QtWidgets.QHBoxLayout(self)
@@ -228,11 +630,28 @@ class F8CodePropWidget(QtWidgets.QWidget):
         self._preview.setText(preview)
 
     def _on_edit_clicked(self) -> None:
-        updated = open_code_editor_dialog(self, title=self._title, code=self.get_value(), language="python")
-        if updated is None:
+        if self._editor_window is not None:
+            try:
+                self._editor_window.raise_()
+                self._editor_window.activateWindow()
+                return
+            except Exception:
+                self._editor_window = None
+
+        def _on_saved(updated: str) -> None:
+            self.set_value(updated)
+            self.value_changed.emit(self.get_name(), updated)
+
+        try:
+            dlg = open_code_editor_window(self, title=self._title, code=self.get_value(), language="python", on_saved=_on_saved)
+            self._editor_window = dlg
+            dlg.destroyed.connect(self._on_editor_destroyed)  # type: ignore[attr-defined]
+        except Exception:
             return
-        self.set_value(updated)
-        self.value_changed.emit(self.get_name(), updated)
+
+    @QtCore.Slot()
+    def _on_editor_destroyed(self) -> None:
+        self._editor_window = None
 
 
 class F8CodeButtonPropWidget(QtWidgets.QWidget):
@@ -248,6 +667,7 @@ class F8CodeButtonPropWidget(QtWidgets.QWidget):
         self._value = ""
         self._title = str(title or "Edit Code")
         self._language = str(language or "plaintext").strip() or "plaintext"
+        self._editor_window: QtWidgets.QDialog | None = None
 
         self._btn = QtWidgets.QPushButton("Edit...")
         try:
@@ -278,11 +698,34 @@ class F8CodeButtonPropWidget(QtWidgets.QWidget):
         self._btn.setEnabled(not bool(read_only))
 
     def _on_edit_clicked(self) -> None:
-        updated = open_code_editor_dialog(self, title=self._title, code=self.get_value(), language=self._language)
-        if updated is None:
+        if self._editor_window is not None:
+            try:
+                self._editor_window.raise_()
+                self._editor_window.activateWindow()
+                return
+            except Exception:
+                self._editor_window = None
+
+        def _on_saved(updated: str) -> None:
+            self.set_value(updated)
+            self.value_changed.emit(self.get_name(), updated)
+
+        try:
+            dlg = open_code_editor_window(
+                self,
+                title=self._title,
+                code=self.get_value(),
+                language=self._language,
+                on_saved=_on_saved,
+            )
+            self._editor_window = dlg
+            dlg.destroyed.connect(self._on_editor_destroyed)  # type: ignore[attr-defined]
+        except Exception:
             return
-        self.set_value(updated)
-        self.value_changed.emit(self.get_name(), updated)
+
+    @QtCore.Slot()
+    def _on_editor_destroyed(self) -> None:
+        self._editor_window = None
 
 
 class F8InlineCodePropWidget(QtWidgets.QPlainTextEdit):
