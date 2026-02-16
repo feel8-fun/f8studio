@@ -18,6 +18,7 @@ from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from f8pysdk.service_ready import wait_service_ready
 from f8pysdk.service_bus import StateWriteOrigin
 from .error_reporting import ExceptionLogOnce, report_exception
+from .nats_server_bootstrap import ensure_nats_server
 from .nodegraph.runtime_compiler import CompiledRuntimeGraphs
 from .pystudio_service import PyStudioService, PyStudioServiceConfig
 from .service_process_manager import ServiceProcessConfig, ServiceProcessManager
@@ -1335,6 +1336,10 @@ class PyStudioServiceBridge(QtCore.QObject):
 
     async def _start_async(self) -> None:
         nats_url = str(self._cfg.nats_url).strip() or "nats://127.0.0.1:4222"
+        try:
+            await asyncio.to_thread(ensure_nats_server, nats_url, log_cb=self._emit_log_line)
+        except Exception as exc:
+            self._report_exception("ensure nats server failed", exc)
 
         # Singleton guard (best-effort): if any existing studio ServiceBus micro responds, do not start.
         try:
