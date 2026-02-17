@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import enum
 import logging
 import json
-from dataclasses import dataclass
 from typing import Any
 
 from .node_base import F8StudioBaseNode
@@ -36,227 +34,33 @@ from .port_painter import draw_exec_port, draw_square_port, EXEC_PORT_COLOR, DAT
 from .service_process_toolbar import ServiceProcessToolbar
 from .service_bridge_protocol import ServiceBridge
 from .viewer import F8StudioNodeViewer
-from ..widgets.f8_editor_widgets import (
-    F8ImageB64Editor,
-    F8MultiSelect,
-    F8OptionCombo,
-    F8Switch,
-    F8ValueBar,
-    parse_multiselect_pool,
-    parse_select_pool,
+from .items.node_item_core import (
+    StateFieldInfo as _StateFieldInfo,
+    port_name as _port_name,
+    service_exec_ports as _service_exec_ports,
+    state_field_info as _state_field_info,
 )
-from ..widgets.f8_prop_value_widgets import open_code_editor_dialog, open_code_editor_window
-from ..command_ui_protocol import CommandUiHandler, CommandUiSource
-import qtawesome as qta
+from .items.inline_command_panel import (
+    ensure_inline_command_widget as _ensure_inline_command_widget_impl,
+    invoke_command as _invoke_command_impl,
+    prompt_command_args as _prompt_command_args_impl,
+)
+from .items.inline_state_panel import (
+    ensure_inline_state_widgets as _ensure_inline_state_widgets_impl,
+    inline_state_input_is_connected as _inline_state_input_is_connected_impl,
+    make_state_inline_control as _make_state_inline_control_impl,
+    on_graph_property_changed as _on_graph_property_changed_impl,
+    on_state_toggle as _on_state_toggle_impl,
+    refresh_inline_state_read_only as _refresh_inline_state_read_only_impl,
+    refresh_option_pool_for_changed_field as _refresh_option_pool_for_changed_field_impl,
+    set_inline_state_control_read_only as _set_inline_state_control_read_only_impl,
+)
+from ..widgets.state_controls.schema_introspect import (
+    schema_enum_items as _shared_schema_enum_items,
+    schema_numeric_range as _shared_schema_numeric_range,
+)
 
 logger = logging.getLogger(__name__)
-
-
-def _port_name(port: Any) -> str:
-    """
-    NodeGraphQt Port exposes `name()` (method).
-    """
-    try:
-        return str(port.name() or "")
-    except Exception:
-        pass
-    try:
-        return str(port.name or "")
-    except Exception:
-        return ""
-
-
-def _model_extra(obj: Any) -> dict[str, Any]:
-    """
-    Best-effort access to pydantic v2 extra fields without RTTI (`getattr`).
-    """
-    try:
-        extra = obj.model_extra
-        return extra if isinstance(extra, dict) else {}
-    except Exception:
-        pass
-    try:
-        extra = obj.__pydantic_extra__
-        return extra if isinstance(extra, dict) else {}
-    except Exception:
-        return {}
-
-
-def _service_exec_ports(spec: F8ServiceSpec) -> tuple[list[str], list[str]]:
-    """
-    F8ServiceSpec doesn't declare exec ports, but it allows extra fields.
-    """
-    extra = _model_extra(spec)
-    in_raw = extra.get("execInPorts")
-    out_raw = extra.get("execOutPorts")
-    exec_in = [str(x) for x in list(in_raw or [])] if isinstance(in_raw, (list, tuple)) else []
-    exec_out = [str(x) for x in list(out_raw or [])] if isinstance(out_raw, (list, tuple)) else []
-    return exec_in, exec_out
-
-
-@dataclass(frozen=True)
-class _StateFieldInfo:
-    name: str
-    label: str
-    tooltip: str
-    show_on_node: bool
-    access: Any
-    access_str: str
-    required: bool
-    ui_control: str
-    ui_language: str
-    value_schema: Any
-
-
-def _state_field_info(field: Any) -> _StateFieldInfo | None:
-    if isinstance(field, dict):
-        name = str(field.get("name") or "").strip()
-    else:
-        try:
-            name = str(field.name or "").strip()
-        except Exception:
-            return None
-    if not name:
-        return None
-
-    if isinstance(field, dict):
-        show_on_node = bool(field.get("showOnNode") or False)
-    else:
-        try:
-            show_on_node = bool(field.showOnNode)
-        except Exception:
-            show_on_node = False
-
-    if isinstance(field, dict):
-        label = str(field.get("label") or "").strip() or name
-        tooltip = str(field.get("description") or "").strip() or name
-        ui_control = str(field.get("uiControl") or "").strip()
-        ui_language = str(field.get("uiLanguage") or "")
-        value_schema = field.get("valueSchema")
-        access = field.get("access")
-        required = bool(field.get("required") or False)
-    else:
-        try:
-            label = str(field.label or "").strip() or name
-        except Exception:
-            label = name
-        try:
-            tooltip = str(field.description or "").strip() or name
-        except Exception:
-            tooltip = name
-        try:
-            ui_control = str(field.uiControl or "").strip()
-        except Exception:
-            ui_control = ""
-        try:
-            ui_language = str(field.uiLanguage or "")
-        except Exception:
-            ui_language = ""
-        try:
-            value_schema = field.valueSchema
-        except Exception:
-            value_schema = None
-        try:
-            access = field.access
-        except Exception:
-            access = None
-        try:
-            required = bool(field.required)
-        except Exception:
-            required = False
-
-    if isinstance(access, enum.Enum):
-        access_value = access.value
-    else:
-        access_value = access if access is not None else ""
-    access_str = str(access_value or "").strip().lower()
-
-    return _StateFieldInfo(
-        name=name,
-        label=label,
-        tooltip=tooltip,
-        show_on_node=show_on_node,
-        access=access,
-        access_str=access_str,
-        required=required,
-        ui_control=ui_control,
-        ui_language=ui_language,
-        value_schema=value_schema,
-    )
-
-
-class _F8ElideToolButton(QtWidgets.QToolButton):
-    def __init__(self, parent: QtWidgets.QWidget | None = None):
-        super().__init__(parent)
-        self._full_text = ""
-
-    def setFullText(self, text: str) -> None:
-        self._full_text = str(text or "")
-        self._apply_elide()
-
-    def resizeEvent(self, event):  # type: ignore[override]
-        super().resizeEvent(event)
-        self._apply_elide()
-
-    def event(self, event):  # type: ignore[override]
-        # Tooltips on embedded widgets inside a QGraphicsProxyWidget can pick up
-        # an unexpected palette/style (showing as a black box). Force the
-        # tooltip to be shown with the global/default styling by passing
-        # widget=None.
-        try:
-            if event.type() == QtCore.QEvent.ToolTip:
-                tip = str(self.toolTip() or "").strip()
-                if not tip:
-                    return True
-                pos = None
-                try:
-                    pos = event.globalPos()
-                except Exception:
-                    try:
-                        pos = event.globalPosition().toPoint()
-                    except Exception:
-                        pos = None
-                if pos is not None:
-                    QtWidgets.QToolTip.showText(pos, tip, None)
-                    return True
-        except Exception:
-            pass
-        return super().event(event)
-
-    def _apply_elide(self) -> None:
-        try:
-            fm = QtGui.QFontMetrics(self.font())
-            # Leave room for the arrow icon.
-            w = max(10, int(self.width() - 24))
-            self.setText(fm.elidedText(self._full_text, QtCore.Qt.ElideRight, w))
-        except RuntimeError:
-            self.setText(self._full_text)
-
-
-class _F8ForceGlobalToolTipFilter(QtCore.QObject):
-    """
-    Force tooltip display via `QToolTip.showText(..., widget=None)` to avoid
-    dark/black tooltip palette issues when widgets are embedded in a
-    `QGraphicsProxyWidget`.
-    """
-
-    def eventFilter(self, watched: QtCore.QObject, event: QtCore.QEvent) -> bool:  # type: ignore[override]
-        if event.type() != QtCore.QEvent.ToolTip:
-            return super().eventFilter(watched, event)
-        if not isinstance(watched, QtWidgets.QWidget):
-            return True
-        tip = str(watched.toolTip() or "").strip()
-        if not tip:
-            return True
-        try:
-            pos = event.globalPos()  # type: ignore[attr-defined]
-        except Exception:
-            try:
-                pos = event.globalPosition().toPoint()  # type: ignore[attr-defined]
-            except Exception:
-                return True
-        QtWidgets.QToolTip.showText(pos, tip, None)
-        return True
 
 
 class F8StudioServiceBaseNode(F8StudioBaseNode):
@@ -446,7 +250,7 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
                 try:
                     if _port_has_connections(self.get_input(port_name)):
                         show_on_node = True
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError):
                     pass
             if show_on_node:
                 desired_inputs[port_name] = {"color": DATA_PORT_COLOR}
@@ -464,7 +268,7 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
                 try:
                     if _port_has_connections(self.get_output(port_name)):
                         show_on_node = True
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError):
                     pass
             if show_on_node:
                 desired_outputs[port_name] = {"color": DATA_PORT_COLOR}
@@ -649,82 +453,14 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             return None
 
     def _inline_state_input_is_connected(self, field_name: str) -> bool:
-        """
-        True if the state field is upstream-driven via a state-edge.
-        """
-        name = str(field_name or "").strip()
-        if not name:
-            return False
-        node = self._backend_node()
-        if node is None:
-            return False
-        p = node.get_input(f"[S]{name}")
-        if p is None:
-            return False
-        return bool(p.connected_ports())
+        return _inline_state_input_is_connected_impl(self, field_name)
 
     @staticmethod
     def _set_inline_state_control_read_only(control: QtWidgets.QWidget, *, read_only: bool) -> None:
-        """
-        Best-effort toggle for inline state controls hosted in the node item.
-
-        Inline controls are created here (not via the property panel), so we
-        avoid relying on NodeGraphQt property widgets.
-        """
-        if isinstance(control, F8OptionCombo):
-            control.set_read_only(bool(read_only))
-            return
-        if isinstance(control, F8Switch):
-            control.setEnabled(not bool(read_only))
-            return
-        if isinstance(control, F8ValueBar):
-            control.setEnabled(not bool(read_only))
-            return
-        if isinstance(control, QtWidgets.QLineEdit):
-            control.setEnabled(True)
-            control.setReadOnly(bool(read_only))
-            return
-        if isinstance(control, QtWidgets.QPlainTextEdit):
-            control.setEnabled(True)
-            control.setReadOnly(bool(read_only))
-            return
-        if isinstance(control, QtWidgets.QTextEdit):
-            control.setEnabled(True)
-            control.setReadOnly(bool(read_only))
-            if read_only:
-                control.setTextInteractionFlags(
-                    QtCore.Qt.TextInteractionFlag.TextSelectableByMouse
-                    | QtCore.Qt.TextInteractionFlag.TextSelectableByKeyboard
-                )
-            else:
-                control.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextEditorInteraction)
-            return
-        # Fallback: disable to prevent edits.
-        control.setEnabled(not bool(read_only))
+        _set_inline_state_control_read_only_impl(control, read_only=read_only)
 
     def refresh_inline_state_read_only(self) -> None:
-        """
-        Refresh readonly state for already-built inline state controls.
-
-        This is used when a state-edge is connected/disconnected: we want to
-        avoid rebuilding widgets (which can cause flicker / temporary layout
-        glitches) and only toggle editability.
-        """
-        node = self._backend_node()
-        if node is None:
-            return
-        fields = list(node.effective_state_fields() or [])
-
-        for f in fields:
-            info = _state_field_info(f)
-            if info is None or not info.show_on_node:
-                continue
-            name = info.name
-            ctrl = self._state_inline_controls.get(name)
-            if ctrl is None:
-                continue
-            read_only = info.access_str == "ro" or self._inline_state_input_is_connected(name)
-            self._set_inline_state_control_read_only(ctrl, read_only=bool(read_only))
+        _refresh_inline_state_read_only_impl(self)
 
     def _graph(self) -> Any | None:
         viewer = self._viewer_safe()
@@ -780,21 +516,21 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         if scene is not None and not multi:
             try:
                 scene.clearSelection()
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
         try:
             self.setSelected(True)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
         # Drive the studio properties panel (listens to graph signals).
         try:
             g.node_selected.emit(node)  # type: ignore[attr-defined]
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         try:
             g.node_selection_changed.emit([node], [])  # type: ignore[attr-defined]
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
     def _bridge(self) -> ServiceBridge | None:
@@ -839,11 +575,11 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                         (b.toolTip() or "").strip()
                         + ("\nService not running" if b.toolTip() else "Service not running")
                     )
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 continue
         try:
             QtCore.QTimer.singleShot(0, self.draw_node)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
     def _service_id(self) -> str:
@@ -854,637 +590,22 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             return ""
 
     def _invoke_command(self, cmd: Any) -> None:
-        """
-        Invoke a command declared on the service spec.
-
-        - no params: fire immediately
-        - has params: show dialog to collect args
-        """
-        if isinstance(cmd, dict):
-            call = str(cmd.get("name") or "").strip()
-        else:
-            try:
-                call = str(cmd.name or "").strip()
-            except Exception:
-                call = ""
-        if not call:
-            return
-        bridge = self._bridge()
-        if bridge is None:
-            return
-        sid = self._service_id()
-        if not sid:
-            return
-        if not self._is_service_running():
-            return
-
-        # Allow a node to intercept command invocation with custom UI logic.
-        try:
-            node = self._backend_node()
-        except Exception:
-            node = None
-        if isinstance(node, CommandUiHandler):
-            parent = None
-            try:
-                v = self.viewer()
-                parent = v.window() if v is not None else None
-            except Exception:
-                parent = None
-            try:
-                if bool(node.handle_command_ui(cmd, parent=parent, source=CommandUiSource.NODEGRAPH)):
-                    return
-            except Exception:
-                node_id = ""
-                try:
-                    node_id = str(self.id or "").strip()
-                except Exception:
-                    node_id = ""
-                logger.exception("handle_command_ui failed nodeId=%s", node_id)
-        if isinstance(cmd, dict):
-            params = list(cmd.get("params") or [])
-        else:
-            try:
-                params = list(cmd.params or [])
-            except Exception:
-                params = []
-
-        if not params:
-            try:
-                bridge.invoke_remote_command(sid, call, {})
-            except Exception:
-                logger.exception("invoke_remote_command failed serviceId=%s call=%s", sid, call)
-            return
-
-        args = self._prompt_command_args(cmd)
-        if args is None:
-            return
-        try:
-            bridge.invoke_remote_command(sid, call, args)
-        except Exception:
-            logger.exception("invoke_remote_command failed serviceId=%s call=%s", sid, call)
+        _invoke_command_impl(self, cmd)
 
     def _prompt_command_args(self, cmd: Any) -> dict[str, Any] | None:
-        if isinstance(cmd, dict):
-            call = str(cmd.get("name") or "").strip() or "Command"
-            params = list(cmd.get("params") or [])
-        else:
-            try:
-                call = str(cmd.name or "").strip() or "Command"
-            except Exception:
-                call = "Command"
-            try:
-                params = list(cmd.params or [])
-            except Exception:
-                params = []
-        if not params:
-            return {}
-
-        v = self.viewer()
-        parent = v.window() if v is not None else None
-
-        dlg = QtWidgets.QDialog(parent)
-        dlg.setWindowTitle(call)
-        dlg.setModal(True)
-
-        form = QtWidgets.QFormLayout()
-        form.setContentsMargins(12, 12, 12, 12)
-        form.setSpacing(8)
-
-        editors: dict[str, tuple[QtWidgets.QWidget, callable]] = {}
-
-        for p in params:
-            if isinstance(p, dict):
-                name = str(p.get("name") or "").strip()
-                required = bool(p.get("required") or False)
-                ui_raw = str(p.get("uiControl") or "").strip()
-                ui = ui_raw.lower()
-                schema = p.get("valueSchema")
-                desc_raw = p.get("description") or ""
-            else:
-                try:
-                    name = str(p.name or "").strip()
-                except Exception:
-                    name = ""
-                try:
-                    required = bool(p.required)
-                except Exception:
-                    required = False
-                try:
-                    ui_raw = str(p.uiControl or "").strip()
-                    ui = ui_raw.lower()
-                except Exception:
-                    ui_raw = ""
-                    ui = ""
-                try:
-                    schema = p.valueSchema
-                except Exception:
-                    schema = None
-                try:
-                    desc_raw = p.description or ""
-                except Exception:
-                    desc_raw = ""
-            if not name:
-                continue
-            t = schema_type(schema) if schema is not None else ""
-            t = t or ""
-
-            enum_items = self._schema_enum_items(schema)
-            lo, hi = self._schema_numeric_range(schema)
-            try:
-                default_value = schema_default(schema)
-            except Exception:
-                default_value = None
-
-            label = f"{name} *" if required else name
-            tooltip = str(desc_raw or "").strip()
-
-            def _with_tooltip(w: QtWidgets.QWidget) -> QtWidgets.QWidget:
-                if tooltip:
-                    w.setToolTip(tooltip)
-                return w
-
-            pool_field = parse_select_pool(ui_raw)
-            if enum_items or pool_field or ui in {"select", "dropdown", "dropbox", "combo", "combobox"}:
-                combo = F8OptionCombo()
-                if pool_field:
-                    node = self._backend_node()
-                    items = []
-                    if node is not None:
-                        try:
-                            v = node.get_property(pool_field)
-                            if isinstance(v, (list, tuple)):
-                                items = [str(x) for x in v]
-                        except Exception:
-                            items = []
-                else:
-                    items = list(enum_items)
-                combo.set_options(items, labels=items)
-                if tooltip:
-                    combo.set_context_tooltip(tooltip)
-                if default_value is not None:
-                    combo.set_value(str(default_value))
-
-                def _get() -> Any:
-                    v = combo.value()
-                    return None if v is None else str(v)
-
-                editors[name] = (_with_tooltip(combo), _get)
-                form.addRow(label, combo)
-                continue
-
-            if t == "boolean" or ui in {"switch", "toggle"}:
-                sw = F8Switch()
-                sw.set_labels("True", "False")
-                if default_value is not None:
-                    sw.set_value(bool(default_value))
-
-                def _get() -> Any:
-                    return bool(sw.value())
-
-                editors[name] = (_with_tooltip(sw), _get)
-                form.addRow(label, sw)
-                continue
-
-            if t in {"integer", "number"} and ui == "slider":
-                is_int = t == "integer"
-                bar = F8ValueBar(integer=is_int, minimum=0.0, maximum=1.0)
-                bar.set_range(lo, hi)
-                if default_value is not None:
-                    bar.set_value(default_value)
-
-                def _get() -> Any:
-                    v = bar.value()
-                    return int(v) if is_int else float(v)
-
-                editors[name] = (_with_tooltip(bar), _get)
-                form.addRow(label, bar)
-                continue
-
-            if t == "integer" or ui in {"spinbox", "int"}:
-                w = QtWidgets.QSpinBox()
-                if lo is not None:
-                    w.setMinimum(int(lo))
-                if hi is not None:
-                    w.setMaximum(int(hi))
-                if default_value is not None:
-                    try:
-                        w.setValue(int(default_value))
-                    except (TypeError, ValueError):
-                        pass
-
-                def _get() -> Any:
-                    return int(w.value())
-
-                editors[name] = (_with_tooltip(w), _get)
-                form.addRow(label, w)
-                continue
-
-            if t == "number" or ui in {"doublespinbox", "float"}:
-                w = QtWidgets.QDoubleSpinBox()
-                w.setDecimals(6)
-                if lo is not None:
-                    w.setMinimum(float(lo))
-                if hi is not None:
-                    w.setMaximum(float(hi))
-                if default_value is not None:
-                    try:
-                        w.setValue(float(default_value))
-                    except (TypeError, ValueError):
-                        pass
-
-                def _get() -> Any:
-                    return float(w.value())
-
-                editors[name] = (_with_tooltip(w), _get)
-                form.addRow(label, w)
-                continue
-
-            if t in {"object", "array", "any"}:
-                w = QtWidgets.QPlainTextEdit()
-                w.setMinimumHeight(90)
-                if default_value is not None:
-                    try:
-                        w.setPlainText(json.dumps(default_value, ensure_ascii=False, indent=2))
-                    except Exception:
-                        w.setPlainText(str(default_value))
-
-                def _get() -> Any:
-                    txt = str(w.toPlainText() or "").strip()
-                    if not txt:
-                        return None
-                    try:
-                        return json.loads(txt)
-                    except Exception:
-                        return txt
-
-                editors[name] = (_with_tooltip(w), _get)
-                form.addRow(label, w)
-                continue
-
-            w = QtWidgets.QLineEdit()
-            if default_value is not None:
-                w.setText("" if default_value is None else str(default_value))
-
-            def _get() -> Any:
-                return str(w.text() or "")
-
-            editors[name] = (_with_tooltip(w), _get)
-            form.addRow(label, w)
-
-        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
-        layout = QtWidgets.QVBoxLayout(dlg)
-        layout.addLayout(form)
-        layout.addWidget(buttons)
-
-        buttons.accepted.connect(dlg.accept)
-        buttons.rejected.connect(dlg.reject)
-
-        while True:
-            if dlg.exec() != QtWidgets.QDialog.Accepted:
-                return None
-            args: dict[str, Any] = {}
-            missing: list[str] = []
-            for p in params:
-                if isinstance(p, dict):
-                    pname = str(p.get("name") or "").strip()
-                    required = bool(p.get("required") or False)
-                else:
-                    try:
-                        pname = str(p.name or "").strip()
-                    except Exception:
-                        pname = ""
-                    try:
-                        required = bool(p.required)
-                    except Exception:
-                        required = False
-                if not pname or pname not in editors:
-                    continue
-                _w, getter = editors[pname]
-                try:
-                    v = getter()
-                except Exception:
-                    v = None
-                # normalize empties
-                if isinstance(v, str) and v.strip() == "":
-                    v = None
-                if required and v is None:
-                    missing.append(pname)
-                    continue
-                if v is not None:
-                    args[pname] = v
-            if missing:
-                QtWidgets.QMessageBox.warning(dlg, "Missing required fields", "Please fill: " + ", ".join(missing))
-                continue
-            return args
+        return _prompt_command_args_impl(self, cmd)
 
     def _ensure_inline_command_widget(self) -> None:
-        self._ensure_bridge_process_hook()
-        node = self._backend_node()
-        if node is None:
-            return
-        try:
-            spec = node.spec
-        except Exception:
-            spec = None
-
-        try:
-            cmds = list(node.effective_commands() or [])
-        except Exception:
-            if spec is None:
-                cmds = []
-            else:
-                try:
-                    cmds = list(spec.commands or [])
-                except Exception:
-                    cmds = []
-
-        visible_cmds: list[Any] = []
-        for c in cmds:
-            if isinstance(c, dict):
-                show = bool(c.get("showOnNode") or False)
-            else:
-                try:
-                    show = bool(c.showOnNode)
-                except Exception:
-                    show = False
-            if show:
-                visible_cmds.append(c)
-        enabled = self._is_service_running()
-
-        # Rebuild only when command list / enabled state changes.
-        try:
-
-            def _cmd_name_desc(cmd: Any) -> tuple[str, str]:
-                if isinstance(cmd, dict):
-                    return str(cmd.get("name") or ""), str(cmd.get("description") or "")
-                try:
-                    return str(cmd.name or ""), str(cmd.description or "")
-                except Exception:
-                    return "", ""
-
-            serial = json.dumps(
-                {
-                    "cmds": [
-                        {
-                            "name": _cmd_name_desc(c)[0],
-                            "desc": _cmd_name_desc(c)[1],
-                        }
-                        for c in visible_cmds
-                    ],
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-                default=str,
-            )
-        except Exception:
-            serial = ""
-
-        # Remove if no commands to show.
-        if not visible_cmds:
-            if self._cmd_proxy is not None:
-                old = None
-                try:
-                    old = self._cmd_proxy.widget()
-                except Exception:
-                    old = None
-                try:
-                    self._cmd_proxy.setWidget(None)
-                except RuntimeError:
-                    pass
-                if old is not None:
-                    try:
-                        old.setParent(None)
-                    except Exception:
-                        pass
-                    try:
-                        old.deleteLater()
-                    except Exception:
-                        pass
-                try:
-                    self._cmd_proxy.setParentItem(None)
-                    if self.scene() is not None:
-                        self.scene().removeItem(self._cmd_proxy)
-                except RuntimeError:
-                    pass
-                self._cmd_proxy = None
-                self._cmd_widget = None
-                self._cmd_buttons = []
-            return
-
-        if self._cmd_proxy is not None and serial and serial == str(self._cmd_serial or ""):
-            # Keep enable state in sync (service running can change without spec changes).
-            for b in list(self._cmd_buttons or []):
-                try:
-                    b.setEnabled(bool(enabled))
-                except Exception:
-                    continue
-            return
-
-        self._cmd_serial = serial
-
-        # Build widget (only when changed).
-        w = QtWidgets.QWidget()
-        lay = QtWidgets.QVBoxLayout(w)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(6)
-        w.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
-        w.setAttribute(QtCore.Qt.WA_StyledBackground, True)
-        w.setStyleSheet("background: transparent;")
-
-        self._cmd_buttons = []
-        for i, c in enumerate(visible_cmds):
-            try:
-                btn_label = str(c.name or "")
-            except Exception:
-                btn_label = ""
-            b = QtWidgets.QPushButton(btn_label)
-            flt = _F8ForceGlobalToolTipFilter(b)
-            b.installEventFilter(flt)
-            self._tooltip_filters.append(flt)
-            b.setMinimumHeight(24)
-            b.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
-            b.setEnabled(bool(enabled))
-            b.setStyleSheet(
-                """
-                QPushButton {
-                    color: rgb(235, 235, 235);
-                    background: rgba(0, 0, 0, 35);
-                    border: 1px solid rgba(120, 200, 255, 85);
-                    border-radius: 6px;
-                    padding: 6px 10px;
-                    text-align: center;
-                    font-weight: 600;
-                }
-                QPushButton:hover {
-                    background: rgba(120, 200, 255, 22);
-                    border-color: rgba(120, 200, 255, 140);
-                }
-                QPushButton:pressed {
-                    background: rgba(120, 200, 255, 35);
-                    border-color: rgba(120, 200, 255, 160);
-                }
-                QPushButton:disabled {
-                    color: rgba(235, 235, 235, 110);
-                    background: rgba(0, 0, 0, 20);
-                    border-color: rgba(255, 255, 255, 18);
-                }
-                """
-            )
-            try:
-                desc = str(c.description or "").strip()
-            except Exception:
-                desc = ""
-            if not enabled:
-                b.setToolTip((desc + "\n" if desc else "") + "Service not running")
-            elif desc:
-                b.setToolTip(desc)
-            b.clicked.connect(lambda _=False, _c=c: self._invoke_command(_c))  # type: ignore[attr-defined]
-            lay.addWidget(b)
-            self._cmd_buttons.append(b)
-
-        if self._cmd_proxy is None:
-            proxy = QtWidgets.QGraphicsProxyWidget(self)
-            proxy.setWidget(w)
-            proxy.setCacheMode(QtWidgets.QGraphicsItem.DeviceCoordinateCache)
-            self._cmd_proxy = proxy
-        else:
-            old = None
-            try:
-                old = self._cmd_proxy.widget()
-            except Exception:
-                old = None
-            self._cmd_proxy.setWidget(w)
-            if old is not None and old is not w:
-                try:
-                    old.setParent(None)
-                except Exception:
-                    pass
-                try:
-                    old.deleteLater()
-                except Exception:
-                    pass
-        self._cmd_widget = w
+        _ensure_inline_command_widget_impl(self)
 
     def _on_graph_property_changed(self, node: Any, name: str, value: Any) -> None:
-        """
-        Keep inline state widgets in sync with NodeGraphQt properties.
-
-        The inspector already tracks these through NodeGraphQt's own property
-        widgets; since our inline widgets are custom QWidgets, we mirror updates
-        here to get the same "two-way binding" behavior.
-        """
-        try:
-            if str(node.id or "") != str(self.id or ""):
-                return
-        except Exception:
-            return
-        key = str(name or "").strip()
-        if not key:
-            return
-        updater = self._state_inline_updaters.get(key)
-        if not updater:
-            # may still be a pool update affecting dependent option widgets.
-            self._refresh_option_pool_for_changed_field(key)
-            return
-        try:
-            updater(value)
-        except Exception:
-            try:
-                node_id = str(self.id or "")
-            except Exception:
-                node_id = ""
-            logger.exception("inline state updater failed nodeId=%s key=%s", node_id, key)
-        self._refresh_option_pool_for_changed_field(key)
+        _on_graph_property_changed_impl(self, node, name, value)
 
     def _refresh_option_pool_for_changed_field(self, changed_field: str) -> None:
-        """
-        If `changed_field` is used as an option-pool, refresh all dependent option controls.
-        """
-        pool = str(changed_field or "").strip()
-        if not pool:
-            return
-        if pool not in set(self._state_inline_option_pools.values()):
-            return
-        node = self._backend_node()
-        if node is None:
-            return
-        try:
-            pool_value = node.get_property(pool)
-        except Exception:
-            pool_value = None
-        if isinstance(pool_value, (list, tuple)):
-            items = [str(x) for x in pool_value]
-        else:
-            items = []
-        for field, pool_name in list(self._state_inline_option_pools.items()):
-            if pool_name != pool:
-                continue
-            ctrl = self._state_inline_controls.get(field)
-            if not isinstance(ctrl, (F8OptionCombo, F8MultiSelect)):
-                continue
-            try:
-                cur = ctrl.value()
-                ctrl.set_options(items, labels=items)
-                ctrl.set_value(cur)
-            except Exception:
-                continue
+        _refresh_option_pool_for_changed_field_impl(self, changed_field)
 
     def _on_state_toggle(self, name: str, expanded: bool) -> None:
-        name = str(name)
-        # When collapsing, node height shrinks. With partial viewport updates this
-        # can leave stale pixels from the old bounding rect. Track the old rect
-        # and explicitly request a scene update covering both old+new bounds.
-        old_scene_rect = None
-        try:
-            old_scene_rect = self.mapToScene(self.boundingRect()).boundingRect()
-        except RuntimeError:
-            old_scene_rect = None
-
-        self._state_inline_expanded[name] = bool(expanded)
-        # Persist expand state in the node's UI overrides so it survives reloads.
-        node = self._backend_node()
-        if node is not None:
-            try:
-                ui = dict(node.ui_overrides() or {})
-                store = ui.get("stateInlineExpanded")
-                if not isinstance(store, dict):
-                    store = {}
-                store[name] = bool(expanded)
-                ui["stateInlineExpanded"] = store
-                node.set_ui_overrides(ui, rebuild=False)
-            except AttributeError:
-                logger.exception("node missing ui_overrides/set_ui_overrides; cannot persist expand state")
-        btn = self._state_inline_toggles.get(str(name))
-        if btn is not None:
-            try:
-                btn.setArrowType(QtCore.Qt.DownArrow if expanded else QtCore.Qt.RightArrow)
-            except RuntimeError:
-                pass
-        body = self._state_inline_bodies.get(str(name))
-        if body is not None:
-            try:
-                body.setVisible(bool(expanded))
-            except RuntimeError:
-                pass
-
-        def _redraw_and_invalidate() -> None:
-            self.draw_node()
-            new_scene_rect = self.mapToScene(self.boundingRect()).boundingRect()
-            r = new_scene_rect
-            if old_scene_rect is not None:
-                r = old_scene_rect.united(new_scene_rect)
-            r = r.adjusted(-6, -6, 6, 6)
-            sc = self.scene()
-            if sc is not None:
-                sc.update(r)
-            v = self.viewer()
-            if v is not None:
-                v.viewport().update()
-
-        try:
-            QtCore.QTimer.singleShot(0, _redraw_and_invalidate)
-        except RuntimeError:
-            _redraw_and_invalidate()
+        _on_state_toggle_impl(self, name, expanded)
 
     @staticmethod
     def _port_group(name: str) -> str:
@@ -1525,766 +646,17 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
 
     @staticmethod
     def _schema_enum_items(value_schema: Any) -> list[str]:
-        if value_schema is None:
-            return []
-        try:
-            root = value_schema.root
-            enum_items = list(root.enum or [])
-        except Exception:
-            enum_items = []
-        return [str(x) for x in enum_items]
+        return _shared_schema_enum_items(value_schema)
 
     @staticmethod
     def _schema_numeric_range(value_schema: Any) -> tuple[float | None, float | None]:
-        if value_schema is None:
-            return None, None
-        try:
-            root = value_schema.root
-        except Exception:
-            return None, None
-        mins: list[float] = []
-        maxs: list[float] = []
-        try:
-            if root.minimum is not None:
-                mins.append(float(root.minimum))
-        except Exception:
-            pass
-        try:
-            if root.exclusiveMinimum is not None:
-                mins.append(float(root.exclusiveMinimum))
-        except Exception:
-            pass
-        try:
-            if root.maximum is not None:
-                maxs.append(float(root.maximum))
-        except Exception:
-            pass
-        try:
-            if root.exclusiveMaximum is not None:
-                maxs.append(float(root.exclusiveMaximum))
-        except Exception:
-            pass
-        lo = min(mins) if mins else None
-        hi = max(maxs) if maxs else None
-        return lo, hi
+        return _shared_schema_numeric_range(value_schema)
 
     def _make_state_inline_control(self, state_field: _StateFieldInfo) -> QtWidgets.QWidget:
-        name = state_field.name
-        ui_raw = state_field.ui_control
-        ui = str(ui_raw or "").strip().lower()
-        schema = state_field.value_schema
-        access_s = state_field.access_str
-        t = (schema_type(schema) or "") if schema is not None else ""
-
-        enum_items = self._schema_enum_items(schema)
-        lo, hi = self._schema_numeric_range(schema)
-        select_pool_field = parse_select_pool(ui_raw)
-        multiselect_pool_field = parse_multiselect_pool(ui_raw)
-        field_tooltip = state_field.tooltip if state_field.tooltip != name else ""
-
-        def _common_style(w: QtWidgets.QWidget) -> None:
-            # Make controls readable on dark node themes.
-            w.setStyleSheet(
-                """
-                QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QPlainTextEdit, QTextEdit {
-                    color: rgb(235, 235, 235);
-                    background: rgba(0, 0, 0, 45);
-                    border: 1px solid rgba(255, 255, 255, 55);
-                    border-radius: 3px;
-                    padding: 1px 4px;
-                }
-                QPlainTextEdit, QTextEdit {
-                    selection-background-color: rgb(80, 130, 180);
-                }
-                QComboBox::drop-down { border: 0px; }
-                QComboBox QAbstractItemView {
-                    color: rgb(235, 235, 235);
-                    background: rgb(35, 35, 35);
-                    selection-background-color: rgb(80, 130, 180);
-                }
-                QCheckBox { color: rgb(235, 235, 235); }
-                QCheckBox::indicator {
-                    width: 13px;
-                    height: 13px;
-                    border: 1px solid rgba(255, 255, 255, 90);
-                    background: rgba(0, 0, 0, 35);
-                    border-radius: 2px;
-                }
-                QCheckBox::indicator:checked { background: rgba(120, 200, 255, 90); }
-                """
-            )
-
-        def _set_node_value(value: Any, *, push_undo: bool) -> None:
-            node = self._backend_node()
-            if node is None or not name:
-                return
-            try:
-                node.set_property(name, value, push_undo=push_undo)
-            except TypeError:
-                node.set_property(name, value)
-
-        def _get_node_value() -> Any:
-            node = self._backend_node()
-            if node is None or not name:
-                return None
-            try:
-                return node.get_property(name)
-            except KeyError:
-                return None
-
-        def _pool_items(pool_field: str | None) -> list[str]:
-            if not pool_field:
-                return []
-            node = self._backend_node()
-            if node is None:
-                return []
-            try:
-                v = node.get_property(pool_field)
-            except Exception:
-                return []
-            if isinstance(v, (list, tuple)):
-                return [str(x) for x in v]
-            # Allow pools stored as JSON strings (eg. "[]", ["a","b"]).
-            if isinstance(v, str):
-                try:
-                    import json as _json
-
-                    parsed = _json.loads(v)
-                except Exception:
-                    return []
-                if isinstance(parsed, (list, tuple)):
-                    out: list[str] = []
-                    for x in parsed:
-                        if isinstance(x, str):
-                            s = x.strip()
-                            if s:
-                                out.append(s)
-                            continue
-                        if isinstance(x, dict):
-                            # Accept [{id,name,...}] and use id.
-                            s = str(x.get("id") or "").strip()
-                            if s:
-                                out.append(s)
-                            continue
-                        s = str(x).strip()
-                        if s:
-                            out.append(s)
-                    return out
-            return []
-
-        # Create control.
-        read_only = access_s == "ro" or self._inline_state_input_is_connected(name)
-
-        if ui in {"wrapline"}:
-
-            class _InlineWrapLineEdit(QtWidgets.QPlainTextEdit):
-                def __init__(self, parent: QtWidgets.QWidget | None = None):
-                    super().__init__(parent)
-                    self._prev = ""
-
-                @staticmethod
-                def _normalize(s: str) -> str:
-                    if "\n" not in s and "\r" not in s:
-                        return s.strip()
-                    parts = [p.strip() for p in s.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
-                    return " ".join([p for p in parts if p]).strip()
-
-                def focusInEvent(self, event):  # type: ignore[override]
-                    super().focusInEvent(event)
-                    self._prev = str(self.toPlainText() or "")
-
-                def focusOutEvent(self, event):  # type: ignore[override]
-                    super().focusOutEvent(event)
-                    txt_raw = str(self.toPlainText() or "")
-                    txt = self._normalize(txt_raw)
-                    if txt != txt_raw:
-                        with QtCore.QSignalBlocker(self):
-                            self.setPlainText(txt)
-                    if txt != self._prev:
-                        self._prev = txt
-                        _set_node_value(txt, push_undo=True)
-
-                def keyPressEvent(self, event):  # type: ignore[override]
-                    if event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter):
-                        # Commit on enter; do not insert newlines.
-                        txt_raw = str(self.toPlainText() or "")
-                        txt = self._normalize(txt_raw)
-                        if txt != txt_raw:
-                            with QtCore.QSignalBlocker(self):
-                                self.setPlainText(txt)
-                        if txt != self._prev:
-                            self._prev = txt
-                            _set_node_value(txt, push_undo=True)
-                        self.clearFocus()
-                        event.accept()
-                        return
-                    super().keyPressEvent(event)
-
-                def insertFromMimeData(self, source: QtCore.QMimeData) -> None:  # type: ignore[override]
-                    if source is None or not source.hasText():
-                        return super().insertFromMimeData(source)
-                    txt = self._normalize(str(source.text() or ""))
-                    if txt:
-                        self.textCursor().insertText(txt)
-                    return
-
-            edit = _InlineWrapLineEdit()
-            edit.setLineWrapMode(QtWidgets.QPlainTextEdit.LineWrapMode.WidgetWidth)
-            edit.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-            edit.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-            edit.setTabStopDistance(4 * edit.fontMetrics().horizontalAdvance(" "))
-            try:
-                font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
-                edit.setFont(font)
-            except Exception:
-                pass
-            edit.setMinimumWidth(160)
-            edit.setMinimumHeight(38)
-            edit.setMaximumHeight(64)
-            _common_style(edit)
-            edit.document().setDocumentMargin(4.0)
-            if field_tooltip:
-                edit.setToolTip(field_tooltip)
-
-            def _apply_value(v: Any) -> None:
-                s = "" if v is None else str(v)
-                s2 = _InlineWrapLineEdit._normalize(s)
-                with QtCore.QSignalBlocker(edit):
-                    edit.setPlainText(s2)
-                try:
-                    edit._prev = s2  # type: ignore[attr-defined]
-                except Exception:
-                    pass
-
-            _apply_value(_get_node_value())
-            self._state_inline_updaters[name] = _apply_value
-            if read_only:
-                edit.setReadOnly(True)
-            return edit
-
-        if ui in {"code_inline", "multiline"}:
-
-            class _InlineExprEdit(QtWidgets.QPlainTextEdit):
-                def __init__(self, parent: QtWidgets.QWidget | None = None):
-                    super().__init__(parent)
-                    self._prev = ""
-
-                def focusInEvent(self, event):  # type: ignore[override]
-                    super().focusInEvent(event)
-                    self._prev = str(self.toPlainText() or "")
-
-                def focusOutEvent(self, event):  # type: ignore[override]
-                    super().focusOutEvent(event)
-                    txt = str(self.toPlainText() or "")
-                    if txt != self._prev:
-                        self._prev = txt
-                        _set_node_value(txt, push_undo=True)
-
-                def keyPressEvent(self, event):  # type: ignore[override]
-                    if event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter) and bool(
-                        event.modifiers() & QtCore.Qt.KeyboardModifier.ControlModifier
-                    ):
-                        txt = str(self.toPlainText() or "")
-                        if txt != self._prev:
-                            self._prev = txt
-                            _set_node_value(txt, push_undo=True)
-                        event.accept()
-                        return
-                    super().keyPressEvent(event)
-
-            edit = _InlineExprEdit()
-            edit.setLineWrapMode(QtWidgets.QPlainTextEdit.LineWrapMode.WidgetWidth)
-            edit.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-            edit.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-            edit.setTabStopDistance(4 * edit.fontMetrics().horizontalAdvance(" "))
-            try:
-                font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
-                edit.setFont(font)
-            except Exception:
-                pass
-            edit.setMinimumWidth(160)
-            edit.setMinimumHeight(44)
-            edit.setMaximumHeight(88)
-            _common_style(edit)
-            edit.document().setDocumentMargin(4.0)
-            if field_tooltip:
-                edit.setToolTip(field_tooltip)
-
-            def _apply_value(v: Any) -> None:
-                s = "" if v is None else str(v)
-                with QtCore.QSignalBlocker(edit):
-                    edit.setPlainText(s)
-                try:
-                    edit._prev = s  # type: ignore[attr-defined]
-                except Exception:
-                    pass
-
-            _apply_value(_get_node_value())
-            self._state_inline_updaters[name] = _apply_value
-            if read_only:
-                edit.setReadOnly(True)
-            return edit
-
-        if ui in {"code"}:
-            btn = QtWidgets.QToolButton()
-            btn.setAutoRaise(True)
-            btn.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
-            btn.setText("Edit...")
-            try:
-                btn.setIcon(qta.icon("fa5s.code", color="white"))
-            except Exception:
-                pass
-            btn.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-            if field_tooltip:
-                btn.setToolTip(field_tooltip)
-
-            def _apply_value(v: Any) -> None:
-                s = "" if v is None else str(v)
-                n = len(s.splitlines()) if s else 0
-                tip = field_tooltip or ""
-                if n:
-                    tip2 = f"{n} line" if n == 1 else f"{n} lines"
-                    btn.setToolTip((tip + "\n" if tip else "") + tip2)
-
-            def _on_click() -> None:
-                current = _get_node_value()
-
-                def _on_saved(updated: str) -> None:
-                    _set_node_value(updated, push_undo=True)
-
-                try:
-                    dlg = open_code_editor_window(
-                        None,
-                        title=f"{self.name} - {state_field.label}",
-                        code="" if current is None else str(current),
-                        language=state_field.ui_language or "plaintext",
-                        on_saved=_on_saved,
-                    )
-                    self._open_code_editors.append(dlg)
-
-                    def _cleanup() -> None:
-                        alive: list[QtWidgets.QDialog] = []
-                        for w in self._open_code_editors:
-                            if w is None:
-                                continue
-                            try:
-                                _ = w.isVisible()
-                                alive.append(w)
-                            except RuntimeError:
-                                continue
-                        self._open_code_editors = alive
-
-                    dlg.destroyed.connect(_cleanup)  # type: ignore[attr-defined]
-                except Exception:
-                    updated = open_code_editor_dialog(
-                        None,
-                        title=f"{self.name} - {state_field.label}",
-                        code="" if current is None else str(current),
-                        language=state_field.ui_language or "plaintext",
-                    )
-                    if updated is None:
-                        return
-                    _set_node_value(updated, push_undo=True)
-
-            btn.clicked.connect(_on_click)  # type: ignore[attr-defined]
-            _apply_value(_get_node_value())
-            self._state_inline_updaters[name] = _apply_value
-            if read_only:
-                btn.setDisabled(True)
-            return btn
-
-        is_image_b64 = t == "string" and (ui in {"image", "image_b64", "img"} or "b64" in name.lower())
-        if is_image_b64:
-            img = F8ImageB64Editor()
-
-            def _apply_value(v: Any) -> None:
-                img.set_value("" if v is None else str(v))
-
-            img.valueChanged.connect(lambda v: _set_node_value(str(v or ""), push_undo=True))  # type: ignore[attr-defined]
-            _apply_value(_get_node_value())
-            self._state_inline_updaters[name] = _apply_value
-            if read_only:
-                img.set_disabled(True)
-            return img
-
-        if multiselect_pool_field or ui in {"multiselect", "multi_select", "multi-select"}:
-            multi = F8MultiSelect()
-            if field_tooltip:
-                multi.set_context_tooltip(field_tooltip)
-
-            items = _pool_items(multiselect_pool_field) if multiselect_pool_field else list(enum_items)
-            multi.set_options(items, labels=items)
-
-            def _apply_value(v: Any) -> None:
-                multi.set_value(v)
-
-            multi.valueChanged.connect(lambda v: _set_node_value(list(v or []), push_undo=True))  # type: ignore[attr-defined]
-            _apply_value(_get_node_value())
-            self._state_inline_updaters[name] = _apply_value
-            if multiselect_pool_field:
-                self._state_inline_option_pools[name] = multiselect_pool_field
-            if read_only:
-                multi.set_read_only(True)
-            return multi
-
-        if enum_items or select_pool_field or ui in {"select", "dropdown", "dropbox", "combo", "combobox"}:
-            combo = F8OptionCombo()
-            _common_style(combo)
-
-            items = _pool_items(select_pool_field) if select_pool_field else list(enum_items)
-            combo.set_options(items, labels=items)
-            if field_tooltip:
-                combo.set_context_tooltip(field_tooltip)
-
-            def _apply_value(v: Any) -> None:
-                combo.set_value("" if v is None else str(v))
-
-            combo.valueChanged.connect(  # type: ignore[attr-defined]
-                lambda v: _set_node_value("" if v is None else str(v), push_undo=True)
-            )
-            _apply_value(_get_node_value())
-            self._state_inline_updaters[name] = _apply_value
-            if select_pool_field:
-                self._state_inline_option_pools[name] = select_pool_field
-            if read_only:
-                combo.set_read_only(True)
-            return combo
-
-        if t == "boolean" or ui in {"switch", "toggle"}:
-            sw = F8Switch()
-            sw.set_labels("True", "False")
-            if field_tooltip:
-                sw.setToolTip(field_tooltip)
-
-            def _apply_value(v: Any) -> None:
-                with QtCore.QSignalBlocker(sw):
-                    sw.set_value(bool(v) if v is not None else False)
-
-            sw.valueChanged.connect(lambda v: _set_node_value(bool(v), push_undo=True))  # type: ignore[attr-defined]
-            _apply_value(_get_node_value())
-            self._state_inline_updaters[name] = _apply_value
-            if read_only:
-                sw.setDisabled(True)
-            return sw
-
-        if t in {"integer", "number"} and ui == "slider":
-            is_int = t == "integer"
-            bar = F8ValueBar(integer=is_int, minimum=0.0, maximum=1.0)
-            bar.set_range(lo, hi)
-
-            def _apply_value(v: Any) -> None:
-                bar.set_value(v)
-
-            bar.valueChanging.connect(lambda v: _set_node_value(v, push_undo=False))  # type: ignore[attr-defined]
-            bar.valueCommitted.connect(lambda v: _set_node_value(v, push_undo=True))  # type: ignore[attr-defined]
-            _apply_value(_get_node_value())
-            self._state_inline_updaters[name] = _apply_value
-            if read_only:
-                bar.setDisabled(True)
-            return bar
-
-        if t == "integer" or ui in {"spinbox", "int"}:
-            line = QtWidgets.QLineEdit()
-            _common_style(line)
-            line.setMinimumWidth(90)
-            vmin = int(lo) if lo is not None else -(2**31)
-            vmax = int(hi) if hi is not None else (2**31 - 1)
-            line.setValidator(QtGui.QIntValidator(vmin, vmax, line))
-
-            def _apply_value(v: Any) -> None:
-                s = "" if v is None else str(int(v))
-                with QtCore.QSignalBlocker(line):
-                    line.setText(s)
-
-            def _commit() -> None:
-                txt = str(line.text() or "").strip()
-                if not txt:
-                    _set_node_value(None, push_undo=True)
-                    return
-                try:
-                    _set_node_value(int(txt), push_undo=True)
-                except ValueError:
-                    return
-
-            _apply_value(_get_node_value())
-            self._state_inline_updaters[name] = _apply_value
-            if read_only:
-                line.setReadOnly(True)
-            else:
-                line.editingFinished.connect(_commit)  # type: ignore[attr-defined]
-            return line
-
-        if t == "number" or ui in {"doublespinbox", "float"}:
-            line = QtWidgets.QLineEdit()
-            _common_style(line)
-            line.setMinimumWidth(90)
-            vmin = float(lo) if lo is not None else -1.0e18
-            vmax = float(hi) if hi is not None else 1.0e18
-            dv = QtGui.QDoubleValidator(vmin, vmax, 6, line)
-            try:
-                dv.setNotation(QtGui.QDoubleValidator.Notation.StandardNotation)
-            except Exception:
-                pass
-            line.setValidator(dv)
-
-            def _apply_value(v: Any) -> None:
-                s = "" if v is None else str(float(v))
-                with QtCore.QSignalBlocker(line):
-                    line.setText(s)
-
-            def _commit() -> None:
-                txt = str(line.text() or "").strip()
-                if not txt:
-                    _set_node_value(None, push_undo=True)
-                    return
-                try:
-                    _set_node_value(float(txt), push_undo=True)
-                except ValueError:
-                    return
-
-            _apply_value(_get_node_value())
-            self._state_inline_updaters[name] = _apply_value
-            if read_only:
-                line.setReadOnly(True)
-            else:
-                line.editingFinished.connect(_commit)  # type: ignore[attr-defined]
-            return line
-
-        # default: text input.
-        line = QtWidgets.QLineEdit()
-        line.setMinimumWidth(90)
-        _common_style(line)
-
-        def _apply_value(v: Any) -> None:
-            s = "" if v is None else str(v)
-            with QtCore.QSignalBlocker(line):
-                line.setText(s)
-
-        _apply_value(_get_node_value())
-        self._state_inline_updaters[name] = _apply_value
-        if read_only:
-            line.setReadOnly(True)
-        else:
-            line.editingFinished.connect(lambda: _set_node_value(line.text(), push_undo=True))
-        return line
+        return _make_state_inline_control_impl(self, state_field)
 
     def _ensure_inline_state_widgets(self) -> None:
-        self._ensure_graph_property_hook()
-        node = self._backend_node()
-        if node is None:
-            return
-        try:
-            fields = list(node.effective_state_fields() or [])
-        except Exception:
-            try:
-                spec = node.spec
-            except Exception:
-                spec = None
-            if spec is None:
-                fields = []
-            else:
-                try:
-                    fields = list(spec.stateFields or [])
-                except Exception:
-                    fields = []
-
-        show: list[_StateFieldInfo] = []
-        for f in fields:
-            info = _state_field_info(f)
-            if info is None or not info.show_on_node:
-                continue
-            show.append(info)
-
-        desired = [info.name for info in show]
-
-        # delete stale widgets.
-        for n in list(self._state_inline_proxies.keys()):
-            if n in desired:
-                continue
-            proxy = self._state_inline_proxies.pop(n, None)
-            self._state_inline_controls.pop(n, None)
-            self._state_inline_updaters.pop(n, None)
-            self._state_inline_toggles.pop(n, None)
-            self._state_inline_headers.pop(n, None)
-            self._state_inline_bodies.pop(n, None)
-            self._state_inline_expanded.pop(n, None)
-            self._state_inline_option_pools.pop(n, None)
-            self._state_inline_ctrl_serial.pop(n, None)
-            if proxy is None:
-                continue
-            old = None
-            try:
-                old = proxy.widget()
-            except Exception:
-                old = None
-            try:
-                proxy.setWidget(None)
-            except RuntimeError:
-                pass
-            if old is not None:
-                try:
-                    old.setParent(None)
-                except Exception:
-                    pass
-                try:
-                    old.deleteLater()
-                except Exception:
-                    pass
-            try:
-                proxy.setParentItem(None)
-                if self.scene() is not None:
-                    self.scene().removeItem(proxy)
-            except RuntimeError:
-                pass
-
-        def _ctrl_serial(info: _StateFieldInfo) -> str:
-            """
-            Signature for deciding when the control widget must be rebuilt.
-            (Exclude label/description; those can be updated in-place.)
-            """
-            try:
-                vs = info.value_schema
-                enum_items = self._schema_enum_items(vs)
-                return json.dumps(
-                    {
-                        "access": info.access_str,
-                        "required": info.required,
-                        "uiControl": info.ui_control,
-                        "uiLanguage": info.ui_language,
-                        "schemaType": str(schema_type(vs) or ""),
-                        "enum": [str(x) for x in enum_items],
-                    },
-                    ensure_ascii=False,
-                    sort_keys=True,
-                    default=str,
-                )
-            except Exception:
-                return ""
-
-        for info in show:
-            # Always keep label/tooltip up to date without rebuilding.
-            n = info.name
-            label = info.label or n
-            tip = info.tooltip or n
-            btn_existing = self._state_inline_toggles.get(n)
-            if btn_existing is not None:
-                try:
-                    btn_existing.setFullText(label)
-                except Exception:
-                    pass
-                try:
-                    btn_existing.setToolTip(tip)
-                except Exception:
-                    pass
-
-            ctrl_sig = _ctrl_serial(info)
-            if n in self._state_inline_proxies and ctrl_sig and ctrl_sig == self._state_inline_ctrl_serial.get(n, ""):
-                continue
-
-            # Default collapsed; restore persisted expand state from ui overrides.
-            expanded = False
-            ui = node.ui_overrides() or {}
-            store = ui.get("stateInlineExpanded") if isinstance(ui, dict) else None
-            if isinstance(store, dict) and n in store:
-                expanded = bool(store.get(n))
-            expanded = bool(self._state_inline_expanded.get(n, expanded))
-            control = self._make_state_inline_control(info)
-
-            # Header: toggle button (state name).
-            header = QtWidgets.QWidget()
-            header_lay = QtWidgets.QHBoxLayout(header)
-            header_lay.setContentsMargins(0, 0, 0, 0)
-            header_lay.setSpacing(6)
-            header.setAttribute(QtCore.Qt.WA_StyledBackground, True)
-            header.setStyleSheet("background: transparent;")
-
-            btn = _F8ElideToolButton()
-            btn.setCheckable(True)
-            btn.setChecked(expanded)
-            btn.setAutoRaise(True)
-            btn.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
-            btn.setArrowType(QtCore.Qt.DownArrow if expanded else QtCore.Qt.RightArrow)
-
-            btn.setFullText(label)
-            btn.setToolTip(tip)
-            btn.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
-            btn.setStyleSheet(
-                """
-                QToolButton {
-                    color: rgb(235, 235, 235);
-                    background: transparent;
-                    border: 1px solid rgba(255, 255, 255, 18);
-                    border-radius: 4px;
-                    padding: 2px 8px;
-                    text-align: left;
-                }
-                QToolButton:hover { background: transparent; }
-                QToolButton:checked { background: transparent; }
-                """
-            )
-
-            header_lay.addWidget(btn, 1)
-
-            # Body: control widget (collapsed by default).
-            body = QtWidgets.QWidget()
-            body_lay = QtWidgets.QVBoxLayout(body)
-            body_lay.setContentsMargins(8, 0, 8, 6)
-            body_lay.setSpacing(0)
-            body_lay.addWidget(control)
-            body.setVisible(expanded)
-            body.setStyleSheet(
-                """
-                QWidget {
-                    background: transparent;
-                    border: 0px;
-                }
-                """
-            )
-
-            panel = QtWidgets.QWidget()
-            panel_lay = QtWidgets.QVBoxLayout(panel)
-            panel_lay.setContentsMargins(0, 0, 0, 0)
-            panel_lay.setSpacing(0)
-            panel_lay.addWidget(header)
-            panel_lay.addWidget(body)
-            panel.setProperty("_f8_state_panel", True)
-            panel.setAttribute(QtCore.Qt.WA_StyledBackground, True)
-            panel.setStyleSheet("background: transparent;")
-
-            # Connect toggle.
-            btn.toggled.connect(lambda v, _n=n: self._on_state_toggle(_n, bool(v)))  # type: ignore[attr-defined]
-            btn.pressed.connect(self._select_node_from_embedded_widget)  # type: ignore[attr-defined]
-
-            # Install/replace proxy.
-            proxy = self._state_inline_proxies.get(n)
-            if proxy is None:
-                proxy = QtWidgets.QGraphicsProxyWidget(self)
-                proxy.setCacheMode(QtWidgets.QGraphicsItem.DeviceCoordinateCache)
-                self._state_inline_proxies[n] = proxy
-
-            old = None
-            try:
-                old = proxy.widget()
-            except Exception:
-                old = None
-            proxy.setWidget(panel)
-            if old is not None and old is not panel:
-                try:
-                    old.setParent(None)
-                except Exception:
-                    pass
-                try:
-                    old.deleteLater()
-                except Exception:
-                    pass
-
-            self._state_inline_controls[n] = control
-            self._state_inline_toggles[n] = btn
-            self._state_inline_headers[n] = header
-            self._state_inline_bodies[n] = body
-            self._state_inline_expanded[n] = expanded
-            if ctrl_sig:
-                self._state_inline_ctrl_serial[n] = ctrl_sig
+        _ensure_inline_state_widgets_impl(self)
 
     def post_init(self, viewer=None, pos=None):
         """
@@ -2644,7 +1016,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                     pname = _port_name(p)
                     if self._port_group(pname) == kind:
                         out.append(pname)
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError):
                     continue
             return out
 
@@ -2712,7 +1084,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                                     rect_w = max(10, int(self.boundingRect().width() - 8.0))
                                     w.setFixedWidth(rect_w)
                                     w.adjustSize()
-                            except Exception:
+                            except (AttributeError, RuntimeError, TypeError, ValueError):
                                 pass
                             try:
                                 panel_h = float(max(header_h, proxy.boundingRect().height()))
@@ -2736,11 +1108,11 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         # Ensure state inline widgets exist so we can account for width.
         try:
             self._ensure_inline_state_widgets()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         try:
             self._ensure_inline_command_widget()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         for widget in self._widgets.values():
             if not widget.isVisible():
@@ -2782,7 +1154,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                     cmd_h = float(self._cmd_proxy.boundingRect().height())
                     if cmd_h > 0:
                         height = max(height, port_area_height + cmd_h + 10.0)
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError, ValueError):
                 pass
         height *= 1.05
         return width, height
@@ -2912,7 +1284,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                     if self._cmd_widget is not None:
                         self._cmd_widget.setFixedWidth(max(10, int(rect.width() - 8.0)))
                         self._cmd_widget.adjustSize()
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError, ValueError):
                     pass
                 w_rect = self._cmd_proxy.boundingRect()
                 x = rect.left() + 4.0
@@ -2992,7 +1364,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         # Ensure inline widgets exist before aligning so sizing + rows match.
         try:
             self._ensure_inline_state_widgets()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
         node = self._backend_node()
@@ -3098,7 +1470,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                 port_width = float(p.boundingRect().width())
                 port_height = float(p.boundingRect().height())
                 break
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError, ValueError):
                 continue
 
         in_x = (port_width / 2.0) * -1.0
@@ -3154,7 +1526,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                         if w is not None:
                             w.setFixedWidth(int(inner_w))
                             w.adjustSize()
-                    except Exception:
+                    except (AttributeError, RuntimeError, TypeError, ValueError):
                         pass
                     try:
                         if self._state_inline_headers.get(state_key) is not None:
@@ -3193,7 +1565,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
                                 else:
                                     panel_x = max(min_x, min(panel_x, max_x))
                                 panel_proxy.setPos(panel_x, y)
-                    except Exception:
+                    except (AttributeError, RuntimeError, TypeError, ValueError):
                         pass
 
                 port_y = y + (header_h - port_height) / 2.0
@@ -3274,11 +1646,11 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
     def _draw_node_horizontal(self):
         try:
             self._ensure_inline_state_widgets()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         try:
             self._ensure_inline_command_widget()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         height = self._text_item.boundingRect().height() + 4.0
 
@@ -3391,7 +1763,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             try:
                 if isinstance(viewer, F8StudioNodeViewer) and viewer.f8_graph is not None:
                     return viewer.f8_graph
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
             return self._graph()
 
@@ -3456,12 +1828,12 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             rect = self.boundingRect()
             w = float(proxy.size().width() or 0.0)
             h = float(proxy.size().height() or 0.0)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError, ValueError):
             return
 
         try:
             proxy.setPos(rect.right() - w, rect.top() - h)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
     def auto_switch_mode(self):
@@ -3507,12 +1879,12 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         for p in self._state_inline_proxies.values():
             try:
                 p.setVisible(visible)
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
         if self._cmd_proxy is not None:
             try:
                 self._cmd_proxy.setVisible(visible)
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
 
         # port text is not visible in vertical layout.
@@ -3681,7 +2053,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         text.setCacheMode(ITEM_CACHE_MODE)
         try:
             text.setToolTip(full_name)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         if port.port_type == PortTypeEnum.IN.value:
             self._input_items[port] = text

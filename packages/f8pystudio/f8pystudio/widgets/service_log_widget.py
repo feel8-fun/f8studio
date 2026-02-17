@@ -59,7 +59,7 @@ class ServiceLogView(QtWidgets.QPlainTextEdit):
         self.setLineWrapMode(QtWidgets.QPlainTextEdit.WidgetWidth)
         try:
             self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         self.setMaximumBlockCount(5000)
 
@@ -104,7 +104,7 @@ class ServiceLogDock(QtWidgets.QDockWidget):
         try:
             if tab_bar is not None:
                 tab_bar.customContextMenuRequested.connect(self._on_tab_context_menu)  # type: ignore[attr-defined]
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
         self._views: dict[str, ServiceLogView] = {}
@@ -126,12 +126,12 @@ class ServiceLogDock(QtWidgets.QDockWidget):
             return
         try:
             idx = self._tabs.indexOf(view)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             idx = -1
         if idx >= 0:
             try:
                 self._tabs.setTabText(idx, self._tab_label(sid))
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
 
     def _tab_label(self, service_id: str) -> str:
@@ -150,7 +150,7 @@ class ServiceLogDock(QtWidgets.QDockWidget):
         view.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         try:
             view.customContextMenuRequested.connect(lambda pos, service_id=sid: self._on_view_context_menu(service_id, pos))  # type: ignore[attr-defined]
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         self._views[sid] = view
         self._tabs.addTab(view, self._tab_label(sid))
@@ -184,16 +184,16 @@ class ServiceLogDock(QtWidgets.QDockWidget):
             return
         try:
             idx = self._tabs.indexOf(view)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             idx = -1
         if idx >= 0:
             try:
                 self._tabs.removeTab(idx)
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
         try:
             view.deleteLater()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
     def _service_id_for_view(self, view: ServiceLogView) -> str | None:
@@ -214,7 +214,7 @@ class ServiceLogDock(QtWidgets.QDockWidget):
         if chosen is act_clear:
             try:
                 view.clear()
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
             return
         if chosen is act_save:

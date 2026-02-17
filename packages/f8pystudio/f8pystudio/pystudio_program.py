@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from typing import Any
 
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
+from .extensions import ExtensionRegistry, StudioPluginManifest
 from .pystudio_node_registry import SERVICE_CLASS, register_pystudio_specs
 
 logger = logging.getLogger(__name__)
@@ -30,6 +32,63 @@ class PyStudioProgram:
                 sc.register_operator(op)
         except Exception:
             logger.exception("Failed to ensure pystudio specs in catalog")
+
+    @staticmethod
+    def _load_extensions_from_env() -> ExtensionRegistry:
+        registry = ExtensionRegistry()
+        raw = os.environ.get("F8PYSTUDIO_PLUGINS", "")
+        module_names = [name.strip() for name in raw.split(",") if name.strip()]
+        for module_name in module_names:
+            try:
+                manifest = registry.register_module(module_name)
+            except (ModuleNotFoundError, ImportError, TypeError, ValueError):
+                logger.exception("Failed to load extension module '%s'", module_name)
+                continue
+            logger.info(
+                "Loaded extension plugin: id=%s name=%s version=%s",
+                manifest.plugin_id,
+                manifest.plugin_name,
+                manifest.plugin_version,
+            )
+        return registry
+
+    @staticmethod
+    def _apply_extensions(registry: ExtensionRegistry) -> None:
+        if not registry.manifests():
+            return
+
+        from .render_nodes import RenderNodeRegistry
+
+        render_registry = RenderNodeRegistry.instance()
+        for manifest in registry.manifests():
+            PyStudioProgram._apply_manifest(manifest, render_registry)
+
+    @staticmethod
+    def _apply_manifest(manifest: StudioPluginManifest, render_registry: Any) -> None:
+        for renderer in manifest.renderers:
+            key = str(renderer.renderer_class).strip()
+            if not key:
+                logger.warning("Skip empty renderer key in plugin '%s'", manifest.plugin_id)
+                continue
+            try:
+                render_registry.register(key, renderer.node_class)
+            except ValueError:
+                logger.warning("Renderer already registered (skip): %s", key)
+            except TypeError:
+                logger.exception("Invalid renderer class for key '%s' in plugin '%s'", key, manifest.plugin_id)
+
+        if manifest.state_controls:
+            logger.info(
+                "Plugin '%s' provides %s state control registration(s).",
+                manifest.plugin_id,
+                len(manifest.state_controls),
+            )
+        if manifest.command_handlers:
+            logger.info(
+                "Plugin '%s' provides %s command handler registration(s).",
+                manifest.plugin_id,
+                len(manifest.command_handlers),
+            )
 
     @staticmethod
     def build_node_classes() -> list[type]:
@@ -168,6 +227,8 @@ class PyStudioProgram:
 
         load_discovery_into_registries()
         self._ensure_pystudio_specs_in_catalog()
+        extensions = self._load_extensions_from_env()
+        self._apply_extensions(extensions)
 
         node_classes = self.build_node_classes()
 

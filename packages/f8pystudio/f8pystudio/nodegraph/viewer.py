@@ -68,7 +68,7 @@ class F8StudioNodeViewer(NodeViewer):
         self._f8_mmb_prev_pos = None
         try:
             self.unsetCursor()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
     def _pan_by_pixels(self, dx_px: int, dy_px: int) -> None:
@@ -162,7 +162,7 @@ class F8StudioNodeViewer(NodeViewer):
                 self.tab_search_toggle()
             try:
                 self.setCursor(QtCore.Qt.ClosedHandCursor)
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
             event.accept()
             return

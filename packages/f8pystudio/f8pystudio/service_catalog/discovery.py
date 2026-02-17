@@ -81,7 +81,7 @@ def _default_roots() -> list[Path]:
             candidate = parent / "services"
             if candidate.is_dir():
                 return [candidate.resolve()]
-    except Exception:
+    except (OSError, RuntimeError, TypeError, ValueError):
         pass
     return []
 
@@ -190,7 +190,7 @@ def _absolutize_entry_paths(entry: F8ServiceEntry, *, service_dir: Path) -> F8Se
         )
         if looks_like_path and not cmd_path.is_absolute():
             launch["command"] = str((wd_path / cmd_path).resolve())
-    except Exception:
+    except (OSError, RuntimeError, TypeError, ValueError):
         pass
 
     payload["launch"] = launch
@@ -368,7 +368,7 @@ def _describe_entry(service_dir: Path, entry: F8ServiceEntry) -> dict[str, Any] 
     env = os.environ.copy()
     try:
         env.update({str(k): str(v) for k, v in (launch.env or {}).items()})
-    except Exception:
+    except (AttributeError, RuntimeError, TypeError, ValueError):
         pass
 
     cwd = service_dir
@@ -449,7 +449,7 @@ def _describe_entry(service_dir: Path, entry: F8ServiceEntry) -> dict[str, Any] 
                 return None
             try:
                 return json.loads(s)
-            except Exception:
+            except json.JSONDecodeError:
                 pass
 
             decoder = json.JSONDecoder()
@@ -504,7 +504,7 @@ def _describe_entry(service_dir: Path, entry: F8ServiceEntry) -> dict[str, Any] 
         if isinstance(svc, dict) and not svc.get("launch"):
             svc["launch"] = entry.launch.model_dump(mode="json")
             data["service"] = svc
-    except Exception:
+    except (AttributeError, RuntimeError, TypeError, ValueError):
         pass
 
     # Optional stability check: if entry.serviceClass is provided, it must match describe output.
@@ -518,7 +518,7 @@ def _describe_entry(service_dir: Path, entry: F8ServiceEntry) -> dict[str, Any] 
             _discovery_add_error(msg)
             logger.error(msg)
             return None
-    except Exception:
+    except (AttributeError, RuntimeError, TypeError, ValueError):
         pass
 
     return data
@@ -692,7 +692,7 @@ def load_discovery_into_registries(*, roots: list[Path] | None = None, overwrite
                     svc_payload = dict(svc_payload)
                     svc_payload["launch"] = launch
                     payload["service"] = svc_payload
-        except Exception:
+        except (AttributeError, OSError, RuntimeError, TypeError, ValueError):
             pass
         try:
             svc = catalog.register_service(

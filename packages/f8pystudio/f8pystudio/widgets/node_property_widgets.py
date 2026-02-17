@@ -68,6 +68,7 @@ from .f8_ui_override_ops import (
     set_data_port_show_on_node_override as _set_data_port_show_on_node_override,
     set_state_field_ui_override as _set_state_field_ui_override,
 )
+from .state_controls.readonly_policy import set_widget_read_only as _set_widget_read_only
 from ..command_ui_protocol import CommandUiHandler, CommandUiSource
 
 
@@ -75,95 +76,11 @@ logger = logging.getLogger(__name__)
 
 
 def _apply_read_only_widget(widget: QtWidgets.QWidget) -> None:
-    """
-    Apply a read-only UX without disabling selection/copy.
-
-    For text-based editors, prefer `setReadOnly(True)` over `setDisabled(True)`
-    so users can still select and copy values.
-    """
-    if isinstance(widget, F8PropOptionCombo):
-        widget.set_read_only(True)
-        return
-    if isinstance(widget, F8PropMultiSelect):
-        widget.set_read_only(True)
-        return
-    if isinstance(widget, F8PropBoolSwitch):
-        widget.set_read_only(True)
-        return
-    if isinstance(widget, _F8CodeButtonPropWidget):
-        widget.set_read_only(True)
-        return
-    if isinstance(widget, QtWidgets.QLineEdit):
-        widget.setEnabled(True)
-        widget.setReadOnly(True)
-        return
-    if isinstance(widget, QtWidgets.QPlainTextEdit):
-        widget.setEnabled(True)
-        widget.setReadOnly(True)
-        return
-    if isinstance(widget, QtWidgets.QTextEdit):
-        widget.setEnabled(True)
-        widget.setReadOnly(True)
-        widget.setTextInteractionFlags(
-            QtCore.Qt.TextInteractionFlag.TextSelectableByMouse | QtCore.Qt.TextInteractionFlag.TextSelectableByKeyboard
-        )
-        return
-    if isinstance(widget, QtWidgets.QAbstractSpinBox):
-        widget.setEnabled(True)
-        widget.setReadOnly(True)
-        try:
-            widget.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
-        except Exception:
-            pass
-        return
-    widget.setDisabled(True)
+    _set_widget_read_only(widget, read_only=True)
 
 
 def _set_read_only_widget(widget: QtWidgets.QWidget, *, read_only: bool) -> None:
-    """
-    Best-effort toggle for read-only UX.
-
-    This mirrors `_apply_read_only_widget`, but also supports restoring editability
-    when `read_only=False` (eg. when a state-edge is disconnected).
-    """
-    if read_only:
-        _apply_read_only_widget(widget)
-        return
-
-    if isinstance(widget, F8PropOptionCombo):
-        widget.set_read_only(False)
-        return
-    if isinstance(widget, F8PropMultiSelect):
-        widget.set_read_only(False)
-        return
-    if isinstance(widget, F8PropBoolSwitch):
-        widget.set_read_only(False)
-        return
-    if isinstance(widget, _F8CodeButtonPropWidget):
-        widget.set_read_only(False)
-        return
-    if isinstance(widget, QtWidgets.QLineEdit):
-        widget.setEnabled(True)
-        widget.setReadOnly(False)
-        return
-    if isinstance(widget, QtWidgets.QPlainTextEdit):
-        widget.setEnabled(True)
-        widget.setReadOnly(False)
-        return
-    if isinstance(widget, QtWidgets.QTextEdit):
-        widget.setEnabled(True)
-        widget.setReadOnly(False)
-        widget.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextEditorInteraction)
-        return
-    if isinstance(widget, QtWidgets.QAbstractSpinBox):
-        widget.setEnabled(True)
-        widget.setReadOnly(False)
-        try:
-            widget.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.UpDownArrows)
-        except Exception:
-            pass
-        return
-    widget.setEnabled(True)
+    _set_widget_read_only(widget, read_only=bool(read_only))
 
 
 def _state_input_is_connected(node: Any, field_name: str) -> bool:
@@ -189,12 +106,9 @@ def _model_extra(obj: Any) -> dict[str, Any]:
 
 
 def _extra_bool(obj: Any, key: str, default: bool = False) -> bool:
-    try:
-        extra = _model_extra(obj)
-        if key in extra:
-            return bool(extra.get(key))
-    except Exception:
-        pass
+    extra = _model_extra(obj)
+    if key in extra:
+        return bool(extra.get(key))
     return bool(default)
 
 
@@ -219,7 +133,7 @@ def _to_jsonable(value: Any) -> Any:
     if not isinstance(value, (bytes, bytearray)):
         try:
             return _to_jsonable(value.value)
-        except Exception:
+        except AttributeError:
             pass
     # Pydantic models (BaseModel / RootModel).
     try:
@@ -248,7 +162,7 @@ def _schema_to_json_obj(schema: Any) -> Any:
         return schema
     try:
         return schema.model_dump(mode="json")
-    except Exception:
+    except (AttributeError, TypeError, ValueError):
         pass
     try:
         root = schema.root
@@ -448,10 +362,7 @@ class _F8StateStackContainer(QtWidgets.QWidget):
         h.setSpacing(6)
         title = QtWidgets.QLabel("State Fields")
         f = title.font()
-        try:
-            f.setBold(True)
-        except Exception:
-            pass
+        f.setBold(True)
         title.setFont(f)
         self._btn_add = QtWidgets.QToolButton()
         self._btn_add.setAutoRaise(True)
@@ -627,10 +538,7 @@ class _F8SpecListSection(QtWidgets.QWidget):
         self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Maximum)
 
     def set_add_visible(self, visible: bool) -> None:
-        try:
-            self._add_btn.setVisible(bool(visible))
-        except Exception:
-            pass
+        self._add_btn.setVisible(bool(visible))
 
     def clear(self) -> None:
         while self._list_layout.count():
@@ -1261,10 +1169,7 @@ class _F8EditCommandParamDialog(QtWidgets.QDialog):
 
         if self._ui_only:
             for w in (self._name, self._required, schema_btn):
-                try:
-                    w.setEnabled(False)
-                except Exception:
-                    pass
+                w.setEnabled(False)
 
     def _refresh_schema_summary(self) -> None:
         t = _schema_type(self._schema)
@@ -1339,10 +1244,7 @@ class _F8EditCommandDialog(QtWidgets.QDialog):
 
         if self._ui_only:
             for w in (self._name, self._desc, btn_add, btn_edit, btn_del):
-                try:
-                    w.setEnabled(False)
-                except Exception:
-                    pass
+                w.setEnabled(False)
 
     def _refresh_params_list(self) -> None:
         self._params_list.clear()
@@ -1479,21 +1381,22 @@ class _F8CommandRow(QtWidgets.QWidget):
         en = bool(enabled)
         try:
             self._btn_invoke.setEnabled(en)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
+            logger.exception("Failed to set invoke enabled state command=%s", self._name)
             return
         if en:
             if self._base_tooltip:
                 try:
                     self._btn_invoke.setToolTip(self._base_tooltip)
-                except Exception:
-                    pass
+                except (AttributeError, RuntimeError, TypeError):
+                    logger.exception("Failed to restore invoke tooltip command=%s", self._name)
             return
         msg = str(disabled_reason or "").strip() or "Service not running"
         tip = (self._base_tooltip + "\n" + msg) if self._base_tooltip else msg
         try:
             self._btn_invoke.setToolTip(tip)
-        except Exception:
-            pass
+        except (AttributeError, RuntimeError, TypeError):
+            logger.exception("Failed to set disabled tooltip command=%s", self._name)
 
     def _on_invoke_clicked(self, _checked: bool = False) -> None:
         self.invoke_clicked.emit(self._name)
@@ -1581,10 +1484,7 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
     def _apply_running_state(self, running: bool) -> None:
         enabled = bool(running)
         for row in list(self._cmd_rows.values()):
-            try:
-                row.set_invoke_enabled(enabled)
-            except Exception:
-                continue
+            row.set_invoke_enabled(enabled)
 
     def _load(self) -> None:
         self._ensure_bridge_process_hook()
@@ -1636,8 +1536,8 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
             row.show_on_node_changed.connect(lambda v, _n=str(name): self._toggle_command_show_on_node(_n, bool(v)))  # type: ignore[attr-defined]
             try:
                 row.set_invoke_enabled(bool(running))
-            except Exception:
-                pass
+            except (AttributeError, RuntimeError, TypeError):
+                logger.exception("Failed to apply running-state to command row command=%s", name)
             self._cmd_rows[str(name)] = row
             self._sec.add_row(row)
 
@@ -1768,7 +1668,7 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
         for c in list(spec.commands or []):
             try:
                 cname = str(c.name or "").strip()
-            except Exception:
+            except (AttributeError, TypeError):
                 continue
             if cname == str(name or "").strip():
                 cmd = c
@@ -1856,7 +1756,7 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
         for i, c in enumerate(cmds):
             try:
                 cname = str(c.name or "").strip()
-            except Exception:
+            except (AttributeError, TypeError):
                 continue
             if cname == str(name or "").strip():
                 idx = i
@@ -1873,10 +1773,10 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
                         if str(c.name or "").strip() == str(name or "").strip():
                             init_cmd = c
                             break
-                    except Exception:
+                    except (AttributeError, TypeError):
                         continue
-            except Exception:
-                pass
+            except (AttributeError, RuntimeError, TypeError):
+                logger.exception("Failed to read effective commands for non-editable command dialog")
         dlg = _F8EditCommandDialog(self, title="Edit command", cmd=init_cmd, ui_only=not editable)
         if dlg.exec_() != QtWidgets.QDialog.Accepted:
             return
@@ -2031,7 +1931,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         for w in list(self._option_pool_dependents.get(pool) or []):
             try:
                 w.refresh_options()
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 continue
 
     def open_state_field_editor(self, field_name: str) -> None:
@@ -2061,7 +1961,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                 if str(f.name or "").strip() == name:
                     current = f
                     break
-            except Exception:
+            except (AttributeError, TypeError):
                 continue
         if current is None:
             return
@@ -2139,7 +2039,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
             try:
                 if str(f.name or "").strip() == name and bool(f.required):
                     return
-            except Exception:
+            except (AttributeError, TypeError):
                 continue
         if QtWidgets.QMessageBox.question(self, "Delete state field", f"Delete '{name}'?") != QtWidgets.QMessageBox.Yes:
             return
@@ -2212,7 +2112,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         try:
             node.sync_from_spec()
         except Exception:
-            return
+            logger.exception("sync_from_spec failed while applying state-field edits")
 
     def _read_node(self, node):
         """
@@ -2334,12 +2234,12 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                         try:
                             widget.set_min(prop_range[0])
                             widget.set_max(prop_range[1])
-                        except Exception:
+                        except (AttributeError, RuntimeError, TypeError, ValueError):
                             try:
                                 widget.setMinimum(prop_range[0])
                                 widget.setMaximum(prop_range[1])
-                            except Exception:
-                                pass
+                            except (AttributeError, RuntimeError, TypeError, ValueError):
+                                logger.exception("Failed to apply numeric range for property '%s'", prop_name)
                     if "tooltip" in common_props[prop_name].keys():
                         tooltip = common_props[prop_name]["tooltip"]
 
@@ -2362,7 +2262,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                         widget = _F8CodeButtonPropWidget(title=f"{node.name()} — {prop_name}", language=ui_language or "plaintext")
                         widget.set_name(prop_name)
                 except Exception:
-                    pass
+                    logger.exception("Failed to build code editor widget for property '%s'", prop_name)
                 access = _state_field_access(node, prop_name)
                 if access == F8StateAccess.ro:
                     _apply_read_only_widget(widget)
@@ -2374,7 +2274,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                             if str(f.name or "").strip() == str(prop_name):
                                 desc = str(f.description or "").strip()
                                 break
-                        except Exception:
+                        except (AttributeError, TypeError):
                             continue
                     if desc:
                         try:
@@ -2475,7 +2375,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         try:
             node.sync_from_spec()
         except Exception:
-            pass
+            logger.exception("sync_from_spec failed before reload")
         self.reload()
 
     def _refresh(self) -> None:
@@ -2538,7 +2438,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                     continue
                 try:
                     scroll_pos[tab_name] = int(areas[0].verticalScrollBar().value())
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError, ValueError):
                     pass
         except Exception:
             scroll_pos = {}
@@ -2553,7 +2453,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                     if self.__tab.tabText(i) == prev_tab:
                         self.__tab.setCurrentIndex(i)
                         break
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
         if scroll_pos:
 
@@ -2570,7 +2470,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                         continue
                     try:
                         areas[0].verticalScrollBar().setValue(scroll_pos[tab_name])
-                    except Exception:
+                    except (AttributeError, RuntimeError, TypeError):
                         pass
 
             QtCore.QTimer.singleShot(0, _restore)
@@ -2752,14 +2652,14 @@ class F8StudioSingleNodePropertiesWidget(QtWidgets.QWidget):
         """
         try:
             vp_w = int(self._scroll.viewport().width())
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError, ValueError):
             return
         if vp_w <= 0:
             return
         try:
             self._container.setMinimumWidth(vp_w)
-        except Exception:
-            pass
+        except (AttributeError, RuntimeError, TypeError):
+            logger.exception("Failed to sync property panel container width")
 
     def _wire_graph_signals(self) -> None:
         g = self._node_graph
@@ -2819,13 +2719,13 @@ class F8StudioSingleNodePropertiesWidget(QtWidgets.QWidget):
             self._container_layout.removeWidget(editor)
             try:
                 editor.setVisible(False)
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 logger.exception("Failed to hide editor before deleteLater")
             editor.deleteLater()
         try:
             self._empty.setVisible(True)
-        except Exception:
-            pass
+        except (AttributeError, RuntimeError, TypeError):
+            logger.exception("Failed to show empty editor placeholder")
 
     def _set_editor(self, editor: F8StudioNodePropEditorWidget) -> None:
         # Preserve the node id that the caller (set_node) just set. We are
@@ -2834,18 +2734,18 @@ class F8StudioSingleNodePropertiesWidget(QtWidgets.QWidget):
         self._editor = editor
         try:
             self._empty.setVisible(False)
-        except Exception:
-            pass
+        except (AttributeError, RuntimeError, TypeError):
+            logger.exception("Failed to hide empty editor placeholder")
         self._container_layout.addWidget(editor, 0)
         self._sync_container_width()
         try:
             editor.property_changed.connect(self._on_editor_property_changed)  # type: ignore[attr-defined]
-        except Exception:
-            pass
+        except (AttributeError, RuntimeError, TypeError):
+            logger.exception("Failed to connect editor.property_changed")
         try:
             editor.property_closed.connect(self._on_editor_closed)  # type: ignore[attr-defined]
-        except Exception:
-            pass
+        except (AttributeError, RuntimeError, TypeError):
+            logger.exception("Failed to connect editor.property_closed")
 
     def set_node(self, node: Any | None, *, force_clear: bool = False) -> None:
         if node is None:
@@ -2868,8 +2768,8 @@ class F8StudioSingleNodePropertiesWidget(QtWidgets.QWidget):
         self._set_editor(F8StudioNodePropEditorWidget(self._container, node=node))
         try:
             self._scroll.verticalScrollBar().setValue(0)
-        except Exception:
-            pass
+        except (AttributeError, RuntimeError, TypeError):
+            logger.exception("Failed to reset property panel scroll position")
 
     def _on_node_selected(self, node: Any) -> None:
         self._last_node_click_ts = time.monotonic()
@@ -2950,7 +2850,7 @@ class F8StudioSingleNodePropertiesWidget(QtWidgets.QWidget):
         try:
             if str(node.id or "") != self._node_id:
                 return
-        except Exception:
+        except AttributeError:
             return
         prop_key = str(prop_name or "").strip()
         if not prop_key:
@@ -2960,17 +2860,14 @@ class F8StudioSingleNodePropertiesWidget(QtWidgets.QWidget):
         try:
             self._editor.refresh_option_pool(prop_key)
         except Exception:
-            pass
+            logger.exception("refresh_option_pool failed for key=%s", prop_key)
 
-        try:
-            w = self._editor.get_widget(prop_name)
-        except Exception:
-            w = None
+        w = self._editor.get_widget(prop_name)
         if w is None:
             return
         try:
             cur = w.get_value()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             cur = None
         if cur == prop_value:
             return
@@ -2978,7 +2875,7 @@ class F8StudioSingleNodePropertiesWidget(QtWidgets.QWidget):
         try:
             w.set_value(prop_value)
         except Exception:
-            pass
+            logger.exception("Failed to update property widget value key=%s", prop_key)
         finally:
             self._block_signal = False
 
@@ -2998,7 +2895,7 @@ def _is_json_state_value(node: Any, prop_name: str) -> bool:
         try:
             if str(f.name or "").strip() != prop_name:
                 continue
-        except Exception:
+        except (AttributeError, TypeError):
             continue
         try:
             vs = f.valueSchema

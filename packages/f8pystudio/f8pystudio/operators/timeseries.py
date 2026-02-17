@@ -70,11 +70,11 @@ class PyStudioTimeSeriesRuntimeNode(StudioVizRuntimeNodeBase):
             if t is None:
                 return
             t.cancel()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         try:
             await asyncio.gather(t, return_exceptions=True)
-        except Exception:
+        except (RuntimeError, TypeError):
             pass
 
     async def on_data(self, port: str, value: Any, *, ts_ms: int | None = None) -> None:
@@ -85,7 +85,7 @@ class PyStudioTimeSeriesRuntimeNode(StudioVizRuntimeNodeBase):
         await self._ensure_config_loaded()
         try:
             val = float(value)
-        except Exception:
+        except (TypeError, ValueError):
             return
         ts = int(ts_ms) if ts_ms is not None else int(time.time() * 1000)
         buf = self._series.get(port)
@@ -145,14 +145,14 @@ class PyStudioTimeSeriesRuntimeNode(StudioVizRuntimeNodeBase):
         self._scheduled_refresh_ms = int(target_ms)
         try:
             loop = asyncio.get_running_loop()
-        except Exception:
+        except RuntimeError:
             return
         self._refresh_task = loop.create_task(self._flush_after(delay_ms), name=f"pystudio:timeseries:flush:{self.node_id}")
 
     async def _flush_after(self, delay_ms: int) -> None:
         try:
             await asyncio.sleep(float(max(0, int(delay_ms))) / 1000.0)
-        except Exception:
+        except (RuntimeError, TypeError, ValueError):
             return
         await self._flush(now_ms=int(time.time() * 1000))
 

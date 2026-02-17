@@ -33,7 +33,7 @@ class F8CodeEditorDialog(QtWidgets.QDialog):
         try:
             font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
             self._edit.setFont(font)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         self._edit.setPlainText(str(code or ""))
 
@@ -482,7 +482,7 @@ class F8MonacoEditorDialog(QtWidgets.QDialog):
         try:
             page.runJavaScript("window._f8_getValue && window._f8_getValue();", _on_value)  # type: ignore[call-arg]
             page.runJavaScript("window._f8_markSaved && window._f8_markSaved();")
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
     @staticmethod
@@ -573,7 +573,7 @@ def open_code_editor_window(
             frame = dlg.frameGeometry()
             frame.moveCenter(center)
             dlg.move(frame.topLeft())
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
     dlg.show()
@@ -646,7 +646,7 @@ class F8CodePropWidget(QtWidgets.QWidget):
             dlg = open_code_editor_window(self, title=self._title, code=self.get_value(), language="python", on_saved=_on_saved)
             self._editor_window = dlg
             dlg.destroyed.connect(self._on_editor_destroyed)  # type: ignore[attr-defined]
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             return
 
     @QtCore.Slot()
@@ -672,7 +672,7 @@ class F8CodeButtonPropWidget(QtWidgets.QWidget):
         self._btn = QtWidgets.QPushButton("Edit...")
         try:
             self._btn.setIcon(qta.icon("fa5s.code", color="white"))
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         self._btn.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
         self._btn.clicked.connect(self._on_edit_clicked)  # type: ignore[attr-defined]
@@ -720,7 +720,7 @@ class F8CodeButtonPropWidget(QtWidgets.QWidget):
             )
             self._editor_window = dlg
             dlg.destroyed.connect(self._on_editor_destroyed)  # type: ignore[attr-defined]
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             return
 
     @QtCore.Slot()
@@ -750,7 +750,7 @@ class F8InlineCodePropWidget(QtWidgets.QPlainTextEdit):
         try:
             font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
             self.setFont(font)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         self.setMinimumHeight(44)
         self.setMaximumHeight(96)
@@ -777,7 +777,7 @@ class F8InlineCodePropWidget(QtWidgets.QPlainTextEdit):
                 self._emit_if_changed(force=True)
                 event.accept()
                 return
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         super().keyPressEvent(event)
 
@@ -819,7 +819,7 @@ class F8WrapLinePropWidget(QtWidgets.QPlainTextEdit):
         try:
             font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
             self.setFont(font)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         self.document().setDocumentMargin(4.0)
 
@@ -856,11 +856,11 @@ class F8WrapLinePropWidget(QtWidgets.QPlainTextEdit):
                 self._emit_if_changed(force=True)
                 try:
                     self.clearFocus()
-                except Exception:
+                except RuntimeError:
                     pass
                 event.accept()
                 return
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         super().keyPressEvent(event)
 
@@ -995,7 +995,7 @@ class F8NumberPropLineEdit(QtWidgets.QLineEdit):
         dv = QtGui.QDoubleValidator(vmin, vmax, 6, self)
         try:
             dv.setNotation(QtGui.QDoubleValidator.Notation.StandardNotation)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         self.setValidator(dv)
 

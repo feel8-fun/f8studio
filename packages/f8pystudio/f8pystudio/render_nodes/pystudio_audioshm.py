@@ -37,20 +37,20 @@ class _AudioShmPane(QtWidgets.QWidget):
             axl.setLabel("")
             axb.setStyle(showValues=False)
             axl.setStyle(showValues=False)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         try:
             pi = self._plot.getPlotItem()
             if pi is not None:
                 try:
                     pi.layout.setContentsMargins(2, 2, 2, 2)
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError):
                     pass
                 try:
                     pi.setDefaultPadding(0.02)
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError, ValueError):
                     pass
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         self._curve = self._plot.plot([], [], pen=pg.mkPen((120, 200, 255), width=1))
 
@@ -100,7 +100,7 @@ class _AudioShmPane(QtWidgets.QWidget):
     def detach(self) -> None:
         try:
             self._timer.stop()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         self._reset_reader()
 
@@ -108,7 +108,7 @@ class _AudioShmPane(QtWidgets.QWidget):
         try:
             if self._reader is not None:
                 self._reader.close()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         self._reader = None
         self._last_seq = 0
@@ -171,7 +171,7 @@ class _AudioShmPane(QtWidgets.QWidget):
         samples = np.frombuffer(payload, dtype=np.float32).copy()
         try:
             samples = samples.reshape((frames, channels))
-        except Exception:
+        except (TypeError, ValueError):
             self._last_seq = seq
             return
         idx = min(max(0, int(self._channel)), max(0, channels - 1))
@@ -218,7 +218,7 @@ class PyStudioAudioShmNode(F8StudioOperatorBaseNode):
         super().__init__(qgraphics_item=F8StudioVizOperatorNodeItem)
         try:
             self.add_custom_widget(_AudioShmWidget(self.view, name="__audioshm", label=""))
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
     def apply_ui_command(self, cmd: UiCommand) -> None:
@@ -229,7 +229,7 @@ class PyStudioAudioShmNode(F8StudioOperatorBaseNode):
                 if not w:
                     return
                 w.detach()
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
             return
         if c != "audioshm.set":
@@ -240,13 +240,13 @@ class PyStudioAudioShmNode(F8StudioOperatorBaseNode):
             throttle_ms = int(payload.get("throttleMs") or 20)
             history_ms = int(payload.get("historyMs") or 250)
             channel = int(payload.get("channel") or 0)
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             return
         try:
             w = self.get_widget("__audioshm")
             if not w:
                 return
             w.set_config(shm_name=shm_name, throttle_ms=throttle_ms, history_ms=history_ms, channel=channel)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError, ValueError):
             return
 

@@ -32,7 +32,7 @@ class F8StudioMissingServiceBaseNode(F8StudioContainerBaseNode):
         try:
             if self.has_property(prop_name):  # type: ignore[attr-defined]
                 return
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         try:
             widget = NodePropWidgetEnum.QTEXT_EDIT.value if multiline else NodePropWidgetEnum.QLINE_EDIT.value
@@ -56,7 +56,7 @@ class F8StudioMissingServiceBaseNode(F8StudioContainerBaseNode):
         if missing_type:
             try:
                 self.set_name(f"[Missing] {missing_type}")
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
 
         try:
@@ -66,6 +66,6 @@ class F8StudioMissingServiceBaseNode(F8StudioContainerBaseNode):
         if isinstance(raw, dict):
             try:
                 self.set_property("missingSpec", json.dumps(raw, ensure_ascii=False, indent=2), push_undo=False)
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError, ValueError):
                 pass
 

@@ -63,7 +63,7 @@ class ServiceProcessManager:
                         if self._exception_log_once.should_log(fp):
                             try:
                                 logger.error("Service output callback raised (service_id=%s)", service_id, exc_info=exc)
-                            except Exception:
+                            except (AttributeError, RuntimeError, TypeError):
                                 pass
                         continue
             except Exception as exc:
@@ -71,7 +71,7 @@ class ServiceProcessManager:
                 if self._exception_log_once.should_log(fp):
                     try:
                         logger.error("Service output reader thread failed (service_id=%s)", service_id, exc_info=exc)
-                    except Exception:
+                    except (AttributeError, RuntimeError, TypeError):
                         pass
                 return
 
@@ -105,7 +105,7 @@ class ServiceProcessManager:
             if t is None or not t.is_alive():
                 if p.stdout:
                     p.stdout.close()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
     def stop(self, service_id: str) -> bool:
@@ -115,17 +115,17 @@ class ServiceProcessManager:
             return True
         try:
             pid = p.pid
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pid = None
 
         # Best-effort graceful terminate, then ensure the whole process tree is gone.
         try:
             p.terminate()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         try:
             p.wait(timeout=0.8)
-        except Exception:
+        except (subprocess.TimeoutExpired, OSError, RuntimeError, TypeError, ValueError):
             pass
 
         # `service.yml` launch commonly uses `pixi run ...` which spawns a child Python process.
@@ -144,13 +144,13 @@ class ServiceProcessManager:
                     check=False,
                     creationflags=creationflags,
                 )
-            except Exception:
+            except (OSError, RuntimeError, TypeError, ValueError, subprocess.SubprocessError):
                 pass
         else:
             try:
                 if p.poll() is None:
                     p.kill()
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
 
         # Wait a bit longer for shutdown (especially after taskkill).
@@ -159,7 +159,7 @@ class ServiceProcessManager:
             try:
                 if p.poll() is not None:
                     break
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 break
             time.sleep(0.05)
 
@@ -184,7 +184,7 @@ class ServiceProcessManager:
         try:
             if service_dir.is_file() and service_dir.name.lower() == "service.yml":
                 service_dir = service_dir.parent.resolve()
-        except Exception:
+        except (AttributeError, OSError, RuntimeError, TypeError, ValueError):
             pass
         entry = load_service_entry(service_dir)
 
@@ -204,13 +204,13 @@ class ServiceProcessManager:
                 try:
                     if on_output is not None:
                         on_output(service_id, "[kv] purged bucket on start\n")
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError):
                     pass
             except Exception as exc:
                 try:
                     if on_output is not None:
                         on_output(service_id, f"[kv] purge bucket failed (ignored): {exc}\n")
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError):
                     pass
 
         launch = entry.launch
@@ -222,7 +222,7 @@ class ServiceProcessManager:
         env = os.environ.copy()
         try:
             env.update({str(k): str(v) for k, v in (launch.env or {}).items()})
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         env["F8_SERVICE_ID"] = service_id
         env["F8_NATS_URL"] = nats_url
@@ -252,9 +252,9 @@ class ServiceProcessManager:
             if on_output is not None:
                 try:
                     pid_txt = str(p.pid)
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError):
                     pid_txt = "?"
                 on_output(service_id, f"[proc] started pid={pid_txt} cmd={' '.join(cmd)}\n")
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         self._start_reader(service_id=service_id, proc=p, on_output=on_output)

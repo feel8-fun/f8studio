@@ -17,6 +17,11 @@ dependencies = [
     "jedi>=0.19.2",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "mypy>=1.11.2",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -31,3 +36,30 @@ include = [
 
 [tool.uv]
 package = true
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_return_any = true
+show_error_codes = true
+pretty = true
+follow_imports = "skip"
+ignore_missing_imports = true
+files = [
+    "f8pystudio/bridge",
+    "f8pystudio/extensions",
+    "f8pystudio/session_migration.py",
+    "f8pystudio/widgets/state_controls",
+]
+
+[[tool.mypy.overrides]]
+module = [
+    "f8pystudio.nodegraph.service_basenode",
+    "f8pystudio.nodegraph.operator_basenode",
+    "f8pystudio.nodegraph.node_graph",
+    "f8pystudio.widgets.node_property_widgets",
+    "f8pystudio.pystudio_service_bridge",
+]
+ignore_errors = true

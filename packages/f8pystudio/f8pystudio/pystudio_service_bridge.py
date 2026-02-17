@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
 import logging
-import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -12,11 +12,23 @@ import nats  # type: ignore[import-not-found]
 from qtpy import QtCore
 
 from f8pysdk import F8Edge, F8RuntimeGraph, F8RuntimeNode
-from f8pysdk.nats_naming import cmd_channel_subject, ensure_token, kv_bucket_for_service, new_id, svc_endpoint_subject, svc_micro_name
-from f8pysdk.nats_transport import NatsTransport, NatsTransportConfig
+from f8pysdk.nats_naming import ensure_token, new_id, svc_endpoint_subject, svc_micro_name
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
-from f8pysdk.service_ready import wait_service_ready
 from f8pysdk.service_bus import StateWriteOrigin
+from .bridge.async_runtime import AsyncRuntimeThread
+from .bridge.command_client import CommandRequest, NatsCommandGateway
+from .bridge.json_codec import coerce_json_value
+from .bridge.process_lifecycle import (
+    LocalServiceProcessGateway,
+    StartServiceRequest,
+    StopServiceRequest,
+)
+from .bridge.remote_state_sync import ApplyWatchTargetsRequest, RemoteStateGatewayAdapter
+from .bridge.rungraph_deployer import (
+    NatsRungraphGateway,
+    RungraphDeployConfig,
+    RungraphDeployRequest,
+)
 from .error_reporting import ExceptionLogOnce, report_exception
 from .nats_server_bootstrap import ensure_nats_server
 from .nodegraph.runtime_compiler import CompiledRuntimeGraphs
@@ -27,92 +39,6 @@ from .remote_state_watcher import RemoteStateWatcher, WatchTarget
 from .ui_bus import UiCommand
 
 logger = logging.getLogger(__name__)
-
-
-class _AsyncThread:
-    def __init__(self) -> None:
-        self._loop: asyncio.AbstractEventLoop | None = None
-        self._thread = threading.Thread(target=self._run, name="pystudio-async", daemon=True)
-        self._ready = threading.Event()
-        self._stop = threading.Event()
-
-    def start(self) -> None:
-        self._thread.start()
-        self._ready.wait(timeout=5)
-
-    def _run(self) -> None:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        self._loop = loop
-        self._ready.set()
-        try:
-            loop.run_until_complete(self._main())
-        finally:
-            try:
-                pending = asyncio.all_tasks(loop)
-                for t in pending:
-                    t.cancel()
-                if pending:
-                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-            except Exception:
-                pass
-            try:
-                loop.close()
-            except Exception:
-                pass
-
-    async def _main(self) -> None:
-        while not self._stop.is_set():
-            await asyncio.sleep(0.05)
-
-    def submit(self, coro: Any) -> "asyncio.Future[Any]":
-        """
-        Submit a coroutine to the thread's event loop.
-
-        Accepts either:
-        - a coroutine object
-        - a coroutine function (no-arg), which will be called lazily
-
-        Important: if the async thread isn't started yet, we close coroutine
-        objects to avoid "coroutine was never awaited" warnings.
-        """
-        if self._loop is None:
-            try:
-                if asyncio.iscoroutine(coro):
-                    coro.close()
-            except Exception:
-                pass
-            raise RuntimeError("async thread not started")
-
-        try:
-            if asyncio.iscoroutinefunction(coro):
-                coro_obj = coro()
-            else:
-                coro_obj = coro
-            if not asyncio.iscoroutine(coro_obj):
-                raise TypeError(f"submit(...) requires a coroutine; got {type(coro_obj).__name__}")
-            return asyncio.run_coroutine_threadsafe(coro_obj, self._loop)  # type: ignore[arg-type]
-        except Exception:
-            try:
-                if asyncio.iscoroutine(coro):
-                    coro.close()
-            except Exception:
-                pass
-            raise
-
-    def stop(self) -> None:
-        self._stop.set()
-        # Do not call loop.stop() directly: it can abort `run_until_complete(...)`
-        # and raise "Event loop stopped before Future completed."
-        if self._loop is not None:
-            try:
-                self._loop.call_soon_threadsafe(lambda: None)
-            except Exception:
-                pass
-        try:
-            self._thread.join(timeout=2)
-        except Exception:
-            pass
 
 
 @dataclass(frozen=True)
@@ -140,8 +66,11 @@ class PyStudioServiceBridge(QtCore.QObject):
     def __init__(self, config: PyStudioServiceBridgeConfig, parent: QtCore.QObject | None = None) -> None:
         super().__init__(parent)
         self._cfg = config
-        self._async = _AsyncThread()
+        self._async = AsyncRuntimeThread()
         self._proc_mgr = ServiceProcessManager()
+        self._process_gateway = LocalServiceProcessGateway(self._proc_mgr)
+        self._rungraph_gateway = NatsRungraphGateway(RungraphDeployConfig(nats_url=self._cfg.nats_url))
+        self._command_gateway = NatsCommandGateway(nats_url=self._cfg.nats_url)
         self._exception_log_once = ExceptionLogOnce()
         self._managed_service_ids: set[str] = set()
         self._managed_service_classes: dict[str, str] = {}  # serviceId -> serviceClass
@@ -156,6 +85,7 @@ class PyStudioServiceBridge(QtCore.QObject):
 
         self._svc: PyStudioService | None = None
         self._remote_state_watcher: RemoteStateWatcher | None = None
+        self._remote_state_gateway: RemoteStateGatewayAdapter | None = None
         self._nc: Any = None
         self._last_nats_error_log_s: float = 0.0
         self._pending_remote_command_cbs: dict[str, Callable[[dict[str, Any] | None, str | None], None]] = {}
@@ -184,6 +114,43 @@ class PyStudioServiceBridge(QtCore.QObject):
             # Logging must never crash the bridge.
             pass
 
+    def _emit_remote_command_response_safe(self, req_id: str, result: object, err: object) -> None:
+        try:
+            self._remote_command_response.emit(str(req_id), result, err)
+        except RuntimeError as exc:
+            self._report_exception("emit remote command response failed", exc)
+
+    def _submit_async(self, coro: Any, *, context: str) -> bool:
+        try:
+            self._async.submit(coro)
+            return True
+        except Exception as exc:
+            self._report_exception(context, exc)
+            return False
+
+    @staticmethod
+    def _message_data_bytes(message: Any) -> bytes:
+        try:
+            data = message.data
+        except AttributeError:
+            return b""
+        try:
+            return bytes(data or b"")
+        except (TypeError, ValueError):
+            return b""
+
+    @staticmethod
+    def _decode_json_object(raw: bytes) -> dict[str, Any] | None:
+        if not raw:
+            return None
+        try:
+            decoded = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return None
+        if isinstance(decoded, dict):
+            return decoded
+        return None
+
     @QtCore.Slot(str, object, object)
     def _on_remote_command_response(self, req_id: str, result: object, err: object) -> None:
         cb = self._pending_remote_command_cbs.pop(str(req_id), None)
@@ -209,40 +176,33 @@ class PyStudioServiceBridge(QtCore.QObject):
 
         This is the lifecycle control described in `docs/design/pysdk-runtime.md`.
         """
-        try:
-            self._managed_active = bool(active)
-        except Exception:
-            self._managed_active = True
-        try:
-            self._async.submit(self._set_managed_active_async(bool(self._managed_active)))
-        except Exception as exc:
-            self._report_exception("submit set_managed_active failed", exc)
-            return
+        self._managed_active = bool(active)
+        self._submit_async(
+            self._set_managed_active_async(bool(self._managed_active)),
+            context="submit set_managed_active failed",
+        )
 
     def start(self) -> None:
         self._async.start()
-        try:
-            self._async.submit(self._start_async())
-        except Exception as exc:
-            self._report_exception("submit start failed", exc)
+        self._submit_async(self._start_async(), context="submit start failed")
 
     def stop(self) -> None:
         try:
             fut = self._async.submit(self._stop_async())
             try:
                 fut.result(timeout=2)
-            except Exception:
-                pass
+            except concurrent.futures.TimeoutError:
+                self._emit_log_line("bridge stop timeout; continue shutdown")
         except Exception as exc:
             self._report_exception("submit stop failed", exc)
         self._async.stop()
 
         # Best-effort stop all launched processes.
-        try:
-            for sid in list(self._proc_mgr.service_ids()):
-                self._proc_mgr.stop(sid)
-        except Exception:
-            pass
+        for sid in list(self._process_gateway.service_ids()):
+            try:
+                self._process_gateway.stop(StopServiceRequest(service_id=sid))
+            except Exception as exc:
+                self._report_exception(f"stop service process failed serviceId={sid}", exc)
 
     def deploy(self, compiled: CompiledRuntimeGraphs) -> None:
         """
@@ -264,12 +224,12 @@ class PyStudioServiceBridge(QtCore.QObject):
                 # (including ones started outside this Studio process).
                 self.start_service(sid, service_class=str(svc.serviceClass))
             except Exception as exc:
-                self.log.emit(f"start service failed: {exc}")
+                self._emit_log_line(f"start service failed: {exc}")
         self._managed_service_ids = managed
         self._managed_service_classes = managed_classes
 
         # 2) deploy + install monitoring (async)
-        self._async.submit(self._deploy_and_monitor_async(compiled))
+        self._submit_async(self._deploy_and_monitor_async(compiled), context="submit deploy_and_monitor failed")
         # Preserve the current global lifecycle preference across repeated deploys.
         # Only enforce deactivate here when globally paused; avoid forcing activate
         # on every F5, which can override rungraph/state-edge driven inactive states.
@@ -285,38 +245,23 @@ class PyStudioServiceBridge(QtCore.QObject):
         """
         try:
             sid = ensure_token(str(service_id), label="service_id")
-        except Exception:
+        except ValueError:
             return
         if sid == self.studio_service_id:
             return
 
-        try:
-            self._managed_service_ids.discard(sid)
-        except Exception:
-            pass
-        try:
-            self._managed_service_classes.pop(sid, None)
-        except Exception:
-            pass
-        try:
-            self._service_status_cache.pop(sid, None)
-        except Exception:
-            pass
+        self._managed_service_ids.discard(sid)
+        self._managed_service_classes.pop(sid, None)
+        self._service_status_cache.pop(sid, None)
 
         # Cancel any pending process actions/timers for this service.
-        try:
-            self._pending_proc_actions.pop(sid, None)
-        except Exception:
-            pass
-        try:
-            t = self._pending_proc_timers.pop(sid, None)
-            if t is not None:
-                try:
-                    t.stop()
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        self._pending_proc_actions.pop(sid, None)
+        timer = self._pending_proc_timers.pop(sid, None)
+        if timer is not None:
+            try:
+                timer.stop()
+            except RuntimeError as exc:
+                self._report_exception(f"stop pending process timer failed serviceId={sid}", exc)
 
     @QtCore.Slot(str)
     def reclaim_service(self, service_id: str) -> None:
@@ -326,18 +271,12 @@ class PyStudioServiceBridge(QtCore.QObject):
         """
         try:
             sid = ensure_token(str(service_id), label="service_id")
-        except Exception:
+        except ValueError:
             return
         if sid == self.studio_service_id:
             return
-        try:
-            self.log.emit(f"reclaim service process serviceId={sid}")
-        except Exception:
-            pass
-        try:
-            self.stop_service(sid)
-        except Exception:
-            pass
+        self._emit_log_line(f"reclaim service process serviceId={sid}")
+        self.stop_service(sid)
         self.unmanage_service(sid)
 
     @QtCore.Slot(str)
@@ -347,25 +286,19 @@ class PyStudioServiceBridge(QtCore.QObject):
         """
         try:
             sid = ensure_token(str(service_id), label="service_id")
-        except Exception:
+        except ValueError:
             return
         if sid == self.studio_service_id:
             return
         if not self.is_service_running(sid):
-            try:
-                self.log.emit(f"deploy skipped (service not running) serviceId={sid}")
-            except Exception:
-                pass
+            self._emit_log_line(f"deploy skipped (service not running) serviceId={sid}")
             return
 
         async def _do() -> None:
             await self._install_studio_graph_async(compiled=compiled)
             await self._deploy_service_rungraph_async(sid, compiled=compiled)
 
-        try:
-            self._async.submit(_do())
-        except Exception:
-            pass
+        self._submit_async(_do(), context=f"submit deploy_service_rungraph failed serviceId={sid}")
 
     async def _ensure_studio_runtime_async(self, *, timeout_s: float = 6.0) -> bool:
         """
@@ -374,17 +307,10 @@ class PyStudioServiceBridge(QtCore.QObject):
         deadline = time.monotonic() + float(timeout_s or 0.0)
         while True:
             svc = self._svc
-            if svc is not None:
-                try:
-                    if svc.bus is not None:
-                        return True
-                except Exception:
-                    pass
+            if svc is not None and svc.bus is not None:
+                return True
             if time.monotonic() >= deadline:
-                try:
-                    self.log.emit("studio runtime not ready (timeout)")
-                except Exception:
-                    pass
+                self._emit_log_line("studio runtime not ready (timeout)")
                 return False
             await asyncio.sleep(0.08)
 
@@ -431,8 +357,8 @@ class PyStudioServiceBridge(QtCore.QObject):
         )
 
     async def _apply_remote_state_watches_async(self, compiled: CompiledRuntimeGraphs) -> None:
-        w = self._remote_state_watcher
-        if w is None:
+        gateway = self._remote_state_gateway
+        if gateway is None:
             return
         targets: list[WatchTarget] = []
         try:
@@ -443,7 +369,8 @@ class PyStudioServiceBridge(QtCore.QObject):
             try:
                 sid = ensure_token(str(n.serviceId or ""), label="service_id")
                 nid = ensure_token(str(n.nodeId or ""), label="node_id")
-            except Exception:
+            except Exception as exc:
+                self._emit_log_line(f"skip invalid remote watch target: {type(exc).__name__}: {exc}")
                 continue
             fields: list[str] = []
             try:
@@ -466,17 +393,17 @@ class PyStudioServiceBridge(QtCore.QObject):
             if op_class and "operatorId" not in fields:
                 fields.append("operatorId")
             targets.append(WatchTarget(service_id=sid, node_id=nid, fields=tuple(fields)))
-        await w.apply_targets(targets)
+        await gateway.apply_targets(ApplyWatchTargetsRequest(targets=tuple(targets)))
 
     def is_service_running(self, service_id: str) -> bool:
         sid = str(service_id or "").strip()
         if not sid:
             return False
         try:
-            if bool(self._proc_mgr.is_running(str(sid))):
+            if bool(self._process_gateway.is_running(str(sid))):
                 return True
-        except Exception:
-            pass
+        except Exception as exc:
+            self._report_exception(f"check process running failed serviceId={sid}", exc)
         # If the service wasn't launched by this studio process, fall back to
         # a best-effort "alive" cache (refreshed via status endpoint).
         v = self._service_alive_cache.get(sid)
@@ -494,12 +421,9 @@ class PyStudioServiceBridge(QtCore.QObject):
         """
         try:
             sid = ensure_token(str(service_id), label="service_id")
-        except Exception:
+        except ValueError:
             return ""
-        try:
-            return str(self._managed_service_classes.get(sid, "") or "")
-        except Exception:
-            return ""
+        return str(self._managed_service_classes.get(sid, "") or "")
 
     def _cache_service_active(self, service_id: str, active: bool | None) -> None:
         sid = str(service_id or "").strip()
@@ -529,7 +453,7 @@ class PyStudioServiceBridge(QtCore.QObject):
         sid = ""
         try:
             sid = ensure_token(str(service_id), label="service_id")
-        except Exception:
+        except ValueError:
             return None
         nc = await self._ensure_nc()
         if nc is None:
@@ -542,16 +466,12 @@ class PyStudioServiceBridge(QtCore.QObject):
             msg = await nc.request(svc_endpoint_subject(sid, "status"), payload, timeout=0.4)
         except Exception:
             return None
-        try:
-            raw = bytes(msg.data or b"")
-        except Exception:
-            raw = b""
+        raw = self._message_data_bytes(msg)
         if not raw:
             return None
-        try:
-            resp = json.loads(raw.decode("utf-8"))
-        except Exception:
-            resp = {}
+        resp = self._decode_json_object(raw)
+        if resp is None:
+            return None
         if not (isinstance(resp, dict) and resp.get("ok") is True):
             return None
         result = resp.get("result") if isinstance(resp.get("result"), dict) else {}
@@ -559,10 +479,7 @@ class PyStudioServiceBridge(QtCore.QObject):
             return None
         out: dict[str, Any] = {"alive": True}
         if "active" in result:
-            try:
-                out["active"] = bool(result.get("active"))
-            except Exception:
-                out["active"] = None
+            out["active"] = bool(result.get("active"))
         return out
 
     def request_service_status(self, service_id: str) -> None:
@@ -572,19 +489,16 @@ class PyStudioServiceBridge(QtCore.QObject):
         sid = ""
         try:
             sid = ensure_token(str(service_id), label="service_id")
-        except Exception:
+        except ValueError:
             return
-        try:
-            now = time.monotonic()
-            last = float(self._service_status_req_s.get(sid, 0.0))
-            if (now - last) < 0.25:
-                return
-            if sid in self._service_status_inflight:
-                return
-            self._service_status_inflight.add(sid)
-            self._service_status_req_s[sid] = now
-        except Exception:
-            pass
+        now = time.monotonic()
+        last = float(self._service_status_req_s.get(sid, 0.0))
+        if (now - last) < 0.25:
+            return
+        if sid in self._service_status_inflight:
+            return
+        self._service_status_inflight.add(sid)
+        self._service_status_req_s[sid] = now
 
         async def _do() -> None:
             try:
@@ -599,25 +513,17 @@ class PyStudioServiceBridge(QtCore.QObject):
                 if "active" in status:
                     self._cache_service_active(sid, status.get("active"))
             finally:
-                try:
-                    self._service_status_inflight.discard(sid)
-                except Exception:
-                    pass
-
-        try:
-            self._async.submit(_do())
-        except Exception:
-            try:
                 self._service_status_inflight.discard(sid)
-            except Exception:
-                pass
-            return
+
+        submitted = self._submit_async(_do(), context=f"submit request_service_status failed serviceId={sid}")
+        if not submitted:
+            self._service_status_inflight.discard(sid)
 
     async def _set_service_active_async(self, service_id: str, active: bool) -> bool:
         sid = ""
         try:
             sid = ensure_token(str(service_id), label="service_id")
-        except Exception:
+        except ValueError:
             return False
         nc = await self._ensure_nc()
         if nc is None:
@@ -631,15 +537,9 @@ class PyStudioServiceBridge(QtCore.QObject):
         for _ in range(2):
             try:
                 msg = await nc.request(svc_endpoint_subject(sid, cmd), payload, timeout=0.5)
-                try:
-                    data = bytes(msg.data or b"")
-                except Exception:
-                    data = b""
+                data = self._message_data_bytes(msg)
                 if data:
-                    try:
-                        resp = json.loads(data.decode("utf-8"))
-                    except Exception:
-                        resp = {}
+                    resp = self._decode_json_object(data) or {}
                     if isinstance(resp, dict) and resp.get("ok") is True:
                         self._cache_service_active(sid, bool(active))
                         return True
@@ -653,15 +553,15 @@ class PyStudioServiceBridge(QtCore.QObject):
         sid = ""
         try:
             sid = ensure_token(str(service_id), label="service_id")
-        except Exception:
+        except ValueError:
             return
         if sid == self.studio_service_id:
             return
 
-        try:
-            self._async.submit(self._set_service_active_async(sid, bool(active)))
-        except Exception:
-            return
+        self._submit_async(
+            self._set_service_active_async(sid, bool(active)),
+            context=f"submit set_service_active failed serviceId={sid}",
+        )
 
     async def _request_service_terminate_async(self, service_id: str) -> bool:
         """
@@ -672,7 +572,7 @@ class PyStudioServiceBridge(QtCore.QObject):
         sid = ""
         try:
             sid = ensure_token(str(service_id), label="service_id")
-        except Exception:
+        except ValueError:
             return False
 
         nc = await self._ensure_nc()
@@ -686,16 +586,10 @@ class PyStudioServiceBridge(QtCore.QObject):
         for _ in range(2):
             try:
                 msg = await nc.request(subject, payload, timeout=0.4)
-                try:
-                    raw = bytes(msg.data or b"")
-                except Exception:
-                    raw = b""
+                raw = self._message_data_bytes(msg)
                 if not raw:
                     continue
-                try:
-                    resp = json.loads(raw.decode("utf-8"))
-                except Exception:
-                    resp = {}
+                resp = self._decode_json_object(raw) or {}
                 if isinstance(resp, dict) and resp.get("ok") is True:
                     return True
                 return False
@@ -717,16 +611,16 @@ class PyStudioServiceBridge(QtCore.QObject):
 
     def _clear_proc_action(self, service_id: str) -> None:
         sid = str(service_id)
-        t = self._pending_proc_timers.pop(sid, None)
-        if t is not None:
+        timer = self._pending_proc_timers.pop(sid, None)
+        if timer is not None:
             try:
-                t.stop()
-            except Exception:
-                pass
+                timer.stop()
+            except RuntimeError as exc:
+                self._report_exception(f"stop proc-action timer failed serviceId={sid}", exc)
             try:
-                t.deleteLater()
-            except Exception:
-                pass
+                timer.deleteLater()
+            except RuntimeError as exc:
+                self._report_exception(f"delete proc-action timer failed serviceId={sid}", exc)
         self._pending_proc_actions.pop(sid, None)
 
     def _poll_proc_action(self, service_id: str) -> None:
@@ -736,20 +630,17 @@ class PyStudioServiceBridge(QtCore.QObject):
             self._clear_proc_action(sid)
             return
 
-        try:
-            if not self.is_service_running(sid):
-                self._clear_proc_action(sid)
-                try:
-                    self.service_process_state.emit(sid, False)
-                except Exception:
-                    pass
+        if not self.is_service_running(sid):
+            self._clear_proc_action(sid)
+            try:
+                self.service_process_state.emit(sid, False)
+            except RuntimeError as exc:
+                self._report_exception(f"emit service process state failed serviceId={sid}", exc)
 
-                if action.get("action") == "restart":
-                    svc_class = str(action.get("serviceClass") or "").strip() or None
-                    self.start_service(sid, service_class=svc_class)
-                return
-        except Exception:
-            pass
+            if action.get("action") == "restart":
+                svc_class = str(action.get("serviceClass") or "").strip() or None
+                self.start_service(sid, service_class=svc_class)
+            return
 
         deadline = float(action.get("deadline") or 0.0)
         if deadline and time.monotonic() < deadline:
@@ -757,14 +648,15 @@ class PyStudioServiceBridge(QtCore.QObject):
 
         # Grace period expired: fall back to local hard stop (taskkill / kill-tree).
         try:
-            ok = bool(self._proc_mgr.stop(sid))
+            stop_result = self._process_gateway.stop(StopServiceRequest(service_id=sid))
+            ok = bool(stop_result.success)
         except Exception as exc:
-            self.log.emit(f"stop_service failed: {exc}")
+            self._emit_log_line(f"stop_service failed: {exc}")
             ok = False
 
         still_running = bool(self.is_service_running(sid))
         if not ok and still_running:
-            self.log.emit(f"stop_service incomplete (process still running): serviceId={sid}")
+            self._emit_log_line(f"stop_service incomplete (process still running): serviceId={sid}")
             # Keep timer running; do not clear, to avoid allowing duplicates.
             self._pending_proc_actions[sid]["deadline"] = time.monotonic() + 1.0
             return
@@ -772,8 +664,8 @@ class PyStudioServiceBridge(QtCore.QObject):
         self._clear_proc_action(sid)
         try:
             self.service_process_state.emit(sid, still_running)
-        except Exception:
-            pass
+        except RuntimeError as exc:
+            self._report_exception(f"emit service process state failed serviceId={sid}", exc)
 
         if not still_running and action.get("action") == "restart":
             svc_class = str(action.get("serviceClass") or "").strip() or None
@@ -784,48 +676,44 @@ class PyStudioServiceBridge(QtCore.QObject):
         sid = ""
         try:
             sid = ensure_token(str(service_id), label="service_id")
-        except Exception:
+        except ValueError:
             return
         if sid == self.studio_service_id:
             return
 
         # Dedup: if Studio already believes the service is alive (via local proc tracking or a fresh
         # status ping), do not spawn another process on repeated deploy (e.g. repeated F5).
-        try:
-            if self.is_service_running(sid):
-                self.log.emit(f"start_service ignored (already running): serviceId={sid}")
-                return
-        except Exception:
-            pass
+        if self.is_service_running(sid):
+            self._emit_log_line(f"start_service ignored (already running): serviceId={sid}")
+            return
 
         svc_class = self._managed_service_classes.get(sid, "") or str(service_class or "")
         if not svc_class:
-            self.log.emit(f"start_service ignored (unknown serviceClass): serviceId={sid}")
+            self._emit_log_line(f"start_service ignored (unknown serviceClass): serviceId={sid}")
             return
         try:
-            self._proc_mgr.start(
-                ServiceProcessConfig(service_class=str(svc_class), service_id=sid, nats_url=self._cfg.nats_url),
-                on_output=lambda _sid, line, _sid2=sid: self.service_output.emit(_sid2, str(line)),
+            self._process_gateway.start(
+                StartServiceRequest(
+                    config=ServiceProcessConfig(service_class=str(svc_class), service_id=sid, nats_url=self._cfg.nats_url),
+                    on_output=lambda _sid, line, _sid2=sid: self.service_output.emit(_sid2, str(line)),
+                )
             )
         except Exception as exc:
-            self.log.emit(f"start_service failed: {exc}")
+            self._emit_log_line(f"start_service failed: {exc}")
             return
-        try:
-            self._managed_service_ids.add(sid)
-            if svc_class:
-                self._managed_service_classes[sid] = str(svc_class)
-        except Exception:
-            pass
+        self._managed_service_ids.add(sid)
+        if svc_class:
+            self._managed_service_classes[sid] = str(svc_class)
         try:
             self.service_process_state.emit(sid, bool(self.is_service_running(sid)))
-        except Exception:
-            pass
+        except RuntimeError as exc:
+            self._report_exception(f"emit service process state failed serviceId={sid}", exc)
 
     @QtCore.Slot(str)
     def stop_service(self, service_id: str) -> None:
         try:
             sid = ensure_token(str(service_id), label="service_id")
-        except Exception:
+        except ValueError:
             return
         if sid == self.studio_service_id:
             return
@@ -833,31 +721,28 @@ class PyStudioServiceBridge(QtCore.QObject):
         if not self.is_service_running(sid):
             try:
                 self.service_process_state.emit(sid, False)
-            except Exception:
-                pass
+            except RuntimeError as exc:
+                self._report_exception(f"emit service process state failed serviceId={sid}", exc)
             return
 
         # 1) Ask the service to terminate itself (best for GUI apps / child process trees).
-        try:
-            self._async.submit(self._request_service_terminate_async(sid))
-        except Exception:
-            pass
+        self._submit_async(
+            self._request_service_terminate_async(sid),
+            context=f"submit request_service_terminate failed serviceId={sid}",
+        )
 
         # 2) Poll for graceful exit, then fall back to local kill-tree.
         self._pending_proc_actions[sid] = {"action": "stop", "deadline": time.monotonic() + 2.2}
         t = self._ensure_proc_action_timer(sid)
-        try:
-            if not t.isActive():
-                t.start()
-        except Exception:
-            pass
+        if not t.isActive():
+            t.start()
         self._poll_proc_action(sid)
 
     @QtCore.Slot(str)
     def restart_service(self, service_id: str, *, service_class: str | None = None) -> None:
         try:
             sid = ensure_token(str(service_id), label="service_id")
-        except Exception:
+        except ValueError:
             return
         if sid == self.studio_service_id:
             return
@@ -868,18 +753,15 @@ class PyStudioServiceBridge(QtCore.QObject):
             self.start_service(sid, service_class=svc_class or None)
             return
 
-        try:
-            self._async.submit(self._request_service_terminate_async(sid))
-        except Exception:
-            pass
+        self._submit_async(
+            self._request_service_terminate_async(sid),
+            context=f"submit request_service_terminate failed serviceId={sid}",
+        )
 
         self._pending_proc_actions[sid] = {"action": "restart", "deadline": time.monotonic() + 2.2, "serviceClass": svc_class}
         t = self._ensure_proc_action_timer(sid)
-        try:
-            if not t.isActive():
-                t.start()
-        except Exception:
-            pass
+        if not t.isActive():
+            t.start()
         self._poll_proc_action(sid)
 
     async def _deploy_service_rungraph_async(self, service_id: str, *, compiled: CompiledRuntimeGraphs | None = None) -> None:
@@ -892,64 +774,24 @@ class PyStudioServiceBridge(QtCore.QObject):
         sid = ""
         try:
             sid = ensure_token(str(service_id), label="service_id")
-        except Exception:
+        except ValueError:
             return
         g = compiled.per_service.get(sid)
         if g is None:
             return
 
-        nats_url = str(self._cfg.nats_url).strip() or "nats://127.0.0.1:4222"
-        bucket = kv_bucket_for_service(sid)
-        tr = NatsTransport(NatsTransportConfig(url=nats_url, kv_bucket=bucket))
         try:
-            await tr.connect()
-
-            # Wait for `ready=true` with periodic warnings (services may take time to boot).
-            deadline = time.monotonic() + 30.0
-            last_log_s: float = 0.0
-            while True:
-                try:
-                    await wait_service_ready(tr, timeout_s=3.0)
-                    break
-                except Exception:
-                    if time.monotonic() >= deadline:
-                        try:
-                            self.log.emit(f"service not ready (timeout) serviceId={sid}")
-                        except Exception:
-                            pass
-                        return
-                    now = time.monotonic()
-                    if (now - last_log_s) >= 3.0:
-                        last_log_s = now
-                        try:
-                            remain = max(0.0, deadline - now)
-                            self.log.emit(f"waiting service ready... serviceId={sid} (timeout in {remain:.0f}s)")
-                        except Exception:
-                            pass
-                    await asyncio.sleep(0.4)
-            payload = g.model_dump(mode="json", by_alias=True)
-            meta = dict(payload.get("meta") or {})
-            if not str(meta.get("source") or "").strip():
-                meta["source"] = "studio"
-            payload["meta"] = meta
-            req = {"reqId": new_id(), "args": {"graph": payload}, "meta": {"source": "studio"}}
-            req_bytes = json.dumps(req, ensure_ascii=False, default=str).encode("utf-8")
-            _ = await tr.request(
-                svc_endpoint_subject(sid, "set_rungraph"),
-                req_bytes,
-                timeout=2.0,
-                raise_on_error=True,
+            result = await self._rungraph_gateway.deploy_runtime_graph(
+                RungraphDeployRequest(
+                    service_id=sid,
+                    graph=g,
+                    source="studio",
+                )
             )
+            if not result.success:
+                raise RuntimeError(result.error_message or "set_rungraph rejected")
         except Exception as exc:
-            try:
-                self.log.emit(f"deploy service rungraph failed serviceId={sid}: {exc}")
-            except Exception:
-                pass
-        finally:
-            try:
-                await tr.close()
-            except Exception:
-                pass
+            self._emit_log_line(f"deploy service rungraph failed serviceId={sid}: {exc}")
 
     async def _install_studio_graph_async(self, *, compiled: CompiledRuntimeGraphs | None = None) -> None:
         """
@@ -966,14 +808,11 @@ class PyStudioServiceBridge(QtCore.QObject):
             studio_graph = self._build_studio_runtime_graph(compiled)
             await self._svc.bus.set_rungraph(studio_graph)
         except Exception as exc:
-            try:
-                self.log.emit(f"install studio graph failed: {exc}")
-            except Exception:
-                pass
+            self._emit_log_line(f"install studio graph failed: {exc}")
         try:
             await self._apply_remote_state_watches_async(compiled)
-        except Exception:
-            pass
+        except Exception as exc:
+            self._report_exception("apply remote state watches failed", exc)
 
     @QtCore.Slot(str)
     def start_service_and_deploy(
@@ -984,7 +823,7 @@ class PyStudioServiceBridge(QtCore.QObject):
         """
         try:
             sid = ensure_token(str(service_id), label="service_id")
-        except Exception:
+        except ValueError:
             return
         if sid == self.studio_service_id:
             return
@@ -995,10 +834,7 @@ class PyStudioServiceBridge(QtCore.QObject):
             await self._deploy_service_rungraph_async(sid, compiled=compiled)
             await self._set_service_active_async(sid, True)
 
-        try:
-            self._async.submit(_do())
-        except Exception:
-            pass
+        self._submit_async(_do(), context=f"submit start_service_and_deploy failed serviceId={sid}")
 
     @QtCore.Slot(str)
     def restart_service_and_deploy(
@@ -1009,7 +845,7 @@ class PyStudioServiceBridge(QtCore.QObject):
         """
         try:
             sid = ensure_token(str(service_id), label="service_id")
-        except Exception:
+        except ValueError:
             return
         if sid == self.studio_service_id:
             return
@@ -1024,10 +860,7 @@ class PyStudioServiceBridge(QtCore.QObject):
             await self._deploy_service_rungraph_async(sid, compiled=compiled)
             await self._set_service_active_async(sid, True)
 
-        try:
-            self._async.submit(_do())
-        except Exception:
-            pass
+        self._submit_async(_do(), context=f"submit restart_service_and_deploy failed serviceId={sid}")
 
     def set_local_state(self, node_id: str, field: str, value: Any) -> None:
         """
@@ -1043,13 +876,10 @@ class PyStudioServiceBridge(QtCore.QObject):
                 return
             try:
                 await self._svc.bus.publish_state_external(node_id, field, value, source="pystudio")
-            except Exception:
-                return
+            except Exception as exc:
+                self._report_exception("publish local state failed", exc)
 
-        try:
-            self._async.submit(_do())
-        except Exception:
-            return
+        self._submit_async(_do(), context=f"submit set_local_state failed nodeId={node_id}")
 
     def set_remote_state(self, service_id: str, node_id: str, field: str, value: Any) -> None:
         """
@@ -1061,30 +891,13 @@ class PyStudioServiceBridge(QtCore.QObject):
         try:
             service_id = ensure_token(str(service_id), label="service_id")
             node_id = ensure_token(str(node_id), label="node_id")
-        except Exception:
+        except ValueError:
             return
         field = str(field or "").strip()
         if not field:
             return
 
-        def _coerce_json_value(v: Any) -> Any:
-            if v is None or isinstance(v, (str, int, float, bool)):
-                return v
-            if isinstance(v, (list, tuple)):
-                return [_coerce_json_value(x) for x in v]
-            if isinstance(v, dict):
-                return {str(k): _coerce_json_value(x) for k, x in v.items()}
-            try:
-                return _coerce_json_value(v.model_dump(mode="json"))
-            except Exception:
-                pass
-            try:
-                return _coerce_json_value(v.root)
-            except Exception:
-                pass
-            return v
-
-        value_json = _coerce_json_value(value)
+        value_json = coerce_json_value(value)
 
         async def _do() -> None:
             nc = await self._ensure_nc()
@@ -1103,16 +916,10 @@ class PyStudioServiceBridge(QtCore.QObject):
             for _ in range(3):
                 try:
                     msg = await nc.request(subject, payload, timeout=0.5)
-                    try:
-                        raw = bytes(msg.data or b"")
-                    except Exception:
-                        raw = b""
+                    raw = self._message_data_bytes(msg)
                     if not raw:
                         continue
-                    try:
-                        resp = json.loads(raw.decode("utf-8"))
-                    except Exception:
-                        resp = {}
+                    resp = self._decode_json_object(raw) or {}
                     if isinstance(resp, dict) and resp.get("ok") is True:
                         return
                     # Validation errors are expected; surface them.
@@ -1121,16 +928,18 @@ class PyStudioServiceBridge(QtCore.QObject):
                         code = str(err.get("code") or "")
                         msg_s = str(err.get("message") or "")
                         if code or msg_s:
-                            self.log.emit(f"set_state rejected serviceId={service_id} nodeId={node_id} field={field} code={code} msg={msg_s}")
+                            self._emit_log_line(
+                                f"set_state rejected serviceId={service_id} nodeId={node_id} field={field} code={code} msg={msg_s}"
+                            )
                         return
                 except Exception:
                     await asyncio.sleep(0.1)
                     continue
 
-        try:
-            self._async.submit(_do())
-        except Exception:
-            return
+        self._submit_async(
+            _do(),
+            context=f"submit set_remote_state failed serviceId={service_id} nodeId={node_id} field={field}",
+        )
 
     def request_remote_command(
         self,
@@ -1153,108 +962,36 @@ class PyStudioServiceBridge(QtCore.QObject):
 
         try:
             service_id = ensure_token(str(service_id), label="service_id")
-        except Exception as exc:
-            try:
-                self._remote_command_response.emit(str(req_id), None, str(exc))
-            except Exception:
-                pass
+        except ValueError as exc:
+            self._emit_remote_command_response_safe(str(req_id), None, str(exc))
             return
         call = str(call or "").strip()
         if not call or service_id == self.studio_service_id:
-            try:
-                self._remote_command_response.emit(str(req_id), None, "invalid call/service_id")
-            except Exception:
-                pass
+            self._emit_remote_command_response_safe(str(req_id), None, "invalid call/service_id")
             return
-
-        def _coerce_json_value(v: Any) -> Any:
-            if v is None or isinstance(v, (str, int, float, bool)):
-                return v
-            if isinstance(v, (list, tuple)):
-                return [_coerce_json_value(x) for x in v]
-            if isinstance(v, dict):
-                return {str(k): _coerce_json_value(x) for k, x in v.items()}
-            try:
-                return _coerce_json_value(v.model_dump(mode="json"))
-            except Exception:
-                pass
-            try:
-                return _coerce_json_value(v.root)
-            except Exception:
-                pass
-            return v
-
-        args_json = _coerce_json_value(args or {})
 
         async def _do() -> None:
-            nc = await self._ensure_nc()
-            if nc is None:
-                try:
-                    self._remote_command_response.emit(str(req_id), None, "NATS not connected")
-                except Exception:
-                    pass
-                return
-            subject = cmd_channel_subject(service_id)
-            payload = json.dumps(
-                {"reqId": str(req_id), "call": call, "args": args_json, "meta": {"actor": "studio", "source": "ui"}},
-                ensure_ascii=False,
-                default=str,
-            ).encode("utf-8")
             try:
-                msg = await nc.request(subject, payload, timeout=float(timeout_s))
-                try:
-                    raw = bytes(msg.data or b"")
-                except Exception:
-                    raw = b""
-                if not raw:
-                    try:
-                        self._remote_command_response.emit(str(req_id), None, "empty response")
-                    except Exception:
-                        pass
+                response = await self._command_gateway.request_command(
+                    CommandRequest(
+                        service_id=service_id,
+                        call=call,
+                        args=args or {},
+                        timeout_s=float(timeout_s),
+                        source="ui",
+                        actor="studio",
+                    )
+                )
+                if response.ok:
+                    self._emit_remote_command_response_safe(str(req_id), dict(response.result), None)
                     return
-                try:
-                    resp = json.loads(raw.decode("utf-8"))
-                except Exception:
-                    resp = {}
-                if not isinstance(resp, dict):
-                    try:
-                        self._remote_command_response.emit(str(req_id), None, "invalid response")
-                    except Exception:
-                        pass
-                    return
-                if resp.get("ok") is True:
-                    result = resp.get("result")
-                    if isinstance(result, dict):
-                        try:
-                            self._remote_command_response.emit(str(req_id), dict(result), None)
-                        except Exception:
-                            pass
-                    else:
-                        try:
-                            self._remote_command_response.emit(str(req_id), {"value": result}, None)
-                        except Exception:
-                            pass
-                    return
-                err = resp.get("error") if isinstance(resp.get("error"), dict) else {}
-                msg_s = str((err or {}).get("message") or "") if isinstance(err, dict) else ""
-                try:
-                    self._remote_command_response.emit(str(req_id), None, msg_s or "rejected")
-                except Exception:
-                    pass
+                self._emit_remote_command_response_safe(str(req_id), None, str(response.error_message or "rejected"))
             except Exception as exc:
-                try:
-                    self._remote_command_response.emit(str(req_id), None, f"{type(exc).__name__}: {exc}")
-                except Exception:
-                    pass
+                self._emit_remote_command_response_safe(str(req_id), None, f"{type(exc).__name__}: {exc}")
 
-        try:
-            self._async.submit(_do())
-        except Exception as exc:
-            try:
-                self._remote_command_response.emit(str(req_id), None, str(exc))
-            except Exception:
-                pass
-            return
+        submitted = self._submit_async(_do(), context=f"submit request_remote_command failed serviceId={service_id}")
+        if not submitted:
+            self._emit_remote_command_response_safe(str(req_id), None, "submit failed")
 
     def invoke_remote_command(self, service_id: str, call: str, args: dict[str, Any] | None = None) -> None:
         """
@@ -1265,74 +1002,31 @@ class PyStudioServiceBridge(QtCore.QObject):
         """
         try:
             service_id = ensure_token(str(service_id), label="service_id")
-        except Exception:
+        except ValueError:
             return
         call = str(call or "").strip()
         if not call or service_id == self.studio_service_id:
             return
 
-        def _coerce_json_value(v: Any) -> Any:
-            if v is None or isinstance(v, (str, int, float, bool)):
-                return v
-            if isinstance(v, (list, tuple)):
-                return [_coerce_json_value(x) for x in v]
-            if isinstance(v, dict):
-                return {str(k): _coerce_json_value(x) for k, x in v.items()}
-            try:
-                return _coerce_json_value(v.model_dump(mode="json"))
-            except Exception:
-                pass
-            try:
-                return _coerce_json_value(v.root)
-            except Exception:
-                pass
-            return v
-
-        args_json = _coerce_json_value(args or {})
-
         async def _do() -> None:
-            nc = await self._ensure_nc()
-            if nc is None:
-                return
-            subject = cmd_channel_subject(service_id)
-            payload = json.dumps(
-                {
-                    "reqId": new_id(),
-                    "call": call,
-                    "args": args_json,
-                    "meta": {"actor": "studio", "source": "ui"},
-                },
-                ensure_ascii=False,
-                default=str,
-            ).encode("utf-8")
             try:
-                msg = await nc.request(subject, payload, timeout=1.5)
-                try:
-                    raw = bytes(msg.data or b"")
-                except Exception:
-                    raw = b""
-                if not raw:
-                    self.log.emit(f"command {call} failed serviceId={service_id}: empty response")
+                response = await self._command_gateway.request_command(
+                    CommandRequest(
+                        service_id=service_id,
+                        call=call,
+                        args=args or {},
+                        timeout_s=1.5,
+                        source="ui",
+                        actor="studio",
+                    )
+                )
+                if response.ok:
                     return
-                try:
-                    resp = json.loads(raw.decode("utf-8"))
-                except Exception:
-                    resp = {}
-                if isinstance(resp, dict) and resp.get("ok") is True:
-                    return
-                msg = ""
-                try:
-                    msg = str((resp.get("error") or {}).get("message") or "")
-                except Exception:
-                    msg = ""
-                self.log.emit(f"command {call} failed serviceId={service_id}: {msg or 'rejected'}")
+                self._emit_log_line(f"command {call} failed serviceId={service_id}: {response.error_message or 'rejected'}")
             except Exception as exc:
-                self.log.emit(f"command {call} failed serviceId={service_id}: {type(exc).__name__}: {exc}")
+                self._emit_log_line(f"command {call} failed serviceId={service_id}: {type(exc).__name__}: {exc}")
 
-        try:
-            self._async.submit(_do())
-        except Exception:
-            return
+        self._submit_async(_do(), context=f"submit invoke_remote_command failed serviceId={service_id}")
 
     async def _start_async(self) -> None:
         nats_url = str(self._cfg.nats_url).strip() or "nats://127.0.0.1:4222"
@@ -1348,21 +1042,21 @@ class PyStudioServiceBridge(QtCore.QObject):
                 if (now - self._last_nats_error_log_s) < 2.0:
                     return
                 self._last_nats_error_log_s = now
-                try:
-                    self.log.emit(f"NATS not reachable at {nats_url!r} (will retry): {type(exc).__name__}: {exc}")
-                except Exception:
-                    pass
+                self._emit_log_line(f"NATS not reachable at {nats_url!r} (will retry): {type(exc).__name__}: {exc}")
 
             self._nc = await nats.connect(servers=[nats_url], connect_timeout=2, error_cb=_err_cb)
             try:
                 await self._nc.request(f"$SRV.PING.{svc_micro_name(self.studio_service_id)}", b"", timeout=0.2)
-                self.log.emit("Another PyStudio instance is already running (micro service ping responded).")
+                self._emit_log_line("Another PyStudio instance is already running (micro service ping responded).")
                 await self._nc.close()
                 self._nc = None
                 return
-            except Exception:
-                pass
-        except Exception:
+            except Exception as exc:
+                exc_name = type(exc).__name__
+                if exc_name not in {"TimeoutError", "NoRespondersError"}:
+                    self._report_exception("singleton ping failed", exc)
+        except Exception as exc:
+            self._report_exception("connect nats for singleton guard failed", exc)
             self._nc = None
 
         try:
@@ -1372,7 +1066,7 @@ class PyStudioServiceBridge(QtCore.QObject):
                 on_ui_command=lambda cmd: self.ui_command.emit(cmd),
             )
         except Exception as exc:
-            self.log.emit(f"studio runtime start failed: {exc}")
+            self._emit_log_line(f"studio runtime start failed: {exc}")
             self._svc = None
 
         # Studio-side remote KV watcher (monitors all remote node state and mirrors into UI).
@@ -1395,8 +1089,8 @@ class PyStudioServiceBridge(QtCore.QObject):
                             ts_ms=int(ts_ms),
                         )
                     )
-                except Exception:
-                    return
+                except RuntimeError as exc:
+                    self._report_exception("emit ui state.update failed", exc)
 
             try:
                 self._remote_state_watcher = RemoteStateWatcher(
@@ -1404,91 +1098,66 @@ class PyStudioServiceBridge(QtCore.QObject):
                     studio_service_id=self.studio_service_id,
                     on_state=_on_state,
                 )
-                await self._remote_state_watcher.start()
-            except Exception:
+                self._remote_state_gateway = RemoteStateGatewayAdapter(self._remote_state_watcher)
+                await self._remote_state_gateway.start()
+            except Exception as exc:
+                self._report_exception("start remote state watcher failed", exc)
                 self._remote_state_watcher = None
+                self._remote_state_gateway = None
 
         # Re-apply current desired lifecycle to any already-known managed services.
         try:
             await self._set_managed_active_async(bool(self._managed_active))
-        except Exception:
-            pass
+        except Exception as exc:
+            self._report_exception("re-apply managed active failed", exc)
 
     async def _stop_async(self) -> None:
         try:
-            if self._remote_state_watcher is not None:
+            if self._remote_state_gateway is not None:
+                await self._remote_state_gateway.stop()
+            elif self._remote_state_watcher is not None:
                 await self._remote_state_watcher.stop()
-        except Exception:
-            pass
+        except Exception as exc:
+            self._report_exception("stop remote state watcher failed", exc)
+        self._remote_state_gateway = None
         self._remote_state_watcher = None
         try:
             if self._svc is not None:
                 await self._svc.stop()
-        except Exception:
-            pass
+        except Exception as exc:
+            self._report_exception("stop studio service failed", exc)
         self._svc = None
+
+        try:
+            await self._command_gateway.close()
+        except Exception as exc:
+            self._report_exception("close command gateway failed", exc)
 
         try:
             if self._nc is not None:
                 await self._nc.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            self._report_exception("close nats connection failed", exc)
         self._nc = None
 
     async def _deploy_and_monitor_async(self, compiled: CompiledRuntimeGraphs) -> None:
-        nats_url = str(self._cfg.nats_url).strip() or "nats://127.0.0.1:4222"
-
         # Deploy per-service rungraphs.
         for sid, g in compiled.per_service.items():
             service_id = ensure_token(str(sid), label="service_id")
             if str(service_id) == self.studio_service_id:
                 continue
-            bucket = kv_bucket_for_service(service_id)
-            tr = NatsTransport(NatsTransportConfig(url=nats_url, kv_bucket=bucket))
             try:
-                await tr.connect()
-                try:
-                    await wait_service_ready(tr, timeout_s=6.0)
-                except Exception as exc:
-                    raise RuntimeError(f"service not ready: {exc}")
-                payload = g.model_dump(mode="json", by_alias=True)
-                meta = dict(payload.get("meta") or {})
-                if not str(meta.get("source") or "").strip():
-                    meta["source"] = "studio"
-                payload["meta"] = meta
-                # Endpoint-only mode: deploy via service endpoint (allows validation/rejection).
-                req = {"reqId": new_id(), "args": {"graph": payload}, "meta": {"source": "studio"}}
-                req_bytes = json.dumps(req, ensure_ascii=False, default=str).encode("utf-8")
-                resp_raw = await tr.request(
-                    svc_endpoint_subject(service_id, "set_rungraph"),
-                    req_bytes,
-                    timeout=2.0,
-                    raise_on_error=True,
+                result = await self._rungraph_gateway.deploy_runtime_graph(
+                    RungraphDeployRequest(
+                        service_id=service_id,
+                        graph=g,
+                        source="studio",
+                    )
                 )
-                if not resp_raw:
-                    raise RuntimeError("set_rungraph request failed: empty response")
-                try:
-                    resp = json.loads(resp_raw.decode("utf-8"))
-                except Exception:
-                    resp = {}
-                if isinstance(resp, dict) and resp.get("ok") is True:
-                    pass
-                elif isinstance(resp, dict) and resp.get("ok") is False:
-                    msg = ""
-                    try:
-                        msg = str((resp.get("error") or {}).get("message") or "")
-                    except Exception:
-                        msg = ""
-                    raise RuntimeError(msg or "set_rungraph rejected")
-                else:
-                    raise RuntimeError("invalid set_rungraph response")
+                if not result.success:
+                    raise RuntimeError(result.error_message or "set_rungraph rejected")
             except Exception as exc:
-                self.log.emit(f"deploy failed serviceId={service_id}: {exc}")
-            finally:
-                try:
-                    await tr.close()
-                except Exception:
-                    pass
+                self._emit_log_line(f"deploy failed serviceId={service_id}: {exc}")
 
         # Install studio runtime graph (studio operators + edges).
         if self._svc is None or self._svc.bus is None:
@@ -1497,12 +1166,12 @@ class PyStudioServiceBridge(QtCore.QObject):
             studio_graph = self._build_studio_runtime_graph(compiled)
             await self._svc.bus.set_rungraph(studio_graph)
         except Exception as exc:
-            self.log.emit(f"install studio graph failed: {exc}")
+            self._emit_log_line(f"install studio graph failed: {exc}")
 
         try:
             await self._apply_remote_state_watches_async(compiled)
-        except Exception:
-            pass
+        except Exception as exc:
+            self._report_exception("apply remote state watches failed", exc)
 
     async def _ensure_nc(self) -> Any | None:
         """
@@ -1517,13 +1186,11 @@ class PyStudioServiceBridge(QtCore.QObject):
                 if (now - self._last_nats_error_log_s) < 2.0:
                     return
                 self._last_nats_error_log_s = now
-                try:
-                    self.log.emit(f"NATS not reachable at {nats_url!r} (will retry): {type(exc).__name__}: {exc}")
-                except Exception:
-                    pass
+                self._emit_log_line(f"NATS not reachable at {nats_url!r} (will retry): {type(exc).__name__}: {exc}")
 
             self._nc = await nats.connect(servers=[nats_url], connect_timeout=2, error_cb=_err_cb)
-        except Exception:
+        except Exception as exc:
+            self._report_exception("ensure nats connection failed", exc)
             self._nc = None
         return self._nc
 
@@ -1547,15 +1214,9 @@ class PyStudioServiceBridge(QtCore.QObject):
             for _ in range(3):
                 try:
                     msg = await nc.request(subject, payload, timeout=0.5)
-                    try:
-                        data = bytes(msg.data or b"")
-                    except Exception:
-                        data = b""
+                    data = self._message_data_bytes(msg)
                     if data:
-                        try:
-                            resp = json.loads(data.decode("utf-8"))
-                        except Exception:
-                            resp = {}
+                        resp = self._decode_json_object(data) or {}
                         if isinstance(resp, dict) and resp.get("ok") is True:
                             ok = True
                             break
@@ -1563,7 +1224,4 @@ class PyStudioServiceBridge(QtCore.QObject):
                     await asyncio.sleep(0.2)
                     continue
             if not ok:
-                try:
-                    self.log.emit(f"lifecycle {cmd} failed serviceId={sid}")
-                except Exception:
-                    pass
+                self._emit_log_line(f"lifecycle {cmd} failed serviceId={sid}")

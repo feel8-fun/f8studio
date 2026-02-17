@@ -60,7 +60,7 @@ class _VideoShmPane(QtWidgets.QWidget):
     def detach(self) -> None:
         try:
             self._timer.stop()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         self._reset_reader()
 
@@ -68,7 +68,7 @@ class _VideoShmPane(QtWidgets.QWidget):
         try:
             if self._reader is not None:
                 self._reader.close()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         self._reader = None
         self._last_frame_id = 0
@@ -118,7 +118,7 @@ class _VideoShmPane(QtWidgets.QWidget):
 
         try:
             img = QtGui.QImage(frame_bytes, w, h, pitch, QtGui.QImage.Format_ARGB32)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError, ValueError):
             return
         pix = QtGui.QPixmap.fromImage(img)
 
@@ -127,7 +127,7 @@ class _VideoShmPane(QtWidgets.QWidget):
             self._last_pixmap_size = target
         try:
             pix2 = pix.scaled(target, QtCore.Qt.KeepAspectRatio, QtCore.Qt.FastTransformation)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pix2 = pix
         self._image.setPixmap(pix2)
         self._title.setText(f"VideoSHM  {w}x{h}  frameId={self._last_frame_id}")
@@ -162,7 +162,7 @@ class PyStudioVideoShmNode(F8StudioOperatorBaseNode):
         super().__init__(qgraphics_item=F8StudioVizOperatorNodeItem)
         try:
             self.add_custom_widget(_VideoShmWidget(self.view, name="__videoshm", label=""))
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
     def apply_ui_command(self, cmd: UiCommand) -> None:
@@ -173,7 +173,7 @@ class PyStudioVideoShmNode(F8StudioOperatorBaseNode):
                 if not w:
                     return
                 w.detach()
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
             return
 
@@ -183,12 +183,12 @@ class PyStudioVideoShmNode(F8StudioOperatorBaseNode):
             payload = dict(cmd.payload or {})
             shm_name = str(payload.get("shmName") or "").strip()
             throttle_ms = int(payload.get("throttleMs") or 33)
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             return
         try:
             w = self.get_widget("__videoshm")
             if not w:
                 return
             w.set_config(shm_name=shm_name, throttle_ms=throttle_ms)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError, ValueError):
             return

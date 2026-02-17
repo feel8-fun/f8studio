@@ -45,6 +45,6 @@ def emit_ui_command(node_id: str, command: str, payload: dict[str, Any], *, ts_m
         if _exception_log_once.should_log(fp):
             try:
                 logger.error("UI command sink raised", exc_info=exc)
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
         return

@@ -42,11 +42,11 @@ def _port_name(port: Any) -> str:
     """
     try:
         return str(port.name() or "")
-    except Exception:
+    except (AttributeError, RuntimeError, TypeError):
         pass
     try:
         return str(port.name or "")
-    except Exception:
+    except (AttributeError, RuntimeError, TypeError):
         return ""
 
 
@@ -83,7 +83,7 @@ def export_runtime_graph(
     for n in all_nodes:
         try:
             spec = n.spec
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             continue
         try:
             node_id = ensure_token(str(n.id or uuid.uuid4().hex).replace(".", "_"), label="nodeId")
@@ -129,7 +129,7 @@ def export_runtime_graph(
                 continue
             try:
                 state_values[name] = n.get_property(name)
-            except Exception:
+            except (AttributeError, KeyError, RuntimeError, TypeError):
                 pass
 
         nodes.append(
@@ -236,7 +236,7 @@ async def deploy_to_service(*, service_id: str, nats_url: str, graph: F8RuntimeG
             msg = ""
             try:
                 msg = str((resp.get("error") or {}).get("message") or "")
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError, ValueError):
                 msg = ""
             raise RuntimeError(msg or "set_rungraph rejected")
         raise RuntimeError("invalid set_rungraph response")

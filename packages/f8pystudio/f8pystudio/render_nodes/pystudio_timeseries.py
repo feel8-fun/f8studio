@@ -37,7 +37,7 @@ class _TimeSeriesPane(QtWidgets.QWidget):
         try:
             plot.getAxis("bottom").setLabel("")
             plot.getAxis("left").setLabel("")
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         try:
             # Tighten internal margins to reduce wasted chrome.
@@ -45,13 +45,13 @@ class _TimeSeriesPane(QtWidgets.QWidget):
             if pi is not None:
                 try:
                     pi.layout.setContentsMargins(2, 2, 2, 2)
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError):
                     pass
                 try:
                     pi.setDefaultPadding(0.02)
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError, ValueError):
                     pass
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         plot.enableAutoRange(axis="y", enable=True)
         self._legend = None
@@ -84,7 +84,7 @@ class _TimeSeriesPane(QtWidgets.QWidget):
             for k, c in list(self._curves.items()):
                 try:
                     self._plot.removeItem(c)
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError):
                     pass
                 self._curves.pop(k, None)
             return
@@ -102,7 +102,7 @@ class _TimeSeriesPane(QtWidgets.QWidget):
                 else:
                     if self._legend is not None:
                         self._legend.setVisible(False)
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
 
         active = {str(k): v for k, v in series.items() if isinstance(k, str) and isinstance(v, list)}
@@ -114,7 +114,7 @@ class _TimeSeriesPane(QtWidgets.QWidget):
                 if c is not None:
                     try:
                         self._plot.removeItem(c)
-                    except Exception:
+                    except (AttributeError, RuntimeError, TypeError):
                         pass
 
         for name, points in active.items():
@@ -123,7 +123,7 @@ class _TimeSeriesPane(QtWidgets.QWidget):
                 rgb = colors.get(name) or (180, 180, 180)
                 try:
                     pen = pg.mkPen((*rgb, 255), width=2)
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError, ValueError):
                     pen = pg.mkPen("w", width=2)
                 curve = self._plot.plot([], [], pen=pen, name=name)
                 self._curves[name] = curve
@@ -135,11 +135,11 @@ class _TimeSeriesPane(QtWidgets.QWidget):
                     ts, v = p
                     xs.append((float(ts) - float(now_ms)) / 1000.0)
                     ys.append(float(v))
-                except Exception:
+                except (TypeError, ValueError):
                     continue
             try:
                 curve.setData(xs, ys)
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError, ValueError):
                 pass
 
         # Y range handling:
@@ -149,7 +149,7 @@ class _TimeSeriesPane(QtWidgets.QWidget):
         try:
             if y_min is not None and y_max is not None and float(y_max) > float(y_min):
                 fixed = True
-        except Exception:
+        except (TypeError, ValueError):
             fixed = False
         try:
             if fixed:
@@ -157,7 +157,7 @@ class _TimeSeriesPane(QtWidgets.QWidget):
                 self._plot.setYRange(float(y_min), float(y_max), padding=0.0)
             else:
                 self._plot.enableAutoRange(axis="y", enable=True)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError, ValueError):
             pass
 
         if window_ms is not None and window_ms > 0:
@@ -215,7 +215,7 @@ class PyStudioTimeSeriesNode(F8StudioOperatorBaseNode):
             
         try:
             colors = series_colors([str(p.name) for p in ports])
-        except Exception:
+        except (AttributeError, TypeError):
             colors = {}
         for i, p in enumerate(ports):
             name = str(p.name)
@@ -224,7 +224,7 @@ class PyStudioTimeSeriesNode(F8StudioOperatorBaseNode):
             rgb = colors.get(name) or (180, 180, 180)
             try:
                 port = self.get_input(f"[D]{name}")
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 port = None
 
             if port is None:
@@ -240,7 +240,7 @@ class PyStudioTimeSeriesNode(F8StudioOperatorBaseNode):
             return
         try:
             payload = dict(cmd.payload or {})
-        except Exception:
+        except (AttributeError, TypeError):
             return
 
         window_ms = payload.get("windowMs")
@@ -264,17 +264,17 @@ class PyStudioTimeSeriesNode(F8StudioOperatorBaseNode):
                 if isinstance(v, (list, tuple)) and len(v) >= 3:
                     try:
                         colors[k] = (int(v[0]), int(v[1]), int(v[2]))
-                    except Exception:
+                    except (TypeError, ValueError):
                         continue
         else:
             # Derive colors from current spec order when runtime didn't provide them.
             try:
                 ports = list(self.spec.dataInPorts or [])
-            except Exception:
+            except (AttributeError, TypeError):
                 ports = []
             try:
                 colors = series_colors([str(p.name) for p in ports])
-            except Exception:
+            except (AttributeError, TypeError):
                 colors = {}
 
         y_min: float | None = None
@@ -282,17 +282,17 @@ class PyStudioTimeSeriesNode(F8StudioOperatorBaseNode):
         try:
             if min_val is not None:
                 y_min = float(min_val)
-        except Exception:
+        except (TypeError, ValueError):
             y_min = None
         try:
             if max_val is not None:
                 y_max = float(max_val)
-        except Exception:
+        except (TypeError, ValueError):
             y_max = None
 
         try:
             w = self.get_widget("__timeseries")
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             return
         if not w:
             return
@@ -306,5 +306,5 @@ class PyStudioTimeSeriesNode(F8StudioOperatorBaseNode):
                 y_min=y_min,
                 y_max=y_max,
             )
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError, ValueError):
             return

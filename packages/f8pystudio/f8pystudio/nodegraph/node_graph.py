@@ -22,6 +22,8 @@ from .viewer import F8StudioNodeViewer
 from .service_bridge_protocol import ServiceBridge
 from .session import last_session_path
 from .spec_visibility import is_hidden_spec_node_class
+from ..session_migration import extract_layout as _extract_session_layout
+from ..session_migration import wrap_layout_for_save as _wrap_layout_for_save
 from ..variants.variant_ids import build_variant_node_type, parse_variant_node_type
 from ..variants.variant_repository import load_library
 from ..variants.variant_compose import build_variant_record_from_node
@@ -304,12 +306,12 @@ class F8StudioGraph(NodeGraph):
             for p in list(spec.dataInPorts or []):
                 try:
                     ports.add(f"[D]{p.name}")
-                except Exception:
+                except (AttributeError, TypeError):
                     continue
             for p in list(spec.dataOutPorts or []):
                 try:
                     ports.add(f"{p.name}[D]")
-                except Exception:
+                except (AttributeError, TypeError):
                     continue
             for s in state_fields:
                 try:
@@ -320,7 +322,7 @@ class F8StudioGraph(NodeGraph):
                         continue
                     ports.add(f"[S]{name}")
                     ports.add(f"{name}[S]")
-                except Exception:
+                except (AttributeError, TypeError):
                     continue
             port_sets[str(node_id)] = ports
 
@@ -824,7 +826,8 @@ class F8StudioGraph(NodeGraph):
 
     def serialize_session(self):
         data = super().serialize_session()
-        return self._strip_port_restore_data(data)
+        stripped_layout = self._strip_port_restore_data(data)
+        return _wrap_layout_for_save(stripped_layout)
 
     def load_session(self, file_path: str) -> None:
         """
@@ -841,7 +844,8 @@ class F8StudioGraph(NodeGraph):
         try:
             self.clear_session()
             with open(file_path) as data_file:
-                layout_data = json.load(data_file)
+                payload = json.load(data_file)
+            layout_data = _extract_session_layout(payload)
             self._inject_node_ids(layout_data)
             layout_data = self._coerce_missing_session_nodes(layout_data)
             self._validate_session_node_types(layout_data)
@@ -892,7 +896,7 @@ class F8StudioGraph(NodeGraph):
             elif isinstance(spec, F8ServiceSpec):
                 if "svcId" in node.model.properties or "svcId" in node.model.custom_properties:
                     node.set_property("svcId", str(new_nid), push_undo=False)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         return node
 
@@ -1147,7 +1151,7 @@ class F8StudioGraph(NodeGraph):
                 svc_class = str(spec.serviceClass or "")
                 if sid and sid != STUDIO_SERVICE_ID and svc_class != _CANVAS_SERVICE_CLASS_:
                     service_ids.add(sid)
-            except Exception:
+            except (AttributeError, TypeError):
                 continue
 
         # NodeGraphQt's `delete_nodes([single])` calls back into `self.delete_node(...)`,
@@ -1165,7 +1169,7 @@ class F8StudioGraph(NodeGraph):
             if node_id:
                 try:
                     self.nodes_deleted.emit([node_id])  # type: ignore[attr-defined]
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError):
                     pass
         else:
             r = super().delete_nodes(nodes, push_undo=push_undo)
@@ -1189,7 +1193,7 @@ class F8StudioGraph(NodeGraph):
                 svc_class = str(spec.serviceClass or "")
                 if sid and sid != STUDIO_SERVICE_ID and svc_class != _CANVAS_SERVICE_CLASS_:
                     before.add(sid)
-            except Exception:
+            except (AttributeError, TypeError):
                 continue
         super().clear_session(*args, **kwargs)
         for sid in sorted({s for s in before if s and s != STUDIO_SERVICE_ID}):
@@ -1207,7 +1211,7 @@ class F8StudioGraph(NodeGraph):
             # Any service instance node with this id keeps the service alive.
             if n is not None and isinstance(n.spec, F8ServiceSpec):
                 return True
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         # If any operator still points at this svcId, keep the service alive.
         for n in self.all_nodes():
@@ -1216,7 +1220,7 @@ class F8StudioGraph(NodeGraph):
             try:
                 if str(n.svcId or "") == sid:
                     return True
-            except Exception:
+            except (AttributeError, TypeError):
                 continue
         return False
 
@@ -1234,11 +1238,11 @@ class F8StudioGraph(NodeGraph):
         try:
             if t.isActive():
                 t.stop()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         try:
             t.start(max(1, int(delay_ms)))
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError, ValueError):
             pass
 
     def _reclaim_service_if_unreferenced(self, service_id: str) -> None:
@@ -1252,7 +1256,7 @@ class F8StudioGraph(NodeGraph):
             return
         try:
             bridge.reclaim_service(sid)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             return
 
     def new_unique_node_id(self) -> str:
@@ -1311,7 +1315,7 @@ class F8StudioGraph(NodeGraph):
         try:
             if "svcId" in operator.model.properties or "svcId" in operator.model.custom_properties:
                 operator.set_property("svcId", str(sid), push_undo=False)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         container.add_child(operator)
         return True
@@ -1402,7 +1406,7 @@ class F8StudioGraph(NodeGraph):
             try:
                 if "svcId" in node.model.properties or "svcId" in node.model.custom_properties:
                     node.set_property("svcId", STUDIO_SERVICE_ID, push_undo=False)
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
             return True, None
 
@@ -1473,7 +1477,7 @@ class F8StudioGraph(NodeGraph):
                 try:
                     if "svcId" in op.model.properties or "svcId" in op.model.custom_properties:
                         op.set_property("svcId", STUDIO_SERVICE_ID, push_undo=False)
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError):
                     pass
                 continue
 
@@ -1484,7 +1488,7 @@ class F8StudioGraph(NodeGraph):
                 try:
                     if "svcId" in op.model.properties or "svcId" in op.model.custom_properties:
                         op.set_property("svcId", "", push_undo=False)
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError):
                     pass
                 logger.warning('Operator "%s" is not inside any container after load.', op.name())
                 continue

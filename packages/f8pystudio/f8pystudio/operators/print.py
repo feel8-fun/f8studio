@@ -52,7 +52,7 @@ class PyStudioPrintRuntimeNode(StudioVizRuntimeNodeBase):
             return
         try:
             loop = asyncio.get_running_loop()
-        except Exception:
+        except RuntimeError:
             return
         self._task = loop.create_task(self._run(), name=f"pystudio:print:{self.node_id}")
 
@@ -63,11 +63,11 @@ class PyStudioPrintRuntimeNode(StudioVizRuntimeNodeBase):
             return
         try:
             t.cancel()
-        except Exception:
+        except (RuntimeError, TypeError):
             pass
         try:
             await asyncio.gather(t, return_exceptions=True)
-        except Exception:
+        except (RuntimeError, TypeError):
             pass
 
     async def _run(self) -> None:

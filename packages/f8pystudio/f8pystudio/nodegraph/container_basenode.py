@@ -51,7 +51,7 @@ class F8StudioContainerBaseNode(F8StudioBaseNode):
             try:
                 if self.has_property(name):  # type: ignore[attr-defined]
                     continue
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
             try:
                 default_value = schema_default(s.valueSchema)
@@ -69,7 +69,7 @@ class F8StudioContainerBaseNode(F8StudioBaseNode):
                     widget_tooltip=tooltip,
                     tab="State",
                 )
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError, ValueError):
                 continue
 
     @staticmethod
@@ -144,7 +144,7 @@ class F8StudioContainerNodeItem(AbstractNodeItem):
         if pos:
             try:
                 self.xy_pos = pos
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError, ValueError):
                 pass
             self._position_service_toolbar()
 
@@ -223,12 +223,12 @@ class F8StudioContainerNodeItem(AbstractNodeItem):
             rect = self.boundingRect()
             w = float(proxy.size().width() or 0.0)
             h = float(proxy.size().height() or 0.0)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError, ValueError):
             return
         
         try:
             proxy.setPos(rect.right() - w, rect.top() - h)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
     def _combined_rect(self, nodes: list[AbstractNodeItem]) -> QtCore.QRectF:

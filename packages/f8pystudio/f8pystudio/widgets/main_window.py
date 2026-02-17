@@ -72,7 +72,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         if svc_name:
             try:
                 self._log_dock.set_service_name(service_id, svc_name)
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
         self._log_dock.append(service_id, line)
 
@@ -82,7 +82,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
             return
         try:
             self._log_dock.close_service_tab(service_id)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
     def _setup_docks(self) -> None:
@@ -196,7 +196,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         except Exception:
             try:
                 self._log_dock.append("studio", "[session] auto-save failed\n")
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
             logger.exception("Auto-save session failed")
 
@@ -299,20 +299,20 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
                         if w is not None:
                             try:
                                 w.blockSignals(True)
-                            except Exception:
+                            except (AttributeError, RuntimeError, TypeError):
                                 pass
                             try:
                                 w.set_value(value)
                             finally:
                                 try:
                                     w.blockSignals(False)
-                                except Exception:
+                                except (AttributeError, RuntimeError, TypeError):
                                     pass
-                    except Exception:
+                    except (AttributeError, RuntimeError, TypeError, ValueError):
                         pass
                 finally:
                     self._applying_runtime_state = False
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             return
 
     def _on_ui_command(self, cmd: UiCommand) -> None:
@@ -338,7 +338,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         try:
             if isinstance(node, UiCommandApplier):
                 node.apply_ui_command(cmd)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError, ValueError):
             return
 
     def _on_ui_property_changed(self, node: Any, name: str, value: Any) -> None:

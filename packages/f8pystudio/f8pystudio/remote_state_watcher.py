@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
@@ -13,6 +14,8 @@ from f8pysdk.nats_naming import (
 )
 from f8pysdk.nats_transport import NatsTransport, NatsTransportConfig
 from f8pysdk.time_utils import now_ms
+
+logger = logging.getLogger(__name__)
 
 
 def _coerce_inbound_ts_ms(ts_raw: Any, *, default: int) -> int:
@@ -31,7 +34,7 @@ def _coerce_inbound_ts_ms(ts_raw: Any, *, default: int) -> int:
             ts = int(ts_raw.strip() or "0")
         else:
             ts = int(ts_raw)
-    except Exception:
+    except (TypeError, ValueError):
         return int(default)
 
     if ts <= 0:
@@ -110,20 +113,20 @@ class RemoteStateWatcher:
                 watcher, task = watch
                 try:
                     task.cancel()
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError):
                     pass
                 try:
                     await watcher.stop()
-                except Exception:
+                except (AttributeError, OSError, RuntimeError, TypeError):
                     pass
-            except Exception:
+            except (TypeError, ValueError):
                 pass
         self._watches.clear()
         self._last_by_key.clear()
         self._started = False
         try:
             await self._tr.close()
-        except Exception:
+        except (AttributeError, OSError, RuntimeError, TypeError):
             pass
 
     async def apply_targets(self, targets: list[WatchTarget]) -> None:
@@ -137,7 +140,7 @@ class RemoteStateWatcher:
             try:
                 sid = ensure_token(str(t.service_id), label="service_id")
                 nid = ensure_token(str(t.node_id), label="node_id")
-            except Exception:
+            except (AttributeError, TypeError, ValueError):
                 continue
             bucket = kv_bucket_for_service(sid)
             pattern = f"nodes.{nid}.state.>"
@@ -151,13 +154,13 @@ class RemoteStateWatcher:
                 watcher, task = watch
                 try:
                     task.cancel()
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError):
                     pass
                 try:
                     await watcher.stop()
-                except Exception:
+                except (AttributeError, OSError, RuntimeError, TypeError):
                     pass
-            except Exception:
+            except (TypeError, ValueError):
                 pass
             self._watches.pop(k, None)
 
@@ -176,7 +179,7 @@ class RemoteStateWatcher:
                     continue
                 try:
                     key = kv_key_node_state(node_id=t.node_id, field=f)
-                except Exception:
+                except (AttributeError, TypeError, ValueError):
                     continue
                 raw = await self._tr.kv_get_in_bucket(bucket, key)
                 if not raw:
@@ -190,7 +193,7 @@ class RemoteStateWatcher:
         node_id, field = parsed
         try:
             payload = json.loads(value.decode("utf-8")) if value else {}
-        except Exception:
+        except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
             payload = {}
         meta: dict[str, Any] = {}
         if isinstance(payload, dict):
@@ -207,19 +210,22 @@ class RemoteStateWatcher:
             last_ts, last_v = last
             # If the *value* didn't change, suppress duplicate UI updates even if ts changes.
             # If the value changed, always apply (even when ts goes backwards).
-            try:
-                if v == last_v:
-                    if int(ts) > int(last_ts):
-                        self._last_by_key[k] = (int(ts), last_v)
-                    return
-            except Exception:
-                # If comparison fails for any reason, fall back to applying.
-                pass
+            if v == last_v:
+                if int(ts) > int(last_ts):
+                    self._last_by_key[k] = (int(ts), last_v)
+                return
         self._last_by_key[k] = (int(ts), v)
 
         try:
             r = self._on_state(str(service_id), str(node_id), str(field), v, int(ts), meta)
             if asyncio.iscoroutine(r):
                 await r
-        except Exception:
+        except Exception as exc:
+            logger.exception(
+                "Remote state callback failed service_id=%s node_id=%s field=%s",
+                service_id,
+                node_id,
+                field,
+                exc_info=exc,
+            )
             return

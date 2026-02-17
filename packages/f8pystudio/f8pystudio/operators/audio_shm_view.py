@@ -115,7 +115,7 @@ class PyStudioAudioShmViewRuntimeNode(OperatorNode):
         try:
             loop = asyncio.get_running_loop()
             loop.create_task(self._ensure_config_loaded(), name=f"pystudio:audioshm:init:{self.node_id}")
-        except Exception:
+        except RuntimeError:
             pass
 
     async def close(self) -> None:
@@ -125,7 +125,7 @@ class PyStudioAudioShmViewRuntimeNode(OperatorNode):
             if t is not None:
                 t.cancel()
                 await asyncio.gather(t, return_exceptions=True)
-        except Exception:
+        except (RuntimeError, TypeError):
             pass
         emit_ui_command(self.node_id, "audioshm.detach", {}, ts_ms=int(time.time() * 1000))
 
@@ -162,7 +162,7 @@ class PyStudioAudioShmViewRuntimeNode(OperatorNode):
             return
         try:
             loop = asyncio.get_running_loop()
-        except Exception:
+        except RuntimeError:
             return
         self._pending_task = loop.create_task(self._push_config_async(now_ms), name=f"pystudio:audioshm:cfg:{self.node_id}")
 

@@ -75,7 +75,7 @@ class _TrackVizCanvas(pg.GraphicsObject):  # type: ignore[misc]
         try:
             self._w = int(payload.get("width") or 0)
             self._h = int(payload.get("height") or 0)
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             self._w, self._h = 0, 0
         self.prepareGeometryChange()
         self.update()
@@ -113,7 +113,7 @@ class _TrackVizCanvas(pg.GraphicsObject):  # type: ignore[misc]
                 continue
             try:
                 tid = int(t.get("id"))
-            except Exception:
+            except (TypeError, ValueError):
                 continue
             hist = t.get("history")
             if not isinstance(hist, list) or not hist:
@@ -129,7 +129,7 @@ class _TrackVizCanvas(pg.GraphicsObject):  # type: ignore[misc]
                     continue
                 try:
                     ts = int(s.get("tsMs") or 0)
-                except Exception:
+                except (TypeError, ValueError):
                     ts = 0
 
                 age = max(0, now_ms - ts) if now_ms > 0 and ts > 0 else 0
@@ -149,7 +149,7 @@ class _TrackVizCanvas(pg.GraphicsObject):  # type: ignore[misc]
                         kind = ""
                         try:
                             kind = str(s.get("kind") or "")
-                        except Exception:
+                        except (TypeError, ValueError):
                             kind = ""
                         override = _color_for_kind(kind)
                         rr, gg, bb_ = (override if override is not None else (r, g, b))
@@ -159,7 +159,7 @@ class _TrackVizCanvas(pg.GraphicsObject):  # type: ignore[misc]
                         p.setBrush(QtCore.Qt.NoBrush)
                         p.drawRect(QtCore.QRectF(x1, y1, w, h))
                         centers.append(((x1 + x2) * 0.5, (y1 + y2) * 0.5, a01, rr, gg, bb_))
-                    except Exception:
+                    except (TypeError, ValueError):
                         pass
 
             # Trail as fading segments.
@@ -191,7 +191,7 @@ class _TrackVizCanvas(pg.GraphicsObject):  # type: ignore[misc]
                     x = float(kp.get("x"))
                     y = float(kp.get("y"))
                     pts.append((x, y))
-                except Exception:
+                except (TypeError, ValueError):
                     pts.append((float("nan"), float("nan")))
 
             # Skeleton lines.
@@ -282,13 +282,13 @@ class _TrackVizPane(QtWidgets.QWidget):
     def update_enabled(self) -> bool:
         try:
             return bool(self._update.isChecked())
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             return True
 
     def set_update_enabled(self, enabled: bool) -> None:
         try:
             self._update.setChecked(bool(enabled))
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         if self.update_enabled() and self._pending is not None:
             p = self._pending
@@ -305,7 +305,7 @@ class _TrackVizPane(QtWidgets.QWidget):
         try:
             w = int(payload.get("width") or 0)
             h = int(payload.get("height") or 0)
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             w, h = 0, 0
         now_ms = int(payload.get("nowMs") or 0)
         history_ms = int(payload.get("historyMs") or 0)
@@ -325,12 +325,12 @@ class _TrackVizPane(QtWidgets.QWidget):
 
         try:
             self._canvas.set_payload(payload)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError, ValueError):
             pass
 
         try:
             self._status.setText(f"tracks={len(tracks)}  now={now_ms}")
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
 
@@ -373,7 +373,7 @@ class PyStudioTrackVizNode(F8StudioOperatorBaseNode):
         super().__init__(qgraphics_item=F8StudioVizOperatorNodeItem)
         try:
             self.add_custom_widget(_TrackVizWidget(self.view, name="__trackviz", label=""))
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
     def apply_ui_command(self, cmd: UiCommand) -> None:
@@ -381,12 +381,12 @@ class PyStudioTrackVizNode(F8StudioOperatorBaseNode):
             return
         try:
             payload = dict(cmd.payload or {})
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             return
         try:
             w = self.get_widget("__trackviz")
             if not w:
                 return
             w.set_scene(dict(payload))
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError, ValueError):
             return

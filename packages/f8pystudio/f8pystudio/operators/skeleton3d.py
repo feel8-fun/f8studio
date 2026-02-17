@@ -98,11 +98,11 @@ class PyStudioSkeleton3DRuntimeNode(StudioVizRuntimeNodeBase):
         if task is not None:
             try:
                 task.cancel()
-            except Exception:
+            except (RuntimeError, TypeError):
                 pass
             try:
                 await asyncio.gather(task, return_exceptions=True)
-            except Exception:
+            except (RuntimeError, TypeError):
                 pass
         emit_ui_command(self.node_id, "skeleton3d.detach", {}, ts_ms=int(time.time() * 1000))
 
@@ -240,7 +240,7 @@ class PyStudioSkeleton3DRuntimeNode(StudioVizRuntimeNodeBase):
     async def _flush_after(self, *, delay_ms: int) -> None:
         try:
             await asyncio.sleep(float(max(0, int(delay_ms))) / 1000.0)
-        except Exception:
+        except (RuntimeError, TypeError, ValueError):
             return
         await self._flush(now_ms=int(time.time() * 1000))
 

@@ -83,12 +83,12 @@ class PyStudioTrackVizRuntimeNode(StudioVizRuntimeNodeBase):
             self._scheduled_refresh_ms = None
             if t is not None:
                 t.cancel()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         try:
             if t is not None:
                 await asyncio.gather(t, return_exceptions=True)
-        except Exception:
+        except (RuntimeError, TypeError):
             pass
 
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
@@ -118,7 +118,7 @@ class PyStudioTrackVizRuntimeNode(StudioVizRuntimeNodeBase):
             if w is not None and h is not None:
                 self._width = int(w)
                 self._height = int(h)
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             pass
 
         tracks_any = payload.get("tracks")
@@ -201,7 +201,7 @@ class PyStudioTrackVizRuntimeNode(StudioVizRuntimeNodeBase):
                 continue
             try:
                 tid = int(t.get("id"))
-            except Exception:
+            except (TypeError, ValueError):
                 continue
             bbox = None
             try:
@@ -261,7 +261,7 @@ class PyStudioTrackVizRuntimeNode(StudioVizRuntimeNodeBase):
         self._scheduled_refresh_ms = int(target_ms)
         try:
             loop = asyncio.get_running_loop()
-        except Exception:
+        except RuntimeError:
             return
         self._refresh_task = loop.create_task(
             self._flush_after(delay_ms),
@@ -271,7 +271,7 @@ class PyStudioTrackVizRuntimeNode(StudioVizRuntimeNodeBase):
     async def _flush_after(self, delay_ms: int) -> None:
         try:
             await asyncio.sleep(float(max(0, int(delay_ms))) / 1000.0)
-        except Exception:
+        except (RuntimeError, TypeError, ValueError):
             return
         await self._flush(now_ms=int(time.time() * 1000))
 

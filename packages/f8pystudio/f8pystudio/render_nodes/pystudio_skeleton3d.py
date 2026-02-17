@@ -158,15 +158,15 @@ class _Skeleton3DViewerWindow(QtWidgets.QDialog):
         """
         try:
             self.detach_scene()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         try:
             self.close()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         try:
             self.deleteLater()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
     def bind_host_parent(self, parent: QtWidgets.QWidget | None) -> None:
@@ -247,7 +247,7 @@ class _Skeleton3DControlPane(QtWidgets.QWidget):
     def set_open_handler(self, on_open_clicked: Callable[[], None]) -> None:
         try:
             self._open_button.clicked.disconnect()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         self._open_button.clicked.connect(on_open_clicked)  # type: ignore[arg-type]
 
@@ -387,7 +387,7 @@ class PyStudioSkeleton3DNode(F8StudioOperatorBaseNode):
 
         try:
             payload = dict(cmd.payload or {})
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             return
 
         self._presenter.on_set_payload(payload)

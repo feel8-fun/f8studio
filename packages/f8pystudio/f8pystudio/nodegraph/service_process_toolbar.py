@@ -159,18 +159,18 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
         if n is not None:
             try:
                 return bool(n.disabled())
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
             try:
                 return bool(n.view.disabled)
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
         # Fallback: use the view item directly.
         item = self._node_item()
         if item is not None:
             try:
                 return bool(item.disabled)
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
         return False
 
@@ -180,12 +180,12 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
             try:
                 n.set_disabled(bool(disabled))
                 return
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
             # Prefer setting backend node state (persists in session); also try the view.
             try:
                 n.view.disabled = bool(disabled)
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
         # Fallback: disable the view item directly (local-only).
         item = self._node_item()
@@ -193,7 +193,7 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
             return
         try:
             item.disabled = bool(disabled)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             return
 
     def _is_running(self) -> bool:
@@ -228,7 +228,7 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
                 self._btn_stop.setEnabled(False)
                 self._btn_sync.setEnabled(False)
                 self._btn_restart.setEnabled(False)
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
             return
 
@@ -247,7 +247,7 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
                     self._btn_restart.setEnabled(False)
                     self._btn_toggle.setToolTip("Start service (initializing)")
                     return
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
         if self._node() is None and item is None:
             # Backend graph/node not ready yet (or node was deleted). Keep polling;
@@ -259,14 +259,14 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
                 self._btn_sync.setEnabled(False)
                 self._btn_restart.setEnabled(False)
                 self._btn_toggle.setToolTip("Start service (node not ready)")
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
             return
 
         # Disable button works even without a bridge connection.
         try:
             self._btn_disable.setEnabled(True)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
         disabled = self._is_node_disabled()
@@ -274,7 +274,7 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
             # Show current state: when disabled -> show "enable" check icon; else show "ban".
             self._btn_disable.setIcon(self._enable_icon if disabled else self._disable_icon)
             self._btn_disable.setToolTip("Enable node" if disabled else "Disable node (skip in rungraph + do not auto-start)")
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
         # When disabled, lock out process controls regardless of bridge availability.
@@ -288,7 +288,7 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
                 self._btn_stop.setToolTip("Disabled")
                 self._btn_sync.setToolTip("Disabled")
                 self._btn_restart.setToolTip("Disabled")
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
             return
 
@@ -302,13 +302,13 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
                 self._btn_sync.setEnabled(False)
                 self._btn_restart.setEnabled(False)
                 self._btn_toggle.setToolTip("Start service (bridge not ready)")
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
             return
 
         try:
             bridge.request_service_status(sid)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         try:
             running = bool(bridge.is_service_running(self._service_id))
@@ -354,7 +354,7 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
         self._set_node_disabled(bool(nxt))
         try:
             self.refresh()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
     def _on_toggle_clicked(self) -> None:
@@ -376,7 +376,7 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
             active = None
             try:
                 active = bridge.get_cached_service_active(sid)
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 active = None
             if active is False:
                 bridge.set_service_active(sid, True)

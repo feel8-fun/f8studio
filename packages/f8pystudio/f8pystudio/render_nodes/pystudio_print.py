@@ -75,13 +75,13 @@ class _PrintPreviewPane(QtWidgets.QWidget):
             f = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
             f.setPointSize(max(8, int(f.pointSize())))
             self._text.setFont(f)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError, ValueError):
             pass
 
         try:
             fm = QtGui.QFontMetricsF(self._text.font())
             self._text.setTabStopDistance(float(fm.horizontalAdvance(" ") * 4.0))
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError, ValueError):
             pass
 
         self._highlighter = _JsonHighlighter(self._text.document())
@@ -140,7 +140,7 @@ class _PrintPreviewPane(QtWidgets.QWidget):
     def _apply_wrap(self, enabled: bool) -> None:
         try:
             self._text.setLineWrapMode(QtWidgets.QTextEdit.WidgetWidth if enabled else QtWidgets.QTextEdit.NoWrap)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
     def _on_update_toggled(self, enabled: bool) -> None:
@@ -151,7 +151,7 @@ class _PrintPreviewPane(QtWidgets.QWidget):
         if pending is not None:
             try:
                 self._text.setPlainText(pending)
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
 
     def _copy_to_clipboard(self) -> None:
@@ -161,13 +161,13 @@ class _PrintPreviewPane(QtWidgets.QWidget):
                 txt = self._pending_text
             else:
                 txt = self._text.toPlainText()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             txt = ""
         try:
             cb = QtWidgets.QApplication.clipboard()
             if cb is not None:
                 cb.setText(str(txt or ""))
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
     def set_wrap(self, enabled: bool) -> None:
@@ -195,7 +195,7 @@ class _PrintPreviewPane(QtWidgets.QWidget):
         # Avoid pathological updates on huge payloads.
         try:
             s = str(text or "")
-        except Exception:
+        except (TypeError, ValueError):
             s = ""
         if len(s) > 50_000:
             s = s[:50_000] + "\n… (truncated)"
@@ -208,7 +208,7 @@ class _PrintPreviewPane(QtWidgets.QWidget):
         try:
             vbar = self._text.verticalScrollBar()
             hbar = self._text.horizontalScrollBar()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             vbar = None
             hbar = None
         v_val = vbar.value() if vbar is not None else None
@@ -219,11 +219,11 @@ class _PrintPreviewPane(QtWidgets.QWidget):
         try:
             if v_val is not None and v_max is not None:
                 follow_tail = (v_max - v_val) <= 2
-        except Exception:
+        except (TypeError, ValueError):
             follow_tail = False
         try:
             self._text.setPlainText(s)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         # Restore scroll position: if the user was at the bottom, keep following tail;
         # otherwise keep the previous position (relative from bottom, best-effort).
@@ -236,14 +236,14 @@ class _PrintPreviewPane(QtWidgets.QWidget):
                     if v_val is not None and v_max is not None:
                         delta_from_bottom = int(v_max) - int(v_val)
                         vbar.setValue(max(0, new_max - delta_from_bottom))
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError, ValueError):
             pass
         try:
             if hbar is not None and h_val is not None and h_max is not None:
                 new_hmax = int(hbar.maximum())
                 delta_from_right = int(h_max) - int(h_val)
                 hbar.setValue(max(0, new_hmax - delta_from_right))
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError, ValueError):
             pass
 
 
@@ -302,20 +302,20 @@ class PyStudioPrintNode(F8StudioOperatorBaseNode):
         super().__init__(qgraphics_item=F8StudioVizOperatorNodeItem)
         try:
             self.add_custom_widget(_PrintPreviewWidget(self.view, name="__print_preview", label=""))
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
     def set_preview(self, value: Any) -> None:
         try:
             txt = json.dumps(value, ensure_ascii=False, indent=1, default=str)
-        except Exception:
+        except (TypeError, ValueError):
             txt = str(value)
         try:
             w = self.get_widget("__print_preview")
             if not w:
                 return
             w.set_preview_text(txt)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             return
 
     def apply_ui_command(self, cmd: UiCommand) -> None:
@@ -323,7 +323,7 @@ class PyStudioPrintNode(F8StudioOperatorBaseNode):
             return
         try:
             payload = dict(cmd.payload or {})
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             return
         value = payload.get("value")
         self.set_preview(value)

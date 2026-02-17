@@ -119,7 +119,7 @@ class _F8ComboPopup(QtWidgets.QFrame):
             return
         try:
             idx = model.index(index, 0)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             return
         self._view.setCurrentIndex(idx)
 
@@ -291,7 +291,7 @@ class F8OptionCombo(QtWidgets.QComboBox):
                 ):
                     event.ignore()
                     return
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
         super().keyPressEvent(event)
 
@@ -344,7 +344,7 @@ class F8OptionCombo(QtWidgets.QComboBox):
                             scene_pos = proxy.mapToScene(QtCore.QPointF(self.rect().bottomLeft()))
                         view_pt = view.mapFromScene(scene_pos)
                         return view.viewport().mapToGlobal(view_pt)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         return self.mapToGlobal(QtCore.QPoint(0, self.height()))
 
@@ -737,13 +737,13 @@ class F8ImageB64Editor(QtWidgets.QWidget):
                         w = view.window()
                         if w is not None:
                             return w
-                    except Exception:
+                    except (AttributeError, RuntimeError, TypeError):
                         pass
         try:
             w = self.window()
             if w is not None:
                 return w
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         try:
             return QtWidgets.QApplication.activeWindow()
@@ -952,13 +952,13 @@ class F8MultiSelect(QtWidgets.QWidget):
                         top = view.window()
                         if top is not None:
                             return top
-                    except Exception:
+                    except (AttributeError, RuntimeError, TypeError):
                         pass
         try:
             top = self.window()
             if top is not None:
                 return top
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         try:
             return QtWidgets.QApplication.activeWindow()

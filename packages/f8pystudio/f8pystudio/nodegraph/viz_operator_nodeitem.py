@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from NodeGraphQt.constants import NodeEnum, PortEnum
 
 from .operator_basenode import F8StudioOperatorNodeItem
@@ -19,10 +21,10 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
     def _port_name(port) -> str:
         try:
             return str(port.name() or "")
-        except Exception:
+        except (AttributeError, TypeError):
             try:
                 return str(port.name or "")
-            except Exception:
+            except (AttributeError, TypeError):
                 return ""
 
     @staticmethod
@@ -38,11 +40,11 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
         try:
             if not bool(state_field.showOnNode):
                 return None
-        except Exception:
+        except (AttributeError, TypeError):
             return None
         try:
             name = str(state_field.name or "").strip()
-        except Exception:
+        except (AttributeError, TypeError):
             return None
         return name or None
 
@@ -61,7 +63,7 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
                 port_width = float(p.boundingRect().width())
                 port_height = float(p.boundingRect().height())
                 break
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError, ValueError):
                 continue
 
         # State inline panel heights (span node width).
@@ -71,7 +73,7 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
 
         try:
             self._ensure_inline_state_widgets()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
         state_names: list[str] = []
@@ -92,7 +94,7 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
                     header = self._state_inline_headers.get(sname)
                     if header is not None:
                         header_h = float(max(header_h, header.sizeHint().height()))
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError, ValueError):
                     pass
 
                 body_h = 0.0
@@ -100,7 +102,7 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
                     body = self._state_inline_bodies.get(sname)
                     if body is not None and body.isVisible():
                         body_h = float(max(0.0, body.sizeHint().height()))
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError, ValueError):
                     body_h = 0.0
 
                 panel_h = header_h + (body_h + spacing if body_h > 0.0 else 0.0)
@@ -117,7 +119,7 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
                 w_rect = widget.boundingRect()
                 widget_width = max(widget_width, float(w_rect.width()))
                 widget_height += float(w_rect.height())
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError, ValueError):
                 continue
 
         side_padding = 10.0 if widget_width else 0.0
@@ -193,7 +195,7 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
                 return
             try:
                 v = float(raw)
-            except Exception:
+            except ValueError:
                 # Keep previous value if parsing fails.
                 _apply_value(_get_node_value())
                 return
@@ -216,7 +218,7 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
         # Ensure inline widgets exist before aligning so sizing + rows match.
         try:
             self._ensure_inline_state_widgets()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
         node = self._backend_node()
@@ -254,7 +256,7 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
                 port_width = float(p.boundingRect().width())
                 port_height = float(p.boundingRect().height())
                 break
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError, ValueError):
                 continue
 
         in_x = (port_width / 2.0) * -1.0
@@ -288,7 +290,7 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
                     if w is not None:
                         w.setFixedWidth(int(inner_w))
                         w.adjustSize()
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError, ValueError):
                     pass
                 try:
                     if self._state_inline_headers.get(sname) is not None:
@@ -303,7 +305,7 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
                     body_h = 0.0
                 try:
                     panel_proxy.setPos(inner_x, y)
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError):
                     pass
 
             port_y = y + (header_h - port_height) / 2.0 if port_height else y
@@ -336,7 +338,7 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
             try:
                 pos_y = float(w.pos().y())
                 h = float(w.boundingRect().height())
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError, ValueError):
                 continue
             top = min(top, pos_y)
             bottom = max(bottom, pos_y + h)
@@ -353,7 +355,7 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
                 if self._port_group(self._port_name(p)) == "state":
                     continue
                 in_ports.append(p)
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 continue
         for p in self.outputs:
             try:
@@ -362,7 +364,7 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
                 if self._port_group(self._port_name(p)) == "state":
                     continue
                 out_ports.append(p)
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 continue
 
         if not in_ports and not out_ports:
@@ -376,7 +378,7 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
                 port_width = float(p.boundingRect().width())
                 port_height = float(p.boundingRect().height())
                 break
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError, ValueError):
                 continue
 
         width = float(self._width)
@@ -400,12 +402,12 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
         for i, p in enumerate(in_ports):
             try:
                 p.setPos(in_x, y_for(i, len(in_ports)))
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 continue
         for i, p in enumerate(out_ports):
             try:
                 p.setPos(out_x, y_for(i, len(out_ports)))
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 continue
 
         # Ensure any visible text items follow (but we typically keep them hidden for viz nodes).
@@ -420,17 +422,17 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
                     txt_width = text.boundingRect().width() - txt_offset
                     txt_x = port.x() - txt_width
                     text.setPos(txt_x, port.y() - 1.5)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
     def _draw_node_horizontal(self):  # type: ignore[override]
         try:
             self._ensure_inline_state_widgets()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         try:
             self._ensure_inline_command_widget()
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
         header_h = float(self._text_item.boundingRect().height() + 4.0)
@@ -440,13 +442,13 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
             try:
                 if port.isVisible():
                     text.setVisible(False)
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
         for port, text in self._output_items.items():
             try:
                 if port.isVisible():
                     text.setVisible(False)
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
 
         # setup initial base size.

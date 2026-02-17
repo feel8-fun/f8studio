@@ -15,11 +15,11 @@ def _mutate_or_copy(model: Any, *, mutate: callable, update: dict[str, Any] | No
     try:
         mutate(model)
         return model
-    except Exception:
+    except (AttributeError, RuntimeError, TypeError, ValueError):
         try:
             if update is not None:
                 return model.model_copy(deep=True, update=update)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError, ValueError):
             pass
         m2 = model.model_copy(deep=True)
         mutate(m2)

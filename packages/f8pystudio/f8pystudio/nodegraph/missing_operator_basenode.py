@@ -33,7 +33,7 @@ class F8StudioMissingOperatorBaseNode(F8StudioOperatorBaseNode):
         try:
             if self.has_property(prop_name):  # type: ignore[attr-defined]
                 return
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
         try:
             widget = NodePropWidgetEnum.QTEXT_EDIT.value if multiline else NodePropWidgetEnum.QLINE_EDIT.value
@@ -58,7 +58,7 @@ class F8StudioMissingOperatorBaseNode(F8StudioOperatorBaseNode):
         if missing_type:
             try:
                 self.set_name(f"[Missing] {missing_type}")
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 pass
 
         # Keep missingSpec reasonably readable if it was stored as a dict by older sessions.
@@ -69,6 +69,6 @@ class F8StudioMissingOperatorBaseNode(F8StudioOperatorBaseNode):
         if isinstance(raw, dict):
             try:
                 self.set_property("missingSpec", json.dumps(raw, ensure_ascii=False, indent=2), push_undo=False)
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError, ValueError):
                 pass
 

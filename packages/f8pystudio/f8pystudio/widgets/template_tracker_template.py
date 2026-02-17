@@ -236,7 +236,7 @@ class TemplateCaptureDialog(QtWidgets.QDialog):
         # Auto-capture once on open to reduce friction.
         try:
             QtCore.QTimer.singleShot(0, self._do_capture)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             pass
 
     def _set_status(self, msg: str) -> None:

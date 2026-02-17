@@ -126,11 +126,11 @@ def _unwrap_json_value(value: Any) -> Any:
         return {str(k): _unwrap_json_value(v) for k, v in value.items()}
     try:
         return _unwrap_json_value(value.root)
-    except Exception:
+    except (AttributeError, TypeError):
         pass
     try:
         return _unwrap_json_value(value.model_dump(mode="json"))
-    except Exception:
+    except (AttributeError, TypeError, ValueError):
         pass
     return value
 
@@ -391,7 +391,7 @@ def compile_global_runtime_graph(
                 if name not in n.model.properties and name not in n.model.custom_properties:
                     continue
                 state_values[name] = n.model.get_property(name)
-            except Exception:
+            except (AttributeError, KeyError, RuntimeError, TypeError):
                 continue
         # NOTE: values for upstream-driven state fields (bound via state edges)
         # are filtered out after compiling edges, so state propagation always
@@ -568,7 +568,7 @@ def compile_runtime_graphs_from_studio(studio_graph: Any) -> CompiledRuntimeGrap
     for n in all_nodes:
         try:
             spec = n.spec
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError):
             continue
         if not isinstance(spec, F8ServiceSpec):
             continue
