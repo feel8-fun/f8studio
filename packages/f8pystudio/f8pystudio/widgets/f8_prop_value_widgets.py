@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 from typing import Any, Callable
 
@@ -953,6 +954,7 @@ class F8NumberPropLineEdit(QtWidgets.QLineEdit):
     """
 
     value_changed = QtCore.Signal(str, object)
+    value_changing = QtCore.Signal(str, object)
 
     def __init__(self, parent=None, *, data_type: type = float):
         super().__init__(parent)
@@ -960,8 +962,16 @@ class F8NumberPropLineEdit(QtWidgets.QLineEdit):
         self._data_type = data_type
         self._min: float | None = None
         self._max: float | None = None
+        self._scrub_enabled = True
+        self._scrub_base_step: float | None = None
+        self._scrub_active = False
+        self._scrub_start_global_x = 0.0
+        self._scrub_start_value = 0.0
+        self._scrub_start_text = ""
+        self._base_tooltip = ""
         self.setMinimumWidth(120)
         self._update_validator()
+        self._refresh_tooltip()
         self.editingFinished.connect(self._emit_value)
 
     def set_name(self, name: str) -> None:
@@ -999,6 +1009,28 @@ class F8NumberPropLineEdit(QtWidgets.QLineEdit):
             pass
         self.setValidator(dv)
 
+    def set_scrub_enabled(self, enabled: bool) -> None:
+        self._scrub_enabled = bool(enabled)
+        self._refresh_tooltip()
+
+    def set_scrub_base_step(self, step: float | None) -> None:
+        if step is None:
+            self._scrub_base_step = None
+            return
+        try:
+            out = abs(float(step))
+        except (TypeError, ValueError):
+            self._scrub_base_step = None
+            return
+        if out <= 0.0:
+            self._scrub_base_step = None
+            return
+        self._scrub_base_step = out
+
+    def setToolTip(self, text: str) -> None:  # type: ignore[override]
+        self._base_tooltip = str(text or "").strip()
+        self._refresh_tooltip()
+
     def get_value(self):
         t = str(self.text() or "").strip()
         if t == "":
@@ -1030,3 +1062,112 @@ class F8NumberPropLineEdit(QtWidgets.QLineEdit):
             return
         self.value_changed.emit(self.get_name(), v)
 
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # type: ignore[override]
+        is_middle_drag = bool(event.button() == QtCore.Qt.MiddleButton)
+        if is_middle_drag and self._scrub_enabled and self.isEnabled() and not self.isReadOnly():
+            self._scrub_begin(event)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # type: ignore[override]
+        if self._scrub_active:
+            self._scrub_update(event, commit=False)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # type: ignore[override]
+        if self._scrub_active and event.button() == QtCore.Qt.MiddleButton:
+            self._scrub_update(event, commit=True)
+            self._scrub_end()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:  # type: ignore[override]
+        if self._scrub_active and event.key() == QtCore.Qt.Key_Escape:
+            with QtCore.QSignalBlocker(self):
+                self.setText(self._scrub_start_text)
+            self._scrub_end()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def _scrub_begin(self, event: QtGui.QMouseEvent) -> None:
+        self._scrub_active = True
+        self._scrub_start_global_x = float(event.globalPosition().x())
+        self._scrub_start_text = str(self.text() or "")
+        current = self.get_value()
+        self._scrub_start_value = 0.0 if current is None else float(current)
+        self.setCursor(QtCore.Qt.SizeHorCursor)
+        self.grabMouse()
+        self.setFocus(QtCore.Qt.MouseFocusReason)
+
+    def _scrub_end(self) -> None:
+        self._scrub_active = False
+        self.unsetCursor()
+        self.releaseMouse()
+
+    def _scrub_update(self, event: QtGui.QMouseEvent, *, commit: bool) -> None:
+        dx = float(event.globalPosition().x()) - self._scrub_start_global_x
+        step = self._resolve_scrub_step()
+        mult = self._resolve_scrub_multiplier(event.modifiers())
+        candidate = self._scrub_start_value + dx * step * mult
+        out = self._coerce_value(candidate)
+        with QtCore.QSignalBlocker(self):
+            self.setText(self._format_value(out))
+        if commit:
+            self.value_changed.emit(self.get_name(), out)
+        else:
+            self.value_changing.emit(self.get_name(), out)
+
+    def _resolve_scrub_step(self) -> float:
+        if self._scrub_base_step is not None:
+            step = max(1e-12, float(self._scrub_base_step))
+            if self._data_type is int:
+                return max(1.0, step)
+            return step
+        magnitude = max(abs(float(self._scrub_start_value)), 1.0)
+        exponent = math.floor(math.log10(magnitude))
+        step = math.pow(10.0, float(exponent)) * 0.01
+        if self._data_type is int:
+            return max(1.0, step)
+        return max(1e-12, step)
+
+    @staticmethod
+    def _resolve_scrub_multiplier(modifiers: QtCore.Qt.KeyboardModifiers) -> float:
+        has_shift = bool(modifiers & QtCore.Qt.ShiftModifier)
+        has_ctrl = bool(modifiers & QtCore.Qt.ControlModifier)
+        if has_shift and has_ctrl:
+            return 1.0
+        if has_shift:
+            return 0.1
+        if has_ctrl:
+            return 10.0
+        return 1.0
+
+    def _coerce_value(self, v: float) -> float | int:
+        out = float(v)
+        if self._min is not None and out < self._min:
+            out = float(self._min)
+        if self._max is not None and out > self._max:
+            out = float(self._max)
+        if self._data_type is int:
+            return int(round(out))
+        return float(out)
+
+    def _format_value(self, v: float | int) -> str:
+        if self._data_type is int:
+            return str(int(v))
+        return ("{:.6f}".format(float(v))).rstrip("0").rstrip(".")
+
+    def _refresh_tooltip(self) -> None:
+        hint = "Middle-Drag to scrub" if self._scrub_enabled else ""
+        if self._base_tooltip and hint:
+            text = f"{self._base_tooltip}\n{hint}"
+        elif self._base_tooltip:
+            text = self._base_tooltip
+        else:
+            text = hint
+        super().setToolTip(text)

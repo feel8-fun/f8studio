@@ -19,7 +19,7 @@ from ...widgets.f8_editor_widgets import (
     parse_multiselect_pool,
     parse_select_pool,
 )
-from ...widgets.f8_prop_value_widgets import open_code_editor_dialog, open_code_editor_window
+from ...widgets.f8_prop_value_widgets import F8NumberPropLineEdit, open_code_editor_dialog, open_code_editor_window
 from .node_item_core import StateFieldInfo, state_field_info
 from .service_toolbar_host import F8ElideToolButton
 
@@ -631,70 +631,51 @@ def make_state_inline_control(node_item: Any, state_field: StateFieldInfo) -> Qt
         return bar
 
     if schema_type_value == "integer" or ui in {"spinbox", "int"}:
-        line = QtWidgets.QLineEdit()
+        line = F8NumberPropLineEdit(data_type=int)
+        line.set_name(name)
         _common_style(line)
         line.setMinimumWidth(90)
-        vmin = int(lo) if lo is not None else -(2**31)
-        vmax = int(hi) if hi is not None else (2**31 - 1)
-        line.setValidator(QtGui.QIntValidator(vmin, vmax, line))
+        if lo is not None:
+            line.set_min(int(lo))
+        if hi is not None:
+            line.set_max(int(hi))
+        if field_tooltip:
+            line.setToolTip(field_tooltip)
 
         def _apply_value(value: Any) -> None:
-            text = "" if value is None else str(int(value))
-            with QtCore.QSignalBlocker(line):
-                line.setText(text)
-
-        def _commit() -> None:
-            txt = str(line.text() or "").strip()
-            if not txt:
-                _set_node_value(None, push_undo=True)
-                return
-            try:
-                _set_node_value(int(txt), push_undo=True)
-            except ValueError:
-                return
+            line.set_value(value)
 
         _apply_value(_get_node_value())
         node_item._state_inline_updaters[name] = _apply_value
         if read_only:
             line.setReadOnly(True)
         else:
-            line.editingFinished.connect(_commit)  # type: ignore[attr-defined]
+            line.value_changing.connect(lambda _field_name, value: _set_node_value(value, push_undo=False))  # type: ignore[attr-defined]
+            line.value_changed.connect(lambda _field_name, value: _set_node_value(value, push_undo=True))  # type: ignore[attr-defined]
         return line
 
     if schema_type_value == "number" or ui in {"doublespinbox", "float"}:
-        line = QtWidgets.QLineEdit()
+        line = F8NumberPropLineEdit(data_type=float)
+        line.set_name(name)
         _common_style(line)
         line.setMinimumWidth(90)
-        vmin = float(lo) if lo is not None else -1.0e18
-        vmax = float(hi) if hi is not None else 1.0e18
-        validator = QtGui.QDoubleValidator(vmin, vmax, 6, line)
-        try:
-            validator.setNotation(QtGui.QDoubleValidator.Notation.StandardNotation)
-        except (AttributeError, RuntimeError, TypeError):
-            pass
-        line.setValidator(validator)
+        if lo is not None:
+            line.set_min(float(lo))
+        if hi is not None:
+            line.set_max(float(hi))
+        if field_tooltip:
+            line.setToolTip(field_tooltip)
 
         def _apply_value(value: Any) -> None:
-            text = "" if value is None else str(float(value))
-            with QtCore.QSignalBlocker(line):
-                line.setText(text)
-
-        def _commit() -> None:
-            txt = str(line.text() or "").strip()
-            if not txt:
-                _set_node_value(None, push_undo=True)
-                return
-            try:
-                _set_node_value(float(txt), push_undo=True)
-            except ValueError:
-                return
+            line.set_value(value)
 
         _apply_value(_get_node_value())
         node_item._state_inline_updaters[name] = _apply_value
         if read_only:
             line.setReadOnly(True)
         else:
-            line.editingFinished.connect(_commit)  # type: ignore[attr-defined]
+            line.value_changing.connect(lambda _field_name, value: _set_node_value(value, push_undo=False))  # type: ignore[attr-defined]
+            line.value_changed.connect(lambda _field_name, value: _set_node_value(value, push_undo=True))  # type: ignore[attr-defined]
         return line
 
     # default: text input.

@@ -1838,6 +1838,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
 
     #: signal (node_id, prop_name, prop_value)
     property_changed = QtCore.Signal(str, str, object)
+    property_changing = QtCore.Signal(str, str, object)
     property_closed = QtCore.Signal(str)
 
     def __init__(self, parent=None, node=None):
@@ -1917,6 +1918,17 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
             value (object): new value.
         """
         self.property_changed.emit(self.__node_id, name, value)
+        self.refresh_option_pool(str(name or ""))
+
+    def _on_property_changing(self, name, value):
+        """
+        slot function called when a property widget is being scrubbed/previewed.
+
+        Args:
+            name (str): property name.
+            value (object): new value (preview).
+        """
+        self.property_changing.emit(self.__node_id, name, value)
         self.refresh_option_pool(str(name or ""))
 
     def refresh_option_pool(self, pool_name: str) -> None:
@@ -2212,6 +2224,10 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                         show_on_node=bool(show_on_node),
                     )
                     widget.value_changed.connect(self._on_property_changed)
+                    try:
+                        widget.value_changing.connect(self._on_property_changing)
+                    except (AttributeError, RuntimeError, TypeError):
+                        pass
                 continue
             for prop_name, value in tab_mapping[tab]:
                 wid_type = model.get_widget_type(prop_name)
@@ -2285,6 +2301,10 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                     name=prop_name, widget=widget, value=value, label=prop_name.replace("_", " "), tooltip=tooltip
                 )
                 widget.value_changed.connect(self._on_property_changed)
+                try:
+                    widget.value_changing.connect(self._on_property_changing)
+                except (AttributeError, RuntimeError, TypeError):
+                    pass
 
         # add "Node" tab properties. (default props)
         self.add_tab("Node")
@@ -2309,6 +2329,10 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
             )
 
             widget.value_changed.connect(self._on_property_changed)
+            try:
+                widget.value_changing.connect(self._on_property_changing)
+            except (AttributeError, RuntimeError, TypeError):
+                pass
 
         spec = _get_node_spec(node)
         if isinstance(spec, F8OperatorSpec):
@@ -2500,6 +2524,10 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         window = self.__tab_windows[tab]
         window.add_widget(name, widget)
         widget.value_changed.connect(self._on_property_changed)
+        try:
+            widget.value_changing.connect(self._on_property_changing)
+        except (AttributeError, RuntimeError, TypeError):
+            pass
 
     def add_tab(self, name):
         """
@@ -2743,6 +2771,10 @@ class F8StudioSingleNodePropertiesWidget(QtWidgets.QWidget):
         except (AttributeError, RuntimeError, TypeError):
             logger.exception("Failed to connect editor.property_changed")
         try:
+            editor.property_changing.connect(self._on_editor_property_changing)  # type: ignore[attr-defined]
+        except (AttributeError, RuntimeError, TypeError):
+            logger.exception("Failed to connect editor.property_changing")
+        try:
             editor.property_closed.connect(self._on_editor_closed)  # type: ignore[attr-defined]
         except (AttributeError, RuntimeError, TypeError):
             logger.exception("Failed to connect editor.property_closed")
@@ -2840,6 +2872,26 @@ class F8StudioSingleNodePropertiesWidget(QtWidgets.QWidget):
             node.set_property(prop_name, prop_value, push_undo=True)
         except Exception:
             logger.exception("set_property failed nodeId=%s prop=%s", nid, prop_name)
+
+    def _on_editor_property_changing(self, node_id: str, prop_name: str, prop_value: Any) -> None:
+        if self._block_signal:
+            return
+        g = self._node_graph
+        if g is None:
+            return
+        nid = str(node_id or "").strip()
+        if not nid:
+            return
+        try:
+            node = g.get_node_by_id(nid)  # type: ignore[attr-defined]
+        except Exception:
+            node = None
+        if node is None:
+            return
+        try:
+            node.set_property(prop_name, prop_value, push_undo=False)
+        except Exception:
+            logger.exception("set_property preview failed nodeId=%s prop=%s", nid, prop_name)
 
     def _on_graph_property_changed(self, node: Any, prop_name: str, prop_value: Any) -> None:
         """

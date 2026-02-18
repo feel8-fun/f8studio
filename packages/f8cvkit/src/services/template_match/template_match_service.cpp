@@ -590,7 +590,7 @@ json TemplateMatchService::describe() {
   service["tags"] = json::array({"cv", "template_match"});
   service["stateFields"] = json::array({
       state_field("templatePngB64", schema_string(), "rw", "Template PNG (Base64)", "PNG bytes encoded as base64.", false),
-      state_field("matchThreshold", schema_number(0.5, 0.0, 1.0), "rw", "Match Threshold", "0..1 score threshold.", true),
+      state_field("matchThreshold", schema_number(0.5, 0.0, 1.0), "rw", "Match Threshold", "0..1 score threshold.", true, "slider"),
       state_field("matchingIntervalMs", schema_integer(200, 0, 60000), "rw", "Matching Interval (ms)",
                   "Minimum milliseconds between template matching passes.", false),
       state_field("shmName", schema_string(), "rw", "Video SHM", "Optional SHM name override (e.g. shm.xxx.video).", true),
