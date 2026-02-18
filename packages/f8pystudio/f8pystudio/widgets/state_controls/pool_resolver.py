@@ -55,9 +55,9 @@ def build_node_pool_resolver(node: Any) -> Callable[[str], list[str]]:
     return _resolver
 
 
-def parse_select_pool(ui_control: str) -> str:
-    return str(_parse_select_pool(ui_control))
+def parse_select_pool(ui_control: str) -> str | None:
+    return _parse_select_pool(ui_control)
 
 
-def parse_multiselect_pool(ui_control: str) -> str:
-    return str(_parse_multiselect_pool(ui_control))
+def parse_multiselect_pool(ui_control: str) -> str | None:
+    return _parse_multiselect_pool(ui_control)
