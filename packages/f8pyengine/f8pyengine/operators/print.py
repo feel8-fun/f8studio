@@ -57,6 +57,19 @@ class PrintRuntimeNode(OperatorNode):
             self._strip = self._coerce_bool(value, default=self._strip)
             return
 
+    async def on_data(self, port: str, value: Any, *, ts_ms: int | None = None) -> None:
+        if port == "value":
+            v = value
+            if self._strip:
+                if isinstance(v, (bytes, bytearray)):
+                    try:
+                        v = bytes(v).decode("utf-8", errors="replace")
+                    except Exception:
+                        pass
+                if isinstance(v, str):
+                    v = v.strip()
+            print(f"[{self.node_id}] value={v}")
+
     async def on_exec(self, exec_id: str | int, _in_port: str | None = None) -> list[str]:
         v = await self.pull("value", ctx_id=exec_id)
         if self._strip:

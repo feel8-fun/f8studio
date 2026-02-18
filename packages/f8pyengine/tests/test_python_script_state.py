@@ -44,7 +44,7 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
             serviceClass=SERVICE_CLASS,
             operatorClass=PythonScriptRuntimeNode.SPEC.operatorClass,
             stateFields=state_fields,
-            stateValues={"allowUnsafeExec": True, "code": code},
+            stateValues={"code": code},
         )
         graph = F8RuntimeGraph(graphId="g1", revision="r1", nodes=[op], edges=[])
         await bus.set_rungraph(graph)
@@ -57,7 +57,7 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
         bar = await node.get_state_value("bar")
         self.assertEqual(int(bar), 42)
 
-    async def test_unsafe_exec_disabled_by_default(self) -> None:
+    async def test_python_script_exec_enabled_by_default(self) -> None:
         harness = ServiceBusHarness()
         bus = harness.create_bus("svcA")
         reg = RuntimeNodeRegistry.instance()
@@ -65,13 +65,16 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
         _ = ServiceHost(bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=reg)
 
         state_fields = list(PythonScriptRuntimeNode.SPEC.stateFields or [])
+        state_fields.append(
+            F8StateSpec(name="booted", label="booted", description="", valueSchema=any_schema(), access=F8StateAccess.ro)
+        )
         op = F8RuntimeNode(
             nodeId="ps2",
             serviceId="svcA",
             serviceClass=SERVICE_CLASS,
             operatorClass=PythonScriptRuntimeNode.SPEC.operatorClass,
             stateFields=state_fields,
-            stateValues={"code": "def onStart(ctx):\n    ctx['set_state']('lastError', 'should_not_run')\n"},
+            stateValues={"code": "def onStart(ctx):\n    ctx['set_state']('booted', True)\n"},
         )
         graph = F8RuntimeGraph(graphId="g2", revision="r1", nodes=[op], edges=[])
         await bus.set_rungraph(graph)
@@ -80,7 +83,66 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
         node = bus.get_node("ps2")
         self.assertIsInstance(node, PythonScriptRuntimeNode)
         assert isinstance(node, PythonScriptRuntimeNode)
-        self.assertIn("unsafe python exec is disabled", str(node._last_error or ""))
+        booted = await node.get_state_value("booted")
+        self.assertTrue(bool(booted))
+
+    async def test_compute_output_uses_on_exec_outputs_in_pull_mode(self) -> None:
+        harness = ServiceBusHarness()
+        bus = harness.create_bus("svcA")
+        reg = RuntimeNodeRegistry.instance()
+        register_operator(reg)
+        _ = ServiceHost(bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=reg)
+
+        code = (
+            "def onExec(ctx, execIn, inputs):\n"
+            "    return {'outputs': {'out': 123}}\n"
+        )
+        op = F8RuntimeNode(
+            nodeId="ps3",
+            serviceId="svcA",
+            serviceClass=SERVICE_CLASS,
+            operatorClass=PythonScriptRuntimeNode.SPEC.operatorClass,
+            stateFields=list(PythonScriptRuntimeNode.SPEC.stateFields or []),
+            stateValues={"code": code},
+        )
+        graph = F8RuntimeGraph(graphId="g3", revision="r1", nodes=[op], edges=[])
+        await bus.set_rungraph(graph)
+
+        node = bus.get_node("ps3")
+        self.assertIsInstance(node, PythonScriptRuntimeNode)
+        assert isinstance(node, PythonScriptRuntimeNode)
+
+        out = await node.compute_output("out", ctx_id="ctx-1")
+        self.assertEqual(out, 123)
+
+    async def test_compute_output_falls_back_to_on_msg_when_on_exec_missing(self) -> None:
+        harness = ServiceBusHarness()
+        bus = harness.create_bus("svcA")
+        reg = RuntimeNodeRegistry.instance()
+        register_operator(reg)
+        _ = ServiceHost(bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=reg)
+
+        code = (
+            "def onMsg(ctx, inputs):\n"
+            "    return 99\n"
+        )
+        op = F8RuntimeNode(
+            nodeId="ps4",
+            serviceId="svcA",
+            serviceClass=SERVICE_CLASS,
+            operatorClass=PythonScriptRuntimeNode.SPEC.operatorClass,
+            stateFields=list(PythonScriptRuntimeNode.SPEC.stateFields or []),
+            stateValues={"code": code},
+        )
+        graph = F8RuntimeGraph(graphId="g4", revision="r1", nodes=[op], edges=[])
+        await bus.set_rungraph(graph)
+
+        node = bus.get_node("ps4")
+        self.assertIsInstance(node, PythonScriptRuntimeNode)
+        assert isinstance(node, PythonScriptRuntimeNode)
+
+        out = await node.compute_output("out", ctx_id="ctx-2")
+        self.assertEqual(out, 99)
 
 
 if __name__ == "__main__":

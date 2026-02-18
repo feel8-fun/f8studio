@@ -67,19 +67,6 @@ DEFAULT_CODE = (
 )
 
 
-def _coerce_bool(value: Any, *, default: bool) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return bool(value)
-    text = str(value or "").strip().lower()
-    if text in ("1", "true", "yes", "on"):
-        return True
-    if text in ("0", "false", "no", "off", ""):
-        return False
-    return bool(default)
-
-
 class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
     """
     Execute user-provided python code with lifecycle hooks:
@@ -108,7 +95,8 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
         self._closing = False
         self._last_error: str | None = None
         self._self_state_writes: dict[str, Any] = {}
-        self._allow_unsafe_exec = _coerce_bool(self._initial_state.get("allowUnsafeExec"), default=False)
+        self._pull_cache_ctx_id: str | int | None = None
+        self._pull_cache_outputs: dict[str, Any] = {}
 
         self._compile_and_start()
 
@@ -190,12 +178,6 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
         }
 
     def _compile_script(self, code: str) -> dict[str, Callable[..., Any]]:
-        if not self._allow_unsafe_exec:
-            self._set_error(
-                "compile",
-                RuntimeError("unsafe python exec is disabled (set allowUnsafeExec=true to enable)"),
-            )
-            return {}
         env: dict[str, Any] = {"__builtins__": __builtins__}
         try:
             exec(code, env, env)
@@ -270,10 +252,6 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
 
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
         name = str(field)
-        if name == "allowUnsafeExec":
-            self._allow_unsafe_exec = _coerce_bool(value, default=False)
-            self._compile_and_start()
-            return
         if name == "code":
             self._code = str(value or "")
             self._compile_and_start()
@@ -296,8 +274,6 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
     async def validate_state(self, field: str, value: Any, *, ts_ms: int, meta: dict[str, Any]) -> Any:
         del ts_ms, meta
         name = str(field or "").strip()
-        if name == "allowUnsafeExec":
-            return _coerce_bool(value, default=False)
         if name == "code":
             return str(value or "")
         return value
@@ -321,6 +297,33 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
         exec_in = str(in_port or "").strip() or None
         return await self._run_on_exec(inputs, exec_in=exec_in)
 
+    async def compute_output(self, port: str, ctx_id: str | int | None = None) -> Any:
+        out_port = str(port or "")
+        if out_port not in self.data_out_ports:
+            return None
+        if not self._runtime:
+            return None
+
+        if ctx_id is not None and ctx_id == self._pull_cache_ctx_id:
+            if out_port in self._pull_cache_outputs:
+                return self._pull_cache_outputs.get(out_port)
+
+        inputs: dict[str, Any] = {}
+        for in_port in list(self.data_in_ports):
+            try:
+                inputs[str(in_port)] = await self.pull(str(in_port), ctx_id=ctx_id)
+            except Exception:
+                continue
+
+        outputs = await self._compute_outputs_for_pull(inputs, exec_in=None)
+        if ctx_id is not None:
+            self._pull_cache_ctx_id = ctx_id
+            self._pull_cache_outputs = dict(outputs)
+        else:
+            self._pull_cache_ctx_id = None
+            self._pull_cache_outputs = {}
+        return outputs.get(out_port)
+
     async def _run_on_exec(self, inputs: dict[str, Any], *, exec_in: str | None) -> list[str]:
         fn = self._runtime.get("onExec")
         if callable(fn):
@@ -338,6 +341,60 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
 
         await self._run_on_msg(inputs, exec_in=exec_in)
         return list(self._exec_out_ports)
+
+    async def _compute_outputs_for_pull(self, inputs: dict[str, Any], *, exec_in: str | None) -> dict[str, Any]:
+        fn_exec = self._runtime.get("onExec")
+        if callable(fn_exec):
+            try:
+                if self._ctx is not None:
+                    self._ctx["execIn"] = exec_in
+                result = fn_exec(self._ctx, str(exec_in or ""), dict(inputs))
+                if inspect.isawaitable(result):
+                    result = await result
+            except Exception as exc:
+                self._set_error("onExec", exc)
+                return {}
+            return self._extract_outputs(result)
+
+        fn_msg = self._runtime.get("onMsg")
+        if not callable(fn_msg):
+            return {}
+        try:
+            if self._ctx is not None:
+                self._ctx["execIn"] = exec_in
+            result = fn_msg(self._ctx, dict(inputs))
+            if inspect.isawaitable(result):
+                result = await result
+        except Exception as exc:
+            self._set_error("onMsg", exc)
+            return {}
+        return self._extract_outputs(result)
+
+    def _extract_outputs(self, result: Any) -> dict[str, Any]:
+        if result is None:
+            return {}
+
+        outputs: dict[str, Any] = {}
+        if isinstance(result, dict):
+            raw_outputs = result.get("outputs")
+            if isinstance(raw_outputs, dict):
+                for k, v in raw_outputs.items():
+                    k_s = str(k)
+                    if k_s in self.data_out_ports:
+                        outputs[k_s] = v
+                return outputs
+
+            for k, v in result.items():
+                k_s = str(k)
+                if k_s in ("exec", "outputs"):
+                    continue
+                if k_s in self.data_out_ports:
+                    outputs[k_s] = v
+            return outputs
+
+        if "out" in self.data_out_ports:
+            outputs["out"] = result
+        return outputs
 
     async def _run_on_msg(self, inputs: dict[str, Any], *, exec_in: str | None) -> None:
         fn = self._runtime.get("onMsg")
@@ -369,27 +426,12 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
 
         if isinstance(r, dict):
             exec_sel = r.get("exec") if "exec" in r else None
-            outputs = r.get("outputs") if isinstance(r.get("outputs"), dict) else None
-
-            if outputs is not None:
-                # Preferred protocol: only emit from `outputs` so data ports can be named freely
-                # (including "exec") without colliding with exec routing.
-                for k, v in outputs.items():
-                    if str(k) in self.data_out_ports:
-                        try:
-                            await self.emit(str(k), v)
-                        except Exception:
-                            continue
-            else:
-                # Backward compat: emit direct port keys (except 'exec').
-                for k, v in r.items():
-                    if str(k) in ("exec", "outputs"):
-                        continue
-                    if str(k) in self.data_out_ports:
-                        try:
-                            await self.emit(str(k), v)
-                        except Exception:
-                            continue
+            outputs = self._extract_outputs(r)
+            for k, v in outputs.items():
+                try:
+                    await self.emit(str(k), v)
+                except Exception:
+                    continue
 
             if exec_sel is None:
                 return None
@@ -425,14 +467,6 @@ PythonScriptRuntimeNode.SPEC = F8OperatorSpec(
     editableDataInPorts=True,
     editableDataOutPorts=True,
     stateFields=[
-        F8StateSpec(
-            name="allowUnsafeExec",
-            label="Allow Unsafe Exec",
-            description="Enable execution of user-provided Python code in this node.",
-            valueSchema=boolean_schema(default=False),
-            access=F8StateAccess.rw,
-            showOnNode=True,
-        ),
         F8StateSpec(
             name="code",
             label="Code",

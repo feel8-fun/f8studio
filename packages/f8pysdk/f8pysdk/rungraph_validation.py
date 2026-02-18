@@ -145,14 +145,30 @@ def validate_state_edge_targets_writable_or_raise(
     for e in list(graph.edges or []):
         if e.kind != F8EdgeKindEnum.state:
             continue
+        from_service = str(e.fromServiceId or "").strip()
+        from_node = str(e.fromOperatorId or "").strip()
+        from_field = str(e.fromPort or "").strip()
         to_service = str(e.toServiceId or "").strip()
         to_node = str(e.toOperatorId or "").strip()
         to_field = str(e.toPort or "").strip()
-        if not to_service or not to_node or not to_field:
+        if not from_service or not from_node or not from_field or not to_service or not to_node or not to_field:
             continue
         if service_filter and to_service != service_filter:
             continue
+        from_access = access_map.get((from_service, from_node, from_field))
+        if from_access is None:
+            raise ValueError(
+                f"state edge source field not found: {from_node}.{from_field}"
+            )
+        if from_access == F8StateAccess.wo:
+            raise ValueError(
+                f"state edge source is write-only: {from_node}.{from_field} ({from_access.value})"
+            )
         access = access_map.get((to_service, to_node, to_field))
+        if access is None:
+            raise ValueError(
+                f"state edge target field not found: {to_node}.{to_field}"
+            )
         if access == F8StateAccess.ro:
             raise ValueError(
                 f"state edge targets non-writable field: {to_node}.{to_field} ({access.value})"

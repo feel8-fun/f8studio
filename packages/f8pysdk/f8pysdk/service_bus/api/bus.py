@@ -5,7 +5,7 @@ import json
 import logging
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
-from typing import Any, Generic, Protocol, TYPE_CHECKING, TypeVar, cast
+from typing import Any, Generic, Protocol, TYPE_CHECKING, TypeVar
 
 from ...capabilities import (
     BusAttachableNode,
@@ -54,6 +54,13 @@ log = logging.getLogger(__name__)
 
 _K = TypeVar("_K")
 _V = TypeVar("_V")
+
+
+def _coerce_data_delivery_mode(value: Any) -> DataDeliveryMode | None:
+    text = str(value or "").strip().lower()
+    if text in ("pull", "push", "both"):
+        return text
+    return None
 
 
 class _CappedOrderedDict(OrderedDict[_K, _V], Generic[_K, _V]):
@@ -113,12 +120,12 @@ class ServiceBus:
         self._publish_all_data = bool(config.publish_all_data)
         self._debug_state = _debug_state_enabled()
         self._active = True
-        data_delivery = str(config.data_delivery or "pull").strip().lower()
-        if data_delivery not in ("pull", "push", "both"):
+        mode = _coerce_data_delivery_mode(config.data_delivery)
+        if mode is None:
             if self._debug_state or log.isEnabledFor(logging.WARNING):
-                log.warning("Invalid data_delivery=%r; defaulting to 'pull'", data_delivery)
-            data_delivery = "pull"
-        self._data_delivery = cast(DataDeliveryMode, data_delivery)
+                log.warning("Invalid data_delivery=%r; defaulting to 'pull'", config.data_delivery)
+            mode = "pull"
+        self._data_delivery = mode
         self._state_sync_concurrency = max(1, int(config.state_sync_concurrency))
         self._state_cache_max_entries = max(0, int(config.state_cache_max_entries))
         self._data_input_max_buffers = max(0, int(config.data_input_max_buffers))
@@ -189,8 +196,7 @@ class ServiceBus:
         """
         Update data delivery behavior at runtime (service-controlled).
         """
-        s = str(value or "").strip().lower()
-        mode = cast(DataDeliveryMode, s) if s in ("pull", "push", "both") else None
+        mode = _coerce_data_delivery_mode(value)
         if mode is None:
             return
         if mode == self._data_delivery:
