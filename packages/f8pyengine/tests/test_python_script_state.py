@@ -144,6 +144,107 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
         out = await node.compute_output("out", ctx_id="ctx-2")
         self.assertEqual(out, 99)
 
+    async def test_ctx_locals_persists_between_calls(self) -> None:
+        harness = ServiceBusHarness()
+        bus = harness.create_bus("svcA")
+        reg = RuntimeNodeRegistry.instance()
+        register_operator(reg)
+        _ = ServiceHost(bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=reg)
+
+        code = (
+            "def onMsg(ctx, inputs):\n"
+            "    c = int(ctx['locals'].get('count') or 0)\n"
+            "    c += 1\n"
+            "    ctx['locals']['count'] = c\n"
+            "    return {'outputs': {'out': c}}\n"
+        )
+        op = F8RuntimeNode(
+            nodeId="ps5",
+            serviceId="svcA",
+            serviceClass=SERVICE_CLASS,
+            operatorClass=PythonScriptRuntimeNode.SPEC.operatorClass,
+            stateFields=list(PythonScriptRuntimeNode.SPEC.stateFields or []),
+            stateValues={"code": code},
+        )
+        graph = F8RuntimeGraph(graphId="g5", revision="r1", nodes=[op], edges=[])
+        await bus.set_rungraph(graph)
+
+        node = bus.get_node("ps5")
+        self.assertIsInstance(node, PythonScriptRuntimeNode)
+        assert isinstance(node, PythonScriptRuntimeNode)
+
+        out1 = await node.compute_output("out", ctx_id="ctx-5a")
+        out2 = await node.compute_output("out", ctx_id="ctx-5b")
+        self.assertEqual(out1, 1)
+        self.assertEqual(out2, 2)
+
+    async def test_ctx_locals_is_isolated_from_system_state(self) -> None:
+        harness = ServiceBusHarness()
+        bus = harness.create_bus("svcA")
+        reg = RuntimeNodeRegistry.instance()
+        register_operator(reg)
+        _ = ServiceHost(bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=reg)
+
+        state_fields = list(PythonScriptRuntimeNode.SPEC.stateFields or [])
+        state_fields.append(F8StateSpec(name="x", label="x", description="", valueSchema=any_schema(), access=F8StateAccess.rw))
+        code = (
+            "async def onExec(ctx, execIn, inputs):\n"
+            "    ctx['locals']['x'] = 1\n"
+            "    await ctx['set_state_async']('x', 2)\n"
+            "    v = await ctx['get_state']('x')\n"
+            "    return {'outputs': {'out': v}}\n"
+        )
+        op = F8RuntimeNode(
+            nodeId="ps6",
+            serviceId="svcA",
+            serviceClass=SERVICE_CLASS,
+            operatorClass=PythonScriptRuntimeNode.SPEC.operatorClass,
+            stateFields=state_fields,
+            stateValues={"code": code},
+        )
+        graph = F8RuntimeGraph(graphId="g6", revision="r1", nodes=[op], edges=[])
+        await bus.set_rungraph(graph)
+
+        node = bus.get_node("ps6")
+        self.assertIsInstance(node, PythonScriptRuntimeNode)
+        assert isinstance(node, PythonScriptRuntimeNode)
+
+        out = await node.compute_output("out", ctx_id="ctx-6a")
+        self.assertEqual(out, 2)
+        state_x = await node.get_state_value("x")
+        self.assertEqual(state_x, 2)
+        self.assertEqual(node._locals.get("x"), 1)
+
+    async def test_ctx_state_key_failure_has_migration_hint(self) -> None:
+        harness = ServiceBusHarness()
+        bus = harness.create_bus("svcA")
+        reg = RuntimeNodeRegistry.instance()
+        register_operator(reg)
+        _ = ServiceHost(bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=reg)
+
+        code = (
+            "def onMsg(ctx, inputs):\n"
+            "    return {'outputs': {'out': ctx['state'].get('count', 0)}}\n"
+        )
+        op = F8RuntimeNode(
+            nodeId="ps7",
+            serviceId="svcA",
+            serviceClass=SERVICE_CLASS,
+            operatorClass=PythonScriptRuntimeNode.SPEC.operatorClass,
+            stateFields=list(PythonScriptRuntimeNode.SPEC.stateFields or []),
+            stateValues={"code": code},
+        )
+        graph = F8RuntimeGraph(graphId="g7", revision="r1", nodes=[op], edges=[])
+        await bus.set_rungraph(graph)
+
+        node = bus.get_node("ps7")
+        self.assertIsInstance(node, PythonScriptRuntimeNode)
+        assert isinstance(node, PythonScriptRuntimeNode)
+
+        out = await node.compute_output("out", ctx_id="ctx-7a")
+        self.assertIsNone(out)
+        self.assertIn("context key 'state' was removed, use 'locals'", str(node._last_error or ""))
+
 
 if __name__ == "__main__":
     unittest.main()

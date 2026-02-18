@@ -13,7 +13,6 @@ from f8pysdk import (
     F8StateAccess,
     F8StateSpec,
     any_schema,
-    boolean_schema,
     string_schema,
 )
 from f8pysdk.capabilities import ClosableNode
@@ -35,7 +34,7 @@ DEFAULT_CODE = (
     "# - onMsg(ctx, inputs)                        # called on data arrival (push mode) or as fallback for exec\n"
     "# - onExec(ctx, execIn, inputs)               # called on exec trigger (pull mode)\n"
     "# - onStop(ctx)\n"
-    "# - ctx['state'] is preserved between calls\n"
+    "# - ctx['locals'] is preserved between calls (script-local memory)\n"
     "# - ctx['execIn'] is set for exec-triggered calls\n"
     "# - State helpers:\n"
     "#   - await ctx['get_state'](field)           # read state value\n"
@@ -86,7 +85,7 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
         )
         self._initial_state = dict(initial_state or {})
         self._exec_out_ports = exec_out_ports(node, default=["exec"])
-        self._state: dict[str, Any] = {}
+        self._locals: dict[str, Any] = {}
 
         self._code = str(self._initial_state.get("code") or DEFAULT_CODE)
         self._runtime: dict[str, Callable[..., Any]] = {}
@@ -97,6 +96,7 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
         self._self_state_writes: dict[str, Any] = {}
         self._pull_cache_ctx_id: str | int | None = None
         self._pull_cache_outputs: dict[str, Any] = {}
+        self._state_key_hint_logged = False
 
         self._compile_and_start()
 
@@ -167,7 +167,7 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
 
         return {
             "nodeId": self.node_id,
-            "state": self._state,
+            "locals": self._locals,
             "execIn": None,
             "log": self._log,
             "emit": _emit,
@@ -194,7 +194,7 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
     def _compile_and_start(self) -> None:
         if self._started:
             self._invoke_hook_sync("onStop")
-        self._state = {}
+        self._locals = {}
         self._ctx = self._build_ctx()
         # Normalize line endings and tabs to avoid TabError on mixed indentation.
         code = str(self._code or "")
@@ -205,6 +205,18 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
             self._started = False
             return
         self._invoke_hook_sync("onStart")
+
+    def _build_invoke_ctx(self, *, exec_in: str | None) -> dict[str, Any]:
+        """
+        Build a per-invocation context.
+
+        `self._ctx` holds shared utilities/state references, while `execIn`
+        must be invocation-scoped to avoid cross-call leakage under concurrency.
+        """
+        base = self._ctx if isinstance(self._ctx, dict) else {}
+        invoke_ctx = dict(base)
+        invoke_ctx["execIn"] = exec_in
+        return invoke_ctx
 
     def _invoke_hook_sync(self, name: str, *args: Any) -> None:
         fn = self._runtime.get(name)
@@ -328,9 +340,8 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
         fn = self._runtime.get("onExec")
         if callable(fn):
             try:
-                if self._ctx is not None:
-                    self._ctx["execIn"] = exec_in
-                r = fn(self._ctx, str(exec_in or ""), dict(inputs))
+                invoke_ctx = self._build_invoke_ctx(exec_in=exec_in)
+                r = fn(invoke_ctx, str(exec_in or ""), dict(inputs))
                 if inspect.isawaitable(r):
                     r = await r
             except Exception as exc:
@@ -346,9 +357,8 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
         fn_exec = self._runtime.get("onExec")
         if callable(fn_exec):
             try:
-                if self._ctx is not None:
-                    self._ctx["execIn"] = exec_in
-                result = fn_exec(self._ctx, str(exec_in or ""), dict(inputs))
+                invoke_ctx = self._build_invoke_ctx(exec_in=exec_in)
+                result = fn_exec(invoke_ctx, str(exec_in or ""), dict(inputs))
                 if inspect.isawaitable(result):
                     result = await result
             except Exception as exc:
@@ -360,9 +370,8 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
         if not callable(fn_msg):
             return {}
         try:
-            if self._ctx is not None:
-                self._ctx["execIn"] = exec_in
-            result = fn_msg(self._ctx, dict(inputs))
+            invoke_ctx = self._build_invoke_ctx(exec_in=exec_in)
+            result = fn_msg(invoke_ctx, dict(inputs))
             if inspect.isawaitable(result):
                 result = await result
         except Exception as exc:
@@ -401,9 +410,8 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
         if not callable(fn):
             return
         try:
-            if self._ctx is not None:
-                self._ctx["execIn"] = exec_in
-            r = fn(self._ctx, dict(inputs))
+            invoke_ctx = self._build_invoke_ctx(exec_in=exec_in)
+            r = fn(invoke_ctx, dict(inputs))
             if inspect.isawaitable(r):
                 r = await r
         except Exception as exc:
