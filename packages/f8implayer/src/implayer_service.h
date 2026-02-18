@@ -16,6 +16,7 @@
 #include "f8cppsdk/kv_store.h"
 #include "f8cppsdk/service_bus.h"
 #include "f8cppsdk/shm/video.h"
+#include "sdl_video_window.h"
 
 namespace f8::cppsdk {
 class VideoSharedMemorySink;
@@ -24,7 +25,6 @@ class VideoSharedMemorySink;
 namespace f8::implayer {
 
 class MpvPlayer;
-class SdlVideoWindow;
 class ImPlayerGui;
 using VideoSharedMemorySink = ::f8::cppsdk::VideoSharedMemorySink;
 
@@ -100,6 +100,7 @@ class ImPlayerService final : public f8::cppsdk::LifecycleNode,
   bool cmd_stop(std::string& err);
   bool cmd_seek(const nlohmann::json& args, std::string& err);
   bool cmd_set_volume(const nlohmann::json& args, std::string& err);
+  void mark_vr_manual_override();
 
   Config cfg_;
 
@@ -152,6 +153,24 @@ class ImPlayerService final : public f8::cppsdk::LifecycleNode,
   unsigned view_last_video_h_ = 0;
 
   bool loop_ = false;
+
+  SdlVideoWindow::ProjectionMode vr_mode_ = SdlVideoWindow::ProjectionMode::Flat2D;
+  float vr_yaw_deg_ = 0.0f;
+  float vr_pitch_deg_ = 0.0f;
+  float vr_fov_deg_ = 90.0f;
+  int vr_sbs_eye_ = 0;
+
+  bool vr_dragging_ = false;
+  float vr_drag_anchor_x_ = 0.0f;
+  float vr_drag_anchor_y_ = 0.0f;
+  float vr_drag_start_yaw_deg_ = 0.0f;
+  float vr_drag_start_pitch_deg_ = 0.0f;
+
+  SdlVideoWindow::ProjectionMode vr_auto_detect_mode_ = SdlVideoWindow::ProjectionMode::Flat2D;
+  bool vr_auto_detect_valid_ = false;
+  bool vr_auto_pending_ratio_ = false;
+  bool vr_manual_override_ = false;
+  std::string vr_auto_video_id_;
 
   std::mutex render_mu_;
 };

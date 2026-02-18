@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <thread>
@@ -127,6 +128,59 @@ std::vector<std::string> split_drop_payload(const std::string& raw) {
   if (!t.empty())
     out.emplace_back(std::move(t));
   return out;
+}
+
+std::string lowercase_ascii(std::string s) {
+  for (char& ch : s) {
+    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  }
+  return s;
+}
+
+float normalize_yaw_deg(float yaw_deg) {
+  float v = std::fmod(yaw_deg, 360.0f);
+  if (v > 180.0f)
+    v -= 360.0f;
+  if (v < -180.0f)
+    v += 360.0f;
+  return v;
+}
+
+SdlVideoWindow::ProjectionMode detect_projection_from_name(const std::string& url) {
+  const std::string lower = lowercase_ascii(url);
+  const bool has_360 = (lower.find("360") != std::string::npos) || (lower.find("vr") != std::string::npos) ||
+                       (lower.find("equirect") != std::string::npos);
+  if (!has_360) {
+    return SdlVideoWindow::ProjectionMode::Flat2D;
+  }
+  const bool has_sbs = (lower.find("sbs") != std::string::npos) || (lower.find("sidebyside") != std::string::npos) ||
+                       (lower.find("side-by-side") != std::string::npos) || (lower.find("_lr") != std::string::npos) ||
+                       (lower.find("-lr") != std::string::npos);
+  if (has_sbs) {
+    return SdlVideoWindow::ProjectionMode::EquirectSbs;
+  }
+  return SdlVideoWindow::ProjectionMode::EquirectMono;
+}
+
+SdlVideoWindow::ProjectionMode detect_projection_from_ratio(unsigned width, unsigned height) {
+  if (width == 0 || height == 0) {
+    return SdlVideoWindow::ProjectionMode::Flat2D;
+  }
+  const double ratio = static_cast<double>(width) / static_cast<double>(height);
+  if (std::abs(ratio - 1.0) <= 0.08) {
+    return SdlVideoWindow::ProjectionMode::EquirectSbs;
+  }
+  if (std::abs(ratio - 2.0) <= 0.12) {
+    return SdlVideoWindow::ProjectionMode::EquirectMono;
+  }
+  return SdlVideoWindow::ProjectionMode::Flat2D;
+}
+
+MpvPlayer::ShmViewMode shm_view_mode_for_vr(SdlVideoWindow::ProjectionMode mode, int sbs_eye) {
+  if (mode == SdlVideoWindow::ProjectionMode::EquirectSbs) {
+    return sbs_eye == 0 ? MpvPlayer::ShmViewMode::SbsLeft : MpvPlayer::ShmViewMode::SbsRight;
+  }
+  return MpvPlayer::ShmViewMode::FullFrame;
 }
 
 }  // namespace
@@ -341,7 +395,17 @@ void ImPlayerService::tick() {
         view_pan_y_ = 0.0f;
         view_panning_ = false;
       }
+      if (vw != 0 && vh != 0 && vr_auto_pending_ratio_ && !vr_manual_override_) {
+        const auto ratio_mode = detect_projection_from_ratio(vw, vh);
+        if (ratio_mode != SdlVideoWindow::ProjectionMode::Flat2D || !vr_auto_detect_valid_) {
+          vr_auto_detect_mode_ = ratio_mode;
+          vr_auto_detect_valid_ = true;
+          vr_mode_ = ratio_mode;
+        }
+        vr_auto_pending_ratio_ = false;
+      }
 
+      player_->setShmViewMode(shm_view_mode_for_vr(vr_mode_, vr_sbs_eye_));
       const bool updated = player_->renderVideoFrame();
       if (force_present || updated || window_->needsRedraw() || (gui_ && gui_->wantsRepaint())) {
         ImPlayerGui::Callbacks cb;
@@ -407,6 +471,21 @@ void ImPlayerService::tick() {
           if (window_)
             (void)window_->toggleFullscreen();
         };
+        cb.set_vr_mode = [this](SdlVideoWindow::ProjectionMode mode) {
+          vr_mode_ = mode;
+          mark_vr_manual_override();
+        };
+        cb.set_vr_eye = [this](int eye) {
+          vr_sbs_eye_ = (eye == 0) ? 0 : 1;
+        };
+        cb.set_vr_fov = [this](float fov_deg) {
+          vr_fov_deg_ = std::clamp(fov_deg, 50.0f, 120.0f);
+        };
+        cb.reset_vr_view = [this]() {
+          vr_yaw_deg_ = 0.0f;
+          vr_pitch_deg_ = 0.0f;
+          vr_fov_deg_ = 90.0f;
+        };
         cb.playlist_select = [this](int index) {
           playlist_play_index(index);
         };
@@ -436,17 +515,21 @@ void ImPlayerService::tick() {
         }
 
         const SdlVideoWindow::ViewTransform view{view_zoom_, view_pan_x_, view_pan_y_};
+        const SdlVideoWindow::VrViewState vr_view{
+            vr_mode_, vr_yaw_deg_, std::clamp(vr_pitch_deg_, -89.0f, 89.0f), std::clamp(vr_fov_deg_, 50.0f, 120.0f),
+            vr_sbs_eye_};
         const bool playing = playing_.load(std::memory_order_relaxed);
         window_->present(
             *player_,
             [this, &cb, &err, &playlist_snapshot, playlist_index_snapshot, playing, loop_snapshot]() {
               if (gui_ && player_) {
                 gui_->renderOverlay(*player_, cb, err, playlist_snapshot, playlist_index_snapshot, playing,
-                                    loop_snapshot, tick_ema_fps_, tick_ema_ms_);
+                                    loop_snapshot, tick_ema_fps_, tick_ema_ms_, vr_mode_, vr_sbs_eye_, vr_yaw_deg_,
+                                    vr_pitch_deg_, vr_fov_deg_);
                 gui_->clearRepaintFlag();
               }
             },
-            view);
+            view, vr_view);
         did_present = true;
       }
     }
@@ -532,6 +615,22 @@ void ImPlayerService::processSdlEvent(const SDL_Event& ev) {
   }
 
   if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+    if (ev.button.button == SDL_BUTTON_LEFT && vr_mode_ != SdlVideoWindow::ProjectionMode::Flat2D) {
+      if (!(gui_ && gui_->wantsCaptureMouse()) && window_) {
+        int win_w = 0, win_h = 0;
+        int px_w = 0, px_h = 0;
+        SDL_GetWindowSize(window_->sdlWindow(), &win_w, &win_h);
+        SDL_GetWindowSizeInPixels(window_->sdlWindow(), &px_w, &px_h);
+        const float sx = (win_w > 0 && px_w > 0) ? static_cast<float>(px_w) / static_cast<float>(win_w) : 1.0f;
+        const float sy = (win_h > 0 && px_h > 0) ? static_cast<float>(px_h) / static_cast<float>(win_h) : 1.0f;
+        vr_dragging_ = true;
+        vr_drag_anchor_x_ = static_cast<float>(ev.button.x) * sx;
+        vr_drag_anchor_y_ = static_cast<float>(ev.button.y) * sy;
+        vr_drag_start_yaw_deg_ = vr_yaw_deg_;
+        vr_drag_start_pitch_deg_ = vr_pitch_deg_;
+      }
+      return;
+    }
     if (ev.button.button == SDL_BUTTON_MIDDLE) {
       int win_w = 0, win_h = 0;
       int px_w = 0, px_h = 0;
@@ -550,6 +649,10 @@ void ImPlayerService::processSdlEvent(const SDL_Event& ev) {
   }
 
   if (ev.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+    if (ev.button.button == SDL_BUTTON_LEFT) {
+      vr_dragging_ = false;
+      return;
+    }
     if (ev.button.button == SDL_BUTTON_MIDDLE) {
       view_panning_ = false;
     }
@@ -557,6 +660,21 @@ void ImPlayerService::processSdlEvent(const SDL_Event& ev) {
   }
 
   if (ev.type == SDL_EVENT_MOUSE_MOTION) {
+    if (vr_dragging_ && window_) {
+      int win_w = 0, win_h = 0;
+      int px_w = 0, px_h = 0;
+      SDL_GetWindowSize(window_->sdlWindow(), &win_w, &win_h);
+      SDL_GetWindowSizeInPixels(window_->sdlWindow(), &px_w, &px_h);
+      const float sx = (win_w > 0 && px_w > 0) ? static_cast<float>(px_w) / static_cast<float>(win_w) : 1.0f;
+      const float sy = (win_h > 0 && px_h > 0) ? static_cast<float>(px_h) / static_cast<float>(win_h) : 1.0f;
+      const float mx = static_cast<float>(ev.motion.x) * sx;
+      const float my = static_cast<float>(ev.motion.y) * sy;
+      constexpr float kYawDegPerPixel = 0.12f;
+      constexpr float kPitchDegPerPixel = 0.12f;
+      vr_yaw_deg_ = normalize_yaw_deg(vr_drag_start_yaw_deg_ + (mx - vr_drag_anchor_x_) * kYawDegPerPixel);
+      vr_pitch_deg_ = std::clamp(vr_drag_start_pitch_deg_ - (my - vr_drag_anchor_y_) * kPitchDegPerPixel, -89.0f, 89.0f);
+      return;
+    }
     if (view_panning_) {
       int win_w = 0, win_h = 0;
       int px_w = 0, px_h = 0;
@@ -1007,22 +1125,7 @@ void ImPlayerService::playlist_next() {
   }
   std::string err;
   if (single) {
-    if (!player_) {
-      return;
-    }
-    if (!player_->openMedia(url)) {
-      err = "mpv loadfile failed";
-      std::lock_guard<std::mutex> lock(state_mu_);
-      last_error_ = err;
-      return;
-    }
-    eof_reached_.store(false, std::memory_order_release);
-    player_->seek(0.0);
-    if (active_.load(std::memory_order_acquire)) {
-      (void)player_->play();
-    } else {
-      player_->pause();
-    }
+    (void)open_media_internal(url, true, err);
     return;
   }
   (void)open_media_internal(url, true, err);
@@ -1100,6 +1203,19 @@ bool ImPlayerService::open_media_internal(const std::string& url, bool keep_play
       playlist_.push_back(u);
       playlist_index_ = 0;
     }
+
+    vr_auto_video_id_ = video_id_;
+    vr_manual_override_ = false;
+    const auto detected_from_name = detect_projection_from_name(u);
+    vr_auto_detect_mode_ = detected_from_name;
+    vr_auto_detect_valid_ = true;
+    vr_auto_pending_ratio_ = true;
+    vr_mode_ = detected_from_name;
+    vr_sbs_eye_ = 0;
+    vr_yaw_deg_ = 0.0f;
+    vr_pitch_deg_ = 0.0f;
+    vr_fov_deg_ = 90.0f;
+    vr_dragging_ = false;
   }
   if (active_.load(std::memory_order_acquire)) {
     (void)player_->play();
@@ -1279,6 +1395,11 @@ bool ImPlayerService::cmd_set_volume(const nlohmann::json& args, std::string& er
   if (player_)
     player_->setVolume(vol);
   return true;
+}
+
+void ImPlayerService::mark_vr_manual_override() {
+  vr_manual_override_ = true;
+  vr_auto_pending_ratio_ = false;
 }
 
 void ImPlayerService::publish_static_state() {

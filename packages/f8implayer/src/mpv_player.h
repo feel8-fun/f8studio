@@ -24,8 +24,14 @@ namespace f8::implayer {
 
 using VideoSharedMemorySink = ::f8::cppsdk::VideoSharedMemorySink;
 
-class MpvPlayer {
- public:
+ class MpvPlayer {
+  public:
+  enum class ShmViewMode {
+    FullFrame = 0,
+    SbsLeft = 1,
+    SbsRight = 2,
+  };
+
   struct Stats {
     std::uint64_t renderCalls = 0;
     std::uint64_t renderUpdates = 0;
@@ -90,6 +96,7 @@ class MpvPlayer {
   void setSharedMemorySink(std::shared_ptr<VideoSharedMemorySink> sink);
   void setVideoShmMaxSize(std::uint32_t max_width, std::uint32_t max_height);
   void setVideoShmMaxFps(double max_fps);
+  void setShmViewMode(ShmViewMode mode);
   std::uint32_t videoShmMaxWidth() const;
   std::uint32_t videoShmMaxHeight() const;
   double videoShmMaxFps() const;
@@ -101,6 +108,7 @@ class MpvPlayer {
   unsigned videoWidth() const { return videoWidth_.load(std::memory_order_relaxed); }
   unsigned videoHeight() const { return videoHeight_.load(std::memory_order_relaxed); }
   unsigned videoFboId() const { return videoFboId_; }
+  unsigned videoTextureId() const { return videoTextureId_; }
   double positionSeconds() const { return lastPositionSeconds_.load(std::memory_order_relaxed); }
   double durationSeconds() const { return lastDurationSeconds_.load(std::memory_order_relaxed); }
   Stats statsSnapshot() const;
@@ -117,6 +125,8 @@ class MpvPlayer {
   void eventLoop();
   void processEvent(const mpv_event& event);
   void handlePropertyChange(const mpv_event_property& property);
+  void maybeAutoDowngradeHwdec(const mpv_event_log_message* log);
+  void notifyEofReachedOnce();
   void handleVideoReconfig();
   std::pair<unsigned, unsigned> targetDimensions(unsigned width, unsigned height) const;
   std::shared_ptr<VideoSharedMemorySink> sharedSink() const;
@@ -136,6 +146,7 @@ class MpvPlayer {
   std::atomic<std::uint32_t> shm_max_height_{0};
   std::atomic<double> shm_max_fps_{0.0};
   std::atomic<double> shm_frame_interval_s_{0.0};
+  std::atomic<int> shm_view_mode_{static_cast<int>(ShmViewMode::FullFrame)};
   TimeCallback timeCallback_;
   PlayingCallback playingCallback_;
   FinishedCallback finishedCallback_;
@@ -164,6 +175,8 @@ class MpvPlayer {
   std::atomic<double> lastPositionSeconds_{0.0};
   std::atomic<double> lastDurationSeconds_{0.0};
   std::atomic<bool> eofReached_{false};
+  std::atomic<bool> eofNotified_{false};
+  std::atomic<bool> hwdecAutoDowngraded_{false};
 
   mutable std::mutex statsMutex_;
   Stats stats_{};
@@ -171,7 +184,7 @@ class MpvPlayer {
   mutable std::mutex mpvPropsMutex_;
   std::string hwdecCurrent_;
   std::string hwdecRequested_;
-  int hwdecExtraFramesRequested_ = 2;
+  int hwdecExtraFramesRequested_ = 6;
   std::string fboFormatRequested_;
   std::string videoPixelFormat_;
 

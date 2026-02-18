@@ -167,7 +167,8 @@ bool ImPlayerGui::wantsCaptureMouse() const {
 
 void ImPlayerGui::renderOverlay(const MpvPlayer& player, const Callbacks& cb, const std::string& last_error,
                                 const std::vector<std::string>& playlist, int playlist_index, bool playing, bool loop,
-                                double tick_fps_ema, double tick_ms_ema) {
+                                double tick_fps_ema, double tick_ms_ema, SdlVideoWindow::ProjectionMode vr_mode,
+                                int vr_sbs_eye, float vr_yaw_deg, float vr_pitch_deg, float vr_fov_deg) {
   if (!started_)
     return;
 
@@ -363,6 +364,48 @@ void ImPlayerGui::renderOverlay(const MpvPlayer& player, const Callbacks& cb, co
           dirty_ = true;
         }
         ImGui::EndPopup();
+      }
+
+      ImGui::Separator();
+      int vr_mode_idx = static_cast<int>(vr_mode);
+      ImGui::SetNextItemWidth(170.0f);
+      if (ImGui::Combo("##vr_mode", &vr_mode_idx, "2D\000360 Mono\000360 SBS\000")) {
+        if (cb.set_vr_mode) {
+          cb.set_vr_mode(static_cast<SdlVideoWindow::ProjectionMode>(vr_mode_idx));
+        }
+        dirty_ = true;
+      }
+      ImGui::SameLine();
+      ImGui::TextDisabled("VR mode");
+
+      if (vr_mode == SdlVideoWindow::ProjectionMode::EquirectSbs) {
+        int eye_idx = (vr_sbs_eye == 0) ? 0 : 1;
+        ImGui::SetNextItemWidth(90.0f);
+        if (ImGui::Combo("##vr_eye", &eye_idx, "Left\000Right\000")) {
+          if (cb.set_vr_eye)
+            cb.set_vr_eye(eye_idx);
+          dirty_ = true;
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("Eye");
+      }
+
+      if (vr_mode != SdlVideoWindow::ProjectionMode::Flat2D) {
+        float fov = std::clamp(vr_fov_deg, 50.0f, 120.0f);
+        ImGui::SetNextItemWidth(170.0f);
+        if (ImGui::SliderFloat("##vr_fov", &fov, 50.0f, 120.0f, "FOV %.0f")) {
+          if (cb.set_vr_fov)
+            cb.set_vr_fov(fov);
+          dirty_ = true;
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("yaw %.1f pitch %.1f", vr_yaw_deg, vr_pitch_deg);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Reset View")) {
+          if (cb.reset_vr_view)
+            cb.reset_vr_view();
+          dirty_ = true;
+        }
       }
 
       if (!last_error.empty()) {

@@ -1,10 +1,12 @@
 #include "mpv_player.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstring>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 
 #include <SDL3/SDL.h>
@@ -43,6 +45,13 @@ std::uint64_t EstimateRgba8Bytes(unsigned width, unsigned height) {
 
 double Clamp01(double value) {
   return std::clamp(value, 0.0, 1.0);
+}
+
+std::string lowercase_ascii(std::string s) {
+  for (char& ch : s) {
+    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  }
+  return s;
 }
 
 void LogMpvMessage(const mpv_event_log_message* log) {
@@ -133,7 +142,9 @@ void MpvPlayer::initializeMpv() {
 #endif
   // Try to keep hardware-decoding surfaces/buffers in check. mpv will still
   // allocate what it needs, but this can reduce the "extra" queueing.
-  mpv_set_option_string(mpv_, "hwdec-extra-frames", "2");
+  // Keep enough decoder surfaces for streams with jittery timestamps.
+  // Using too few extra frames can cause "No decoder surfaces left" on some files.
+  mpv_set_option_string(mpv_, "hwdec-extra-frames", "6");
   // Default FBO format is platform/content dependent. For SDR content, forcing
   // rgba8 can reduce VRAM usage. (HDR/10-bit workflows may prefer higher depth.)
   mpv_set_option_string(mpv_, "fbo-format", "rgba8");
@@ -160,7 +171,7 @@ void MpvPlayer::initializeMpv() {
 #else
     hwdecRequested_ = "auto";
 #endif
-    hwdecExtraFramesRequested_ = 2;
+    hwdecExtraFramesRequested_ = 6;
     fboFormatRequested_ = "rgba8";
   }
 }
@@ -170,6 +181,7 @@ bool MpvPlayer::openMedia(const std::string& source) {
     return false;
   const char* cmd[] = {"loadfile", source.c_str(), nullptr};
   eofReached_.store(false, std::memory_order_release);
+  eofNotified_.store(false, std::memory_order_release);
   return mpv_command(mpv_, cmd) >= 0;
 }
 
@@ -216,6 +228,7 @@ bool MpvPlayer::setHwdec(const std::string& hwdec) {
   if (status >= 0) {
     std::lock_guard<std::mutex> lock(mpvPropsMutex_);
     hwdecRequested_ = hwdec;
+    hwdecAutoDowngraded_.store(false, std::memory_order_release);
     return true;
   }
   return false;
@@ -264,6 +277,10 @@ void MpvPlayer::setVideoShmMaxFps(double max_fps) {
   shm_max_fps_.store(max_fps, std::memory_order_relaxed);
   shm_frame_interval_s_.store(max_fps > 0.0 ? (1.0 / max_fps) : 0.0, std::memory_order_relaxed);
   shm_rate_reset_.store(true, std::memory_order_release);
+}
+
+void MpvPlayer::setShmViewMode(ShmViewMode mode) {
+  shm_view_mode_.store(static_cast<int>(mode), std::memory_order_relaxed);
 }
 
 std::uint32_t MpvPlayer::videoShmMaxWidth() const {
@@ -479,16 +496,17 @@ void MpvPlayer::eventLoop() {
 void MpvPlayer::processEvent(const mpv_event& event) {
   switch (event.event_id) {
     case MPV_EVENT_FILE_LOADED:
+      eofReached_.store(false, std::memory_order_release);
+      eofNotified_.store(false, std::memory_order_release);
       if (playingCallback_)
         playingCallback_(true);
       break;
     case MPV_EVENT_LOG_MESSAGE:
       LogMpvMessage(static_cast<mpv_event_log_message*>(event.data));
+      maybeAutoDowngradeHwdec(static_cast<mpv_event_log_message*>(event.data));
       break;
     case MPV_EVENT_END_FILE:
-      if (playingCallback_)
-        playingCallback_(false);
-      if (finishedCallback_) {
+      {
         int reason = 0;
         if (event.data) {
           const auto* end = static_cast<const mpv_event_end_file*>(event.data);
@@ -496,7 +514,8 @@ void MpvPlayer::processEvent(const mpv_event& event) {
         }
         // Auto-advance playlist only on natural EOF; ignore stop/error.
         if (reason == MPV_END_FILE_REASON_EOF) {
-          finishedCallback_();
+          eofReached_.store(true, std::memory_order_release);
+          notifyEofReachedOnce();
         }
       }
       break;
@@ -551,12 +570,54 @@ void MpvPlayer::handlePropertyChange(const mpv_event_property& property) {
     const int v = property.data ? *static_cast<int*>(property.data) : 0;
     const bool eof = (v != 0);
     const bool prev = eofReached_.exchange(eof, std::memory_order_acq_rel);
-    if (eof && !prev) {
-      if (playingCallback_)
-        playingCallback_(false);
-      if (finishedCallback_)
-        finishedCallback_();
+    if (eof) {
+      if (!prev) {
+        notifyEofReachedOnce();
+      }
+    } else {
+      eofNotified_.store(false, std::memory_order_release);
     }
+  }
+}
+
+void MpvPlayer::maybeAutoDowngradeHwdec(const mpv_event_log_message* log) {
+  if (!mpv_ || !log || !log->text) {
+    return;
+  }
+  if (hwdecAutoDowngraded_.load(std::memory_order_acquire)) {
+    return;
+  }
+
+  const std::string text = lowercase_ascii(std::string(log->text));
+  const bool surface_exhausted = (text.find("no decoder surfaces left") != std::string::npos);
+  const bool hw_decode_frame_error = (text.find("error while decoding frame (hardware decoding)") != std::string::npos);
+  if (!surface_exhausted && !hw_decode_frame_error) {
+    return;
+  }
+
+  const int status = mpv_set_property_string(mpv_, "hwdec", "no");
+  if (status < 0) {
+    spdlog::warn("[mpv]auto hwdec downgrade failed: {}", mpv_error_string(status));
+    return;
+  }
+
+  hwdecAutoDowngraded_.store(true, std::memory_order_release);
+  {
+    std::lock_guard<std::mutex> lock(mpvPropsMutex_);
+    hwdecRequested_ = "no";
+  }
+  spdlog::warn("[mpv]hardware decode failure detected; auto-downgraded hwdec to 'no' for this runtime");
+}
+
+void MpvPlayer::notifyEofReachedOnce() {
+  if (eofNotified_.exchange(true, std::memory_order_acq_rel)) {
+    return;
+  }
+  if (playingCallback_) {
+    playingCallback_(false);
+  }
+  if (finishedCallback_) {
+    finishedCallback_();
   }
 }
 
@@ -572,12 +633,14 @@ void MpvPlayer::resetVideoOutput() {
   }
   destroyReadbackPbos();
   eofReached_.store(false, std::memory_order_release);
+  eofNotified_.store(false, std::memory_order_release);
 }
 
 void MpvPlayer::resetPlaybackState() {
   lastPositionSeconds_.store(0.0, std::memory_order_relaxed);
   lastDurationSeconds_.store(0.0, std::memory_order_relaxed);
   eofReached_.store(false, std::memory_order_release);
+  eofNotified_.store(false, std::memory_order_release);
 }
 
 void MpvPlayer::handleVideoReconfig() {
@@ -845,7 +908,22 @@ bool MpvPlayer::copyFrameToSharedMemory(unsigned width, unsigned height, double&
     return false;
   }
 
-  auto [target_w, target_h] = targetDimensions(width, height);
+  const ShmViewMode view_mode = static_cast<ShmViewMode>(shm_view_mode_.load(std::memory_order_relaxed));
+  unsigned src_x0 = 0;
+  unsigned src_w = width;
+  if (view_mode != ShmViewMode::FullFrame && width >= 2) {
+    const unsigned left_w = width / 2;
+    const unsigned right_w = width - left_w;
+    if (view_mode == ShmViewMode::SbsLeft) {
+      src_x0 = 0;
+      src_w = left_w;
+    } else if (view_mode == ShmViewMode::SbsRight) {
+      src_x0 = left_w;
+      src_w = right_w;
+    }
+  }
+
+  auto [target_w, target_h] = targetDimensions(src_w, height);
   if (target_w == 0 || target_h == 0) {
     std::lock_guard<std::mutex> lock(statsMutex_);
     stats_.shmSkipTarget += 1;
@@ -867,8 +945,8 @@ bool MpvPlayer::copyFrameToSharedMemory(unsigned width, unsigned height, double&
   glBindFramebuffer(GL_READ_FRAMEBUFFER, videoFboId_);
   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, downsampleFboId_);
   // glReadPixels reads from bottom-left; flip during blit so the SHM payload is top-down.
-  glBlitFramebuffer(0, 0, static_cast<GLint>(width), static_cast<GLint>(height), 0, static_cast<GLint>(target_h),
-                    static_cast<GLint>(target_w), 0, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+  glBlitFramebuffer(static_cast<GLint>(src_x0), 0, static_cast<GLint>(src_x0 + src_w), static_cast<GLint>(height), 0,
+                    static_cast<GLint>(target_h), static_cast<GLint>(target_w), 0, GL_COLOR_BUFFER_BIT, GL_LINEAR);
 
   const std::size_t byte_count = static_cast<std::size_t>(target_w) * target_h * 4;
   if (!ensureReadbackPbos(byte_count)) {

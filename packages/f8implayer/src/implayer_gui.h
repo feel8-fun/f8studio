@@ -7,6 +7,8 @@
 
 #include <SDL3/SDL.h>
 
+#include "sdl_video_window.h"
+
 namespace f8::implayer {
 
 class MpvPlayer;
@@ -26,6 +28,10 @@ class MpvPlayer;
       std::function<void(const std::string& fbo_format)> set_fbo_format;
       std::function<void()> fit_view;
       std::function<void()> toggle_fullscreen;
+      std::function<void(SdlVideoWindow::ProjectionMode mode)> set_vr_mode;
+      std::function<void(int eye)> set_vr_eye;
+      std::function<void(float fov_deg)> set_vr_fov;
+      std::function<void()> reset_vr_view;
 
       std::function<void(int index)> playlist_select;
       std::function<void(int index)> playlist_remove;
@@ -46,7 +52,8 @@ class MpvPlayer;
     void processEvent(SDL_Event* ev);
     void renderOverlay(const MpvPlayer& player, const Callbacks& cb, const std::string& last_error,
                        const std::vector<std::string>& playlist, int playlist_index, bool playing, bool loop,
-                       double tick_fps_ema, double tick_ms_ema);
+                       double tick_fps_ema, double tick_ms_ema, SdlVideoWindow::ProjectionMode vr_mode, int vr_sbs_eye,
+                       float vr_yaw_deg, float vr_pitch_deg, float vr_fov_deg);
     bool wantsCaptureKeyboard() const;
     bool wantsCaptureMouse() const;
 

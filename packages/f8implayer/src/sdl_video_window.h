@@ -11,6 +11,12 @@ class MpvPlayer;
 
 class SdlVideoWindow {
  public:
+  enum class ProjectionMode {
+    Flat2D = 0,
+    EquirectMono = 1,
+    EquirectSbs = 2,
+  };
+
   struct Config {
     std::string title = "f8implayer";
     int width = 1280;
@@ -45,9 +51,18 @@ class SdlVideoWindow {
     float pan_y = 0.0f;
   };
 
+  struct VrViewState {
+    ProjectionMode mode = ProjectionMode::Flat2D;
+    float yaw_deg = 0.0f;
+    float pitch_deg = 0.0f;
+    float fov_deg = 90.0f;
+    int sbs_eye = 0;
+  };
+
   using OverlayCallback = std::function<void()>;
   void present(const MpvPlayer& player, const OverlayCallback& overlay = {});
   void present(const MpvPlayer& player, const OverlayCallback& overlay, const ViewTransform& view);
+  void present(const MpvPlayer& player, const OverlayCallback& overlay, const ViewTransform& view, const VrViewState& vr);
 
   bool wantsClose() const { return wants_close_; }
   bool needsRedraw() const { return needs_redraw_; }
@@ -66,6 +81,12 @@ class SdlVideoWindow {
  private:
   void updateDrawableSize();
   void clearBlack();
+  bool ensureVrRenderer();
+  void destroyVrRenderer();
+  bool renderVrFrame(unsigned texture_id, const VrViewState& vr);
+  static unsigned compileShader(unsigned type, const char* source);
+  static void logShaderFailure(unsigned shader, const char* stage);
+  static void logProgramFailure(unsigned program);
 
   Config cfg_;
   SDL_Window* window_ = nullptr;
@@ -76,6 +97,17 @@ class SdlVideoWindow {
   bool needs_redraw_ = true;
   unsigned drawable_w_ = 0;
   unsigned drawable_h_ = 0;
+
+  unsigned vr_program_ = 0;
+  unsigned vr_vao_ = 0;
+  int vr_u_texture_ = -1;
+  int vr_u_aspect_ = -1;
+  int vr_u_yaw_rad_ = -1;
+  int vr_u_pitch_rad_ = -1;
+  int vr_u_tan_half_fov_ = -1;
+  int vr_u_mode_ = -1;
+  int vr_u_sbs_eye_ = -1;
+  bool vr_renderer_failed_once_ = false;
 };
 
 }  // namespace f8::implayer

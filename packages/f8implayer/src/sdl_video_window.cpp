@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
 
 #include <glad/glad.h>
 #include <spdlog/spdlog.h>
@@ -12,6 +13,56 @@
 namespace f8::implayer {
 
 namespace {
+
+constexpr float kPi = 3.14159265358979323846f;
+constexpr const char* kVrVertexShader = R"(
+#version 330 core
+out vec2 v_ndc;
+void main() {
+  vec2 pos;
+  if (gl_VertexID == 0) pos = vec2(-1.0, -1.0);
+  else if (gl_VertexID == 1) pos = vec2(3.0, -1.0);
+  else pos = vec2(-1.0, 3.0);
+  v_ndc = pos;
+  gl_Position = vec4(pos, 0.0, 1.0);
+}
+)";
+
+constexpr const char* kVrFragmentShader = R"(
+#version 330 core
+in vec2 v_ndc;
+out vec4 FragColor;
+
+uniform sampler2D uTexture;
+uniform float uAspect;
+uniform float uYawRad;
+uniform float uPitchRad;
+uniform float uTanHalfFov;
+uniform int uMode;     // 1=mono, 2=sbs
+uniform int uSbsEye;   // 0=left, 1=right
+
+void main() {
+  vec3 dir = normalize(vec3(v_ndc.x * uTanHalfFov * uAspect, -v_ndc.y * uTanHalfFov, 1.0));
+
+  float cp = cos(uPitchRad);
+  float sp = sin(uPitchRad);
+  float cy = cos(uYawRad);
+  float sy = sin(uYawRad);
+
+  vec3 d1 = vec3(dir.x, cp * dir.y - sp * dir.z, sp * dir.y + cp * dir.z);
+  vec3 d = vec3(cy * d1.x + sy * d1.z, d1.y, -sy * d1.x + cy * d1.z);
+
+  float u = atan(d.x, d.z) / (2.0 * 3.14159265358979323846) + 0.5;
+  float v = 0.5 - asin(clamp(d.y, -1.0, 1.0)) / 3.14159265358979323846;
+
+  if (uMode == 2) {
+    if (uSbsEye == 0) u *= 0.5;
+    else u = 0.5 + u * 0.5;
+  }
+
+  FragColor = texture(uTexture, vec2(fract(u), clamp(v, 0.0, 1.0)));
+}
+)";
 
 void aspect_fit_rect(unsigned src_w, unsigned src_h, unsigned dst_w, unsigned dst_h, int& x0, int& y0, int& x1,
                      int& y1) {
@@ -111,6 +162,10 @@ void SdlVideoWindow::stop() {
     return;
   }
 
+  if (window_ && gl_context_) {
+    SDL_GL_MakeCurrent(window_, gl_context_);
+  }
+  destroyVrRenderer();
   if (window_) {
     SDL_GL_MakeCurrent(window_, nullptr);
   }
@@ -171,10 +226,15 @@ bool SdlVideoWindow::makeCurrent() {
 }
 
 void SdlVideoWindow::present(const MpvPlayer& player, const OverlayCallback& overlay) {
-  present(player, overlay, ViewTransform{});
+  present(player, overlay, ViewTransform{}, VrViewState{});
 }
 
 void SdlVideoWindow::present(const MpvPlayer& player, const OverlayCallback& overlay, const ViewTransform& view) {
+  present(player, overlay, view, VrViewState{});
+}
+
+void SdlVideoWindow::present(const MpvPlayer& player, const OverlayCallback& overlay, const ViewTransform& view,
+                             const VrViewState& vr) {
   if (!started_ || !window_)
     return;
   if (!makeCurrent())
@@ -189,35 +249,209 @@ void SdlVideoWindow::present(const MpvPlayer& player, const OverlayCallback& ove
   const unsigned src_w = player.videoWidth();
   const unsigned src_h = player.videoHeight();
   const unsigned src_fbo = player.videoFboId();
+  const unsigned src_texture = player.videoTextureId();
   if (src_w > 0 && src_h > 0 && src_fbo != 0) {
-    int x0, y0, x1, y1;
-    aspect_fit_rect(src_w, src_h, drawable_w_, drawable_h_, x0, y0, x1, y1);
+    const bool want_vr = vr.mode != ProjectionMode::Flat2D;
+    bool rendered_vr = false;
+    if (want_vr && src_texture != 0) {
+      rendered_vr = renderVrFrame(src_texture, vr);
+    }
 
-    const float zoom = std::clamp(view.zoom, 0.1f, 10.0f);
-    const float base_w = static_cast<float>(x1 - x0);
-    const float base_h = static_cast<float>(y1 - y0);
-    const float cx = static_cast<float>(x0) + base_w * 0.5f;
-    const float cy = static_cast<float>(y0) + base_h * 0.5f;
-    const float w = base_w * zoom;
-    const float h = base_h * zoom;
+    if (!rendered_vr) {
+      int x0, y0, x1, y1;
+      aspect_fit_rect(src_w, src_h, drawable_w_, drawable_h_, x0, y0, x1, y1);
 
-    const float dx0 = cx - w * 0.5f + view.pan_x;
-    const float dy0 = cy - h * 0.5f + view.pan_y;
-    const float dx1 = dx0 + w;
-    const float dy1 = dy0 + h;
+      const float zoom = std::clamp(view.zoom, 0.1f, 10.0f);
+      const float base_w = static_cast<float>(x1 - x0);
+      const float base_h = static_cast<float>(y1 - y0);
+      const float cx = static_cast<float>(x0) + base_w * 0.5f;
+      const float cy = static_cast<float>(y0) + base_h * 0.5f;
+      const float w = base_w * zoom;
+      const float h = base_h * zoom;
 
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(src_fbo));
-    glReadBuffer(GL_COLOR_ATTACHMENT0);
-    glBlitFramebuffer(0, 0, static_cast<GLint>(src_w), static_cast<GLint>(src_h), static_cast<GLint>(std::lround(dx0)),
-                      static_cast<GLint>(std::lround(dy0)), static_cast<GLint>(std::lround(dx1)),
-                      static_cast<GLint>(std::lround(dy1)), GL_COLOR_BUFFER_BIT, GL_LINEAR);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+      const float dx0 = cx - w * 0.5f + view.pan_x;
+      const float dy0 = cy - h * 0.5f + view.pan_y;
+      const float dx1 = dx0 + w;
+      const float dy1 = dy0 + h;
+
+      glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(src_fbo));
+      glReadBuffer(GL_COLOR_ATTACHMENT0);
+      glBlitFramebuffer(0, 0, static_cast<GLint>(src_w), static_cast<GLint>(src_h),
+                        static_cast<GLint>(std::lround(dx0)), static_cast<GLint>(std::lround(dy0)),
+                        static_cast<GLint>(std::lround(dx1)), static_cast<GLint>(std::lround(dy1)), GL_COLOR_BUFFER_BIT,
+                        GL_LINEAR);
+      glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    }
   }
 
   if (overlay)
     overlay();
   SDL_GL_SwapWindow(window_);
   needs_redraw_ = false;
+}
+
+bool SdlVideoWindow::ensureVrRenderer() {
+  if (vr_program_ != 0 && vr_vao_ != 0) {
+    return true;
+  }
+
+  const unsigned vs = compileShader(GL_VERTEX_SHADER, kVrVertexShader);
+  if (vs == 0) {
+    return false;
+  }
+  const unsigned fs = compileShader(GL_FRAGMENT_SHADER, kVrFragmentShader);
+  if (fs == 0) {
+    glDeleteShader(vs);
+    return false;
+  }
+
+  const unsigned program = glCreateProgram();
+  glAttachShader(program, vs);
+  glAttachShader(program, fs);
+  glLinkProgram(program);
+  glDeleteShader(vs);
+  glDeleteShader(fs);
+
+  GLint linked = GL_FALSE;
+  glGetProgramiv(program, GL_LINK_STATUS, &linked);
+  if (linked != GL_TRUE) {
+    logProgramFailure(program);
+    glDeleteProgram(program);
+    return false;
+  }
+
+  unsigned vao = 0;
+  glGenVertexArrays(1, &vao);
+  if (vao == 0) {
+    glDeleteProgram(program);
+    spdlog::error("VR renderer init failed: glGenVertexArrays returned 0");
+    return false;
+  }
+
+  vr_program_ = program;
+  vr_vao_ = vao;
+  vr_u_texture_ = glGetUniformLocation(vr_program_, "uTexture");
+  vr_u_aspect_ = glGetUniformLocation(vr_program_, "uAspect");
+  vr_u_yaw_rad_ = glGetUniformLocation(vr_program_, "uYawRad");
+  vr_u_pitch_rad_ = glGetUniformLocation(vr_program_, "uPitchRad");
+  vr_u_tan_half_fov_ = glGetUniformLocation(vr_program_, "uTanHalfFov");
+  vr_u_mode_ = glGetUniformLocation(vr_program_, "uMode");
+  vr_u_sbs_eye_ = glGetUniformLocation(vr_program_, "uSbsEye");
+  return true;
+}
+
+void SdlVideoWindow::destroyVrRenderer() {
+  if (vr_vao_ != 0) {
+    glDeleteVertexArrays(1, &vr_vao_);
+    vr_vao_ = 0;
+  }
+  if (vr_program_ != 0) {
+    glDeleteProgram(vr_program_);
+    vr_program_ = 0;
+  }
+  vr_u_texture_ = -1;
+  vr_u_aspect_ = -1;
+  vr_u_yaw_rad_ = -1;
+  vr_u_pitch_rad_ = -1;
+  vr_u_tan_half_fov_ = -1;
+  vr_u_mode_ = -1;
+  vr_u_sbs_eye_ = -1;
+  vr_renderer_failed_once_ = false;
+}
+
+bool SdlVideoWindow::renderVrFrame(unsigned texture_id, const VrViewState& vr) {
+  if (!ensureVrRenderer()) {
+    if (!vr_renderer_failed_once_) {
+      vr_renderer_failed_once_ = true;
+      spdlog::warn("VR renderer unavailable; falling back to 2D blit");
+    }
+    return false;
+  }
+  vr_renderer_failed_once_ = false;
+  if (drawable_h_ == 0) {
+    return false;
+  }
+
+  const float fov_deg = std::clamp(vr.fov_deg, 50.0f, 120.0f);
+  const float yaw_rad = vr.yaw_deg * (kPi / 180.0f);
+  const float pitch_rad = vr.pitch_deg * (kPi / 180.0f);
+  const float half_fov_rad = 0.5f * fov_deg * (kPi / 180.0f);
+  const float tan_half_fov = std::tan(half_fov_rad);
+  const float aspect = static_cast<float>(drawable_w_) / static_cast<float>(drawable_h_);
+
+  int mode = 0;
+  if (vr.mode == ProjectionMode::EquirectMono) {
+    mode = 1;
+  } else if (vr.mode == ProjectionMode::EquirectSbs) {
+    mode = 2;
+  }
+  const int sbs_eye = (vr.sbs_eye == 0) ? 0 : 1;
+
+  glUseProgram(vr_program_);
+  glBindVertexArray(vr_vao_);
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, texture_id);
+
+  if (vr_u_texture_ >= 0)
+    glUniform1i(vr_u_texture_, 0);
+  if (vr_u_aspect_ >= 0)
+    glUniform1f(vr_u_aspect_, aspect);
+  if (vr_u_yaw_rad_ >= 0)
+    glUniform1f(vr_u_yaw_rad_, yaw_rad);
+  if (vr_u_pitch_rad_ >= 0)
+    glUniform1f(vr_u_pitch_rad_, pitch_rad);
+  if (vr_u_tan_half_fov_ >= 0)
+    glUniform1f(vr_u_tan_half_fov_, tan_half_fov);
+  if (vr_u_mode_ >= 0)
+    glUniform1i(vr_u_mode_, mode);
+  if (vr_u_sbs_eye_ >= 0)
+    glUniform1i(vr_u_sbs_eye_, sbs_eye);
+
+  glDisable(GL_BLEND);
+  glDisable(GL_DEPTH_TEST);
+  glDisable(GL_CULL_FACE);
+  glDrawArrays(GL_TRIANGLES, 0, 3);
+
+  glBindTexture(GL_TEXTURE_2D, 0);
+  glBindVertexArray(0);
+  glUseProgram(0);
+  return true;
+}
+
+unsigned SdlVideoWindow::compileShader(unsigned type, const char* source) {
+  const unsigned shader = glCreateShader(type);
+  glShaderSource(shader, 1, &source, nullptr);
+  glCompileShader(shader);
+  GLint ok = GL_FALSE;
+  glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
+  if (ok != GL_TRUE) {
+    logShaderFailure(shader, type == GL_VERTEX_SHADER ? "vertex" : "fragment");
+    glDeleteShader(shader);
+    return 0;
+  }
+  return shader;
+}
+
+void SdlVideoWindow::logShaderFailure(unsigned shader, const char* stage) {
+  GLint len = 0;
+  glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &len);
+  std::string info;
+  if (len > 0) {
+    info.resize(static_cast<std::size_t>(len));
+    glGetShaderInfoLog(shader, len, nullptr, info.data());
+  }
+  spdlog::error("VR {} shader compile failed: {}", stage ? stage : "unknown", info);
+}
+
+void SdlVideoWindow::logProgramFailure(unsigned program) {
+  GLint len = 0;
+  glGetProgramiv(program, GL_INFO_LOG_LENGTH, &len);
+  std::string info;
+  if (len > 0) {
+    info.resize(static_cast<std::size_t>(len));
+    glGetProgramInfoLog(program, len, nullptr, info.data());
+  }
+  spdlog::error("VR shader program link failed: {}", info);
 }
 
 void SdlVideoWindow::updateDrawableSize() {
