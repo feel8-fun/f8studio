@@ -14,6 +14,7 @@ from f8pysdk import (
     boolean_schema,
     integer_schema,
 )
+from f8pysdk.capabilities import NodeBus
 from f8pysdk.nats_naming import ensure_token
 from f8pysdk.runtime_node import OperatorNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
@@ -44,6 +45,8 @@ class PullRuntimeNode(OperatorNode):
         self._task: asyncio.Task[object] | None = None
         self._stop = asyncio.Event()
         self._last_log_ms_by_sig: dict[str, int] = {}
+        self._auto_trigger_enabled = self._coerce_bool(self._initial_state.get("autoTriggerEnabled"), default=False)
+        self._auto_trigger_hz = self._coerce_int(self._initial_state.get("autoTriggerHz"), default=10, minimum=1, maximum=120)
 
     def _should_log(self, sig: str, *, now_ms: int, interval_ms: int = 2000) -> bool:
         last_ms = int(self._last_log_ms_by_sig.get(sig, 0))
@@ -54,7 +57,8 @@ class PullRuntimeNode(OperatorNode):
 
     def attach(self, bus: Any) -> None:
         super().attach(bus)
-        if getattr(bus, "active", True):
+        bus_like = bus if isinstance(bus, NodeBus) else None
+        if bus_like is None or bool(bus_like.active):
             self._start_loop()
 
     async def close(self) -> None:
@@ -90,9 +94,8 @@ class PullRuntimeNode(OperatorNode):
 
     async def _run_periodic(self) -> None:
         while not self._stop.is_set():
-            enabled = await self._get_bool_state("autoTriggerEnabled", default=False)
-            hz = await self._get_int_state("autoTriggerHz", default=10, minimum=1, maximum=120)
-            period_s = 1.0 / float(max(1, hz))
+            enabled = bool(self._auto_trigger_enabled)
+            period_s = 1.0 / float(max(1, int(self._auto_trigger_hz)))
 
             if enabled:
                 exec_id = int(time.time() * 1000.0)
@@ -123,43 +126,46 @@ class PullRuntimeNode(OperatorNode):
         # This node is timer-driven; exec input is intentionally unsupported.
         return []
 
-    async def _get_int_state(self, name: str, *, default: int, minimum: int, maximum: int) -> int:
-        value: Any = None
-        try:
-            value = await self.get_state_value(name)
-        except Exception:
-            value = None
-        if value is None:
-            value = self._initial_state.get(name)
-        value = _unwrap_json_value(value)
+    async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
+        del ts_ms
+        name = str(field or "").strip()
+        if name == "autoTriggerEnabled":
+            self._auto_trigger_enabled = self._coerce_bool(value, default=False)
+            return
+        if name == "autoTriggerHz":
+            self._auto_trigger_hz = self._coerce_int(value, default=10, minimum=1, maximum=120)
+            return
 
+    async def validate_state(self, field: str, value: Any, *, ts_ms: int, meta: dict[str, Any]) -> Any:
+        del ts_ms, meta
+        name = str(field or "").strip()
+        if name == "autoTriggerEnabled":
+            return self._coerce_bool(value, default=False)
+        if name == "autoTriggerHz":
+            return self._coerce_int(value, default=10, minimum=1, maximum=120)
+        return value
+
+    @staticmethod
+    def _coerce_int(value: Any, *, default: int, minimum: int, maximum: int) -> int:
+        raw = _unwrap_json_value(value)
         try:
-            out = int(value) if value is not None else int(default)
+            out = int(raw) if raw is not None else int(default)
         except (TypeError, ValueError):
             out = int(default)
         if out < minimum:
-            out = minimum
+            return int(minimum)
         if out > maximum:
-            out = maximum
-        return out
+            return int(maximum)
+        return int(out)
 
-    async def _get_bool_state(self, name: str, *, default: bool) -> bool:
-        value: Any = None
-        try:
-            value = await self.get_state_value(name)
-        except Exception:
-            value = None
-        if value is None:
-            value = self._initial_state.get(name)
-        value = _unwrap_json_value(value)
-
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, (int, float)):
-            return bool(value)
-        if value is None:
-            return bool(default)
-        text = str(value).strip().lower()
+    @staticmethod
+    def _coerce_bool(value: Any, *, default: bool) -> bool:
+        raw = _unwrap_json_value(value)
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, (int, float)):
+            return bool(raw)
+        text = str(raw or "").strip().lower()
         if text in ("1", "true", "yes", "on"):
             return True
         if text in ("0", "false", "no", "off", ""):

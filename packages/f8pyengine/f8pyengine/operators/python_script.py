@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-import traceback
+import logging
 from typing import Any, Callable
 
 from f8pysdk import (
@@ -13,6 +13,7 @@ from f8pysdk import (
     F8StateAccess,
     F8StateSpec,
     any_schema,
+    boolean_schema,
     string_schema,
 )
 from f8pysdk.capabilities import ClosableNode
@@ -24,6 +25,7 @@ from ..constants import SERVICE_CLASS
 from ._ports import exec_out_ports
 
 OPERATOR_CLASS = "f8.python_script"
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_CODE = (
@@ -65,6 +67,19 @@ DEFAULT_CODE = (
 )
 
 
+def _coerce_bool(value: Any, *, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value or "").strip().lower()
+    if text in ("1", "true", "yes", "on"):
+        return True
+    if text in ("0", "false", "no", "off", ""):
+        return False
+    return bool(default)
+
+
 class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
     """
     Execute user-provided python code with lifecycle hooks:
@@ -93,6 +108,7 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
         self._closing = False
         self._last_error: str | None = None
         self._self_state_writes: dict[str, Any] = {}
+        self._allow_unsafe_exec = _coerce_bool(self._initial_state.get("allowUnsafeExec"), default=False)
 
         self._compile_and_start()
 
@@ -115,16 +131,12 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
             self._started = False
 
     def _log(self, message: str) -> None:
-        print(f"[{self.node_id}:python_script] {message}")
+        logger.info("[%s:python_script] %s", self.node_id, message)
 
     def _set_error(self, stage: str, exc: BaseException) -> None:
         msg = f"{stage}: {exc}"
         self._last_error = msg
-        self._log(f"error {msg}")
-        try:
-            traceback.print_exc()
-        except Exception:
-            pass
+        logger.error("[%s:python_script] error %s", self.node_id, msg, exc_info=exc)
         try:
             loop = asyncio.get_running_loop()
             async def _set_last_error() -> None:
@@ -178,6 +190,12 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
         }
 
     def _compile_script(self, code: str) -> dict[str, Callable[..., Any]]:
+        if not self._allow_unsafe_exec:
+            self._set_error(
+                "compile",
+                RuntimeError("unsafe python exec is disabled (set allowUnsafeExec=true to enable)"),
+            )
+            return {}
         env: dict[str, Any] = {"__builtins__": __builtins__}
         try:
             exec(code, env, env)
@@ -252,6 +270,10 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
 
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
         name = str(field)
+        if name == "allowUnsafeExec":
+            self._allow_unsafe_exec = _coerce_bool(value, default=False)
+            self._compile_and_start()
+            return
         if name == "code":
             self._code = str(value or "")
             self._compile_and_start()
@@ -270,6 +292,15 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
                 await r
         except Exception as exc:
             self._set_error("onState", exc)
+
+    async def validate_state(self, field: str, value: Any, *, ts_ms: int, meta: dict[str, Any]) -> Any:
+        del ts_ms, meta
+        name = str(field or "").strip()
+        if name == "allowUnsafeExec":
+            return _coerce_bool(value, default=False)
+        if name == "code":
+            return str(value or "")
+        return value
 
     async def on_data(self, port: str, value: Any, *, ts_ms: int | None = None) -> None:
         # Push-mode: treat incoming data as a message.
@@ -394,6 +425,14 @@ PythonScriptRuntimeNode.SPEC = F8OperatorSpec(
     editableDataInPorts=True,
     editableDataOutPorts=True,
     stateFields=[
+        F8StateSpec(
+            name="allowUnsafeExec",
+            label="Allow Unsafe Exec",
+            description="Enable execution of user-provided Python code in this node.",
+            valueSchema=boolean_schema(default=False),
+            access=F8StateAccess.rw,
+            showOnNode=True,
+        ),
         F8StateSpec(
             name="code",
             label="Code",

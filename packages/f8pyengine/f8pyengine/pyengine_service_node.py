@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Protocol, cast
 
 from f8pysdk.nats_naming import ensure_token
 from f8pysdk.generated import F8RuntimeNode
 from f8pysdk.runtime_node import ServiceNode
+
+logger = logging.getLogger(__name__)
 
 
 class _DataDeliveryBus(Protocol):
@@ -56,4 +59,5 @@ class PyEngineServiceNode(ServiceNode):
         try:
             cast(_DataDeliveryBus, self._bus).set_data_delivery(mode, source="state")
         except Exception:
+            logger.exception("set_data_delivery failed node=%s mode=%s", self.node_id, mode)
             return

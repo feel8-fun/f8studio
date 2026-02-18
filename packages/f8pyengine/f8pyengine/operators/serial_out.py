@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -24,6 +25,7 @@ from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from ..constants import SERVICE_CLASS
 
 OPERATOR_CLASS = "f8.serial_out"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -53,6 +55,7 @@ class SerialOutRuntimeNode(OperatorNode):
         self._initial_state = dict(initial_state or {})
         self._lock = asyncio.Lock()
         self._cfg: _SerialConfig | None = None
+        self._cfg_dirty = True
         self._serial: Any = None
         self._last_error: str | None = None
 
@@ -72,7 +75,9 @@ class SerialOutRuntimeNode(OperatorNode):
         return []
 
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
+        del value, ts_ms
         if str(field) in ("port", "baudrate", "enabled"):
+            self._cfg_dirty = True
             await self._ensure_serial(force_restart=True)
 
     async def close(self) -> None:
@@ -113,14 +118,21 @@ class SerialOutRuntimeNode(OperatorNode):
         )
 
     async def _ensure_serial(self, *, force_restart: bool = False) -> None:
-        cfg = await self._read_cfg_from_state()
         async with self._lock:
+            prev_cfg = self._cfg
+            if force_restart or self._cfg_dirty or self._cfg is None:
+                cfg = await self._read_cfg_from_state()
+                self._cfg_dirty = False
+            else:
+                cfg = self._cfg
+            if cfg is None:
+                return
             if not cfg.enabled:
                 await self._close_serial_locked()
                 self._cfg = cfg
                 await self._emit_status(written_bytes=0)
                 return
-            if not force_restart and self._cfg == cfg and self._serial is not None:
+            if not force_restart and prev_cfg == cfg and self._serial is not None:
                 return
             await self._close_serial_locked()
             self._cfg = cfg
@@ -160,7 +172,7 @@ class SerialOutRuntimeNode(OperatorNode):
         try:
             await asyncio.to_thread(s.close)
         except Exception:
-            pass
+            logger.exception("[%s:serial_out] close serial failed", self.node_id)
 
     async def _write(self, data: bytes) -> int:
         async with self._lock:
@@ -172,7 +184,7 @@ class SerialOutRuntimeNode(OperatorNode):
                 try:
                     await asyncio.to_thread(s.flush)
                 except Exception:
-                    pass
+                    logger.exception("[%s:serial_out] flush failed", self.node_id)
                 return int(n or 0)
             except Exception as exc:
                 self._last_error = f"{type(exc).__name__}: {exc}"

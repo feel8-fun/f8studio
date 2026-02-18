@@ -102,6 +102,10 @@ class MixSilenceFillRuntimeNode(OperatorNode):
 
         self._last_ctx_id: str | int | None = None
         self._cache: dict[str, float] = {}
+        self._silence_s = 0.5
+        self._delta_threshold = 0.001
+        self._tau_s = 0.2 / 3.0
+        self._refresh_runtime_params(self._initial_state)
 
     async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
         return list(self._exec_out_ports)
@@ -111,6 +115,13 @@ class MixSilenceFillRuntimeNode(OperatorNode):
         _ = meta
         # Freeze/resume without a large dt step.
         self._last_time_s = None
+
+    async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
+        del ts_ms
+        name = str(field or "").strip()
+        if name not in ("silenceMs", "deltaThreshold", "fadeMs"):
+            return
+        self._refresh_runtime_params({name: value})
 
     async def compute_output(self, port: str, ctx_id: str | int | None = None) -> Any:
         p = str(port)
@@ -137,22 +148,9 @@ class MixSilenceFillRuntimeNode(OperatorNode):
         a_num = _coerce_number(a_raw)
         b_num = _coerce_number(b_raw)
 
-        silence_ms = _coerce_number(await self.get_state_value("silenceMs"))
-        if silence_ms is None:
-            silence_ms = _coerce_number(self._initial_state.get("silenceMs"))
-        silence_s = float(max(0.0, float(silence_ms or 0.0)) / 1000.0)
-
-        delta_thresh = _coerce_number(await self.get_state_value("deltaThreshold"))
-        if delta_thresh is None:
-            delta_thresh = _coerce_number(self._initial_state.get("deltaThreshold"))
-        eps = float(max(0.0, float(delta_thresh or 0.0)))
-
-        fade_ms = _coerce_number(await self.get_state_value("fadeMs"))
-        if fade_ms is None:
-            fade_ms = _coerce_number(self._initial_state.get("fadeMs"))
-        fade_s = float(max(0.0, float(fade_ms or 0.0)) / 1000.0)
-        # Time constant: reach ~95% in fadeMs.
-        tau_s = float(fade_s / 3.0) if fade_s > 0.0 else 0.0
+        silence_s = float(self._silence_s)
+        eps = float(self._delta_threshold)
+        tau_s = float(self._tau_s)
 
         # Activity detection: if A changes "enough", mark it active.
         if a_num is not None:
@@ -190,6 +188,21 @@ class MixSilenceFillRuntimeNode(OperatorNode):
 
         out = (1.0 - alpha) * float(a_num) + alpha * float(b_num)
         return {"out": float(out), "alpha": float(alpha), "silent": float(silent)}
+
+    def _refresh_runtime_params(self, values: dict[str, Any]) -> None:
+        if "silenceMs" in values:
+            silence_ms = _coerce_number(values.get("silenceMs"))
+            if silence_ms is not None:
+                self._silence_s = float(max(0.0, float(silence_ms)) / 1000.0)
+        if "deltaThreshold" in values:
+            delta = _coerce_number(values.get("deltaThreshold"))
+            if delta is not None:
+                self._delta_threshold = float(max(0.0, float(delta)))
+        if "fadeMs" in values:
+            fade_ms = _coerce_number(values.get("fadeMs"))
+            if fade_ms is not None:
+                fade_s = float(max(0.0, float(fade_ms)) / 1000.0)
+                self._tau_s = float(fade_s / 3.0) if fade_s > 0.0 else 0.0
 
 
 MixSilenceFillRuntimeNode.SPEC = F8OperatorSpec(

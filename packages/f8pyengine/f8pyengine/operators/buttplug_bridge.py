@@ -257,6 +257,7 @@ class ButtplugBridgeRuntimeNode(OperatorNode):
         self._worker_task: asyncio.Task[None] | None = None
         self._stop_event = asyncio.Event()
         self._active = True
+        self._tick_lock = asyncio.Lock()
 
         self._rescan_requested = False
         self._force_reconnect = False
@@ -293,6 +294,7 @@ class ButtplugBridgeRuntimeNode(OperatorNode):
             stop_on_deactivate = await self._read_bool_state("stopOnDeactivate", default=True)
             if stop_on_deactivate:
                 await self._stop_target_device_outputs()
+            await self._disconnect_client()
 
     async def validate_state(self, field: str, value: Any, *, ts_ms: int, meta: dict[str, Any]) -> Any:
         del ts_ms, meta
@@ -360,6 +362,9 @@ class ButtplugBridgeRuntimeNode(OperatorNode):
 
     async def on_exec(self, exec_id: str | int, in_port: str | None = None) -> list[str]:
         del in_port
+        if not self._active:
+            await self._emit_status_ports()
+            return []
         await self._tick_once()
 
         target = await self._resolve_target_device(update_selection=True)
@@ -441,13 +446,18 @@ class ButtplugBridgeRuntimeNode(OperatorNode):
                 continue
 
     async def _tick_once(self) -> None:
-        cfg = await self._read_bridge_config()
-        await self._reconcile_connection(cfg)
-        if self._rescan_requested:
-            self._rescan_requested = False
-            await self._run_scan_cycle(cfg)
-        await self._publish_runtime_status()
-        await self._publish_device_snapshot()
+        async with self._tick_lock:
+            if not self._active:
+                await self._publish_runtime_status()
+                await self._publish_device_snapshot()
+                return
+            cfg = await self._read_bridge_config()
+            await self._reconcile_connection(cfg)
+            if self._rescan_requested:
+                self._rescan_requested = False
+                await self._run_scan_cycle(cfg)
+            await self._publish_runtime_status()
+            await self._publish_device_snapshot()
 
     async def _read_bridge_config(self) -> _BridgeConfig:
         enabled = await self._read_bool_state("enabled", default=True)

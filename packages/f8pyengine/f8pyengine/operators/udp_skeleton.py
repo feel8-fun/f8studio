@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import logging
 import socket
@@ -68,6 +69,18 @@ class _UdpProtocol(asyncio.DatagramProtocol):
                 pass
 
 
+def _is_loopback_bind_address(value: str) -> bool:
+    s = str(value or "").strip().lower()
+    if not s:
+        return False
+    if s in ("localhost",):
+        return True
+    try:
+        return bool(ipaddress.ip_address(s).is_loopback)
+    except ValueError:
+        return False
+
+
 class UdpSkeletonRuntimeNode(OperatorNode):
     """
     UDP skeleton receiver.
@@ -99,6 +112,10 @@ class UdpSkeletonRuntimeNode(OperatorNode):
 
         self._packet_count = 0
         self._last_error: str | None = None
+        self._allow_non_loopback_bind = self._parse_bool(
+            self._initial_state.get("allowNonLoopbackBind"),
+            default=False,
+        )
 
         self._cleanup_after_ms = self._parse_int(self._initial_state.get("cleanupAfterMs", 10000), default=10000)
         self._selected_key = str(self._initial_state.get("selectedKey", "") or "")
@@ -117,8 +134,8 @@ class UdpSkeletonRuntimeNode(OperatorNode):
                 if not bool(bus_like.active):
                     loop = asyncio.get_running_loop()
                     loop.create_task(self._stop_receiver(), name=f"udp_skeleton:deactivate:{self.node_id}")
-            except Exception:
-                pass
+            except RuntimeError:
+                logger.exception("udp_skeleton attach failed: no running loop nodeId=%s", self.node_id)
 
     async def on_lifecycle(self, active: bool, _meta: dict[str, Any]) -> None:
         if bool(active):
@@ -169,6 +186,11 @@ class UdpSkeletonRuntimeNode(OperatorNode):
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
         _ = ts_ms
         f = str(field)
+        if f == "allowNonLoopbackBind":
+            self._allow_non_loopback_bind = self._parse_bool(value, default=False)
+            if self._bus_active():
+                await self._ensure_receiver(force_restart=True)
+            return
         if f in ("bindAddress", "port", "maxQueue", "reuseAddress"):
             if self._bus_active():
                 await self._ensure_receiver(force_restart=True)
@@ -205,10 +227,36 @@ class UdpSkeletonRuntimeNode(OperatorNode):
             except Exception:
                 return int(default)
 
+    @staticmethod
+    def _parse_bool(value: Any, *, default: bool) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        s = str(value or "").strip().lower()
+        if s in ("1", "true", "yes", "on"):
+            return True
+        if s in ("0", "false", "no", "off", ""):
+            return False
+        return bool(default)
+
+    async def validate_state(self, field: str, value: Any, *, ts_ms: int, meta: dict[str, Any]) -> Any:
+        del ts_ms, meta
+        f = str(field or "").strip()
+        if f == "allowNonLoopbackBind":
+            return self._parse_bool(value, default=False)
+        if f == "bindAddress":
+            bind_address = str(value or "").strip() or "127.0.0.1"
+            allow_non_loopback = self._allow_non_loopback_bind
+            if (not allow_non_loopback) and (not _is_loopback_bind_address(bind_address)):
+                raise ValueError("bindAddress must be loopback unless allowNonLoopbackBind is true")
+            return bind_address
+        return value
+
     async def _read_cfg_from_state(self) -> _UdpConfig | None:
         bind_address = await self.get_state_value("bindAddress")
         if bind_address is None:
-            bind_address = self._initial_state.get("bindAddress", "0.0.0.0")
+            bind_address = self._initial_state.get("bindAddress", "127.0.0.1")
         port = await self.get_state_value("port")
         if port is None:
             port = self._initial_state.get("port", 39540)
@@ -221,9 +269,9 @@ class UdpSkeletonRuntimeNode(OperatorNode):
             reuse_address = self._initial_state.get("reuseAddress", False)
 
         try:
-            bind_address_s = str(bind_address).strip() or "0.0.0.0"
+            bind_address_s = str(bind_address).strip() or "127.0.0.1"
         except Exception:
-            bind_address_s = "0.0.0.0"
+            bind_address_s = "127.0.0.1"
         try:
             port_i = int(port)
         except Exception:
@@ -236,6 +284,9 @@ class UdpSkeletonRuntimeNode(OperatorNode):
             self._last_error = f"Invalid port: {port_i}"
             return None
         max_q = max(1, min(4096, max_q))
+        if (not self._allow_non_loopback_bind) and (not _is_loopback_bind_address(bind_address_s)):
+            self._last_error = "bindAddress must be loopback unless allowNonLoopbackBind is true"
+            return None
 
         reuse_addr = False
         if isinstance(reuse_address, bool):
@@ -545,8 +596,16 @@ UdpSkeletonRuntimeNode.SPEC = F8OperatorSpec(
         F8StateSpec(
             name="bindAddress",
             label="Bind Address",
-            description="Local address to bind (use 0.0.0.0 for all).",
-            valueSchema=string_schema(default="0.0.0.0"),
+            description="Local address to bind (loopback by default).",
+            valueSchema=string_schema(default="127.0.0.1"),
+            access=F8StateAccess.rw,
+            showOnNode=False,
+        ),
+        F8StateSpec(
+            name="allowNonLoopbackBind",
+            label="Allow Non-loopback Bind",
+            description="When true, allow bindAddress values other than loopback.",
+            valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
             showOnNode=False,
         ),

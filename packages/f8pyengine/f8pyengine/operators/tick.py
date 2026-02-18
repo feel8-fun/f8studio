@@ -44,6 +44,11 @@ class TickRuntimeNode(OperatorNode, EntrypointNode):
         self._exec_out_ports = list(node.execOutPorts or []) or ["exec"]
         self._stop = asyncio.Event()
         self._hires_enabled = False
+        try:
+            self._tick_ms = self._coerce_tick_ms(self._initial_state.get("tickMs"), default=100)
+        except ValueError:
+            self._tick_ms = 100
+        self._want_hires = self._coerce_bool(self._initial_state.get("hiResTimer"), default=True)
 
     async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
         return list(self._exec_out_ports)
@@ -53,27 +58,20 @@ class TickRuntimeNode(OperatorNode, EntrypointNode):
     ) -> Any:
         name = str(field or "").strip()
         if name == "tickMs":
-            try:
-                ms = int(value)
-            except Exception:
-                raise ValueError("tickMs must be an integer") from None
-            if ms < 1:
-                raise ValueError("tickMs must be >= 1")
-            if ms > 50000:
-                raise ValueError("tickMs must be <= 50000")
-            return ms
+            return self._coerce_tick_ms(value, default=100)
         if name == "hiResTimer":
-            if isinstance(value, bool):
-                return value
-            if isinstance(value, (int, float)):
-                return bool(value)
-            s = str(value or "").strip().lower()
-            if s in ("1", "true", "yes", "on"):
-                return True
-            if s in ("0", "false", "no", "off", ""):
-                return False
-            raise ValueError("hiResTimer must be a boolean")
+            return self._coerce_bool(value, default=False)
         return value
+
+    async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
+        del ts_ms
+        name = str(field or "").strip()
+        if name == "tickMs":
+            self._tick_ms = self._coerce_tick_ms(value, default=self._tick_ms)
+            return
+        if name == "hiResTimer":
+            self._want_hires = self._coerce_bool(value, default=self._want_hires)
+            return
 
     def _apply_windows_timer_resolution(self, enabled: bool) -> None:
         """
@@ -103,24 +101,8 @@ class TickRuntimeNode(OperatorNode, EntrypointNode):
 
             try:
                 while not self._stop.is_set():
-                    tick_ms = await self.get_state_value("tickMs")
-                    if tick_ms is None:
-                        tick_ms = self._initial_state.get("tickMs", 100)
-                    try:
-                        ms = max(1, int(tick_ms))
-                    except Exception:
-                        ms = 100
-
-                    want_hires = await self.get_state_value("hiResTimer")
-                    if want_hires is None:
-                        want_hires = self._initial_state.get("hiResTimer", False)
-                    want_hires_bool = False
-                    if isinstance(want_hires, bool):
-                        want_hires_bool = want_hires
-                    elif isinstance(want_hires, (int, float)):
-                        want_hires_bool = bool(want_hires)
-                    else:
-                        want_hires_bool = str(want_hires).strip().lower() in ("1", "true", "yes", "on")
+                    ms = int(self._tick_ms)
+                    want_hires_bool = bool(self._want_hires)
                     if want_hires_bool != self._hires_enabled:
                         self._apply_windows_timer_resolution(want_hires_bool)
                         self._hires_enabled = want_hires_bool
@@ -170,6 +152,31 @@ class TickRuntimeNode(OperatorNode, EntrypointNode):
 
     async def stop_entrypoint(self) -> None:
         self._stop.set()
+
+    @staticmethod
+    def _coerce_tick_ms(value: Any, *, default: int) -> int:
+        try:
+            ms = int(value)
+        except (TypeError, ValueError):
+            raise ValueError("tickMs must be an integer") from None
+        if ms < 1:
+            raise ValueError("tickMs must be >= 1")
+        if ms > 50000:
+            raise ValueError("tickMs must be <= 50000")
+        return int(ms)
+
+    @staticmethod
+    def _coerce_bool(value: Any, *, default: bool) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        text = str(value or "").strip().lower()
+        if text in ("1", "true", "yes", "on"):
+            return True
+        if text in ("0", "false", "no", "off", ""):
+            return False
+        return bool(default)
 
 
 TickRuntimeNode.SPEC = F8OperatorSpec(

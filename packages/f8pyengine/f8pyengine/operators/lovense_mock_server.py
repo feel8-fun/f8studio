@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import ipaddress
 import json
 import logging
 import traceback
@@ -36,6 +37,8 @@ logger = logging.getLogger(__name__)
 
 _MAX_BODY_BYTES = 1024 * 1024
 _MAX_HEADER_BYTES = 32 * 1024
+_MAX_WS_FRAME_BYTES = 64 * 1024
+_MAX_WS_BUFFER_BYTES = 256 * 1024
 _WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 _RAW_LOG_MAX_CHARS = 4000
 
@@ -311,6 +314,18 @@ def _summarize_command(payload: dict[str, Any]) -> dict[str, Any]:
     return {"type": "other", "command": cmd, "apiVer": api_ver}
 
 
+def _is_loopback_bind_address(value: str) -> bool:
+    s = str(value or "").strip().lower()
+    if not s:
+        return False
+    if s in ("localhost",):
+        return True
+    try:
+        return bool(ipaddress.ip_address(s).is_loopback)
+    except ValueError:
+        return False
+
+
 class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
     """
     Mock Lovense Local API server (Mobile mode) for ingesting external commands.
@@ -336,8 +351,12 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
         self._lock = asyncio.Lock()
         self._event_lock = asyncio.Lock()
         self._server: asyncio.AbstractServer | None = None
+        self._allow_non_loopback_bind = self._parse_bool(
+            _unwrap_json_value(self._initial_state.get("allowNonLoopbackBind")),
+            default=False,
+        )
         self._cfg: _ServerConfig = _ServerConfig(
-            bind_address=str(_unwrap_json_value(self._initial_state.get("bindAddress")) or "0.0.0.0"),
+            bind_address=str(_unwrap_json_value(self._initial_state.get("bindAddress")) or "127.0.0.1"),
             port=self._parse_port(_unwrap_json_value(self._initial_state.get("port")), default=30010),
         )
         self._print_enabled = self._parse_bool(
@@ -391,6 +410,8 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
             v = str(value or "").strip()
             if not v:
                 raise ValueError("bindAddress must be non-empty")
+            if (not self._allow_non_loopback_bind) and (not _is_loopback_bind_address(v)):
+                raise ValueError("bindAddress must be loopback unless allowNonLoopbackBind is true")
             return v
         if name == "port":
             port = self._parse_port(value, default=30010)
@@ -398,6 +419,8 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
                 raise ValueError("port must be 1..65535")
             return port
         if name == "printEnabled":
+            return self._parse_bool(value, default=False)
+        if name == "allowNonLoopbackBind":
             return self._parse_bool(value, default=False)
         if name == "eventIncludePayload":
             return self._parse_bool(value, default=False)
@@ -411,6 +434,9 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
         if name == "bindAddress":
             bind_address = str(_unwrap_json_value(value) or "").strip()
             if bind_address and bind_address != self._cfg.bind_address:
+                if (not self._allow_non_loopback_bind) and (not _is_loopback_bind_address(bind_address)):
+                    self._set_error("bindAddress must be loopback unless allowNonLoopbackBind is true")
+                    return
                 self._cfg = _ServerConfig(bind_address=bind_address, port=self._cfg.port)
                 await self._restart_server()
             return
@@ -425,6 +451,12 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
             return
         if name == "printEnabled":
             self._print_enabled = self._parse_bool(_unwrap_json_value(value), default=False)
+            return
+        if name == "allowNonLoopbackBind":
+            self._allow_non_loopback_bind = self._parse_bool(_unwrap_json_value(value), default=False)
+            if (not self._allow_non_loopback_bind) and (not _is_loopback_bind_address(self._cfg.bind_address)):
+                self._cfg = _ServerConfig(bind_address="127.0.0.1", port=self._cfg.port)
+            await self._restart_server()
             return
         if name == "eventIncludePayload":
             self._event_include_payload = self._parse_bool(_unwrap_json_value(value), default=False)
@@ -442,6 +474,10 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
             if self._server is not None:
                 return
             cfg = self._cfg
+            if (not self._allow_non_loopback_bind) and (not _is_loopback_bind_address(cfg.bind_address)):
+                self._set_error("bindAddress must be loopback unless allowNonLoopbackBind is true")
+                self._server = None
+                return
             try:
                 self._server = await asyncio.start_server(
                     self._handle_client,
@@ -534,11 +570,13 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
     async def _handle_one_request(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> bool:
         header_bytes = await self._read_until(reader, b"\r\n\r\n", limit=_MAX_HEADER_BYTES)
         if header_bytes == b"__header_overrun__":
+            self._set_error("headers too large")
             await self._write_json(writer, status=413, obj={"ok": False, "error": "headers_too_large"}, keep_alive=False)
             return False
         if not header_bytes:
             return False
         if not header_bytes.endswith(b"\r\n\r\n"):
+            self._set_error("headers too large")
             await self._write_json(writer, status=413, obj={"ok": False, "error": "headers_too_large"}, keep_alive=False)
             return False
         header_text = header_bytes.decode("utf-8", errors="replace")
@@ -592,6 +630,10 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
 
         content_type = headers.get("content-type", "")
         body_text = await self._read_body_text(reader, headers)
+        if body_text == "__body_too_large__":
+            self._set_error("payload too large")
+            await self._write_json(writer, status=413, obj={"ok": False, "error": "payload_too_large"}, keep_alive=False)
+            return False
         self._raw_log(
             "in",
             f"{request_line}\nheaders={json.dumps(headers, ensure_ascii=False, separators=(',', ':'))}\n"
@@ -991,7 +1033,7 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
                 content_length = None
         if content_length is not None:
             if content_length < 0 or content_length > _MAX_BODY_BYTES:
-                return ""
+                return "__body_too_large__"
             if content_length == 0:
                 return ""
             body = await reader.readexactly(int(content_length))
@@ -1013,7 +1055,7 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
                     _ = await reader.readline()
                     break
                 if len(body) + size > _MAX_BODY_BYTES:
-                    break
+                    return "__body_too_large__"
                 chunk = await reader.readexactly(size)
                 body.extend(chunk)
                 _ = await reader.readexactly(2)  # CRLF
@@ -1070,7 +1112,16 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
             if not chunk:
                 break
             buf.extend(chunk)
-            frames, buf = self._ws_try_parse_frames(buf)
+            if len(buf) > _MAX_WS_BUFFER_BYTES:
+                self._set_error("websocket buffer too large")
+                await self._ws_send_close(writer)
+                return
+            try:
+                frames, buf = self._ws_try_parse_frames(buf)
+            except ValueError as exc:
+                self._set_error(f"websocket frame parse failed: {exc}")
+                await self._ws_send_close(writer)
+                return
             for opcode, payload in frames:
                 if opcode == 0x8:
                     await self._ws_send_close(writer)
@@ -1129,6 +1180,8 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
                 mask = None
             if len(buf) - pos < ln:
                 break
+            if int(ln) > _MAX_WS_FRAME_BYTES:
+                raise ValueError("frame too large")
             payload = buf[pos : pos + ln]
             pos += ln
             offset = pos
@@ -1256,10 +1309,18 @@ LovenseMockServerRuntimeNode.SPEC = F8OperatorSpec(
         F8StateSpec(
             name="bindAddress",
             label="Bind Address",
-            description="Local address to bind (use 0.0.0.0 to accept other hosts on your LAN).",
-            valueSchema=string_schema(default="0.0.0.0"),
+            description="Local address to bind (loopback by default).",
+            valueSchema=string_schema(default="127.0.0.1"),
             access=F8StateAccess.rw,
             showOnNode=True,
+        ),
+        F8StateSpec(
+            name="allowNonLoopbackBind",
+            label="Allow Non-loopback Bind",
+            description="When true, allow bindAddress values other than loopback.",
+            valueSchema=boolean_schema(default=False),
+            access=F8StateAccess.rw,
+            showOnNode=False,
         ),
         F8StateSpec(
             name="port",

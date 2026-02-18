@@ -5,11 +5,64 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..generated import F8EdgeDirection, F8EdgeKindEnum, F8RuntimeGraph, F8RuntimeNode
+from ..generated import F8EdgeDirection, F8EdgeKindEnum, F8RuntimeGraph
 from ..capabilities import BusAttachableNode, ComputableNode, EntrypointNode, ExecutableNode
 from ..nats_naming import ensure_token
 from ..service_bus.bus import ServiceBus
 from ..time_utils import now_ms
+
+
+def _entrypoint_node_id_or_raise(graph: F8RuntimeGraph, *, service_id: str) -> str | None:
+    entrypoint_ids: list[str] = []
+    for node in list(graph.nodes or []):
+        if str(node.serviceId or "") != str(service_id):
+            continue
+        in_n = len(list(node.execInPorts or []))
+        out_n = len(list(node.execOutPorts or []))
+        if in_n == 0 and out_n > 0:
+            entrypoint_ids.append(str(node.nodeId))
+    if not entrypoint_ids:
+        return None
+    if len(entrypoint_ids) > 1:
+        raise ValueError(f"graph has multiple exec entrypoints: {entrypoint_ids}")
+    return entrypoint_ids[0]
+
+
+def validate_exec_topology_or_raise(
+    graph: F8RuntimeGraph,
+    *,
+    service_id: str,
+) -> dict[tuple[str, str], tuple[str, str]]:
+    """
+    Validate exec topology for one service and return the exec route map.
+    """
+    sid = ensure_token(service_id, label="service_id")
+    out_map: dict[tuple[str, str], tuple[str, str]] = {}
+    in_seen: set[tuple[str, str]] = set()
+    adj: dict[str, set[str]] = {}
+    for edge in list(graph.edges or []):
+        if edge.kind != F8EdgeKindEnum.exec:
+            continue
+        if str(edge.fromServiceId or "") != sid or str(edge.toServiceId or "") != sid:
+            continue
+        if not edge.fromOperatorId or not edge.toOperatorId:
+            continue
+        from_key = (str(edge.fromOperatorId), str(edge.fromPort))
+        to_val = (str(edge.toOperatorId), str(edge.toPort))
+        to_key = (to_val[0], to_val[1])
+
+        if from_key in out_map:
+            raise ValueError(f"exec out port must be single-connected: {from_key} (edgeId={edge.edgeId})")
+        if to_key in in_seen:
+            raise ValueError(f"exec in port must be single-connected: {to_key} (edgeId={edge.edgeId})")
+
+        out_map[from_key] = to_val
+        in_seen.add(to_key)
+        adj.setdefault(from_key[0], set()).add(to_key[0])
+
+    ExecFlowExecutor._ensure_exec_acyclic(adj)
+    _entrypoint_node_id_or_raise(graph, service_id=sid)
+    return out_map
 
 
 @dataclass
@@ -169,30 +222,7 @@ class ExecFlowExecutor:
                 continue
 
     def _rebuild_exec_routes(self, graph: F8RuntimeGraph) -> None:
-        out_map: dict[tuple[str, str], tuple[str, str]] = {}
-        in_seen: set[tuple[str, str]] = set()
-        adj: dict[str, set[str]] = {}
-        for edge in graph.edges:
-            if edge.kind != F8EdgeKindEnum.exec:
-                continue
-            if str(edge.fromServiceId) != self._service_id or str(edge.toServiceId) != self._service_id:
-                continue
-            if not edge.fromOperatorId or not edge.toOperatorId:
-                continue
-            from_key = (str(edge.fromOperatorId), str(edge.fromPort))
-            to_val = (str(edge.toOperatorId), str(edge.toPort))
-            to_key = (to_val[0], to_val[1])
-
-            if from_key in out_map:
-                raise ValueError(f"exec out port must be single-connected: {from_key} (edgeId={edge.edgeId})")
-            if to_key in in_seen:
-                raise ValueError(f"exec in port must be single-connected: {to_key} (edgeId={edge.edgeId})")
-
-            out_map[from_key] = to_val
-            in_seen.add(to_key)
-            adj.setdefault(from_key[0], set()).add(to_key[0])
-        self._exec_out = out_map
-        self._ensure_exec_acyclic(adj)
+        self._exec_out = validate_exec_topology_or_raise(graph, service_id=self._service_id)
 
     @staticmethod
     def _ensure_exec_acyclic(adj: dict[str, set[str]]) -> None:
@@ -225,24 +255,8 @@ class ExecFlowExecutor:
         for n in sorted(adj.keys()):
             _visit(n)
 
-    @staticmethod
-    def _entrypoint_node_id(graph: F8RuntimeGraph) -> str | None:
-        entrypoint_ids: list[str] = []
-        for n in list(graph.nodes or []):
-            assert isinstance(n, F8RuntimeNode)
-            node_id = n.nodeId
-            in_n =  len(n.execInPorts)
-            out_n = len(n.execOutPorts)
-            if in_n == 0 and out_n > 0:
-                entrypoint_ids.append(node_id)
-        if not entrypoint_ids:
-            return None
-        if len(entrypoint_ids) > 1:
-            raise ValueError(f"graph has multiple exec entrypoints: {entrypoint_ids}")
-        return entrypoint_ids[0]
-
     async def _restart_entrypoint_if_needed(self, graph: F8RuntimeGraph) -> None:
-        new_source = self._entrypoint_node_id(graph)
+        new_source = _entrypoint_node_id_or_raise(graph, service_id=self._service_id)
         cur = self._entrypoint_ctx.node_id if self._entrypoint_ctx else None
         if new_source == cur:
             return

@@ -184,6 +184,12 @@ class _FakeClient:
             await cb()
 
 
+class _SlowConnectClient(_FakeClient):
+    async def connect(self, url: str) -> None:
+        await bridge_mod.asyncio.sleep(0.05)
+        await super().connect(url)
+
+
 class ButtplugBridgeTests(unittest.IsolatedAsyncioTestCase):
     async def _build_node(self, *, state_values: dict[str, Any]) -> tuple[Any, ButtplugBridgeRuntimeNode]:
         harness = ServiceBusHarness()
@@ -374,6 +380,16 @@ class ButtplugBridgeTests(unittest.IsolatedAsyncioTestCase):
         await node.close()
         self.assertEqual(client.disconnect_calls, 1)
         self.assertEqual((await bus.get_state("bp1", "lastCommandTsMs")).value > 0, True)
+
+    async def test_tick_once_is_mutex_guarded(self) -> None:
+        client = _SlowConnectClient(devices={})
+        with patch.object(ButtplugBridgeRuntimeNode, "_create_client", return_value=client):
+            _bus, node = await self._build_node(
+                state_values={"enabled": True, "autoConnect": True, "autoScanOnConnect": False, "reconnectIntervalMs": 0}
+            )
+            await bridge_mod.asyncio.gather(node._tick_once(), node._tick_once())
+            self.assertEqual(client.connect_calls, 1)
+            await node.close()
 
 
 if __name__ == "__main__":

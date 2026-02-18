@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import os
 import socket
@@ -55,6 +56,47 @@ async def _http_post_json(*, host: str, port: int, path: str, payload: dict[str,
     parts = head.split(" ", 2)
     code = int(parts[1]) if len(parts) >= 2 and parts[1].isdigit() else 0
     return code, head
+
+
+async def _ws_open_and_send_large_text(*, host: str, port: int, path: str, payload_size: int) -> bytes:
+    key = base64.b64encode(b"0123456789012345").decode("ascii")
+    req = (
+        f"GET {path} HTTP/1.1\r\n"
+        f"Host: {host}:{port}\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        f"Sec-WebSocket-Key: {key}\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "\r\n"
+    ).encode("ascii")
+    reader, writer = await asyncio.open_connection(host, int(port))
+    try:
+        writer.write(req)
+        await writer.drain()
+        _ = await reader.readuntil(b"\r\n\r\n")
+        _ = await reader.read(4096)
+
+        payload = b"a" * int(payload_size)
+        frame = bytearray([0x81])
+        ln = len(payload)
+        if ln < 126:
+            frame.append(ln)
+        elif ln < 65536:
+            frame.append(126)
+            frame.extend(int(ln).to_bytes(2, "big"))
+        else:
+            frame.append(127)
+            frame.extend((0).to_bytes(4, "big"))
+            frame.extend(int(ln).to_bytes(4, "big"))
+        writer.write(bytes(frame) + payload)
+        await writer.drain()
+        return await reader.read(4096)
+    finally:
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
 
 
 class LovenseMockServerNodeTests(unittest.IsolatedAsyncioTestCase):
@@ -139,6 +181,39 @@ class LovenseMockServerNodeTests(unittest.IsolatedAsyncioTestCase):
 
         if isinstance(node2, LovenseMockServerRuntimeNode):
             await node2.close()
+
+    async def test_websocket_large_frame_is_rejected(self) -> None:
+        port = _free_port()
+        harness = ServiceBusHarness()
+        bus = harness.create_bus("svcA")
+
+        reg = RuntimeNodeRegistry.instance()
+        register_operator(reg)
+        _ = ServiceHost(bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=reg)
+
+        op = F8RuntimeNode(
+            nodeId="lov_ws",
+            serviceId="svcA",
+            serviceClass=SERVICE_CLASS,
+            operatorClass=LovenseMockServerRuntimeNode.SPEC.operatorClass,
+            stateFields=list(LovenseMockServerRuntimeNode.SPEC.stateFields or []),
+            stateValues={"bindAddress": "127.0.0.1", "port": port},
+        )
+        await bus.set_rungraph(F8RuntimeGraph(graphId="g_ws", revision="r1", nodes=[op], edges=[]))
+
+        for _ in range(50):
+            st = await bus.get_state("lov_ws", "listening")
+            if st.found and st.value is True:
+                break
+            await asyncio.sleep(0.02)
+
+        data = await _ws_open_and_send_large_text(host="127.0.0.1", port=port, path="/v1", payload_size=70_000)
+        self.assertTrue((data == b"") or (data.startswith(b"\x88")))
+
+        node = bus.get_node("lov_ws")
+        self.assertIsInstance(node, LovenseMockServerRuntimeNode)
+        if isinstance(node, LovenseMockServerRuntimeNode):
+            await node.close()
 
 
 if __name__ == "__main__":

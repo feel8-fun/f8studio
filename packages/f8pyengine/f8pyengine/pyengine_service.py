@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from f8pysdk.executors.exec_flow import ExecFlowExecutor
+from f8pysdk.executors.exec_flow import validate_exec_topology_or_raise
 from f8pysdk.generated import F8RuntimeGraph
 from f8pysdk.capabilities import ExecutableNode, ServiceHookBase
 from f8pysdk.nats_naming import ensure_token
@@ -12,6 +14,8 @@ from f8pysdk.service_cli import ServiceCliTemplate
 
 from .constants import SERVICE_CLASS
 from .pyengine_node_registry import register_pyengine_specs
+
+logger = logging.getLogger(__name__)
 
 
 class PyEngineService(ServiceCliTemplate, ServiceHookBase):
@@ -49,31 +53,32 @@ class PyEngineService(ServiceCliTemplate, ServiceHookBase):
         try:
             runtime.bus.unregister_rungraph_hook(self)
         except Exception:
-            pass
+            logger.exception("unregister_rungraph_hook failed")
         try:
             runtime.bus.unregister_service_hook(self)
         except Exception:
-            pass
+            logger.exception("unregister_service_hook failed")
         self._runtime = None
         if executor is None:
             return
         try:
             await executor.stop_entrypoint()
         except Exception:
-            pass
+            logger.exception("stop_entrypoint failed during teardown")
 
     async def _sync_exec_nodes(self, runtime: ServiceRuntime, graph: F8RuntimeGraph) -> None:
         want: set[str] = set()
         for n in list(graph.nodes or []):
+            if n.serviceClass != self.service_class:
+                continue
+            exec_in = list(n.execInPorts or [])
+            exec_out = list(n.execOutPorts or [])
+            if not exec_in and not exec_out:
+                continue
             try:
-                if n.serviceClass != self.service_class:
-                    continue
-                exec_in = n.execInPorts
-                exec_out = n.execOutPorts
-                if not exec_in and not exec_out:
-                    continue
-                want.add(ensure_token(n.nodeId, label="nodeId"))
-            except Exception:
+                want.add(ensure_token(str(n.nodeId), label="nodeId"))
+            except ValueError:
+                logger.warning("skip invalid exec node id in rungraph: %r", n.nodeId)
                 continue
 
         executor = self._executor
@@ -85,6 +90,7 @@ class PyEngineService(ServiceCliTemplate, ServiceHookBase):
         try:
             entry_id = executor.current_entrypoint_node_id()
         except Exception:
+            logger.exception("read current_entrypoint_node_id failed")
             entry_id = None
         if entry_id and entry_id in want:
             try:
@@ -94,15 +100,15 @@ class PyEngineService(ServiceCliTemplate, ServiceHookBase):
                     try:
                         await executor.stop_entrypoint()
                     except Exception:
-                        pass
+                        logger.exception("stop_entrypoint failed for hot-replaced node")
             except Exception:
-                pass
+                logger.exception("compare hot-replaced entrypoint failed")
 
         for node_id in sorted(self._exec_node_ids - want):
             try:
                 executor.unregister_node(node_id)
             except Exception:
-                pass
+                logger.exception("unregister exec node failed: %s", node_id)
             self._exec_node_ids.discard(node_id)
 
         # Always (re-)register nodes in `want` so hot-recreated runtime node instances
@@ -112,12 +118,13 @@ class PyEngineService(ServiceCliTemplate, ServiceHookBase):
             if node is None:
                 continue
             if not isinstance(node, ExecutableNode):
-                print(f"pyengine: skip node without on_exec: {node_id}")
+                logger.warning("skip node without on_exec: %s", node_id)
                 continue
             try:
                 executor.register_node(node)
                 self._exec_node_ids.add(node_id)
             except Exception:
+                logger.exception("register exec node failed: %s", node_id)
                 continue
 
     async def on_rungraph(self, graph: F8RuntimeGraph) -> None:
@@ -129,7 +136,10 @@ class PyEngineService(ServiceCliTemplate, ServiceHookBase):
         await executor.apply_rungraph(graph)
 
     async def validate_rungraph(self, graph: F8RuntimeGraph) -> None:
-        _ = graph
+        runtime = self._runtime
+        if runtime is None:
+            return
+        validate_exec_topology_or_raise(graph, service_id=runtime.bus.service_id)
 
     async def on_activate(self, _bus: Any, _meta: dict[str, Any]) -> None:
         executor = self._executor

@@ -44,7 +44,7 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
             serviceClass=SERVICE_CLASS,
             operatorClass=PythonScriptRuntimeNode.SPEC.operatorClass,
             stateFields=state_fields,
-            stateValues={"code": code},
+            stateValues={"allowUnsafeExec": True, "code": code},
         )
         graph = F8RuntimeGraph(graphId="g1", revision="r1", nodes=[op], edges=[])
         await bus.set_rungraph(graph)
@@ -56,6 +56,31 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
         assert isinstance(node, PythonScriptRuntimeNode)
         bar = await node.get_state_value("bar")
         self.assertEqual(int(bar), 42)
+
+    async def test_unsafe_exec_disabled_by_default(self) -> None:
+        harness = ServiceBusHarness()
+        bus = harness.create_bus("svcA")
+        reg = RuntimeNodeRegistry.instance()
+        register_operator(reg)
+        _ = ServiceHost(bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=reg)
+
+        state_fields = list(PythonScriptRuntimeNode.SPEC.stateFields or [])
+        op = F8RuntimeNode(
+            nodeId="ps2",
+            serviceId="svcA",
+            serviceClass=SERVICE_CLASS,
+            operatorClass=PythonScriptRuntimeNode.SPEC.operatorClass,
+            stateFields=state_fields,
+            stateValues={"code": "def onStart(ctx):\n    ctx['set_state']('lastError', 'should_not_run')\n"},
+        )
+        graph = F8RuntimeGraph(graphId="g2", revision="r1", nodes=[op], edges=[])
+        await bus.set_rungraph(graph)
+        await asyncio.sleep(0.05)
+
+        node = bus.get_node("ps2")
+        self.assertIsInstance(node, PythonScriptRuntimeNode)
+        assert isinstance(node, PythonScriptRuntimeNode)
+        self.assertIn("unsafe python exec is disabled", str(node._last_error or ""))
 
 
 if __name__ == "__main__":

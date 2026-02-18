@@ -8,7 +8,10 @@ from dataclasses import dataclass
 from types import CodeType
 from typing import Any
 
-import numpy as np  # type: ignore
+try:
+    import numpy as np  # type: ignore
+except ImportError:
+    np = None
 
 from f8pysdk import (
     F8DataPortSpec,
@@ -18,6 +21,7 @@ from f8pysdk import (
     F8StateAccess,
     F8StateSpec,
     any_schema,
+    boolean_schema,
     string_schema,
 )
 from f8pysdk.nats_naming import ensure_token
@@ -63,6 +67,19 @@ def _is_identifier(name: str) -> bool:
         return bool(name) and name.isidentifier()
     except Exception:
         return False
+
+
+def _coerce_bool(value: Any, *, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value or "").strip().lower()
+    if text in ("1", "true", "yes", "on"):
+        return True
+    if text in ("0", "false", "no", "off", ""):
+        return False
+    return bool(default)
 
 
 def _wrap_value(v: Any) -> Any:
@@ -139,9 +156,10 @@ class _ExprValidator(ast.NodeVisitor):
     - calls to a small allowlist: abs/min/max/round, and math.<fn> (where fn is allowlisted)
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, allow_numpy: bool) -> None:
         super().__init__()
         self._errors: list[str] = []
+        self._allow_numpy = bool(allow_numpy)
 
     def error(self, msg: str) -> None:
         self._errors.append(str(msg))
@@ -209,9 +227,6 @@ class _ExprValidator(ast.NodeVisitor):
             ast.Call,
             ast.keyword,
         )
-        index_node = getattr(ast, "Index", None)
-        if index_node is not None:
-            allowed = (*allowed, index_node)
         if not isinstance(node, allowed):
             self.error(f"disallowed syntax: {type(node).__name__}")
             return None
@@ -240,6 +255,9 @@ class _ExprValidator(ast.NodeVisitor):
             base: ast.AST = node.func.value
             while isinstance(base, ast.Attribute):
                 base = base.value
+            if not self._allow_numpy:
+                self.error("numpy calls are disabled")
+                return None
             if not (isinstance(base, ast.Name) and base.id in ("np", "numpy")):
                 self.error("call target not allowed")
                 return None
@@ -249,8 +267,8 @@ class _ExprValidator(ast.NodeVisitor):
         return self.generic_visit(node)
 
 
-def _compile_expr(expr: str) -> tuple[CodeType | None, str | None]:
-    validator = _ExprValidator()
+def _compile_expr(expr: str, *, allow_numpy: bool) -> tuple[CodeType | None, str | None]:
+    validator = _ExprValidator(allow_numpy=allow_numpy)
     tree, err = validator.validate(expr)
     if tree is None:
         return None, str(err or "invalid expression")
@@ -260,13 +278,16 @@ def _compile_expr(expr: str) -> tuple[CodeType | None, str | None]:
         return None, str(exc)
 
 
-def _safe_eval_compiled(code: CodeType, *, names: dict[str, Any]) -> Any:
+def _safe_eval_compiled(code: CodeType, *, names: dict[str, Any], allow_numpy: bool) -> Any:
     # No builtins; only allowlisted math/functions.
     safe_globals: dict[str, Any] = {"__builtins__": {}}
     safe_globals.update(_ALLOWED_GLOBAL_FNS)
     safe_globals["math"] = math
-    safe_globals["np"] = np
-    safe_globals["numpy"] = np
+    if allow_numpy:
+        if np is None:
+            raise RuntimeError("numpy is not available")
+        safe_globals["np"] = np
+        safe_globals["numpy"] = np
     return eval(code, safe_globals, names)  # noqa: S307 (controlled eval)
 
 
@@ -296,6 +317,7 @@ class ExprRuntimeNode(OperatorNode):
         )
         self._initial_state = dict(initial_state or {})
         self._code = self._normalize_code(self._initial_state.get("code") or "input")
+        self._allow_numpy = _coerce_bool(self._initial_state.get("allowNumpy"), default=False)
         self._compiled: CodeType | None = None
         self._compile_error: str | None = None
         self._recompile()
@@ -333,11 +355,26 @@ class ExprRuntimeNode(OperatorNode):
 
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
         _ = ts_ms
-        if str(field or "") != "code":
+        name = str(field or "")
+        if name == "allowNumpy":
+            self._allow_numpy = _coerce_bool(value, default=False)
+            self._recompile()
+            self._dirty = True
+            return
+        if name != "code":
             return
         self._code = self._normalize_code(value)
         self._recompile()
         self._dirty = True
+
+    async def validate_state(self, field: str, value: Any, *, ts_ms: int, meta: dict[str, Any]) -> Any:
+        del ts_ms, meta
+        name = str(field or "").strip()
+        if name == "allowNumpy":
+            return _coerce_bool(value, default=False)
+        if name == "code":
+            return self._normalize_code(value)
+        return value
 
     @staticmethod
     def _normalize_code(value: Any) -> str:
@@ -353,7 +390,7 @@ class ExprRuntimeNode(OperatorNode):
         return " ".join([p for p in parts if p]).strip()
 
     def _recompile(self) -> None:
-        compiled, err = _compile_expr(self._code)
+        compiled, err = _compile_expr(self._code, allow_numpy=self._allow_numpy)
         self._compiled = compiled
         self._compile_error = err
 
@@ -386,7 +423,11 @@ class ExprRuntimeNode(OperatorNode):
         try:
             if self._compiled is None:
                 raise ValueError(self._compile_error or "invalid expression")
-            out = _safe_eval_compiled(self._compiled, names=self._build_eval_names(pulled))
+            out = _safe_eval_compiled(
+                self._compiled,
+                names=self._build_eval_names(pulled),
+                allow_numpy=self._allow_numpy,
+            )
             if isinstance(out, _JsonRef):
                 out = out.unwrap()
         except Exception as exc:
@@ -420,9 +461,19 @@ ExprRuntimeNode.SPEC = F8OperatorSpec(
     editableDataOutPorts=False,
     stateFields=[
         F8StateSpec(
+            name="allowNumpy",
+            label="Allow Numpy",
+            description="Enable numpy calls in expressions (np.*, numpy.*).",
+            uiControl="toggle",
+            valueSchema=boolean_schema(default=False),
+            access=F8StateAccess.rw,
+            showOnNode=False,
+            required=False,
+        ),
+        F8StateSpec(
             name="code",
             label="Expr",
-            description="Single-line expression (no statements). Available: abs/min/max/round/float/int, math.*, numpy as np, comprehensions. Examples: input.center.x ; a+b-c**2 ; np.clip(x,0,1) ; [p.x for p in input.points if p.x >= 0]",
+            description="Single-line expression (no statements). Available: abs/min/max/round/float/int, math.*, comprehensions. Numpy (np.*, numpy.*) is available only when Allow Numpy is enabled.",
             uiControl="wrapline",
             uiLanguage="python",
             valueSchema=string_schema(default="input"),

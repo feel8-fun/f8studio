@@ -16,6 +16,7 @@ from f8pysdk.service_bus.routing_data import buffer_input  # noqa: E402
 from f8pysdk.testing import ServiceBusHarness  # noqa: E402
 
 from f8pyengine.constants import SERVICE_CLASS  # noqa: E402
+from f8pyengine.operators import expr as expr_mod  # noqa: E402
 from f8pyengine.operators.expr import ExprRuntimeNode, register_operator  # noqa: E402
 from f8pysdk import F8DataPortSpec, any_schema  # noqa: E402
 
@@ -151,6 +152,67 @@ class ExprNodeTests(unittest.IsolatedAsyncioTestCase):
         buffer_input(bus, "e4", "input", payload, ts_ms=0, edge=None, ctx_id=None)
         out = await node.compute_output("out", ctx_id=4)
         self.assertEqual(out, [0, 2])
+
+    async def test_numpy_disabled_by_default(self) -> None:
+        harness = ServiceBusHarness()
+        bus = harness.create_bus("svcA")
+        reg = RuntimeNodeRegistry.instance()
+        register_operator(reg)
+        _ = ServiceHost(bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=reg)
+
+        op = F8RuntimeNode(
+            nodeId="e5",
+            serviceId="svcA",
+            serviceClass=SERVICE_CLASS,
+            operatorClass=ExprRuntimeNode.SPEC.operatorClass,
+            stateFields=list(ExprRuntimeNode.SPEC.stateFields or []),
+            stateValues={"code": "np.clip(input, 0, 1)"},
+            dataInPorts=[
+                F8DataPortSpec(name="input", description="", valueSchema=any_schema(), required=False),
+            ],
+            dataOutPorts=[
+                F8DataPortSpec(name="out", description="", valueSchema=any_schema(), required=False),
+            ],
+        )
+        graph = F8RuntimeGraph(graphId="g5", revision="r1", nodes=[op], edges=[])
+        await bus.set_rungraph(graph)
+
+        node = bus.get_node("e5")
+        assert isinstance(node, ExprRuntimeNode)
+        buffer_input(bus, "e5", "input", 0.5, ts_ms=0, edge=None, ctx_id=None)
+        out = await node.compute_output("out", ctx_id=5)
+        self.assertIsNone(out)
+
+    @unittest.skipIf(expr_mod.np is None, "numpy not available in test environment")
+    async def test_numpy_enabled_allows_np_calls(self) -> None:
+        harness = ServiceBusHarness()
+        bus = harness.create_bus("svcA")
+        reg = RuntimeNodeRegistry.instance()
+        register_operator(reg)
+        _ = ServiceHost(bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=reg)
+
+        op = F8RuntimeNode(
+            nodeId="e6",
+            serviceId="svcA",
+            serviceClass=SERVICE_CLASS,
+            operatorClass=ExprRuntimeNode.SPEC.operatorClass,
+            stateFields=list(ExprRuntimeNode.SPEC.stateFields or []),
+            stateValues={"allowNumpy": True, "code": "np.clip(input, 0, 1)"},
+            dataInPorts=[
+                F8DataPortSpec(name="input", description="", valueSchema=any_schema(), required=False),
+            ],
+            dataOutPorts=[
+                F8DataPortSpec(name="out", description="", valueSchema=any_schema(), required=False),
+            ],
+        )
+        graph = F8RuntimeGraph(graphId="g6", revision="r1", nodes=[op], edges=[])
+        await bus.set_rungraph(graph)
+
+        node = bus.get_node("e6")
+        assert isinstance(node, ExprRuntimeNode)
+        buffer_input(bus, "e6", "input", 1.5, ts_ms=0, edge=None, ctx_id=None)
+        out = await node.compute_output("out", ctx_id=6)
+        self.assertEqual(float(out), 1.0)
 
 
 if __name__ == "__main__":
