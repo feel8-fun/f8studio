@@ -82,6 +82,7 @@ class PyStudioServiceBridge(QtCore.QObject):
         self._service_status_inflight: set[str] = set()
         self._service_status_req_s: dict[str, float] = {}
         self._last_compiled: CompiledRuntimeGraphs | None = None
+        self._shutting_down: bool = False
 
         self._svc: PyStudioService | None = None
         self._remote_state_watcher: RemoteStateWatcher | None = None
@@ -122,9 +123,20 @@ class PyStudioServiceBridge(QtCore.QObject):
             self._report_exception("emit remote command response failed", exc)
 
     def _submit_async(self, coro: Any, *, context: str) -> bool:
+        if self._shutting_down or (not self._async.is_accepting_submissions()):
+            if asyncio.iscoroutine(coro):
+                coro.close()
+            return False
         try:
             self._async.submit(coro)
             return True
+        except RuntimeError as exc:
+            if asyncio.iscoroutine(coro):
+                coro.close()
+            if self._shutting_down or (not self._async.is_accepting_submissions()):
+                return False
+            self._report_exception(context, exc)
+            return False
         except Exception as exc:
             self._report_exception(context, exc)
             return False
@@ -184,10 +196,12 @@ class PyStudioServiceBridge(QtCore.QObject):
         )
 
     def start(self) -> None:
+        self._shutting_down = False
         self._async.start()
         self._submit_async(self._start_async(), context="submit start failed")
 
     def stop(self) -> None:
+        self._shutting_down = True
         try:
             fut = self._async.submit(self._stop_async())
             try:
