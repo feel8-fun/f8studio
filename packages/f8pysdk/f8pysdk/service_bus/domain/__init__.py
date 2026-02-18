@@ -1,6 +1,4 @@
-from __future__ import annotations
-
-from .domain.state_pipeline import (
+from .state_pipeline import (
     coerce_state_value,
     origin_allows_access,
     publish_state,

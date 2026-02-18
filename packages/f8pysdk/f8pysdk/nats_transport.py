@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 import nats  # type: ignore[import-not-found]
+from nats.errors import TimeoutError as NatsTimeoutError  # type: ignore[import-not-found]
 from nats.js.api import KeyValueConfig, StorageType  # type: ignore[import-not-found]
-from nats.js.errors import BucketNotFoundError  # type: ignore[import-not-found]
+from nats.js.errors import BucketNotFoundError, NotFoundError as JsNotFoundError  # type: ignore[import-not-found]
 
 
 log = logging.getLogger(__name__)
@@ -273,6 +274,9 @@ class NatsTransport:
                     entry = await watcher.updates(timeout=0.5)
                 except asyncio.CancelledError:
                     break
+                except (NatsTimeoutError, asyncio.TimeoutError, TimeoutError):
+                    # Normal idle poll timeout: no KV update available.
+                    continue
                 except Exception as exc:
                     if not update_error_logged:
                         update_error_logged = True
@@ -319,23 +323,72 @@ class NatsTransport:
         """
         Watch KV updates within an explicit bucket.
         """
-        kv = await self.kv_store(bucket)
-        watcher = await kv.watch(str(key_pattern))
+        bucket_s = str(bucket)
+        pattern_s = str(key_pattern)
+
+        class _ManagedWatch:
+            def __init__(self) -> None:
+                self._watcher: Any | None = None
+
+            def set_watcher(self, watcher: Any | None) -> None:
+                self._watcher = watcher
+
+            async def stop(self) -> None:
+                watcher = self._watcher
+                self._watcher = None
+                if watcher is None:
+                    return
+                await watcher.stop()
+
+        managed = _ManagedWatch()
 
         async def _pump() -> None:
             update_error_logged = False
+            missing_stream_logged = False
             while True:
                 try:
+                    watcher = managed._watcher
+                    if watcher is None:
+                        kv = await self.kv_store(bucket_s)
+                        watcher = await kv.watch(pattern_s)
+                        managed.set_watcher(watcher)
+                        missing_stream_logged = False
                     entry = await watcher.updates(timeout=0.5)
                 except asyncio.CancelledError:
+                    try:
+                        await managed.stop()
+                    except Exception as exc:
+                        log.debug(
+                            "kv bucket watch stop failed bucket=%s key_pattern=%s",
+                            bucket_s,
+                            pattern_s,
+                            exc_info=exc,
+                        )
                     break
+                except (NatsTimeoutError, asyncio.TimeoutError, TimeoutError):
+                    # Normal idle poll timeout: no KV update available.
+                    continue
+                except (BucketNotFoundError, JsNotFoundError) as exc:
+                    # Remote service bucket/stream may not exist yet (service not ready).
+                    # Keep the watch alive and retry lazily in background.
+                    managed.set_watcher(None)
+                    if not missing_stream_logged:
+                        missing_stream_logged = True
+                        log.debug(
+                            "kv bucket watch waiting for bucket/stream bucket=%s key_pattern=%s",
+                            bucket_s,
+                            pattern_s,
+                            exc_info=exc,
+                        )
+                    await asyncio.sleep(0.2)
+                    continue
                 except Exception as exc:
                     if not update_error_logged:
                         update_error_logged = True
                         log.error(
                             "kv bucket watch updates failed bucket=%s key_pattern=%s",
-                            bucket,
-                            key_pattern,
+                            bucket_s,
+                            pattern_s,
                             exc_info=exc,
                         )
                     await asyncio.sleep(0.05)
@@ -349,8 +402,8 @@ class NatsTransport:
                 except Exception as exc:
                     log.error(
                         "kv bucket watch entry parse failed bucket=%s key_pattern=%s",
-                        bucket,
-                        key_pattern,
+                        bucket_s,
+                        pattern_s,
                         exc_info=exc,
                     )
                     continue
@@ -361,14 +414,14 @@ class NatsTransport:
                 except Exception as exc:
                     log.error(
                         "kv bucket watch callback failed bucket=%s key_pattern=%s key=%s",
-                        bucket,
-                        key_pattern,
+                        bucket_s,
+                        pattern_s,
                         k,
                         exc_info=exc,
                     )
 
-        task = asyncio.create_task(_pump(), name=f"kv_watch:{bucket}:{key_pattern}")
-        return (watcher, task)
+        task = asyncio.create_task(_pump(), name=f"kv_watch:{bucket_s}:{pattern_s}")
+        return (managed, task)
 
     async def kv_get_in_bucket(self, bucket: str, key: str) -> bytes | None:
         """
