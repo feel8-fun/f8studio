@@ -37,6 +37,10 @@ class ServiceRuntimeConfig:
         delete_bucket_on_start: bool = False,
         delete_bucket_on_stop: bool = False,
         data_delivery: DataDeliveryMode = "pull",
+        state_sync_concurrency: int = 8,
+        state_cache_max_entries: int = 8192,
+        data_input_max_buffers: int = 4096,
+        data_input_default_queue_size: int = 256,
         registry_modules: list[str] | tuple[str, ...] | None = None,
     ) -> "ServiceRuntimeConfig":
         bus = ServiceBusConfig(
@@ -49,6 +53,10 @@ class ServiceRuntimeConfig:
             delete_bucket_on_start=bool(delete_bucket_on_start),
             delete_bucket_on_stop=bool(delete_bucket_on_stop),
             data_delivery=data_delivery,
+            state_sync_concurrency=max(1, int(state_sync_concurrency)),
+            state_cache_max_entries=max(0, int(state_cache_max_entries)),
+            data_input_max_buffers=max(0, int(data_input_max_buffers)),
+            data_input_default_queue_size=max(1, int(data_input_default_queue_size)),
         )
         host = ServiceHostConfig(service_class=str(service_class))
         modules = tuple(str(m).strip() for m in (registry_modules or ()) if str(m).strip())
@@ -98,19 +106,13 @@ class ServiceRuntime:
         self._registry = registry or RuntimeNodeRegistry.instance()
 
         for module in config.registry_modules:
-            try:
-                self._registry.load_modules([str(module)])
-            except Exception:
-                continue
+            self._registry.load_modules([str(module)])
 
         self.bus = ServiceBus(config.bus)
         self.host = ServiceHost(self.bus, config=config.host, registry=self._registry)
 
     async def start(self) -> None:
-        try:
-            await self.host.start()
-        except Exception:
-            pass
+        await self.host.start()
         await self.bus.start()
 
     async def stop(self) -> None:

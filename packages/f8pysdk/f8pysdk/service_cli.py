@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
 import sys
 from abc import ABC, abstractmethod
@@ -10,6 +11,9 @@ from typing import Any
 
 from .runtime_node_registry import RuntimeNodeRegistry
 from .service_runtime import ServiceRuntime, ServiceRuntimeConfig
+
+
+log = logging.getLogger(__name__)
 
 
 def _env_or(default: str, key: str) -> str:
@@ -73,8 +77,8 @@ class ServiceCliTemplate(ABC):
         finally:
             try:
                 await self.teardown(runtime)
-            except Exception:
-                pass
+            except Exception as exc:
+                log.error("service teardown failed service_class=%s", self.service_class, exc_info=exc)
             await runtime.stop()
 
     def describe_json(self) -> dict[str, Any]:
@@ -96,7 +100,7 @@ class ServiceCliTemplate(ABC):
                 # On Windows, the console encoding may be cp1252 and crash on unicode.
                 try:
                     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
-                except Exception:
+                except AttributeError:
                     pass
                 print(payload)
             except UnicodeEncodeError:

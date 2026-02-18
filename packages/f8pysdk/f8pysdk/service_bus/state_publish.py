@@ -1,18 +1,24 @@
 from __future__ import annotations
 
 import asyncio
+import enum
 import json
+import logging
 from dataclasses import dataclass
 from typing import Any, TYPE_CHECKING
 
 from ..generated import F8StateAccess
 from ..json_unwrap import unwrap_json_value
 from ..nats_naming import ensure_token, kv_key_node_state
+from .error_utils import log_error_once
 from .state_write import StateWriteContext, StateWriteError, StateWriteOrigin, StateWriteSource
 from ..time_utils import now_ms
 
 if TYPE_CHECKING:
     from .bus import ServiceBus
+
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -54,19 +60,14 @@ def coerce_state_value(value: Any) -> Any:
         return {str(k): coerce_state_value(v) for k, v in value.items()}
 
     # Enum-like objects.
-    try:
-        import enum
-
-        if isinstance(value, enum.Enum):
-            return coerce_state_value(value.value)
-    except Exception:
-        pass
+    if isinstance(value, enum.Enum):
+        return coerce_state_value(value.value)
 
     # Pydantic v2 models/root models.
     try:
         dumped = value.model_dump(mode="json")  # type: ignore[attr-defined]
         return coerce_state_value(dumped)
-    except Exception:
+    except (AttributeError, TypeError, ValueError):
         pass
 
     unwrapped = unwrap_json_value(value)
@@ -102,27 +103,45 @@ async def _route_intra_state_edges(
 ) -> None:
     if bool(meta_dict.get("_noStateFanout")):
         return
-    targets = bus._intra_state_out.get((str(node_id), str(field))) or []
+    node_id_s = str(node_id)
+    field_s = str(field)
+    targets = bus._intra_state_out.get((node_id_s, field_s)) or []
     if not targets:
         return
     for to_node, to_field, _edge in list(targets):
-        if str(to_node) == str(node_id) and str(to_field) == str(field):
+        to_node_s = str(to_node)
+        to_field_s = str(to_field)
+        if to_node_s == node_id_s and to_field_s == field_s:
             continue
-        access = bus._state_access_by_node_field.get((str(to_node), str(to_field)))
+        access = bus._state_access_by_node_field.get((to_node_s, to_field_s))
         if access not in (F8StateAccess.rw, F8StateAccess.wo):
             continue
         try:
             await publish_state(
                 bus,
-                str(to_node),
-                str(to_field),
+                to_node_s,
+                to_field_s,
                 value,
                 ts_ms=int(ts_ms),
                 origin=StateWriteOrigin.external,
                 source=StateWriteSource.state_edge_intra,
-                meta={"fromNodeId": str(node_id), "fromField": str(field)},
+                meta={"fromNodeId": node_id_s, "fromField": field_s},
             )
-        except Exception:
+        except StateWriteError as exc:
+            log_error_once(
+                bus,
+                key=f"intra_state_route_write_error:{to_node_s}:{to_field_s}",
+                message=f"intra-state propagation rejected for {to_node_s}.{to_field_s}",
+                exc=exc,
+            )
+            continue
+        except Exception as exc:
+            log_error_once(
+                bus,
+                key=f"intra_state_route_unexpected_error:{to_node_s}:{to_field_s}",
+                message=f"intra-state propagation failed for {to_node_s}.{to_field_s}",
+                exc=exc,
+            )
             continue
 
 
@@ -134,14 +153,24 @@ async def _deliver_state_local(
     ts_ms: int,
     meta_dict: dict[str, Any],
 ) -> None:
-    node = bus._nodes.get(str(node_id))
+    node_id_s = str(node_id)
+    field_s = str(field)
+    node = bus._nodes.get(node_id_s)
     if node is None:
         return
-    await node.on_state(str(field), value, ts_ms=int(ts_ms))
+    try:
+        await node.on_state(field_s, value, ts_ms=int(ts_ms))
+    except Exception as exc:
+        log_error_once(
+            bus,
+            key=f"node_on_state_failed:{node_id_s}:{field_s}",
+            message=f"node.on_state failed for {node_id_s}.{field_s}",
+            exc=exc,
+        )
     await _route_intra_state_edges(
         bus,
-        node_id=str(node_id),
-        field=str(field),
+        node_id=node_id_s,
+        field=field_s,
         value=value,
         ts_ms=int(ts_ms),
         meta_dict=dict(meta_dict),
@@ -165,25 +194,27 @@ async def validate_state_update(
     - return a (possibly transformed) value to accept
     - raise StateWriteError/ValueError to reject
     """
-    node = bus._nodes.get(str(node_id))
+    node_id_s = str(node_id)
+    field_s = str(field)
+    node = bus._nodes.get(node_id_s)
 
-    access = bus._state_access_by_node_field.get((str(node_id), str(field)))
+    access = bus._state_access_by_node_field.get((node_id_s, field_s))
     # If we have an applied graph, unknown fields are rejected.
     if bus._graph is not None and access is None:
         raise StateWriteError(
             "UNKNOWN_FIELD",
-            f"unknown state field: {node_id}.{field}",
-            details={"nodeId": str(node_id), "field": str(field)},
+            f"unknown state field: {node_id_s}.{field_s}",
+            details={"nodeId": node_id_s, "field": field_s},
         )
 
     # Enforce write access when known.
     if access is not None and not origin_allows_access(ctx.origin, access):
         raise StateWriteError(
             "FORBIDDEN",
-            f"state field not writable: {node_id}.{field} ({access.value})",
+            f"state field not writable: {node_id_s}.{field_s} ({access.value})",
             details={
-                "nodeId": str(node_id),
-                "field": str(field),
+                "nodeId": node_id_s,
+                "field": field_s,
                 "access": access.value,
                 "origin": ctx.origin.value,
             },
@@ -195,7 +226,7 @@ async def validate_state_update(
         meta_dict = dict(meta or {})
         meta_dict.setdefault("origin", ctx.origin.value)
         meta_dict.setdefault("source", ctx.resolved_source)
-        r = node.validate_state(str(field), value, ts_ms=int(ts_ms), meta=meta_dict)
+        r = node.validate_state(field_s, value, ts_ms=int(ts_ms), meta=meta_dict)
         if asyncio.iscoroutine(r):
             return await r
         return r
@@ -261,7 +292,7 @@ async def publish_state(
                         % (bus.service_id, node_id, field)
                     )
                 return
-        except Exception:
+        except (TypeError, ValueError):
             pass
     if bus._debug_state:
         print(
@@ -273,5 +304,14 @@ async def publish_state(
     if deliver_local:
         # Local writes (actor == self.service_id) do not round-trip through the KV watcher.
         # Apply to listeners and the node callback immediately.
-        await _deliver_state_local(bus, node_id, field, update.value, int(payload["ts"]), dict(payload))
+        try:
+            await _deliver_state_local(bus, node_id, field, update.value, int(payload["ts"]), dict(payload))
+        except Exception as exc:
+            log.error(
+                "state persisted but local delivery failed service_id=%s node_id=%s field=%s",
+                bus.service_id,
+                node_id,
+                field,
+                exc_info=exc,
+            )
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections import deque
 from typing import Any, TYPE_CHECKING
 
 from ..generated import F8Edge, F8EdgeKindEnum, F8RuntimeGraph, F8RuntimeGraphMeta, F8StateAccess
@@ -10,13 +11,17 @@ from ..json_unwrap import unwrap_json_value
 from ..nats_naming import data_subject
 from .state_write import StateWriteOrigin, StateWriteSource
 from ..time_utils import now_ms
-from ..rungraph_validation import validate_state_edges_or_raise
+from ..rungraph_validation import (
+    validate_state_edge_targets_writable_or_raise,
+    validate_state_edges_or_raise,
+)
 
 from .cross_state import (
     stop_unused_cross_state_watches,
     sync_cross_state_watches,
     update_cross_state_bindings,
 )
+from .error_utils import log_error_once
 from .state_publish import publish_state
 from .routing_data import precreate_input_buffers_for_cross_in, sync_subscriptions
 
@@ -72,7 +77,11 @@ async def apply_rungraph(bus: "ServiceBus", graph: F8RuntimeGraph) -> bool:
     try:
         await validate_rungraph_or_raise(bus, graph)
     except Exception as exc:
-        _log_rungraph_error_once(bus, "rungraph_validate_failed", "rungraph rejected by validation", exc)
+        _log_rungraph_error_once(
+            bus,
+            "rungraph_validate_failed",
+            f"rungraph rejected by validation: {type(exc).__name__}: {exc}",
+        )
         return False
 
     # Service/container nodes use `nodeId == serviceId`.
@@ -144,6 +153,64 @@ async def apply_rungraph_state_values(bus: "ServiceBus", graph: F8RuntimeGraph) 
     except Exception:
         rungraph_ts = 0
 
+    concurrency = max(1, int(bus._state_sync_concurrency))
+    sem = asyncio.Semaphore(concurrency)
+    tasks: list[asyncio.Task[None]] = []
+
+    async def _seed_one(node_id: str, field: str, value: Any) -> None:
+        async with sem:
+            access = bus._state_access_by_node_field.get((node_id, field))
+            if access not in (F8StateAccess.rw, F8StateAccess.wo):
+                return
+            if (node_id, field) in bus._cross_state_targets:
+                return
+            unwrapped = unwrap_json_value(value)
+
+            # Reconcile semantics: only seed rungraph snapshot values if KV doesn't
+            # already have a newer/equal value (by timestamp). This prevents rungraph
+            # deploys from clobbering user/runtime updates.
+            if rungraph_ts > 0:
+                try:
+                    st = await bus.get_state(node_id, field)
+                except Exception as exc:
+                    log_error_once(
+                        bus,
+                        key=f"rungraph_state_reconcile_read_failed:{node_id}:{field}",
+                        message=f"failed to read existing state during rungraph reconcile for {node_id}.{field}",
+                        exc=exc,
+                    )
+                    st = None
+                if st is not None and st.found:
+                    try:
+                        if st.value == unwrapped:
+                            return
+                    except (TypeError, ValueError):
+                        pass
+                    try:
+                        if st.ts_ms is not None and int(st.ts_ms) > int(rungraph_ts):
+                            return
+                    except (TypeError, ValueError):
+                        pass
+
+            try:
+                await publish_state(
+                    bus,
+                    node_id,
+                    field,
+                    unwrapped,
+                    origin=StateWriteOrigin.rungraph,
+                    source=StateWriteSource.rungraph,
+                    ts_ms=(int(rungraph_ts) if rungraph_ts > 0 else None),
+                    meta={"via": "rungraph", "rungraphReconcile": True, "_noStateFanout": True},
+                )
+            except Exception as exc:
+                log_error_once(
+                    bus,
+                    key=f"rungraph_state_seed_failed:{node_id}:{field}",
+                    message=f"failed to seed rungraph state for {node_id}.{field}",
+                    exc=exc,
+                )
+
     for n in list(graph.nodes or []):
         if str(n.serviceId) != bus.service_id:
             continue
@@ -157,46 +224,14 @@ async def apply_rungraph_state_values(bus: "ServiceBus", graph: F8RuntimeGraph) 
             field = str(k or "").strip()
             if not field:
                 continue
-            access = bus._state_access_by_node_field.get((node_id, field))
-            if access not in (F8StateAccess.rw, F8StateAccess.wo):
-                continue
-            if (node_id, field) in bus._cross_state_targets:
-                continue
-            unwrapped = unwrap_json_value(v)
+            task = asyncio.create_task(
+                _seed_one(node_id, field, v),
+                name=f"service_bus:rungraph_seed:{node_id}:{field}",
+            )
+            tasks.append(task)
 
-            # Reconcile semantics: only seed rungraph snapshot values if KV doesn't
-            # already have a newer/equal value (by timestamp). This prevents rungraph
-            # deploys from clobbering user/runtime updates.
-            if rungraph_ts > 0:
-                try:
-                    st = await bus.get_state(node_id, field)
-                except Exception:
-                    st = None
-                if st is not None and st.found:
-                    try:
-                        if st.value == unwrapped:
-                            continue
-                    except Exception:
-                        pass
-                    try:
-                        if st.ts_ms is not None and int(st.ts_ms) >= int(rungraph_ts):
-                            continue
-                    except Exception:
-                        continue
-
-            try:
-                await publish_state(
-                    bus,
-                    node_id,
-                    field,
-                    unwrapped,
-                    origin=StateWriteOrigin.rungraph,
-                    source=StateWriteSource.rungraph,
-                    ts_ms=(int(rungraph_ts) if rungraph_ts > 0 else None),
-                    meta={"via": "rungraph", "rungraphReconcile": True, "_noStateFanout": True},
-                )
-            except Exception:
-                continue
+    if tasks:
+        await asyncio.gather(*tasks)
 
 
 async def initial_sync_intra_state_edges(bus: "ServiceBus", graph: F8RuntimeGraph) -> None:
@@ -235,21 +270,18 @@ async def initial_sync_intra_state_edges(bus: "ServiceBus", graph: F8RuntimeGrap
         prev = upstream_by_target.get(to_key)
         if prev is not None and prev != from_key:
             if bus._debug_state:
-                try:
-                    print(
-                        "state_debug[%s] state_edge_init_skip_multi_upstream to=%s.%s from_a=%s.%s from_b=%s.%s"
-                        % (
-                            bus.service_id,
-                            str(to_key[0]),
-                            str(to_key[1]),
-                            str(prev[0]),
-                            str(prev[1]),
-                            str(from_key[0]),
-                            str(from_key[1]),
-                        )
+                print(
+                    "state_debug[%s] state_edge_init_skip_multi_upstream to=%s.%s from_a=%s.%s from_b=%s.%s"
+                    % (
+                        bus.service_id,
+                        str(to_key[0]),
+                        str(to_key[1]),
+                        str(prev[0]),
+                        str(prev[1]),
+                        str(from_key[0]),
+                        str(from_key[1]),
                     )
-                except Exception:
-                    pass
+                )
             continue
         upstream_by_target[to_key] = from_key
 
@@ -264,10 +296,7 @@ async def initial_sync_intra_state_edges(bus: "ServiceBus", graph: F8RuntimeGrap
     roots = [k for k in nodes if k not in inbound]
     if not roots:
         if bus._debug_state:
-            try:
-                print("state_debug[%s] state_edge_init_no_roots (cycle?)" % (bus.service_id,))
-            except Exception:
-                pass
+            print("state_debug[%s] state_edge_init_no_roots (cycle?)" % (bus.service_id,))
         return
 
     ts0 = int(now_ms())
@@ -277,15 +306,21 @@ async def initial_sync_intra_state_edges(bus: "ServiceBus", graph: F8RuntimeGrap
     for root in list(roots):
         try:
             root_state = await bus.get_state(root[0], root[1])
-        except Exception:
+        except Exception as exc:
+            log_error_once(
+                bus,
+                key=f"state_edge_init_root_read_failed:{root[0]}:{root[1]}",
+                message=f"state-edge init failed to read root {root[0]}.{root[1]}",
+                exc=exc,
+            )
             continue
         if not root_state.found:
             continue
 
-        queue: list[tuple[tuple[str, str], object]] = [(root, root_state.value)]
+        queue: deque[tuple[tuple[str, str], object]] = deque([(root, root_state.value)])
         seen_in_component: set[tuple[str, str]] = set()
         while queue:
-            from_key, from_val = queue.pop(0)
+            from_key, from_val = queue.popleft()
             if from_key in seen_in_component:
                 continue
             seen_in_component.add(from_key)
@@ -298,7 +333,13 @@ async def initial_sync_intra_state_edges(bus: "ServiceBus", graph: F8RuntimeGrap
 
                 try:
                     to_state = await bus.get_state(to_key[0], to_key[1])
-                except Exception:
+                except Exception as exc:
+                    log_error_once(
+                        bus,
+                        key=f"state_edge_init_target_read_failed:{to_key[0]}:{to_key[1]}",
+                        message=f"state-edge init failed to read target {to_key[0]}.{to_key[1]}",
+                        exc=exc,
+                    )
                     to_state = None
 
                 if to_state is not None and to_state.found:
@@ -306,7 +347,7 @@ async def initial_sync_intra_state_edges(bus: "ServiceBus", graph: F8RuntimeGrap
                         if to_state.value == from_val:
                             queue.append((to_key, to_state.value))
                             continue
-                    except Exception:
+                    except (TypeError, ValueError):
                         pass
 
                 try:
@@ -320,14 +361,20 @@ async def initial_sync_intra_state_edges(bus: "ServiceBus", graph: F8RuntimeGrap
                         source=StateWriteSource.state_edge_intra_init,
                         meta={"fromNodeId": from_key[0], "fromField": from_key[1]},
                     )
-                except Exception:
+                except Exception as exc:
+                    log_error_once(
+                        bus,
+                        key=f"state_edge_init_publish_failed:{to_key[0]}:{to_key[1]}",
+                        message=f"state-edge init failed to publish {to_key[0]}.{to_key[1]}",
+                        exc=exc,
+                    )
                     continue
 
                 # Continue propagation using the post-validation cached value if available.
                 try:
                     cached = bus._state_cache.get(to_key)
                     next_val = cached[0] if cached is not None else from_val
-                except Exception:
+                except (TypeError, ValueError):
                     next_val = from_val
                 queue.append((to_key, next_val))
 
@@ -368,7 +415,13 @@ async def seed_builtin_identity_state(bus: "ServiceBus", graph: F8RuntimeGraph) 
                     meta={"builtin": True, "_noStateFanout": True},
                     deliver_local=False,
                 )
-        except Exception:
+        except Exception as exc:
+            log_error_once(
+                bus,
+                key=f"seed_builtin_identity_state_failed:{node_id}",
+                message=f"failed to seed builtin identity state for node {node_id}",
+                exc=exc,
+            )
             continue
 
 
@@ -378,21 +431,7 @@ async def validate_rungraph_or_raise(bus: "ServiceBus", graph: F8RuntimeGraph) -
     """
     # Global state-edge constraints (covers cross-service cycles too).
     validate_state_edges_or_raise(graph, forbid_cycles=True, forbid_multi_upstream=True)
-
-    access_map: dict[tuple[str, str], F8StateAccess] = {}
-    for n in list(graph.nodes or []):
-        if str(n.serviceId) != bus.service_id:
-            continue
-        node_id = str(n.nodeId or "")
-        if not node_id:
-            continue
-        for sf in list(n.stateFields or []):
-            name = str(sf.name or "").strip()
-            if not name:
-                continue
-            a = sf.access
-            if isinstance(a, F8StateAccess):
-                access_map[(node_id, name)] = a
+    validate_state_edge_targets_writable_or_raise(graph, local_service_id=bus.service_id)
 
     for n in list(graph.nodes or []):
         if str(n.serviceId) != bus.service_id:
@@ -418,19 +457,6 @@ async def validate_rungraph_or_raise(bus: "ServiceBus", graph: F8RuntimeGraph) -
                     raise ValueError(f"unknown state value: {node_id}.{key}")
                 if a == F8StateAccess.ro:
                     raise ValueError(f"read-only state cannot be set by rungraph: {node_id}.{key}")
-
-    for e in list(graph.edges or []):
-        if e.kind != F8EdgeKindEnum.state:
-            continue
-        if str(e.toServiceId) != bus.service_id:
-            continue
-        to_node = str(e.toOperatorId or "")
-        to_field = str(e.toPort or "")
-        if not to_node or not to_field:
-            continue
-        a = access_map.get((to_node, to_field))
-        if a == F8StateAccess.ro:
-            raise ValueError(f"state edge targets non-writable field: {to_node}.{to_field} ({a.value})")
 
     for hook in list(bus._rungraph_hooks):
         try:

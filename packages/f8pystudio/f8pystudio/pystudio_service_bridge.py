@@ -86,6 +86,7 @@ class PyStudioServiceBridge(QtCore.QObject):
         self._svc: PyStudioService | None = None
         self._remote_state_watcher: RemoteStateWatcher | None = None
         self._remote_state_gateway: RemoteStateGatewayAdapter | None = None
+        self._watch_targets_cache: tuple[WatchTarget, ...] | None = None
         self._nc: Any = None
         self._last_nats_error_log_s: float = 0.0
         self._pending_remote_command_cbs: dict[str, Callable[[dict[str, Any] | None, str | None], None]] = {}
@@ -356,10 +357,18 @@ class PyStudioServiceBridge(QtCore.QObject):
             edges=[*base_edges],
         )
 
-    async def _apply_remote_state_watches_async(self, compiled: CompiledRuntimeGraphs) -> None:
-        gateway = self._remote_state_gateway
-        if gateway is None:
-            return
+    @staticmethod
+    def _dedupe_fields(fields: list[str]) -> tuple[str, ...]:
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for field in fields:
+            if field in seen:
+                continue
+            seen.add(field)
+            ordered.append(field)
+        return tuple(ordered)
+
+    def _build_remote_watch_targets(self, compiled: CompiledRuntimeGraphs) -> tuple[WatchTarget, ...]:
         targets: list[WatchTarget] = []
         try:
             nodes = list(compiled.global_graph.nodes or [])
@@ -369,10 +378,11 @@ class PyStudioServiceBridge(QtCore.QObject):
             try:
                 sid = ensure_token(str(n.serviceId or ""), label="service_id")
                 nid = ensure_token(str(n.nodeId or ""), label="node_id")
-            except Exception as exc:
+            except ValueError as exc:
                 self._emit_log_line(f"skip invalid remote watch target: {type(exc).__name__}: {exc}")
                 continue
-            fields: list[str] = []
+
+            candidates: list[str] = []
             try:
                 state_fields = list(n.stateFields or [])
             except Exception:
@@ -383,17 +393,32 @@ class PyStudioServiceBridge(QtCore.QObject):
                 except Exception:
                     name = ""
                 if name:
-                    fields.append(name)
-            if "svcId" not in fields:
-                fields.append("svcId")
-            try:
-                op_class = str(n.operatorClass or "").strip()
-            except Exception:
-                op_class = ""
-            if op_class and "operatorId" not in fields:
-                fields.append("operatorId")
-            targets.append(WatchTarget(service_id=sid, node_id=nid, fields=tuple(fields)))
-        await gateway.apply_targets(ApplyWatchTargetsRequest(targets=tuple(targets)))
+                    candidates.append(name)
+
+            if "svcId" not in candidates:
+                candidates.append("svcId")
+            op_class = str(n.operatorClass or "").strip()
+            if op_class and "operatorId" not in candidates:
+                candidates.append("operatorId")
+
+            targets.append(
+                WatchTarget(
+                    service_id=sid,
+                    node_id=nid,
+                    fields=self._dedupe_fields(candidates),
+                )
+            )
+        return tuple(sorted(targets, key=lambda t: (t.service_id, t.node_id, t.fields)))
+
+    async def _apply_remote_state_watches_async(self, compiled: CompiledRuntimeGraphs) -> None:
+        gateway = self._remote_state_gateway
+        if gateway is None:
+            return
+        targets_sorted = self._build_remote_watch_targets(compiled)
+        if self._watch_targets_cache == targets_sorted:
+            return
+        await gateway.apply_targets(ApplyWatchTargetsRequest(targets=targets_sorted))
+        self._watch_targets_cache = targets_sorted
 
     def is_service_running(self, service_id: str) -> bool:
         sid = str(service_id or "").strip()
@@ -1121,6 +1146,7 @@ class PyStudioServiceBridge(QtCore.QObject):
             self._report_exception("stop remote state watcher failed", exc)
         self._remote_state_gateway = None
         self._remote_state_watcher = None
+        self._watch_targets_cache = None
         try:
             if self._svc is not None:
                 await self._svc.stop()

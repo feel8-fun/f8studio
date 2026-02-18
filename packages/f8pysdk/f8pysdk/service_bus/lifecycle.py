@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from typing import Any, TYPE_CHECKING
 
 from ..capabilities import LifecycleNode
@@ -13,6 +14,9 @@ from .state_write import StateWriteSource
 
 if TYPE_CHECKING:
     from .bus import ServiceBus
+
+
+log = logging.getLogger(__name__)
 
 
 async def _ensure_micro_endpoints_started(bus: "ServiceBus") -> None:
@@ -88,10 +92,27 @@ async def stop(bus: "ServiceBus") -> None:
     bus._data_inputs.clear()
 
     bus._cross_state_in_by_key.clear()
-    for (_sid, _key), watch in list(bus._remote_state_watches.items()):
-        watcher, task = watch
-        task.cancel()
-        await watcher.stop()
+    for (sid, key), watch in list(bus._remote_state_watches.items()):
+        watcher: Any = None
+        task: asyncio.Task[Any] | None = None
+        try:
+            watcher, task = watch
+        except (TypeError, ValueError) as exc:
+            log.error("invalid cross-state watch handle sid=%s key=%s", sid, key, exc_info=exc)
+            continue
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:
+                log.error("cross-state watch task stop failed sid=%s key=%s", sid, key, exc_info=exc)
+        if watcher is not None:
+            try:
+                await watcher.stop()
+            except Exception as exc:
+                log.error("cross-state watcher stop failed sid=%s key=%s", sid, key, exc_info=exc)
     bus._remote_state_watches.clear()
 
     bus._state_cache.clear()
@@ -119,8 +140,8 @@ async def notify_before_ready(bus: "ServiceBus") -> None:
             r = hook.on_before_ready(bus)
             if asyncio.iscoroutine(r):
                 await r
-        except Exception:
-            continue
+        except Exception as exc:
+            log.error("service hook failed: on_before_ready %s", type(hook).__name__, exc_info=exc)
 
 
 async def notify_after_ready(bus: "ServiceBus") -> None:
@@ -129,8 +150,8 @@ async def notify_after_ready(bus: "ServiceBus") -> None:
             r = hook.on_after_ready(bus)
             if asyncio.iscoroutine(r):
                 await r
-        except Exception:
-            continue
+        except Exception as exc:
+            log.error("service hook failed: on_after_ready %s", type(hook).__name__, exc_info=exc)
 
 
 async def notify_before_stop(bus: "ServiceBus") -> None:
@@ -139,8 +160,8 @@ async def notify_before_stop(bus: "ServiceBus") -> None:
             r = hook.on_before_stop(bus)
             if asyncio.iscoroutine(r):
                 await r
-        except Exception:
-            continue
+        except Exception as exc:
+            log.error("service hook failed: on_before_stop %s", type(hook).__name__, exc_info=exc)
 
 
 async def notify_after_stop(bus: "ServiceBus") -> None:
@@ -149,8 +170,8 @@ async def notify_after_stop(bus: "ServiceBus") -> None:
             r = hook.on_after_stop(bus)
             if asyncio.iscoroutine(r):
                 await r
-        except Exception:
-            continue
+        except Exception as exc:
+            log.error("service hook failed: on_after_stop %s", type(hook).__name__, exc_info=exc)
 
 
 async def apply_active(
@@ -192,5 +213,6 @@ async def apply_active(
                 r = hook.on_deactivate(bus, dict(payload))
             if asyncio.iscoroutine(r):
                 await r
-        except Exception:
-            continue
+        except Exception as exc:
+            phase = "on_activate" if bool(active) else "on_deactivate"
+            log.error("service hook failed: %s %s", phase, type(hook).__name__, exc_info=exc)

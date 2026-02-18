@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from .generated import F8Edge, F8EdgeKindEnum, F8RuntimeGraph
+from .generated import F8Edge, F8EdgeKindEnum, F8RuntimeGraph, F8StateAccess
 
 
 def _state_key(*, service_id: str, node_id: str, field: str) -> tuple[str, str, str]:
@@ -114,3 +114,46 @@ def validate_state_edges_or_raise(
         if cyc is not None:
             msg = "cyclic state-edge loop detected: " + " -> ".join(_fmt_key(x) for x in cyc)
             raise ValueError(msg)
+
+
+def validate_state_edge_targets_writable_or_raise(
+    graph: F8RuntimeGraph,
+    *,
+    local_service_id: str | None = None,
+) -> None:
+    """
+    Validate that state-edge targets are writable.
+
+    If `local_service_id` is provided, only validate edges whose `toServiceId`
+    equals that service id.
+    """
+    access_map: dict[tuple[str, str, str], F8StateAccess] = {}
+    for n in list(graph.nodes or []):
+        service_id = str(n.serviceId or "").strip()
+        node_id = str(n.nodeId or "").strip()
+        if not service_id or not node_id:
+            continue
+        for sf in list(n.stateFields or []):
+            field = str(sf.name or "").strip()
+            if not field:
+                continue
+            access = sf.access
+            if isinstance(access, F8StateAccess):
+                access_map[(service_id, node_id, field)] = access
+
+    service_filter = str(local_service_id or "").strip()
+    for e in list(graph.edges or []):
+        if e.kind != F8EdgeKindEnum.state:
+            continue
+        to_service = str(e.toServiceId or "").strip()
+        to_node = str(e.toOperatorId or "").strip()
+        to_field = str(e.toPort or "").strip()
+        if not to_service or not to_node or not to_field:
+            continue
+        if service_filter and to_service != service_filter:
+            continue
+        access = access_map.get((to_service, to_node, to_field))
+        if access == F8StateAccess.ro:
+            raise ValueError(
+                f"state edge targets non-writable field: {to_node}.{to_field} ({access.value})"
+            )

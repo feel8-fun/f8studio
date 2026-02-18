@@ -4,9 +4,10 @@ import asyncio
 import json
 import logging
 import os
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol, TYPE_CHECKING, TypeAlias, cast
+from typing import Any, Generic, Literal, Protocol, TYPE_CHECKING, TypeAlias, TypeVar, cast
 
 from nats.js.api import StorageType  # type: ignore[import-not-found]
 
@@ -55,6 +56,40 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 DataDeliveryMode: TypeAlias = Literal["pull", "push", "both"]
+_K = TypeVar("_K")
+_V = TypeVar("_V")
+
+
+class _CappedOrderedDict(OrderedDict[_K, _V], Generic[_K, _V]):
+    """
+    Ordered mapping with max-entry cap.
+
+    - `get` and `__getitem__` refresh recency.
+    - `__setitem__` enforces max size.
+    """
+
+    def __init__(self, *, max_entries: int) -> None:
+        super().__init__()
+        self._max_entries = max(0, int(max_entries))
+
+    def __getitem__(self, key: _K) -> _V:
+        value = super().__getitem__(key)
+        super().move_to_end(key)
+        return value
+
+    def get(self, key: _K, default: _V | None = None) -> _V | None:
+        if key in self:
+            return self[key]
+        return default
+
+    def __setitem__(self, key: _K, value: _V) -> None:
+        exists = key in self
+        super().__setitem__(key, value)
+        if exists:
+            super().move_to_end(key)
+        if self._max_entries > 0:
+            while len(self) > self._max_entries:
+                self.popitem(last=False)
 
 def _debug_state_enabled() -> bool:
     return str(os.getenv("F8_STATE_DEBUG", "")).lower() in ("1", "true", "yes", "on")
@@ -71,6 +106,10 @@ class ServiceBusConfig:
     delete_bucket_on_start: bool = False
     delete_bucket_on_stop: bool = False
     data_delivery: DataDeliveryMode = "pull"
+    state_sync_concurrency: int = 8
+    state_cache_max_entries: int = 8192
+    data_input_max_buffers: int = 4096
+    data_input_default_queue_size: int = 256
 
 
 class _ServiceBusNode(StatefulNode, BusAttachableNode, Protocol):
@@ -101,12 +140,13 @@ class ServiceBus:
         data_delivery = str(config.data_delivery or "pull").strip().lower()
         if data_delivery not in ("pull", "push", "both"):
             if self._debug_state or log.isEnabledFor(logging.WARNING):
-                try:
-                    log.warning("Invalid data_delivery=%r; defaulting to 'pull'", data_delivery)
-                except Exception:
-                    pass
+                log.warning("Invalid data_delivery=%r; defaulting to 'pull'", data_delivery)
             data_delivery = "pull"
         self._data_delivery = cast(DataDeliveryMode, data_delivery)
+        self._state_sync_concurrency = max(1, int(config.state_sync_concurrency))
+        self._state_cache_max_entries = max(0, int(config.state_cache_max_entries))
+        self._data_input_max_buffers = max(0, int(config.data_input_max_buffers))
+        self._data_input_default_queue_size = max(1, int(config.data_input_default_queue_size))
 
         bucket = kv_bucket_for_service(self.service_id)
         if transport is None:
@@ -134,7 +174,9 @@ class ServiceBus:
         self._intra_data_in: dict[tuple[str, str], list[tuple[str, str, F8Edge]]] = {}
         self._cross_in_by_subject: dict[str, list[tuple[str, str, F8Edge]]] = {}
         self._cross_out_subjects: dict[tuple[str, str], str] = {}
-        self._data_inputs: dict[tuple[str, str], _InputBuffer] = {}
+        self._data_inputs: _CappedOrderedDict[tuple[str, str], _InputBuffer] = _CappedOrderedDict(
+            max_entries=self._data_input_max_buffers
+        )
 
         # Intra-service state fanout (state edges within the same service).
         self._intra_state_out: dict[tuple[str, str], list[tuple[str, str, F8Edge]]] = {}
@@ -145,7 +187,9 @@ class ServiceBus:
         self._cross_state_targets: set[tuple[str, str]] = set()
         self._cross_state_last_ts: dict[tuple[str, str], int] = {}
 
-        self._state_cache: dict[tuple[str, str], tuple[Any, int]] = {}
+        self._state_cache: _CappedOrderedDict[tuple[str, str], tuple[Any, int]] = _CappedOrderedDict(
+            max_entries=self._state_cache_max_entries
+        )
         self._state_access_by_node_field: dict[tuple[str, str], F8StateAccess] = {}
         self._data_route_subs: dict[str, Any] = {}
         self._custom_subs: list[Any] = []
@@ -155,6 +199,8 @@ class ServiceBus:
 
         # Error dedupe for rungraph apply boundaries.
         self._rungraph_apply_error_once: set[str] = set()
+        # Generic error dedupe for high-frequency paths (watchers/fanout/loops).
+        self._error_once: set[str] = set()
 
         # Process-level termination request (set via `svc.<serviceId>.terminate`).
         # Service entrypoints may `await bus.wait_terminate()` to exit gracefully.
@@ -225,8 +271,8 @@ class ServiceBus:
             try:
                 loop = asyncio.get_running_loop()
                 loop.create_task(node.close(), name=f"service_bus:close:{node_id}")
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("failed to schedule node close node_id=%s", node_id, exc_info=exc)
 
     def get_node(self, node_id: str) -> _ServiceBusNode | None:
         """

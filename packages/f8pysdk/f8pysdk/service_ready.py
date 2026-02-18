@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from typing import Any
 
 from .nats_naming import kv_key_ready
 from .nats_transport import NatsTransport
 from .time_utils import now_ms
+
+
+log = logging.getLogger(__name__)
 
 
 async def wait_service_ready(
@@ -89,11 +93,14 @@ async def wait_service_ready(
     finally:
         if watch is not None:
             watcher, task = watch
+            task.cancel()
             try:
-                task.cancel()
-            except Exception:
+                await task
+            except asyncio.CancelledError:
                 pass
+            except Exception as exc:
+                log.error("ready watch task stop failed key=%s", key, exc_info=exc)
             try:
                 await watcher.stop()
-            except Exception:
-                pass
+            except Exception as exc:
+                log.error("ready watcher stop failed key=%s", key, exc_info=exc)

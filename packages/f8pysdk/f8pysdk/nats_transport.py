@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
@@ -8,6 +9,9 @@ from typing import Any, Awaitable, Callable
 import nats  # type: ignore[import-not-found]
 from nats.js.api import KeyValueConfig, StorageType  # type: ignore[import-not-found]
 from nats.js.errors import BucketNotFoundError  # type: ignore[import-not-found]
+
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -75,10 +79,7 @@ class NatsTransport:
                 if (now - last_err_log) < 2.0:
                     return
                 last_err_log = now
-                try:
-                    print(f"[f8] NATS connection error (will retry): {type(exc).__name__}: {exc}")
-                except Exception:
-                    pass
+                print(f"[f8] NATS connection error (will retry): {type(exc).__name__}: {exc}")
 
             while self._nc is None:
                 attempt += 1
@@ -95,21 +96,18 @@ class NatsTransport:
                     # Friendly reminder without traceback spam.
                     if attempt == 1 or (now - last_log) >= 2.0:
                         last_log = now
-                        try:
-                            print(
-                                f"[f8] NATS server is not reachable at {url!r}. "
-                                f"Start `nats-server` or set `F8_NATS_URL`. retrying... ({type(exc).__name__})"
-                            )
-                        except Exception:
-                            pass
+                        print(
+                            f"[f8] NATS server is not reachable at {url!r}. "
+                            f"Start `nats-server` or set `F8_NATS_URL`. retrying... ({type(exc).__name__})"
+                        )
                     await asyncio.sleep(min(2.0, 0.2 * attempt))
                     continue
             self._js = self._nc.jetstream()
             if bool(self._config.delete_bucket_on_connect) and self._js is not None:
                 try:
                     await self._js.delete_key_value(str(self._config.kv_bucket))
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.debug("delete_key_value failed during connect bucket=%s", self._config.kv_bucket, exc_info=exc)
             self._kv = await self._open_kv(self._config.kv_bucket)
             if self._kv is not None:
                 self._kv_stores[self._config.kv_bucket] = self._kv
@@ -134,20 +132,20 @@ class NatsTransport:
             for sub in subs:
                 try:
                     await sub.unsubscribe()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.debug("unsubscribe failed during close", exc_info=exc)
 
             if bool(self._config.delete_bucket_on_close) and self._js is not None:
                 try:
                     await self._js.delete_key_value(str(self._config.kv_bucket))
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.debug("delete_key_value failed during close bucket=%s", self._config.kv_bucket, exc_info=exc)
 
             if self._nc is not None:
                 try:
                     await self._nc.drain()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.debug("nats drain failed during close", exc_info=exc)
             self._nc = None
             self._js = None
             self._kv = None
@@ -199,8 +197,8 @@ class NatsTransport:
                 return
             try:
                 await cb(str(msg.subject or subject), bytes(msg.data or b""))  # type: ignore[attr-defined]
-            except Exception:
-                return
+            except Exception as exc:
+                log.error("subscriber callback failed subject=%s", subject, exc_info=exc)
 
         sub = await self._nc.subscribe(str(subject), queue=str(queue) if queue else None, cb=_handler)
         self._subs.append(sub)
@@ -226,8 +224,8 @@ class NatsTransport:
                 return
             try:
                 await cb(msg)
-            except Exception:
-                return
+            except Exception as exc:
+                log.error("subscriber raw callback failed subject=%s", subject, exc_info=exc)
 
         sub = await self._nc.subscribe(str(subject), queue=str(queue) if queue else None, cb=_handler)
         self._subs.append(sub)
@@ -269,24 +267,33 @@ class NatsTransport:
         watcher = await self._kv.watch(str(key_pattern))
 
         async def _pump() -> None:
+            update_error_logged = False
             while True:
                 try:
                     entry = await watcher.updates(timeout=0.5)
-                except Exception:
+                except asyncio.CancelledError:
+                    break
+                except Exception as exc:
+                    if not update_error_logged:
+                        update_error_logged = True
+                        log.error("kv watch updates failed key_pattern=%s", key_pattern, exc_info=exc)
+                    await asyncio.sleep(0.05)
                     continue
+                update_error_logged = False
                 if entry is None:
                     continue
                 try:
                     k = str(entry.key or "")  # type: ignore[attr-defined]
                     v = bytes(entry.value or b"")  # type: ignore[attr-defined]
-                except Exception:
+                except Exception as exc:
+                    log.error("kv watch entry parse failed key_pattern=%s", key_pattern, exc_info=exc)
                     continue
                 if not k:
                     continue
                 try:
                     await cb(k, v)
-                except Exception:
-                    continue
+                except Exception as exc:
+                    log.error("kv watch callback failed key_pattern=%s key=%s", key_pattern, k, exc_info=exc)
 
         task = asyncio.create_task(_pump(), name=f"kv_watch:{key_pattern}")
         return (watcher, task)
@@ -316,24 +323,49 @@ class NatsTransport:
         watcher = await kv.watch(str(key_pattern))
 
         async def _pump() -> None:
+            update_error_logged = False
             while True:
                 try:
                     entry = await watcher.updates(timeout=0.5)
-                except Exception:
+                except asyncio.CancelledError:
+                    break
+                except Exception as exc:
+                    if not update_error_logged:
+                        update_error_logged = True
+                        log.error(
+                            "kv bucket watch updates failed bucket=%s key_pattern=%s",
+                            bucket,
+                            key_pattern,
+                            exc_info=exc,
+                        )
+                    await asyncio.sleep(0.05)
                     continue
+                update_error_logged = False
                 if entry is None:
                     continue
                 try:
                     k = str(entry.key or "")  # type: ignore[attr-defined]
                     v = bytes(entry.value or b"")  # type: ignore[attr-defined]
-                except Exception:
+                except Exception as exc:
+                    log.error(
+                        "kv bucket watch entry parse failed bucket=%s key_pattern=%s",
+                        bucket,
+                        key_pattern,
+                        exc_info=exc,
+                    )
                     continue
                 if not k:
                     continue
                 try:
                     await cb(k, v)
-                except Exception:
-                    continue
+                except Exception as exc:
+                    log.error(
+                        "kv bucket watch callback failed bucket=%s key_pattern=%s key=%s",
+                        bucket,
+                        key_pattern,
+                        k,
+                        exc_info=exc,
+                    )
 
         task = asyncio.create_task(_pump(), name=f"kv_watch:{bucket}:{key_pattern}")
         return (watcher, task)

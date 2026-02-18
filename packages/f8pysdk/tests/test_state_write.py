@@ -44,6 +44,11 @@ class _RejectingNode(_DummyNode):
         raise StateWriteError("CONFLICT", f"reject {field}")
 
 
+class _OnStateFailNode(_DummyNode):
+    async def on_state(self, field: str, value: object, *, ts_ms: int | None = None) -> None:
+        raise RuntimeError("on_state failed")
+
+
 class StateWriteTests(unittest.IsolatedAsyncioTestCase):
     async def test_external_cannot_write_ro(self) -> None:
         bus = ServiceBus(ServiceBusConfig(service_id="svc"))
@@ -107,6 +112,20 @@ class StateWriteTests(unittest.IsolatedAsyncioTestCase):
         payload = json.loads(raw.decode("utf-8")) if raw else {}
         self.assertEqual(payload.get("source"), "runtime")
         self.assertEqual(payload.get("origin"), "runtime")
+
+    async def test_publish_state_persists_even_if_local_callback_fails(self) -> None:
+        cluster = InMemoryCluster()
+        transport = InMemoryTransport(cluster=cluster, kv_bucket="kv.svc")
+        bus = ServiceBus(ServiceBusConfig(service_id="svc"), transport=transport)
+        bus._state_access_by_node_field[("svc", "status")] = F8StateAccess.rw
+        bus.register_node(_OnStateFailNode("svc"))
+
+        await bus.publish_state_runtime("svc", "status", 7, ts_ms=42)
+
+        key = kv_key_node_state(node_id="svc", field="status")
+        raw = await transport.kv_get(key)
+        payload = json.loads(raw.decode("utf-8")) if raw else {}
+        self.assertEqual(payload.get("value"), 7)
 
     async def test_cross_service_state_edge(self) -> None:
         harness = ServiceBusHarness()
@@ -309,11 +328,8 @@ class StateWriteTests(unittest.IsolatedAsyncioTestCase):
             strategy=F8EdgeStrategyEnum.latest,
         )
         graph = F8RuntimeGraph(graphId="g1", revision="r1", nodes=[node_a, node_b], edges=[edge])
-        await bus.set_rungraph(graph)
-
-        await bus.publish_state_runtime("opA", "out", "v1", ts_ms=1)
-        out = (await bus.get_state("opB", "input")).value
-        self.assertIsNone(out)
+        with self.assertRaises(RuntimeError):
+            await bus.set_rungraph(graph)
 
     async def test_intra_state_edge_initial_sync(self) -> None:
         harness = ServiceBusHarness()

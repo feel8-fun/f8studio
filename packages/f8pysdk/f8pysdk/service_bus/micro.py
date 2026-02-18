@@ -52,8 +52,8 @@ class _ServiceBusMicroEndpoints:
             return
         try:
             await self._micro.stop()
-        except Exception:
-            pass
+        except Exception as exc:
+            log.error("failed to stop micro service service_id=%s", self._bus.service_id, exc_info=exc)
         self._micro = None
 
     def _parse_envelope(self, data: bytes) -> tuple[str, dict[str, Any], dict[str, Any], dict[str, Any]]:
@@ -61,7 +61,7 @@ class _ServiceBusMicroEndpoints:
         if data:
             try:
                 req = json.loads(data.decode("utf-8"))
-            except Exception:
+            except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
                 req = {}
         if not isinstance(req, dict):
             req = {}
@@ -113,14 +113,8 @@ class _ServiceBusMicroEndpoints:
 
     async def _terminate(self, req: Any) -> None:
         req_id, _raw, _args, meta = self._parse_envelope(req.data)
-        try:
-            log.info("terminate requested serviceId=%s meta=%s", self._bus.service_id, dict(meta or {}))
-        except Exception:
-            pass
-        try:
-            self._bus._terminate_event.set()
-        except Exception:
-            pass
+        log.info("terminate requested serviceId=%s meta=%s", self._bus.service_id, dict(meta or {}))
+        self._bus._terminate_event.set()
         await self._respond(req, req_id=req_id, ok=True, result={"terminating": True})
 
     async def _cmd(self, req: Any) -> None:
@@ -164,7 +158,7 @@ class _ServiceBusMicroEndpoints:
 
         try:
             node_id_s = ensure_token(node_id_s, label="node_id")
-        except Exception:
+        except ValueError:
             await self._respond(
                 req, req_id=req_id, ok=False, error={"code": "INVALID_ARGS", "message": "invalid nodeId"}
             )

@@ -92,6 +92,8 @@ class RemoteStateWatcher:
         )
         self._started = False
         self._watches: dict[tuple[str, str], Any] = {}  # (bucket, key_pattern) -> (watcher, task)
+        self._targets: dict[tuple[str, str], WatchTarget] = {}
+        self._field_filters: dict[tuple[str, str], frozenset[str]] = {}
         # Dedupe applied updates per (serviceId,nodeId,field).
         #
         # Important: do not treat `ts_ms` as a total order for UI updates. Many
@@ -100,6 +102,17 @@ class RemoteStateWatcher:
         # representing the latest KV write. The UI should reflect the KV's
         # current value in that case.
         self._last_by_key: dict[tuple[str, str, str], tuple[int, Any]] = {}  # -> (ts_ms, last_value)
+        self._callback_error_once: set[tuple[str, str, str, str]] = set()
+
+    @staticmethod
+    async def _stop_watch_handle(watch: Any) -> None:
+        watcher, task = watch
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        await watcher.stop()
 
     async def start(self) -> None:
         if self._started:
@@ -110,19 +123,14 @@ class RemoteStateWatcher:
     async def stop(self) -> None:
         for (_bucket, _pattern), watch in list(self._watches.items()):
             try:
-                watcher, task = watch
-                try:
-                    task.cancel()
-                except (AttributeError, RuntimeError, TypeError):
-                    pass
-                try:
-                    await watcher.stop()
-                except (AttributeError, OSError, RuntimeError, TypeError):
-                    pass
-            except (TypeError, ValueError):
-                pass
+                await self._stop_watch_handle(watch)
+            except (AttributeError, OSError, RuntimeError, TypeError, ValueError):
+                logger.exception("Failed to stop remote state watch")
         self._watches.clear()
+        self._targets.clear()
+        self._field_filters.clear()
         self._last_by_key.clear()
+        self._callback_error_once.clear()
         self._started = False
         try:
             await self._tr.close()
@@ -146,32 +154,43 @@ class RemoteStateWatcher:
             pattern = f"nodes.{nid}.state.>"
             want_patterns[(bucket, pattern)] = WatchTarget(service_id=sid, node_id=nid, fields=tuple(t.fields or ()))
 
+        changed_patterns: set[tuple[str, str]] = set()
+        for key, target in want_patterns.items():
+            prev = self._targets.get(key)
+            if prev is None or tuple(prev.fields) != tuple(target.fields):
+                changed_patterns.add(key)
+
         # Stop watches not needed.
         for k, watch in list(self._watches.items()):
             if k in want_patterns:
                 continue
             try:
-                watcher, task = watch
-                try:
-                    task.cancel()
-                except (AttributeError, RuntimeError, TypeError):
-                    pass
-                try:
-                    await watcher.stop()
-                except (AttributeError, OSError, RuntimeError, TypeError):
-                    pass
-            except (TypeError, ValueError):
-                pass
+                await self._stop_watch_handle(watch)
+            except (AttributeError, OSError, RuntimeError, TypeError, ValueError):
+                logger.exception("Failed to stop remote state watch bucket=%s pattern=%s", k[0], k[1])
             self._watches.pop(k, None)
+            self._targets.pop(k, None)
 
-        # Start new watches + initial sync for all desired patterns (even existing ones).
+        self._targets = dict(want_patterns)
+        self._field_filters = {
+            (t.service_id, t.node_id): frozenset(str(f).strip() for f in t.fields if str(f).strip())
+            for t in want_patterns.values()
+        }
+
+        # Start new watches + initial sync for new/changed targets.
         for (bucket, pattern), t in want_patterns.items():
             if (bucket, pattern) not in self._watches:
                 async def _cb(key: str, val: bytes, *, _sid: str = t.service_id) -> None:
                     await self._on_kv(_sid, key, val)
 
-                self._watches[(bucket, pattern)] = await self._tr.kv_watch_in_bucket(bucket, pattern, cb=_cb)
+                try:
+                    self._watches[(bucket, pattern)] = await self._tr.kv_watch_in_bucket(bucket, pattern, cb=_cb)
+                except (AttributeError, OSError, RuntimeError, TypeError, ValueError):
+                    logger.exception("Failed to start remote state watch bucket=%s pattern=%s", bucket, pattern)
+                    continue
 
+            if (bucket, pattern) not in changed_patterns:
+                continue
             # Initial sync per declared field (best-effort).
             for field in list(t.fields or ()):
                 f = str(field or "").strip()
@@ -181,7 +200,11 @@ class RemoteStateWatcher:
                     key = kv_key_node_state(node_id=t.node_id, field=f)
                 except (AttributeError, TypeError, ValueError):
                     continue
-                raw = await self._tr.kv_get_in_bucket(bucket, key)
+                try:
+                    raw = await self._tr.kv_get_in_bucket(bucket, key)
+                except (AttributeError, OSError, RuntimeError, TypeError, ValueError):
+                    logger.exception("Failed to fetch initial remote state bucket=%s key=%s", bucket, key)
+                    continue
                 if not raw:
                     continue
                 await self._on_kv(t.service_id, key, raw)
@@ -191,6 +214,9 @@ class RemoteStateWatcher:
         if not parsed:
             return
         node_id, field = parsed
+        allowed_fields = self._field_filters.get((str(service_id), str(node_id)))
+        if allowed_fields is not None and allowed_fields and str(field) not in allowed_fields:
+            return
         try:
             payload = json.loads(value.decode("utf-8")) if value else {}
         except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
@@ -221,11 +247,13 @@ class RemoteStateWatcher:
             if asyncio.iscoroutine(r):
                 await r
         except Exception as exc:
-            logger.exception(
-                "Remote state callback failed service_id=%s node_id=%s field=%s",
-                service_id,
-                node_id,
-                field,
-                exc_info=exc,
-            )
-            return
+            err_key = (str(service_id), str(node_id), str(field), type(exc).__name__)
+            if err_key not in self._callback_error_once:
+                self._callback_error_once.add(err_key)
+                logger.exception(
+                    "Remote state callback failed service_id=%s node_id=%s field=%s",
+                    service_id,
+                    node_id,
+                    field,
+                    exc_info=exc,
+                )

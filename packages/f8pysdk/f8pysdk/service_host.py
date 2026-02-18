@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -8,6 +9,10 @@ from .json_unwrap import unwrap_json_value
 from .runtime_node import OperatorNode, RuntimeNode
 from .runtime_node_registry import RuntimeNodeRegistry
 from .service_bus.bus import ServiceBus
+
+
+log = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class ServiceHostConfig:
@@ -58,42 +63,36 @@ class ServiceHost:
         node_id = str(self._bus.service_id).strip()
         try:
             node = self._registry.create_service_node(service_class=service_class, node_id=node_id, initial_state={})
-        except Exception:
-            node = None
+        except Exception as exc:
+            raise RuntimeError(f"failed to create service node service_class={service_class} node_id={node_id}") from exc
         if node is None:
-            return
+            raise RuntimeError(f"service node factory returned None service_class={service_class} node_id={node_id}")
         self._service_node = node
         try:
             self._bus.register_node(node)
-        except Exception:
+        except Exception as exc:
             self._service_node = None
-            return
+            raise RuntimeError(f"failed to register service node node_id={node_id}") from exc
 
     async def apply_rungraph(self, graph: F8RuntimeGraph) -> None:
         """
         Register/unregister local runtime nodes based on the latest rungraph snapshot.
         """
         if self._service_node is None:
-            try:
-                await self.start()
-            except Exception:
-                return
+            await self.start()
         service_class = str(self._config.service_class or "").strip()
 
         want_operator_nodes: list[F8RuntimeNode] = []
         service_snapshot: F8RuntimeNode | None = None
         for n in graph.nodes:
-            try:
-                if service_class and str(n.serviceClass) != service_class:
-                    continue
-                if n.operatorClass is None:
-                    # Service/container node snapshot (state only).
-                    if n.nodeId == str(self._bus.service_id):
-                        service_snapshot = n
-                    continue
-                want_operator_nodes.append(n)
-            except Exception:
+            if service_class and str(n.serviceClass) != service_class:
                 continue
+            if n.operatorClass is None:
+                # Service/container node snapshot (state only).
+                if n.nodeId == str(self._bus.service_id):
+                    service_snapshot = n
+                continue
+            want_operator_nodes.append(n)
 
         want_ids = {str(n.nodeId) for n in want_operator_nodes}
 
@@ -102,8 +101,8 @@ class ServiceHost:
                 continue
             try:
                 self._bus.unregister_node(node_id)
-            except Exception:
-                pass
+            except Exception as exc:
+                log.error("failed to unregister runtime node node_id=%s", node_id, exc_info=exc)
             self._operator_nodes.pop(node_id, None)
 
         for n in want_operator_nodes:
@@ -112,41 +111,38 @@ class ServiceHost:
                 # If the node definition changed (ports/state), re-create the runtime node so
                 # the local instance matches the rungraph snapshot. Otherwise, edited ports
                 # may show in UI but not work at runtime.
-                try:
-                    existing = self._operator_nodes.get(node_id)
-                    if existing is not None and self._needs_recreate(existing, n):
-                        try:
-                            self._bus.unregister_node(node_id)
-                        except Exception:
-                            pass
-                        self._operator_nodes.pop(node_id, None)
-                    else:
-                        continue
-                except Exception:
+                existing = self._operator_nodes.get(node_id)
+                if existing is not None and self._needs_recreate(existing, n):
+                    try:
+                        self._bus.unregister_node(node_id)
+                    except Exception as exc:
+                        log.error("failed to unregister recreated node node_id=%s", node_id, exc_info=exc)
+                    self._operator_nodes.pop(node_id, None)
+                else:
                     continue
             initial_state = self._node_initial_state(n)
             try:
                 node = self._registry.create(node_id=node_id, node=n, initial_state=initial_state)
-            except Exception:
+            except Exception as exc:
+                log.error("failed to create runtime node node_id=%s", node_id, exc_info=exc)
                 node = None
             if node is None:
                 continue
             if not isinstance(node, OperatorNode):
+                log.error("runtime node has invalid type node_id=%s type=%s", node_id, type(node).__name__)
                 continue
             # Make runtime node metadata match the rungraph snapshot explicitly.
             # This keeps change detection deterministic and avoids "ghost fields".
-            try:
-                node.data_in_ports = [str(p.name) for p in (n.dataInPorts or [])]
-                node.data_out_ports = [str(p.name) for p in (n.dataOutPorts or [])]
-                node.state_fields = [str(s.name) for s in (n.stateFields or [])]
-                node.exec_in_ports = [str(x) for x in (n.execInPorts or [])]
-                node.exec_out_ports = [str(x) for x in (n.execOutPorts or [])]
-            except Exception:
-                pass
+            node.data_in_ports = [str(p.name) for p in (n.dataInPorts or [])]
+            node.data_out_ports = [str(p.name) for p in (n.dataOutPorts or [])]
+            node.state_fields = [str(s.name) for s in (n.stateFields or [])]
+            node.exec_in_ports = [str(x) for x in (n.execInPorts or [])]
+            node.exec_out_ports = [str(x) for x in (n.execOutPorts or [])]
             self._operator_nodes[node_id] = node
             try:
                 self._bus.register_node(node)
-            except Exception:
+            except Exception as exc:
+                log.error("failed to register runtime node node_id=%s", node_id, exc_info=exc)
                 self._operator_nodes.pop(node_id, None)
                 continue
 

@@ -24,7 +24,10 @@ from f8pysdk.builtin_state_fields import (
     operator_state_fields_with_builtins,
     service_state_fields_with_builtins,
 )
-from f8pysdk.rungraph_validation import validate_state_edges_or_raise
+from f8pysdk.rungraph_validation import (
+    validate_state_edge_targets_writable_or_raise,
+    validate_state_edges_or_raise,
+)
 from f8pysdk.schema_helpers import boolean_schema
 from f8pysdk.schema_helpers import integer_schema
 from f8pysdk.schema_helpers import any_schema
@@ -491,8 +494,9 @@ def compile_global_runtime_graph(
             compile_warnings.extend(warnings)
         for warning in warnings:
             logger.warning("%s", warning)
-    # Studio-level validation: reject global cyclic state loops early.
+    # Studio-level validation: reject invalid state wiring early.
     validate_state_edges_or_raise(graph, forbid_cycles=True, forbid_multi_upstream=True)
+    validate_state_edge_targets_writable_or_raise(graph)
     return graph
 
 

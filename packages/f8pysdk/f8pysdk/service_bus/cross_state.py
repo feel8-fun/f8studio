@@ -12,12 +12,51 @@ from ..nats_naming import (
     parse_kv_key_node_state,
 )
 from .payload import coerce_inbound_ts_ms, extract_ts_field
+from .error_utils import log_error_once
 from .state_publish import coerce_state_value, publish_state, validate_state_update
-from .state_write import StateWriteContext, StateWriteOrigin, StateWriteSource
+from .state_write import StateWriteContext, StateWriteError, StateWriteOrigin, StateWriteSource
 from ..time_utils import now_ms
 
 if TYPE_CHECKING:
     from .bus import ServiceBus
+
+
+async def _stop_watch_handle(bus: "ServiceBus", watch: Any, *, key: tuple[str, str]) -> None:
+    watcher: Any = None
+    task: asyncio.Task[Any] | None = None
+    try:
+        watcher, task = watch
+    except (TypeError, ValueError) as exc:
+        log_error_once(
+            bus,
+            key=f"cross_state_watch_unpack_failed:{key[0]}:{key[1]}",
+            message=f"invalid cross-state watch handle for {key}",
+            exc=exc,
+        )
+        return
+    if task is not None:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            log_error_once(
+                bus,
+                key=f"cross_state_watch_task_stop_failed:{key[0]}:{key[1]}",
+                message=f"cross-state watch task stop failed for {key}",
+                exc=exc,
+            )
+    if watcher is not None:
+        try:
+            await watcher.stop()
+        except Exception as exc:
+            log_error_once(
+                bus,
+                key=f"cross_state_watch_stop_failed:{key[0]}:{key[1]}",
+                message=f"cross-state watcher stop failed for {key}",
+                exc=exc,
+            )
 
 
 def update_cross_state_bindings(bus: "ServiceBus", graph: F8RuntimeGraph) -> None:
@@ -38,7 +77,7 @@ def update_cross_state_bindings(bus: "ServiceBus", graph: F8RuntimeGraph) -> Non
         peer = str(edge.fromServiceId or "").strip()
         try:
             peer = ensure_token(peer, label="fromServiceId")
-        except Exception:
+        except ValueError:
             continue
 
         if not edge.toOperatorId or not edge.fromOperatorId:
@@ -64,18 +103,7 @@ async def stop_unused_cross_state_watches(bus: "ServiceBus") -> None:
     for k, watch in list(bus._remote_state_watches.items()):
         if k in want:
             continue
-        try:
-            watcher, task = watch
-            try:
-                task.cancel()
-            except Exception:
-                pass
-            try:
-                await watcher.stop()
-            except Exception:
-                pass
-        except Exception:
-            pass
+        await _stop_watch_handle(bus, watch, key=k)
         bus._remote_state_watches.pop(k, None)
 
 
@@ -87,6 +115,7 @@ async def sync_cross_state_watches(bus: "ServiceBus") -> None:
     # can skip cross-state target fields.
     want = bus._cross_state_in_by_key
 
+    initial_sync_jobs: list[tuple[str, str, str]] = []
     # Start missing watches and perform best-effort initial sync for every watched key.
     for peer, remote_key in want.keys():
         bucket = kv_bucket_for_service(peer)
@@ -96,21 +125,56 @@ async def sync_cross_state_watches(bus: "ServiceBus") -> None:
             async def _cb(key: str, val: bytes, *, _peer: str = peer) -> None:
                 await on_remote_state_kv(bus, _peer, key, val, is_initial=False)
 
-            bus._remote_state_watches[(peer, remote_key)] = await bus._transport.kv_watch_in_bucket(
-                bucket, remote_key, cb=_cb
-            )
+            try:
+                bus._remote_state_watches[(peer, remote_key)] = await bus._transport.kv_watch_in_bucket(
+                    bucket, remote_key, cb=_cb
+                )
+            except Exception as exc:
+                log_error_once(
+                    bus,
+                    key=f"cross_state_watch_start_failed:{peer}:{remote_key}",
+                    message=f"failed to start cross-state watch peer={peer} key={remote_key}",
+                    exc=exc,
+                )
+                continue
 
-        # Initial sync: fetch current value once so new targets receive the current value
-        # even if the upstream doesn't change after deploy.
-        try:
-            raw = await bus._transport.kv_get_in_bucket(bucket, remote_key)
+        initial_sync_jobs.append((peer, bucket, remote_key))
+
+    if not initial_sync_jobs:
+        return
+
+    concurrency = max(1, int(bus._state_sync_concurrency))
+    sem = asyncio.Semaphore(concurrency)
+    tasks: list[asyncio.Task[None]] = []
+
+    async def _sync_one(peer: str, bucket: str, remote_key: str) -> None:
+        async with sem:
+            # Initial sync: fetch current value once so new targets receive the current value
+            # even if the upstream doesn't change after deploy.
+            try:
+                raw = await bus._transport.kv_get_in_bucket(bucket, remote_key)
+            except Exception as exc:
+                log_error_once(
+                    bus,
+                    key=f"cross_state_initial_get_failed:{peer}:{remote_key}",
+                    message=f"cross-state initial sync read failed peer={peer} key={remote_key}",
+                    exc=exc,
+                )
+                return
             if raw:
                 # Phase 1 (strong sync): apply remote values without triggering
                 # intra-service fanout yet. After all cross-state targets are
                 # materialized, we run a single ordered intra init sync.
                 await on_remote_state_kv(bus, peer, remote_key, raw, is_initial=True, no_fanout=True)
-        except Exception:
-            pass
+
+    for peer, bucket, remote_key in initial_sync_jobs:
+        task = asyncio.create_task(
+            _sync_one(peer, bucket, remote_key),
+            name=f"service_bus:cross_state_sync:{peer}:{remote_key}",
+        )
+        tasks.append(task)
+
+    await asyncio.gather(*tasks)
 
 
 async def on_remote_state_kv(
@@ -122,17 +186,19 @@ async def on_remote_state_kv(
     is_initial: bool,
     no_fanout: bool = False,
 ) -> None:
+    peer_service_id_s = str(peer_service_id)
+    key_s = str(key)
     parsed = parse_kv_key_node_state(key)
     if not parsed:
         return
     remote_node, remote_field = parsed
     remote_key = kv_key_node_state(node_id=remote_node, field=remote_field)
-    targets = bus._cross_state_in_by_key.get((peer_service_id, remote_key)) or []
+    targets = bus._cross_state_in_by_key.get((peer_service_id_s, remote_key)) or []
     if not targets:
         return
     try:
         payload = json.loads(value.decode("utf-8")) if value else {}
-    except Exception:
+    except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
         payload = {}
     if isinstance(payload, dict):
         v = payload.get("value")
@@ -140,6 +206,7 @@ async def on_remote_state_kv(
     else:
         v = payload
         ts = now_ms()
+    ts_i = int(ts)
 
     if bus._debug_state:
         try:
@@ -150,19 +217,22 @@ async def on_remote_state_kv(
                 "state_debug[%s] cross_state_in peer=%s key=%s ts=%s initial=%s value=%s targets=%s"
                 % (
                     bus.service_id,
-                    str(peer_service_id),
-                    str(key),
-                    str(ts),
+                    peer_service_id_s,
+                    key_s,
+                    str(ts_i),
                     "1" if bool(is_initial) else "0",
                     v_s,
                     str(len(targets)),
                 )
             )
-        except Exception:
+        except (TypeError, ValueError):
             pass
 
     for local_node_id, local_field, _edge in targets:
-        access = bus._state_access_by_node_field.get((str(local_node_id), str(local_field)))
+        local_node_id_s = str(local_node_id)
+        local_field_s = str(local_field)
+        local_key = (local_node_id_s, local_field_s)
+        access = bus._state_access_by_node_field.get(local_key)
         if access == F8StateAccess.ro:
             continue
         try:
@@ -170,32 +240,26 @@ async def on_remote_state_kv(
 
             # Cross-service state edges are directional bindings: downstream follows
             # upstream. We only guard against out-of-order remote updates.
-            try:
-                last_ts = bus._cross_state_last_ts.get((str(local_node_id), str(local_field)))
-                if not is_initial and last_ts is not None and int(ts) < int(last_ts):
-                    if bus._debug_state:
-                        try:
-                            print(
-                                "state_debug[%s] cross_state_skip_old_remote node=%s field=%s ts_last=%s ts_remote=%s peer=%s key=%s"
-                                % (
-                                    bus.service_id,
-                                    str(local_node_id),
-                                    str(local_field),
-                                    str(last_ts),
-                                    str(ts),
-                                    str(peer_service_id),
-                                    str(key),
-                                )
-                            )
-                        except Exception:
-                            pass
-                    continue
-            except Exception:
-                pass
+            last_ts = bus._cross_state_last_ts.get(local_key)
+            if not is_initial and last_ts is not None and ts_i < int(last_ts):
+                if bus._debug_state:
+                    print(
+                        "state_debug[%s] cross_state_skip_old_remote node=%s field=%s ts_last=%s ts_remote=%s peer=%s key=%s"
+                        % (
+                            bus.service_id,
+                            local_node_id_s,
+                            local_field_s,
+                            str(last_ts),
+                            str(ts_i),
+                            peer_service_id_s,
+                            key_s,
+                        )
+                    )
+                continue
 
             meta_out = {
-                "peerServiceId": str(peer_service_id),
-                "remoteKey": str(key),
+                "peerServiceId": peer_service_id_s,
+                "remoteKey": key_s,
                 "_noStateFanout": True if bool(no_fanout) else False,
                 **{k: vv for k, vv in dict(meta_in).items() if k not in ("value", "actor", "ts", "source")},
             }
@@ -203,10 +267,10 @@ async def on_remote_state_kv(
                 meta_out.pop("_noStateFanout", None)
             v2 = await validate_state_update(
                 bus,
-                node_id=str(local_node_id),
-                field=str(local_field),
+                node_id=local_node_id_s,
+                field=local_field_s,
                 value=v,
-                ts_ms=int(ts),
+                ts_ms=ts_i,
                 meta={"source": StateWriteSource.state_edge_cross.value, **meta_out},
                 ctx=StateWriteContext(origin=StateWriteOrigin.external, source=StateWriteSource.state_edge_cross),
             )
@@ -215,76 +279,75 @@ async def on_remote_state_kv(
             # Skip duplicates (common when KV watch emits the current value and we
             # also perform an explicit initial `kv_get`).
             try:
-                cached = bus._state_cache.get((str(local_node_id), str(local_field)))
-                if cached is not None and int(ts) <= int(cached[1]) and cached[0] == v2:
+                cached = bus._state_cache.get(local_key)
+                if cached is not None and ts_i <= int(cached[1]) and cached[0] == v2:
                     if bus._debug_state:
-                        try:
-                            print(
-                                "state_debug[%s] cross_state_skip_duplicate to=%s.%s ts=%s peer=%s remote_key=%s"
-                                % (
-                                    bus.service_id,
-                                    str(local_node_id),
-                                    str(local_field),
-                                    str(ts),
-                                    str(peer_service_id),
-                                    str(key),
-                                )
+                        print(
+                            "state_debug[%s] cross_state_skip_duplicate to=%s.%s ts=%s peer=%s remote_key=%s"
+                            % (
+                                bus.service_id,
+                                local_node_id_s,
+                                local_field_s,
+                                str(ts_i),
+                                peer_service_id_s,
+                                key_s,
                             )
-                        except Exception:
-                            pass
+                        )
                     continue
-            except Exception:
+            except (TypeError, ValueError):
                 pass
 
             if access is None:
                 if bus._debug_state:
-                    try:
-                        print(
-                            "state_debug[%s] cross_state_skip_unknown_field to=%s.%s peer=%s remote_key=%s"
-                            % (
-                                bus.service_id,
-                                str(local_node_id),
-                                str(local_field),
-                                str(peer_service_id),
-                                str(key),
-                            )
-                        )
-                    except Exception:
-                        pass
-                continue
-            else:
-                await publish_state(
-                    bus,
-                    str(local_node_id),
-                    str(local_field),
-                    v2,
-                    ts_ms=ts,
-                    origin=StateWriteOrigin.external,
-                    source=StateWriteSource.state_edge_cross,
-                    meta=meta_out,
-                )
-            if bus._debug_state:
-                try:
-                    v2s = repr(v2)
-                    if len(v2s) > 160:
-                        v2s = v2s[:157] + "..."
                     print(
-                        "state_debug[%s] cross_state_apply to=%s.%s ts=%s peer=%s remote_key=%s value=%s"
+                        "state_debug[%s] cross_state_skip_unknown_field to=%s.%s peer=%s remote_key=%s"
                         % (
                             bus.service_id,
-                            str(local_node_id),
-                            str(local_field),
-                            str(ts),
-                            str(peer_service_id),
-                            str(key),
-                            v2s,
+                            local_node_id_s,
+                            local_field_s,
+                            peer_service_id_s,
+                            key_s,
                         )
                     )
-                except Exception:
-                    pass
-            try:
-                bus._cross_state_last_ts[(str(local_node_id), str(local_field))] = int(ts)
-            except Exception:
-                pass
-        except Exception:
-            pass
+                continue
+            await publish_state(
+                bus,
+                local_node_id_s,
+                local_field_s,
+                v2,
+                ts_ms=ts_i,
+                origin=StateWriteOrigin.external,
+                source=StateWriteSource.state_edge_cross,
+                meta=meta_out,
+            )
+            if bus._debug_state:
+                v2s = repr(v2)
+                if len(v2s) > 160:
+                    v2s = v2s[:157] + "..."
+                print(
+                    "state_debug[%s] cross_state_apply to=%s.%s ts=%s peer=%s remote_key=%s value=%s"
+                    % (
+                        bus.service_id,
+                        local_node_id_s,
+                        local_field_s,
+                        str(ts_i),
+                        peer_service_id_s,
+                        key_s,
+                        v2s,
+                    )
+                )
+            bus._cross_state_last_ts[local_key] = ts_i
+        except StateWriteError as exc:
+            log_error_once(
+                bus,
+                key=f"cross_state_rejected:{local_node_id_s}:{local_field_s}",
+                message=f"cross-state update rejected for {local_node_id_s}.{local_field_s}",
+                exc=exc,
+            )
+        except Exception as exc:
+            log_error_once(
+                bus,
+                key=f"cross_state_apply_failed:{local_node_id_s}:{local_field_s}",
+                message=f"cross-state apply failed for {local_node_id_s}.{local_field_s}",
+                exc=exc,
+            )

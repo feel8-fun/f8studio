@@ -2,16 +2,22 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import dataclass
+import logging
+from collections import deque
+from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, TYPE_CHECKING
 
 from ..capabilities import ComputableNode, DataReceivableNode
 from ..generated import F8Edge, F8EdgeStrategyEnum
 from ..nats_naming import data_subject, ensure_token
+from .error_utils import log_error_once
 from ..time_utils import now_ms
 
 if TYPE_CHECKING:
     from .bus import ServiceBus
+
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -19,7 +25,7 @@ class _InputBuffer:
     to_node: str
     to_port: str
     edge: F8Edge | None
-    queue: list[tuple[Any, int]] = None  # type: ignore[assignment]
+    queue: deque[tuple[Any, int]] = field(default_factory=deque)
     last_seen_value: Any = None
     last_seen_ts: int | None = None
     last_seen_ctx_id: str | int | None = None
@@ -27,15 +33,33 @@ class _InputBuffer:
     last_pulled_ts: int | None = None
     last_pulled_ctx_id: str | int | None = None
 
-    def __post_init__(self) -> None:
-        if self.queue is None:
-            self.queue = []
+
+def _ensure_input_buffer(
+    bus: "ServiceBus",
+    *,
+    to_node: str,
+    to_port: str,
+    edge: F8Edge | None,
+) -> _InputBuffer:
+    key = (str(to_node), str(to_port))
+    buf = bus._data_inputs.get(key)
+    if buf is None:
+        buf = _InputBuffer(to_node=str(to_node), to_port=str(to_port), edge=edge)
+        bus._data_inputs[key] = buf
+    if edge is not None:
+        buf.edge = edge
+    return buf
 
 
 def precreate_input_buffers_for_cross_in(bus: "ServiceBus", cross_in: dict[str, list[tuple[str, str, F8Edge]]]) -> None:
     for _subject, targets in cross_in.items():
         for to_node, to_port, edge in targets:
-            bus._data_inputs[(str(to_node), str(to_port))] = _InputBuffer(to_node=str(to_node), to_port=str(to_port), edge=edge)
+            _ensure_input_buffer(
+                bus,
+                to_node=str(to_node),
+                to_port=str(to_port),
+                edge=edge,
+            )
 
 
 async def emit_data(bus: "ServiceBus", node_id: str, port: str, value: Any, *, ts_ms: int | None = None) -> None:
@@ -73,10 +97,7 @@ async def pull_data(bus: "ServiceBus", node_id: str, port: str, *, ctx_id: str |
         return None
     node_id = ensure_token(node_id, label="node_id")
     port = ensure_token(port, label="port_id")
-    buf = bus._data_inputs.get((node_id, port))
-    if buf is None:
-        buf = _InputBuffer(to_node=node_id, to_port=port, edge=None)
-        bus._data_inputs[(node_id, port)] = buf
+    buf = _ensure_input_buffer(bus, to_node=node_id, to_port=port, edge=None)
     edge = buf.edge
     _now_ms = now_ms()
 
@@ -94,7 +115,7 @@ async def pull_data(bus: "ServiceBus", node_id: str, port: str, *, ctx_id: str |
                 await ensure_input_available(bus, node_id=node_id, port=port, ctx_id=ctx_id)
             if not buf.queue:
                 return None
-        v, ts = buf.queue.pop(0)
+        v, ts = buf.queue.popleft()
         buf.last_pulled_value = v
         buf.last_pulled_ts = int(ts) if ts is not None else _now_ms
         buf.last_pulled_ctx_id = ctx_id
@@ -103,7 +124,7 @@ async def pull_data(bus: "ServiceBus", node_id: str, port: str, *, ctx_id: str |
     # latest
     if not buf.queue and (ctx_id is None or buf.last_seen_ctx_id != ctx_id):
         await ensure_input_available(bus, node_id=node_id, port=port, ctx_id=ctx_id)
-    v = buf.queue[-1][0] if buf.queue else buf.last_seen_value
+    v = buf.last_seen_value
     buf.queue.clear()
     if v is not None:
         buf.last_pulled_value = v
@@ -144,15 +165,23 @@ async def compute_and_buffer_for_input(
     stack.add(key)
     try:
         for from_node, from_port, edge in list(bus._intra_data_in.get(key) or []):
-            src = bus._nodes.get(str(from_node))
+            from_node_s = str(from_node)
+            from_port_s = str(from_port)
+            src = bus._nodes.get(from_node_s)
             if src is None:
                 continue
             try:
                 if isinstance(src, ComputableNode):
-                    v = await src.compute_output(str(from_port), ctx_id=ctx_id)
+                    v = await src.compute_output(from_port_s, ctx_id=ctx_id)
                 else:
                     v = None
-            except Exception:
+            except Exception as exc:
+                log_error_once(
+                    bus,
+                    key=f"compute_output_failed:{from_node_s}:{from_port_s}",
+                    message=f"compute_output failed for {from_node_s}.{from_port_s}",
+                    exc=exc,
+                )
                 continue
             if v is None:
                 continue
@@ -160,8 +189,14 @@ async def compute_and_buffer_for_input(
             # route it through `emit_data` so intra edges get buffered and any
             # cross-service subscribers can also receive the computed value.
             try:
-                await emit_data(bus, str(from_node), str(from_port), v, ts_ms=now_ms())
-            except Exception:
+                await emit_data(bus, from_node_s, from_port_s, v, ts_ms=now_ms())
+            except Exception as exc:
+                log_error_once(
+                    bus,
+                    key=f"emit_data_failed:{from_node_s}:{from_port_s}",
+                    message=f"emit_data failed for {from_node_s}.{from_port_s}; using local fallback buffer",
+                    exc=exc,
+                )
                 # Fallback: still satisfy the local pull.
                 buffer_input(
                     bus,
@@ -191,7 +226,7 @@ async def on_cross_data_msg(bus: "ServiceBus", subject: str, payload: bytes) -> 
             ts = msg.get("ts")
         else:
             value = msg
-    except Exception:
+    except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
         value = payload
 
     ts_i = int(ts) if ts is not None else now_ms()
@@ -200,7 +235,13 @@ async def on_cross_data_msg(bus: "ServiceBus", subject: str, payload: bytes) -> 
             if is_stale(edge, ts_i):
                 continue
             push_input(bus, to_node, to_port, value, ts_ms=ts_i, edge=edge)
-        except Exception:
+        except Exception as exc:
+            log_error_once(
+                bus,
+                key=f"cross_data_push_failed:{to_node}:{to_port}",
+                message=f"cross-data delivery failed for {to_node}.{to_port}",
+                exc=exc,
+            )
             continue
 
 
@@ -215,7 +256,7 @@ def is_stale(edge: F8Edge | None, ts_ms: int) -> bool:
         if t <= 0:
             return False
         return (now_ms() - int(ts_ms)) > t
-    except Exception:
+    except (AttributeError, TypeError, ValueError):
         return False
 
 
@@ -241,8 +282,13 @@ def push_input(bus: "ServiceBus", to_node: str, to_port: str, value: Any, *, ts_
                         node.on_data(str(to_port), value, ts_ms=int(ts_ms)),  # type: ignore[misc]
                         name=f"service_bus:on_data:{to_node}:{to_port}",
                     )
-            except Exception:
-                pass
+            except Exception as exc:
+                log_error_once(
+                    bus,
+                    key=f"push_on_data_schedule_failed:{to_node}:{to_port}",
+                    message=f"failed to schedule on_data for {to_node}.{to_port}",
+                    exc=exc,
+                )
 
 
 def buffer_input(
@@ -257,26 +303,22 @@ def buffer_input(
 ) -> None:
     to_node = str(to_node)
     to_port = str(to_port)
-    buf = bus._data_inputs.get((to_node, to_port))
-    if buf is None:
-        buf = _InputBuffer(to_node=to_node, to_port=to_port, edge=edge)
-        bus._data_inputs[(to_node, to_port)] = buf
-    if edge is not None:
-        buf.edge = edge
+    buf = _ensure_input_buffer(bus, to_node=to_node, to_port=to_port, edge=edge)
 
     buf.last_seen_value = value
     buf.last_seen_ts = int(ts_ms)
     buf.last_seen_ctx_id = ctx_id
 
     buf.queue.append((value, int(ts_ms)))
-    max_n = 256
+    max_n = int(bus._data_input_default_queue_size)
     if buf.edge is not None:
         try:
             max_n = max(1, int(buf.edge.queueSize))
-        except Exception:
-            max_n = 256
+        except (AttributeError, TypeError, ValueError):
+            max_n = int(bus._data_input_default_queue_size)
     if len(buf.queue) > max_n:
-        del buf.queue[0 : len(buf.queue) - max_n]
+        while len(buf.queue) > max_n:
+            buf.queue.popleft()
 
     return
 
@@ -290,8 +332,8 @@ async def sync_subscriptions(bus: "ServiceBus", want_subjects: set[str]) -> None
             continue
         try:
             await sub.unsubscribe()
-        except Exception:
-            pass
+        except Exception as exc:
+            log.error("failed to unsubscribe routed subject=%s", subject, exc_info=exc)
 
     for subject in want_subjects:
         if subject in bus._data_route_subs:

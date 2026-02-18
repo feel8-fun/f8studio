@@ -55,6 +55,24 @@ class RemoteStateWatcherTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(events), 1)
 
+    async def test_ignores_fields_not_in_watch_target(self) -> None:
+        events: list[tuple[str, str, str, object, int]] = []
+
+        async def _on_state(service_id: str, node_id: str, field: str, value: object, ts_ms: int, meta: dict) -> None:
+            _ = (service_id, node_id, meta)
+            events.append(("svc", "n1", field, value, int(ts_ms)))
+
+        w = RemoteStateWatcher(
+            nats_url="nats://127.0.0.1:4222",
+            studio_service_id="studio",
+            on_state=_on_state,
+        )
+        w._field_filters = {("svc", "n1"): frozenset({"status"})}
+        await w._on_kv("svc", "nodes.n1.state.other", json.dumps({"value": "x", "ts_ms": 1}).encode("utf-8"))
+        await w._on_kv("svc", "nodes.n1.state.status", json.dumps({"value": "ok", "ts_ms": 2}).encode("utf-8"))
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0][2], "status")
+
 
 if __name__ == "__main__":
     unittest.main()
