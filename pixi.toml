@@ -52,7 +52,6 @@ onnx = { features = ["py313", "sdk", "onnx", "vision"], solve-group = "onnx" }
 [tasks]
 engine = "python -m f8pyengine.main"
 studio = "python -m f8pystudio.main"
-studio_live = "python -m f8pystudio.main --discovery-live"
 detect_tracker = "python -m f8pydetect_tracker.main"
 dl_detector = "python -m f8pydl.main_detector"
 dl_humandetector = "python -m f8pydl.main_humandetector"
