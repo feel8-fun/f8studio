@@ -9,6 +9,7 @@ from NodeGraphQt.constants import Z_VAL_BACKDROP, NodeEnum
 from NodeGraphQt.constants import NodePropWidgetEnum
 from NodeGraphQt.qgraphics.node_abstract import AbstractNodeItem
 from NodeGraphQt.qgraphics.node_backdrop import BackdropSizer
+from NodeGraphQt.qgraphics.node_overlay_disabled import XDisabledItem
 
 from f8pysdk import F8ServiceSpec
 from f8pysdk.schema_helpers import schema_default, schema_type
@@ -136,7 +137,59 @@ class F8StudioContainerNodeItem(AbstractNodeItem):
         self._sizer = BackdropSizer(self, 26.0)
         self._sizer.set_pos(*self._min_size)
         self._child_views: list[AbstractNodeItem] = []
+        self._x_item = XDisabledItem(self, "DISABLED")
+        self._x_item.setVisible(False)
+        self._forced_child_prev_disabled: dict[str, bool] = {}
+        self._forced_child_ids: set[str] = set()
         self._svc_toolbar_proxy: QtWidgets.QGraphicsProxyWidget | None = None
+
+    def _child_state_key(self, view: Any) -> str | None:
+        try:
+            node_id = str(view.id or "").strip()
+        except (AttributeError, RuntimeError, TypeError):
+            return None
+        if not node_id:
+            return None
+        return node_id
+
+    def _force_child_disabled_if_needed(self, view: Any) -> None:
+        key = self._child_state_key(view)
+        if key is None:
+            return
+        if key in self._forced_child_prev_disabled:
+            return
+        try:
+            prev_disabled = bool(view.disabled)
+        except (AttributeError, RuntimeError, TypeError):
+            return
+        self._forced_child_prev_disabled[key] = prev_disabled
+        if prev_disabled:
+            return
+        try:
+            view.disabled = True
+        except (AttributeError, RuntimeError, TypeError):
+            self._forced_child_prev_disabled.pop(key, None)
+            return
+        self._forced_child_ids.add(key)
+
+    def _restore_forced_child_if_needed(self, view: Any) -> None:
+        key = self._child_state_key(view)
+        if key is None:
+            return
+        if key not in self._forced_child_ids:
+            self._forced_child_prev_disabled.pop(key, None)
+            return
+        prev_disabled = self._forced_child_prev_disabled.get(key, False)
+        try:
+            view.disabled = bool(prev_disabled)
+        except (AttributeError, RuntimeError, TypeError):
+            return
+        self._forced_child_ids.discard(key)
+        self._forced_child_prev_disabled.pop(key, None)
+
+    def _clear_forced_child_cache(self) -> None:
+        self._forced_child_ids.clear()
+        self._forced_child_prev_disabled.clear()
 
     def post_init(self, viewer=None, pos=None):
         self._ensure_service_toolbar(viewer)
@@ -364,12 +417,30 @@ class F8StudioContainerNodeItem(AbstractNodeItem):
         if view not in self._child_views:
             self._child_views.append(view)
         view._container_item = self
+        try:
+            container_disabled = bool(self.disabled)
+        except (AttributeError, RuntimeError, TypeError):
+            container_disabled = False
+        if container_disabled:
+            self._force_child_disabled_if_needed(view)
 
     def remove_child(self, view: Any) -> None:
+        try:
+            container_disabled = bool(self.disabled)
+        except (AttributeError, RuntimeError, TypeError):
+            container_disabled = False
+        if container_disabled:
+            self._restore_forced_child_if_needed(view)
+
         if view in self._child_views:
             self._child_views.remove(view)
         if view._container_item is self:
             view._container_item = None
+
+        key = self._child_state_key(view)
+        if key is not None:
+            self._forced_child_ids.discard(key)
+            self._forced_child_prev_disabled.pop(key, None)
 
     @property
     def minimum_size(self):
@@ -392,3 +463,18 @@ class F8StudioContainerNodeItem(AbstractNodeItem):
     def height(self, height=0.0):
         AbstractNodeItem.height.fset(self, height)
         self._sizer.set_pos(self._width, self._height)
+
+    @AbstractNodeItem.disabled.setter
+    def disabled(self, state=False):
+        AbstractNodeItem.disabled.fset(self, state)
+        disabled_state = bool(state)
+        self._x_item.setVisible(disabled_state)
+
+        if disabled_state:
+            for child in list(self._child_views):
+                self._force_child_disabled_if_needed(child)
+            return
+
+        for child in list(self._child_views):
+            self._restore_forced_child_if_needed(child)
+        self._clear_forced_child_cache()

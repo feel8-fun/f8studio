@@ -964,6 +964,40 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             for pipe in port.connected_pipes:
                 pipe.reset()
 
+    def _refresh_pipe_visual_state(self) -> None:
+        """
+        Force connected pipes to repaint after disabled state changes.
+        """
+        ports = self.inputs + self.outputs
+        seen_pipe_ids: set[int] = set()
+        for port in ports:
+            try:
+                connected_pipes = list(port.connected_pipes)
+            except Exception:
+                continue
+            for pipe in connected_pipes:
+                pipe_key = id(pipe)
+                if pipe_key in seen_pipe_ids:
+                    continue
+                seen_pipe_ids.add(pipe_key)
+                try:
+                    pipe.update()
+                except Exception:
+                    continue
+
+        scene = self.scene()
+        if scene is not None:
+            try:
+                scene.update()
+            except Exception:
+                pass
+        viewer = self._viewer_safe()
+        if viewer is not None:
+            try:
+                viewer.viewport().update()
+            except Exception:
+                pass
+
     def _calc_size_horizontal(self):
         # width, height from node name text.
         text_w = self._text_item.boundingRect().width()
@@ -1958,6 +1992,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             w.widget().setDisabled(state)
         self._tooltip_disable(state)
         self._x_item.setVisible(state)
+        self._refresh_pipe_visual_state()
 
     @AbstractNodeItem.selected.setter
     def selected(self, selected=False):
