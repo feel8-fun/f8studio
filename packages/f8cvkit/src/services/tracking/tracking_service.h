@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include <nlohmann/json_fwd.hpp>
 
@@ -17,6 +18,17 @@
 #include "f8cppsdk/video_shared_memory_sink.h"
 
 namespace f8::cvkit::tracking {
+
+struct TrackingInitCandidate {
+  cv::Rect bbox;
+  std::optional<double> score;
+};
+
+enum class TrackingInitSelectMode {
+  ClosestCenter,
+  LargestArea,
+  HighestScore,
+};
 
 class TrackingService final : public f8::cppsdk::LifecycleNode,
                               public f8::cppsdk::StatefulNode,
@@ -57,6 +69,7 @@ class TrackingService final : public f8::cppsdk::LifecycleNode,
   void publish_state_if_changed(const std::string& field, const json& value, const std::string& source,
                                 const json& meta);
   void set_shm_name(const std::string& shm_name, const json& meta);
+  void set_init_select(const std::string& mode, const json& meta);
   bool ensure_video_open();
    void apply_init_box_if_any();
    void process_frame_once();
@@ -79,6 +92,8 @@ class TrackingService final : public f8::cppsdk::LifecycleNode,
   std::optional<f8::cppsdk::VideoSharedMemoryHeader> last_header_;
   std::uint64_t last_frame_id_ = 0;
   std::int64_t last_video_open_attempt_ms_ = 0;
+  TrackingInitSelectMode init_select_mode_ = TrackingInitSelectMode::ClosestCenter;
+  std::string init_select_state_ = "closest_center";
 
    // Tracking state.
    std::mutex tracking_mu_;
@@ -86,8 +101,8 @@ class TrackingService final : public f8::cppsdk::LifecycleNode,
    cv::Rect bbox_;
    bool is_tracking_ = false;
 
-  // Init box from template matching.
-  std::optional<cv::Rect> pending_init_box_;
+  // Pending init candidates extracted from upstream payloads.
+  std::vector<TrackingInitCandidate> pending_init_boxes_;
 };
 
 }  // namespace f8::cvkit::tracking
