@@ -126,6 +126,12 @@ def validate_state_edge_targets_writable_or_raise(
 
     If `local_service_id` is provided, only validate edges whose `toServiceId`
     equals that service id.
+
+    Note:
+    - In per-service rungraphs, cross-service inbound edges may be present as
+      half-edges while the upstream node definition is intentionally absent.
+      In that case, source-access validation cannot be performed locally and
+      should be skipped. Global graph validation still checks both ends.
     """
     access_map: dict[tuple[str, str, str], F8StateAccess] = {}
     for n in list(graph.nodes or []):
@@ -157,10 +163,19 @@ def validate_state_edge_targets_writable_or_raise(
             continue
         from_access = access_map.get((from_service, from_node, from_field))
         if from_access is None:
-            raise ValueError(
-                f"state edge source field not found: {from_node}.{from_field}"
-            )
-        if from_access == F8StateAccess.wo:
+            # Per-service apply: for cross-service inbound state edges, the
+            # source node may be absent in the local half-graph.
+            if service_filter and from_service != service_filter:
+                from_access = None
+            else:
+                raise ValueError(
+                    f"state edge source field not found: {from_node}.{from_field}"
+                )
+        if from_access is None:
+            # Cross-service source in local half-graph: can't validate access
+            # here; rely on global validation at compile/deploy time.
+            pass
+        elif from_access == F8StateAccess.wo:
             raise ValueError(
                 f"state edge source is write-only: {from_node}.{from_field} ({from_access.value})"
             )

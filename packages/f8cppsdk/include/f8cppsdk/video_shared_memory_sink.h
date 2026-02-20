@@ -59,21 +59,26 @@ struct VideoSharedMemoryHeader {
   std::int64_t ts_ms = 0;
   std::uint32_t active_slot = 0;
   std::uint32_t payload_capacity = 0;
+  std::uint32_t notify_seq = 0;
 };
 
 class VideoSharedMemoryReader {
  public:
   VideoSharedMemoryReader() = default;
-  ~VideoSharedMemoryReader() = default;
+  ~VideoSharedMemoryReader();
 
   bool open(const std::string& region_name, std::size_t bytes);
-  void close() { region_.close(); }
+  void close();
 
   bool readHeader(VideoSharedMemoryHeader& out) const;
+  bool waitNewFrame(std::uint32_t last_notify_seq, std::uint32_t timeout_ms, std::uint32_t* observed_notify_seq) const;
   bool copyLatestFrame(std::vector<std::byte>& out_bgra, VideoSharedMemoryHeader& out_header) const;
 
  private:
   ShmRegion region_;
+#if defined(_WIN32)
+  void* frame_event_ = nullptr;
+#endif
 };
 
 }  // namespace f8::cppsdk

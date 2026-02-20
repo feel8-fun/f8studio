@@ -83,6 +83,7 @@ class TemplateMatchService final : public f8::cppsdk::LifecycleNode,
   std::vector<std::byte> frame_bgra_;
   std::optional<f8::cppsdk::VideoSharedMemoryHeader> last_header_;
   std::uint64_t last_frame_id_ = 0;
+  std::uint32_t last_notify_seq_ = 0;
   std::int64_t last_video_open_attempt_ms_ = 0;
 };
 

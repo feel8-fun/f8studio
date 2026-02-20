@@ -79,6 +79,30 @@ class RungraphValidationTests(unittest.TestCase):
         graph = F8RuntimeGraph(graphId="g1", revision="r1", nodes=[source, target], edges=[edge])
         validate_state_edge_targets_writable_or_raise(graph, local_service_id="svcA")
 
+    def test_local_service_cross_service_source_missing_is_allowed(self) -> None:
+        # Simulate a per-service half-graph for svcB: inbound edge is present,
+        # but upstream node/state fields from svcA are intentionally absent.
+        target = F8RuntimeNode(
+            nodeId="opB",
+            serviceId="svcB",
+            serviceClass="svcB",
+            operatorClass="OpB",
+            stateFields=[F8StateSpec(name="input", valueSchema=string_schema(), access=F8StateAccess.rw)],
+        )
+        edge = F8Edge(
+            edgeId="e1",
+            fromServiceId="svcA",
+            fromOperatorId="opA",
+            fromPort="out",
+            toServiceId="svcB",
+            toOperatorId="opB",
+            toPort="input",
+            kind=F8EdgeKindEnum.state,
+            strategy=F8EdgeStrategyEnum.latest,
+        )
+        graph = F8RuntimeGraph(graphId="g1", revision="r1", nodes=[target], edges=[edge])
+        validate_state_edge_targets_writable_or_raise(graph, local_service_id="svcB")
+
 
 if __name__ == "__main__":
     unittest.main()

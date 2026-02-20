@@ -225,6 +225,7 @@ bool TemplateMatchService::start() {
   frame_bgra_.clear();
   last_header_.reset();
   last_frame_id_ = 0;
+  last_notify_seq_ = 0;
   last_video_open_attempt_ms_ = 0;
 
   running_.store(true, std::memory_order_release);
@@ -285,6 +286,7 @@ void TemplateMatchService::on_state(const std::string& node_id, const std::strin
     shm_name_override_ = value.get<std::string>();
     video_.close();
     last_video_open_attempt_ms_ = 0;
+    last_notify_seq_ = 0;
     publish_state_if_changed("shmName", shm_name_override_, "state", meta);
     return;
   }
@@ -384,6 +386,7 @@ bool TemplateMatchService::ensure_video_open() {
     publish_state_if_changed("lastError", "video shm open failed: " + shm_name, "runtime", json::object());
     return false;
   }
+  last_notify_seq_ = 0;
   publish_state_if_changed("lastError", "", "runtime", json::object());
   return true;
 }
@@ -397,13 +400,23 @@ void TemplateMatchService::detect_once() {
     return;
   }
 
-  const std::int64_t now_ms = f8::cppsdk::now_ms();
-  if (matching_interval_ms_ > 0 && last_match_ts_ms_ > 0 && (now_ms - last_match_ts_ms_) < matching_interval_ms_) {
-    return;
-  }
   if (!ensure_video_open()) {
     return;
   }
+
+  std::uint32_t observed_notify_seq = last_notify_seq_;
+  std::uint32_t wait_timeout_ms = 50;
+  if (matching_interval_ms_ > 0 && last_match_ts_ms_ > 0) {
+    const std::int64_t now_ms = f8::cppsdk::now_ms();
+    const std::int64_t remaining = matching_interval_ms_ - (now_ms - last_match_ts_ms_);
+    if (remaining > 0) {
+      wait_timeout_ms = static_cast<std::uint32_t>(std::min<std::int64_t>(remaining, 500));
+    }
+  }
+  if (!video_.waitNewFrame(last_notify_seq_, wait_timeout_ms, &observed_notify_seq)) {
+    return;
+  }
+  last_notify_seq_ = observed_notify_seq;
 
   f8::cppsdk::VideoSharedMemoryHeader hdr{};
   if (!video_.copyLatestFrame(frame_bgra_, hdr)) {
@@ -414,6 +427,11 @@ void TemplateMatchService::detect_once() {
   }
   last_frame_id_ = hdr.frame_id;
   last_header_ = hdr;
+
+  const std::int64_t now_ms = f8::cppsdk::now_ms();
+  if (matching_interval_ms_ > 0 && last_match_ts_ms_ > 0 && (now_ms - last_match_ts_ms_) < matching_interval_ms_) {
+    return;
+  }
 
   if (hdr.format != 1 || hdr.width == 0 || hdr.height == 0 || hdr.pitch == 0) {
     publish_state_if_changed("lastError", "unsupported video shm format", "runtime", json::object());

@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import os
+import platform
 import struct
 import time
+import ctypes
+import errno
 from dataclasses import dataclass
+from multiprocessing.shared_memory import SharedMemory
 from typing import Optional, Tuple
 
 from .core import open_shared_memory_create, open_shared_memory_readonly
@@ -15,7 +19,33 @@ VIDEO_SHM_MAGIC = 0xF8A11A01
 VIDEO_SHM_VERSION = 1
 VIDEO_FORMAT_BGRA32 = 1
 
-_VIDEO_HEADER_STRUCT = struct.Struct("<7I4xQq2I")
+_VIDEO_HEADER_STRUCT = struct.Struct("<7I4xQq4I")
+_VIDEO_NOTIFY_SEQ_OFFSET = 56
+
+
+if os.name == "posix":
+    _FUTEX_WAIT = 0
+    _FUTEX_WAKE = 1
+    _SYS_FUTEX_BY_ARCH = {
+        "x86_64": 202,
+        "amd64": 202,
+        "aarch64": 98,
+        "arm64": 98,
+        "armv7l": 240,
+        "i386": 240,
+        "i686": 240,
+    }
+
+    class _Timespec(ctypes.Structure):
+        _fields_ = [("tv_sec", ctypes.c_long), ("tv_nsec", ctypes.c_long)]
+
+    _libc = ctypes.CDLL(None, use_errno=True)
+    _syscall = _libc.syscall
+    _syscall.restype = ctypes.c_long
+    _syscall.argtypes = [ctypes.c_long, ctypes.c_void_p, ctypes.c_int, ctypes.c_uint32, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32]
+    _sys_futex = _SYS_FUTEX_BY_ARCH.get(platform.machine().lower(), None)
+else:
+    _sys_futex = None
 
 
 @dataclass(frozen=True)
@@ -31,6 +61,7 @@ class VideoShmHeader:
     ts_ms: int
     active_slot: int
     payload_capacity: int
+    notify_seq: int
 
     @property
     def header_bytes(self) -> int:
@@ -68,6 +99,7 @@ def read_video_header(buf: memoryview) -> Optional[VideoShmHeader]:
         ts_ms=fields[8],
         active_slot=fields[9],
         payload_capacity=fields[10],
+        notify_seq=fields[11],
     )
 
 
@@ -76,9 +108,11 @@ class VideoShmReader:
         self.shm_name = shm_name
         self._shm = None
         self._event: Optional[Win32Event] = None
+        self._last_notify_seq: int = 0
 
     def open(self, use_event: bool = True) -> None:
         self._shm = open_shared_memory_readonly(self.shm_name)
+        self._last_notify_seq = 0
         if use_event and os.name == "nt":
             self._event = Win32Event.open(frame_event_name(self.shm_name))
 
@@ -89,6 +123,7 @@ class VideoShmReader:
         if self._shm:
             self._shm.close()
             self._shm = None
+        self._last_notify_seq = 0
 
     @property
     def has_event(self) -> bool:
@@ -103,7 +138,46 @@ class VideoShmReader:
     def wait_new_frame(self, timeout_ms: int = 10) -> bool:
         if self._event:
             return self._event.wait(timeout_ms)
-        time.sleep(max(1, timeout_ms) / 1000.0)
+        hdr = self.read_header()
+        if hdr is None:
+            return False
+        current_seq = int(hdr.notify_seq) & 0xFFFFFFFF
+        if current_seq != self._last_notify_seq:
+            self._last_notify_seq = current_seq
+            return True
+        if not self._futex_wait_notify_seq(current_seq=current_seq, timeout_ms=timeout_ms):
+            return False
+        hdr_after = self.read_header()
+        if hdr_after is None:
+            return False
+        next_seq = int(hdr_after.notify_seq) & 0xFFFFFFFF
+        if next_seq == self._last_notify_seq:
+            return False
+        self._last_notify_seq = next_seq
+        return True
+
+    def _futex_wait_notify_seq(self, current_seq: int, timeout_ms: int) -> bool:
+        if os.name != "posix" or _sys_futex is None:
+            return False
+        timeout_ms = int(timeout_ms)
+        if timeout_ms < 0:
+            timeout_ms = 0
+        try:
+            buf = self.buf
+            base_addr = ctypes.addressof(ctypes.c_char.from_buffer(buf))
+        except (TypeError, ValueError, RuntimeError):
+            return False
+        addr = ctypes.c_void_p(base_addr + _VIDEO_NOTIFY_SEQ_OFFSET)
+        ts = _Timespec(
+            tv_sec=ctypes.c_long(timeout_ms // 1000),
+            tv_nsec=ctypes.c_long((timeout_ms % 1000) * 1000000),
+        )
+        rc = int(_syscall(_sys_futex, addr, _FUTEX_WAIT, ctypes.c_uint32(current_seq & 0xFFFFFFFF), ctypes.byref(ts), None, 0))
+        if rc == 0:
+            return True
+        err = ctypes.get_errno()
+        if err in (errno.EAGAIN, errno.EINTR, errno.ETIMEDOUT):
+            return False
         return False
 
     def read_header(self) -> Optional[VideoShmHeader]:
@@ -121,7 +195,7 @@ class VideoShmReader:
         if h0.slot_offset_bytes + h0.frame_bytes > len(buf):
             return None, None
         h1 = read_video_header(buf)
-        if not h1 or h1.frame_id != h0.frame_id or h1.active_slot != h0.active_slot:
+        if not h1 or h1.frame_id != h0.frame_id or h1.active_slot != h0.active_slot or h1.notify_seq != h0.notify_seq:
             return None, None
         return h0, buf[h0.slot_offset_bytes : h0.slot_offset_bytes + h0.frame_bytes]
 
@@ -136,6 +210,7 @@ class VideoShmWriter:
         self._active_slot = 0
         self._frame_id = 0
         self._payload_capacity = 0
+        self._notify_seq = 0
 
     def open(self) -> None:
         self._shm = open_shared_memory_create(self.shm_name, self.size)
@@ -167,6 +242,8 @@ class VideoShmWriter:
         header_bytes = _VIDEO_HEADER_STRUCT.size
         usable = max(0, len(buf) - header_bytes)
         self._payload_capacity = usable // self.slot_count
+        self._frame_id = 0
+        self._notify_seq = 0
         _VIDEO_HEADER_STRUCT.pack_into(
             buf,
             0,
@@ -181,6 +258,8 @@ class VideoShmWriter:
             0,
             0,
             self._payload_capacity,
+            0,
+            0,
         )
 
     def write_frame_bgra(self, width: int, height: int, pitch: int, payload: bytes) -> None:
@@ -199,6 +278,7 @@ class VideoShmWriter:
         buf[slot_off : slot_off + frame_bytes] = payload[:frame_bytes]
 
         self._frame_id += 1
+        self._notify_seq += 1
         ts_ms = int(time.time() * 1000)
         _VIDEO_HEADER_STRUCT.pack_into(
             buf,
@@ -214,7 +294,20 @@ class VideoShmWriter:
             int(ts_ms),
             int(self._active_slot),
             int(self._payload_capacity),
+            int(self._notify_seq) & 0xFFFFFFFF,
+            0,
         )
 
         if self._event:
             self._event.pulse()
+        self._futex_wake_notify_seq()
+
+    def _futex_wake_notify_seq(self) -> None:
+        if os.name != "posix" or _sys_futex is None:
+            return
+        try:
+            base_addr = ctypes.addressof(ctypes.c_char.from_buffer(self.buf))
+        except (TypeError, ValueError, RuntimeError):
+            return
+        addr = ctypes.c_void_p(base_addr + _VIDEO_NOTIFY_SEQ_OFFSET)
+        _syscall(_sys_futex, addr, _FUTEX_WAKE, ctypes.c_uint32(0x7FFFFFFF), None, None, 0)

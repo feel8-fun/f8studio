@@ -68,7 +68,7 @@ int main(int argc, char** argv) {
 
   while (!g_stop.load(std::memory_order_acquire) && svc.running()) {
     svc.tick();
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 
   svc.stop();

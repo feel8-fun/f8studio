@@ -6,6 +6,8 @@ from typing import Any
 from qtpy import QtCore, QtGui, QtWidgets
 from NodeGraphQt.nodes.base_node import NodeBaseWidget
 
+from f8pysdk.shm import VideoShmReader
+
 from ..nodegraph.operator_basenode import F8StudioOperatorBaseNode
 from ..nodegraph.viz_operator_nodeitem import F8StudioVizOperatorNodeItem
 from ..ui_bus import UiCommand
@@ -69,6 +71,15 @@ class _TrackVizCanvas(pg.GraphicsObject):  # type: ignore[misc]
         self._payload: dict[str, Any] | None = None
         self._w: int = 0
         self._h: int = 0
+        self._frame: QtGui.QImage | None = None
+
+    def set_video_frame(self, image: QtGui.QImage | None) -> None:
+        self._frame = image
+        if image is not None:
+            self._w = int(image.width())
+            self._h = int(image.height())
+            self.prepareGeometryChange()
+        self.update()
 
     def set_payload(self, payload: dict[str, Any]) -> None:
         self._payload = payload
@@ -89,6 +100,13 @@ class _TrackVizCanvas(pg.GraphicsObject):  # type: ignore[misc]
 
     def paint(self, p: QtGui.QPainter, *args) -> None:  # type: ignore[override]
         payload = self._payload
+        if not payload and not self._frame:
+            return
+
+        has_frame = self._frame is not None
+        if has_frame and self._frame is not None:
+            p.drawImage(QtCore.QPointF(0.0, 0.0), self._frame)
+
         if not payload:
             return
 
@@ -269,6 +287,15 @@ class _TrackVizPane(QtWidgets.QWidget):
 
         self._pending = None
         self._last_wh: tuple[int, int] | None = None
+        self._video_shm_name = ""
+        self._video_shm_throttle_ms = 33
+        self._video_reader: VideoShmReader | None = None
+        self._video_frame_id = 0
+        self._video_frame_bytes: bytes | None = None
+        self._video_size: tuple[int, int] | None = None
+        self._video_timer = QtCore.QTimer(self)
+        self._video_timer.timeout.connect(self._tick_video)  # type: ignore[attr-defined]
+        self._video_timer.setInterval(33)
 
         # Smaller default footprint (similar to VideoSHM view).
         self.setMinimumWidth(240)
@@ -307,6 +334,20 @@ class _TrackVizPane(QtWidgets.QWidget):
             h = int(payload.get("height") or 0)
         except (AttributeError, TypeError, ValueError):
             w, h = 0, 0
+        try:
+            video_shm_name = str(payload.get("videoShmName") or "").strip()
+        except (AttributeError, TypeError, ValueError):
+            video_shm_name = ""
+        try:
+            video_shm_throttle_ms = int(payload.get("throttleMs") or 33)
+        except (AttributeError, TypeError, ValueError):
+            video_shm_throttle_ms = 33
+
+        self._set_video_config(
+            shm_name=video_shm_name,
+            throttle_ms=video_shm_throttle_ms,
+        )
+
         now_ms = int(payload.get("nowMs") or 0)
         history_ms = int(payload.get("historyMs") or 0)
         tracks = payload.get("tracks") if isinstance(payload.get("tracks"), list) else []
@@ -332,6 +373,91 @@ class _TrackVizPane(QtWidgets.QWidget):
             self._status.setText(f"tracks={len(tracks)}  now={now_ms}")
         except (AttributeError, RuntimeError, TypeError):
             pass
+
+    def detach(self) -> None:
+        try:
+            self._video_timer.stop()
+        except (AttributeError, RuntimeError, TypeError):
+            pass
+        self._reset_video_reader()
+
+    def _set_video_config(self, *, shm_name: str, throttle_ms: int) -> None:
+        next_throttle_ms = max(1, int(throttle_ms))
+        if self._video_shm_throttle_ms != next_throttle_ms:
+            self._video_shm_throttle_ms = next_throttle_ms
+            self._video_timer.setInterval(self._video_shm_throttle_ms)
+
+        next_name = str(shm_name or "").strip()
+        if next_name != self._video_shm_name:
+            self._video_shm_name = next_name
+            self._reset_video_reader()
+
+        if self._video_shm_name:
+            if not self._video_timer.isActive():
+                self._video_timer.start()
+        else:
+            if self._video_timer.isActive():
+                self._video_timer.stop()
+            self._canvas.set_video_frame(None)
+
+    def _reset_video_reader(self) -> None:
+        try:
+            if self._video_reader is not None:
+                self._video_reader.close()
+        except (AttributeError, RuntimeError, TypeError):
+            pass
+        self._video_reader = None
+        self._video_frame_id = 0
+        self._video_frame_bytes = None
+        self._video_size = None
+
+    def _ensure_video_reader(self) -> bool:
+        if self._video_reader is not None:
+            return True
+        if not self._video_shm_name:
+            return False
+        try:
+            reader = VideoShmReader(self._video_shm_name)
+            reader.open(use_event=False)
+            self._video_reader = reader
+            return True
+        except Exception as exc:
+            self._status.setText(f"video shm open failed: {exc}")
+            self._video_reader = None
+            return False
+
+    def _tick_video(self) -> None:
+        if not self._ensure_video_reader():
+            return
+        if self._video_reader is None:
+            return
+        try:
+            header, payload = self._video_reader.read_latest_bgra()
+        except Exception as exc:
+            self._status.setText(f"video shm read failed: {exc}")
+            return
+        if header is None or payload is None:
+            return
+        frame_id = int(header.frame_id)
+        if frame_id == self._video_frame_id:
+            return
+
+        w = int(header.width)
+        h = int(header.height)
+        pitch = int(header.pitch)
+        if w <= 0 or h <= 0 or pitch <= 0:
+            return
+
+        frame_bytes = bytes(payload)
+        self._video_frame_bytes = frame_bytes
+        self._video_frame_id = frame_id
+        try:
+            img = QtGui.QImage(frame_bytes, w, h, pitch, QtGui.QImage.Format_ARGB32)
+            safe_img = img.copy()
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return
+        self._video_size = (w, h)
+        self._canvas.set_video_frame(safe_img)
 
 
 class _TrackVizWidget(NodeBaseWidget):
@@ -363,6 +489,9 @@ class _TrackVizWidget(NodeBaseWidget):
     def set_scene(self, payload: dict[str, Any]) -> None:
         self._pane.set_scene(payload)
 
+    def detach(self) -> None:
+        self._pane.detach()
+
 
 class PyStudioTrackVizNode(F8StudioOperatorBaseNode):
     """
@@ -377,7 +506,17 @@ class PyStudioTrackVizNode(F8StudioOperatorBaseNode):
             pass
 
     def apply_ui_command(self, cmd: UiCommand) -> None:
-        if str(cmd.command) != "trackviz.set":
+        command = str(cmd.command or "")
+        if command == "trackviz.detach":
+            try:
+                w = self.get_widget("__trackviz")
+                if not w:
+                    return
+                w.detach()
+            except (AttributeError, RuntimeError, TypeError):
+                pass
+            return
+        if command != "trackviz.set":
             return
         try:
             payload = dict(cmd.payload or {})

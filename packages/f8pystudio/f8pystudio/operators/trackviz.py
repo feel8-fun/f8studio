@@ -15,6 +15,7 @@ from f8pysdk import (
     F8StateSpec,
     any_schema,
     integer_schema,
+    string_schema,
 )
 from f8pysdk.nats_naming import ensure_token
 from f8pysdk.runtime_node import RuntimeNode
@@ -69,12 +70,26 @@ class PyStudioTrackVizRuntimeNode(StudioVizRuntimeNodeBase):
         self._history_ms: int = 500
         self._history_frames: int = 10
         self._throttle_ms: int = 50
+        self._video_shm_name: str = ""
 
         self._tracks: dict[int, deque[_Sample]] = {}
         self._dirty: bool = False
         self._last_refresh_ms: int | None = None
         self._refresh_task: asyncio.Task[object] | None = None
         self._scheduled_refresh_ms: int | None = None
+
+    def attach(self, bus: Any) -> None:
+        super().attach(bus)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop.create_task(self._emit_initial_scene(), name=f"pystudio:trackviz:init:{self.node_id}")
+
+    async def _emit_initial_scene(self) -> None:
+        await self._ensure_config_loaded()
+        self._dirty = True
+        await self._schedule_refresh(now_ms=int(time.time() * 1000))
 
     async def close(self) -> None:
         try:
@@ -90,15 +105,22 @@ class PyStudioTrackVizRuntimeNode(StudioVizRuntimeNodeBase):
                 await asyncio.gather(t, return_exceptions=True)
         except (RuntimeError, TypeError):
             pass
+        emit_ui_command(self.node_id, "trackviz.detach", {}, ts_ms=int(time.time() * 1000))
 
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
         f = str(field or "").strip()
         if f == "throttleMs":
             self._throttle_ms = await self._get_int_state("throttleMs", default=50, minimum=0, maximum=60000)
+            self._dirty = True
         elif f == "historyMs":
             self._history_ms = await self._get_int_state("historyMs", default=500, minimum=0, maximum=60000)
+            self._dirty = True
         elif f == "historyFrames":
             self._history_frames = await self._get_int_state("historyFrames", default=10, minimum=1, maximum=200)
+            self._dirty = True
+        elif f == "videoShmName":
+            self._video_shm_name = await self._get_str_state("videoShmName", default="")
+            self._dirty = True
         else:
             return
         now = int(ts_ms) if ts_ms is not None else int(time.time() * 1000)
@@ -240,6 +262,7 @@ class PyStudioTrackVizRuntimeNode(StudioVizRuntimeNodeBase):
         self._throttle_ms = await self._get_int_state("throttleMs", default=50, minimum=0, maximum=60000)
         self._history_ms = await self._get_int_state("historyMs", default=500, minimum=0, maximum=60000)
         self._history_frames = await self._get_int_state("historyFrames", default=10, minimum=1, maximum=200)
+        self._video_shm_name = await self._get_str_state("videoShmName", default="")
         self._config_loaded = True
 
     async def _schedule_refresh(self, *, now_ms: int) -> None:
@@ -306,8 +329,10 @@ class PyStudioTrackVizRuntimeNode(StudioVizRuntimeNodeBase):
                 "height": int(self._height or 0),
                 "historyMs": int(self._history_ms),
                 "historyFrames": int(self._history_frames),
+                "throttleMs": int(self._throttle_ms),
                 "tracks": out_tracks,
                 "nowMs": int(now_ms),
+                "videoShmName": str(self._video_shm_name or "").strip(),
             },
             ts_ms=int(now_ms),
         )
@@ -350,6 +375,18 @@ class PyStudioTrackVizRuntimeNode(StudioVizRuntimeNodeBase):
             out = maximum
         return out
 
+    async def _get_str_state(self, name: str, *, default: str) -> str:
+        v: Any = None
+        try:
+            v = await self.get_state_value(name)
+        except Exception:
+            v = None
+        if v is None:
+            v = self._initial_state.get(name)
+        try:
+            return str(v) if v is not None else str(default)
+        except Exception:
+            return str(default)
 
 def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
     reg = registry or RuntimeNodeRegistry.instance()
@@ -401,6 +438,14 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
                     valueSchema=integer_schema(default=10, minimum=1, maximum=200),
                     access=F8StateAccess.rw,
                     showOnNode=False,
+                ),
+                F8StateSpec(
+                    name="videoShmName",
+                    label="Video SHM Name",
+                    description="Optional BGRA Video SHM mapping name used as TrackViz background.",
+                    valueSchema=string_schema(default=""),
+                    access=F8StateAccess.rw,
+                    showOnNode=True,
                 ),
                 *viz_sampling_state_fields(show_on_node=False),
             ],

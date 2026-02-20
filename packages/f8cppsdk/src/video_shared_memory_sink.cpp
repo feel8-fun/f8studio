@@ -1,10 +1,12 @@
 #include "f8cppsdk/video_shared_memory_sink.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstring>
 #include <cstdlib>
+#include <ctime>
 #include <string>
 
 #include <spdlog/spdlog.h>
@@ -12,6 +14,12 @@
 #if defined(_WIN32)
 #define NOMINMAX
 #include <Windows.h>
+#elif defined(__linux__)
+#include <cerrno>
+#include <climits>
+#include <linux/futex.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 #endif
 
 namespace f8::cppsdk {
@@ -41,9 +49,27 @@ struct ShmHeader {
   std::int64_t ts_ms = 0;
   std::uint32_t active_slot = 0;
   std::uint32_t payload_capacity = 0;
+  std::uint32_t notify_seq = 0;
+  std::uint32_t reserved = 0;
 };
+static_assert(sizeof(ShmHeader) == 64, "Video SHM header size mismatch");
 
 inline std::size_t header_size() { return sizeof(ShmHeader); }
+
+#if defined(__linux__)
+int futex_wait_u32(const std::uint32_t* addr, std::uint32_t expected, std::uint32_t timeout_ms) {
+  timespec ts{};
+  ts.tv_sec = static_cast<time_t>(timeout_ms / 1000);
+  ts.tv_nsec = static_cast<long>((timeout_ms % 1000) * 1000000u);
+  return static_cast<int>(syscall(SYS_futex, reinterpret_cast<const int*>(addr), FUTEX_WAIT, static_cast<int>(expected),
+                                  &ts, nullptr, 0));
+}
+
+int futex_wake_all_u32(std::uint32_t* addr) {
+  return static_cast<int>(
+      syscall(SYS_futex, reinterpret_cast<int*>(addr), FUTEX_WAKE, static_cast<int>(INT_MAX), nullptr, nullptr, 0));
+}
+#endif
 
 }  // namespace
 
@@ -102,6 +128,8 @@ bool VideoSharedMemorySink::initialize(const std::string& region_name, std::size
   hdr->width = 0;
   hdr->height = 0;
   hdr->pitch = 0;
+  hdr->notify_seq = 0;
+  hdr->reserved = 0;
 
   const std::size_t usable = capacity_bytes - header_size();
   slot_payload_capacity_ = usable / slot_count_;
@@ -145,11 +173,14 @@ bool VideoSharedMemorySink::writeFrame(const void* data, unsigned stride_bytes) 
   hdr->frame_id = ++frame_id_;
   hdr->ts_ms =
       std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+  (void)__atomic_add_fetch(&hdr->notify_seq, 1u, __ATOMIC_RELEASE);
 
 #if defined(_WIN32)
   if (frame_event_) {
     SetEvent(static_cast<HANDLE>(frame_event_));
   }
+#elif defined(__linux__)
+  (void)futex_wake_all_u32(&hdr->notify_seq);
 #endif
 
   return true;
@@ -184,7 +215,29 @@ bool VideoSharedMemorySink::configureDimensions(unsigned requested_width, unsign
 }
 
 bool VideoSharedMemoryReader::open(const std::string& region_name, std::size_t bytes) {
-  return region_.open_existing_readonly(region_name, bytes);
+  close();
+  if (!region_.open_existing_readonly(region_name, bytes)) {
+    return false;
+  }
+#if defined(_WIN32)
+  const std::string ev_name = region_name + "_evt";
+  const std::wstring wname(ev_name.begin(), ev_name.end());
+  HANDLE h = OpenEventW(SYNCHRONIZE, FALSE, wname.c_str());
+  frame_event_ = h;
+#endif
+  return true;
+}
+
+VideoSharedMemoryReader::~VideoSharedMemoryReader() { close(); }
+
+void VideoSharedMemoryReader::close() {
+#if defined(_WIN32)
+  if (frame_event_) {
+    CloseHandle(static_cast<HANDLE>(frame_event_));
+    frame_event_ = nullptr;
+  }
+#endif
+  region_.close();
 }
 
 bool VideoSharedMemoryReader::readHeader(VideoSharedMemoryHeader& out) const {
@@ -202,7 +255,49 @@ bool VideoSharedMemoryReader::readHeader(VideoSharedMemoryHeader& out) const {
   out.ts_ms = hdr->ts_ms;
   out.active_slot = hdr->active_slot;
   out.payload_capacity = hdr->payload_capacity;
+  out.notify_seq = __atomic_load_n(&hdr->notify_seq, __ATOMIC_ACQUIRE);
   return true;
+}
+
+bool VideoSharedMemoryReader::waitNewFrame(std::uint32_t last_notify_seq, std::uint32_t timeout_ms,
+                                           std::uint32_t* observed_notify_seq) const {
+  if (!region_.data() || region_.size() < sizeof(ShmHeader)) return false;
+  const auto* hdr = static_cast<const ShmHeader*>(region_.data());
+  if (hdr->magic != kShmMagic) return false;
+
+  const auto load_notify = [&]() { return __atomic_load_n(&hdr->notify_seq, __ATOMIC_ACQUIRE); };
+  std::uint32_t now_notify_seq = load_notify();
+  if (observed_notify_seq) {
+    *observed_notify_seq = now_notify_seq;
+  }
+  if (now_notify_seq != last_notify_seq) {
+    return true;
+  }
+
+#if defined(_WIN32)
+  if (!frame_event_) return false;
+  const DWORD rc = WaitForSingleObject(static_cast<HANDLE>(frame_event_), static_cast<DWORD>(timeout_ms));
+  if (rc != WAIT_OBJECT_0 && rc != WAIT_TIMEOUT) {
+    return false;
+  }
+#elif defined(__linux__)
+  const int rc = futex_wait_u32(&hdr->notify_seq, last_notify_seq, timeout_ms);
+  if (rc != 0) {
+    const int err = errno;
+    if (err != ETIMEDOUT && err != EAGAIN && err != EINTR) {
+      return false;
+    }
+  }
+#else
+  (void)timeout_ms;
+  return false;
+#endif
+
+  now_notify_seq = load_notify();
+  if (observed_notify_seq) {
+    *observed_notify_seq = now_notify_seq;
+  }
+  return now_notify_seq != last_notify_seq;
 }
 
 bool VideoSharedMemoryReader::copyLatestFrame(std::vector<std::byte>& out_bgra, VideoSharedMemoryHeader& out_header) const {
@@ -216,7 +311,7 @@ bool VideoSharedMemoryReader::copyLatestFrame(std::vector<std::byte>& out_bgra, 
 
   // Simple stability check: read twice and require frame_id/slot match.
   if (!readHeader(h1)) return false;
-  if (h1.frame_id != h0.frame_id || h1.active_slot != h0.active_slot) return false;
+  if (h1.frame_id != h0.frame_id || h1.active_slot != h0.active_slot || h1.notify_seq != h0.notify_seq) return false;
 
   const std::size_t header_bytes = sizeof(ShmHeader);
   const std::size_t slot_off = header_bytes + static_cast<std::size_t>(h0.active_slot) * h0.payload_capacity;

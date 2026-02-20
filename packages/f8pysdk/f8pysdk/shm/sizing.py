@@ -5,7 +5,7 @@ from .naming import DEFAULT_AUDIO_SHM_BYTES, DEFAULT_VIDEO_SHM_BYTES, DEFAULT_VI
 
 def video_min_bytes(slot_count: int = DEFAULT_VIDEO_SHM_SLOTS) -> int:
     slot_count = int(max(1, slot_count))
-    header_bytes = 48  # matches C++ VideoSharedMemoryHeader (see f8cppsdk)
+    header_bytes = 64  # matches C++ video SHM wire header (ShmHeader in f8cppsdk)
     min_slot_payload = 32 * 32 * 4
     return int(header_bytes + slot_count * min_slot_payload)
 
@@ -14,7 +14,7 @@ def video_required_bytes(max_width: int, max_height: int, slot_count: int = DEFA
     slot_count = int(max(1, slot_count))
     max_width = int(max(0, max_width))
     max_height = int(max(0, max_height))
-    header_bytes = 48
+    header_bytes = 64
     per_frame = max_width * max_height * 4
     return int(max(video_min_bytes(slot_count), header_bytes + slot_count * per_frame))
 
@@ -41,4 +41,3 @@ def audio_required_bytes(sample_rate: int, channels: int, frames_per_chunk: int,
 
 def audio_recommended_bytes(sample_rate: int, channels: int, frames_per_chunk: int, chunk_count: int, fmt: str = "f32le") -> int:
     return int(max(DEFAULT_AUDIO_SHM_BYTES, audio_required_bytes(sample_rate, channels, frames_per_chunk, chunk_count, fmt=fmt)))
-
