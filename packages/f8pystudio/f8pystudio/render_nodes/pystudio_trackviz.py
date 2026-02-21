@@ -249,6 +249,22 @@ class _TrackVizPane(QtWidgets.QWidget):
         self._title.setStyleSheet("color: rgb(225, 225, 225);")
         self._update = QtWidgets.QCheckBox("Update")
         self._update.setChecked(True)
+        self._update.setStyleSheet(
+            """
+            QCheckBox { color: rgb(225, 225, 225); }
+            QCheckBox::indicator {
+                width: 13px;
+                height: 13px;
+                border: 1px solid rgba(255, 255, 255, 90);
+                background: rgba(0, 0, 0, 35);
+                border-radius: 2px;
+            }
+            QCheckBox::indicator:checked {
+                image: none;
+                background: rgba(120, 200, 255, 90);
+            }
+            """
+        )
         top.addWidget(self._title, 1)
         top.addWidget(self._update, 0)
 
@@ -317,6 +333,7 @@ class _TrackVizPane(QtWidgets.QWidget):
             self._update.setChecked(bool(enabled))
         except (AttributeError, RuntimeError, TypeError):
             pass
+        self._sync_video_timer_with_update_state()
         if self.update_enabled() and self._pending is not None:
             p = self._pending
             self._pending = None
@@ -392,12 +409,16 @@ class _TrackVizPane(QtWidgets.QWidget):
             self._video_shm_name = next_name
             self._reset_video_reader()
 
-        if self._video_shm_name:
+        self._sync_video_timer_with_update_state()
+
+    def _sync_video_timer_with_update_state(self) -> None:
+        if self._video_shm_name and self.update_enabled():
             if not self._video_timer.isActive():
                 self._video_timer.start()
-        else:
-            if self._video_timer.isActive():
-                self._video_timer.stop()
+            return
+        if self._video_timer.isActive():
+            self._video_timer.stop()
+        if not self._video_shm_name:
             self._canvas.set_video_frame(None)
 
     def _reset_video_reader(self) -> None:
@@ -427,6 +448,8 @@ class _TrackVizPane(QtWidgets.QWidget):
             return False
 
     def _tick_video(self) -> None:
+        if not self.update_enabled():
+            return
         if not self._ensure_video_reader():
             return
         if self._video_reader is None:
