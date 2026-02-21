@@ -3,8 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from qtpy import QtCore, QtWidgets, QtGui
-from NodeGraphQt.constants import MIME_TYPE, URN_SCHEME
+from qtpy import QtCore, QtWidgets
 
 from f8pysdk import F8OperatorSpec, F8ServiceSpec
 
@@ -18,30 +17,6 @@ from ..variants.variant_repository import (
     list_variants_for_base,
     upsert_variant,
 )
-
-
-class _VariantListWidget(QtWidgets.QListWidget):
-    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-        self.setDragEnabled(True)
-        self.setDefaultDropAction(QtCore.Qt.CopyAction)
-
-    def startDrag(self, supported_actions: QtCore.Qt.DropActions) -> None:  # type: ignore[override]
-        _ = supported_actions
-        item = self.currentItem()
-        if item is None:
-            return
-        variant_id = str(item.data(QtCore.Qt.UserRole) or "").strip()
-        if not variant_id:
-            return
-        node_type = build_variant_node_type(variant_id)
-        node_urn = f"{URN_SCHEME}node:{node_type}"
-        mime_data = QtCore.QMimeData()
-        mime_data.setData(MIME_TYPE, QtCore.QByteArray(node_urn.encode()))
-        drag = QtGui.QDrag(self)
-        drag.setMimeData(mime_data)
-        drag.exec(QtCore.Qt.CopyAction)
 
 
 class _VariantMetaDialog(QtWidgets.QDialog):
@@ -103,7 +78,8 @@ class NodeVariantManagerDialog(QtWidgets.QDialog):
         self.setWindowTitle(f"Variants - {self._base_node_name}")
         self.resize(980, 620)
 
-        self._list = _VariantListWidget(self)
+        self._list = QtWidgets.QListWidget(self)
+        self._list.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._list.itemSelectionChanged.connect(self._on_selection_changed)  # type: ignore[attr-defined]
         self._list.itemDoubleClicked.connect(self._on_item_double_clicked)  # type: ignore[attr-defined]
         self._raw = QtWidgets.QPlainTextEdit(self)
@@ -261,7 +237,9 @@ class NodeVariantManagerDialog(QtWidgets.QDialog):
         graph = self._graph
         if graph is None:
             return
-        graph.create_variant_node(selected.variantId)
+        variant_node_type = build_variant_node_type(str(selected.variantId))
+        placement_label = f"{self._base_node_name}\n - {selected.name}"
+        graph.begin_node_placement(variant_node_type, placement_label)
 
     def _on_import_clicked(self) -> None:
         path, _ = QtWidgets.QFileDialog.getOpenFileName(

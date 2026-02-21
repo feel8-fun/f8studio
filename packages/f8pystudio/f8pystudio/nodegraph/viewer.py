@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from Qt import QtCore, QtGui, QtWidgets
 from NodeGraphQt.widgets.viewer import NodeViewer
+
+logger = logging.getLogger(__name__)
 
 
 class F8StudioNodeViewer(NodeViewer):
@@ -18,6 +21,11 @@ class F8StudioNodeViewer(NodeViewer):
     _PAN_STEP_PX_FAST: int = 150
     _ZOOM_TICKS: int = 1
     _ZOOM_TICKS_FAST: int = 3
+    _PREVIEW_PADDING_X: float = 10.0
+    _PREVIEW_PADDING_Y: float = 6.0
+    _PREVIEW_OFFSET_X: float = 14.0
+    _PREVIEW_OFFSET_Y: float = 14.0
+    node_placement_changed = QtCore.Signal(bool, str)
 
     def __init__(self, parent=None, undo_stack=None):
         super().__init__(parent=parent, undo_stack=undo_stack)
@@ -28,6 +36,10 @@ class F8StudioNodeViewer(NodeViewer):
         # and other interactions. Do not overwrite them here.
         self._f8_mmb_panning: bool = False
         self._f8_mmb_prev_pos: QtCore.QPoint | None = None
+        self._pending_node_type: str | None = None
+        self._pending_node_label: str = ""
+        self._placement_preview_rect: QtWidgets.QGraphicsRectItem | None = None
+        self._placement_preview_label: QtWidgets.QGraphicsSimpleTextItem | None = None
 
         self._shortcut_search = QtWidgets.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Tab), self)
         self._shortcut_search.setContext(QtCore.Qt.WidgetShortcut)
@@ -48,9 +60,38 @@ class F8StudioNodeViewer(NodeViewer):
     def set_graph(self, graph: Any) -> None:
         self._f8_graph = graph
 
+    def begin_node_placement(self, node_type: str, node_label: str) -> None:
+        pending_type = str(node_type or "").strip()
+        if not pending_type:
+            self.cancel_node_placement()
+            return
+        self._pending_node_type = pending_type
+        self._pending_node_label = str(node_label or "").strip()
+        self._ensure_placement_preview_items()
+        self._update_placement_preview_at(self.mapFromGlobal(QtGui.QCursor.pos()))
+        self._update_cursor_state()
+        self.node_placement_changed.emit(True, self._pending_node_label)
+
+    def cancel_node_placement(self) -> None:
+        if self._pending_node_type is None:
+            return
+        self._pending_node_type = None
+        self._pending_node_label = ""
+        self._set_placement_preview_visible(False)
+        self._update_cursor_state()
+        self.node_placement_changed.emit(False, "")
+
+    def is_node_placement_active(self) -> bool:
+        return self._pending_node_type is not None
+
     def showEvent(self, event):
         super().showEvent(event)
         self.setFocus()
+
+    def enterEvent(self, event):  # type: ignore[override]
+        if self.is_node_placement_active():
+            self._update_placement_preview_at(self.mapFromGlobal(QtGui.QCursor.pos()))
+        return super().enterEvent(event)
 
     def focusOutEvent(self, event):  # type: ignore[override]
         self._cancel_f8_mmb_pan()
@@ -66,10 +107,75 @@ class F8StudioNodeViewer(NodeViewer):
             return
         self._f8_mmb_panning = False
         self._f8_mmb_prev_pos = None
+        self._update_cursor_state()
+
+    def _update_cursor_state(self) -> None:
         try:
-            self.unsetCursor()
+            if self._f8_mmb_panning:
+                self.setCursor(QtCore.Qt.ClosedHandCursor)
+            elif self._pending_node_type is not None:
+                self.setCursor(QtCore.Qt.CrossCursor)
+            else:
+                self.unsetCursor()
         except (AttributeError, RuntimeError, TypeError):
             pass
+
+    def _ensure_placement_preview_items(self) -> None:
+        if self._placement_preview_rect is not None and self._placement_preview_label is not None:
+            return
+        scene = self.scene()
+        if scene is None:
+            return
+        rect_item = QtWidgets.QGraphicsRectItem()
+        rect_item.setAcceptedMouseButtons(QtCore.Qt.NoButton)
+        rect_item.setZValue(10_000.0)
+        rect_item.setPen(QtGui.QPen(QtGui.QColor(132, 190, 255, 220), 1.0))
+        rect_item.setBrush(QtGui.QBrush(QtGui.QColor(32, 43, 56, 155)))
+        rect_item.setVisible(False)
+        scene.addItem(rect_item)
+
+        label_item = QtWidgets.QGraphicsSimpleTextItem()
+        label_item.setAcceptedMouseButtons(QtCore.Qt.NoButton)
+        label_item.setBrush(QtGui.QBrush(QtGui.QColor(240, 246, 252, 230)))
+        font = label_item.font()
+        font.setPointSize(10)
+        label_item.setFont(font)
+        label_item.setZValue(10_001.0)
+        label_item.setVisible(False)
+        scene.addItem(label_item)
+
+        self._placement_preview_rect = rect_item
+        self._placement_preview_label = label_item
+
+    def _set_placement_preview_visible(self, visible: bool) -> None:
+        rect_item = self._placement_preview_rect
+        label_item = self._placement_preview_label
+        if rect_item is None or label_item is None:
+            return
+        rect_item.setVisible(visible)
+        label_item.setVisible(visible)
+
+    def _update_placement_preview_at(self, view_pos: QtCore.QPoint) -> None:
+        if not self.is_node_placement_active():
+            return
+        self._ensure_placement_preview_items()
+        rect_item = self._placement_preview_rect
+        label_item = self._placement_preview_label
+        if rect_item is None or label_item is None:
+            return
+
+        label_text = self._pending_node_label or (self._pending_node_type or "")
+        label_item.setText(label_text)
+        text_rect = label_item.boundingRect()
+
+        top_left = self.mapToScene(view_pos)
+        x = float(top_left.x()) + self._PREVIEW_OFFSET_X
+        y = float(top_left.y()) + self._PREVIEW_OFFSET_Y
+        width = float(text_rect.width()) + (self._PREVIEW_PADDING_X * 2.0)
+        height = float(text_rect.height()) + (self._PREVIEW_PADDING_Y * 2.0)
+        rect_item.setRect(x, y, width, height)
+        label_item.setPos(x + self._PREVIEW_PADDING_X, y + self._PREVIEW_PADDING_Y)
+        self._set_placement_preview_visible(True)
 
     def _pan_by_pixels(self, dx_px: int, dy_px: int) -> None:
         center_view = QtCore.QPoint(int(self.viewport().width() / 2), int(self.viewport().height() / 2))
@@ -98,6 +204,11 @@ class F8StudioNodeViewer(NodeViewer):
         )
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        if event.key() == QtCore.Qt.Key_Escape and self.is_node_placement_active():
+            self.cancel_node_placement()
+            event.accept()
+            return
+
         event.setAccepted(False)
         super().keyPressEvent(event)
 
@@ -152,6 +263,32 @@ class F8StudioNodeViewer(NodeViewer):
 
     def mousePressEvent(self, event):
         self.setFocus()
+        if self.is_node_placement_active():
+            if event.button() == QtCore.Qt.RightButton:
+                self.cancel_node_placement()
+                event.accept()
+                return
+            if event.button() == QtCore.Qt.LeftButton:
+                pending_type = self._pending_node_type
+                graph = self._f8_graph
+                if pending_type is None or graph is None:
+                    event.accept()
+                    return
+                scene_pos = self.mapToScene(event.pos())
+                try:
+                    created = graph.create_node(
+                        pending_type,
+                        pos=(float(scene_pos.x()), float(scene_pos.y())),
+                    )
+                except Exception:
+                    logger.exception('failed to create pending node "%s"', pending_type)
+                    event.accept()
+                    return
+                if created is not None:
+                    self.cancel_node_placement()
+                event.accept()
+                return
+
         # Always reserve MMB for canvas pan, regardless of what's under cursor.
         # NodeGraphQt disables MMB pan when clicking on nodes; we want consistent
         # navigation behavior.
@@ -160,15 +297,14 @@ class F8StudioNodeViewer(NodeViewer):
             self._f8_mmb_prev_pos = event.pos()
             if self._search_widget.isVisible():
                 self.tab_search_toggle()
-            try:
-                self.setCursor(QtCore.Qt.ClosedHandCursor)
-            except (AttributeError, RuntimeError, TypeError):
-                pass
+            self._update_cursor_state()
             event.accept()
             return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        if self.is_node_placement_active():
+            self._update_placement_preview_at(event.pos())
         # Force MMB to pan only (no ALT+MMB zoom).
         if self._f8_mmb_panning and self._f8_mmb_prev_pos is not None:
             previous_pos = self.mapToScene(self._f8_mmb_prev_pos)

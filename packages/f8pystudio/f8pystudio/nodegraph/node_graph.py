@@ -55,6 +55,7 @@ def _rect_at_pos(item: QtWidgets.QGraphicsItem, pos: list[float] | tuple[float, 
 
 class F8StudioGraph(NodeGraph):
     """Main F8PyStudio controller class."""
+    node_placement_changed = QtCore.Signal(bool, str)
 
     def __init__(self, parent=None, **kwargs):
         """
@@ -70,6 +71,7 @@ class F8StudioGraph(NodeGraph):
         kwargs["viewer"] = viewer
         super().__init__(parent, **kwargs)
         viewer.set_graph(self)
+        viewer.node_placement_changed.connect(self._on_viewer_node_placement_changed)  # type: ignore[attr-defined]
 
         self.uuid_length = kwargs.get("uuid_length", 4)
         self.uuid_generator = shortuuid.ShortUUID()
@@ -92,6 +94,9 @@ class F8StudioGraph(NodeGraph):
         # Keep inline state widgets in sync with upstream bindings.
         self.port_connected.connect(self._on_port_connected)  # type: ignore[attr-defined]
         self.port_disconnected.connect(self._on_port_disconnected)  # type: ignore[attr-defined]
+
+    def _on_viewer_node_placement_changed(self, active: bool, label: str) -> None:
+        self.node_placement_changed.emit(bool(active), str(label or ""))
 
     def _prompt_variant_metadata(
         self,
@@ -181,6 +186,16 @@ class F8StudioGraph(NodeGraph):
 
     def _on_port_disconnected(self, in_port: NGPort, out_port: NGPort) -> None:
         self._on_port_connection_changed(in_port=in_port, out_port=out_port)
+
+    def begin_node_placement(self, node_type: str, node_label: str) -> None:
+        viewer = self._viewer
+        if isinstance(viewer, F8StudioNodeViewer):
+            viewer.begin_node_placement(node_type=node_type, node_label=node_label)
+
+    def cancel_node_placement(self) -> None:
+        viewer = self._viewer
+        if isinstance(viewer, F8StudioNodeViewer):
+            viewer.cancel_node_placement()
 
     @staticmethod
     def _is_state_port(port: NGPort) -> bool:
