@@ -105,6 +105,10 @@ class PyStudioTimeSeriesRuntimeNode(StudioVizRuntimeNodeBase):
             self._window_ms = await self._get_int_state("windowMs", default=10000, minimum=100, maximum=600000)
         elif f == "bufferLimit":
             self._buffer_limit = await self._get_int_state("bufferLimit", default=200, minimum=10, maximum=5000)
+        elif f == "clearNonce":
+            await self._get_int_state("clearNonce", default=0, minimum=0, maximum=2147483647)
+            self._series.clear()
+            self._dirty = True
         elif f == "showLegend":
             self._show_legend = await self._get_bool_state("showLegend", default=False)
         elif f == "minVal":
@@ -168,8 +172,10 @@ class PyStudioTimeSeriesRuntimeNode(StudioVizRuntimeNodeBase):
         if changed or any_points:
             preferred = list(self.data_in_ports or [])
             keys = list(self._series.keys())
-            ordered_keys = [k for k in preferred if k in self._series] + [k for k in keys if k not in set(preferred)]
-            colors = series_colors(ordered_keys)
+            preferred_set = set(preferred)
+            unknown_order = [k for k in keys if k not in preferred_set]
+            color_order = preferred + unknown_order
+            colors = series_colors(color_order)
             emit_ui_command(
                 self.node_id,
                 "timeseries.set",
@@ -303,6 +309,14 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
                     label="Buffer Limit",
                     description="Maximum number of points kept in memory.",
                     valueSchema=integer_schema(default=200, minimum=10, maximum=5000),
+                    access=F8StateAccess.rw,
+                    showOnNode=False,
+                ),
+                F8StateSpec(
+                    name="clearNonce",
+                    label="Clear Nonce",
+                    description="Increment to clear accumulated series buffer.",
+                    valueSchema=integer_schema(default=0, minimum=0, maximum=2147483647),
                     access=F8StateAccess.rw,
                     showOnNode=False,
                 ),
