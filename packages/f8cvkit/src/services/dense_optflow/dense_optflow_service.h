@@ -47,6 +47,7 @@ class DenseOptflowService final : public f8::cppsdk::LifecycleNode,
 
   void publish_state_if_changed(const std::string& field, const json& value, const std::string& source,
                                 const json& meta);
+  void emit_telemetry(std::int64_t ts_ms, double process_ms);
   void handle_request(const json& req, const json& meta);
 
   Config cfg_;
@@ -57,6 +58,13 @@ class DenseOptflowService final : public f8::cppsdk::LifecycleNode,
 
   std::mutex state_mu_;
   std::unordered_map<std::string, json> published_state_;
+  std::uint64_t telemetry_observed_requests_ = 0;
+  std::uint64_t telemetry_processed_requests_ = 0;
+  std::uint64_t telemetry_window_processed_requests_ = 0;
+  std::int64_t telemetry_window_start_ms_ = 0;
+  double telemetry_last_process_ms_ = 0.0;
+  double telemetry_total_process_ms_ = 0.0;
+  double telemetry_fps_ = 0.0;
 };
 
 }  // namespace f8::cvkit::dense_optflow

@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cctype>
 #include <algorithm>
+#include <exception>
 #include <utility>
 
 #include <nlohmann/json.hpp>
@@ -38,7 +39,6 @@ json schema_integer(std::int64_t default_value, std::int64_t minimum, std::int64
   s["maximum"] = maximum;
   return s;
 }
-json schema_boolean() { return json{{"type", "boolean"}}; }
 
 json schema_object(const json& props, const json& required = json::array()) {
   json obj;
@@ -227,6 +227,13 @@ bool TemplateMatchService::start() {
   last_frame_id_ = 0;
   last_notify_seq_ = 0;
   last_video_open_attempt_ms_ = 0;
+  telemetry_observed_frames_ = 0;
+  telemetry_processed_frames_ = 0;
+  telemetry_window_processed_frames_ = 0;
+  telemetry_window_start_ms_ = 0;
+  telemetry_last_process_ms_ = 0.0;
+  telemetry_total_process_ms_ = 0.0;
+  telemetry_fps_ = 0.0;
 
   running_.store(true, std::memory_order_release);
   stop_requested_.store(false, std::memory_order_release);
@@ -283,10 +290,13 @@ void TemplateMatchService::on_state(const std::string& node_id, const std::strin
     return;
   }
   if (field == "shmName" && value.is_string()) {
-    shm_name_override_ = value.get<std::string>();
-    video_.close();
-    last_video_open_attempt_ms_ = 0;
-    last_notify_seq_ = 0;
+    {
+      std::lock_guard<std::mutex> lock(video_mu_);
+      shm_name_override_ = value.get<std::string>();
+      video_.close();
+      last_video_open_attempt_ms_ = 0;
+      last_notify_seq_ = 0;
+    }
     publish_state_if_changed("shmName", shm_name_override_, "state", meta);
     return;
   }
@@ -295,7 +305,14 @@ void TemplateMatchService::on_state(const std::string& node_id, const std::strin
       const double v = value.is_number() ? value.get<double>() : std::stod(value.dump());
       match_threshold_ = std::min(1.0, std::max(0.0, v));
       publish_state_if_changed("matchThreshold", match_threshold_, "state", meta);
+    } catch (const std::exception& ex) {
+      const std::string msg = std::string("invalid matchThreshold: ") + ex.what();
+      spdlog::warn("{}", msg);
+      publish_state_if_changed("lastError", msg, "state", meta);
     } catch (...) {
+      const std::string msg = "invalid matchThreshold: unknown exception";
+      spdlog::warn("{}", msg);
+      publish_state_if_changed("lastError", msg, "state", meta);
     }
     return;
   }
@@ -304,7 +321,14 @@ void TemplateMatchService::on_state(const std::string& node_id, const std::strin
       const std::int64_t v = value.is_number_integer() ? value.get<std::int64_t>() : std::stoll(value.dump());
       matching_interval_ms_ = std::max<std::int64_t>(0, std::min<std::int64_t>(60000, v));
       publish_state_if_changed("matchingIntervalMs", matching_interval_ms_, "state", meta);
+    } catch (const std::exception& ex) {
+      const std::string msg = std::string("invalid matchingIntervalMs: ") + ex.what();
+      spdlog::warn("{}", msg);
+      publish_state_if_changed("lastError", msg, "state", meta);
     } catch (...) {
+      const std::string msg = "invalid matchingIntervalMs: unknown exception";
+      spdlog::warn("{}", msg);
+      publish_state_if_changed("lastError", msg, "state", meta);
     }
     return;
   }
@@ -400,91 +424,141 @@ void TemplateMatchService::detect_once() {
     return;
   }
 
-  if (!ensure_video_open()) {
-    return;
-  }
-
-  std::uint32_t observed_notify_seq = last_notify_seq_;
-  std::uint32_t wait_timeout_ms = 50;
-  if (matching_interval_ms_ > 0 && last_match_ts_ms_ > 0) {
-    const std::int64_t now_ms = f8::cppsdk::now_ms();
-    const std::int64_t remaining = matching_interval_ms_ - (now_ms - last_match_ts_ms_);
-    if (remaining > 0) {
-      wait_timeout_ms = static_cast<std::uint32_t>(std::min<std::int64_t>(remaining, 500));
+  {
+    std::lock_guard<std::mutex> lock(video_mu_);
+    if (!ensure_video_open()) {
+      return;
     }
-  }
-  if (!video_.waitNewFrame(last_notify_seq_, wait_timeout_ms, &observed_notify_seq)) {
-    return;
-  }
-  last_notify_seq_ = observed_notify_seq;
+    std::uint32_t observed_notify_seq = last_notify_seq_;
+    std::uint32_t wait_timeout_ms = 50;
+    if (matching_interval_ms_ > 0 && last_match_ts_ms_ > 0) {
+      const std::int64_t now_ms = f8::cppsdk::now_ms();
+      const std::int64_t remaining = matching_interval_ms_ - (now_ms - last_match_ts_ms_);
+      if (remaining > 0) {
+        wait_timeout_ms = static_cast<std::uint32_t>(std::min<std::int64_t>(remaining, 500));
+      }
+    }
+    if (!video_.waitNewFrame(last_notify_seq_, wait_timeout_ms, &observed_notify_seq)) {
+      return;
+    }
+    last_notify_seq_ = observed_notify_seq;
 
-  f8::cppsdk::VideoSharedMemoryHeader hdr{};
-  if (!video_.copyLatestFrame(frame_bgra_, hdr)) {
-    return;
-  }
-  if (hdr.frame_id == 0 || hdr.frame_id == last_frame_id_) {
-    return;
-  }
-  last_frame_id_ = hdr.frame_id;
-  last_header_ = hdr;
+    f8::cppsdk::VideoSharedMemoryHeader hdr{};
+    if (!video_.copyLatestFrame(frame_bgra_, hdr)) {
+      return;
+    }
+    if (hdr.frame_id == 0 || hdr.frame_id == last_frame_id_) {
+      return;
+    }
+    ++telemetry_observed_frames_;
+    last_frame_id_ = hdr.frame_id;
+    last_header_ = hdr;
 
-  const std::int64_t now_ms = f8::cppsdk::now_ms();
-  if (matching_interval_ms_ > 0 && last_match_ts_ms_ > 0 && (now_ms - last_match_ts_ms_) < matching_interval_ms_) {
-    return;
+    const std::int64_t now_ms = f8::cppsdk::now_ms();
+    if (matching_interval_ms_ > 0 && last_match_ts_ms_ > 0 && (now_ms - last_match_ts_ms_) < matching_interval_ms_) {
+      return;
+    }
+
+    if (hdr.format != 1 || hdr.width == 0 || hdr.height == 0 || hdr.pitch == 0) {
+      publish_state_if_changed("lastError", "unsupported video shm format", "runtime", json::object());
+      return;
+    }
+    const std::size_t row_bytes = static_cast<std::size_t>(hdr.pitch);
+    if (row_bytes < static_cast<std::size_t>(hdr.width) * 4) {
+      publish_state_if_changed("lastError", "invalid video shm pitch", "runtime", json::object());
+      return;
+    }
+    if (frame_bgra_.size() < row_bytes * static_cast<std::size_t>(hdr.height)) {
+      publish_state_if_changed("lastError", "video shm frame too small", "runtime", json::object());
+      return;
+    }
+    if (template_bgr_.empty()) {
+      template_loaded_ = false;
+      template_error_ = "template empty";
+      publish_state_if_changed("lastError", template_error_, "runtime", json::object());
+      return;
+    }
+
+    cv::Mat bgra_mat(static_cast<int>(hdr.height), static_cast<int>(hdr.width), CV_8UC4,
+                     const_cast<std::byte*>(frame_bgra_.data()), static_cast<std::size_t>(hdr.pitch));
+    cv::Mat bgr;
+    try {
+      cv::cvtColor(bgra_mat, bgr, cv::COLOR_BGRA2BGR);
+    } catch (const cv::Exception& ex) {
+      publish_state_if_changed("lastError", std::string("opencv cvtColor failed: ") + ex.what(), "runtime", json::object());
+      return;
+    }
+
+    if (template_bgr_.cols > bgr.cols || template_bgr_.rows > bgr.rows) {
+      publish_state_if_changed("lastError", "template larger than frame", "runtime", json::object());
+      return;
+    }
+
+    cv::Mat result;
+    try {
+      cv::matchTemplate(bgr, template_bgr_, result, cv::TM_CCOEFF_NORMED);
+    } catch (const cv::Exception& ex) {
+      publish_state_if_changed("lastError", std::string("opencv matchTemplate failed: ") + ex.what(), "runtime",
+                               json::object());
+      return;
+    }
+    double min_val = 0.0;
+    double max_val = 0.0;
+    cv::Point min_loc;
+    cv::Point max_loc;
+    cv::minMaxLoc(result, &min_val, &max_val, &min_loc, &max_loc);
+
+    json out = json::object();
+    out["frameId"] = hdr.frame_id;
+    out["tsMs"] = hdr.ts_ms;
+    out["score"] = max_val;
+    out["x"] = max_loc.x;
+    out["y"] = max_loc.y;
+    out["w"] = template_bgr_.cols;
+    out["h"] = template_bgr_.rows;
+    out["frameW"] = hdr.width;
+    out["frameH"] = hdr.height;
+
+    publish_state_if_changed("lastError", "", "runtime", json::object());
+    last_match_ts_ms_ = now_ms;
+    (void)bus_->emit_data(cfg_.service_id, "result", out);
+    const std::int64_t end_ts_ms = f8::cppsdk::now_ms();
+    emit_telemetry(end_ts_ms, hdr.frame_id, static_cast<double>(end_ts_ms - now_ms));
+  }
+}
+
+void TemplateMatchService::emit_telemetry(std::int64_t ts_ms, std::uint64_t frame_id, double process_ms) {
+  if (!bus_) return;
+  if (telemetry_window_start_ms_ <= 0) {
+    telemetry_window_start_ms_ = ts_ms;
+  }
+  ++telemetry_processed_frames_;
+  ++telemetry_window_processed_frames_;
+  telemetry_last_process_ms_ = process_ms;
+  telemetry_total_process_ms_ += process_ms;
+
+  const std::int64_t elapsed = ts_ms - telemetry_window_start_ms_;
+  if (elapsed >= 1000) {
+    telemetry_fps_ = static_cast<double>(telemetry_window_processed_frames_) * 1000.0 / static_cast<double>(elapsed);
+    telemetry_window_start_ms_ = ts_ms;
+    telemetry_window_processed_frames_ = 0;
   }
 
-  if (hdr.format != 1 || hdr.width == 0 || hdr.height == 0 || hdr.pitch == 0) {
-    publish_state_if_changed("lastError", "unsupported video shm format", "runtime", json::object());
-    return;
-  }
-  const std::size_t row_bytes = static_cast<std::size_t>(hdr.pitch);
-  if (row_bytes < static_cast<std::size_t>(hdr.width) * 4) {
-    publish_state_if_changed("lastError", "invalid video shm pitch", "runtime", json::object());
-    return;
-  }
-  if (frame_bgra_.size() < row_bytes * static_cast<std::size_t>(hdr.height)) {
-    publish_state_if_changed("lastError", "video shm frame too small", "runtime", json::object());
-    return;
-  }
-  if (template_bgr_.empty()) {
-    template_loaded_ = false;
-    template_error_ = "template empty";
-    publish_state_if_changed("lastError", template_error_, "runtime", json::object());
-    return;
-  }
+  const std::uint64_t dropped_frames =
+      telemetry_observed_frames_ > telemetry_processed_frames_ ? (telemetry_observed_frames_ - telemetry_processed_frames_) : 0;
+  const double avg_process_ms =
+      telemetry_processed_frames_ > 0 ? (telemetry_total_process_ms_ / static_cast<double>(telemetry_processed_frames_)) : 0.0;
 
-  cv::Mat bgra_mat(static_cast<int>(hdr.height), static_cast<int>(hdr.width), CV_8UC4,
-                   const_cast<std::byte*>(frame_bgra_.data()), static_cast<std::size_t>(hdr.pitch));
-  cv::Mat bgr;
-  cv::cvtColor(bgra_mat, bgr, cv::COLOR_BGRA2BGR);
-
-  if (template_bgr_.cols > bgr.cols || template_bgr_.rows > bgr.rows) {
-    publish_state_if_changed("lastError", "template larger than frame", "runtime", json::object());
-    return;
-  }
-
-  cv::Mat result;
-  cv::matchTemplate(bgr, template_bgr_, result, cv::TM_CCOEFF_NORMED);
-  double min_val = 0.0;
-  double max_val = 0.0;
-  cv::Point min_loc;
-  cv::Point max_loc;
-  cv::minMaxLoc(result, &min_val, &max_val, &min_loc, &max_loc);
-
-  json out = json::object();
-  out["frameId"] = hdr.frame_id;
-  out["tsMs"] = hdr.ts_ms;
-  out["score"] = max_val;
-  out["x"] = max_loc.x;
-  out["y"] = max_loc.y;
-  out["w"] = template_bgr_.cols;
-  out["h"] = template_bgr_.rows;
-  out["frameW"] = hdr.width;
-  out["frameH"] = hdr.height;
-
-  publish_state_if_changed("lastError", "", "runtime", json::object());
-  last_match_ts_ms_ = now_ms;
-  (void)bus_->emit_data(cfg_.service_id, "result", out);
+  json telemetry = json::object();
+  telemetry["tsMs"] = ts_ms;
+  telemetry["frameId"] = frame_id;
+  telemetry["fps"] = telemetry_fps_;
+  telemetry["processMs"] = telemetry_last_process_ms_;
+  telemetry["avgProcessMs"] = avg_process_ms;
+  telemetry["observedFrames"] = telemetry_observed_frames_;
+  telemetry["processedFrames"] = telemetry_processed_frames_;
+  telemetry["droppedFrames"] = dropped_frames;
+  (void)bus_->emit_data(cfg_.service_id, "telemetry", telemetry);
 }
 
 bool TemplateMatchService::on_command(const std::string& call, const json& args, const json& meta, json& result,
@@ -523,19 +597,25 @@ bool TemplateMatchService::on_command(const std::string& call, const json& args,
     max_w = clamp_int(max_w, 0, 10000);
     max_h = clamp_int(max_h, 0, 10000);
 
-    if (!ensure_video_open()) {
-      error_code = "RUNTIME_ERROR";
-      error_message = "video shm not available";
-      return false;
-    }
-
     std::vector<std::byte> frame;
     f8::cppsdk::VideoSharedMemoryHeader hdr{};
-    if (!video_.copyLatestFrame(frame, hdr)) {
-      error_code = "RUNTIME_ERROR";
-      error_message = "no frame available";
-      return false;
+    std::string shm_name;
+    {
+      std::lock_guard<std::mutex> lock(video_mu_);
+      if (!ensure_video_open()) {
+        error_code = "RUNTIME_ERROR";
+        error_message = "video shm not available";
+        return false;
+      }
+
+      if (!video_.copyLatestFrame(frame, hdr)) {
+        error_code = "RUNTIME_ERROR";
+        error_message = "no frame available";
+        return false;
+      }
+      shm_name = shm_name_override_;
     }
+
     if (hdr.format != 1 || hdr.width == 0 || hdr.height == 0 || hdr.pitch == 0) {
       error_code = "RUNTIME_ERROR";
       error_message = "unsupported video shm format";
@@ -556,7 +636,13 @@ bool TemplateMatchService::on_command(const std::string& call, const json& args,
     cv::Mat bgra_mat(static_cast<int>(hdr.height), static_cast<int>(hdr.width), CV_8UC4,
                      const_cast<std::byte*>(frame.data()), static_cast<std::size_t>(hdr.pitch));
     cv::Mat bgr;
-    cv::cvtColor(bgra_mat, bgr, cv::COLOR_BGRA2BGR);
+    try {
+      cv::cvtColor(bgra_mat, bgr, cv::COLOR_BGRA2BGR);
+    } catch (const cv::Exception& ex) {
+      error_code = "RUNTIME_ERROR";
+      error_message = std::string("opencv cvtColor failed: ") + ex.what();
+      return false;
+    }
 
     const auto enc = encode_image_b64(bgr, fmt, quality, max_bytes, max_w, max_h);
     if (!enc.error.empty()) {
@@ -564,8 +650,6 @@ bool TemplateMatchService::on_command(const std::string& call, const json& args,
       error_message = enc.error;
       return false;
     }
-
-    const std::string shm_name = shm_name_override_;
 
     result["frameId"] = hdr.frame_id;
     result["tsMs"] = hdr.ts_ms;
@@ -598,6 +682,15 @@ json TemplateMatchService::describe() {
            {"h", schema_integer()},
            {"frameW", schema_integer()},
            {"frameH", schema_integer()}});
+  const json telemetry_schema = schema_object(
+      json{{"tsMs", schema_integer()},
+           {"frameId", schema_integer()},
+           {"fps", schema_number()},
+           {"processMs", schema_number()},
+           {"avgProcessMs", schema_number()},
+           {"observedFrames", schema_integer()},
+           {"processedFrames", schema_integer()},
+           {"droppedFrames", schema_integer()}});
 
   json service;
   service["schemaVersion"] = "f8service/1";
@@ -633,6 +726,10 @@ json TemplateMatchService::describe() {
   service["dataInPorts"] = json::array();
   service["dataOutPorts"] = json::array({
       json{{"name", "result"}, {"valueSchema", result_schema}, {"description", "Match result stream."}, {"required", false}},
+      json{{"name", "telemetry"},
+           {"valueSchema", telemetry_schema},
+           {"description", "Runtime telemetry: fps/process time/dropped frames."},
+           {"required", false}},
   });
   service["editableDataInPorts"] = false;
   service["editableDataOutPorts"] = false;

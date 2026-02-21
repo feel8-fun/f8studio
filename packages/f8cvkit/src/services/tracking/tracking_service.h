@@ -54,32 +54,33 @@ class TrackingService final : public f8::cppsdk::LifecycleNode,
   void tick();
 
   void on_lifecycle(bool active, const nlohmann::json& meta) override;
-   void on_state(const std::string& node_id, const std::string& field, const nlohmann::json& value, std::int64_t ts_ms,
-                 const nlohmann::json& meta) override;
-   void on_data(const std::string& node_id, const std::string& port, const nlohmann::json& value, std::int64_t ts_ms,
+  void on_state(const std::string& node_id, const std::string& field, const nlohmann::json& value, std::int64_t ts_ms,
                 const nlohmann::json& meta) override;
-   bool on_command(const std::string& call, const nlohmann::json& args, const nlohmann::json& meta,
-                   nlohmann::json& result, std::string& error_code, std::string& error_message) override;
+  void on_data(const std::string& node_id, const std::string& port, const nlohmann::json& value, std::int64_t ts_ms,
+               const nlohmann::json& meta) override;
+  bool on_command(const std::string& call, const nlohmann::json& args, const nlohmann::json& meta,
+                  nlohmann::json& result, std::string& error_code, std::string& error_message) override;
 
-   static nlohmann::json describe();
+  static nlohmann::json describe();
 
  private:
   using json = nlohmann::json;
 
   void publish_state_if_changed(const std::string& field, const json& value, const std::string& source,
                                 const json& meta);
+  void emit_telemetry(std::int64_t ts_ms, std::uint64_t frame_id, double process_ms);
   void set_shm_name(const std::string& shm_name, const json& meta);
   void set_init_select(const std::string& mode, const json& meta);
   bool ensure_video_open();
-   void apply_init_box_if_any();
-   void process_frame_once();
-   void set_tracking(bool tracking, const json& meta);
-   void stop_tracking_internal(const json& meta);
+  void apply_init_box_if_any();
+  void process_frame_once();
+  void set_tracking(bool tracking, const json& meta);
+  void stop_tracking_internal(const json& meta);
 
-   Config cfg_;
-   std::atomic<bool> running_{false};
-   std::atomic<bool> stop_requested_{false};
-   std::atomic<bool> active_{true};
+  Config cfg_;
+  std::atomic<bool> running_{false};
+  std::atomic<bool> stop_requested_{false};
+  std::atomic<bool> active_{true};
   std::unique_ptr<f8::cppsdk::ServiceBus> bus_;
 
   std::mutex state_mu_;
@@ -95,14 +96,22 @@ class TrackingService final : public f8::cppsdk::LifecycleNode,
   TrackingInitSelectMode init_select_mode_ = TrackingInitSelectMode::ClosestCenter;
   std::string init_select_state_ = "closest_center";
 
-   // Tracking state.
-   std::mutex tracking_mu_;
-   cv::Ptr<cv::Tracker> tracker_;
-   cv::Rect bbox_;
-   bool is_tracking_ = false;
+  // Tracking state.
+  std::mutex tracking_mu_;
+  cv::Ptr<cv::Tracker> tracker_;
+  cv::Rect bbox_;
+  bool is_tracking_ = false;
 
   // Pending init candidates extracted from upstream payloads.
   std::vector<TrackingInitCandidate> pending_init_boxes_;
+
+  std::uint64_t telemetry_observed_frames_ = 0;
+  std::uint64_t telemetry_processed_frames_ = 0;
+  std::uint64_t telemetry_window_processed_frames_ = 0;
+  std::int64_t telemetry_window_start_ms_ = 0;
+  double telemetry_last_process_ms_ = 0.0;
+  double telemetry_total_process_ms_ = 0.0;
+  double telemetry_fps_ = 0.0;
 };
 
 }  // namespace f8::cvkit::tracking

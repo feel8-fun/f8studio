@@ -56,6 +56,31 @@ static_assert(sizeof(ShmHeader) == 64, "Video SHM header size mismatch");
 
 inline std::size_t header_size() { return sizeof(ShmHeader); }
 
+inline std::uint32_t notify_seq_add_release(std::uint32_t* addr) {
+#if defined(_WIN32)
+  return static_cast<std::uint32_t>(InterlockedIncrement(reinterpret_cast<volatile long*>(addr)));
+#elif defined(__linux__)
+  return __atomic_add_fetch(addr, 1u, __ATOMIC_RELEASE);
+#else
+  return __atomic_add_fetch(addr, 1u, __ATOMIC_RELEASE);
+#endif
+}
+
+inline std::uint32_t notify_seq_load_acquire(const std::uint32_t* addr) {
+#if defined(_WIN32)
+  // Reader maps SHM as read-only; do not use interlocked RMW ops here.
+  // Use a volatile load followed by an acquire fence to preserve ordering.
+  const auto* src = reinterpret_cast<volatile const std::uint32_t*>(addr);
+  const std::uint32_t v = *src;
+  std::atomic_thread_fence(std::memory_order_acquire);
+  return v;
+#elif defined(__linux__)
+  return __atomic_load_n(addr, __ATOMIC_ACQUIRE);
+#else
+  return __atomic_load_n(addr, __ATOMIC_ACQUIRE);
+#endif
+}
+
 #if defined(__linux__)
 int futex_wait_u32(const std::uint32_t* addr, std::uint32_t expected, std::uint32_t timeout_ms) {
   timespec ts{};
@@ -173,7 +198,7 @@ bool VideoSharedMemorySink::writeFrame(const void* data, unsigned stride_bytes) 
   hdr->frame_id = ++frame_id_;
   hdr->ts_ms =
       std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-  (void)__atomic_add_fetch(&hdr->notify_seq, 1u, __ATOMIC_RELEASE);
+  (void)notify_seq_add_release(&hdr->notify_seq);
 
 #if defined(_WIN32)
   if (frame_event_) {
@@ -255,7 +280,7 @@ bool VideoSharedMemoryReader::readHeader(VideoSharedMemoryHeader& out) const {
   out.ts_ms = hdr->ts_ms;
   out.active_slot = hdr->active_slot;
   out.payload_capacity = hdr->payload_capacity;
-  out.notify_seq = __atomic_load_n(&hdr->notify_seq, __ATOMIC_ACQUIRE);
+  out.notify_seq = notify_seq_load_acquire(&hdr->notify_seq);
   return true;
 }
 
@@ -265,7 +290,7 @@ bool VideoSharedMemoryReader::waitNewFrame(std::uint32_t last_notify_seq, std::u
   const auto* hdr = static_cast<const ShmHeader*>(region_.data());
   if (hdr->magic != kShmMagic) return false;
 
-  const auto load_notify = [&]() { return __atomic_load_n(&hdr->notify_seq, __ATOMIC_ACQUIRE); };
+  const auto load_notify = [&]() { return notify_seq_load_acquire(&hdr->notify_seq); };
   std::uint32_t now_notify_seq = load_notify();
   if (observed_notify_seq) {
     *observed_notify_seq = now_notify_seq;

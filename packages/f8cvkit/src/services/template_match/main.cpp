@@ -1,6 +1,7 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <exception>
 #include <iostream>
 #include <string>
 #include <thread>
@@ -42,7 +43,10 @@ int main(int argc, char** argv) {
 
   try {
     spdlog::set_default_logger(spdlog::stdout_color_mt("console"));
+  } catch (const std::exception& ex) {
+    std::cerr << "logger init failed: " << ex.what() << "\n";
   } catch (...) {
+    std::cerr << "logger init failed: unknown exception\n";
   }
   spdlog::set_level(spdlog::level::info);
   spdlog::flush_on(spdlog::level::info);

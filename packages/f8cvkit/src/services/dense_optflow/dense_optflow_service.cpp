@@ -8,6 +8,7 @@
 #include <spdlog/spdlog.h>
 
 #include "f8cppsdk/state_kv.h"
+#include "f8cppsdk/time_utils.h"
 #include "f8cvkit/cvkit_image_io.h"
 
 namespace f8::cvkit::dense_optflow {
@@ -19,7 +20,6 @@ namespace {
 json schema_string() { return json{{"type", "string"}}; }
 json schema_number() { return json{{"type", "number"}}; }
 json schema_integer() { return json{{"type", "integer"}}; }
-json schema_boolean() { return json{{"type", "boolean"}}; }
 
 json schema_object(const json& props, const json& required = json::array()) {
   json obj;
@@ -71,6 +71,13 @@ bool DenseOptflowService::start() {
   publish_state_if_changed("serviceClass", cfg_.service_class, "init", json::object());
   publish_state_if_changed("lastError", "", "init", json::object());
   publish_state_if_changed("lastResult", json::object(), "init", json::object());
+  telemetry_observed_requests_ = 0;
+  telemetry_processed_requests_ = 0;
+  telemetry_window_processed_requests_ = 0;
+  telemetry_window_start_ms_ = 0;
+  telemetry_last_process_ms_ = 0.0;
+  telemetry_total_process_ms_ = 0.0;
+  telemetry_fps_ = 0.0;
 
   running_.store(true, std::memory_order_release);
   stop_requested_.store(false, std::memory_order_release);
@@ -107,6 +114,41 @@ void DenseOptflowService::publish_state_if_changed(const std::string& field, con
   }
 }
 
+void DenseOptflowService::emit_telemetry(std::int64_t ts_ms, double process_ms) {
+  if (!bus_) return;
+  if (telemetry_window_start_ms_ <= 0) {
+    telemetry_window_start_ms_ = ts_ms;
+  }
+  ++telemetry_processed_requests_;
+  ++telemetry_window_processed_requests_;
+  telemetry_last_process_ms_ = process_ms;
+  telemetry_total_process_ms_ += process_ms;
+
+  const std::int64_t elapsed = ts_ms - telemetry_window_start_ms_;
+  if (elapsed >= 1000) {
+    telemetry_fps_ = static_cast<double>(telemetry_window_processed_requests_) * 1000.0 / static_cast<double>(elapsed);
+    telemetry_window_start_ms_ = ts_ms;
+    telemetry_window_processed_requests_ = 0;
+  }
+
+  const std::uint64_t dropped_frames = telemetry_observed_requests_ > telemetry_processed_requests_
+                                           ? (telemetry_observed_requests_ - telemetry_processed_requests_)
+                                           : 0;
+  const double avg_process_ms = telemetry_processed_requests_ > 0
+                                    ? (telemetry_total_process_ms_ / static_cast<double>(telemetry_processed_requests_))
+                                    : 0.0;
+
+  json telemetry = json::object();
+  telemetry["tsMs"] = ts_ms;
+  telemetry["fps"] = telemetry_fps_;
+  telemetry["processMs"] = telemetry_last_process_ms_;
+  telemetry["avgProcessMs"] = avg_process_ms;
+  telemetry["observedFrames"] = telemetry_observed_requests_;
+  telemetry["processedFrames"] = telemetry_processed_requests_;
+  telemetry["droppedFrames"] = dropped_frames;
+  (void)bus_->emit_data(cfg_.service_id, "telemetry", telemetry);
+}
+
 void DenseOptflowService::on_lifecycle(bool active, const json& meta) {
   active_.store(active, std::memory_order_release);
   (void)meta;
@@ -130,11 +172,13 @@ void DenseOptflowService::on_data(const std::string& node_id, const std::string&
     publish_state_if_changed("lastError", "request must be object", "data", meta);
     return;
   }
+  ++telemetry_observed_requests_;
   handle_request(value, meta);
 }
 
 void DenseOptflowService::handle_request(const json& req, const json& meta) {
   if (!bus_) return;
+  const std::int64_t process_start_ms = f8::cppsdk::now_ms();
   const std::string prev_path = req.value("prevPath", "");
   const std::string next_path = req.value("nextPath", "");
   if (prev_path.empty() || next_path.empty()) {
@@ -176,9 +220,20 @@ void DenseOptflowService::handle_request(const json& req, const json& meta) {
   publish_state_if_changed("lastError", "", "data", meta);
   publish_state_if_changed("lastResult", out, "data", meta);
   (void)bus_->emit_data(cfg_.service_id, "result", out);
+  const std::int64_t end_ts_ms = f8::cppsdk::now_ms();
+  emit_telemetry(end_ts_ms, static_cast<double>(end_ts_ms - process_start_ms));
 }
 
 json DenseOptflowService::describe() {
+  const json telemetry_schema = schema_object(
+      json{{"tsMs", schema_integer()},
+           {"fps", schema_number()},
+           {"processMs", schema_number()},
+           {"avgProcessMs", schema_number()},
+           {"observedFrames", schema_integer()},
+           {"processedFrames", schema_integer()},
+           {"droppedFrames", schema_integer()}});
+
   json service;
   service["schemaVersion"] = "f8service/1";
   service["serviceClass"] = "f8.cvkit.denseoptflow";
@@ -209,6 +264,10 @@ json DenseOptflowService::describe() {
             schema_object(json{{"prevPath", schema_string()}, {"nextPath", schema_string()}, {"meanMag", schema_number()}},
                           json::array({"prevPath", "nextPath", "meanMag"}))},
            {"description", "Result payload: {prevPath,nextPath,meanMag}."},
+           {"required", false}},
+      json{{"name", "telemetry"},
+           {"valueSchema", telemetry_schema},
+           {"description", "Runtime telemetry: fps/process time/dropped frames."},
            {"required", false}},
   });
   service["editableDataInPorts"] = false;
