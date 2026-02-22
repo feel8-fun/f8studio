@@ -48,6 +48,15 @@ class _SkeletonEntry:
     payload: Any
 
 
+@dataclass
+class _ChunkFrameBuffer:
+    frame_id: int
+    chunk_count: int
+    started_rx_ts_ms: int
+    last_rx_ts_ms: int
+    chunks: dict[int, list[dict[str, Any]]]
+
+
 class _UdpProtocol(asyncio.DatagramProtocol):
     def __init__(self, queue: asyncio.Queue[tuple[int, bytes, tuple[str, int]]], dropped_ref: list[int]) -> None:
         self._queue = queue
@@ -121,6 +130,8 @@ class UdpSkeletonRuntimeNode(OperatorNode):
         self._selected_key = str(self._initial_state.get("selectedKey", "") or "")
 
         self._skeletons_by_key: dict[str, _SkeletonEntry] = {}
+        self._chunk_frames_by_key: dict[str, _ChunkFrameBuffer] = {}
+        self._last_completed_frame_id_by_key: dict[str, int] = {}
         self._output_version = 0
         self._last_synced_keys: list[str] = []
         self._ctx_output_cache: dict[tuple[str, str | int | None], tuple[int, Any]] = {}
@@ -378,6 +389,8 @@ class UdpSkeletonRuntimeNode(OperatorNode):
                 pass
         self._queue = None
         self._cfg = None
+        async with self._models_lock:
+            self._chunk_frames_by_key.clear()
 
     async def _drain_loop(self) -> None:
         assert self._queue is not None
@@ -394,10 +407,16 @@ class UdpSkeletonRuntimeNode(OperatorNode):
                 if not key:
                     key = f"{addr[0]}:{addr[1]}"
 
-                entry = _SkeletonEntry(rx_ts_ms=int(rx_ts_ms), payload=payload)
-
                 keys_changed = False
                 async with self._models_lock:
+                    merged_payload = self._merge_or_defer_chunk_payload(
+                        key=key,
+                        payload=payload,
+                        rx_ts_ms=int(rx_ts_ms),
+                    )
+                    if merged_payload is None:
+                        continue
+                    entry = _SkeletonEntry(rx_ts_ms=int(rx_ts_ms), payload=merged_payload)
                     keys_changed = key not in self._skeletons_by_key
                     self._skeletons_by_key[key] = entry
                     self._bump_output_version()
@@ -433,6 +452,102 @@ class UdpSkeletonRuntimeNode(OperatorNode):
                 if s:
                     return s
         return None
+
+    @staticmethod
+    def _to_int(value: Any) -> int | None:
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+        if isinstance(value, str):
+            s = value.strip()
+            if not s:
+                return None
+            try:
+                return int(s)
+            except ValueError:
+                return None
+        return None
+
+    def _merge_or_defer_chunk_payload(self, *, key: str, payload: Any, rx_ts_ms: int) -> Any | None:
+        if not isinstance(payload, dict):
+            return payload
+        payload_type = payload.get("type")
+        if payload_type != "skeleton_binary":
+            return payload
+
+        trailer_raw = payload.get("trailer")
+        if not isinstance(trailer_raw, dict):
+            return payload
+
+        chunk_count = self._to_int(trailer_raw.get("chunkCount"))
+        chunk_index = self._to_int(trailer_raw.get("chunkIndex"))
+        frame_id = self._to_int(trailer_raw.get("frameId"))
+
+        if chunk_count is None or chunk_index is None or frame_id is None:
+            return payload
+        if chunk_count <= 1:
+            self._last_completed_frame_id_by_key[key] = frame_id
+            return payload
+        if chunk_index < 0 or chunk_index >= chunk_count:
+            return None
+
+        last_completed = self._last_completed_frame_id_by_key.get(key)
+        if last_completed is not None and frame_id <= int(last_completed):
+            return None
+
+        active_buffer = self._chunk_frames_by_key.get(key)
+        if active_buffer is not None:
+            if frame_id < int(active_buffer.frame_id):
+                return None
+            if frame_id > int(active_buffer.frame_id):
+                active_buffer = None
+            elif chunk_count != int(active_buffer.chunk_count):
+                active_buffer = None
+
+        if active_buffer is None:
+            active_buffer = _ChunkFrameBuffer(
+                frame_id=frame_id,
+                chunk_count=chunk_count,
+                started_rx_ts_ms=rx_ts_ms,
+                last_rx_ts_ms=rx_ts_ms,
+                chunks={},
+            )
+            self._chunk_frames_by_key[key] = active_buffer
+
+        bones_raw = payload.get("bones")
+        if not isinstance(bones_raw, list):
+            return None
+        chunk_bones: list[dict[str, Any]] = []
+        for bone in bones_raw:
+            if isinstance(bone, dict):
+                chunk_bones.append(bone)
+
+        active_buffer.chunks[chunk_index] = chunk_bones
+        active_buffer.last_rx_ts_ms = rx_ts_ms
+
+        if len(active_buffer.chunks) < active_buffer.chunk_count:
+            return None
+
+        merged_bones: list[dict[str, Any]] = []
+        for i in range(active_buffer.chunk_count):
+            merged_bones.extend(active_buffer.chunks.get(i, []))
+
+        merged_payload = dict(payload)
+        merged_payload["bones"] = merged_bones
+        merged_payload["boneCount"] = len(merged_bones)
+
+        merged_trailer = dict(trailer_raw)
+        merged_trailer["chunkIndex"] = 0
+        merged_trailer["chunkCount"] = 1
+        merged_trailer["assembledChunkCount"] = active_buffer.chunk_count
+        merged_payload["trailer"] = merged_trailer
+
+        self._chunk_frames_by_key.pop(key, None)
+        self._last_completed_frame_id_by_key[key] = frame_id
+        return merged_payload
 
     @staticmethod
     def _decode_payload(raw: bytes) -> Any:
@@ -549,6 +664,11 @@ class UdpSkeletonRuntimeNode(OperatorNode):
                 if rx and rx < cutoff:
                     self._skeletons_by_key.pop(k, None)
                     removed = True
+
+            for k, pending in list(self._chunk_frames_by_key.items()):
+                if int(pending.last_rx_ts_ms) < cutoff:
+                    self._chunk_frames_by_key.pop(k, None)
+
             if removed:
                 self._bump_output_version()
 
