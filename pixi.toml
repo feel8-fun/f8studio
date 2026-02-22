@@ -6,6 +6,8 @@ channels = ["conda-forge"]
 platforms = ["win-64", "linux-64"]
 
 [dependencies]
+pillow = ">=12.0.0"
+pyinstaller = ">=6.14.0"
 
 [system-requirements]
 # Pixi uses `system-requirements` to determine the compatible manylinux tag for PyPI wheels on linux.
@@ -69,3 +71,4 @@ mp_pose = "python -m f8pymppose.main_pose"
 sdk_tests = 'python -m unittest discover -s packages/f8pysdk/tests -p "test_*.py"'
 update_describes = "python scripts/update_static_describes.py"
 dl_bench = "python scripts/bench_dl_baseline.py"
+studio_exe = "python scripts/build_studio_exe.py"

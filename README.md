@@ -29,6 +29,10 @@ Fresh workspace for the API-first, NATS-only architecture. Current focus is cont
 ## SHM tools
 - Audio waveform viewer: `pixi run -e default python scripts/audioshm_viewer.py --service-id audiocap --use-event`
 
+## Studio exe (Windows)
+- Build: `pixi run -e default studio_exe`
+- Requires: `pyinstaller` and `pillow` installed in the active environment.
+
 ## Service discovery (startup speed)
 Studio service discovery can avoid spawning `pixi run ... --describe` by using a static `describe.json` in each service directory (e.g. `services/f8/engine/describe.json`).
 

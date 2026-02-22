@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from pathlib import Path
 from typing import Any
 
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
@@ -14,6 +15,20 @@ logger = logging.getLogger(__name__)
 
 
 class PyStudioProgram:
+    @staticmethod
+    def _studio_icon_path() -> Path | None:
+        env_icon = (os.environ.get("F8_STUDIO_ICON_PATH") or "").strip()
+        if env_icon:
+            candidate = Path(env_icon).expanduser()
+            if candidate.exists():
+                return candidate
+
+        repo_icon = Path(__file__).resolve().parents[3] / "assets" / "icon.png"
+        if repo_icon.exists():
+            return repo_icon
+
+        return None
+
     def describe_json(self) -> dict[str, Any]:
         register_pystudio_specs()
         return RuntimeNodeRegistry.instance().describe(SERVICE_CLASS).model_dump(mode="json")
@@ -219,7 +234,7 @@ class PyStudioProgram:
 
     def run(self) -> int:
         # Local import: keep `--describe` fast and avoid importing Qt at module import time.
-        from qtpy import QtWidgets
+        from qtpy import QtGui, QtWidgets
 
         from .widgets.main_window import F8StudioMainWin
         from .service_catalog import load_discovery_into_registries
@@ -233,7 +248,16 @@ class PyStudioProgram:
         node_classes = self.build_node_classes()
 
         app = QtWidgets.QApplication([])
+        icon_path = self._studio_icon_path()
+        if icon_path is not None:
+            app_icon = QtGui.QIcon(str(icon_path))
+            if not app_icon.isNull():
+                app.setWindowIcon(app_icon)
         mainwin = F8StudioMainWin(node_classes)
+        if icon_path is not None:
+            mainwin_icon = QtGui.QIcon(str(icon_path))
+            if not mainwin_icon.isNull():
+                mainwin.setWindowIcon(mainwin_icon)
         mainwin.show()
 
         try:
