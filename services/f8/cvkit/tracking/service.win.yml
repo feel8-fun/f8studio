@@ -1,0 +1,10 @@
+schemaVersion: f8serviceEntry/1
+serviceClass: f8.cvkit.tracking
+label: CVKit Tracking
+version: 0.0.1
+launch:
+  command: "../win/f8cvkit_tracking_service.exe"
+  args: []
+  env: {}
+  workdir: "./"
+

@@ -1,0 +1,9 @@
+schemaVersion: f8serviceEntry/1
+serviceClass: f8.cvkit.denseoptflow
+label: CVKit Dense Optical Flow
+version: 0.0.1
+launch:
+  command: "../win/f8cvkit_dense_optflow_service.exe"
+  args: []
+  env: {}
+  workdir: "./"
