@@ -836,6 +836,9 @@ class OnnxVisionServiceNode(ServiceNode):
 
     def _build_detection_payload(self, *, width: int, height: int, frame_id: int, ts_ms: int, detections: list[Any]) -> dict[str, Any]:
         detections = self._apply_detection_filters(detections)
+        skeleton_protocol = "none"
+        if self._model is not None:
+            skeleton_protocol = str(self._model.skeleton_protocol or "").strip() or "none"
         out: list[dict[str, Any]] = []
         frame_size = (int(width), int(height))
         for d in detections:
@@ -846,6 +849,7 @@ class OnnxVisionServiceNode(ServiceNode):
                 "bbox": [int(x1), int(y1), int(x2), int(y2)],
                 "keypoints": [],
                 "obb": [],
+                "skeletonProtocol": skeleton_protocol,
             }
             if d.keypoints:
                 item["keypoints"] = [
@@ -867,6 +871,7 @@ class OnnxVisionServiceNode(ServiceNode):
             "height": int(height),
             "model": (self._model.model_id if self._model else ""),
             "task": str(self._service_task),
+            "skeletonProtocol": skeleton_protocol,
             "detections": out,
         }
 

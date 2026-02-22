@@ -593,7 +593,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
                     name="markerScale",
                     label="Marker Scale",
                     description="Global scale for bone point size and bone axis size.",
-                    valueSchema=number_schema(default=1.0, minimum=0.1, maximum=20.0),
+                    valueSchema=number_schema(default=1.0, minimum=0.0),
                     access=F8StateAccess.rw,
                     showOnNode=False,
                 ),

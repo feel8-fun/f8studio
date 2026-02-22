@@ -40,6 +40,7 @@ Studio service discovery can avoid spawning `pixi run ... --describe` by using a
 - Detector: `pixi run -e onnx dl_detector`
 - Human detector: `pixi run -e onnx dl_humandetector`
 - Classifier: `pixi run -e onnx dl_classifier`
+- MediaPipe pose: `pixi run -e mediapipe mp_pose`
 - Baseline benchmark: `pixi run -e onnx dl_bench -- --model-yaml <yaml> --video <video>`
 
 ## Audio capture

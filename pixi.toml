@@ -17,6 +17,10 @@ libc = { family = "glibc", version = "2.34" }
 python = "3.13.*"
 pip = ">=24"
 
+[feature.py310.dependencies]
+python = "3.10.*"
+pip = ">=24"
+
 [feature.sdk.pypi-dependencies]
 f8pysdk = { path = "packages/f8pysdk", editable = true }
 
@@ -45,9 +49,14 @@ f8pydl = { path = "packages/f8pydl", editable = true }
 onnxruntime-gpu = ">=1.17.0"
 pyyaml = ">=6.0.0"
 
+[feature.mediapipe.pypi-dependencies]
+f8pymppose = { path = "packages/f8pymppose", editable = true }
+mediapipe = ">=0.10.14"
+
 [environments]
 default = { features = ["py313", "sdk", "engine", "studio", "vision"], solve-group = "default" }
 onnx = { features = ["py313", "sdk", "onnx", "vision"], solve-group = "onnx" }
+mediapipe = { features = ["py310", "sdk", "vision", "mediapipe"], solve-group = "mediapipe" }
 
 [tasks]
 engine = "python -m f8pyengine.main"
@@ -56,6 +65,7 @@ detect_tracker = "python -m f8pydetect_tracker.main"
 dl_detector = "python -m f8pydl.main_detector"
 dl_humandetector = "python -m f8pydl.main_humandetector"
 dl_classifier = "python -m f8pydl.main_classifier"
+mp_pose = "python -m f8pymppose.main_pose"
 sdk_tests = 'python -m unittest discover -s packages/f8pysdk/tests -p "test_*.py"'
 update_describes = "python scripts/update_static_describes.py"
 dl_bench = "python scripts/bench_dl_baseline.py"

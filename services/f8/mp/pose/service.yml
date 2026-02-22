@@ -1,0 +1,9 @@
+schemaVersion: f8serviceEntry/1
+serviceClass: f8.mp.pose
+label: MediaPipe Pose
+version: 0.0.1
+launch:
+  command: pixi
+  args: ["run", "-e", "mediapipe", "mp_pose"]
+  env: {}
+  workdir: "../../../../"

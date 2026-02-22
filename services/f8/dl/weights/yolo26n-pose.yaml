@@ -4,6 +4,7 @@ model:
   displayName: yolo26n pose
   provider: yolo
   task: yolo_pose
+  skeletonProtocol: coco17
   onnxPath: yolo26n-pose.onnx
 input:
   width: 640

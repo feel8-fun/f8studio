@@ -20,6 +20,7 @@ class ModelSpec:
     conf_threshold: float
     iou_threshold: float
     classes: list[str]
+    skeleton_protocol: str = "none"
     keypoints: list[str] | None = None
     keypoint_dims: int = 3
     top_k: int = 5
@@ -113,6 +114,13 @@ def _coerce_str_list(v: Any) -> list[str] | None:
     return None
 
 
+def _normalize_skeleton_protocol(v: Any) -> str:
+    text = _as_str(v).strip()
+    if not text:
+        return "none"
+    return text
+
+
 def load_model_spec(yaml_path: Path) -> ModelSpec:
     """
     Load a model yaml.
@@ -134,6 +142,7 @@ def load_model_spec(yaml_path: Path) -> ModelSpec:
         classification = data.get("classification") if isinstance(data.get("classification"), dict) else {}
 
         task = _parse_task(model.get("task")) or "yolo_det"
+        skeleton_protocol = _normalize_skeleton_protocol(model.get("skeletonProtocol"))
         model_id = _as_str(model.get("id"), default=_as_str(data.get("name"), default=yaml_path.stem))
         display_name = _as_str(model.get("displayName"), default=model_id)
         provider = _as_str(model.get("provider"), default=_as_str(data.get("provider"), default=""))
@@ -167,6 +176,7 @@ def load_model_spec(yaml_path: Path) -> ModelSpec:
             conf_threshold=conf_threshold,
             iou_threshold=iou_threshold,
             classes=classes,
+            skeleton_protocol=skeleton_protocol,
             keypoints=keypoints,
             keypoint_dims=max(1, int(keypoint_dims)),
             top_k=max(1, int(top_k)),
@@ -198,6 +208,9 @@ def load_model_spec(yaml_path: Path) -> ModelSpec:
     conf_threshold = _as_float(data.get("conf_threshold"), default=0.25)
     iou_threshold = _as_float(data.get("iou_threshold"), default=0.45)
     classes = _coerce_str_list(data.get("classes")) or []
+    skeleton_protocol = _normalize_skeleton_protocol(
+        data.get("skeletonProtocol") if data.get("skeletonProtocol") is not None else data.get("skeleton_protocol")
+    )
     keypoints = _coerce_str_list(data.get("keypoints"))
     keypoint_dims = _as_int(data.get("keypoint_dims"), default=3)
     top_k = _as_int(data.get("top_k"), default=5)
@@ -213,6 +226,7 @@ def load_model_spec(yaml_path: Path) -> ModelSpec:
         conf_threshold=conf_threshold,
         iou_threshold=iou_threshold,
         classes=classes,
+        skeleton_protocol=skeleton_protocol,
         keypoints=keypoints,
         keypoint_dims=max(1, int(keypoint_dims)),
         top_k=max(1, int(top_k)),

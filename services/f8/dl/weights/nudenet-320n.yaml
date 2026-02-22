@@ -4,6 +4,7 @@ model:
   displayName: NudeNet-320n
   provider: notAI-tech
   task: yolo_det
+  skeletonProtocol: none
   onnxPath: nudenet-320n.onnx
   url: https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/320n.onnx
 input:

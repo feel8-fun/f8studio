@@ -36,6 +36,7 @@ class _Sample:
     bbox: tuple[float, float, float, float] | None = None  # x1,y1,x2,y2
     keypoints: list[dict[str, Any]] | None = None
     kind: str = "track"  # "track" | "match" | other
+    skeleton_protocol: str | None = None
 
 
 class PyStudioTrackVizRuntimeNode(StudioVizRuntimeNodeBase):
@@ -133,6 +134,11 @@ class PyStudioTrackVizRuntimeNode(StudioVizRuntimeNodeBase):
 
         payload = value if isinstance(value, dict) else {}
         now = int(ts_ms) if ts_ms is not None else int(payload.get("tsMs") or time.time() * 1000)
+        payload_skeleton_protocol = ""
+        try:
+            payload_skeleton_protocol = str(payload.get("skeletonProtocol") or "").strip()
+        except (AttributeError, TypeError, ValueError):
+            payload_skeleton_protocol = ""
 
         try:
             w = payload.get("width")
@@ -181,6 +187,7 @@ class PyStudioTrackVizRuntimeNode(StudioVizRuntimeNodeBase):
                             "bbox": list(bbox) if bbox is not None else None,
                             "keypoints": kps,
                             "kind": "det",
+                            "skeletonProtocol": str(det.get("skeletonProtocol") or payload_skeleton_protocol or "").strip(),
                         }
                     )
                 tracks = det_tracks
@@ -214,7 +221,15 @@ class PyStudioTrackVizRuntimeNode(StudioVizRuntimeNodeBase):
                     kps0 = [x for x in kp0 if isinstance(x, dict)]
             except Exception:
                 kps0 = None
-            tracks = [{"id": 1, "bbox": list(bbox0) if bbox0 is not None else None, "keypoints": kps0, "kind": kind0}]
+            tracks = [
+                {
+                    "id": 1,
+                    "bbox": list(bbox0) if bbox0 is not None else None,
+                    "keypoints": kps0,
+                    "kind": kind0,
+                    "skeletonProtocol": payload_skeleton_protocol,
+                }
+            ]
 
         for t in tracks:
             if not isinstance(t, dict):
@@ -245,12 +260,25 @@ class PyStudioTrackVizRuntimeNode(StudioVizRuntimeNodeBase):
                 kind = str(t.get("kind") or t.get("source") or "track")
             except Exception:
                 kind = "track"
+            skeleton_protocol = ""
+            try:
+                skeleton_protocol = str(t.get("skeletonProtocol") or payload_skeleton_protocol or "").strip()
+            except Exception:
+                skeleton_protocol = ""
 
             q = self._tracks.get(tid)
             if q is None:
                 q = deque()
                 self._tracks[tid] = q
-            q.append(_Sample(ts_ms=now, bbox=bbox, keypoints=kps, kind=kind))
+            q.append(
+                _Sample(
+                    ts_ms=now,
+                    bbox=bbox,
+                    keypoints=kps,
+                    kind=kind,
+                    skeleton_protocol=(skeleton_protocol if skeleton_protocol else None),
+                )
+            )
 
         self._dirty = True
         self._prune(now_ms=now)
@@ -318,6 +346,8 @@ class PyStudioTrackVizRuntimeNode(StudioVizRuntimeNodeBase):
                     item["keypoints"] = s.keypoints
                 if s.kind:
                     item["kind"] = str(s.kind)
+                if s.skeleton_protocol:
+                    item["skeletonProtocol"] = str(s.skeleton_protocol)
                 hist.append(item)
             out_tracks.append({"id": int(tid), "history": hist})
 

@@ -4,6 +4,7 @@ model:
   displayName: FunGen 12s pov 1.1.0
   provider: FunGen
   task: yolo_det
+  skeletonProtocol: none
   onnxPath: FunGen-12s-pov-1.1.0.onnx
 input:
   width: 640

@@ -10,6 +10,7 @@ from f8pysdk.shm import VideoShmReader
 
 from ..nodegraph.operator_basenode import F8StudioOperatorBaseNode
 from ..nodegraph.viz_operator_nodeitem import F8StudioVizOperatorNodeItem
+from ..skeleton_protocols import skeleton_edges_for_protocol
 from ..ui_bus import UiCommand
 
 import pyqtgraph as pg  # type: ignore[import-not-found]
@@ -34,28 +35,6 @@ def _color_for_kind(kind: str) -> tuple[int, int, int] | None:
     if k == "track":
         return (80, 220, 120)
     return None
-
-
-_COCO17_EDGES: list[tuple[int, int]] = [
-    (0, 1),
-    (0, 2),
-    (1, 3),
-    (2, 4),
-    (0, 5),
-    (0, 6),
-    (5, 7),
-    (7, 9),
-    (6, 8),
-    (8, 10),
-    (5, 6),
-    (5, 11),
-    (6, 12),
-    (11, 12),
-    (11, 13),
-    (13, 15),
-    (12, 14),
-    (14, 16),
-]
 
 
 class _TrackVizCanvas(pg.GraphicsObject):  # type: ignore[misc]
@@ -212,24 +191,30 @@ class _TrackVizCanvas(pg.GraphicsObject):  # type: ignore[misc]
                 except (TypeError, ValueError):
                     pts.append((float("nan"), float("nan")))
 
-            # Skeleton lines.
-            pen = QtGui.QPen(QtGui.QColor(r, g, b, 220))
-            pen.setWidthF(2.0)
-            p.setPen(pen)
-            for i, j in _COCO17_EDGES:
-                if i >= len(pts) or j >= len(pts):
-                    continue
-                x0, y0 = pts[i]
-                x1, y1 = pts[j]
-                if not (x0 == x0 and y0 == y0 and x1 == x1 and y1 == y1):
-                    continue
-                p.drawLine(QtCore.QPointF(x0, y0), QtCore.QPointF(x1, y1))
+            skeleton_protocol = ""
+            try:
+                skeleton_protocol = str(last.get("skeletonProtocol") or "").strip()
+            except (AttributeError, TypeError, ValueError):
+                skeleton_protocol = ""
+            skeleton_edges = skeleton_edges_for_protocol(skeleton_protocol)
+            if skeleton_edges is not None:
+                pen = QtGui.QPen(QtGui.QColor(r, g, b, 220))
+                pen.setWidthF(2.0)
+                p.setPen(pen)
+                for i, j in skeleton_edges:
+                    if i >= len(pts) or j >= len(pts):
+                        continue
+                    x0, y0 = pts[i]
+                    x1, y1 = pts[j]
+                    if not (x0 == x0 and y0 == y0 and x1 == x1 and y1 == y1):
+                        continue
+                    p.drawLine(QtCore.QPointF(x0, y0), QtCore.QPointF(x1, y1))
 
             # Keypoint dots.
             brush = QtGui.QBrush(QtGui.QColor(r, g, b, 220))
             p.setBrush(brush)
             p.setPen(QtCore.Qt.NoPen)
-            rad = 3.0
+            rad = 3.0 if skeleton_edges is not None else 6.0
             for x, y in pts:
                 if not (x == x and y == y):
                     continue

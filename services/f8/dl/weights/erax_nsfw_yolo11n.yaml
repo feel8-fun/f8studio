@@ -4,6 +4,7 @@ model:
   displayName: erax nsfw yolo11n
   provider: ERAX-AI
   task: yolo_det
+  skeletonProtocol: none
   onnxPath: erax_nsfw_yolo11n.onnx
 input:
   width: 640
