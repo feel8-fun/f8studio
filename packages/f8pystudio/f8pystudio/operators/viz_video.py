@@ -23,8 +23,8 @@ from ..constants import SERVICE_CLASS
 from ..ui_bus import emit_ui_command
 
 
-OPERATOR_CLASS = "f8.video_shm_view"
-RENDERER_CLASS = "pystudio_videoshm"
+OPERATOR_CLASS = "f8.viz.video"
+RENDERER_CLASS = "viz_video"
 
 
 def _default_video_shm_name(service_id: str) -> str:
@@ -32,7 +32,7 @@ def _default_video_shm_name(service_id: str) -> str:
     return video_shm_name(s) if s else ""
 
 
-class PyStudioVideoShmViewRuntimeNode(OperatorNode):
+class VizVideoRuntimeNode(OperatorNode):
     """
     Studio-only visualization node: view a Video SHM (BGRA32) in a Qt widget.
 
@@ -45,7 +45,7 @@ class PyStudioVideoShmViewRuntimeNode(OperatorNode):
         serviceClass=SERVICE_CLASS,
         operatorClass=OPERATOR_CLASS,
         version="0.0.1",
-        label="Video SHM View",
+        label="VideoViz",
         description="Display frames from a VideoSHM region (BGRA32).",
         tags=["ui", "shm", "video", "viewer"],
         dataInPorts=[],
@@ -118,7 +118,7 @@ class PyStudioVideoShmViewRuntimeNode(OperatorNode):
                 await asyncio.gather(t, return_exceptions=True)
         except (RuntimeError, TypeError):
             pass
-        emit_ui_command(self.node_id, "videoshm.detach", {}, ts_ms=int(time.time() * 1000))
+        emit_ui_command(self.node_id, "viz.video.detach", {}, ts_ms=int(time.time() * 1000))
 
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
         f = str(field or "").strip()
@@ -157,7 +157,7 @@ class PyStudioVideoShmViewRuntimeNode(OperatorNode):
             shm_name = _default_video_shm_name(self._service_id)
         emit_ui_command(
             self.node_id,
-            "videoshm.set",
+            "viz.video.set",
             {
                 "shmName": shm_name,
                 "serviceId": str(self._service_id or "").strip(),
@@ -203,8 +203,8 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
     reg = registry or RuntimeNodeRegistry.instance()
 
     def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
-        return PyStudioVideoShmViewRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
+        return VizVideoRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
 
     reg.register(SERVICE_CLASS, OPERATOR_CLASS, _factory, overwrite=True)
-    reg.register_operator_spec(PyStudioVideoShmViewRuntimeNode.SPEC, overwrite=True)
+    reg.register_operator_spec(VizVideoRuntimeNode.SPEC, overwrite=True)
     return reg

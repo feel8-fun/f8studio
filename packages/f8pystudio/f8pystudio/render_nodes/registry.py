@@ -8,14 +8,14 @@ from typing import ClassVar
 from ..nodegraph.service_basenode import F8StudioServiceBaseNode
 from ..nodegraph.container_basenode import F8StudioContainerBaseNode
 from ..nodegraph.operator_basenode import F8StudioOperatorBaseNode
-from .pystudio_print import PyStudioPrintNode
-from .pystudio_timeseries import PyStudioTimeSeriesNode
-from .pystudio_videoshm import PyStudioVideoShmNode
-from .pystudio_audioshm import PyStudioAudioShmNode
-from .pystudio_trackviz import PyStudioTrackVizNode
+from .viz_text import VizTextRenderNode
+from .viz_wave import VizWaveRenderNode
+from .viz_video import VizVideoRenderNode
+from .viz_audio import VizAudioRenderNode
+from .viz_track import VizTrackRenderNode
 from .pystudio_template_tracker import PyStudioTemplateTrackerNode
-from .pystudio_skeleton3d import PyStudioSkeleton3DNode
-from .pystudio_tcode_viewer import PyStudioTCodeViewerNode
+from .viz_three_d import VizThreeDRenderNode
+from .viz_tcode import VizTCodeRenderNode
 
 
 class RenderNodeRegistry:
@@ -35,14 +35,14 @@ class RenderNodeRegistry:
         self._renderers["default_svc"] = F8StudioServiceBaseNode
         self._renderers["default_op"] = F8StudioOperatorBaseNode
         self._renderers["default_container"] = F8StudioContainerBaseNode
-        self._renderers["pystudio_print"] = PyStudioPrintNode
-        self._renderers["pystudio_timeseries"] = PyStudioTimeSeriesNode
-        self._renderers["pystudio_videoshm"] = PyStudioVideoShmNode
-        self._renderers["pystudio_audioshm"] = PyStudioAudioShmNode
-        self._renderers["pystudio_trackviz"] = PyStudioTrackVizNode
+        self._renderers["viz_text"] = VizTextRenderNode
+        self._renderers["viz_wave"] = VizWaveRenderNode
+        self._renderers["viz_video"] = VizVideoRenderNode
+        self._renderers["viz_audio"] = VizAudioRenderNode
+        self._renderers["viz_track"] = VizTrackRenderNode
         self._renderers["pystudio_template_tracker"] = PyStudioTemplateTrackerNode
-        self._renderers["pystudio_skeleton3d"] = PyStudioSkeleton3DNode
-        self._renderers["pystudio_tcode_viewer"] = PyStudioTCodeViewerNode
+        self._renderers["viz_three_d"] = VizThreeDRenderNode
+        self._renderers["viz_tcode"] = VizTCodeRenderNode
 
     def register(self, renderer_key: str, renderer: type[NodeObject]) -> None:
         if renderer_key in self._renderers:

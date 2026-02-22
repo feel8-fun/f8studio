@@ -254,7 +254,7 @@ class _TCodeViewerWidget(NodeBaseWidget):
         self._pane.set_window_open(is_open)
 
 
-class PyStudioTCodeViewerNode(F8StudioOperatorBaseNode):
+class VizTCodeRenderNode(F8StudioOperatorBaseNode):
     def __init__(self) -> None:
         super().__init__(qgraphics_item=F8StudioVizOperatorNodeItem)
         self._presenter = _TCodeViewerPresenter()
@@ -329,24 +329,24 @@ class PyStudioTCodeViewerNode(F8StudioOperatorBaseNode):
     def apply_ui_command(self, cmd: UiCommand) -> None:
         command = str(cmd.command or "").strip()
         if command not in (
-            "tcode_viewer.set_model",
-            "tcode_viewer.write",
-            "tcode_viewer.reset",
-            "tcode_viewer.detach",
+            "viz.tcode.set_model",
+            "viz.tcode.write",
+            "viz.tcode.reset",
+            "viz.tcode.detach",
         ):
             return
 
-        if command == "tcode_viewer.detach":
+        if command == "viz.tcode.detach":
             self._presenter.on_detach()
             return
 
         payload = dict(cmd.payload or {})
-        if command == "tcode_viewer.set_model":
+        if command == "viz.tcode.set_model":
             model = str(payload.get("model") or "SR6")
             self._presenter.on_set_model(model=model)
             return
 
-        if command == "tcode_viewer.reset":
+        if command == "viz.tcode.reset":
             self._presenter.on_reset()
             return
 

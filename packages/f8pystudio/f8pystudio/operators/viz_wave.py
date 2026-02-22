@@ -25,11 +25,11 @@ from ..ui_bus import emit_ui_command
 from ._viz_base import StudioVizRuntimeNodeBase, viz_sampling_state_fields
 
 
-OPERATOR_CLASS = "f8.timeseries"
-RENDERER_CLASS = "pystudio_timeseries"
+OPERATOR_CLASS = "f8.viz.wave"
+RENDERER_CLASS = "viz_wave"
 
 
-class PyStudioTimeSeriesRuntimeNode(StudioVizRuntimeNodeBase):
+class VizWaveRuntimeNode(StudioVizRuntimeNodeBase):
     """
     Studio-side runtime node for time-series plotting.
 
@@ -178,7 +178,7 @@ class PyStudioTimeSeriesRuntimeNode(StudioVizRuntimeNodeBase):
             colors = series_colors(color_order)
             emit_ui_command(
                 self.node_id,
-                "timeseries.set",
+                "viz.wave.set",
                 {
                     "series": {k: list(v) for k, v in (self._series or {}).items() if v},
                     "colors": {k: list(rgb) for k, rgb in colors.items()},
@@ -281,7 +281,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
     reg = registry or RuntimeNodeRegistry.instance()
 
     def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
-        return PyStudioTimeSeriesRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
+        return VizWaveRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
 
     reg.register(SERVICE_CLASS, OPERATOR_CLASS, _factory, overwrite=True)
     reg.register_operator_spec(
@@ -290,7 +290,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
             serviceClass=SERVICE_CLASS,
             operatorClass=OPERATOR_CLASS,
             version="0.0.1",
-            label="Time Series Plot",
+            label="WaveViz",
             description="Plot numeric values over time (UI-only).",
             tags=["plot", "timeseries", "ui"],
             dataInPorts=[

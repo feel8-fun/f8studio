@@ -284,9 +284,9 @@ class _AudioShmWidget(NodeBaseWidget):
         self._pane.detach()
 
 
-class PyStudioAudioShmNode(F8StudioOperatorBaseNode):
+class VizAudioRenderNode(F8StudioOperatorBaseNode):
     """
-    Render node for `f8.audio_shm_view`.
+    Render node for `f8.viz.audio`.
     """
 
     def __init__(self):
@@ -327,12 +327,12 @@ class PyStudioAudioShmNode(F8StudioOperatorBaseNode):
 
     def apply_ui_command(self, cmd: UiCommand) -> None:
         c = str(cmd.command or "")
-        if c == "audioshm.detach":
+        if c == "viz.audio.detach":
             widget = self._widget()
             if widget is not None:
                 widget.detach()
             return
-        if c != "audioshm.set":
+        if c != "viz.audio.set":
             return
         try:
             payload = dict(cmd.payload or {})

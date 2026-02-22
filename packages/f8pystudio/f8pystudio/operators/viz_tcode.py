@@ -25,12 +25,12 @@ from ._viz_base import StudioVizRuntimeNodeBase, viz_sampling_state_fields
 
 logger = logging.getLogger(__name__)
 
-OPERATOR_CLASS = "f8.tcode_viewer"
-RENDERER_CLASS = "pystudio_tcode_viewer"
+OPERATOR_CLASS = "f8.viz.tcode"
+RENDERER_CLASS = "viz_tcode"
 MODEL_VALUES = ("OSR2", "SR6", "SSR1")
 
 
-class PyStudioTCodeViewerRuntimeNode(StudioVizRuntimeNodeBase):
+class VizTCodeRuntimeNode(StudioVizRuntimeNodeBase):
     """
     Studio-side runtime node that forwards TCode lines to detached viewer UI.
     """
@@ -65,7 +65,7 @@ class PyStudioTCodeViewerRuntimeNode(StudioVizRuntimeNodeBase):
                 await asyncio.gather(task, return_exceptions=True)
             except Exception:
                 logger.exception("failed to await tcode viewer flush task nodeId=%s", self.node_id)
-        emit_ui_command(self.node_id, "tcode_viewer.detach", {}, ts_ms=int(time.time() * 1000))
+        emit_ui_command(self.node_id, "viz.tcode.detach", {}, ts_ms=int(time.time() * 1000))
 
     async def on_data(self, port: str, value: Any, *, ts_ms: int | None = None) -> None:
         if str(port or "").strip() != "tcode":
@@ -163,13 +163,13 @@ class PyStudioTCodeViewerRuntimeNode(StudioVizRuntimeNodeBase):
     def _emit_set_model(self) -> None:
         emit_ui_command(
             self.node_id,
-            "tcode_viewer.set_model",
+            "viz.tcode.set_model",
             {"model": self._model},
             ts_ms=int(time.time() * 1000),
         )
 
     def _emit_reset(self) -> None:
-        emit_ui_command(self.node_id, "tcode_viewer.reset", {}, ts_ms=int(time.time() * 1000))
+        emit_ui_command(self.node_id, "viz.tcode.reset", {}, ts_ms=int(time.time() * 1000))
 
     def _emit_pending(self, *, now_ms: int) -> None:
         if not self._pending_lines:
@@ -177,7 +177,7 @@ class PyStudioTCodeViewerRuntimeNode(StudioVizRuntimeNodeBase):
             return
         line = "".join(self._pending_lines)
         self._pending_lines.clear()
-        emit_ui_command(self.node_id, "tcode_viewer.write", {"line": line, "tsMs": int(now_ms)}, ts_ms=int(now_ms))
+        emit_ui_command(self.node_id, "viz.tcode.write", {"line": line, "tsMs": int(now_ms)}, ts_ms=int(now_ms))
         self._last_flush_ms = int(now_ms)
 
     def _normalize_line(self, value: str) -> str:
@@ -219,7 +219,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
     reg = registry or RuntimeNodeRegistry.instance()
 
     def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
-        return PyStudioTCodeViewerRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
+        return VizTCodeRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
 
     reg.register(SERVICE_CLASS, OPERATOR_CLASS, _factory, overwrite=True)
     reg.register_operator_spec(
@@ -228,7 +228,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
             serviceClass=SERVICE_CLASS,
             operatorClass=OPERATOR_CLASS,
             version="0.0.1",
-            label="TCode Viewer",
+            label="TCodeViz",
             description="Detached OSR emulator viewer for TCode string streams.",
             tags=["viz", "tcode", "osr", "ui"],
             dataInPorts=[

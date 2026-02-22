@@ -515,9 +515,9 @@ class _TrackVizWidget(NodeBaseWidget):
         self._pane.detach()
 
 
-class PyStudioTrackVizNode(F8StudioOperatorBaseNode):
+class VizTrackRenderNode(F8StudioOperatorBaseNode):
     """
-    Render node for `f8.trackviz`.
+    Render node for `f8.viz.track`.
     """
 
     def __init__(self):
@@ -558,12 +558,12 @@ class PyStudioTrackVizNode(F8StudioOperatorBaseNode):
 
     def apply_ui_command(self, cmd: UiCommand) -> None:
         command = str(cmd.command or "")
-        if command == "trackviz.detach":
+        if command == "viz.track.detach":
             widget = self._widget()
             if widget is not None:
                 widget.detach()
             return
-        if command != "trackviz.set":
+        if command != "viz.track.set":
             return
         try:
             payload = dict(cmd.payload or {})

@@ -23,8 +23,8 @@ from ..constants import SERVICE_CLASS
 from ..ui_bus import emit_ui_command
 
 
-OPERATOR_CLASS = "f8.audio_shm_view"
-RENDERER_CLASS = "pystudio_audioshm"
+OPERATOR_CLASS = "f8.viz.audio"
+RENDERER_CLASS = "viz_audio"
 
 
 def _default_audio_shm_name(service_id: str) -> str:
@@ -32,7 +32,7 @@ def _default_audio_shm_name(service_id: str) -> str:
     return audio_shm_name(s) if s else ""
 
 
-class PyStudioAudioShmViewRuntimeNode(OperatorNode):
+class VizAudioRuntimeNode(OperatorNode):
     """
     Studio-only visualization node: view an Audio SHM (ring buffer) waveform.
 
@@ -45,7 +45,7 @@ class PyStudioAudioShmViewRuntimeNode(OperatorNode):
         serviceClass=SERVICE_CLASS,
         operatorClass=OPERATOR_CLASS,
         version="0.0.1",
-        label="Audio SHM View",
+        label="AudioViz",
         description="Display waveform from an AudioSHM region.",
         tags=["ui", "shm", "audio", "viewer", "waveform"],
         dataInPorts=[],
@@ -136,7 +136,7 @@ class PyStudioAudioShmViewRuntimeNode(OperatorNode):
                 await asyncio.gather(t, return_exceptions=True)
         except (RuntimeError, TypeError):
             pass
-        emit_ui_command(self.node_id, "audioshm.detach", {}, ts_ms=int(time.time() * 1000))
+        emit_ui_command(self.node_id, "viz.audio.detach", {}, ts_ms=int(time.time() * 1000))
 
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
         f = str(field or "").strip()
@@ -181,7 +181,7 @@ class PyStudioAudioShmViewRuntimeNode(OperatorNode):
             shm_name = _default_audio_shm_name(self._service_id)
         emit_ui_command(
             self.node_id,
-            "audioshm.set",
+            "viz.audio.set",
             {
                 "shmName": shm_name,
                 "serviceId": str(self._service_id or "").strip(),
@@ -229,8 +229,8 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
     reg = registry or RuntimeNodeRegistry.instance()
 
     def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
-        return PyStudioAudioShmViewRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
+        return VizAudioRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
 
     reg.register(SERVICE_CLASS, OPERATOR_CLASS, _factory, overwrite=True)
-    reg.register_operator_spec(PyStudioAudioShmViewRuntimeNode.SPEC, overwrite=True)
+    reg.register_operator_spec(VizAudioRuntimeNode.SPEC, overwrite=True)
     return reg

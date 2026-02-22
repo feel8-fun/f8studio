@@ -1,19 +1,19 @@
-from .print import PyStudioPrintRuntimeNode, register_operator as register_print
-from .trackviz import PyStudioTrackVizRuntimeNode, register_operator as register_trackviz
-from .timeseries import PyStudioTimeSeriesRuntimeNode, register_operator as register_timeseries
-from .video_shm_view import PyStudioVideoShmViewRuntimeNode, register_operator as register_video_shm_view
-from .audio_shm_view import PyStudioAudioShmViewRuntimeNode, register_operator as register_audio_shm_view
-from .skeleton3d import PyStudioSkeleton3DRuntimeNode, register_operator as register_skeleton3d
-from .tcode_viewer import PyStudioTCodeViewerRuntimeNode, register_operator as register_tcode_viewer
+from .viz_text import VizTextRuntimeNode, register_operator as register_viz_text
+from .viz_track import VizTrackRuntimeNode, register_operator as register_viz_track
+from .viz_wave import VizWaveRuntimeNode, register_operator as register_viz_wave
+from .viz_video import VizVideoRuntimeNode, register_operator as register_viz_video
+from .viz_audio import VizAudioRuntimeNode, register_operator as register_viz_audio
+from .viz_three_d import VizThreeDRuntimeNode, register_operator as register_viz_three_d
+from .viz_tcode import VizTCodeRuntimeNode, register_operator as register_viz_tcode
 
 __all__ = [
-    "PyStudioPrintRuntimeNode",
-    "PyStudioTrackVizRuntimeNode",
-    "PyStudioTimeSeriesRuntimeNode",
-    "PyStudioVideoShmViewRuntimeNode",
-    "PyStudioAudioShmViewRuntimeNode",
-    "PyStudioSkeleton3DRuntimeNode",
-    "PyStudioTCodeViewerRuntimeNode",
+    "VizTextRuntimeNode",
+    "VizTrackRuntimeNode",
+    "VizWaveRuntimeNode",
+    "VizVideoRuntimeNode",
+    "VizAudioRuntimeNode",
+    "VizThreeDRuntimeNode",
+    "VizTCodeRuntimeNode",
     "register_operator",
 ]
 
@@ -22,11 +22,11 @@ def register_operator(registry=None):
     """
     Register all Studio in-process operators.
     """
-    reg = register_print(registry)
-    reg = register_timeseries(reg)
-    reg = register_trackviz(reg)
-    reg = register_video_shm_view(reg)
-    reg = register_audio_shm_view(reg)
-    reg = register_skeleton3d(reg)
-    reg = register_tcode_viewer(reg)
+    reg = register_viz_text(registry)
+    reg = register_viz_wave(reg)
+    reg = register_viz_track(reg)
+    reg = register_viz_video(reg)
+    reg = register_viz_audio(reg)
+    reg = register_viz_three_d(reg)
+    reg = register_viz_tcode(reg)
     return reg

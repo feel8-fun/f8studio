@@ -287,9 +287,9 @@ class _Skeleton3DWidget(NodeBaseWidget):
         self._pane.set_people_count(count)
 
 
-class PyStudioSkeleton3DNode(F8StudioOperatorBaseNode):
+class VizThreeDRenderNode(F8StudioOperatorBaseNode):
     """
-    Render node for `f8.skeleton3d`.
+    Render node for `f8.viz.three_d`.
 
     Node body is a compact control panel. 3D rendering lives in a detached viewer
     window, so closing the window only pauses rendering while runtime continues to
@@ -375,10 +375,10 @@ class PyStudioSkeleton3DNode(F8StudioOperatorBaseNode):
 
     def apply_ui_command(self, cmd: UiCommand) -> None:
         command = str(cmd.command or "").strip()
-        if command not in ("skeleton3d.set", "skeleton3d.detach"):
+        if command not in ("viz.three_d.set", "viz.three_d.detach"):
             return
 
-        if command == "skeleton3d.detach":
+        if command == "viz.three_d.detach":
             self._presenter.on_detach()
             widget = self._get_widget()
             if widget is not None:

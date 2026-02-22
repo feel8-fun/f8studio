@@ -23,13 +23,13 @@ from ..constants import SERVICE_CLASS
 from ..ui_bus import emit_ui_command
 from ._viz_base import StudioVizRuntimeNodeBase, viz_sampling_state_fields
 
-OPERATOR_CLASS = "f8.print"
-RENDERER_CLASS = "pystudio_print"
+OPERATOR_CLASS = "f8.viz.text"
+RENDERER_CLASS = "viz_text"
 
 
-class PyStudioPrintRuntimeNode(StudioVizRuntimeNodeBase):
+class VizTextRuntimeNode(StudioVizRuntimeNodeBase):
     """
-    Studio-side runtime node for `f8.print`.
+    Studio-side runtime node for `f8.viz.text`.
 
     This node runs inside the Studio process (`serviceId=studio`) and periodically
     pulls its `inputData` buffer, then emits UI commands for preview updates.
@@ -101,7 +101,7 @@ class PyStudioPrintRuntimeNode(StudioVizRuntimeNodeBase):
                     ts_ms = int(time.time() * 1000)
                     self._last_preview_value = v
                     self._last_preview_ts = ts_ms
-                    emit_ui_command(self.node_id, "preview.update", {"value": v}, ts_ms=ts_ms)
+                    emit_ui_command(self.node_id, "viz.text.update", {"value": v}, ts_ms=ts_ms)
 
             await asyncio.sleep(max(0.02, float(throttle_ms) / 1000.0))
 
@@ -115,7 +115,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
     reg = registry or RuntimeNodeRegistry.instance()
 
     def _print_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
-        return PyStudioPrintRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
+        return VizTextRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
 
     reg.register(SERVICE_CLASS, OPERATOR_CLASS, _print_factory, overwrite=True)
 
@@ -125,7 +125,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
             serviceClass=SERVICE_CLASS,
             operatorClass=OPERATOR_CLASS,
             version="0.0.1",
-            label="Print Node",
+            label="TextViz",
             description="Operator that displays incoming data in the editor (preview).",
             tags=["print", "console"],
             dataInPorts=[

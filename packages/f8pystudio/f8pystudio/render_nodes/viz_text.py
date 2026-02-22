@@ -202,7 +202,7 @@ class _PrintPreviewPane(QtWidgets.QWidget):
         except (TypeError, ValueError):
             s = ""
         if len(s) > 50_000:
-            s = s[:50_000] + "\n… (truncated)"
+            s = s[:50_000] + "\nâ€¦ (truncated)"
         if not self._update.isChecked():
             self._pending_text = s
             return
@@ -325,9 +325,9 @@ class _PrintPreviewWidget(NodeBaseWidget):
         self._pane.set_text(text)
 
 
-class PyStudioPrintNode(F8StudioOperatorBaseNode):
+class VizTextRenderNode(F8StudioOperatorBaseNode):
     """
-    Render node for `f8.print`.
+    Render node for `f8.viz.text`.
 
     Adds a preview text area that can be updated by the editor refresh loop.
     """
@@ -397,7 +397,7 @@ class PyStudioPrintNode(F8StudioOperatorBaseNode):
         widget.set_preview_text(txt)
 
     def apply_ui_command(self, cmd: UiCommand) -> None:
-        if str(cmd.command) != "preview.update":
+        if str(cmd.command) != "viz.text.update":
             return
         try:
             payload = dict(cmd.payload or {})

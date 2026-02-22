@@ -228,9 +228,9 @@ class _VideoShmWidget(NodeBaseWidget):
         self._pane.detach()
 
 
-class PyStudioVideoShmNode(F8StudioOperatorBaseNode):
+class VizVideoRenderNode(F8StudioOperatorBaseNode):
     """
-    Render node for `f8.video_shm_view`.
+    Render node for `f8.viz.video`.
     """
 
     def __init__(self):
@@ -271,13 +271,13 @@ class PyStudioVideoShmNode(F8StudioOperatorBaseNode):
 
     def apply_ui_command(self, cmd: UiCommand) -> None:
         c = str(cmd.command or "")
-        if c == "videoshm.detach":
+        if c == "viz.video.detach":
             widget = self._widget()
             if widget is not None:
                 widget.detach()
             return
 
-        if c != "videoshm.set":
+        if c != "viz.video.set":
             return
         try:
             payload = dict(cmd.payload or {})

@@ -30,8 +30,8 @@ from ._viz_base import StudioVizRuntimeNodeBase, viz_sampling_state_fields
 
 logger = logging.getLogger(__name__)
 
-OPERATOR_CLASS = "f8.skeleton3d"
-RENDERER_CLASS = "pystudio_skeleton3d"
+OPERATOR_CLASS = "f8.viz.three_d"
+RENDERER_CLASS = "viz_three_d"
 
 
 @dataclass(frozen=True)
@@ -51,7 +51,7 @@ class _PersonViz:
     nodes: list[_NodeViz]
 
 
-class PyStudioSkeleton3DRuntimeNode(StudioVizRuntimeNodeBase):
+class VizThreeDRuntimeNode(StudioVizRuntimeNodeBase):
     """
     Studio-side runtime node for 3D skeleton visualization.
 
@@ -109,7 +109,7 @@ class PyStudioSkeleton3DRuntimeNode(StudioVizRuntimeNodeBase):
                 await asyncio.gather(task, return_exceptions=True)
             except (RuntimeError, TypeError):
                 pass
-        emit_ui_command(self.node_id, "skeleton3d.detach", {}, ts_ms=int(time.time() * 1000))
+        emit_ui_command(self.node_id, "viz.three_d.detach", {}, ts_ms=int(time.time() * 1000))
 
     async def on_data(self, port: str, value: Any, *, ts_ms: int | None = None) -> None:
         if str(port or "").strip() != "skeletons":
@@ -262,7 +262,7 @@ class PyStudioSkeleton3DRuntimeNode(StudioVizRuntimeNodeBase):
             return
 
         payload = self._build_payload(now_ms=now_ms, people=self._latest_people)
-        emit_ui_command(self.node_id, "skeleton3d.set", payload, ts_ms=int(now_ms))
+        emit_ui_command(self.node_id, "viz.three_d.set", payload, ts_ms=int(now_ms))
         self._last_refresh_ms = int(now_ms)
         self._dirty = False
 
@@ -399,14 +399,14 @@ class PyStudioSkeleton3DRuntimeNode(StudioVizRuntimeNodeBase):
 
     @staticmethod
     def _extract_node(*, raw_bone: dict[str, Any], index: int) -> _NodeViz | None:
-        pos = PyStudioSkeleton3DRuntimeNode._coerce_vec3(raw_bone.get("pos"))
+        pos = VizThreeDRuntimeNode._coerce_vec3(raw_bone.get("pos"))
         if pos is None:
             return None
         name_any = raw_bone.get("name")
         node_name = str(name_any).strip() if name_any is not None else ""
         if not node_name:
             node_name = f"bone_{index}"
-        rot = PyStudioSkeleton3DRuntimeNode._coerce_quat(raw_bone.get("rot"))
+        rot = VizThreeDRuntimeNode._coerce_quat(raw_bone.get("rot"))
         return _NodeViz(index=int(index), name=node_name, pos=pos, rot=rot)
 
     @staticmethod
@@ -520,7 +520,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
     reg = registry or RuntimeNodeRegistry.instance()
 
     def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
-        return PyStudioSkeleton3DRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
+        return VizThreeDRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
 
     reg.register(SERVICE_CLASS, OPERATOR_CLASS, _factory, overwrite=True)
     reg.register_operator_spec(
@@ -529,7 +529,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
             serviceClass=SERVICE_CLASS,
             operatorClass=OPERATOR_CLASS,
             version="0.0.1",
-            label="Skeleton3D",
+            label="3DViz",
             description="3D viewer for multi-person skeleton streams (Studio UI-only).",
             tags=["viz", "3d", "skeleton", "ui"],
             dataInPorts=[

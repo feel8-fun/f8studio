@@ -1,21 +1,21 @@
-from .pystudio_audioshm import PyStudioAudioShmNode
-from .pystudio_print import PyStudioPrintNode
-from .pystudio_skeleton3d import PyStudioSkeleton3DNode
-from .pystudio_tcode_viewer import PyStudioTCodeViewerNode
+from .viz_audio import VizAudioRenderNode
+from .viz_text import VizTextRenderNode
+from .viz_three_d import VizThreeDRenderNode
+from .viz_tcode import VizTCodeRenderNode
 from .pystudio_template_tracker import PyStudioTemplateTrackerNode
-from .pystudio_timeseries import PyStudioTimeSeriesNode
-from .pystudio_trackviz import PyStudioTrackVizNode
-from .pystudio_videoshm import PyStudioVideoShmNode
+from .viz_wave import VizWaveRenderNode
+from .viz_track import VizTrackRenderNode
+from .viz_video import VizVideoRenderNode
 from .registry import RenderNodeRegistry
 
 __all__ = [
-    "PyStudioAudioShmNode",
-    "PyStudioPrintNode",
-    "PyStudioSkeleton3DNode",
-    "PyStudioTCodeViewerNode",
+    "VizAudioRenderNode",
+    "VizTextRenderNode",
+    "VizThreeDRenderNode",
+    "VizTCodeRenderNode",
     "PyStudioTemplateTrackerNode",
-    "PyStudioTimeSeriesNode",
-    "PyStudioTrackVizNode",
-    "PyStudioVideoShmNode",
+    "VizWaveRenderNode",
+    "VizTrackRenderNode",
+    "VizVideoRenderNode",
     "RenderNodeRegistry",
 ]

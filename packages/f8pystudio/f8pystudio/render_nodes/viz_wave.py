@@ -342,9 +342,9 @@ class _TimeSeriesWidget(NodeBaseWidget):
         )
 
 
-class PyStudioTimeSeriesNode(F8StudioOperatorBaseNode):
+class VizWaveRenderNode(F8StudioOperatorBaseNode):
     """
-    Render node for `f8.timeseries`.
+    Render node for `f8.viz.wave`.
     """
 
     def __init__(self):
@@ -414,7 +414,7 @@ class PyStudioTimeSeriesNode(F8StudioOperatorBaseNode):
         return self.widget_by_name(_WIDGET_NAME, _TimeSeriesWidget)
 
     def apply_ui_command(self, cmd: UiCommand) -> None:
-        if str(cmd.command) != "timeseries.set":
+        if str(cmd.command) != "viz.wave.set":
             return
         try:
             payload = dict(cmd.payload or {})

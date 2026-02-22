@@ -27,8 +27,8 @@ from ..ui_bus import emit_ui_command
 from ._viz_base import StudioVizRuntimeNodeBase, viz_sampling_state_fields
 
 
-OPERATOR_CLASS = "f8.trackviz"
-RENDERER_CLASS = "pystudio_trackviz"
+OPERATOR_CLASS = "f8.viz.track"
+RENDERER_CLASS = "viz_track"
 
 
 @dataclass
@@ -40,7 +40,7 @@ class _Sample:
     skeleton_protocol: str | None = None
 
 
-class PyStudioTrackVizRuntimeNode(StudioVizRuntimeNodeBase):
+class VizTrackRuntimeNode(StudioVizRuntimeNodeBase):
     """
     Studio-side node that visualizes tracking results.
 
@@ -107,7 +107,7 @@ class PyStudioTrackVizRuntimeNode(StudioVizRuntimeNodeBase):
                 await asyncio.gather(t, return_exceptions=True)
         except (RuntimeError, TypeError):
             pass
-        emit_ui_command(self.node_id, "trackviz.detach", {}, ts_ms=int(time.time() * 1000))
+        emit_ui_command(self.node_id, "viz.track.detach", {}, ts_ms=int(time.time() * 1000))
 
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
         f = str(field or "").strip()
@@ -354,7 +354,7 @@ class PyStudioTrackVizRuntimeNode(StudioVizRuntimeNodeBase):
 
         emit_ui_command(
             self.node_id,
-            "trackviz.set",
+            "viz.track.set",
             {
                 "width": int(self._width or 0),
                 "height": int(self._height or 0),
@@ -423,7 +423,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
     reg = registry or RuntimeNodeRegistry.instance()
 
     def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
-        return PyStudioTrackVizRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
+        return VizTrackRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
 
     reg.register(SERVICE_CLASS, OPERATOR_CLASS, _factory, overwrite=True)
 
