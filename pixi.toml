@@ -46,7 +46,6 @@ opencv-contrib-python = ">=4.13.0.90"
 # Separate environment for ONNXRuntime GPU wheels.
 
 [feature.onnx.pypi-dependencies]
-f8pydetect_tracker = { path = "packages/f8pydetect_tracker", editable = true }
 f8pydl = { path = "packages/f8pydl", editable = true }
 onnxruntime-gpu = ">=1.17.0"
 pyyaml = ">=6.0.0"
@@ -63,7 +62,6 @@ mediapipe = { features = ["py310", "sdk", "vision", "mediapipe"], solve-group = 
 [tasks]
 engine = "python -m f8pyengine.main"
 studio = "python -m f8pystudio.main"
-detect_tracker = "python -m f8pydetect_tracker.main"
 dl_detector = "python -m f8pydl.main_detector"
 dl_humandetector = "python -m f8pydl.main_humandetector"
 dl_classifier = "python -m f8pydl.main_classifier"

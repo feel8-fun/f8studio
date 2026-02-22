@@ -26,10 +26,6 @@ def _default_weights_dir() -> Path:
     except Exception:
         pass
     try:
-        candidates.append((Path.cwd() / "services" / "f8" / "detect_tracker" / "weights").resolve())
-    except Exception:
-        pass
-    try:
         root = Path(__file__).resolve().parents[3]
         candidates.append((root / "services" / "f8" / "dl" / "weights").resolve())
         candidates.append((root / "services" / "f8" / "detect_tracker" / "weights").resolve())
