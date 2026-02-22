@@ -24,6 +24,7 @@ from f8pysdk.runtime_node import RuntimeNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from ..constants import SERVICE_CLASS
+from ..skeleton_protocols import skeleton_edges_for_protocol
 from ..ui_bus import emit_ui_command
 from ._viz_base import StudioVizRuntimeNodeBase, viz_sampling_state_fields
 
@@ -35,6 +36,7 @@ RENDERER_CLASS = "pystudio_skeleton3d"
 
 @dataclass(frozen=True)
 class _NodeViz:
+    index: int
     name: str
     pos: tuple[float, float, float]
     rot: tuple[float, float, float, float] | None
@@ -44,6 +46,8 @@ class _NodeViz:
 class _PersonViz:
     name: str
     bbox: tuple[float, float, float, float, float, float] | None
+    skeleton_protocol: str
+    skeleton_edges: list[tuple[int, int]] | None
     nodes: list[_NodeViz]
 
 
@@ -81,6 +85,7 @@ class PyStudioSkeleton3DRuntimeNode(StudioVizRuntimeNodeBase):
         self._show_person_boxes = True
         self._show_person_names = False
         self._show_bone_points = True
+        self._show_skeleton_lines = True
         self._show_bone_axes = False
         self._show_bone_names = False
         self._max_people = 64
@@ -139,6 +144,9 @@ class PyStudioSkeleton3DRuntimeNode(StudioVizRuntimeNodeBase):
         elif name == "showBonePoints":
             self._show_bone_points = self._coerce_bool(value, default=self._show_bone_points)
             updated = True
+        elif name == "showSkeletonLines":
+            self._show_skeleton_lines = self._coerce_bool(value, default=self._show_skeleton_lines)
+            updated = True
         elif name == "showBoneAxes":
             self._show_bone_axes = self._coerce_bool(value, default=self._show_bone_axes)
             updated = True
@@ -182,6 +190,9 @@ class PyStudioSkeleton3DRuntimeNode(StudioVizRuntimeNodeBase):
         )
         self._show_bone_points = self._coerce_bool(
             await self._get_state_or_initial("showBonePoints", True), default=True
+        )
+        self._show_skeleton_lines = self._coerce_bool(
+            await self._get_state_or_initial("showSkeletonLines", True), default=True
         )
         self._show_bone_axes = self._coerce_bool(await self._get_state_or_initial("showBoneAxes", False), default=False)
         self._show_bone_names = self._coerce_bool(await self._get_state_or_initial("showBoneNames", False), default=False)
@@ -261,6 +272,7 @@ class PyStudioSkeleton3DRuntimeNode(StudioVizRuntimeNodeBase):
             nodes_json: list[dict[str, Any]] = []
             for node in list(person.nodes)[: self._max_bones_per_person]:
                 item: dict[str, Any] = {
+                    "index": int(node.index),
                     "name": str(node.name),
                     "pos": [float(node.pos[0]), float(node.pos[1]), float(node.pos[2])],
                 }
@@ -282,6 +294,12 @@ class PyStudioSkeleton3DRuntimeNode(StudioVizRuntimeNodeBase):
                 {
                     "name": str(person.name),
                     "bbox": bbox,
+                    "skeletonProtocol": str(person.skeleton_protocol),
+                    "skeletonEdges": (
+                        [[int(a), int(b)] for a, b in person.skeleton_edges]
+                        if person.skeleton_edges is not None
+                        else None
+                    ),
                     "nodes": nodes_json,
                 }
             )
@@ -294,6 +312,7 @@ class PyStudioSkeleton3DRuntimeNode(StudioVizRuntimeNodeBase):
                 "showPersonBoxes": bool(self._show_person_boxes),
                 "showPersonNames": bool(self._show_person_names),
                 "showBonePoints": bool(self._show_bone_points),
+                "showSkeletonLines": bool(self._show_skeleton_lines),
                 "showBoneAxes": bool(self._show_bone_axes),
                 "showBoneNames": bool(self._show_bone_names),
                 "autoZoomOnNewPeople": bool(self._auto_zoom_on_new_people),
@@ -329,9 +348,17 @@ class PyStudioSkeleton3DRuntimeNode(StudioVizRuntimeNodeBase):
 
     def _extract_person(self, *, payload: dict[str, Any], index: int) -> _PersonViz | None:
         person_name = self._extract_person_name(payload=payload, index=index)
+        skeleton_protocol = self._extract_protocol(payload)
+        skeleton_edges = skeleton_edges_for_protocol(skeleton_protocol)
         bones_any = payload.get("bones")
         if not isinstance(bones_any, list):
-            return _PersonViz(name=person_name, bbox=None, nodes=[])
+            return _PersonViz(
+                name=person_name,
+                bbox=None,
+                skeleton_protocol=skeleton_protocol,
+                skeleton_edges=skeleton_edges,
+                nodes=[],
+            )
 
         nodes: list[_NodeViz] = []
         for bone_index, raw_bone in enumerate(bones_any):
@@ -343,7 +370,21 @@ class PyStudioSkeleton3DRuntimeNode(StudioVizRuntimeNodeBase):
             nodes.append(node)
             if len(nodes) >= self._max_bones_per_person:
                 break
-        return _PersonViz(name=person_name, bbox=self._compute_bbox(nodes), nodes=nodes)
+        return _PersonViz(
+            name=person_name,
+            bbox=self._compute_bbox(nodes),
+            skeleton_protocol=skeleton_protocol,
+            skeleton_edges=skeleton_edges,
+            nodes=nodes,
+        )
+
+    @staticmethod
+    def _extract_protocol(payload: dict[str, Any]) -> str:
+        value = payload.get("skeletonProtocol")
+        text = str(value or "").strip().lower()
+        if not text:
+            return "none"
+        return text
 
     @staticmethod
     def _extract_person_name(*, payload: dict[str, Any], index: int) -> str:
@@ -366,7 +407,7 @@ class PyStudioSkeleton3DRuntimeNode(StudioVizRuntimeNodeBase):
         if not node_name:
             node_name = f"bone_{index}"
         rot = PyStudioSkeleton3DRuntimeNode._coerce_quat(raw_bone.get("rot"))
-        return _NodeViz(name=node_name, pos=pos, rot=rot)
+        return _NodeViz(index=int(index), name=node_name, pos=pos, rot=rot)
 
     @staticmethod
     def _compute_bbox(nodes: list[_NodeViz]) -> tuple[float, float, float, float, float, float] | None:
@@ -537,6 +578,14 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
                     name="showBonePoints",
                     label="Show Bone Points",
                     description="Display bone node points.",
+                    valueSchema=boolean_schema(default=True),
+                    access=F8StateAccess.rw,
+                    showOnNode=False,
+                ),
+                F8StateSpec(
+                    name="showSkeletonLines",
+                    label="Show Skeleton Lines",
+                    description="Display protocol-based links for known skeleton protocols.",
                     valueSchema=boolean_schema(default=True),
                     access=F8StateAccess.rw,
                     showOnNode=False,

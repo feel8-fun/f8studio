@@ -108,6 +108,19 @@
     return new THREE.Quaternion(x, y, z, w);
   }
 
+  function coerceEdgeList(v) {
+    if (!Array.isArray(v)) return null;
+    const out = [];
+    for (const item of v) {
+      if (!Array.isArray(item) || item.length < 2) continue;
+      const i = Number(item[0]);
+      const j = Number(item[1]);
+      if (!Number.isFinite(i) || !Number.isFinite(j)) continue;
+      out.push([Math.trunc(i), Math.trunc(j)]);
+    }
+    return out.length > 0 ? out : null;
+  }
+
   function hashColorFromName(name) {
     const s = String(name || '');
     let h = 0;
@@ -412,6 +425,7 @@
       ? Math.max(0.1, Math.min(20.0, markerScaleRaw))
       : 1.0;
     const pointPositions = [];
+    const posByIndex = new Map();
 
     for (const node of nodes) {
       const nodeName = String(node && node.name ? node.name : 'node');
@@ -419,6 +433,10 @@
       if (!pos) continue;
 
       pointPositions.push(pos.x, pos.y, pos.z);
+      const nodeIndex = Number(node && node.index);
+      if (Number.isFinite(nodeIndex)) {
+        posByIndex.set(Math.trunc(nodeIndex), pos.clone());
+      }
       bounds = mergeBounds(bounds, pos);
 
       const boneVisible = modelEnabled && isAxisEnabled(name, nodeName);
@@ -450,6 +468,32 @@
       });
       const pts = new THREE.Points(geom, mat);
       g.add(pts);
+    }
+
+    if (modelEnabled && renderFlags.showSkeletonLines) {
+      const skeletonEdges = coerceEdgeList(person && person.skeletonEdges);
+      if (skeletonEdges && skeletonEdges.length > 0) {
+        const linePositions = [];
+        for (const edge of skeletonEdges) {
+          const i = edge[0];
+          const j = edge[1];
+          const p0 = posByIndex.get(i);
+          const p1 = posByIndex.get(j);
+          if (!p0 || !p1) continue;
+          linePositions.push(p0.x, p0.y, p0.z, p1.x, p1.y, p1.z);
+        }
+        if (linePositions.length >= 6) {
+          const lineGeom = new THREE.BufferGeometry();
+          lineGeom.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3));
+          const lineMat = new THREE.LineBasicMaterial({
+            color: color,
+            transparent: true,
+            opacity: 0.9,
+          });
+          const lines = new THREE.LineSegments(lineGeom, lineMat);
+          g.add(lines);
+        }
+      }
     }
 
     if (modelEnabled && renderFlags.showPersonNames && boxCenter && boxSize) {
@@ -489,6 +533,7 @@
         showPersonBoxes: true,
         showPersonNames: false,
         showBonePoints: true,
+        showSkeletonLines: true,
         showBoneAxes: false,
         showBoneNames: false,
         autoZoomOnNewPeople: false,

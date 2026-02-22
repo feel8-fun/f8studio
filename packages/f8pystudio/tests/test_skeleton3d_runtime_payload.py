@@ -50,6 +50,7 @@ class Skeleton3DRuntimePayloadTests(unittest.IsolatedAsyncioTestCase):
         n = _make_runtime(initial_state={"throttleMs": 0})
         single = {
             "modelName": "Alice",
+            "skeletonProtocol": "mediapipe_pose_33",
             "bones": [
                 {"name": "hip", "pos": [0.0, 1.0, 0.0], "rot": [1.0, 0.0, 0.0, 0.0]},
                 {"name": "head", "pos": [0.0, 1.7, 0.0], "rot": [1.0, 0.0, 0.0, 0.0]},
@@ -62,7 +63,11 @@ class Skeleton3DRuntimePayloadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(first.payload.get("people") or []), 1)
         person0 = (first.payload.get("people") or [])[0]
         self.assertEqual(person0.get("name"), "Alice")
+        self.assertEqual(person0.get("skeletonProtocol"), "mediapipe_pose_33")
+        self.assertIsInstance(person0.get("skeletonEdges"), list)
         self.assertEqual(len(person0.get("nodes") or []), 2)
+        node0 = (person0.get("nodes") or [])[0]
+        self.assertEqual(int(node0.get("index")), 0)
         self.assertIsNotNone(person0.get("bbox"))
 
         second_person = {
@@ -128,12 +133,38 @@ class Skeleton3DRuntimePayloadTests(unittest.IsolatedAsyncioTestCase):
         flags = dict(last.get("renderFlags") or {})
         self.assertTrue(bool(flags.get("showPersonNames")))
 
-        await n.on_state("markerScale", 2.5, ts_ms=1300)
+        await n.on_state("showSkeletonLines", False, ts_ms=1250)
         await asyncio.sleep(0.13)
         self.assertGreaterEqual(len(cmds), 4)
         last = cmds[-1].payload
         flags = dict(last.get("renderFlags") or {})
+        self.assertFalse(bool(flags.get("showSkeletonLines")))
+
+        await n.on_state("markerScale", 2.5, ts_ms=1300)
+        await asyncio.sleep(0.13)
+        self.assertGreaterEqual(len(cmds), 5)
+        last = cmds[-1].payload
+        flags = dict(last.get("renderFlags") or {})
         self.assertAlmostEqual(float(flags.get("markerScale") or 0.0), 2.5, places=4)
+        await n.close()
+
+    async def test_unknown_protocol_does_not_emit_edges(self) -> None:
+        cmds: list[UiCommand] = []
+        set_ui_command_sink(lambda c: cmds.append(c))
+
+        n = _make_runtime(initial_state={"throttleMs": 0})
+        payload = {
+            "modelName": "Alice",
+            "skeletonProtocol": "custom_proto",
+            "bones": [{"name": "hip", "pos": [0.0, 1.0, 0.0]}],
+        }
+        await n.on_data("skeletons", payload, ts_ms=1000)
+        self.assertGreaterEqual(len(cmds), 1)
+        out = cmds[-1].payload
+        people = out.get("people") or []
+        self.assertEqual(len(people), 1)
+        self.assertEqual(people[0].get("skeletonProtocol"), "custom_proto")
+        self.assertIsNone(people[0].get("skeletonEdges"))
         await n.close()
 
 
