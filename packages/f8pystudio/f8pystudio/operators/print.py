@@ -12,6 +12,7 @@ from f8pysdk import (
     F8StateAccess,
     F8StateSpec,
     any_schema,
+    boolean_schema,
     integer_schema,
 )
 from f8pysdk.nats_naming import ensure_token
@@ -137,6 +138,22 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
             dataOutPorts=[],
             rendererClass=RENDERER_CLASS,
             stateFields=[
+                F8StateSpec(
+                    name="uiUpdate",
+                    label="UI Update",
+                    description="Pause/resume embedded preview updates in the editor.",
+                    valueSchema=boolean_schema(default=True),
+                    access=F8StateAccess.rw,
+                    showOnNode=False,
+                ),
+                F8StateSpec(
+                    name="uiWrap",
+                    label="UI Wrap",
+                    description="Whether embedded preview text wraps long lines.",
+                    valueSchema=boolean_schema(default=True),
+                    access=F8StateAccess.rw,
+                    showOnNode=False,
+                ),
                 F8StateSpec(
                     name="throttleMs",
                     label="Throttle (ms)",

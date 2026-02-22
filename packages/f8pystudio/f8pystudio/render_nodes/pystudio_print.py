@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Callable
 
 from qtpy import QtCore, QtGui, QtWidgets
 from NodeGraphQt.nodes.base_node import NodeBaseWidget
@@ -9,6 +9,10 @@ from NodeGraphQt.nodes.base_node import NodeBaseWidget
 from ..nodegraph.operator_basenode import F8StudioOperatorBaseNode
 from ..nodegraph.viz_operator_nodeitem import F8StudioVizOperatorNodeItem
 from ..ui_bus import UiCommand
+
+_STATE_UI_UPDATE = "uiUpdate"
+_STATE_UI_WRAP = "uiWrap"
+_WIDGET_NAME = "__print_preview"
 
 
 class _JsonHighlighter(QtGui.QSyntaxHighlighter):
@@ -255,30 +259,44 @@ class _PrintPreviewWidget(NodeBaseWidget):
     - Wrap checkbox persisted in the session.
     """
 
-    def __init__(self, parent=None, name: str = "__print_preview", label: str = "") -> None:
+    def __init__(
+        self,
+        parent=None,
+        name: str = _WIDGET_NAME,
+        label: str = "",
+        *,
+        on_wrap_toggled: Callable[[bool], None] | None = None,
+        on_update_toggled: Callable[[bool], None] | None = None,
+    ) -> None:
         super().__init__(parent=parent, name=name, label=label)
         self._pane = _PrintPreviewPane()
         self.set_custom_widget(self._pane)
 
         self._block = False
+        self._on_wrap_toggled_cb = on_wrap_toggled
+        self._on_update_toggled_cb = on_update_toggled
         self._pane.wrap_checkbox().toggled.connect(self.on_value_changed)
+        self._pane.wrap_checkbox().toggled.connect(self._on_wrap_toggled)
         self._pane.update_checkbox().toggled.connect(self.on_value_changed)
+        self._pane.update_checkbox().toggled.connect(self._on_update_toggled)
 
     def get_value(self) -> object:
         return {"wrap": bool(self._pane.wrap()), "update": bool(self._pane.update_enabled())}
 
     def set_value(self, value: object) -> None:
-        wrap = True
-        update_enabled = True
-        if isinstance(value, dict):
-            wrap = bool(value.get("wrap", True))
-            update_enabled = bool(value.get("update", True))
-        elif isinstance(value, bool):
-            wrap = bool(value)
+        _ = value
+
+    def set_wrap_enabled(self, enabled: bool) -> None:
         try:
             self._block = True
-            self._pane.set_wrap(wrap)
-            self._pane.set_update_enabled(update_enabled)
+            self._pane.set_wrap(enabled)
+        finally:
+            self._block = False
+
+    def set_update_enabled(self, enabled: bool) -> None:
+        try:
+            self._block = True
+            self._pane.set_update_enabled(enabled)
         finally:
             self._block = False
 
@@ -286,6 +304,22 @@ class _PrintPreviewWidget(NodeBaseWidget):
         if self._block:
             return
         return super().on_value_changed(*args, **kwargs)
+
+    def _on_wrap_toggled(self, enabled: bool) -> None:
+        if self._block:
+            return
+        cb = self._on_wrap_toggled_cb
+        if cb is None:
+            return
+        cb(bool(enabled))
+
+    def _on_update_toggled(self, enabled: bool) -> None:
+        if self._block:
+            return
+        cb = self._on_update_toggled_cb
+        if cb is None:
+            return
+        cb(bool(enabled))
 
     def set_preview_text(self, text: str) -> None:
         self._pane.set_text(text)
@@ -300,23 +334,67 @@ class PyStudioPrintNode(F8StudioOperatorBaseNode):
 
     def __init__(self):
         super().__init__(qgraphics_item=F8StudioVizOperatorNodeItem)
-        try:
-            self.add_custom_widget(_PrintPreviewWidget(self.view, name="__print_preview", label=""))
-        except (AttributeError, RuntimeError, TypeError):
-            pass
+        self.add_ephemeral_widget(
+            _PrintPreviewWidget(
+                self.view,
+                name=_WIDGET_NAME,
+                label="",
+                on_wrap_toggled=self._on_wrap_toggled,
+                on_update_toggled=self._on_update_toggled,
+            )
+        )
+        self._sync_wrap_checkbox_from_state(default=True)
+        self._sync_update_checkbox_from_state(default=True)
+
+    def sync_from_spec(self) -> None:
+        super().sync_from_spec()
+        self._sync_wrap_checkbox_from_state(default=True)
+        self._sync_update_checkbox_from_state(default=True)
+
+    def set_property(self, name, value, push_undo=True):  # type: ignore[override]
+        super().set_property(name, value, push_undo=push_undo)
+        key = str(name or "").strip()
+        if key == _STATE_UI_WRAP:
+            self._sync_wrap_checkbox_from_state(default=bool(value))
+        if key == _STATE_UI_UPDATE:
+            self._sync_update_checkbox_from_state(default=bool(value))
+
+    def _on_wrap_toggled(self, enabled: bool) -> None:
+        self.set_state_bool(_STATE_UI_WRAP, bool(enabled))
+
+    def _on_update_toggled(self, enabled: bool) -> None:
+        self.set_state_bool(_STATE_UI_UPDATE, bool(enabled))
+
+    def _sync_wrap_checkbox_from_state(self, *, default: bool) -> None:
+        self.sync_bool_state_to_widget(
+            state_name=_STATE_UI_WRAP,
+            default=default,
+            widget_name=_WIDGET_NAME,
+            widget_type=_PrintPreviewWidget,
+            apply_value=_PrintPreviewWidget.set_wrap_enabled,
+        )
+
+    def _sync_update_checkbox_from_state(self, *, default: bool) -> None:
+        self.sync_bool_state_to_widget(
+            state_name=_STATE_UI_UPDATE,
+            default=default,
+            widget_name=_WIDGET_NAME,
+            widget_type=_PrintPreviewWidget,
+            apply_value=_PrintPreviewWidget.set_update_enabled,
+        )
+
+    def _widget(self) -> _PrintPreviewWidget | None:
+        return self.widget_by_name(_WIDGET_NAME, _PrintPreviewWidget)
 
     def set_preview(self, value: Any) -> None:
         try:
             txt = json.dumps(value, ensure_ascii=False, indent=1, default=str)
         except (TypeError, ValueError):
             txt = str(value)
-        try:
-            w = self.get_widget("__print_preview")
-            if not w:
-                return
-            w.set_preview_text(txt)
-        except (AttributeError, RuntimeError, TypeError):
+        widget = self._widget()
+        if widget is None:
             return
+        widget.set_preview_text(txt)
 
     def apply_ui_command(self, cmd: UiCommand) -> None:
         if str(cmd.command) != "preview.update":

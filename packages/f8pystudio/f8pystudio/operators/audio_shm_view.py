@@ -10,6 +10,7 @@ from f8pysdk import (
     F8RuntimeNode,
     F8StateAccess,
     F8StateSpec,
+    boolean_schema,
     integer_schema,
     string_schema,
 )
@@ -51,6 +52,14 @@ class PyStudioAudioShmViewRuntimeNode(OperatorNode):
         dataOutPorts=[],
         rendererClass=RENDERER_CLASS,
         stateFields=[
+            F8StateSpec(
+                name="uiUpdate",
+                label="UI Update",
+                description="Pause/resume embedded viewer updates in the editor.",
+                valueSchema=boolean_schema(default=True),
+                access=F8StateAccess.rw,
+                showOnNode=False,
+            ),
             F8StateSpec(
                 name="serviceId",
                 label="Service Id",

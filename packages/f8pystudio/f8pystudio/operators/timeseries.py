@@ -305,6 +305,14 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
             rendererClass=RENDERER_CLASS,
             stateFields=[
                 F8StateSpec(
+                    name="uiUpdate",
+                    label="UI Update",
+                    description="Pause/resume embedded chart updates in the editor.",
+                    valueSchema=boolean_schema(default=True),
+                    access=F8StateAccess.rw,
+                    showOnNode=False,
+                ),
+                F8StateSpec(
                     name="bufferLimit",
                     label="Buffer Limit",
                     description="Maximum number of points kept in memory.",

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 from .node_base import F8StudioBaseNode
 
@@ -9,6 +9,7 @@ from f8pysdk import F8OperatorSpec, F8StateAccess
 from f8pysdk.schema_helpers import schema_default, schema_type
 
 from qtpy import QtCore, QtWidgets
+from NodeGraphQt.nodes.base_node import NodeBaseWidget
 
 from NodeGraphQt.constants import (
     Z_VAL_NODE,
@@ -20,6 +21,7 @@ from .port_painter import draw_exec_port, draw_square_port, EXEC_PORT_COLOR, DAT
 from .service_basenode import F8StudioServiceNodeItem
 
 logger = logging.getLogger(__name__)
+WidgetT = TypeVar("WidgetT", bound=NodeBaseWidget)
 
 
 class F8StudioOperatorBaseNode(F8StudioBaseNode):
@@ -132,6 +134,35 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
             except Exception as exc:
                 logger.warning("Failed to create operator state property '%s': %s", name, exc)
                 continue
+
+    def state_bool(self, name: str, *, default: bool) -> bool:
+        value = self.get_property(name)
+        if value is None:
+            return bool(default)
+        return bool(value)
+
+    def set_state_bool(self, name: str, enabled: bool) -> None:
+        self.set_property(name, bool(enabled), push_undo=False)
+
+    def widget_by_name(self, name: str, widget_type: type[WidgetT]) -> WidgetT | None:
+        widget = self.view.widgets.get(name)
+        if isinstance(widget, widget_type):
+            return widget
+        return None
+
+    def sync_bool_state_to_widget(
+        self,
+        *,
+        state_name: str,
+        default: bool,
+        widget_name: str,
+        widget_type: type[WidgetT],
+        apply_value: Callable[[WidgetT, bool], None],
+    ) -> None:
+        widget = self.widget_by_name(widget_name, widget_type)
+        if widget is None:
+            return
+        apply_value(widget, self.state_bool(state_name, default=default))
 
     @staticmethod
     def _state_widget_for_schema(value_schema) -> tuple[int, list[str] | None, tuple[float, float] | None]:
@@ -371,7 +402,7 @@ class F8StudioOperatorNodeItem(F8StudioServiceNodeItem):
 
     def itemChange(self, change, value):  # type: ignore[override]
         """
-        Keep legacy operator behaviors:
+        Keep operator interaction behaviors:
         - highlight pipes on selection
         - clamp operator nodes to container bounds while dragging
         """

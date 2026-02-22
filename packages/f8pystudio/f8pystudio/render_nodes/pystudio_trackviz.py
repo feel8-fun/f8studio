@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import colorsys
-from typing import Any
+from typing import Any, Callable
 
 from qtpy import QtCore, QtGui, QtWidgets
 from NodeGraphQt.nodes.base_node import NodeBaseWidget
@@ -14,6 +14,9 @@ from ..skeleton_protocols import skeleton_edges_for_protocol
 from ..ui_bus import UiCommand
 
 import pyqtgraph as pg  # type: ignore[import-not-found]
+
+_STATE_UI_UPDATE = "uiUpdate"
+_WIDGET_NAME = "__trackviz"
 
 
 def _color_for_id(track_id: int) -> tuple[int, int, int]:
@@ -308,16 +311,10 @@ class _TrackVizPane(QtWidgets.QWidget):
         return self._update
 
     def update_enabled(self) -> bool:
-        try:
-            return bool(self._update.isChecked())
-        except (AttributeError, RuntimeError, TypeError):
-            return True
+        return bool(self._update.isChecked())
 
     def set_update_enabled(self, enabled: bool) -> None:
-        try:
-            self._update.setChecked(bool(enabled))
-        except (AttributeError, RuntimeError, TypeError):
-            pass
+        self._update.setChecked(bool(enabled))
         self._sync_video_timer_with_update_state()
         if self.update_enabled() and self._pending is not None:
             p = self._pending
@@ -469,20 +466,29 @@ class _TrackVizPane(QtWidgets.QWidget):
 
 
 class _TrackVizWidget(NodeBaseWidget):
-    def __init__(self, parent=None, name: str = "__trackviz", label: str = "") -> None:
+    def __init__(
+        self,
+        parent=None,
+        name: str = _WIDGET_NAME,
+        label: str = "",
+        *,
+        on_update_toggled: Callable[[bool], None] | None = None,
+    ) -> None:
         super().__init__(parent=parent, name=name, label=label)
         self._pane = _TrackVizPane()
         self.set_custom_widget(self._pane)
         self._block = False
+        self._on_update_toggled_cb = on_update_toggled
         self._pane.update_checkbox().toggled.connect(self.on_value_changed)  # type: ignore[attr-defined]
+        self._pane.update_checkbox().toggled.connect(self._on_update_toggled)
 
     def get_value(self) -> object:
         return {"update": bool(self._pane.update_enabled())}
 
     def set_value(self, value: object) -> None:
-        enabled = True
-        if isinstance(value, dict):
-            enabled = bool(value.get("update", True))
+        _ = value
+
+    def set_update_enabled(self, enabled: bool) -> None:
         try:
             self._block = True
             self._pane.set_update_enabled(enabled)
@@ -493,6 +499,14 @@ class _TrackVizWidget(NodeBaseWidget):
         if self._block:
             return
         return super().on_value_changed(*args, **kwargs)
+
+    def _on_update_toggled(self, enabled: bool) -> None:
+        if self._block:
+            return
+        cb = self._on_update_toggled_cb
+        if cb is None:
+            return
+        cb(bool(enabled))
 
     def set_scene(self, payload: dict[str, Any]) -> None:
         self._pane.set_scene(payload)
@@ -508,21 +522,46 @@ class PyStudioTrackVizNode(F8StudioOperatorBaseNode):
 
     def __init__(self):
         super().__init__(qgraphics_item=F8StudioVizOperatorNodeItem)
-        try:
-            self.add_custom_widget(_TrackVizWidget(self.view, name="__trackviz", label=""))
-        except (AttributeError, RuntimeError, TypeError):
-            pass
+        self.add_ephemeral_widget(
+            _TrackVizWidget(
+                self.view,
+                name=_WIDGET_NAME,
+                label="",
+                on_update_toggled=self._on_update_toggled,
+            )
+        )
+        self._sync_update_checkbox_from_state(default=True)
+
+    def sync_from_spec(self) -> None:
+        super().sync_from_spec()
+        self._sync_update_checkbox_from_state(default=True)
+
+    def set_property(self, name, value, push_undo=True):  # type: ignore[override]
+        super().set_property(name, value, push_undo=push_undo)
+        if str(name or "").strip() == _STATE_UI_UPDATE:
+            self._sync_update_checkbox_from_state(default=bool(value))
+
+    def _on_update_toggled(self, enabled: bool) -> None:
+        self.set_state_bool(_STATE_UI_UPDATE, bool(enabled))
+
+    def _sync_update_checkbox_from_state(self, *, default: bool) -> None:
+        self.sync_bool_state_to_widget(
+            state_name=_STATE_UI_UPDATE,
+            default=default,
+            widget_name=_WIDGET_NAME,
+            widget_type=_TrackVizWidget,
+            apply_value=_TrackVizWidget.set_update_enabled,
+        )
+
+    def _widget(self) -> _TrackVizWidget | None:
+        return self.widget_by_name(_WIDGET_NAME, _TrackVizWidget)
 
     def apply_ui_command(self, cmd: UiCommand) -> None:
         command = str(cmd.command or "")
         if command == "trackviz.detach":
-            try:
-                w = self.get_widget("__trackviz")
-                if not w:
-                    return
-                w.detach()
-            except (AttributeError, RuntimeError, TypeError):
-                pass
+            widget = self._widget()
+            if widget is not None:
+                widget.detach()
             return
         if command != "trackviz.set":
             return
@@ -530,10 +569,7 @@ class PyStudioTrackVizNode(F8StudioOperatorBaseNode):
             payload = dict(cmd.payload or {})
         except (AttributeError, TypeError, ValueError):
             return
-        try:
-            w = self.get_widget("__trackviz")
-            if not w:
-                return
-            w.set_scene(dict(payload))
-        except (AttributeError, RuntimeError, TypeError, ValueError):
+        widget = self._widget()
+        if widget is None:
             return
+        widget.set_scene(dict(payload))

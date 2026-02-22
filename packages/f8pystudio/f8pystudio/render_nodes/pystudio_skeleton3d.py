@@ -303,7 +303,7 @@ class PyStudioSkeleton3DNode(F8StudioOperatorBaseNode):
         self._app_quit_hook_bound = False
         try:
             widget = _Skeleton3DWidget(self.view, name="__skeleton3d", label="")
-            self.add_custom_widget(widget)
+            self.add_ephemeral_widget(widget)
             widget.set_open_handler(self._open_viewer)
         except Exception:
             logger.exception("failed to init skeleton3d widget")

@@ -262,7 +262,7 @@ class PyStudioTCodeViewerNode(F8StudioOperatorBaseNode):
         self._app_quit_hook_bound = False
         try:
             widget = _TCodeViewerWidget(self.view, name="__tcode_viewer", label="")
-            self.add_custom_widget(widget)
+            self.add_ephemeral_widget(widget)
             widget.set_open_handler(self._open_viewer)
         except Exception:
             logger.exception("failed to init tcode viewer widget")

@@ -5,6 +5,8 @@ import json
 from typing import Any
 
 from NodeGraphQt import BaseNode
+from NodeGraphQt.nodes.base_node import NodeBaseWidget
+from NodeGraphQt.errors import NodeWidgetError
 
 from f8pysdk import F8OperatorSpec, F8ServiceSpec
 
@@ -62,13 +64,41 @@ class F8StudioBaseNode(BaseNode):
         """
         Extend NodeGraphQt model update so `spec` + system fields persist in
         session JSON.
+
+        Also avoid writing values for ephemeral embedded widgets that are not
+        backed by a registered node property.
         """
-        super().update_model()
+        for name, val in self.view.properties.items():
+            if name in ["inputs", "outputs"]:
+                continue
+            if name not in self.model.properties and name not in self.model.custom_properties:
+                continue
+            self.model.set_property(name, val)
+
+        for name, widget in self.view.widgets.items():
+            if name not in self.model.properties and name not in self.model.custom_properties:
+                continue
+            self.model.set_property(name, widget.get_value())
 
         if not isinstance(self.model.f8_sys, dict):
             self.model.f8_sys = {}
         if not isinstance(self.model.f8_ui, dict):
             self.model.f8_ui = {}
+
+    def add_ephemeral_widget(self, widget: NodeBaseWidget) -> None:
+        """
+        Add an embedded node widget without creating/persisting a custom node
+        property for it.
+
+        Use this for render-only UI panes whose state is persisted through
+        explicit state fields instead of NodeGraphQt widget properties.
+        """
+        if not isinstance(widget, NodeBaseWidget):
+            raise NodeWidgetError("'widget' must be an instance of a NodeBaseWidget")
+        widget._node = self  # type: ignore[attr-defined]
+        self.view.add_widget(widget)
+        self.view.draw_node()
+        widget.parent()
 
     def ui_overrides(self) -> dict[str, object]:
         return self.model.f8_ui if isinstance(self.model.f8_ui, dict) else {}

@@ -13,6 +13,9 @@ from ..ui_bus import UiCommand
 
 import pyqtgraph as pg  # type: ignore[import-not-found]
 
+_STATE_UI_UPDATE = "uiUpdate"
+_WIDGET_NAME = "__timeseries"
+
 
 class _TimeSeriesPane(QtWidgets.QWidget):
     clear_requested = QtCore.Signal()
@@ -119,16 +122,10 @@ class _TimeSeriesPane(QtWidgets.QWidget):
         return self._update
 
     def update_enabled(self) -> bool:
-        try:
-            return bool(self._update.isChecked())
-        except (AttributeError, RuntimeError, TypeError):
-            return True
+        return bool(self._update.isChecked())
 
     def set_update_enabled(self, enabled: bool) -> None:
-        try:
-            self._update.setChecked(bool(enabled))
-        except (AttributeError, RuntimeError, TypeError):
-            pass
+        self._update.setChecked(bool(enabled))
         if self.update_enabled():
             self._apply_pending_payload()
 
@@ -275,29 +272,32 @@ class _TimeSeriesWidget(NodeBaseWidget):
     def __init__(
         self,
         parent=None,
-        name: str = "__timeseries",
+        name: str = _WIDGET_NAME,
         label: str = "",
         *,
         on_clear_requested: Callable[[], None] | None = None,
+        on_update_toggled: Callable[[bool], None] | None = None,
     ) -> None:
         super().__init__(parent=parent, name=name, label=label)
         self._pane = _TimeSeriesPane()
         self.set_custom_widget(self._pane)
         self._block = False
         self._on_clear_requested_cb = on_clear_requested
+        self._on_update_toggled_cb = on_update_toggled
         self._pane.update_checkbox().toggled.connect(self.on_value_changed)  # type: ignore[attr-defined]
+        self._pane.update_checkbox().toggled.connect(self._on_update_toggled)
         self._pane.clear_requested.connect(self._on_clear_requested)
 
     def get_value(self) -> object:
         return {"update": bool(self._pane.update_enabled())}
 
     def set_value(self, value: object) -> None:
-        update_enabled = True
-        if isinstance(value, dict):
-            update_enabled = bool(value.get("update", True))
+        _ = value
+
+    def set_update_enabled(self, enabled: bool) -> None:
         try:
             self._block = True
-            self._pane.set_update_enabled(update_enabled)
+            self._pane.set_update_enabled(enabled)
         finally:
             self._block = False
 
@@ -310,10 +310,15 @@ class _TimeSeriesWidget(NodeBaseWidget):
         cb = self._on_clear_requested_cb
         if cb is None:
             return
-        try:
-            cb()
-        except (AttributeError, RuntimeError, TypeError, ValueError):
+        cb()
+
+    def _on_update_toggled(self, enabled: bool) -> None:
+        if self._block:
             return
+        cb = self._on_update_toggled_cb
+        if cb is None:
+            return
+        cb(bool(enabled))
 
     def set_series_map(
         self,
@@ -345,24 +350,29 @@ class PyStudioTimeSeriesNode(F8StudioOperatorBaseNode):
     def __init__(self):
         super().__init__(qgraphics_item=F8StudioVizOperatorNodeItem)
         self._clear_nonce = 0
-        self.add_custom_widget(
+        self.add_ephemeral_widget(
             _TimeSeriesWidget(
                 self.view,
-                name="__timeseries",
+                name=_WIDGET_NAME,
                 label="",
                 on_clear_requested=self._on_clear_requested,
+                on_update_toggled=self._on_update_toggled,
             )
         )
+        self._sync_update_checkbox_from_state(default=True)
+
+    def set_property(self, name, value, push_undo=True):  # type: ignore[override]
+        super().set_property(name, value, push_undo=push_undo)
+        if str(name or "").strip() == _STATE_UI_UPDATE:
+            self._sync_update_checkbox_from_state(default=bool(value))
 
     def _on_clear_requested(self) -> None:
         self._clear_nonce = int(self._clear_nonce) + 1
-        try:
-            self.set_property("clearNonce", int(self._clear_nonce), push_undo=False)
-        except (AttributeError, RuntimeError, TypeError, ValueError):
-            return
+        self.set_property("clearNonce", int(self._clear_nonce), push_undo=False)
 
     def sync_from_spec(self) -> None:
         super().sync_from_spec()
+        self._sync_update_checkbox_from_state(default=True)
         spec = self.spec
         ports = spec.dataInPorts
             
@@ -388,6 +398,21 @@ class PyStudioTimeSeriesNode(F8StudioOperatorBaseNode):
             port.border_color = rgb
             port.view.setToolTip(str(name))
 
+    def _on_update_toggled(self, enabled: bool) -> None:
+        self.set_state_bool(_STATE_UI_UPDATE, bool(enabled))
+
+    def _sync_update_checkbox_from_state(self, *, default: bool) -> None:
+        self.sync_bool_state_to_widget(
+            state_name=_STATE_UI_UPDATE,
+            default=default,
+            widget_name=_WIDGET_NAME,
+            widget_type=_TimeSeriesWidget,
+            apply_value=_TimeSeriesWidget.set_update_enabled,
+        )
+
+    def _widget(self) -> _TimeSeriesWidget | None:
+        return self.widget_by_name(_WIDGET_NAME, _TimeSeriesWidget)
+
     def apply_ui_command(self, cmd: UiCommand) -> None:
         if str(cmd.command) != "timeseries.set":
             return
@@ -404,10 +429,8 @@ class PyStudioTimeSeriesNode(F8StudioOperatorBaseNode):
         series = payload.get("series")
         colors_raw = payload.get("colors")
 
-        if not (isinstance(series, dict) and series):
-            # Backwards compatibility (single series).
-            points = list(payload.get("points") or [])
-            series = {"value": points}
+        if not isinstance(series, dict):
+            return
 
         colors: dict[str, tuple[int, int, int]] = {}
         if isinstance(colors_raw, dict):
@@ -443,21 +466,15 @@ class PyStudioTimeSeriesNode(F8StudioOperatorBaseNode):
         except (TypeError, ValueError):
             y_max = None
 
-        try:
-            w = self.get_widget("__timeseries")
-        except (AttributeError, RuntimeError, TypeError):
+        widget = self._widget()
+        if widget is None:
             return
-        if not w:
-            return
-        try:
-            w.set_series_map(
-                series,
-                colors=colors,
-                window_ms=window_ms,
-                now_ms=now_ms,
-                show_legend=bool(show_legend) if show_legend is not None else None,
-                y_min=y_min,
-                y_max=y_max,
-            )
-        except (AttributeError, RuntimeError, TypeError, ValueError):
-            return
+        widget.set_series_map(
+            series,
+            colors=colors,
+            window_ms=window_ms,
+            now_ms=now_ms,
+            show_legend=bool(show_legend) if show_legend is not None else None,
+            y_min=y_min,
+            y_max=y_max,
+        )

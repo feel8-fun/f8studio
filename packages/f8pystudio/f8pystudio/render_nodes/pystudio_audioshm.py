@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import time
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import pyqtgraph as pg  # type: ignore[import-not-found]
@@ -15,6 +15,9 @@ from ..nodegraph.operator_basenode import F8StudioOperatorBaseNode
 from ..nodegraph.viz_operator_nodeitem import F8StudioVizOperatorNodeItem
 from ..ui_bus import UiCommand
 
+_STATE_UI_UPDATE = "uiUpdate"
+_WIDGET_NAME = "__audioshm"
+
 
 class _AudioShmPane(QtWidgets.QWidget):
     def __init__(self) -> None:
@@ -23,8 +26,30 @@ class _AudioShmPane(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
 
+        top = QtWidgets.QHBoxLayout()
+        top.setContentsMargins(0, 0, 0, 0)
         self._title = QtWidgets.QLabel("AudioSHM")
         self._title.setStyleSheet("color: rgb(225, 225, 225);")
+        self._update = QtWidgets.QCheckBox("Update")
+        self._update.setChecked(True)
+        self._update.setStyleSheet(
+            """
+            QCheckBox { color: rgb(225, 225, 225); }
+            QCheckBox::indicator {
+                width: 13px;
+                height: 13px;
+                border: 1px solid rgba(255, 255, 255, 90);
+                background: rgba(0, 0, 0, 35);
+                border-radius: 2px;
+            }
+            QCheckBox::indicator:checked {
+                image: none;
+                background: rgba(120, 200, 255, 90);
+            }
+            """
+        )
+        top.addWidget(self._title, 1)
+        top.addWidget(self._update, 0)
 
         self._plot = pg.PlotWidget()
         self._plot.setBackground((20, 20, 20))
@@ -57,7 +82,7 @@ class _AudioShmPane(QtWidgets.QWidget):
         self._status = QtWidgets.QLabel("")
         self._status.setStyleSheet("color: rgb(160, 160, 160);")
 
-        layout.addWidget(self._title)
+        layout.addLayout(top)
         layout.addWidget(self._plot, 1)
         layout.addWidget(self._status)
 
@@ -85,6 +110,16 @@ class _AudioShmPane(QtWidgets.QWidget):
         self._x = np.zeros((0,), dtype=np.float32)
         self._y = np.zeros((0,), dtype=np.float32)
 
+    def update_checkbox(self) -> QtWidgets.QCheckBox:
+        return self._update
+
+    def update_enabled(self) -> bool:
+        return bool(self._update.isChecked())
+
+    def set_update_enabled(self, enabled: bool) -> None:
+        self._update.setChecked(bool(enabled))
+        self._sync_timer_with_update_state()
+
     def set_config(self, *, shm_name: str, throttle_ms: int, history_ms: int, channel: int) -> None:
         shm_name = str(shm_name or "").strip()
         self._history_ms = max(20, int(history_ms))
@@ -94,8 +129,7 @@ class _AudioShmPane(QtWidgets.QWidget):
         if shm_name != self._shm_name:
             self._shm_name = shm_name
             self._reset_reader()
-        if not self._timer.isActive():
-            self._timer.start()
+        self._sync_timer_with_update_state()
 
     def detach(self) -> None:
         try:
@@ -114,6 +148,14 @@ class _AudioShmPane(QtWidgets.QWidget):
         self._last_seq = 0
         self._status.setText("")
         self._title.setText("AudioSHM")
+
+    def _sync_timer_with_update_state(self) -> None:
+        if self.update_enabled() and self._shm_name:
+            if not self._timer.isActive():
+                self._timer.start()
+            return
+        if self._timer.isActive():
+            self._timer.stop()
 
     def _ensure_reader(self) -> bool:
         if self._reader is not None:
@@ -140,6 +182,8 @@ class _AudioShmPane(QtWidgets.QWidget):
         self._curve.setData(self._x, self._y)
 
     def _tick(self) -> None:
+        if not self.update_enabled():
+            return
         if not self._ensure_reader():
             return
         assert self._reader is not None
@@ -191,16 +235,47 @@ class _AudioShmPane(QtWidgets.QWidget):
 
 
 class _AudioShmWidget(NodeBaseWidget):
-    def __init__(self, parent=None, name: str = "__audioshm", label: str = "") -> None:
+    def __init__(
+        self,
+        parent=None,
+        name: str = _WIDGET_NAME,
+        label: str = "",
+        *,
+        on_update_toggled: Callable[[bool], None] | None = None,
+    ) -> None:
         super().__init__(parent=parent, name=name, label=label)
         self._pane = _AudioShmPane()
         self.set_custom_widget(self._pane)
+        self._block = False
+        self._on_update_toggled_cb = on_update_toggled
+        self._pane.update_checkbox().toggled.connect(self.on_value_changed)  # type: ignore[attr-defined]
+        self._pane.update_checkbox().toggled.connect(self._on_update_toggled)
 
     def get_value(self) -> object:
-        return {}
+        return {"update": bool(self._pane.update_enabled())}
 
     def set_value(self, value: object) -> None:
-        return
+        _ = value
+
+    def set_update_enabled(self, enabled: bool) -> None:
+        try:
+            self._block = True
+            self._pane.set_update_enabled(enabled)
+        finally:
+            self._block = False
+
+    def on_value_changed(self, *args, **kwargs):
+        if self._block:
+            return
+        return super().on_value_changed(*args, **kwargs)
+
+    def _on_update_toggled(self, enabled: bool) -> None:
+        if self._block:
+            return
+        cb = self._on_update_toggled_cb
+        if cb is None:
+            return
+        cb(bool(enabled))
 
     def set_config(self, *, shm_name: str, throttle_ms: int, history_ms: int, channel: int) -> None:
         self._pane.set_config(shm_name=shm_name, throttle_ms=throttle_ms, history_ms=history_ms, channel=channel)
@@ -216,21 +291,46 @@ class PyStudioAudioShmNode(F8StudioOperatorBaseNode):
 
     def __init__(self):
         super().__init__(qgraphics_item=F8StudioVizOperatorNodeItem)
-        try:
-            self.add_custom_widget(_AudioShmWidget(self.view, name="__audioshm", label=""))
-        except (AttributeError, RuntimeError, TypeError):
-            pass
+        self.add_ephemeral_widget(
+            _AudioShmWidget(
+                self.view,
+                name=_WIDGET_NAME,
+                label="",
+                on_update_toggled=self._on_update_toggled,
+            )
+        )
+        self._sync_update_checkbox_from_state(default=True)
+
+    def sync_from_spec(self) -> None:
+        super().sync_from_spec()
+        self._sync_update_checkbox_from_state(default=True)
+
+    def set_property(self, name, value, push_undo=True):  # type: ignore[override]
+        super().set_property(name, value, push_undo=push_undo)
+        if str(name or "").strip() == _STATE_UI_UPDATE:
+            self._sync_update_checkbox_from_state(default=bool(value))
+
+    def _on_update_toggled(self, enabled: bool) -> None:
+        self.set_state_bool(_STATE_UI_UPDATE, bool(enabled))
+
+    def _sync_update_checkbox_from_state(self, *, default: bool) -> None:
+        self.sync_bool_state_to_widget(
+            state_name=_STATE_UI_UPDATE,
+            default=default,
+            widget_name=_WIDGET_NAME,
+            widget_type=_AudioShmWidget,
+            apply_value=_AudioShmWidget.set_update_enabled,
+        )
+
+    def _widget(self) -> _AudioShmWidget | None:
+        return self.widget_by_name(_WIDGET_NAME, _AudioShmWidget)
 
     def apply_ui_command(self, cmd: UiCommand) -> None:
         c = str(cmd.command or "")
         if c == "audioshm.detach":
-            try:
-                w = self.get_widget("__audioshm")
-                if not w:
-                    return
-                w.detach()
-            except (AttributeError, RuntimeError, TypeError):
-                pass
+            widget = self._widget()
+            if widget is not None:
+                widget.detach()
             return
         if c != "audioshm.set":
             return
@@ -242,11 +342,8 @@ class PyStudioAudioShmNode(F8StudioOperatorBaseNode):
             channel = int(payload.get("channel") or 0)
         except (AttributeError, TypeError, ValueError):
             return
-        try:
-            w = self.get_widget("__audioshm")
-            if not w:
-                return
-            w.set_config(shm_name=shm_name, throttle_ms=throttle_ms, history_ms=history_ms, channel=channel)
-        except (AttributeError, RuntimeError, TypeError, ValueError):
+        widget = self._widget()
+        if widget is None:
             return
+        widget.set_config(shm_name=shm_name, throttle_ms=throttle_ms, history_ms=history_ms, channel=channel)
 
