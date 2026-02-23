@@ -370,17 +370,18 @@ class VizWaveRenderNode(F8StudioOperatorBaseNode):
         self._clear_nonce = int(self._clear_nonce) + 1
         self.set_property("clearNonce", int(self._clear_nonce), push_undo=False)
 
-    def sync_from_spec(self) -> None:
-        super().sync_from_spec()
-        self._sync_update_checkbox_from_state(default=True)
+    def _build_data_port(self) -> None:
+        super()._build_data_port()
+        self._apply_data_port_colors()
+
+    def _apply_data_port_colors(self) -> None:
         spec = self.spec
         ports = spec.dataInPorts
-            
         try:
             colors = series_colors([str(p.name) for p in ports])
         except (AttributeError, TypeError):
             colors = {}
-        for i, p in enumerate(ports):
+        for p in ports:
             name = str(p.name)
             if not name:
                 continue
@@ -389,14 +390,17 @@ class VizWaveRenderNode(F8StudioOperatorBaseNode):
                 port = self.get_input(f"[D]{name}")
             except (AttributeError, RuntimeError, TypeError):
                 port = None
-
             if port is None:
                 continue
-
             port.view.display_name = False
             port.color = rgb
             port.border_color = rgb
-            port.view.setToolTip(str(name))
+            port.view.setToolTip(name)
+
+    def sync_from_spec(self) -> None:
+        super().sync_from_spec()
+        self._sync_update_checkbox_from_state(default=True)
+        self._apply_data_port_colors()
 
     def _on_update_toggled(self, enabled: bool) -> None:
         self.set_state_bool(_STATE_UI_UPDATE, bool(enabled))
