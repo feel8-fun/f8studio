@@ -16,7 +16,7 @@ def _b64decode(s: str) -> bytes:
 
 
 @dataclass(frozen=True)
-class CaptureFrame:
+class TemplateCaptureFrame:
     frame_id: int
     ts_ms: int
     image_bytes: bytes
@@ -25,7 +25,7 @@ class CaptureFrame:
     height: int
 
 
-class RoiSelectLabel(QtWidgets.QLabel):
+class TemplateRoiSelectLabel(QtWidgets.QLabel):
     """
     Simple ROI selection widget for a still image.
 
@@ -182,18 +182,18 @@ def _encode_png_b64(img: QtGui.QImage, *, max_b64_bytes: int = 900_000) -> tuple
     raise ValueError("encoded template too large for max_b64_bytes")
 
 
-class TemplateCaptureDialog(QtWidgets.QDialog):
+class TemplateMatchCaptureDialog(QtWidgets.QDialog):
     def __init__(
         self,
         *,
         parent: QtWidgets.QWidget | None,
         bridge: Any,
         service_id: str,
-        request_capture: Callable[[Callable[[CaptureFrame | None, str | None], None]], None],
+        request_capture: Callable[[Callable[[TemplateCaptureFrame | None, str | None], None]], None],
         set_template_b64: Callable[[str], None],
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Template Tracker - Set Template")
+        self.setWindowTitle("Template Match - Set Template")
         self.setModal(True)
         self.resize(980, 640)
 
@@ -202,9 +202,9 @@ class TemplateCaptureDialog(QtWidgets.QDialog):
         self._request_capture = request_capture
         self._set_template_b64 = set_template_b64
 
-        self._capture: CaptureFrame | None = None
+        self._capture: TemplateCaptureFrame | None = None
 
-        self._img = RoiSelectLabel()
+        self._img = TemplateRoiSelectLabel()
         self._img.setText("Click Capture to fetch a frame")
         self._img.roi_changed.connect(self._update_buttons)  # type: ignore[attr-defined]
 
@@ -254,7 +254,7 @@ class TemplateCaptureDialog(QtWidgets.QDialog):
         self._btn_capture.setEnabled(False)
         self._btn_apply.setEnabled(False)
 
-        def _done(cap: CaptureFrame | None, err: str | None) -> None:
+        def _done(cap: TemplateCaptureFrame | None, err: str | None) -> None:
             self._btn_capture.setEnabled(True)
             if err:
                 self._set_status(f"Capture failed: {err}")

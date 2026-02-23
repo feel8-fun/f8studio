@@ -151,7 +151,9 @@ class VizWaveRuntimeNode(StudioVizRuntimeNodeBase):
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        self._refresh_task = loop.create_task(self._flush_after(delay_ms), name=f"pystudio:timeseries:flush:{self.node_id}")
+        self._refresh_task = loop.create_task(
+            self._flush_after(delay_ms), name=f"pystudio:timeseries:flush:{self.node_id}"
+        )
 
     async def _flush_after(self, delay_ms: int) -> None:
         try:
@@ -295,9 +297,21 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
             tags=["plot", "timeseries", "ui"],
             dataInPorts=[
                 F8DataPortSpec(
-                    name="value",
+                    name="x",
                     description="Numeric input value (y-axis).",
                     valueSchema=number_schema(),
+                ),
+                F8DataPortSpec(
+                    name="y",
+                    description="Numeric input value (y-axis).",
+                    valueSchema=number_schema(),
+                    showOnNode=False,
+                ),
+                F8DataPortSpec(
+                    name="z",
+                    description="Numeric input value (y-axis).",
+                    valueSchema=number_schema(),
+                    showOnNode=False,
                 ),
             ],
             dataOutPorts=[],

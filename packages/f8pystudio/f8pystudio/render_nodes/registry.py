@@ -13,7 +13,7 @@ from .viz_wave import VizWaveRenderNode
 from .viz_video import VizVideoRenderNode
 from .viz_audio import VizAudioRenderNode
 from .viz_track import VizTrackRenderNode
-from .pystudio_template_tracker import PyStudioTemplateTrackerNode
+from .template_match_capture import TemplateMatchCaptureRenderNode
 from .viz_three_d import VizThreeDRenderNode
 from .viz_tcode import VizTCodeRenderNode
 
@@ -40,7 +40,7 @@ class RenderNodeRegistry:
         self._renderers["viz_video"] = VizVideoRenderNode
         self._renderers["viz_audio"] = VizAudioRenderNode
         self._renderers["viz_track"] = VizTrackRenderNode
-        self._renderers["pystudio_template_tracker"] = PyStudioTemplateTrackerNode
+        self._renderers["template_match_capture"] = TemplateMatchCaptureRenderNode
         self._renderers["viz_three_d"] = VizThreeDRenderNode
         self._renderers["viz_tcode"] = VizTCodeRenderNode
 

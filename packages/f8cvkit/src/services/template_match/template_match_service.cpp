@@ -206,7 +206,7 @@ bool TemplateMatchService::start() {
   }
 
   publish_state_if_changed("serviceClass", cfg_.service_class, "init", json::object());
-  publish_state_if_changed("templatePngB64", "", "init", json::object());
+  publish_state_if_changed("templateImagePngB64", "", "init", json::object());
   publish_state_if_changed("matchThreshold", match_threshold_, "init", json::object());
   publish_state_if_changed("matchingIntervalMs", matching_interval_ms_, "init", json::object());
   publish_state_if_changed("shmName", "", "init", json::object());
@@ -285,7 +285,7 @@ void TemplateMatchService::on_state(const std::string& node_id, const std::strin
                                     std::int64_t ts_ms, const json& meta) {
   (void)ts_ms;
   if (node_id != cfg_.service_id) return;
-  if (field == "templatePngB64" && value.is_string()) {
+  if (field == "templateImagePngB64" && value.is_string()) {
     set_template_png_b64(value.get<std::string>(), meta);
     return;
   }
@@ -350,7 +350,7 @@ void TemplateMatchService::set_template_png_b64(const std::string& b64, const js
   while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.pop_back();
 
   if (s == template_png_b64_) {
-    publish_state_if_changed("templatePngB64", template_png_b64_, "state", meta);
+    publish_state_if_changed("templateImagePngB64", template_png_b64_, "state", meta);
     return;
   }
 
@@ -358,10 +358,10 @@ void TemplateMatchService::set_template_png_b64(const std::string& b64, const js
   template_loaded_ = false;
   template_error_.clear();
   template_bgr_.release();
-  publish_state_if_changed("templatePngB64", template_png_b64_, "state", meta);
+  publish_state_if_changed("templateImagePngB64", template_png_b64_, "state", meta);
 
   if (template_png_b64_.empty()) {
-    template_error_ = "missing templatePngB64";
+    template_error_ = "missing templateImagePngB64";
     publish_state_if_changed("lastError", template_error_, "state", meta);
     return;
   }
@@ -376,7 +376,7 @@ void TemplateMatchService::set_template_png_b64(const std::string& b64, const js
   cv::Mat buf(1, static_cast<int>(dec.bytes.size()), CV_8UC1, const_cast<std::uint8_t*>(dec.bytes.data()));
   cv::Mat img = cv::imdecode(buf, cv::IMREAD_COLOR);
   if (img.empty()) {
-    template_error_ = "imdecode failed (templatePngB64)";
+    template_error_ = "imdecode failed (templateImagePngB64)";
     publish_state_if_changed("lastError", template_error_, "state", meta);
     return;
   }
@@ -567,7 +567,7 @@ bool TemplateMatchService::on_command(const std::string& call, const json& args,
   error_code.clear();
   error_message.clear();
   result = json::object();
-  if (call == "captureFrame") {
+  if (call == "captureTemplateFrame") {
     std::string fmt = "jpg";
     int quality = 85;
     int max_bytes = 900000;
@@ -697,10 +697,10 @@ json TemplateMatchService::describe() {
   service["serviceClass"] = "f8.cvkit.templatematch";
   service["label"] = "CVKit Template Match";
   service["version"] = "0.0.1";
-  service["rendererClass"] = "pystudio_template_tracker";
+  service["rendererClass"] = "template_match_capture";
   service["tags"] = json::array({"cv", "template_match"});
   service["stateFields"] = json::array({
-      state_field("templatePngB64", schema_string(), "rw", "Template PNG (Base64)", "PNG bytes encoded as base64.", false),
+      state_field("templateImagePngB64", schema_string(), "rw", "Template PNG (Base64)", "PNG bytes encoded as base64.", false),
       state_field("matchThreshold", schema_number(0.5, 0.0, 1.0), "rw", "Match Threshold", "0..1 score threshold.", true, "slider"),
       state_field("matchingIntervalMs", schema_integer(200, 0, 60000), "rw", "Matching Interval (ms)",
                   "Minimum milliseconds between template matching passes.", false),
@@ -709,7 +709,7 @@ json TemplateMatchService::describe() {
   });
   service["editableStateFields"] = false;
   service["commands"] = json::array({
-      json{{"name", "captureFrame"},
+      json{{"name", "captureTemplateFrame"},
            {"description", "Capture current SHM frame as an encoded image (base64)."},
            {"showOnNode", true},
            {"params",

@@ -2,7 +2,7 @@ from .viz_audio import VizAudioRenderNode
 from .viz_text import VizTextRenderNode
 from .viz_three_d import VizThreeDRenderNode
 from .viz_tcode import VizTCodeRenderNode
-from .pystudio_template_tracker import PyStudioTemplateTrackerNode
+from .template_match_capture import TemplateMatchCaptureRenderNode
 from .viz_wave import VizWaveRenderNode
 from .viz_track import VizTrackRenderNode
 from .viz_video import VizVideoRenderNode
@@ -13,7 +13,7 @@ __all__ = [
     "VizTextRenderNode",
     "VizThreeDRenderNode",
     "VizTCodeRenderNode",
-    "PyStudioTemplateTrackerNode",
+    "TemplateMatchCaptureRenderNode",
     "VizWaveRenderNode",
     "VizTrackRenderNode",
     "VizVideoRenderNode",
