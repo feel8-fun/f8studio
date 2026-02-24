@@ -452,7 +452,7 @@ ExprRuntimeNode.SPEC = F8OperatorSpec(
     description="Evaluate a small expression using input values (math/logic/extraction).",
     tags=["expr", "math", "logic", "transform", "lightweight"],
     dataInPorts=[
-        F8DataPortSpec(name="input", description="Default input value.", valueSchema=any_schema(), required=False),
+        F8DataPortSpec(name="x", description="Input value for the expression.", valueSchema=any_schema(), required=False),
     ],
     dataOutPorts=[
         F8DataPortSpec(name="out", description="Expression result.", valueSchema=any_schema(), required=False),
@@ -476,7 +476,7 @@ ExprRuntimeNode.SPEC = F8OperatorSpec(
             description="Single-line expression (no statements). Available: abs/min/max/round/float/int, math.*, comprehensions. Numpy (np.*, numpy.*) is available only when Allow Numpy is enabled.",
             uiControl="wrapline",
             uiLanguage="python",
-            valueSchema=string_schema(default="input"),
+            valueSchema=string_schema(default="x"),
             access=F8StateAccess.rw,
             showOnNode=True,
             required=False,

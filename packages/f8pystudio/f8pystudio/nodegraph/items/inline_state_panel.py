@@ -385,7 +385,8 @@ def make_state_inline_control(node_item: Any, state_field: StateFieldInfo) -> Qt
             edit.setFont(font)
         except (AttributeError, RuntimeError, TypeError):
             pass
-        edit.setMinimumWidth(160)
+        edit.setMinimumWidth(0)
+        edit.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
         edit.setMinimumHeight(38)
         edit.setMaximumHeight(64)
         _common_style(edit)

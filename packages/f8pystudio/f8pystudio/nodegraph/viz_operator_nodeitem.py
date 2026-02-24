@@ -304,8 +304,26 @@ class F8StudioVizOperatorNodeItem(F8StudioOperatorNodeItem):
                 except Exception:
                     body_h = 0.0
                 try:
-                    panel_proxy.setPos(inner_x, y)
-                except (AttributeError, RuntimeError, TypeError):
+                    # Center panels using their actual width, then clamp into node bounds.
+                    w = panel_proxy.widget()
+                    if w is None:
+                        panel_proxy.setPos(inner_x, y)
+                    else:
+                        panel_w = float(w.width() or 0.0)
+                        if panel_w <= 0.0:
+                            panel_w = float(panel_proxy.boundingRect().width() or 0.0)
+                        if panel_w <= 0.0:
+                            panel_proxy.setPos(inner_x, y)
+                        else:
+                            panel_x = rect.left() + (rect.width() - panel_w) / 2.0
+                            min_x = float(inner_x)
+                            max_x = float(rect.right() - 4.0 - panel_w)
+                            if max_x < min_x:
+                                panel_x = min_x
+                            else:
+                                panel_x = max(min_x, min(panel_x, max_x))
+                            panel_proxy.setPos(panel_x, y)
+                except (AttributeError, RuntimeError, TypeError, ValueError):
                     pass
 
             port_y = y + (header_h - port_height) / 2.0 if port_height else y
