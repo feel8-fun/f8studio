@@ -15,6 +15,59 @@ from .service_toolbar_host import F8ForceGlobalToolTipFilter
 logger = logging.getLogger(__name__)
 
 
+def _snapshot_selected_node_ids(node_item: Any) -> list[str]:
+    try:
+        graph = node_item._graph()
+    except Exception:
+        return []
+    if graph is None:
+        return []
+    try:
+        selected_nodes = list(graph.selected_nodes() or [])
+    except Exception:
+        return []
+    out: list[str] = []
+    for node in selected_nodes:
+        try:
+            node_id = str(node.id or "").strip()
+        except Exception:
+            node_id = ""
+        if node_id:
+            out.append(node_id)
+    return out
+
+
+def _restore_selected_node_ids(node_item: Any, ids: list[str]) -> None:
+    try:
+        graph = node_item._graph()
+    except Exception:
+        return
+    if graph is None:
+        return
+    target_ids = {str(node_id).strip() for node_id in ids if str(node_id).strip()}
+    try:
+        nodes = list(graph.all_nodes() or [])
+    except Exception:
+        nodes = []
+    for node in nodes:
+        try:
+            node_id = str(node.id or "").strip()
+        except Exception:
+            node_id = ""
+        if not node_id:
+            continue
+        try:
+            node.set_property("selected", node_id in target_ids, push_undo=False)
+        except Exception:
+            continue
+
+
+def _on_command_pressed(node_item: Any, command: Any) -> None:
+    selected_ids = _snapshot_selected_node_ids(node_item)
+    node_item._invoke_command(command)
+    QtCore.QTimer.singleShot(0, lambda: _restore_selected_node_ids(node_item, selected_ids))
+
+
 def invoke_command(node_item: Any, cmd: Any) -> None:
     """
     Invoke a command declared on the service spec.
@@ -506,7 +559,7 @@ def ensure_inline_command_widget(node_item: Any) -> None:
             button.setToolTip((desc + "\n" if desc else "") + "Service not running")
         elif desc:
             button.setToolTip(desc)
-        button.clicked.connect(lambda _=False, _c=command: node_item._invoke_command(_c))  # type: ignore[attr-defined]
+        button.pressed.connect(lambda _c=command: _on_command_pressed(node_item, _c))  # type: ignore[attr-defined]
         layout.addWidget(button)
         node_item._cmd_buttons.append(button)
 

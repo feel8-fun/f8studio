@@ -178,10 +178,15 @@ class NodeVariantManagerDialog(QtWidgets.QDialog):
         if not isinstance(spec, (F8OperatorSpec, F8ServiceSpec)):
             QtWidgets.QMessageBox.warning(self, "Unsupported node", "Selected node has no typed spec.")
             return
+        node_display_name = ""
+        try:
+            node_display_name = str(node.name() or "").strip()
+        except (AttributeError, RuntimeError, TypeError):
+            node_display_name = ""
         dlg = _VariantMetaDialog(
             parent=self,
             title="Save Variant",
-            name=str(spec.label or node.NODE_NAME or self._base_node_name),
+            name=str(node_display_name or node.NODE_NAME or spec.label or self._base_node_name),
             description=str(spec.description or ""),
             tags=[str(t) for t in list(spec.tags or [])],
         )

@@ -149,7 +149,12 @@ class F8StudioGraph(NodeGraph):
             return
         if not isinstance(spec, (F8OperatorSpec, F8ServiceSpec)):
             return
-        default_name = str(spec.label or node.NODE_NAME or node.name() or "").strip() or "Variant"
+        node_display_name = ""
+        try:
+            node_display_name = str(node.name() or "").strip()
+        except (AttributeError, RuntimeError, TypeError):
+            node_display_name = ""
+        default_name = str(node_display_name or node.NODE_NAME or spec.label or "").strip() or "Variant"
         default_desc = str(spec.description or "").strip()
         default_tags = [str(t) for t in list(spec.tags or []) if str(t).strip()]
         values = self._prompt_variant_metadata(
