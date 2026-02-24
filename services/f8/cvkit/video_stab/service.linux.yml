@@ -1,0 +1,9 @@
+schemaVersion: f8serviceEntry/1
+serviceClass: f8.cvkit.videostab
+label: CVKit Video Stabilizer
+version: 0.0.1
+launch:
+  command: "../linux/f8cvkit_video_stab_service"
+  args: []
+  env: {}
+  workdir: "./"
