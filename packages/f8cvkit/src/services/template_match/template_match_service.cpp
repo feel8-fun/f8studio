@@ -49,6 +49,13 @@ json schema_object(const json& props, const json& required = json::array()) {
   return obj;
 }
 
+json schema_array(const json& item_schema) {
+  json arr;
+  arr["type"] = "array";
+  arr["items"] = item_schema;
+  return arr;
+}
+
 json state_field(std::string name, const json& value_schema, std::string access, std::string label = {},
                  std::string description = {}, bool show_on_node = false, std::string ui_control = {}) {
   json sf;
@@ -508,20 +515,37 @@ void TemplateMatchService::detect_once() {
     cv::Point max_loc;
     cv::minMaxLoc(result, &min_val, &max_val, &min_loc, &max_loc);
 
+    const int x1 = max_loc.x;
+    const int y1 = max_loc.y;
+    const int x2 = max_loc.x + template_bgr_.cols;
+    const int y2 = max_loc.y + template_bgr_.rows;
+
+    json detections = json::array();
+    if (max_val >= match_threshold_) {
+      json det = json::object();
+      det["cls"] = "template_match";
+      det["score"] = max_val;
+      det["bbox"] = json::array({x1, y1, x2, y2});
+      det["keypoints"] = json::array();
+      det["obb"] = json::array();
+      det["skeletonProtocol"] = "none";
+      detections.push_back(std::move(det));
+    }
+
     json out = json::object();
+    out["schemaVersion"] = "f8visionDetections/1";
     out["frameId"] = hdr.frame_id;
     out["tsMs"] = hdr.ts_ms;
-    out["score"] = max_val;
-    out["x"] = max_loc.x;
-    out["y"] = max_loc.y;
-    out["w"] = template_bgr_.cols;
-    out["h"] = template_bgr_.rows;
-    out["frameW"] = hdr.width;
-    out["frameH"] = hdr.height;
+    out["width"] = hdr.width;
+    out["height"] = hdr.height;
+    out["model"] = "cvkit.template_match";
+    out["task"] = "template_match";
+    out["skeletonProtocol"] = "none";
+    out["detections"] = std::move(detections);
 
     publish_state_if_changed("lastError", "", "runtime", json::object());
     last_match_ts_ms_ = now_ms;
-    (void)bus_->emit_data(cfg_.service_id, "result", out);
+    (void)bus_->emit_data(cfg_.service_id, "detections", out);
     const std::int64_t end_ts_ms = f8::cppsdk::now_ms();
     emit_telemetry(end_ts_ms, hdr.frame_id, static_cast<double>(end_ts_ms - now_ms));
   }
@@ -672,19 +696,28 @@ bool TemplateMatchService::on_command(const std::string& call, const json& args,
 }
 
 json TemplateMatchService::describe() {
-  const json result_schema = schema_object(
+  const json keypoint_schema = schema_object(
+      json{{"x", schema_number()}, {"y", schema_number()}, {"score", schema_number()}});
+  const json detection_schema = schema_object(
+      json{{"cls", schema_string()},
+           {"score", schema_number()},
+           {"bbox", schema_array(schema_integer())},
+           {"keypoints", schema_array(keypoint_schema)},
+           {"obb", schema_array(schema_array(schema_number()))},
+           {"skeletonProtocol", schema_string()}});
+  const json detections_schema = schema_object(
+      json{{"schemaVersion", schema_string()},
+           {"frameId", schema_integer()},
+           {"tsMs", schema_integer()},
+           {"width", schema_integer()},
+           {"height", schema_integer()},
+           {"model", schema_string()},
+           {"task", schema_string()},
+           {"skeletonProtocol", schema_string()},
+           {"detections", schema_array(detection_schema)}});
+  const json telemetry_schema = schema_object(
       json{{"frameId", schema_integer()},
            {"tsMs", schema_integer()},
-           {"score", schema_number()},
-           {"x", schema_integer()},
-           {"y", schema_integer()},
-           {"w", schema_integer()},
-           {"h", schema_integer()},
-           {"frameW", schema_integer()},
-           {"frameH", schema_integer()}});
-  const json telemetry_schema = schema_object(
-      json{{"tsMs", schema_integer()},
-           {"frameId", schema_integer()},
            {"fps", schema_number()},
            {"processMs", schema_number()},
            {"avgProcessMs", schema_number()},
@@ -701,7 +734,8 @@ json TemplateMatchService::describe() {
   service["tags"] = json::array({"cv", "template_match"});
   service["stateFields"] = json::array({
       state_field("templateImagePngB64", schema_string(), "rw", "Template PNG (Base64)", "PNG bytes encoded as base64.", false),
-      state_field("matchThreshold", schema_number(0.5, 0.0, 1.0), "rw", "Match Threshold", "0..1 score threshold.", true, "slider"),
+      state_field("matchThreshold", schema_number(0.5, 0.0, 1.0), "rw", "Match Threshold",
+                  "0..1 score threshold used to emit detections.", true, "slider"),
       state_field("matchingIntervalMs", schema_integer(200, 0, 60000), "rw", "Matching Interval (ms)",
                   "Minimum milliseconds between template matching passes.", false),
       state_field("shmName", schema_string(), "rw", "Video SHM", "Optional SHM name override (e.g. shm.xxx.video).", true),
@@ -725,7 +759,10 @@ json TemplateMatchService::describe() {
   service["editableCommands"] = false;
   service["dataInPorts"] = json::array();
   service["dataOutPorts"] = json::array({
-      json{{"name", "result"}, {"valueSchema", result_schema}, {"description", "Match result stream."}, {"required", false}},
+      json{{"name", "detections"},
+           {"valueSchema", detections_schema},
+           {"description", "Detection output in schema f8visionDetections/1 (single best match as 0/1 detection)."},
+           {"required", false}},
       json{{"name", "telemetry"},
            {"valueSchema", telemetry_schema},
            {"description", "Runtime telemetry: fps/process time/dropped frames."},

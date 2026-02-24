@@ -47,9 +47,9 @@ class VizTrackRuntimeNode(StudioVizRuntimeNodeBase):
     Expected input payloads:
     - Multi-target (from f8.detecttracker `detections`):
       { "tsMs": int, "width": int, "height": int, "tracks": [ {id, bbox, keypoints?}, ... ] }
-    - Multi-target (from f8.dl.detector / f8.dl.humandetector):
+    - Multi-target (from f8.dl.detector / f8.dl.humandetector / f8.cvkit.templatematch):
       { "schemaVersion": "f8visionDetections/1", "tsMs": int, "width": int, "height": int, "detections": [ {bbox, keypoints?}, ... ] }
-    - Single-target (from f8.cvkit.templatematch `result` or f8.cvkit.tracking `tracking`):
+    - Single-target (from f8.cvkit.tracking `tracking`):
       { "tsMs": int, "width": int, "height": int, "bbox": [x1,y1,x2,y2] | null }
 
     The runtime node maintains a short history per track id, and emits a UI command
