@@ -40,6 +40,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         for cls in node_classes:
             self.studio_graph.node_factory.register_node(cls)
         self.studio_graph.install_variant_context_menu_for_nodes(list(node_classes))
+        self.studio_graph.install_identity_context_menu_for_nodes(list(node_classes))
 
         self.setCentralWidget(self.studio_graph.widget)
 

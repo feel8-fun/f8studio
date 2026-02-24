@@ -1785,10 +1785,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
     def _ensure_service_toolbar(self, viewer: Any | None) -> None:
         if self._svc_toolbar_proxy is not None:
             return
-        try:
-            service_id = str(self.id or "").strip()
-        except Exception:
-            service_id = ""
+        service_id = self._current_service_id()
         if not service_id:
             return
 
@@ -1813,7 +1810,7 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             if g is None:
                 return None
             try:
-                return g.get_node_by_id(service_id)
+                return g.get_node_by_id(self._current_service_id())
             except Exception:
                 return None
 
@@ -1853,6 +1850,24 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
             self._svc_toolbar_proxy = proxy
         except Exception:
             self._svc_toolbar_proxy = None
+
+    def _current_service_id(self) -> str:
+        try:
+            return str(self.id or "").strip()
+        except (AttributeError, RuntimeError, TypeError):
+            return ""
+
+    def refresh_service_identity_bindings(self) -> None:
+        proxy = self._svc_toolbar_proxy
+        if proxy is None:
+            return
+        try:
+            widget = proxy.widget()
+        except (AttributeError, RuntimeError, TypeError):
+            widget = None
+        if isinstance(widget, ServiceProcessToolbar):
+            widget.set_service_id(self._current_service_id())
+        self._position_service_toolbar()
 
     def _position_service_toolbar(self) -> None:
         proxy = self._svc_toolbar_proxy

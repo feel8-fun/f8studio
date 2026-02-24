@@ -124,6 +124,10 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
 
         self.refresh()
 
+    def set_service_id(self, service_id: str) -> None:
+        self._service_id = str(service_id or "").strip()
+        self.refresh()
+
     def _bridge(self) -> ServiceBridge | None:
         try:
             b = self._get_bridge()
