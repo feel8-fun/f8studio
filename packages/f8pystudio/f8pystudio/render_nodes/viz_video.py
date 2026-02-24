@@ -27,6 +27,8 @@ class _VideoShmPane(QtWidgets.QWidget):
         top.setContentsMargins(0, 0, 0, 0)
         self._title = QtWidgets.QLabel("VideoSHM")
         self._title.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        self._title.setMinimumWidth(0)
+        self._title.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Preferred)
         self._title.setStyleSheet("color: rgb(225, 225, 225);")
         self._update = QtWidgets.QCheckBox("Update")
         self._update.setChecked(True)
@@ -51,11 +53,15 @@ class _VideoShmPane(QtWidgets.QWidget):
 
         self._image = QtWidgets.QLabel()
         self._image.setAlignment(QtCore.Qt.AlignCenter)
-        self._image.setMinimumSize(200, 120)
+        # Avoid forcing a wide minimum: keep width shrinkable inside narrow nodes.
+        self._image.setMinimumSize(0, 120)
+        self._image.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         self._image.setStyleSheet("background: rgba(0,0,0,60); border: 1px solid rgba(255,255,255,25);")
 
         self._status = QtWidgets.QLabel("")
         self._status.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        self._status.setMinimumWidth(0)
+        self._status.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Preferred)
         self._status.setStyleSheet("color: rgb(160, 160, 160);")
 
         layout.addLayout(top)
