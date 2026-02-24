@@ -147,7 +147,7 @@ class PyStudioProgram:
         # discovery is missing some operator types.
         missing_spec = F8OperatorSpec(
             schemaVersion=F8OperatorSchemaVersion.f8operator_1,
-            serviceClass="svc.f8.missing",
+            serviceClass="f8.missing",
             operatorClass="f8.missing.operator",
             version="0.0.1",
             label="Missing Operator",
@@ -186,7 +186,7 @@ class PyStudioProgram:
         missing_node_cls = type(
             "f8.missing.operator",
             (F8StudioMissingOperatorBaseNode,),
-            {"__identifier__": "svc.f8.missing", "NODE_NAME": "Missing Operator", "SPEC_TEMPLATE": missing_spec},
+            {"__identifier__": "f8.missing", "NODE_NAME": "Missing Operator", "SPEC_TEMPLATE": missing_spec},
         )
         generated_node_cls.append(missing_node_cls)
 

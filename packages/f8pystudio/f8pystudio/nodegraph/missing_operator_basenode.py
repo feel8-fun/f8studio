@@ -15,7 +15,7 @@ class F8StudioMissingOperatorBaseNode(F8StudioOperatorBaseNode):
     """
     Placeholder operator node used when a session references an unregistered node type.
 
-    Session loader sets `custom` values:
+    Session loader stores original type/spec in `f8_sys`, and mirrors them into `custom` values:
       - missingType: original `type_` string
       - missingSpec: JSON string of the original `f8_spec` (best-effort)
     """
@@ -71,4 +71,3 @@ class F8StudioMissingOperatorBaseNode(F8StudioOperatorBaseNode):
                 self.set_property("missingSpec", json.dumps(raw, ensure_ascii=False, indent=2), push_undo=False)
             except (AttributeError, RuntimeError, TypeError, ValueError):
                 pass
-
