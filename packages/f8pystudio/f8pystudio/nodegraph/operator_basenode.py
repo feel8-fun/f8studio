@@ -16,7 +16,6 @@ from NodeGraphQt.constants import (
     NodePropWidgetEnum,
 )
 
-from .items.operator_legacy_node_item import _LegacyF8StudioOperatorNodeItem
 from .port_painter import draw_exec_port, draw_square_port, EXEC_PORT_COLOR, DATA_PORT_COLOR, STATE_PORT_COLOR
 from .service_basenode import F8StudioServiceNodeItem
 
