@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import colorsys
+import math
 from typing import Any, Callable
 
 from qtpy import QtCore, QtGui, QtWidgets
@@ -40,6 +41,16 @@ def _color_for_kind(kind: str) -> tuple[int, int, int] | None:
     return None
 
 
+def _flow_color(mag: float, max_mag: float) -> tuple[int, int, int]:
+    den = max(1e-6, max_mag)
+    t = max(0.0, min(1.0, float(mag) / den))
+    # cyan -> orange/red
+    r = int(40 + 215 * t)
+    g = int(220 - 120 * t)
+    b = int(220 - 200 * t)
+    return r, g, b
+
+
 class _TrackVizCanvas(pg.GraphicsObject):  # type: ignore[misc]
     """
     A single GraphicsObject that paints the whole scene.
@@ -55,22 +66,22 @@ class _TrackVizCanvas(pg.GraphicsObject):  # type: ignore[misc]
         self._h: int = 0
         self._frame: QtGui.QImage | None = None
 
+    def set_canvas_size(self, width: int, height: int) -> None:
+        ww = max(0, int(width))
+        hh = max(0, int(height))
+        if ww == self._w and hh == self._h:
+            return
+        self._w = ww
+        self._h = hh
+        self.prepareGeometryChange()
+        self.update()
+
     def set_video_frame(self, image: QtGui.QImage | None) -> None:
         self._frame = image
-        if image is not None:
-            self._w = int(image.width())
-            self._h = int(image.height())
-            self.prepareGeometryChange()
         self.update()
 
     def set_payload(self, payload: dict[str, Any]) -> None:
         self._payload = payload
-        try:
-            self._w = int(payload.get("width") or 0)
-            self._h = int(payload.get("height") or 0)
-        except (AttributeError, TypeError, ValueError):
-            self._w, self._h = 0, 0
-        self.prepareGeometryChange()
         self.update()
 
     def boundingRect(self) -> QtCore.QRectF:  # type: ignore[override]
@@ -87,7 +98,9 @@ class _TrackVizCanvas(pg.GraphicsObject):  # type: ignore[misc]
 
         has_frame = self._frame is not None
         if has_frame and self._frame is not None:
-            p.drawImage(QtCore.QPointF(0.0, 0.0), self._frame)
+            target_w = max(1.0, float(self._w if self._w > 0 else self._frame.width()))
+            target_h = max(1.0, float(self._h if self._h > 0 else self._frame.height()))
+            p.drawImage(QtCore.QRectF(0.0, 0.0, target_w, target_h), self._frame)
 
         if not payload:
             return
@@ -102,8 +115,7 @@ class _TrackVizCanvas(pg.GraphicsObject):  # type: ignore[misc]
             history_ms = 0
 
         tracks = payload.get("tracks") if isinstance(payload.get("tracks"), list) else []
-        if not tracks:
-            return
+        flow = payload.get("flow") if isinstance(payload.get("flow"), dict) else None
 
         p.setRenderHint(QtGui.QPainter.Antialiasing, True)
         p.setRenderHint(QtGui.QPainter.TextAntialiasing, True)
@@ -223,6 +235,69 @@ class _TrackVizCanvas(pg.GraphicsObject):  # type: ignore[misc]
                     continue
                 p.drawEllipse(QtCore.QPointF(x, y), rad, rad)
 
+        if isinstance(flow, dict):
+            vectors = flow.get("vectors") if isinstance(flow.get("vectors"), list) else []
+            try:
+                scale = float(payload.get("flowArrowScale") or 1.0)
+            except (TypeError, ValueError):
+                scale = 1.0
+            try:
+                min_mag = float(payload.get("flowArrowMinMag") or 0.0)
+            except (TypeError, ValueError):
+                min_mag = 0.0
+            scale = max(0.1, min(20.0, scale))
+            min_mag = max(0.0, min(100.0, min_mag))
+
+            mags: list[float] = []
+            for item in vectors:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    mags.append(float(item.get("mag") or 0.0))
+                except (TypeError, ValueError):
+                    continue
+            max_mag = max(mags) if mags else 1.0
+
+            for item in vectors:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    x = float(item.get("x"))
+                    y = float(item.get("y"))
+                    dx = float(item.get("dx"))
+                    dy = float(item.get("dy"))
+                    mag = float(item.get("mag"))
+                except (TypeError, ValueError):
+                    continue
+                if mag < min_mag:
+                    continue
+
+                x2 = x + dx * scale
+                y2 = y + dy * scale
+                rr, gg, bb_ = _flow_color(mag, max_mag)
+                pen = QtGui.QPen(QtGui.QColor(rr, gg, bb_, 190))
+                pen.setWidthF(1.2)
+                p.setPen(pen)
+                p.drawLine(QtCore.QPointF(x, y), QtCore.QPointF(x2, y2))
+
+                vx = x2 - x
+                vy = y2 - y
+                vlen = math.hypot(vx, vy)
+                if vlen < 1e-6:
+                    continue
+                ux = vx / vlen
+                uy = vy / vlen
+                head_len = max(3.0, min(8.0, 2.0 + 0.3 * vlen))
+                # two wings rotated by +/- 30 deg
+                c = 0.8660254037844386
+                s = 0.5
+                lx = c * ux - s * uy
+                ly = s * ux + c * uy
+                rx = c * ux + s * uy
+                ry = -s * ux + c * uy
+                p.drawLine(QtCore.QPointF(x2, y2), QtCore.QPointF(x2 - head_len * lx, y2 - head_len * ly))
+                p.drawLine(QtCore.QPointF(x2, y2), QtCore.QPointF(x2 - head_len * rx, y2 - head_len * ry))
+
 
 class _TrackVizPane(QtWidgets.QWidget):
     def __init__(self) -> None:
@@ -289,6 +364,7 @@ class _TrackVizPane(QtWidgets.QWidget):
 
         self._pending = None
         self._last_wh: tuple[int, int] | None = None
+        self._scene_size: tuple[int, int] | None = None
         self._video_shm_name = ""
         self._video_shm_throttle_ms = 33
         self._video_reader: VideoShmReader | None = None
@@ -340,9 +416,16 @@ class _TrackVizPane(QtWidgets.QWidget):
             throttle_ms=video_shm_throttle_ms,
         )
         try:
+            pw = int(payload.get("width") or 0)
+            ph = int(payload.get("height") or 0)
+            self._scene_size = (pw, ph) if pw > 0 and ph > 0 else None
+        except (AttributeError, TypeError, ValueError):
+            self._scene_size = None
+        try:
             self._canvas.set_payload(payload)
         except (AttributeError, RuntimeError, TypeError, ValueError):
             pass
+        self._sync_canvas_geometry()
 
 
     def detach(self) -> None:
@@ -374,6 +457,32 @@ class _TrackVizPane(QtWidgets.QWidget):
             self._video_timer.stop()
         if not self._video_shm_name:
             self._canvas.set_video_frame(None)
+            self._video_size = None
+            self._sync_canvas_geometry()
+
+    def _sync_canvas_geometry(self) -> None:
+        if self._vb is None:
+            return
+        width = 0
+        height = 0
+        # Priority: VideoSHM frame size first.
+        if self._video_size is not None:
+            width, height = self._video_size
+        elif self._scene_size is not None:
+            width, height = self._scene_size
+        if width <= 0 or height <= 0:
+            return
+        self._canvas.set_canvas_size(width, height)
+        wh = (int(width), int(height))
+        if self._last_wh == wh:
+            return
+        self._last_wh = wh
+        self._vb.setRange(
+            xRange=(0.0, float(width)),
+            yRange=(0.0, float(height)),
+            padding=0.0,
+            disableAutoRange=True,
+        )
 
     def _reset_video_reader(self) -> None:
         try:
@@ -385,6 +494,7 @@ class _TrackVizPane(QtWidgets.QWidget):
         self._video_frame_id = 0
         self._video_frame_bytes = None
         self._video_size = None
+        self._sync_canvas_geometry()
 
     def _ensure_video_reader(self) -> bool:
         if self._video_reader is not None:
@@ -397,7 +507,8 @@ class _TrackVizPane(QtWidgets.QWidget):
             self._video_reader = reader
             return True
         except Exception as exc:
-            self._status.setText(f"video shm open failed: {exc}")
+            if hasattr(self, "_status") and self._status is not None:
+                self._status.setText(f"video shm open failed: {exc}")
             self._video_reader = None
             return False
 
@@ -411,7 +522,8 @@ class _TrackVizPane(QtWidgets.QWidget):
         try:
             header, payload = self._video_reader.read_latest_bgra()
         except Exception as exc:
-            self._status.setText(f"video shm read failed: {exc}")
+            if hasattr(self, "_status") and self._status is not None:
+                self._status.setText(f"video shm read failed: {exc}")
             return
         if header is None or payload is None:
             return
@@ -435,6 +547,7 @@ class _TrackVizPane(QtWidgets.QWidget):
             return
         self._video_size = (w, h)
         self._canvas.set_video_frame(safe_img)
+        self._sync_canvas_geometry()
 
 
 class _TrackVizWidget(NodeBaseWidget):

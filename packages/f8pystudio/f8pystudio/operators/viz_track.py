@@ -16,6 +16,7 @@ from f8pysdk import (
     any_schema,
     boolean_schema,
     integer_schema,
+    number_schema,
     string_schema,
 )
 from f8pysdk.nats_naming import ensure_token
@@ -73,8 +74,12 @@ class VizTrackRuntimeNode(StudioVizRuntimeNodeBase):
         self._history_frames: int = 10
         self._throttle_ms: int = 50
         self._video_shm_name: str = ""
+        self._flow_arrow_scale: float = 1.0
+        self._flow_arrow_min_mag: float = 0.0
+        self._flow_arrow_max_count: int = 2000
 
         self._tracks: dict[int, deque[_Sample]] = {}
+        self._flow_payload: dict[str, Any] | None = None
         self._dirty: bool = False
         self._last_refresh_ms: int | None = None
         self._refresh_task: asyncio.Task[object] | None = None
@@ -123,6 +128,15 @@ class VizTrackRuntimeNode(StudioVizRuntimeNodeBase):
         elif f == "videoShmName":
             self._video_shm_name = await self._get_str_state("videoShmName", default="")
             self._dirty = True
+        elif f == "flowArrowScale":
+            self._flow_arrow_scale = await self._get_float_state("flowArrowScale", default=1.0, minimum=0.1, maximum=20.0)
+            self._dirty = True
+        elif f == "flowArrowMinMag":
+            self._flow_arrow_min_mag = await self._get_float_state("flowArrowMinMag", default=0.0, minimum=0.0, maximum=100.0)
+            self._dirty = True
+        elif f == "flowArrowMaxCount":
+            self._flow_arrow_max_count = await self._get_int_state("flowArrowMaxCount", default=2000, minimum=100, maximum=20000)
+            self._dirty = True
         else:
             return
         now = int(ts_ms) if ts_ms is not None else int(time.time() * 1000)
@@ -135,6 +149,11 @@ class VizTrackRuntimeNode(StudioVizRuntimeNodeBase):
 
         payload = value if isinstance(value, dict) else {}
         now = int(ts_ms) if ts_ms is not None else int(payload.get("tsMs") or time.time() * 1000)
+        schema_version = ""
+        try:
+            schema_version = str(payload.get("schemaVersion") or "").strip()
+        except (AttributeError, TypeError, ValueError):
+            schema_version = ""
         payload_skeleton_protocol = ""
         try:
             payload_skeleton_protocol = str(payload.get("skeletonProtocol") or "").strip()
@@ -149,6 +168,37 @@ class VizTrackRuntimeNode(StudioVizRuntimeNodeBase):
                 self._height = int(h)
         except (AttributeError, TypeError, ValueError):
             pass
+
+        if schema_version == "f8visionFlowField/1":
+            vectors_in = payload.get("vectors")
+            vectors_out: list[dict[str, float]] = []
+            if isinstance(vectors_in, list):
+                for item in vectors_in:
+                    if not isinstance(item, dict):
+                        continue
+                    try:
+                        x = float(item.get("x"))
+                        y = float(item.get("y"))
+                        dx = float(item.get("dx"))
+                        dy = float(item.get("dy"))
+                        mag = float(item.get("mag"))
+                    except (TypeError, ValueError):
+                        continue
+                    if mag < float(self._flow_arrow_min_mag):
+                        continue
+                    vectors_out.append({"x": x, "y": y, "dx": dx, "dy": dy, "mag": mag})
+                    if len(vectors_out) >= int(self._flow_arrow_max_count):
+                        break
+            self._flow_payload = {
+                "schemaVersion": "f8visionFlowField/1",
+                "tsMs": int(payload.get("tsMs") or now),
+                "width": int(self._width or 0),
+                "height": int(self._height or 0),
+                "vectors": vectors_out,
+            }
+            self._dirty = True
+            await self._schedule_refresh(now_ms=now)
+            return
 
         tracks_any = payload.get("tracks")
         tracks: list[dict[str, Any]] = [t for t in tracks_any if isinstance(t, dict)] if isinstance(tracks_any, list) else []
@@ -292,6 +342,9 @@ class VizTrackRuntimeNode(StudioVizRuntimeNodeBase):
         self._history_ms = await self._get_int_state("historyMs", default=500, minimum=0, maximum=60000)
         self._history_frames = await self._get_int_state("historyFrames", default=10, minimum=1, maximum=200)
         self._video_shm_name = await self._get_str_state("videoShmName", default="")
+        self._flow_arrow_scale = await self._get_float_state("flowArrowScale", default=1.0, minimum=0.1, maximum=20.0)
+        self._flow_arrow_min_mag = await self._get_float_state("flowArrowMinMag", default=0.0, minimum=0.0, maximum=100.0)
+        self._flow_arrow_max_count = await self._get_int_state("flowArrowMaxCount", default=2000, minimum=100, maximum=20000)
         self._config_loaded = True
 
     async def _schedule_refresh(self, *, now_ms: int) -> None:
@@ -332,7 +385,7 @@ class VizTrackRuntimeNode(StudioVizRuntimeNodeBase):
         self._prune(now_ms=int(now_ms))
 
         changed = bool(self._dirty)
-        if not changed and not self._tracks:
+        if not changed and not self._tracks and self._flow_payload is None:
             self._last_refresh_ms = int(now_ms)
             return
 
@@ -362,6 +415,9 @@ class VizTrackRuntimeNode(StudioVizRuntimeNodeBase):
                 "historyFrames": int(self._history_frames),
                 "throttleMs": int(self._throttle_ms),
                 "tracks": out_tracks,
+                "flow": self._flow_payload if self._flow_payload is not None else None,
+                "flowArrowScale": float(self._flow_arrow_scale),
+                "flowArrowMinMag": float(self._flow_arrow_min_mag),
                 "nowMs": int(now_ms),
                 "videoShmName": str(self._video_shm_name or "").strip(),
             },
@@ -418,6 +474,24 @@ class VizTrackRuntimeNode(StudioVizRuntimeNodeBase):
             return str(v) if v is not None else str(default)
         except Exception:
             return str(default)
+
+    async def _get_float_state(self, name: str, *, default: float, minimum: float, maximum: float) -> float:
+        v: Any = None
+        try:
+            v = await self.get_state_value(name)
+        except Exception:
+            v = None
+        if v is None:
+            v = self._initial_state.get(name)
+        try:
+            out = float(v) if v is not None else float(default)
+        except Exception:
+            out = float(default)
+        if out < minimum:
+            out = minimum
+        if out > maximum:
+            out = maximum
+        return out
 
 def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
     reg = registry or RuntimeNodeRegistry.instance()
@@ -485,6 +559,30 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
                     valueSchema=string_schema(default=""),
                     access=F8StateAccess.rw,
                     showOnNode=True,
+                ),
+                F8StateSpec(
+                    name="flowArrowScale",
+                    label="Flow Arrow Scale",
+                    description="Scale factor applied to optical-flow arrow vectors.",
+                    valueSchema=number_schema(default=1.0, minimum=0.1, maximum=20.0),
+                    access=F8StateAccess.rw,
+                    showOnNode=True,
+                ),
+                F8StateSpec(
+                    name="flowArrowMinMag",
+                    label="Flow Min Magnitude",
+                    description="Hide optical-flow arrows whose magnitude is below this value.",
+                    valueSchema=number_schema(default=0.0, minimum=0.0, maximum=100.0),
+                    access=F8StateAccess.rw,
+                    showOnNode=True,
+                ),
+                F8StateSpec(
+                    name="flowArrowMaxCount",
+                    label="Flow Max Arrows",
+                    description="Maximum number of optical-flow arrows rendered per frame.",
+                    valueSchema=integer_schema(default=2000, minimum=100, maximum=20000),
+                    access=F8StateAccess.rw,
+                    showOnNode=False,
                 ),
                 *viz_sampling_state_fields(show_on_node=False),
             ],
