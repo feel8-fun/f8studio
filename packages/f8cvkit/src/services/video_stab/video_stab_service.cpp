@@ -232,7 +232,6 @@ bool VideoStabService::start() {
   publish_state_if_changed("minDistance", min_distance_, "init", json::object());
   publish_state_if_changed("ransacReprojThreshold", ransac_reproj_threshold_, "init", json::object());
   publish_state_if_changed("resetOnFailureFrames", reset_on_failure_frames_, "init", json::object());
-  publish_state_if_changed("isActive", active_.load(std::memory_order_acquire), "init", json::object());
   publish_state_if_changed("lastError", "", "init", json::object());
 
   running_.store(true, std::memory_order_release);
@@ -318,7 +317,7 @@ void VideoStabService::emit_telemetry(std::int64_t ts_ms, std::uint64_t frame_id
 
 void VideoStabService::on_lifecycle(bool active, const json& meta) {
   active_.store(active, std::memory_order_release);
-  publish_state_if_changed("isActive", active, "lifecycle", meta);
+  (void)meta;
 }
 
 bool VideoStabService::parse_double_field(const json& value, double& out) const {
@@ -901,11 +900,11 @@ json VideoStabService::describe() {
       state_field("outputShmName", schema_string(), "ro", "Output Video SHM", "Output SHM name generated from serviceId.",
                   true),
       state_field("motionModel", schema_string_enum({"affine", "homography"}, "affine"), "rw", "Motion Model",
-                  "Global motion model used by stabilizer.", true),
+                  "Global motion model used by stabilizer.", false),
       state_field("stabilizationMode", schema_string_enum({"trajectory", "instant"}, "trajectory"), "rw",
-                  "Stabilization Mode", "trajectory=smooth accumulated path; instant=smooth per-frame motion.", true),
+                  "Stabilization Mode", "trajectory=smooth accumulated path; instant=smooth per-frame motion.", false),
       state_field("smoothAlpha", schema_number(0.15, 0.01, 0.5), "rw", "Smooth Alpha",
-                  "EMA alpha used for motion smoothing.", true, "slider"),
+                  "EMA alpha used for motion smoothing.", false, "slider"),
       state_field("maxCornerCount", schema_integer(300, 20, 2000), "rw", "Max Corner Count", "LK feature count."),
       state_field("qualityLevel", schema_number(0.01, 0.0001, 0.3), "rw", "Quality Level",
                   "goodFeaturesToTrack quality level."),
@@ -913,8 +912,7 @@ json VideoStabService::describe() {
       state_field("ransacReprojThreshold", schema_number(3.0, 0.1, 20.0), "rw", "RANSAC Threshold",
                   "RANSAC reprojection threshold."),
       state_field("resetOnFailureFrames", schema_integer(5, 1, 120), "rw", "Reset On Failure Frames",
-                  "Reset internal stabilizer state after N consecutive failures."),
-      state_field("isActive", schema_boolean(), "ro", "Is Active", "Lifecycle active flag.", true),
+                  "Reset internal stabilizer state after N consecutive failures.", false),
       state_field("lastError", schema_string(), "ro", "Last Error", "Last error message.", false),
   });
   service["editableStateFields"] = false;
