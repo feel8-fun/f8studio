@@ -63,9 +63,9 @@ class _TimeSeriesPane(QtWidgets.QWidget):
             }
             """
         )
-        top.addWidget(self._clear, 0)
-        top.addWidget(self._update, 0)
-        top.addStretch(1)
+        top.addWidget(self._clear)
+        top.addStretch()
+        top.addWidget(self._update)
         layout.addLayout(top)
 
         self._pending_payload: dict[str, Any] | None = None

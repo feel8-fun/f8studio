@@ -214,10 +214,6 @@ class _TCodeViewerControlPane(QtWidgets.QWidget):
         self._open_button.clicked.connect(on_open_clicked)  # type: ignore[arg-type]
         layout.addWidget(self._open_button)
 
-        self._window_status = QtWidgets.QLabel("window: closed")
-        self._window_status.setStyleSheet("color: rgb(160, 160, 160);")
-        layout.addWidget(self._window_status)
-
         self.setMinimumWidth(100)
         self.setMinimumHeight(20)
         self.setMaximumWidth(150)
@@ -231,7 +227,7 @@ class _TCodeViewerControlPane(QtWidgets.QWidget):
         self._open_button.clicked.connect(on_open_clicked)  # type: ignore[arg-type]
 
     def set_window_open(self, is_open: bool) -> None:
-        self._window_status.setText("window: open" if is_open else "window: closed")
+        ...
 
 
 class _TCodeViewerWidget(NodeBaseWidget):

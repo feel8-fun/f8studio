@@ -152,7 +152,7 @@ class _TrackVizCanvas(pg.GraphicsObject):  # type: ignore[misc]
                         except (TypeError, ValueError):
                             kind = ""
                         override = _color_for_kind(kind)
-                        rr, gg, bb_ = (override if override is not None else (r, g, b))
+                        rr, gg, bb_ = override if override is not None else (r, g, b)
                         pen = QtGui.QPen(QtGui.QColor(rr, gg, bb_, int(a01 * 255)))
                         pen.setWidthF(2.0 if a01 > 0.7 else 1.0)
                         p.setPen(pen)
@@ -233,8 +233,6 @@ class _TrackVizPane(QtWidgets.QWidget):
 
         top = QtWidgets.QHBoxLayout()
         top.setContentsMargins(0, 0, 0, 0)
-        self._title = QtWidgets.QLabel("TrackViz")
-        self._title.setStyleSheet("color: rgb(225, 225, 225);")
         self._update = QtWidgets.QCheckBox("Update")
         self._update.setChecked(True)
         self._update.setStyleSheet(
@@ -253,8 +251,8 @@ class _TrackVizPane(QtWidgets.QWidget):
             }
             """
         )
-        top.addWidget(self._title, 1)
-        top.addWidget(self._update, 0)
+        top.addStretch()
+        top.addWidget(self._update)
 
         layout.addLayout(top)
 
@@ -285,9 +283,9 @@ class _TrackVizPane(QtWidgets.QWidget):
         self._canvas = _TrackVizCanvas()
         vb.addItem(self._canvas)
 
-        self._status = QtWidgets.QLabel("")
-        self._status.setStyleSheet("color: rgb(160, 160, 160);")
-        layout.addWidget(self._status)
+        # self._status = QtWidgets.QLabel("")
+        # self._status.setStyleSheet("color: rgb(160, 160, 160);")
+        # layout.addWidget(self._status)
 
         self._pending = None
         self._last_wh: tuple[int, int] | None = None
@@ -329,11 +327,6 @@ class _TrackVizPane(QtWidgets.QWidget):
             return
 
         try:
-            w = int(payload.get("width") or 0)
-            h = int(payload.get("height") or 0)
-        except (AttributeError, TypeError, ValueError):
-            w, h = 0, 0
-        try:
             video_shm_name = str(payload.get("videoShmName") or "").strip()
         except (AttributeError, TypeError, ValueError):
             video_shm_name = ""
@@ -346,32 +339,11 @@ class _TrackVizPane(QtWidgets.QWidget):
             shm_name=video_shm_name,
             throttle_ms=video_shm_throttle_ms,
         )
-
-        now_ms = int(payload.get("nowMs") or 0)
-        history_ms = int(payload.get("historyMs") or 0)
-        tracks = payload.get("tracks") if isinstance(payload.get("tracks"), list) else []
-
-        if w > 0 and h > 0:
-            if self._last_wh != (w, h):
-                self._last_wh = (w, h)
-            self._vb.setRange(
-                QtCore.QRectF(0.0, 0.0, float(w), float(h)),
-                padding=0.01,
-                disableAutoRange=True,
-            )
-            self._title.setText(f"TrackViz  {w}x{h}")
-        else:
-            self._title.setText("TrackViz")
-
         try:
             self._canvas.set_payload(payload)
         except (AttributeError, RuntimeError, TypeError, ValueError):
             pass
 
-        try:
-            self._status.setText(f"tracks={len(tracks)}  now={now_ms}")
-        except (AttributeError, RuntimeError, TypeError):
-            pass
 
     def detach(self) -> None:
         try:

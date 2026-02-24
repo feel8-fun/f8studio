@@ -31,7 +31,10 @@ class _JsonHighlighter(QtGui.QSyntaxHighlighter):
             # String values.
             (QtCore.QRegularExpression(r"\"([^\"\\\\]|\\\\.)*\""), _fmt(fg=QtGui.QColor(140, 220, 160))),
             # Key strings: "key": (must come after string to override it).
-            (QtCore.QRegularExpression(r"\"([^\"\\\\]|\\\\.)*\"(?=\\s*:)"), _fmt(fg=QtGui.QColor(120, 200, 255), bold=True)),
+            (
+                QtCore.QRegularExpression(r"\"([^\"\\\\]|\\\\.)*\"(?=\\s*:)"),
+                _fmt(fg=QtGui.QColor(120, 200, 255), bold=True),
+            ),
             # Numbers.
             (
                 QtCore.QRegularExpression(r"\\b-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?\\b"),
@@ -93,8 +96,8 @@ class _PrintPreviewPane(QtWidgets.QWidget):
         top = QtWidgets.QHBoxLayout()
         top.setContentsMargins(0, 0, 0, 0)
         top.addWidget(self._copy)
+        top.addStretch()
         top.addWidget(self._update)
-        top.addStretch(1)
         top.addWidget(self._wrap)
 
         layout = QtWidgets.QVBoxLayout(self)

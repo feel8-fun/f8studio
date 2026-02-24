@@ -28,8 +28,7 @@ class _AudioShmPane(QtWidgets.QWidget):
 
         top = QtWidgets.QHBoxLayout()
         top.setContentsMargins(0, 0, 0, 0)
-        self._title = QtWidgets.QLabel("AudioSHM")
-        self._title.setStyleSheet("color: rgb(225, 225, 225);")
+
         self._update = QtWidgets.QCheckBox("Update")
         self._update.setChecked(True)
         self._update.setStyleSheet(
@@ -48,8 +47,8 @@ class _AudioShmPane(QtWidgets.QWidget):
             }
             """
         )
-        top.addWidget(self._title, 1)
-        top.addWidget(self._update, 0)
+        top.addStretch()
+        top.addWidget(self._update)
 
         self._plot = pg.PlotWidget()
         self._plot.setBackground((20, 20, 20))
@@ -79,21 +78,20 @@ class _AudioShmPane(QtWidgets.QWidget):
             pass
         self._curve = self._plot.plot([], [], pen=pg.mkPen((120, 200, 255), width=1))
 
-        self._status = QtWidgets.QLabel("")
-        self._status.setStyleSheet("color: rgb(160, 160, 160);")
+        # self._status = QtWidgets.QLabel("")
+        # self._status.setStyleSheet("color: rgb(160, 160, 160);")
 
         layout.addLayout(top)
         layout.addWidget(self._plot, 1)
-        layout.addWidget(self._status)
+        # layout.addWidget(self._status)
 
         # Node label + state fields already provide context; keep pane compact by default.
-        self._title.setVisible(False)
-        self._status.setVisible(False)
+        # self._title.setVisible(False)
+        # self._status.setVisible(False)
         self.setMinimumWidth(200)
         self.setMinimumHeight(120)
         self.setMaximumWidth(200)
         self.setMaximumHeight(150)
-
 
         self._timer = QtCore.QTimer(self)
         self._timer.timeout.connect(self._tick)  # type: ignore[attr-defined]
@@ -146,8 +144,6 @@ class _AudioShmPane(QtWidgets.QWidget):
             pass
         self._reader = None
         self._last_seq = 0
-        self._status.setText("")
-        self._title.setText("AudioSHM")
 
     def _sync_timer_with_update_state(self) -> None:
         if self.update_enabled() and self._shm_name:
@@ -160,17 +156,12 @@ class _AudioShmPane(QtWidgets.QWidget):
     def _ensure_reader(self) -> bool:
         if self._reader is not None:
             return True
-        if not self._shm_name:
-            self._status.setText("missing shmName")
-            return False
         try:
             r = AudioShmReader(self._shm_name)
             r.open(use_event=False)
             self._reader = r
-            self._status.setText(f"{self._shm_name}")
             return True
         except Exception as exc:
-            self._status.setText(f"open failed: {exc}")
             self._reader = None
             return False
 
@@ -192,7 +183,6 @@ class _AudioShmPane(QtWidgets.QWidget):
         if hdr is None or hdr.magic != 0xF8A11A02 or hdr.version != 1:
             return
         if int(hdr.fmt) != int(SAMPLE_FORMAT_F32LE):
-            self._status.setText(f"unsupported fmt={hdr.fmt}")
             return
         if hdr.sample_rate <= 0 or hdr.channels <= 0:
             return
@@ -229,8 +219,6 @@ class _AudioShmPane(QtWidgets.QWidget):
 
         peak = float(np.max(np.abs(y))) if y.size else 0.0
         self._curve.setData(self._x, self._y)
-        self._title.setText(f"AudioSHM  {int(h2.sample_rate)}Hz  ch={channels}  seq={seq}  peak={peak:.3f}")
-        self._status.setText(f"{self._shm_name}  ts={int(ch.ts_ms)}")
         self._last_seq = seq
 
 
@@ -346,4 +334,3 @@ class VizAudioRenderNode(F8StudioOperatorBaseNode):
         if widget is None:
             return
         widget.set_config(shm_name=shm_name, throttle_ms=throttle_ms, history_ms=history_ms, channel=channel)
-

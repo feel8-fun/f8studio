@@ -219,30 +219,14 @@ class _Skeleton3DControlPane(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
-        self._title = QtWidgets.QLabel("Skeleton3D")
-        self._title.setStyleSheet("color: rgb(225, 225, 225);")
-        layout.addWidget(self._title)
-
         self._open_button = QtWidgets.QPushButton("Open Viewer")
         self._open_button.clicked.connect(on_open_clicked)  # type: ignore[arg-type]
         layout.addWidget(self._open_button)
 
-        self._window_status = QtWidgets.QLabel("window: closed")
-        self._window_status.setStyleSheet("color: rgb(160, 160, 160);")
-        layout.addWidget(self._window_status)
-
-        self._viewer_status = QtWidgets.QLabel("viewer: idle")
-        self._viewer_status.setStyleSheet("color: rgb(160, 160, 160);")
-        layout.addWidget(self._viewer_status)
-
-        self._people_status = QtWidgets.QLabel("people: 0")
-        self._people_status.setStyleSheet("color: rgb(160, 160, 160);")
-        layout.addWidget(self._people_status)
-
-        self.setMinimumWidth(240)
-        self.setMinimumHeight(120)
-        self.setMaximumWidth(260)
-        self.setMaximumHeight(140)
+        self.setMinimumWidth(100)
+        self.setMinimumHeight(20)
+        self.setMaximumWidth(100)
+        self.setMaximumHeight(20)
 
     def set_open_handler(self, on_open_clicked: Callable[[], None]) -> None:
         try:
@@ -252,13 +236,13 @@ class _Skeleton3DControlPane(QtWidgets.QWidget):
         self._open_button.clicked.connect(on_open_clicked)  # type: ignore[arg-type]
 
     def set_window_open(self, is_open: bool) -> None:
-        self._window_status.setText("window: open" if is_open else "window: closed")
+        ...
 
     def set_viewer_status(self, text: str) -> None:
-        self._viewer_status.setText(f"viewer: {text}")
+        ...
 
     def set_people_count(self, count: int) -> None:
-        self._people_status.setText(f"people: {max(0, int(count))}")
+        ...
 
 
 class _Skeleton3DWidget(NodeBaseWidget):
