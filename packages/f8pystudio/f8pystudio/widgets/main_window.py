@@ -45,6 +45,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         self.setCentralWidget(self.studio_graph.widget)
 
         self._setup_docks()
+        self._deploy_action = self._create_deploy_action()
         self._setup_menu()
         self._setup_toolbar()
         self._applying_runtime_state = False
@@ -133,10 +134,13 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         compile_action.triggered.connect(self._compile_runtime_action)  # type: ignore[attr-defined]
         menu.addAction(compile_action)
 
-        self._deploy_action = QtGui.QAction("Send Graph", self)
-        self._deploy_action.setShortcut("F5")
-        self._deploy_action.triggered.connect(self._on_deploy_action_triggered)  # type: ignore[attr-defined]
         menu.addAction(self._deploy_action)
+
+    def _create_deploy_action(self) -> QtGui.QAction:
+        deploy_action = QtGui.QAction("Send Graph", self)
+        deploy_action.setShortcut("F5")
+        deploy_action.triggered.connect(self._on_deploy_action_triggered)  # type: ignore[attr-defined]
+        return deploy_action
 
     def _setup_toolbar(self) -> None:
         tb = self.addToolBar("Run")
@@ -164,7 +168,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         # Send Graph(F5).
         self._send_icon = qta.icon("mdi6.send", color="white")
         self._deploy_action.setIcon(self._send_icon)
-        self._deploy_action.setToolTip("Send graph to services")
+        self._deploy_action.setToolTip("Send graph to services (F5)")
         tb.addAction(self._deploy_action)
 
         tb.addSeparator()
