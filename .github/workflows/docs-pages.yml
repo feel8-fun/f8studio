@@ -11,7 +11,6 @@ on:
       - "mkdocs.yml"
       - "docs/requirements.txt"
       - ".github/workflows/docs-pages.yml"
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -45,6 +44,13 @@ jobs:
           python scripts/check_docs_nav.py
           python scripts/check_docs_links.py
           zensical build
+
+      - name: Verify site output
+        run: |
+          test -f site/index.html
+          echo "site/index.html found"
+          ls -la site | sed -n '1,80p'
+          grep -m 1 -E "<title>.*</title>" site/index.html || true
 
       - name: Upload debug site artifact
         uses: actions/upload-artifact@v4

@@ -1,15 +1,6 @@
 name: docs-quality
 
 on:
-  push:
-    paths:
-      - "docs/**"
-      - "scripts/check_docs_nav.py"
-      - "scripts/check_docs_links.py"
-      - "mkdocs.yml"
-      - ".github/workflows/docs-quality.yml"
-      - "tests/test_generate_service_docs.py"
-      - "tests/test_docs_validators.py"
   pull_request:
     paths:
       - "docs/**"
