@@ -34,21 +34,6 @@ class PyStudioProgram:
         return RuntimeNodeRegistry.instance().describe(SERVICE_CLASS).model_dump(mode="json")
 
     @staticmethod
-    def _ensure_pystudio_specs_in_catalog() -> None:
-        try:
-            reg = register_pystudio_specs()
-            from .service_catalog import ServiceCatalog
-
-            sc = ServiceCatalog.instance()
-            svc = reg.service_spec(SERVICE_CLASS)
-            if svc is not None:
-                sc.register_service(svc)
-            for op in reg.operator_specs(SERVICE_CLASS):
-                sc.register_operator(op)
-        except Exception:
-            logger.exception("Failed to ensure pystudio specs in catalog")
-
-    @staticmethod
     def _load_extensions_from_env() -> ExtensionRegistry:
         registry = ExtensionRegistry()
         raw = os.environ.get("F8PYSTUDIO_PLUGINS", "")
@@ -241,7 +226,6 @@ class PyStudioProgram:
         from .service_catalog.discovery import last_discovery_error_lines, last_discovery_timing_lines
 
         load_discovery_into_registries()
-        self._ensure_pystudio_specs_in_catalog()
         extensions = self._load_extensions_from_env()
         self._apply_extensions(extensions)
 

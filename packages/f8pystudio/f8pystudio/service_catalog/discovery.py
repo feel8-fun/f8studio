@@ -17,6 +17,8 @@ import yaml
 from f8pysdk import F8ServiceDescribe, F8ServiceEntry
 from f8pysdk.builtin_state_fields import normalize_describe_payload_dict
 
+from ..pystudio_node_registry import SERVICE_CLASS as PYSTUDIO_SERVICE_CLASS
+from ..pystudio_node_registry import register_pystudio_specs
 from .service_catalog import ServiceCatalog
 
 
@@ -592,9 +594,31 @@ def _discovery_slow_ms_default() -> float:
         return 0.0
 
 
+def _inject_builtin_pystudio_specs(catalog: ServiceCatalog) -> str | None:
+    """
+    Register the built-in `f8.pystudio` specs into catalog.
+
+    This keeps Studio discoverable even when no external `services/f8/studio/service.yml`
+    entry exists. Built-in Studio does not use a `service_entry_path`.
+    """
+    try:
+        registry = register_pystudio_specs()
+        service_spec = registry.service_spec(PYSTUDIO_SERVICE_CLASS)
+        if service_spec is None:
+            return None
+        catalog.register_service(service_spec)
+        for operator_spec in registry.operator_specs(PYSTUDIO_SERVICE_CLASS):
+            catalog.register_operator(operator_spec)
+        return str(service_spec.serviceClass)
+    except Exception:
+        logger.exception("Failed to inject built-in pystudio specs into discovery catalog")
+        return None
+
+
 def load_discovery_into_registries(*, roots: list[Path] | None = None, overwrite: bool = True) -> list[str]:
     """
-    Load `service.yml` discovery entries into in-process registries.
+    Load external `service.yml` discovery entries into in-process registries,
+    then inject built-in Studio specs.
 
     Returns the list of discovered serviceClass entries.
     """
@@ -708,4 +732,9 @@ def load_discovery_into_registries(*, roots: list[Path] | None = None, overwrite
             catalog.register_operators(payload.get("operators") or [])
         except Exception as e:
             logger.warning(f"Failed to register operators from {service_dir}: {e}")
+
+    builtin_service_class = _inject_builtin_pystudio_specs(catalog)
+    if builtin_service_class is not None and builtin_service_class not in found:
+        found.append(builtin_service_class)
+
     return found
