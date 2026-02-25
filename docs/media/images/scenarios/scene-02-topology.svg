@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="220" viewBox="0 0 960 220">
+  <rect width="960" height="220" fill="#f6f8fa"/>
+  <rect x="120" y="80" width="210" height="60" rx="8" fill="#cfe8ff"/>
+  <rect x="390" y="80" width="210" height="60" rx="8" fill="#dff5d8"/>
+  <rect x="660" y="80" width="210" height="60" rx="8" fill="#ffe7c2"/>
+  <text x="225" y="115" text-anchor="middle" font-family="Arial" font-size="18">screencap</text>
+  <text x="495" y="115" text-anchor="middle" font-family="Arial" font-size="18">detector</text>
+  <text x="765" y="115" text-anchor="middle" font-family="Arial" font-size="18">tracking</text>
+  <line x1="330" y1="110" x2="390" y2="110" stroke="#333" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="600" y1="110" x2="660" y2="110" stroke="#333" stroke-width="2" marker-end="url(#arrow)"/>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#333"/>
+    </marker>
+  </defs>
+</svg>

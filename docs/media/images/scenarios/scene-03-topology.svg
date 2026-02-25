@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="220" viewBox="0 0 960 220">
+  <rect width="960" height="220" fill="#f6f8fa"/>
+  <rect x="80" y="80" width="240" height="60" rx="8" fill="#cfe8ff"/>
+  <rect x="370" y="80" width="270" height="60" rx="8" fill="#f2d9ff"/>
+  <rect x="690" y="80" width="190" height="60" rx="8" fill="#dff5d8"/>
+  <text x="200" y="115" text-anchor="middle" font-family="Arial" font-size="18">mp.pose</text>
+  <text x="505" y="115" text-anchor="middle" font-family="Arial" font-size="18">pyengine operators</text>
+  <text x="785" y="115" text-anchor="middle" font-family="Arial" font-size="18">control output</text>
+  <line x1="320" y1="110" x2="370" y2="110" stroke="#333" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="640" y1="110" x2="690" y2="110" stroke="#333" stroke-width="2" marker-end="url(#arrow)"/>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#333"/>
+    </marker>
+  </defs>
+</svg>

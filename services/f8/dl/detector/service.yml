@@ -4,6 +4,6 @@ label: DL Detector
 version: 0.0.1
 launch:
   command: pixi
-  args: ["run", "-e", "onnx", "dl_detector"]
+  args: ["run", "f8pydl_detector"]
   env: {}
   workdir: "../../../../"

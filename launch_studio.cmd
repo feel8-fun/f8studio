@@ -1,1 +1,1 @@
-pixi run studio
+pixi run f8pyengine

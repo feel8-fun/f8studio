@@ -51,3 +51,13 @@ Studio service discovery can avoid spawning `pixi run ... --describe` by using a
 - List recording devices: `build/bin/f8audiocap_service.exe --list-devices`
 - Capture system mix (Windows): `build/bin/f8audiocap_service.exe --service-id audiocap --mode capture --backend wasapi`
 - Capture microphone (SDL): `build/bin/f8audiocap_service.exe --service-id audiocap --mode capture --backend sdl --device 0`
+
+## Documentation site
+- Config: `mkdocs.yml`
+- Dependencies: `docs/requirements.txt`
+- Generate module pages: `python scripts/generate_service_docs.py`
+- Validate generated content only: `python scripts/generate_service_docs.py --check`
+- Validate nav targets: `python scripts/check_docs_nav.py`
+- Validate markdown links: `python scripts/check_docs_links.py`
+- Build static site: `zensical build`
+- Local preview: `zensical serve`

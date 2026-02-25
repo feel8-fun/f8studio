@@ -4,6 +4,6 @@ label: DL Classifier
 version: 0.0.1
 launch:
   command: pixi
-  args: ["run", "-e", "onnx", "dl_classifier"]
+  args: ["run", "f8pydl_classifier"]
   env: {}
   workdir: "../../../../"

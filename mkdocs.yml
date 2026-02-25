@@ -1,0 +1,66 @@
+site_name: F8Studio Documentation
+site_description: Official guides for installation, module usage, and scenario-based workflows.
+site_url: https://docs.f8studio.example
+repo_name: feel8/f8studio
+repo_url: https://github.com/feel8/f8studio
+
+docs_dir: docs
+site_dir: site
+strict: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation and Deployment: getting-started/install-deploy.md
+      - Studio (GUI): getting-started/studio.md
+      - Runner (Headless): getting-started/runner.md
+  - Modules:
+      - Overview: modules/index.md
+      - Services:
+          - Audio Capture: modules/services/f8-audiocap.md
+          - CVKit Dense Optical Flow: modules/services/f8-cvkit-denseoptflow.md
+          - CVKit Template Match: modules/services/f8-cvkit-templatematch.md
+          - CVKit Tracking: modules/services/f8-cvkit-tracking.md
+          - CVKit Video Stabilizer: modules/services/f8-cvkit-videostab.md
+          - DL Classifier: modules/services/f8-dl-classifier.md
+          - DL Detector: modules/services/f8-dl-detector.md
+          - DL Human Detector: modules/services/f8-dl-humandetector.md
+          - PyEngine: modules/services/f8-pyengine.md
+          - IM Player: modules/services/f8-implayer.md
+          - MediaPipe Pose: modules/services/f8-mp-pose.md
+          - Screen Capture: modules/services/f8-screencap.md
+  - Scenarios:
+      - Overview: scenarios/index.md
+      - "Scene 01: Offline Video Tracking": scenarios/scene-01-offline-video-tracking.md
+      - "Scene 02: Desktop Live Tracking": scenarios/scene-02-desktop-live-tracking.md
+      - "Scene 03: Realtime Pose Control": scenarios/scene-03-realtime-pose-control.md
+  - Deep Dives:
+      - Lovense Local API: LovenseLocalAPI.md
+      - Lovense Mock Server: LovenseMockServer.md
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences

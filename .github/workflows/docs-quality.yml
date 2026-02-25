@@ -1,0 +1,63 @@
+name: docs-quality
+
+on:
+  push:
+    paths:
+      - "docs/**"
+      - "services/**/service.yml"
+      - "services/**/describe.json"
+      - "scripts/generate_service_docs.py"
+      - "scripts/check_docs_nav.py"
+      - "scripts/check_docs_links.py"
+      - "mkdocs.yml"
+      - ".github/workflows/docs-quality.yml"
+      - "tests/test_generate_service_docs.py"
+      - "tests/test_docs_validators.py"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "services/**/service.yml"
+      - "services/**/describe.json"
+      - "scripts/generate_service_docs.py"
+      - "scripts/check_docs_nav.py"
+      - "scripts/check_docs_links.py"
+      - "mkdocs.yml"
+      - ".github/workflows/docs-quality.yml"
+      - "tests/test_generate_service_docs.py"
+      - "tests/test_docs_validators.py"
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r docs/requirements.txt
+
+      - name: Unit tests (docs tooling)
+        run: |
+          python -m unittest discover -s tests -p "test_*.py"
+
+      - name: Validate generated service docs
+        run: |
+          python scripts/generate_service_docs.py --check
+
+      - name: Validate nav targets
+        run: |
+          python scripts/check_docs_nav.py
+
+      - name: Validate markdown links
+        run: |
+          python scripts/check_docs_links.py
+
+      - name: Build docs (Zensical)
+        run: |
+          zensical build
