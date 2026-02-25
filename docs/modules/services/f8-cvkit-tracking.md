@@ -11,7 +11,7 @@ No description.
 ## How to Run
 
 ```bash
-pixi run -e default python scripts/run_cpp_service.py --service-dir services/f8/cvkit/tracking --exe f8cvkit_tracking_service --env-var F8CVKIT_TRACKING_EXE
+services/f8/cvkit/linux/f8cvkit_tracking_service
 ```
 
 - Workdir: `../../../../`
@@ -64,7 +64,7 @@ _None_
 ### Minimal Run Example
 
 ```bash
-pixi run -e default python scripts/run_cpp_service.py --service-dir services/f8/cvkit/tracking --exe f8cvkit_tracking_service --env-var F8CVKIT_TRACKING_EXE
+services/f8/cvkit/linux/f8cvkit_tracking_service
 ```
 
 ### Common Pitfalls

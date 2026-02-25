@@ -11,7 +11,7 @@ No description.
 ## How to Run
 
 ```bash
-pixi run -e default python scripts/run_cpp_service.py --service-dir services/f8/audiocap --exe f8audiocap_service --env-var F8AUDIOCAP_EXE
+services/f8/audiocap/linux/f8audiocap_service
 ```
 
 - Workdir: `../../../`

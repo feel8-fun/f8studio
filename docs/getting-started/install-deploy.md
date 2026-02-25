@@ -33,6 +33,35 @@ Static discovery metadata is stored in `services/**/describe.json` and can be re
 pixi run -e default update_describes
 ```
 
+## C++ Build (Pixi + Conan + CMake)
+
+Bootstrap dependencies and configure/build C++ services:
+
+```bash
+pixi run -e cpp cpp_bootstrap
+pixi run -e cpp cpp_configure_release
+pixi run -e cpp cpp_build_release
+```
+
+Refresh lockfiles when dependency versions change:
+
+```bash
+pixi lock
+pixi run -e cpp cpp_lock_refresh
+```
+
+Build a distributable runtime bundle (`pixi.toml + pixi.lock + services/** + wheels/**`):
+
+```bash
+pixi run -e cpp cpp_dist_runtime
+```
+
+Notes:
+
+- CI on Windows uses GitHub-hosted runner images plus `msvc-dev-cmd`; no manual Visual Studio setup is needed in CI.
+- Local Windows development still requires Visual Studio Build Tools for native compilation.
+- On Linux, `libmpv` and `ytdlp` currently use Conan recipes with `apt` system requirements.
+
 ## Documentation Toolchain
 
 Install docs dependencies:

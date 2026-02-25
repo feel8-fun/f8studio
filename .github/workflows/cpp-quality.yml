@@ -1,0 +1,84 @@
+name: cpp-quality
+
+on:
+  push:
+    paths:
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "conanfile.py"
+      - "conan.lock"
+      - "conan_recipes/**"
+      - "packages/**/CMakeLists.txt"
+      - "packages/**/*.h"
+      - "packages/**/*.hpp"
+      - "packages/**/*.c"
+      - "packages/**/*.cc"
+      - "packages/**/*.cpp"
+      - "packages/**/*.cxx"
+      - "packages/**/*.inl"
+      - "pixi.toml"
+      - "pixi.lock"
+      - "scripts/cpp_ci.py"
+      - ".github/workflows/cpp-quality.yml"
+  pull_request:
+    paths:
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "conanfile.py"
+      - "conan.lock"
+      - "conan_recipes/**"
+      - "packages/**/CMakeLists.txt"
+      - "packages/**/*.h"
+      - "packages/**/*.hpp"
+      - "packages/**/*.c"
+      - "packages/**/*.cc"
+      - "packages/**/*.cpp"
+      - "packages/**/*.cxx"
+      - "packages/**/*.inl"
+      - "pixi.toml"
+      - "pixi.lock"
+      - "scripts/cpp_ci.py"
+      - ".github/workflows/cpp-quality.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-2022
+    runs-on: ${{ matrix.os }}
+    env:
+      CONAN_HOME: ${{ github.workspace }}/.conan2
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: prefix-dev/setup-pixi@v0.9.3
+
+      - name: Setup MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Cache Conan
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CONAN_HOME }}
+          key: conan-${{ runner.os }}-${{ hashFiles('conanfile.py', 'conan_recipes/**', 'conan.lock') }}
+          restore-keys: |
+            conan-${{ runner.os }}-
+
+      - name: Check pixi lockfile
+        run: pixi lock --check
+
+      - name: Bootstrap C++ toolchain and deps
+        run: pixi run --frozen -e cpp cpp_bootstrap
+
+      - name: Configure CMake (Release)
+        run: pixi run --frozen -e cpp cpp_configure_release
+
+      - name: Build C++ targets (Release)
+        run: pixi run --frozen -e cpp cpp_build_release
