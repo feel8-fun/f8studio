@@ -336,6 +336,45 @@ class F8StudioGraph(NodeGraph):
             model_nodes.pop(old_id, None)
         model_nodes[str(new_id)] = node
 
+    def _rewrite_connected_port_node_id_references(self, *, old_id: str, new_id: str) -> None:
+        src = str(old_id or "").strip()
+        dst = str(new_id or "").strip()
+        if not src or not dst or src == dst:
+            return
+        for node in list(self.all_nodes() or []):
+            ports = list(node.input_ports() or []) + list(node.output_ports() or [])
+            for port in ports:
+                connected = port.model.connected_ports
+                if src not in connected:
+                    continue
+                moved = list(connected.pop(src) or [])
+                if not moved:
+                    continue
+                dst_ports = connected.setdefault(dst, [])
+                for name in moved:
+                    if name not in dst_ports:
+                        dst_ports.append(name)
+
+    def repair_stale_port_connection_refs(self) -> int:
+        """
+        Drop connected-port references whose node_id is no longer present in graph.
+
+        Returns:
+            int: number of stale refs removed.
+        """
+        valid_node_ids = {str(n.id or "").strip() for n in list(self.all_nodes() or []) if str(n.id or "").strip()}
+        removed = 0
+        for node in list(self.all_nodes() or []):
+            ports = list(node.input_ports() or []) + list(node.output_ports() or [])
+            for port in ports:
+                connected = port.model.connected_ports
+                stale_ids = [nid for nid in list(connected.keys()) if str(nid or "") not in valid_node_ids]
+                for stale_id in stale_ids:
+                    removed += len(list(connected.pop(stale_id, []) or []))
+        if removed:
+            logger.warning("Repaired %s stale port connection reference(s).", removed)
+        return removed
+
     def _cascade_service_id_to_bound_operators(
         self,
         *,
@@ -408,9 +447,13 @@ class F8StudioGraph(NodeGraph):
         except (AttributeError, RuntimeError, TypeError):
             return False, self.tr("This node type does not support Id rename.")
 
+        # NodeGraphQt stores connections as {node_id: [port_name]} on each port model.
+        # Rewrite these refs before replacing the model node-id mapping.
+        self._rewrite_connected_port_node_id_references(old_id=old_id, new_id=nid)
         self._update_node_id_mapping(node=node, old_id=old_id, new_id=nid)
         node.model.id = nid
         node.view.id = nid
+        self.repair_stale_port_connection_refs()
 
         if isinstance(spec, F8OperatorSpec):
             try:
@@ -1588,6 +1631,7 @@ class F8StudioGraph(NodeGraph):
         """
         if not nodes:
             return
+        self.repair_stale_port_connection_refs()
 
         service_ids: set[str] = set()
         for n in list(nodes or []):

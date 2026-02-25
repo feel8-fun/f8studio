@@ -566,7 +566,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
                     description="Scale factor applied to optical-flow arrow vectors.",
                     valueSchema=number_schema(default=1.0, minimum=0.1, maximum=20.0),
                     access=F8StateAccess.rw,
-                    showOnNode=True,
+                    showOnNode=False,
                 ),
                 F8StateSpec(
                     name="flowArrowMinMag",
@@ -574,7 +574,7 @@ def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNod
                     description="Hide optical-flow arrows whose magnitude is below this value.",
                     valueSchema=number_schema(default=0.0, minimum=0.0, maximum=100.0),
                     access=F8StateAccess.rw,
-                    showOnNode=True,
+                    showOnNode=False,
                 ),
                 F8StateSpec(
                     name="flowArrowMaxCount",

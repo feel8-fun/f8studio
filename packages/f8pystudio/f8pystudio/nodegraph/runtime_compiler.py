@@ -563,6 +563,12 @@ def compile_runtime_graphs_from_studio(studio_graph: Any) -> CompiledRuntimeGrap
         is_operator_node = studio_graph._is_operator_node
     except Exception as exc:
         raise TypeError("studio_graph must be an F8StudioGraph (missing type predicates).") from exc
+    try:
+        repaired = int(studio_graph.repair_stale_port_connection_refs())
+    except (AttributeError, RuntimeError, TypeError, ValueError):
+        repaired = 0
+    if repaired:
+        logger.warning("compile_runtime_graphs_from_studio: repaired %s stale port ref(s) before compile.", repaired)
 
     services = [n for n in all_nodes if is_container_node(n)]
     operators = [n for n in all_nodes if is_operator_node(n)]

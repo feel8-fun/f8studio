@@ -90,7 +90,25 @@ def _state_input_is_connected(node: Any, field_name: str) -> bool:
     p = node.get_input(f"[S]{name}")
     if p is None:
         return False
-    return bool(p.connected_ports())
+    try:
+        return bool(p.connected_ports())
+    except AttributeError as exc:
+        logger.warning("state input connection has stale node reference; field=%s err=%s", name, exc)
+        try:
+            graph = node.graph
+        except (AttributeError, RuntimeError, TypeError):
+            graph = None
+        if graph is None:
+            return False
+        try:
+            valid_ids = {str(n.id or "").strip() for n in list(graph.all_nodes() or []) if str(n.id or "").strip()}
+        except (AttributeError, RuntimeError, TypeError):
+            return False
+        connected = p.model.connected_ports
+        stale_ids = [nid for nid in list(connected.keys()) if str(nid or "") not in valid_ids]
+        for stale_id in stale_ids:
+            connected.pop(stale_id, None)
+        return False
 
 def _model_extra(obj: Any) -> dict[str, Any]:
     try:
