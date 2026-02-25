@@ -62,6 +62,7 @@ mediapipe = { features = ["py310", "sdk", "vision", "mediapipe"], solve-group = 
 [tasks]
 engine = "python -m f8pyengine.main"
 studio = "python -m f8pystudio.main"
+runner = "python -m f8pysdk.headless_runner"
 dl_detector = "python -m f8pydl.main_detector"
 dl_humandetector = "python -m f8pydl.main_humandetector"
 dl_classifier = "python -m f8pydl.main_classifier"

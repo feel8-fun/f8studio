@@ -1,25 +1,24 @@
 from __future__ import annotations
-from typing import Any
 
 import concurrent.futures
 import json
 import logging
 import os
-import subprocess
 import re
+import subprocess
 import sys
 import threading
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
+from typing import Any
+
 import yaml
 
-from f8pysdk import F8ServiceDescribe, F8ServiceEntry
+from f8pysdk.generated import F8ServiceDescribe, F8ServiceEntry
 from f8pysdk.builtin_state_fields import normalize_describe_payload_dict
 
-from ..pystudio_node_registry import SERVICE_CLASS as PYSTUDIO_SERVICE_CLASS
-from ..pystudio_node_registry import register_pystudio_specs
-from .service_catalog import ServiceCatalog
+from .catalog import ServiceCatalog
 
 
 logger = logging.getLogger(__name__)
@@ -29,18 +28,10 @@ _LAST_DISCOVERY_ERROR_LINES: list[str] = []
 
 
 def last_discovery_timing_lines() -> list[str]:
-    """
-    Returns the last discovery timing lines (best-effort), suitable for UI display.
-
-    This is mainly for the Studio GUI where stdout/stderr may not be visible.
-    """
     return list(_LAST_DISCOVERY_TIMING_LINES)
 
 
 def last_discovery_error_lines() -> list[str]:
-    """
-    Returns discovery errors from the last run (best-effort), suitable for UI display.
-    """
     with _DISCOVERY_ERROR_LOCK:
         return list(_LAST_DISCOVERY_ERROR_LINES)
 
@@ -68,12 +59,6 @@ def _discovery_add_error(line: str) -> None:
 
 
 def _default_roots() -> list[Path]:
-    """
-    Default discovery roots.
-
-    - `F8_SERVICE_DISCOVERY_DIRS` (os.pathsep-separated) overrides.
-    - otherwise, use `<repo>/services` if it exists (when running from source).
-    """
     env = (os.environ.get("F8_SERVICE_DISCOVERY_DIRS") or "").strip()
     if env:
         return [Path(p).expanduser().resolve() for p in env.split(os.pathsep) if p.strip()]
@@ -104,16 +89,6 @@ def _read_yaml(path: Path) -> Any:
 
 
 def _platform_service_yml_names() -> list[str]:
-    """
-    Platform-specific service entry filenames (in priority order).
-
-    Supported:
-    - service.win.yml
-    - service.linux.yml
-    - service.mac.yml (darwin)
-
-    Always falls back to `service.yml` if no platform-specific file exists.
-    """
     if os.name == "nt" or sys.platform.startswith("win"):
         return ["service.win.yml"]
     if sys.platform.startswith("darwin"):
@@ -128,20 +103,6 @@ def _service_yml_candidates(service_dir: Path) -> list[Path]:
 
 
 def find_service_dirs(roots: Iterable[Path]) -> list[Path]:
-    """
-    Find directories containing a service entry file.
-
-    Discovery structure:
-      <root>/<serviceClass>/service.yml
-      <root>/<serviceClass>/service.win.yml   (optional)
-      <root>/<serviceClass>/service.linux.yml (optional)
-      <root>/<serviceClass>/service.mac.yml   (optional)
-      <root>/<serviceClass>/operators.yml   (optional)
-
-    Note:
-    - `serviceClass` is slash-separated (eg. `f8/engine`), so services may live
-      in nested directories like `<root>/f8/engine/service.yml`.
-    """
     found: set[Path] = set()
     for root in roots:
         r = Path(root).expanduser()
@@ -154,12 +115,11 @@ def find_service_dirs(roots: Iterable[Path]) -> list[Path]:
             continue
         try:
             patterns = ["service.yml", "service.win.yml", "service.linux.yml", "service.mac.yml"]
-            for pat in patterns:
-                for svc_file in r.rglob(pat):
+            for pattern in patterns:
+                for svc_file in r.rglob(pattern):
                     if svc_file.is_file():
                         found.add(svc_file.parent.resolve())
         except Exception:
-            # Fallback to the immediate children layout.
             for child in sorted(r.iterdir()):
                 if not child.is_dir():
                     continue
@@ -181,9 +141,6 @@ def _absolutize_entry_paths(entry: F8ServiceEntry, *, service_dir: Path) -> F8Se
         wd_path = wd_path.resolve()
     launch["workdir"] = str(wd_path)
 
-    # Absolutize command when it looks like a path. On Windows, CreateProcess can fail
-    # to resolve relative executable paths that include directory components (e.g. `win/foo.exe`),
-    # so we normalize them here.
     cmd_raw = str(launch.get("command") or "").strip()
     try:
         cmd_path = Path(cmd_raw).expanduser()
@@ -200,13 +157,6 @@ def _absolutize_entry_paths(entry: F8ServiceEntry, *, service_dir: Path) -> F8Se
 
 
 def load_service_entry(service_dir: Path) -> F8ServiceEntry:
-    """
-    Load a minimal discovery entry from a service entry YAML file.
-
-    Supported forms:
-    - `schemaVersion: f8serviceEntry/1` + `launch: {...}`
-    - shorthand: `command: ...` + optional `args/env/workdir` (will be mapped into `launch`)
-    """
     service_dir = Path(service_dir).resolve()
 
     def _try_load_candidate(candidate: Path) -> dict[str, Any] | None:
@@ -216,8 +166,6 @@ def load_service_entry(service_dir: Path) -> F8ServiceEntry:
         if not isinstance(obj, dict):
             raise ValueError(f"{candidate} must be a YAML mapping")
 
-        # Best-effort fallback: if a platform-specific YAML points to a missing relative executable,
-        # fall back to `service.yml` so dev workflows still work without a packaging step.
         if candidate.name != "service.yml":
             try:
                 launch = obj.get("launch") if isinstance(obj.get("launch"), dict) else {}
@@ -234,9 +182,7 @@ def load_service_entry(service_dir: Path) -> F8ServiceEntry:
                     if not resolved.is_file():
                         return None
             except Exception:
-                # If we can't validate, keep the candidate (don't hide real errors).
                 pass
-
         return obj
 
     data: Any | None = None
@@ -256,7 +202,6 @@ def load_service_entry(service_dir: Path) -> F8ServiceEntry:
         tried = ", ".join(str(p.name) for p in _service_yml_candidates(service_dir))
         raise ValueError(f"{service_dir} is missing a service entry YAML (tried: {tried})")
 
-    # Shorthand mapping.
     if "launch" not in data and "command" in data:
         launch = F8ServiceEntry.model_validate(
             {
@@ -278,21 +223,10 @@ def load_service_entry(service_dir: Path) -> F8ServiceEntry:
 
 
 def _read_static_describe_file(service_dir: Path) -> dict[str, Any] | None:
-    """
-    Optional fast-path: load describe payload from a local file instead of launching a subprocess.
-
-    Supported filenames (in `service_dir`):
-    - describe.json
-    - describe.yml / describe.yaml
-
-    File format must match the normal `--describe` payload:
-      {"schemaVersion":"f8describe/1","service":{...},"operators":[...]}
-    """
     if (os.environ.get("F8_DISCOVERY_DISABLE_STATIC_DESCRIBE") or "").strip():
         return None
 
     service_dir = Path(service_dir).resolve()
-
     json_path = service_dir / "describe.json"
     if json_path.is_file():
         try:
@@ -311,19 +245,12 @@ def _read_static_describe_file(service_dir: Path) -> dict[str, Any] | None:
             return obj if isinstance(obj, dict) else None
         except Exception:
             return None
-
     return None
 
 
 def _read_inline_describe(entry: F8ServiceEntry) -> dict[str, Any] | None:
-    """
-    Optional fast-path: allow `service.yml` to carry an inline `describe:` payload.
-
-    This avoids spawning `pixi run ... --describe` for services whose specs are static.
-    """
     if (os.environ.get("F8_DISCOVERY_DISABLE_STATIC_DESCRIBE") or "").strip():
         return None
-
     try:
         extra = entry.model_extra or {}
     except Exception:
@@ -335,12 +262,6 @@ def _read_inline_describe(entry: F8ServiceEntry) -> dict[str, Any] | None:
 
 
 def _describe_entry(service_dir: Path, entry: F8ServiceEntry) -> dict[str, Any] | None:
-    """
-    Invoke `{entry.launch} --describe` and parse JSON payload.
-
-    Expected JSON:
-      {"schemaVersion":"f8describe/1","service":{...},"operators":[...]}
-    """
     service_dir = Path(service_dir).resolve()
 
     inline = _read_inline_describe(entry)
@@ -348,10 +269,7 @@ def _describe_entry(service_dir: Path, entry: F8ServiceEntry) -> dict[str, Any] 
         data: dict[str, Any] = dict(inline)
     else:
         static_file = _read_static_describe_file(service_dir)
-        if static_file is not None:
-            data = static_file
-        else:
-            data = {}
+        data = static_file if static_file is not None else {}
 
     try:
         launch = entry.launch
@@ -360,13 +278,9 @@ def _describe_entry(service_dir: Path, entry: F8ServiceEntry) -> dict[str, Any] 
     except Exception:
         return None
 
-    if data:
-        # Validate/normalize the payload just like subprocess output.
-        out_obj: Any = data
-    else:
-        out_obj = None
+    out_obj: Any = data if data else None
+    cmd = [str(launch.command), *[str(arg) for arg in (launch.args or [])], *[str(arg) for arg in describe_args]]
 
-    cmd = [str(launch.command), *[str(a) for a in (launch.args or [])], *[str(a) for a in describe_args]]
     env = os.environ.copy()
     try:
         env.update({str(k): str(v) for k, v in (launch.env or {}).items()})
@@ -406,18 +320,12 @@ def _describe_entry(service_dir: Path, entry: F8ServiceEntry) -> dict[str, Any] 
         finally:
             if logger.isEnabledFor(logging.DEBUG):
                 dt_ms = (time.perf_counter() - t0) * 1000.0
-                logger.debug(f"describe took {dt_ms:.1f}ms: {' '.join(cmd)}")
+                logger.debug("describe took %.1fms: %s", dt_ms, " ".join(cmd))
 
         out = (proc.stdout or "").strip()
         err = (proc.stderr or "").strip()
 
         def _filter_benign_stderr(text: str) -> str:
-            """
-            Some launchers print informational messages to stderr even on success.
-
-            Example: `pixi run` prints "Pixi task (...): <cmd>" to stderr by default.
-            Treat these as benign so `--describe` discovery still works.
-            """
             if not text:
                 return ""
             keep: list[str] = []
@@ -436,16 +344,14 @@ def _describe_entry(service_dir: Path, entry: F8ServiceEntry) -> dict[str, Any] 
             _discovery_add_error(msg)
             logger.error(msg)
             return None
-        elif err2:
-            # Don't fail discovery if stdout contains JSON; stderr might contain harmless noise.
-            logger.warning(f"Error output from describe command {' '.join(cmd)}:\n{_truncate_text(err2, max_chars=800)}")
+        if err2:
+            logger.warning(
+                "Error output from describe command %s:\n%s",
+                " ".join(cmd),
+                _truncate_text(err2, max_chars=800),
+            )
 
         def _extract_last_json_obj(text: str) -> Any | None:
-            """
-            Best-effort: extract the last JSON value from noisy output (logs + JSON).
-
-            Handles nested objects by using `raw_decode` instead of naive brace matching.
-            """
             s = (text or "").strip()
             if not s:
                 return None
@@ -482,7 +388,6 @@ def _describe_entry(service_dir: Path, entry: F8ServiceEntry) -> dict[str, Any] 
             return None
 
     data = out_obj
-
     if not isinstance(data, dict):
         return None
     data = normalize_describe_payload_dict(data)
@@ -491,7 +396,6 @@ def _describe_entry(service_dir: Path, entry: F8ServiceEntry) -> dict[str, Any] 
         payload = F8ServiceDescribe.model_validate(data)
         data = payload.model_dump(mode="json")
     except Exception:
-        # allow loose payloads as long as required keys exist
         if "service" not in data:
             msg = f"describe JSON missing required key 'service' for {service_dir}: {' '.join(cmd)}"
             _discovery_add_error(msg)
@@ -500,22 +404,21 @@ def _describe_entry(service_dir: Path, entry: F8ServiceEntry) -> dict[str, Any] 
         if "operators" not in data:
             data["operators"] = []
 
-    # If the described service omitted launch info, inherit it from the discovery entry.
     try:
-        svc = data.get("service") or {}
-        if isinstance(svc, dict) and not svc.get("launch"):
-            svc["launch"] = entry.launch.model_dump(mode="json")
-            data["service"] = svc
+        service_payload = data.get("service") or {}
+        if isinstance(service_payload, dict) and not service_payload.get("launch"):
+            service_payload["launch"] = entry.launch.model_dump(mode="json")
+            data["service"] = service_payload
     except (AttributeError, RuntimeError, TypeError, ValueError):
         pass
 
-    # Optional stability check: if entry.serviceClass is provided, it must match describe output.
     try:
         entry_service_class = str(entry.serviceClass or "").strip()
         described_service_class = str((data.get("service") or {}).get("serviceClass") or "").strip()
         if entry_service_class and described_service_class and entry_service_class != described_service_class:
             msg = (
-                f"Service class mismatch for {service_dir}: entry has '{entry_service_class}', described has '{described_service_class}'"
+                f"Service class mismatch for {service_dir}: entry has '{entry_service_class}', "
+                f"described has '{described_service_class}'"
             )
             _discovery_add_error(msg)
             logger.error(msg)
@@ -527,11 +430,6 @@ def _describe_entry(service_dir: Path, entry: F8ServiceEntry) -> dict[str, Any] 
 
 
 def _describe_entry_timed(service_dir: Path, entry: F8ServiceEntry) -> tuple[dict[str, Any] | None, float, str]:
-    """
-    Wrapper around `_describe_entry()` that measures elapsed time and reports the source.
-
-    `source` is one of: inline, file, subprocess, none
-    """
     t0 = time.perf_counter()
 
     inline = _read_inline_describe(entry)
@@ -552,25 +450,15 @@ def _describe_entry_timed(service_dir: Path, entry: F8ServiceEntry) -> tuple[dic
 
 
 def _discovery_parallelism(service_count: int) -> int:
-    """
-    Determine parallelism for describe subprocess launches.
-
-    Env overrides:
-    - `F8_DESCRIBE_JOBS`: int; 1 forces sequential
-    - `F8_DISCOVERY_JOBS`: int; legacy alias
-
-    Defaults to a small number to avoid thrashing when `pixi run ...` is heavy.
-    """
     raw = (os.environ.get("F8_DESCRIBE_JOBS") or os.environ.get("F8_DISCOVERY_JOBS") or "").strip()
     if raw:
         try:
-            v = int(raw)
-            return max(1, v)
+            value = int(raw)
+            return max(1, value)
         except Exception:
             return 1
 
     cpu = os.cpu_count() or 4
-    # Favor modest parallelism; `pixi run` tends to be IO-heavy and can contend on locks/caches.
     return max(1, min(service_count, min(6, cpu)))
 
 
@@ -580,7 +468,6 @@ def _discovery_log_timings_enabled() -> bool:
         return True
     if raw in ("0", "false", "no", "off", "disable", "disabled", ""):
         return False
-    # Unknown value: be safe and enable (user set something non-empty explicitly).
     return True
 
 
@@ -594,49 +481,27 @@ def _discovery_slow_ms_default() -> float:
         return 0.0
 
 
-def _inject_builtin_pystudio_specs(catalog: ServiceCatalog) -> str | None:
-    """
-    Register the built-in `f8.pystudio` specs into catalog.
-
-    This keeps Studio discoverable even when no external `services/f8/studio/service.yml`
-    entry exists. Built-in Studio does not use a `service_entry_path`.
-    """
-    try:
-        registry = register_pystudio_specs()
-        service_spec = registry.service_spec(PYSTUDIO_SERVICE_CLASS)
-        if service_spec is None:
-            return None
-        catalog.register_service(service_spec)
-        for operator_spec in registry.operator_specs(PYSTUDIO_SERVICE_CLASS):
-            catalog.register_operator(operator_spec)
-        return str(service_spec.serviceClass)
-    except Exception:
-        logger.exception("Failed to inject built-in pystudio specs into discovery catalog")
-        return None
-
-
-def load_discovery_into_registries(*, roots: list[Path] | None = None, overwrite: bool = True) -> list[str]:
-    """
-    Load external `service.yml` discovery entries into in-process registries,
-    then inject built-in Studio specs.
-
-    Returns the list of discovered serviceClass entries.
-    """
+def load_discovery_into_catalog(
+    *,
+    roots: list[Path] | None = None,
+    overwrite: bool = True,
+    catalog: ServiceCatalog | None = None,
+    builtin_injectors: Sequence[Callable[[ServiceCatalog], str | None]] = (),
+) -> list[str]:
     global _LAST_DISCOVERY_TIMING_LINES
-
+    _ = overwrite
     _discovery_clear_errors()
 
     roots = roots if roots is not None else _default_roots()
-    catalog = ServiceCatalog.instance()
+    target_catalog = catalog or ServiceCatalog.instance()
 
     found: list[str] = []
-
     entries: list[tuple[Path, F8ServiceEntry]] = []
     for service_dir in find_service_dirs(roots):
         try:
             entry = load_service_entry(service_dir)
         except ValueError as exc:
-            logger.warning(f"Skipping service in {service_dir}: {exc}")
+            logger.warning("Skipping service in %s: %s", service_dir, exc)
             continue
         entries.append((Path(service_dir).resolve(), entry))
 
@@ -653,15 +518,14 @@ def load_discovery_into_registries(*, roots: list[Path] | None = None, overwrite
             futs: dict[concurrent.futures.Future[tuple[dict[str, Any] | None, float, str]], tuple[Path, F8ServiceEntry]] = {}
             for service_dir, entry in entries:
                 futs[ex.submit(_describe_entry_timed, service_dir, entry)] = (service_dir, entry)
-
             for fut in concurrent.futures.as_completed(futs):
-                service_dir, entry = futs[fut]
+                service_dir, _entry = futs[fut]
                 try:
                     payload, dt_ms, source = fut.result()
                     payload_by_dir[service_dir] = payload
                     timing_by_dir[service_dir] = (dt_ms, source)
                 except Exception as exc:
-                    logger.warning(f"Describe failed for {service_dir}: {exc}")
+                    logger.warning("Describe failed for %s: %s", service_dir, exc)
                     payload_by_dir[service_dir] = None
                     timing_by_dir[service_dir] = (0.0, "none")
 
@@ -680,19 +544,13 @@ def load_discovery_into_registries(*, roots: list[Path] | None = None, overwrite
             if slow_ms > 0.0 and dt_ms < slow_ms:
                 continue
             lines.append(f"{dt_ms:7.1f}ms  {label}  [{service_dir}]")
-
         errs = last_discovery_error_lines()
         if errs:
             lines.append("")
             lines.append("discovery errors:")
-            for e in errs:
-                lines.append(f"ERROR {e}")
-
+            for err in errs:
+                lines.append(f"ERROR {err}")
         _LAST_DISCOVERY_TIMING_LINES = lines
-
-        logger.info(lines[0])
-        for line in lines[1:]:
-            logger.info(f"  {line}")
     else:
         _LAST_DISCOVERY_TIMING_LINES = []
 
@@ -718,23 +576,43 @@ def load_discovery_into_registries(*, roots: list[Path] | None = None, overwrite
                     payload["service"] = svc_payload
         except (AttributeError, OSError, RuntimeError, TypeError, ValueError):
             pass
+
         try:
-            svc = catalog.register_service(
+            svc = target_catalog.register_service(
                 payload["service"],
-                # Keep as directory path; launchers need the service root.
                 service_entry_path=Path(service_dir).resolve(),
             )
-        except Exception as e:
-            logger.warning(f"Failed to register service from {service_dir}: {e}")
+        except Exception as exc:
+            logger.warning("Failed to register service from %s: %s", service_dir, exc)
             continue
         found.append(str(svc.serviceClass))
         try:
-            catalog.register_operators(payload.get("operators") or [])
-        except Exception as e:
-            logger.warning(f"Failed to register operators from {service_dir}: {e}")
+            target_catalog.register_operators(payload.get("operators") or [])
+        except Exception as exc:
+            logger.warning("Failed to register operators from %s: %s", service_dir, exc)
 
-    builtin_service_class = _inject_builtin_pystudio_specs(catalog)
-    if builtin_service_class is not None and builtin_service_class not in found:
-        found.append(builtin_service_class)
+    for injector in list(builtin_injectors or ()):
+        try:
+            service_class = injector(target_catalog)
+        except Exception:
+            logger.exception("Built-in injector failed: %r", injector)
+            continue
+        if service_class is not None and service_class not in found:
+            found.append(str(service_class))
 
     return found
+
+
+def load_discovery_into_registries(
+    *,
+    roots: list[Path] | None = None,
+    overwrite: bool = True,
+    catalog: ServiceCatalog | None = None,
+    builtin_injectors: Sequence[Callable[[ServiceCatalog], str | None]] = (),
+) -> list[str]:
+    return load_discovery_into_catalog(
+        roots=roots,
+        overwrite=overwrite,
+        catalog=catalog,
+        builtin_injectors=builtin_injectors,
+    )

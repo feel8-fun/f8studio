@@ -7,6 +7,12 @@ from pathlib import Path
 from typing import Any
 
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
+from f8pysdk.service_runtime_tools.catalog import ServiceCatalog
+from f8pysdk.service_runtime_tools.discovery import (
+    last_discovery_error_lines,
+    last_discovery_timing_lines,
+    load_discovery_into_catalog,
+)
 
 from .extensions import ExtensionRegistry, StudioPluginManifest
 from .pystudio_node_registry import SERVICE_CLASS, register_pystudio_specs
@@ -32,6 +38,17 @@ class PyStudioProgram:
     def describe_json(self) -> dict[str, Any]:
         register_pystudio_specs()
         return RuntimeNodeRegistry.instance().describe(SERVICE_CLASS).model_dump(mode="json")
+
+    @staticmethod
+    def _inject_builtin_pystudio_specs(catalog: ServiceCatalog) -> str | None:
+        registry = register_pystudio_specs()
+        service_spec = registry.service_spec(SERVICE_CLASS)
+        if service_spec is None:
+            return None
+        catalog.register_service(service_spec)
+        for operator_spec in registry.operator_specs(SERVICE_CLASS):
+            catalog.register_operator(operator_spec)
+        return str(service_spec.serviceClass)
 
     @staticmethod
     def _load_extensions_from_env() -> ExtensionRegistry:
@@ -93,7 +110,6 @@ class PyStudioProgram:
     @staticmethod
     def build_node_classes() -> list[type]:
         from .render_nodes import RenderNodeRegistry
-        from .service_catalog import ServiceCatalog
         from .nodegraph.missing_operator_basenode import F8StudioMissingOperatorBaseNode
         from .nodegraph.missing_service_basenode import F8StudioMissingServiceBaseNode
         from f8pysdk import (
@@ -222,10 +238,11 @@ class PyStudioProgram:
         from qtpy import QtGui, QtWidgets
 
         from .widgets.main_window import F8StudioMainWin
-        from .service_catalog import load_discovery_into_registries
-        from .service_catalog.discovery import last_discovery_error_lines, last_discovery_timing_lines
 
-        load_discovery_into_registries()
+        load_discovery_into_catalog(
+            catalog=ServiceCatalog.instance(),
+            builtin_injectors=(self._inject_builtin_pystudio_specs,),
+        )
         extensions = self._load_extensions_from_env()
         self._apply_extensions(extensions)
 

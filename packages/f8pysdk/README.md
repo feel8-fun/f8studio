@@ -31,3 +31,20 @@ class MyService(ServiceCliTemplate):
         # registry.register(...)
         pass
 ```
+
+### Headless Runner
+
+Run a saved Studio session JSON without launching UI:
+
+```bash
+python -m f8pysdk.headless_runner --session path/to/session.json
+```
+
+Default behavior:
+- attempts local NATS bootstrap (auto-start/download) when needed
+- auto-starts discovered service processes
+- deploys per-service rungraphs and waits until termination signal
+
+Useful flags:
+- `--no-bootstrap`: disable NATS auto bootstrap
+- `--no-auto-start`: deploy only to already-running services

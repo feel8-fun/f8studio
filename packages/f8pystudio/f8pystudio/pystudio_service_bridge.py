@@ -30,7 +30,7 @@ from .bridge.rungraph_deployer import (
     RungraphDeployRequest,
 )
 from .error_reporting import ExceptionLogOnce, report_exception
-from .nats_server_bootstrap import ensure_nats_server
+from f8pysdk.nats_server_bootstrap import ensure_nats_server
 from .nodegraph.runtime_compiler import CompiledRuntimeGraphs
 from .pystudio_service import PyStudioService, PyStudioServiceConfig
 from .service_process_manager import ServiceProcessConfig, ServiceProcessManager

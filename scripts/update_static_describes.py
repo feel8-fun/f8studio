@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from f8pysdk import F8ServiceDescribe
-from f8pystudio.service_catalog.discovery import find_service_dirs, load_service_entry
+from f8pysdk.service_runtime_tools.discovery import find_service_dirs, load_service_entry
 
 
 def _extract_last_json_obj(text: str) -> Any | None:
@@ -131,4 +131,3 @@ def main(argv: list[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
-
