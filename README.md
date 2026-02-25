@@ -55,8 +55,8 @@ Studio service discovery can avoid spawning `pixi run ... --describe` by using a
 ## Documentation site
 - Config: `mkdocs.yml`
 - Dependencies: `docs/requirements.txt`
-- Generate module pages: `python scripts/generate_service_docs.py`
-- Validate generated content only: `python scripts/generate_service_docs.py --check`
+- Generate module pages (offline, requires `describe.json`): `python scripts/generate_service_docs.py`
+- Validate generated content only (offline): `python scripts/generate_service_docs.py --check`
 - Validate nav targets: `python scripts/check_docs_nav.py`
 - Validate markdown links: `python scripts/check_docs_links.py`
 - Build static site: `zensical build`

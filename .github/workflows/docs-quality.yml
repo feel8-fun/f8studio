@@ -4,9 +4,6 @@ on:
   push:
     paths:
       - "docs/**"
-      - "services/**/service.yml"
-      - "services/**/describe.json"
-      - "scripts/generate_service_docs.py"
       - "scripts/check_docs_nav.py"
       - "scripts/check_docs_links.py"
       - "mkdocs.yml"
@@ -16,9 +13,6 @@ on:
   pull_request:
     paths:
       - "docs/**"
-      - "services/**/service.yml"
-      - "services/**/describe.json"
-      - "scripts/generate_service_docs.py"
       - "scripts/check_docs_nav.py"
       - "scripts/check_docs_links.py"
       - "mkdocs.yml"
@@ -45,10 +39,6 @@ jobs:
       - name: Unit tests (docs tooling)
         run: |
           python -m unittest discover -s tests -p "test_*.py"
-
-      - name: Validate generated service docs
-        run: |
-          python scripts/generate_service_docs.py --check
 
       - name: Validate nav targets
         run: |

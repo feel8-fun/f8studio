@@ -6,9 +6,6 @@ on:
       - "main"
     paths:
       - "docs/**"
-      - "services/**/service.yml"
-      - "services/**/describe.json"
-      - "scripts/generate_service_docs.py"
       - "scripts/check_docs_nav.py"
       - "scripts/check_docs_links.py"
       - "mkdocs.yml"
@@ -43,9 +40,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r docs/requirements.txt
 
-      - name: Generate and validate docs
+      - name: Validate and build docs
         run: |
-          python scripts/generate_service_docs.py
           python scripts/check_docs_nav.py
           python scripts/check_docs_links.py
           zensical build

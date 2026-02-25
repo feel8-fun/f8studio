@@ -44,7 +44,6 @@ python -m pip install -r docs/requirements.txt
 Generate and validate docs:
 
 ```bash
-python scripts/generate_service_docs.py
 python scripts/check_docs_nav.py
 python scripts/check_docs_links.py
 zensical build
@@ -57,6 +56,11 @@ Recommended settings in Cloudflare Pages:
 
 - **Framework preset**: None
 - **Build command**:
-  `python -m pip install -r docs/requirements.txt && python scripts/generate_service_docs.py && python scripts/check_docs_nav.py && python scripts/check_docs_links.py && zensical build`
+  `python -m pip install -r docs/requirements.txt && python scripts/check_docs_nav.py && python scripts/check_docs_links.py && zensical build`
 - **Build output directory**: `site`
 - **Root directory**: repository root
+
+## Note on Generated Service Pages
+
+Service reference pages under `docs/modules/services/*.md` are generated offline from `service.yml` + `describe.json`.
+Do not run generation in GitHub Pages build, because CI does not have runtime artifacts needed to produce `describe.json`.
