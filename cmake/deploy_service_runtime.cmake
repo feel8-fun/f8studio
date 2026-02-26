@@ -39,7 +39,9 @@ if(DEFINED clean_dest AND NOT "${clean_dest}" STREQUAL "" AND clean_dest)
     "${dest_dir}/*.exe"
     "${dest_dir}/*.pdb"
     "${dest_dir}/*.so"
+    "${dest_dir}/*.so.*"
     "${dest_dir}/*.dylib"
+    "${dest_dir}/*.dylib.*"
   )
   if(_old_files)
     file(REMOVE ${_old_files})
@@ -56,14 +58,23 @@ get_filename_component(_exe_dir "${exe}" DIRECTORY)
 set(_search_dirs "${_exe_dir}")
 list(APPEND _search_dirs ${extra_search_dirs})
 
-# Also include PATH (useful for dev builds where dependencies live in a toolchain/env).
-if(DEFINED ENV{PATH} AND NOT "$ENV{PATH}" STREQUAL "")
-  if(WIN32)
+# Include runtime search env vars. Using PATH on Linux tends to pull in many
+# unrelated system packages and slows dependency resolution.
+if(WIN32)
+  if(DEFINED ENV{PATH} AND NOT "$ENV{PATH}" STREQUAL "")
     string(REPLACE ";" ";" _path_list "$ENV{PATH}")
-  else()
-    string(REPLACE ":" ";" _path_list "$ENV{PATH}")
+    list(APPEND _search_dirs ${_path_list})
   endif()
-  list(APPEND _search_dirs ${_path_list})
+elseif(APPLE)
+  if(DEFINED ENV{DYLD_LIBRARY_PATH} AND NOT "$ENV{DYLD_LIBRARY_PATH}" STREQUAL "")
+    string(REPLACE ":" ";" _dyld_list "$ENV{DYLD_LIBRARY_PATH}")
+    list(APPEND _search_dirs ${_dyld_list})
+  endif()
+else()
+  if(DEFINED ENV{LD_LIBRARY_PATH} AND NOT "$ENV{LD_LIBRARY_PATH}" STREQUAL "")
+    string(REPLACE ":" ";" _ld_path_list "$ENV{LD_LIBRARY_PATH}")
+    list(APPEND _search_dirs ${_ld_path_list})
+  endif()
 endif()
 list(REMOVE_DUPLICATES _search_dirs)
 
@@ -71,7 +82,7 @@ set(_resolved "")
 set(_unresolved "")
 
 # Avoid copying OS/system runtime libs.
-set(_exclude_regexes
+set(_pre_exclude_regexes
   [[^api-ms-win-.*]]
   [[^ext-ms-win-.*]]
   [[.*[/\\]Windows[/\\].*]]
@@ -80,13 +91,36 @@ set(_exclude_regexes
   [[.*[/\\]system32[/\\].*]]
   [[.*[/\\]winsxs[/\\].*]]
 )
+set(_post_exclude_regexes "")
+if(UNIX AND NOT APPLE)
+  # Skip Linux core runtime libs; they should come from the host system.
+  list(APPEND _pre_exclude_regexes
+    [[^linux-vdso\.so.*]]
+    [[^ld-linux-.*\.so.*]]
+    [[^lib(c|m|dl|pthread|rt|util|resolv|nsl|anl|crypt)\.so.*]]
+    [[^libnss_.*\.so.*]]
+    [[^libBrokenLocale\.so.*]]
+    [[^libthread_db\.so.*]]
+  )
+  # Do not bundle host system library directories.
+  list(APPEND _post_exclude_regexes
+    [[^/lib/.*]]
+    [[^/lib32/.*]]
+    [[^/lib64/.*]]
+    [[^/usr/lib/.*]]
+    [[^/usr/lib32/.*]]
+    [[^/usr/lib64/.*]]
+    [[^/usr/local/lib/.*]]
+  )
+endif()
 
 file(GET_RUNTIME_DEPENDENCIES
   EXECUTABLES "${exe}"
   DIRECTORIES ${_search_dirs}
   RESOLVED_DEPENDENCIES_VAR _resolved
   UNRESOLVED_DEPENDENCIES_VAR _unresolved
-  PRE_EXCLUDE_REGEXES ${_exclude_regexes}
+  PRE_EXCLUDE_REGEXES ${_pre_exclude_regexes}
+  POST_EXCLUDE_REGEXES ${_post_exclude_regexes}
 )
 
 foreach(_dep IN LISTS _resolved)
@@ -100,8 +134,21 @@ foreach(_dep IN LISTS _resolved)
   if(_dep_norm MATCHES "/windows/" OR _dep_norm MATCHES "/system32/" OR _dep_norm MATCHES "/winsxs/")
     continue()
   endif()
+  if(UNIX AND NOT APPLE)
+    if(_dep_norm MATCHES "^/lib/" OR _dep_norm MATCHES "^/lib32/" OR _dep_norm MATCHES "^/lib64/" OR
+       _dep_norm MATCHES "^/usr/lib/" OR _dep_norm MATCHES "^/usr/lib32/" OR _dep_norm MATCHES "^/usr/lib64/" OR
+       _dep_norm MATCHES "^/usr/local/lib/")
+      continue()
+    endif()
+  endif()
 
   get_filename_component(_name "${_dep}" NAME)
+  if(UNIX AND NOT APPLE)
+    string(TOLOWER "${_name}" _name_lower)
+    if(_name_lower MATCHES [[^(linux-vdso\.so.*|ld-linux-.*\.so.*|lib(c|m|dl|pthread|rt|util|resolv|nsl|anl|crypt)\.so.*|libnss_.*\.so.*|libbrokenlocale\.so.*|libthread_db\.so.*)$]])
+      continue()
+    endif()
+  endif()
   execute_process(
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_dep}" "${dest_dir}/${_name}"
     COMMAND_ERROR_IS_FATAL ANY

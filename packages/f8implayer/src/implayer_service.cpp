@@ -94,6 +94,46 @@ std::string trim_copy(std::string s) {
   return s;
 }
 
+bool looks_like_url_without_scheme(const std::string& s) {
+  if (s.empty())
+    return false;
+  if (s.find("://") != std::string::npos)
+    return false;
+
+  const char first = s.front();
+  if (first == '/' || first == '\\' || first == '.' || first == '~')
+    return false;
+  if (s.find('\\') != std::string::npos)
+    return false;
+
+  // Keep local Windows paths as local files (e.g. C:/xx or D:\xx).
+  if (s.size() >= 2 && std::isalpha(static_cast<unsigned char>(s[0])) != 0 && s[1] == ':')
+    return false;
+
+  const std::size_t host_end = s.find_first_of("/?#");
+  const std::string host = s.substr(0, host_end);
+  if (host.empty())
+    return false;
+
+  bool has_dot = false;
+  bool has_alpha = false;
+  for (char ch : host) {
+    const unsigned char uch = static_cast<unsigned char>(ch);
+    if (std::isalpha(uch) != 0) {
+      has_alpha = true;
+      continue;
+    }
+    if (std::isdigit(uch) != 0 || ch == '-' || ch == ':' || ch == '[' || ch == ']')
+      continue;
+    if (ch == '.') {
+      has_dot = true;
+      continue;
+    }
+    return false;
+  }
+  return has_dot && has_alpha;
+}
+
 std::string normalize_url(std::string s) {
   s = trim_copy(std::move(s));
   while (s.size() >= 2) {
@@ -104,6 +144,9 @@ std::string normalize_url(std::string s) {
     if (!match_double && !match_single)
       break;
     s = trim_copy(s.substr(1, s.size() - 2));
+  }
+  if (looks_like_url_without_scheme(s)) {
+    s = "https://" + s;
   }
   return s;
 }

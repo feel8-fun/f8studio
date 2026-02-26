@@ -25,6 +25,13 @@ option(F8_DEPLOY_SERVICE_RUNTIME "Deploy service runtime to services/... after b
 option(F8_DEPLOY_SERVICE_RUNTIME_POST_BUILD "Run deploy as POST_BUILD step" ON)
 option(F8_DEPLOY_SERVICE_CLEAN "Clean services/<svc>/<platform> before deploy" ON)
 
+if(NOT TARGET f8_deploy_all_runtime)
+    add_custom_target(
+        f8_deploy_all_runtime
+        COMMENT "Deploy runtime artifacts for all C++ services"
+    )
+endif()
+
 # Build Output
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR})
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR})
@@ -112,6 +119,9 @@ function(f8_deploy_service_runtime target service_rel_dir)
             VERBATIM
             COMMENT "Deploy ${target} runtime to ${_dest_dir}"
         )
+    endif()
+    if(TARGET f8_deploy_all_runtime)
+        add_dependencies(f8_deploy_all_runtime ${_deploy_target})
     endif()
 
     if(F8_DEPLOY_SERVICE_RUNTIME AND F8_DEPLOY_SERVICE_RUNTIME_POST_BUILD)

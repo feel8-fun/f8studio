@@ -126,7 +126,9 @@ void MpvPlayer::initializeMpv() {
   mpv_set_option_string(mpv_, "keep-open", "yes");
   // Enable ytdl_hook.lua (youtube-dl / yt-dlp) when available; mpv will auto-detect the binary.
   mpv_set_option_string(mpv_, "ytdl", "yes");
-  mpv_set_option_string(mpv_, "ytdl-format", "best");
+  // Prefer muxing best video+audio, but fall back to single-file best when the
+  // site/extractor does not expose a mergeable pair.
+  mpv_set_option_string(mpv_, "ytdl-format", "bestvideo+bestaudio/best");
 #if defined(_WIN32)
   // Prefer Windows native audio output. Some builds default to "null" ao when probing fails.
   mpv_set_option_string(mpv_, "ao", "wasapi");
