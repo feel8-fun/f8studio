@@ -91,6 +91,8 @@ using VideoSharedMemorySink = ::f8::cppsdk::VideoSharedMemorySink;
   bool setHwdec(const std::string& hwdec);
   bool setHwdecExtraFrames(int extra_frames);
   bool setFboFormat(const std::string& fbo_format);
+  bool setYtdlRawOptions(const std::string& raw_options);
+  bool setCookiesFile(const std::string& cookies_file);
   void resetVideoOutput();
   void resetPlaybackState();
   void setSharedMemorySink(std::shared_ptr<VideoSharedMemorySink> sink);

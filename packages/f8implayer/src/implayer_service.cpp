@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
 #include <string>
 #include <thread>
 #include <unordered_set>
@@ -33,6 +34,15 @@ namespace {
 
 json schema_string() {
   return json{{"type", "string"}};
+}
+json schema_string_enum(std::initializer_list<const char*> items) {
+  json s = schema_string();
+  s["enum"] = json::array();
+  for (const char* it : items) {
+    if (it && *it)
+      s["enum"].push_back(it);
+  }
+  return s;
 }
 json schema_number() {
   return json{{"type", "number"}};
@@ -180,6 +190,50 @@ std::string lowercase_ascii(std::string s) {
   return s;
 }
 
+bool parse_auth_mode(const std::string& raw, std::string& normalized_mode) {
+  const std::string mode = lowercase_ascii(trim_copy(raw));
+  if (mode == "none") {
+    normalized_mode = "none";
+    return true;
+  }
+  if (mode == "browser") {
+    normalized_mode = "browser";
+    return true;
+  }
+  if (mode == "cookiesfile") {
+    normalized_mode = "cookiesFile";
+    return true;
+  }
+  return false;
+}
+
+bool is_supported_auth_mode(const std::string& mode) {
+  std::string normalized;
+  return parse_auth_mode(mode, normalized);
+}
+
+bool is_supported_auth_browser(const std::string& browser) {
+  return browser == "chrome" || browser == "chromium" || browser == "edge" || browser == "firefox" ||
+         browser == "safari";
+}
+
+bool is_sensitive_auth_field(const std::string& field) {
+  return field == "authBrowserProfile" || field == "authCookiesFile";
+}
+
+bool is_profile_value_safe(const std::string& profile) {
+  // ytdl-raw-options uses comma as option separator; disallow commas/newlines to
+  // keep parsing deterministic.
+  return profile.find(',') == std::string::npos && profile.find('\n') == std::string::npos &&
+         profile.find('\r') == std::string::npos;
+}
+
+std::string browser_cookie_option_value(const std::string& browser, const std::string& profile) {
+  if (profile.empty())
+    return browser;
+  return browser + ":" + profile;
+}
+
 float normalize_yaw_deg(float yaw_deg) {
   float v = std::fmod(yaw_deg, 360.0f);
   if (v > 180.0f)
@@ -325,6 +379,14 @@ bool ImPlayerService::start() {
     return false;
   }
   player_->setVolume(volume_);
+  {
+    std::lock_guard<std::mutex> lock(state_mu_);
+    std::string auth_err;
+    if (!apply_auth_options_locked(auth_err)) {
+      last_error_ = auth_err;
+      spdlog::warn("failed to apply initial auth options: {}", auth_err);
+    }
+  }
 
   // Start the service bus only after the GUI/player are ready, so rungraph/state
   // deployments won't race against initialization.
@@ -869,6 +931,81 @@ bool ImPlayerService::on_set_state(const std::string& node_id, const std::string
         ok = true;
       }
     }
+  } else if (f == "authMode") {
+    if (!value.is_string()) {
+      err = "authMode must be a string";
+      ok = false;
+    } else {
+      std::string mode;
+      if (!parse_auth_mode(value.get<std::string>(), mode)) {
+        err = "authMode must be one of: none|browser|cookiesFile";
+        ok = false;
+      } else {
+        std::lock_guard<std::mutex> lock(state_mu_);
+        auth_mode_ = mode;
+        ok = apply_auth_options_locked(err);
+        if (!ok) {
+          last_error_ = err;
+        } else {
+          last_error_.clear();
+        }
+      }
+    }
+  } else if (f == "authBrowser") {
+    if (!value.is_string()) {
+      err = "authBrowser must be a string";
+      ok = false;
+    } else {
+      const std::string browser = lowercase_ascii(trim_copy(value.get<std::string>()));
+      if (!is_supported_auth_browser(browser)) {
+        err = "authBrowser must be one of: chrome|chromium|edge|firefox|safari";
+        ok = false;
+      } else {
+        std::lock_guard<std::mutex> lock(state_mu_);
+        auth_browser_ = browser;
+        ok = apply_auth_options_locked(err);
+        if (!ok) {
+          last_error_ = err;
+        } else {
+          last_error_.clear();
+        }
+      }
+    }
+  } else if (f == "authBrowserProfile") {
+    if (!value.is_string()) {
+      err = "authBrowserProfile must be a string";
+      ok = false;
+    } else {
+      const std::string profile = trim_copy(value.get<std::string>());
+      if (!is_profile_value_safe(profile)) {
+        err = "authBrowserProfile contains unsupported characters";
+        ok = false;
+      } else {
+        std::lock_guard<std::mutex> lock(state_mu_);
+        auth_browser_profile_ = profile;
+        ok = apply_auth_options_locked(err);
+        if (!ok) {
+          last_error_ = err;
+        } else {
+          last_error_.clear();
+        }
+      }
+    }
+  } else if (f == "authCookiesFile") {
+    if (!value.is_string()) {
+      err = "authCookiesFile must be a string";
+      ok = false;
+    } else {
+      const std::string cookies_file = trim_copy(value.get<std::string>());
+      std::lock_guard<std::mutex> lock(state_mu_);
+      auth_cookies_file_ = cookies_file;
+      ok = apply_auth_options_locked(err);
+      if (!ok) {
+        last_error_ = err;
+      } else {
+        last_error_.clear();
+      }
+    }
   } else {
     error_code = "UNKNOWN_FIELD";
     error_message = "unknown state field";
@@ -902,13 +1039,25 @@ bool ImPlayerService::on_set_state(const std::string& node_id, const std::string
     write_value = cfg_.video_shm_max_height;
   } else if (f == "videoShmMaxFps") {
     write_value = cfg_.video_shm_max_fps;
+  } else if (f == "authMode") {
+    std::lock_guard<std::mutex> lock(state_mu_);
+    write_value = auth_mode_;
+  } else if (f == "authBrowser") {
+    std::lock_guard<std::mutex> lock(state_mu_);
+    write_value = auth_browser_;
+  } else if (f == "authBrowserProfile") {
+    std::lock_guard<std::mutex> lock(state_mu_);
+    write_value = auth_browser_profile_;
+  } else if (f == "authCookiesFile") {
+    std::lock_guard<std::mutex> lock(state_mu_);
+    write_value = auth_cookies_file_;
   }
   {
     std::lock_guard<std::mutex> lock(state_mu_);
     auto it = published_state_.find(f);
     if (it == published_state_.end() || it->second != write_value) {
       published_state_[f] = write_value;
-      if (bus_) {
+      if (bus_ && !is_sensitive_auth_field(f)) {
         f8::cppsdk::kv_set_node_state(bus_->kv(), cfg_.service_id, cfg_.service_id, f, write_value, "endpoint", meta);
       }
     }
@@ -974,7 +1123,8 @@ bool ImPlayerService::on_set_rungraph(const nlohmann::json& graph_obj, const nlo
 
       // Only apply writable fields from rungraph (never seed runtime-owned ro fields).
       if (field != "active" && field != "mediaUrl" && field != "volume" && field != "videoShmMaxWidth" &&
-          field != "videoShmMaxHeight" && field != "videoShmMaxFps") {
+          field != "videoShmMaxHeight" && field != "videoShmMaxFps" && field != "authMode" &&
+          field != "authBrowser") {
         continue;
       }
       if (field == "active") {
@@ -1228,6 +1378,14 @@ bool ImPlayerService::open_media_internal(const std::string& url, bool keep_play
     }
   }
 
+  {
+    std::lock_guard<std::mutex> lock(state_mu_);
+    if (!apply_auth_options_locked(err)) {
+      last_error_ = err;
+      return false;
+    }
+  }
+
   if (!player_->openMedia(u)) {
     err = "mpv loadfile failed";
     std::lock_guard<std::mutex> lock(state_mu_);
@@ -1303,6 +1461,13 @@ bool ImPlayerService::cmd_play(std::string& err) {
     if (url.empty()) {
       err = "no media loaded";
       return false;
+    }
+    {
+      std::lock_guard<std::mutex> lock(state_mu_);
+      if (!apply_auth_options_locked(err)) {
+        last_error_ = err;
+        return false;
+      }
     }
     if (!player_->openMedia(url)) {
       err = "mpv loadfile failed";
@@ -1394,6 +1559,13 @@ bool ImPlayerService::cmd_seek(const nlohmann::json& args, std::string& err) {
       err = "no media loaded";
       return false;
     }
+    {
+      std::lock_guard<std::mutex> lock(state_mu_);
+      if (!apply_auth_options_locked(err)) {
+        last_error_ = err;
+        return false;
+      }
+    }
     if (!player_->openMedia(url)) {
       err = "mpv loadfile failed";
       std::lock_guard<std::mutex> lock(state_mu_);
@@ -1445,6 +1617,70 @@ void ImPlayerService::mark_vr_manual_override() {
   vr_auto_pending_ratio_ = false;
 }
 
+bool ImPlayerService::apply_auth_options_locked(std::string& err) {
+  if (!player_) {
+    err = "player not initialized";
+    return false;
+  }
+  if (!is_supported_auth_mode(auth_mode_)) {
+    err = "authMode must be one of: none|browser|cookiesFile";
+    return false;
+  }
+
+  if (auth_mode_ == "none") {
+    if (!player_->setYtdlRawOptions("")) {
+      err = "failed to clear ytdl-raw-options";
+      return false;
+    }
+    if (!player_->setCookiesFile("")) {
+      err = "failed to clear cookies-file";
+      return false;
+    }
+    return true;
+  }
+
+  if (auth_mode_ == "browser") {
+    if (!is_supported_auth_browser(auth_browser_)) {
+      err = "authBrowser must be one of: chrome|chromium|edge|firefox|safari";
+      return false;
+    }
+    if (!is_profile_value_safe(auth_browser_profile_)) {
+      err = "authBrowserProfile contains unsupported characters";
+      return false;
+    }
+    if (!player_->setCookiesFile("")) {
+      err = "failed to clear cookies-file";
+      return false;
+    }
+    const std::string from_browser = browser_cookie_option_value(auth_browser_, auth_browser_profile_);
+    if (!player_->setYtdlRawOptions("cookies-from-browser=" + from_browser)) {
+      err = "failed to set ytdl cookies-from-browser";
+      return false;
+    }
+    return true;
+  }
+
+  // auth_mode_ == "cookiesFile"
+  const std::string file = trim_copy(auth_cookies_file_);
+  if (file.empty()) {
+    err = "authCookiesFile must be a non-empty path when authMode=cookiesFile";
+    return false;
+  }
+  if (!std::filesystem::exists(file)) {
+    err = "authCookiesFile does not exist: " + file;
+    return false;
+  }
+  if (!player_->setYtdlRawOptions("")) {
+    err = "failed to clear ytdl-raw-options";
+    return false;
+  }
+  if (!player_->setCookiesFile(file)) {
+    err = "failed to set cookies-file";
+    return false;
+  }
+  return true;
+}
+
 void ImPlayerService::publish_static_state() {
   if (!shm_)
     return;
@@ -1467,6 +1703,8 @@ void ImPlayerService::publish_static_state() {
     want("videoShmMaxWidth", cfg_.video_shm_max_width);
     want("videoShmMaxHeight", cfg_.video_shm_max_height);
     want("videoShmMaxFps", cfg_.video_shm_max_fps);
+    want("authMode", auth_mode_);
+    want("authBrowser", auth_browser_);
   }
   for (const auto& [field, v] : updates) {
     if (bus_) {
@@ -1543,6 +1781,15 @@ json ImPlayerService::describe() {
       state_field("videoShmMaxWidth", schema_integer(), "rw", "SHM Max Width", "Downsample limit (0 = auto).", false),
       state_field("videoShmMaxHeight", schema_integer(), "rw", "SHM Max Height", "Downsample limit (0 = auto).", false),
       state_field("videoShmMaxFps", schema_number(), "rw", "SHM Max FPS", "Copy rate limit (0 = unlimited).", false),
+      state_field("authMode", schema_string_enum({"none", "browser", "cookiesFile"}), "rw", "Auth Mode",
+                  "Cookie auth mode: none|browser|cookiesFile (default: none).", false),
+      state_field("authBrowser", schema_string_enum({"chrome", "chromium", "edge", "firefox", "safari"}), "rw",
+                  "Auth Browser",
+                  "Browser name for authMode=browser: chrome|chromium|edge|firefox|safari.", false),
+      state_field("authBrowserProfile", schema_string(), "rw", "Auth Browser Profile",
+                  "Optional browser profile for authMode=browser. Sensitive: runtime-only; not persisted.", false),
+      state_field("authCookiesFile", schema_string(), "rw", "Auth Cookies File",
+                  "cookies.txt path for authMode=cookiesFile. Sensitive: runtime-only; not persisted.", false),
       state_field("decodedWidth", schema_integer(), "ro", "Decoded Width",
                   "Decoded/source video width (on-screen uses this).", false),
       state_field("decodedHeight", schema_integer(), "ro", "Decoded Height",

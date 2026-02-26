@@ -93,6 +93,7 @@ class ImPlayerService final : public f8::cppsdk::LifecycleNode,
   void playlist_prev();
 
   bool open_media_internal(const std::string& url, bool keep_playlist, std::string& err);
+  bool apply_auth_options_locked(std::string& err);
 
   bool cmd_open(const nlohmann::json& args, std::string& err);
   bool cmd_play(std::string& err);
@@ -153,6 +154,10 @@ class ImPlayerService final : public f8::cppsdk::LifecycleNode,
   unsigned view_last_video_h_ = 0;
 
   bool loop_ = false;
+  std::string auth_mode_ = "none";
+  std::string auth_browser_ = "chrome";
+  std::string auth_browser_profile_;
+  std::string auth_cookies_file_;
 
   SdlVideoWindow::ProjectionMode vr_mode_ = SdlVideoWindow::ProjectionMode::Flat2D;
   float vr_yaw_deg_ = 0.0f;

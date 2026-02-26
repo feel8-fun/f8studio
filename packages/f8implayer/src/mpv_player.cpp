@@ -263,6 +263,28 @@ bool MpvPlayer::setFboFormat(const std::string& fbo_format) {
   return false;
 }
 
+bool MpvPlayer::setYtdlRawOptions(const std::string& raw_options) {
+  if (!mpv_)
+    return false;
+  const int status = mpv_set_property_string(mpv_, "ytdl-raw-options", raw_options.c_str());
+  if (status < 0) {
+    spdlog::warn("failed to set ytdl-raw-options: {}", mpv_error_string(status));
+    return false;
+  }
+  return true;
+}
+
+bool MpvPlayer::setCookiesFile(const std::string& cookies_file) {
+  if (!mpv_)
+    return false;
+  const int status = mpv_set_property_string(mpv_, "cookies-file", cookies_file.c_str());
+  if (status < 0) {
+    spdlog::warn("failed to set cookies-file: {}", mpv_error_string(status));
+    return false;
+  }
+  return true;
+}
+
 void MpvPlayer::setSharedMemorySink(std::shared_ptr<VideoSharedMemorySink> sink) {
   std::lock_guard<std::mutex> lock(sinkMutex_);
   sink_ = std::move(sink);

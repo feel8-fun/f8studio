@@ -32,6 +32,10 @@ services/f8/implayer/linux/f8implayer_service
 | `videoShmMaxWidth` | `rw` | `false` | `false` | `integer` | Downsample limit (0 = auto). |
 | `videoShmMaxHeight` | `rw` | `false` | `false` | `integer` | Downsample limit (0 = auto). |
 | `videoShmMaxFps` | `rw` | `false` | `false` | `number` | Copy rate limit (0 = unlimited). |
+| `authMode` | `rw` | `false` | `false` | `string` | Cookie auth mode: `none` \| `browser` \| `cookiesFile` (default `none`). |
+| `authBrowser` | `rw` | `false` | `false` | `string` | Browser for `authMode=browser`: `chrome` \| `chromium` \| `edge` \| `firefox` \| `safari`. |
+| `authBrowserProfile` | `rw` | `false` | `false` | `string` | Optional browser profile for `authMode=browser`. Sensitive runtime value (not persisted). |
+| `authCookiesFile` | `rw` | `false` | `false` | `string` | cookies.txt path for `authMode=cookiesFile`. Sensitive runtime value (not persisted). |
 | `decodedWidth` | `ro` | `false` | `false` | `integer` | Decoded/source video width (on-screen uses this). |
 | `decodedHeight` | `ro` | `false` | `false` | `integer` | Decoded/source video height (on-screen uses this). |
 | `videoWidth` | `ro` | `false` | `false` | `integer` | Width of the video frame. |
@@ -120,8 +124,11 @@ services/f8/implayer/linux/f8implayer_service
 
 - Missing codec/runtime libraries on target host.
 - Wrong SHM name wiring disconnects downstream consumers.
+- For website URLs, guest mode may provide lower quality streams when cookie auth is not configured.
 
 ### Troubleshooting
 
 - Verify media playback locally before integrating downstream nodes.
 - Confirm `shmName` is identical across producer and consumers.
+- Browser mode requires a logged-in browser profile on the same machine.
+- cookies file mode requires a valid existing cookies file path.
