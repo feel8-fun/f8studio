@@ -19,9 +19,16 @@ cd f8studio
 Use pixi tasks for runtime commands:
 
 ```bash
-pixi run -e default studio
+pixi run -e default f8pystudio
 pixi run -e default runner --help
 ```
+
+Build a Studio launcher with repo icon `assets/icon.ico`:
+
+```bash
+pixi run -e ci build_studio_launcher
+```
+- Output is a Nuitka-built executable under `build/dist/` (platform-specific extension/name).
 
 ## Service Runtime Basics
 
@@ -53,7 +60,7 @@ pixi run -e cpp cpp_lock_refresh
 Build a distributable runtime bundle (`pixi.toml + pixi.lock + services/** + wheels/**`):
 
 ```bash
-pixi run -e cpp cpp_dist_runtime
+pixi run -e ci dist_ci
 ```
 
 Notes:

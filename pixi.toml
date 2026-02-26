@@ -74,11 +74,10 @@ doc_serve = "zensical serve"
 doc_check = "python scripts/generate_service_docs.py --check && python scripts/check_docs_nav.py && python scripts/check_docs_links.py"
 
 [feature.cpp.dependencies]
+pip = ">=26.0.1,<27"
 conan = ">=2.23.0,<3"
 cmake = ">=3.30,<5"
 ninja = ">=1.13.0,<2"
-hatchling = ">=1.28.0,<2"
-datamodel-code-generator = ">=0.35.0,<1"
 
 [feature.cpp.target.linux-64.dependencies]
 gxx_linux-64 = ">=11,<12"
@@ -88,11 +87,22 @@ cpp_lock_refresh = "python scripts/cpp_ci.py lock-refresh"
 cpp_bootstrap = "python scripts/cpp_ci.py bootstrap"
 cpp_configure_release = "python scripts/cpp_ci.py configure"
 cpp_build_release = "python scripts/cpp_ci.py build"
-cpp_dist_runtime = "python scripts/cpp_ci.py dist-runtime"
+
+[feature.ci.dependencies]
+python = ">=3.13,<3.14"
+pip = ">=26.0.1,<27"
+nuitka = ">=2.7.17,<3"
+hatchling = ">=1.28.0,<2"
+datamodel-code-generator = ">=0.35.0,<1"
+
+[feature.ci.tasks]
+build_studio_launcher = "python scripts/build_studio_launcher.py"
+dist_ci = "python scripts/dist_ci.py"
 
 [environments]
 default = { features = ["python", "sdk", "engine", "studio", "vision"], solve-group = "default" }
 onnx = { features = ["python", "sdk", "onnx", "vision"], solve-group = "onnx" }
 mediapipe = { features = ["python", "sdk", "vision", "mediapipe"], solve-group = "mediapipe" }
 doc = { features = ["doc"] }
-cpp = { features = ["python", "cpp"], solve-group = "cpp" }
+cpp = { features = ["cpp"], solve-group = "cpp" }
+ci = { features = ["ci"], solve-group = "ci" }
