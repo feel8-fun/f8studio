@@ -993,7 +993,7 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode):
         return ""
 
     def _pick_headers(self, headers: dict[str, str]) -> dict[str, Any]:
-        # Match scripts/lovense-mock-server.js: print a conservative subset.
+        # Print only a conservative subset of headers for logs.
         h = dict(headers or {})
         return {
             "content-type": h.get("content-type"),

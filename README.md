@@ -19,13 +19,6 @@ Fresh workspace for the API-first, NATS-only architecture. Current focus is cont
 - Add scripts to generate TS/C++ stubs from OpenAPI and wrap NATS req/rep.
 - Wire a minimal prototype: Web ping/echo + config apply via NATS in-memory broker.
 
-## C++ formatting
-- Config: `.clang-format`
-- Format: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/format_cpp.ps1`
-- Check: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/format_cpp.ps1 -Check`
-- Optional: `-ClangFormat <path-or-command>`
-- Optional: `-ChangedOnly` or `-StagedOnly`
-
 ## SHM tools
 - Audio waveform viewer: `pixi run -e default python scripts/audioshm_viewer.py --service-id audiocap --use-event`
 

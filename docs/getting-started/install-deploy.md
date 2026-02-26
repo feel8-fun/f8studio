@@ -67,7 +67,6 @@ Notes:
 
 - CI on Windows uses GitHub-hosted runner images plus `msvc-dev-cmd`; no manual Visual Studio setup is needed in CI.
 - Local Windows development still requires Visual Studio Build Tools for native compilation.
-- On Linux, `libmpv` and `ytdlp` currently use Conan recipes with `apt` system requirements.
 
 ## Documentation Toolchain
 
