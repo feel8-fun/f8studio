@@ -11,13 +11,15 @@ target_include_directories(f8cvkit
 )
 
 find_package(OpenCV REQUIRED CONFIG)
+find_package(CUDAToolkit REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(cxxopts REQUIRED)
 find_package(nlohmann_json REQUIRED)
 
 target_link_libraries(f8cvkit
   PUBLIC
-    ${OpenCV_LIBS}
+    opencv::opencv
+    CUDA::cudart
   PRIVATE
     spdlog::spdlog
 )

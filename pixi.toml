@@ -79,8 +79,18 @@ conan = ">=2.23.0,<3"
 cmake = ">=3.30,<5"
 ninja = ">=1.13.0,<2"
 
+[feature.cpp.target.win-64.dependencies]
+cuda-version = "12.8.*"
+cuda-nvcc = "12.8.*"
+cuda-cudart-dev = "12.8.*"
+cuda-libraries-dev = "12.8.*"
+
 [feature.cpp.target.linux-64.dependencies]
 gxx_linux-64 = ">=11,<12"
+cuda-version = "12.8.*"
+cuda-nvcc = "12.8.*"
+cuda-cudart-dev = "12.8.*"
+cuda-libraries-dev = "12.8.*"
 
 [feature.cpp.tasks]
 cpp_lock_refresh = "python scripts/cpp_ci.py lock-refresh"

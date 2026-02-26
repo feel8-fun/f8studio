@@ -13,6 +13,7 @@ LOCKFILE_PATH = REPO_ROOT / "conan.lock"
 USER_PRESETS_PATH = REPO_ROOT / "CMakeUserPresets.json"
 GENERATED_PRESETS_PATH = REPO_ROOT / "build" / "Release" / "generators" / "CMakePresets.json"
 GENERATED_PRESETS_FALLBACK_PATH = REPO_ROOT / "build" / "generators" / "CMakePresets.json"
+PIXI_CPP_ENV_PATH = (REPO_ROOT / ".pixi" / "envs" / "cpp").resolve()
 
 
 def _run(command: list[str]) -> None:
@@ -21,8 +22,111 @@ def _run(command: list[str]) -> None:
 
     command_env = os.environ.copy()
     command_env["CCACHE_TEMPDIR"] = str(ccache_tmp_dir)
+    if os.name == "nt":
+        pixi_cuda_root = PIXI_CPP_ENV_PATH / "Library"
+        pixi_cuda_bin = pixi_cuda_root / "bin"
+        existing_path = command_env.get("PATH", "")
+        command_env["PATH"] = str(pixi_cuda_bin) + os.pathsep + existing_path
+        command_env["CUDA_PATH"] = str(pixi_cuda_root)
+        command_env["CUDA_HOME"] = str(pixi_cuda_root)
+        command_env["CUDA_TOOLKIT_ROOT_DIR"] = str(pixi_cuda_root)
+        command_env["CUDAToolkit_ROOT"] = str(pixi_cuda_root)
+        for key in list(command_env.keys()):
+            if key.startswith("CUDA_PATH_V"):
+                del command_env[key]
 
     subprocess.run(command, check=True, cwd=REPO_ROOT, env=command_env)
+
+
+def _run_capture(command: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        command,
+        check=False,
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+    )
+
+
+def _enforce_pixi_nvcc() -> None:
+    nvcc_proc = _run_capture(["nvcc", "--version"])
+    if nvcc_proc.returncode != 0:
+        raise RuntimeError(
+            "CUDA compiler check failed: `nvcc --version` is unavailable in current shell. "
+            "Run `pixi install -e cpp` and execute builds via `pixi run -e cpp ...`."
+        )
+
+    if os.name == "nt":
+        path_proc = _run_capture(["where", "nvcc"])
+    else:
+        path_proc = _run_capture(["which", "-a", "nvcc"])
+    if path_proc.returncode != 0:
+        raise RuntimeError(
+            "CUDA compiler path check failed: unable to resolve `nvcc` path. "
+            "Run `pixi install -e cpp` and execute builds via `pixi run -e cpp ...`."
+        )
+
+    nvcc_paths: list[Path] = []
+    for raw_line in path_proc.stdout.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        candidate = Path(line).expanduser().resolve()
+        nvcc_paths.append(candidate)
+
+    if not nvcc_paths:
+        raise RuntimeError(
+            "CUDA compiler path check failed: `where/which nvcc` returned no usable paths. "
+            "Run `pixi install -e cpp` and execute builds via `pixi run -e cpp ...`."
+        )
+
+    first_nvcc = nvcc_paths[0]
+    if PIXI_CPP_ENV_PATH in first_nvcc.parents:
+        return
+
+    paths_text = ", ".join(str(path) for path in nvcc_paths)
+    raise RuntimeError(
+        "CUDA compiler resolution is ambiguous or not pixi-first. "
+        f"Expected first `nvcc` under `{PIXI_CPP_ENV_PATH}`, got: {paths_text}. "
+        "Run `pixi install -e cpp` and ensure `pixi run -e cpp ...` is used."
+    )
+
+
+def _conan_msvc_settings_args() -> list[str]:
+    if os.name != "nt":
+        return []
+    # Make profile resolution deterministic inside pixi shells where `conan profile detect`
+    # may not infer compiler settings.
+    return [
+        "-s:h",
+        "os=Windows",
+        "-s:h",
+        "arch=x86_64",
+        "-s:h",
+        "compiler=msvc",
+        "-s:h",
+        "compiler.version=194",
+        "-s:h",
+        "compiler.runtime=dynamic",
+        "-s:h",
+        "compiler.runtime_type=Release",
+        "-s:h",
+        "compiler.cppstd=17",
+        "-s:b",
+        "os=Windows",
+        "-s:b",
+        "arch=x86_64",
+        "-s:b",
+        "compiler=msvc",
+        "-s:b",
+        "compiler.version=194",
+        "-s:b",
+        "compiler.runtime=dynamic",
+        "-s:b",
+        "compiler.runtime_type=Release",
+        "-s:b",
+        "compiler.cppstd=17",
+    ]
 
 
 def _bootstrap() -> None:
@@ -34,7 +138,7 @@ def _bootstrap() -> None:
             "Missing conan.lock at repository root. Run `python scripts/cpp_ci.py lock-refresh` first."
         )
 
-    _run(["conan", "profile", "detect", "--force"])
+    _enforce_pixi_nvcc()
     _run(
         [
             "conan",
@@ -44,8 +148,7 @@ def _bootstrap() -> None:
             ".",
             "-s",
             "build_type=Release",
-            "-s",
-            "compiler.cppstd=17",
+            *_conan_msvc_settings_args(),
             "--build=missing",
             "--lockfile",
             "conan.lock",
@@ -120,7 +223,6 @@ def _build() -> None:
 
 
 def _lock_refresh() -> None:
-    _run(["conan", "profile", "detect", "--force"])
     if LOCKFILE_PATH.is_file():
         LOCKFILE_PATH.unlink()
     _run(
@@ -129,8 +231,7 @@ def _lock_refresh() -> None:
             "lock",
             "create",
             ".",
-            "-s",
-            "compiler.cppstd=17",
+            *_conan_msvc_settings_args(),
             "--lockfile-out",
             "conan.lock",
             "--build=missing",

@@ -8,6 +8,8 @@
 #include <nlohmann/json.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/video/tracking.hpp>
+#include <opencv2/core/cuda.hpp>
+#include <opencv2/cudaoptflow.hpp>
 #include <spdlog/spdlog.h>
 
 #include "f8cppsdk/shm/naming.h"
@@ -107,6 +109,17 @@ bool parse_double_value(const json& value, double& out) {
     return true;
   }
   return false;
+}
+
+bool cuda_runtime_available() {
+  static const bool available = []() {
+    try {
+      return cv::cuda::getCudaEnabledDeviceCount() > 0;
+    } catch (const cv::Exception&) {
+      return false;
+    }
+  }();
+  return available;
 }
 
 }  // namespace
@@ -432,13 +445,33 @@ void DenseOptflowService::process_frame_once() {
   const std::int64_t process_start_ms = f8::cppsdk::now_ms();
 
   cv::Mat flow;
-  try {
-    cv::calcOpticalFlowFarneback(prev_gray_, gray, flow, 0.5, 3, 15, 3, 5, 1.2, 0);
-  } catch (const cv::Exception& ex) {
-    ++telemetry_fail_frames_;
-    publish_state_if_changed("lastError", std::string("opencv farneback failed: ") + ex.what(), "runtime", json::object());
-    prev_gray_ = gray;
-    return;
+  bool used_cuda = false;
+  if (cuda_runtime_available()) {
+    try {
+      cv::cuda::GpuMat prev_gray_gpu;
+      cv::cuda::GpuMat gray_gpu;
+      cv::cuda::GpuMat flow_gpu;
+      prev_gray_gpu.upload(prev_gray_);
+      gray_gpu.upload(gray);
+      cv::Ptr<cv::cuda::FarnebackOpticalFlow> flow_algo =
+          cv::cuda::FarnebackOpticalFlow::create(5, 0.5, false, 15, 3, 5, 1.2, 0);
+      flow_algo->calc(prev_gray_gpu, gray_gpu, flow_gpu);
+      flow_gpu.download(flow);
+    } catch (const cv::Exception& ex) {
+      spdlog::warn("dense_optflow cuda farneback failed; fallback to cpu: {}", ex.what());
+      used_cuda = false;
+    }
+  }
+  if (flow.empty()) {
+    try {
+      cv::calcOpticalFlowFarneback(prev_gray_, gray, flow, 0.5, 3, 15, 3, 5, 1.2, 0);
+      used_cuda = false;
+    } catch (const cv::Exception& ex) {
+      ++telemetry_fail_frames_;
+      publish_state_if_changed("lastError", std::string("opencv farneback failed: ") + ex.what(), "runtime", json::object());
+      prev_gray_ = gray;
+      return;
+    }
   }
 
   std::uint64_t grid_points = 0;
@@ -481,6 +514,7 @@ void DenseOptflowService::process_frame_once() {
   out["width"] = hdr.width;
   out["height"] = hdr.height;
   out["model"] = "farneback";
+  out["backend"] = used_cuda ? "cuda" : "cpu";
   out["sampleStepPx"] = step;
   out["vectors"] = std::move(vectors);
   out["stats"] = json::object({
@@ -509,6 +543,7 @@ json DenseOptflowService::describe() {
            {"width", schema_integer()},
            {"height", schema_integer()},
            {"model", schema_string()},
+           {"backend", schema_string()},
            {"sampleStepPx", schema_integer()},
            {"vectors", schema_array(vector_schema)},
            {"stats",

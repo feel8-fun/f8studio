@@ -501,6 +501,10 @@ void TemplateMatchService::detect_once() {
       return;
     }
 
+    double min_val = 0.0;
+    double max_val = 0.0;
+    cv::Point min_loc;
+    cv::Point max_loc;
     cv::Mat result;
     try {
       cv::matchTemplate(bgr, template_bgr_, result, cv::TM_CCOEFF_NORMED);
@@ -509,10 +513,6 @@ void TemplateMatchService::detect_once() {
                                json::object());
       return;
     }
-    double min_val = 0.0;
-    double max_val = 0.0;
-    cv::Point min_loc;
-    cv::Point max_loc;
     cv::minMaxLoc(result, &min_val, &max_val, &min_loc, &max_loc);
 
     const int x1 = max_loc.x;
@@ -539,6 +539,7 @@ void TemplateMatchService::detect_once() {
     out["width"] = hdr.width;
     out["height"] = hdr.height;
     out["model"] = "cvkit.template_match";
+    out["backend"] = "cpu";
     out["task"] = "template_match";
     out["skeletonProtocol"] = "none";
     out["detections"] = std::move(detections);
@@ -712,6 +713,7 @@ json TemplateMatchService::describe() {
            {"width", schema_integer()},
            {"height", schema_integer()},
            {"model", schema_string()},
+           {"backend", schema_string()},
            {"task", schema_string()},
            {"skeletonProtocol", schema_string()},
            {"detections", schema_array(detection_schema)}});

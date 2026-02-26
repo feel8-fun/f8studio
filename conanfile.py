@@ -49,6 +49,18 @@ class F8Build(ConanFile):
         # Ensure OpenCV contrib modules are available for CV services.
         # (e.g. opencv_tracking for CSRT/KCF trackers)
         self.options["opencv"].tracking = True
+        self.options["opencv"].with_cuda = True
+        self.options["opencv"].cudaoptflow = True
+        self.options["opencv"].bgsegm = True
+        self.options["opencv"].imgproc = True
+        self.options["opencv"].cudaarithm = True
+        self.options["opencv"].cudaimgproc = True
+        self.options["opencv"].cudawarping = True
+        self.options["opencv"].cudafilters = True
+        self.options["opencv"].cudafeatures2d = True
+        self.options["opencv"].optflow = True
+        self.options["opencv"].ximgproc = True
+        self.options["opencv"].cuda_arch_bin = os.getenv("F8_OPENCV_CUDA_ARCH_BIN", "6.1;7.5;8.6;8.9;12.0")
         # Disable FFmpeg integration to avoid pulling ffmpeg/libx264/libx265.
         self.options["opencv"].with_ffmpeg = False
 
