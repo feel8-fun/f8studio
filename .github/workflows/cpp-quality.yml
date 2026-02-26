@@ -63,6 +63,12 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Install Linux media runtime deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmpv-dev yt-dlp
+
       - name: Cache Conan
         uses: actions/cache@v4
         with:

@@ -37,7 +37,7 @@ def _run_nuitka(*, repo_root: Path, app_name: str, icon_ico: Path | None, dist_d
     if sys.platform.startswith("win"):
         cmd.extend(["--windows-console-mode=disable"])
         if icon_ico is not None:
-            cmd.extend(["--windows-icon-from-ico", str(icon_ico)])
+            cmd.append(f"--windows-icon-from-ico={icon_ico}")
 
     nuitka_cache_dir = repo_root / "build" / ".nuitka-cache"
     nuitka_cache_dir.mkdir(parents=True, exist_ok=True)

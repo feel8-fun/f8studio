@@ -275,6 +275,8 @@ def _describe_entry(service_dir: Path, entry: F8ServiceEntry) -> dict[str, Any] 
         launch = entry.launch
         describe_args = list(entry.describeArgs or ["--describe"])
         timeout_ms = int(entry.timeoutMs or 4000)
+        if _is_pixi_command(str(launch.command)):
+            timeout_ms = max(timeout_ms, 15000)
     except Exception:
         return None
 
@@ -309,6 +311,8 @@ def _describe_entry(service_dir: Path, entry: F8ServiceEntry) -> dict[str, Any] 
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=max(0.1, timeout_ms / 1000.0),
                 check=False,
             )
@@ -462,6 +466,15 @@ def _discovery_parallelism(service_count: int) -> int:
     return max(1, min(service_count, min(6, cpu)))
 
 
+def _is_pixi_command(command: str) -> bool:
+    cmd = str(command or "").strip().lower()
+    if not cmd:
+        return False
+    if cmd in ("pixi", "pixi.exe", "pixi.bat", "pixi.cmd"):
+        return True
+    return Path(cmd).name in ("pixi", "pixi.exe", "pixi.bat", "pixi.cmd")
+
+
 def _discovery_log_timings_enabled() -> bool:
     raw = (os.environ.get("F8_DISCOVERY_LOG_TIMINGS") or "").strip().lower()
     if raw in ("1", "true", "yes", "on", "enable", "enabled"):
@@ -508,6 +521,17 @@ def load_discovery_into_catalog(
     payload_by_dir: dict[Path, dict[str, Any] | None] = {}
     timing_by_dir: dict[Path, tuple[float, str]] = {}
     jobs = _discovery_parallelism(len(entries))
+    if os.name == "nt":
+        has_pixi_describe = False
+        for _service_dir, _entry in entries:
+            try:
+                if _is_pixi_command(str(_entry.launch.command)):
+                    has_pixi_describe = True
+                    break
+            except Exception:
+                continue
+        if has_pixi_describe and jobs > 1:
+            jobs = 1
     if jobs <= 1 or len(entries) <= 1:
         for service_dir, entry in entries:
             payload, dt_ms, source = _describe_entry_timed(service_dir, entry)

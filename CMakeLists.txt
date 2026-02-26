@@ -50,13 +50,30 @@ function(f8_deploy_service_runtime target service_rel_dir)
         return()
     endif()
 
-    # Optional third arg: "NO_CLEAN" to allow multiple executables to share one runtime directory.
+    # Optional args:
+    # - "NO_CLEAN" to allow multiple executables to share one runtime directory.
+    # - "EXTRA_FILES" followed by one or more file paths to copy into deploy dir.
+    set(_extra_files "")
     set(_clean_dest "$<IF:$<BOOL:${F8_DEPLOY_SERVICE_CLEAN}>,1,0>")
-    if(ARGC GREATER 2)
-        if("${ARGV2}" STREQUAL "NO_CLEAN")
+    set(_arg_index 2)
+    while(_arg_index LESS ARGC)
+        set(_arg "${ARGV${_arg_index}}")
+        if("${_arg}" STREQUAL "NO_CLEAN")
             set(_clean_dest "0")
+        elseif("${_arg}" STREQUAL "EXTRA_FILES")
+            math(EXPR _arg_index "${_arg_index} + 1")
+            while(_arg_index LESS ARGC)
+                set(_next "${ARGV${_arg_index}}")
+                if("${_next}" STREQUAL "NO_CLEAN" OR "${_next}" STREQUAL "EXTRA_FILES")
+                    math(EXPR _arg_index "${_arg_index} - 1")
+                    break()
+                endif()
+                list(APPEND _extra_files "${_next}")
+                math(EXPR _arg_index "${_arg_index} + 1")
+            endwhile()
         endif()
-    endif()
+        math(EXPR _arg_index "${_arg_index} + 1")
+    endwhile()
 
     if(WIN32)
         set(_platform_dir "win")
@@ -79,6 +96,10 @@ function(f8_deploy_service_runtime target service_rel_dir)
         -Dclean_dest="${_clean_dest}"
         -P "${PROJECT_SOURCE_DIR}/cmake/deploy_service_runtime.cmake"
     )
+    if(_extra_files)
+        # Use '|' as transport separator to avoid ';' list splitting in Visual Studio custom commands.
+        list(APPEND _deploy_cmd -Dextra_files="$<JOIN:${_extra_files},|>")
+    endif()
 
     # Always provide a manual deploy target, so developers can disable POST_BUILD
     # and run deploy explicitly when needed.

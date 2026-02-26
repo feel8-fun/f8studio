@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -13,6 +14,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PIXI_TOML_PATH = REPO_ROOT / "pixi.toml"
 CPP_PRESET_PATH = REPO_ROOT / "build" / "Release" / "generators" / "CMakePresets.json"
+CPP_PRESET_FALLBACK_PATH = REPO_ROOT / "build" / "generators" / "CMakePresets.json"
 
 PYTHON_PACKAGE_DIRS: dict[str, str] = {
     "f8pysdk": "packages/f8pysdk",
@@ -128,9 +130,35 @@ def _bundle_studio_launcher(dist_dir: Path) -> None:
 
 
 def _build_cpp_runtime() -> None:
-    if not CPP_PRESET_PATH.is_file():
+    def _resolve_conan_build_preset_name() -> str:
+        for presets_path in (CPP_PRESET_PATH, CPP_PRESET_FALLBACK_PATH):
+            if not presets_path.is_file():
+                continue
+            presets = json.loads(presets_path.read_text(encoding="utf-8"))
+            build_presets = presets.get("buildPresets", [])
+            configure_presets = presets.get("configurePresets", [])
+            build_preset_names = {
+                preset.get("name") for preset in build_presets if isinstance(preset.get("name"), str)
+            }
+            configure_preset_names = {
+                preset.get("name") for preset in configure_presets if isinstance(preset.get("name"), str)
+            }
+
+            if "conan-release" in build_preset_names:
+                return "conan-release"
+            if "conan-default" in build_preset_names:
+                return "conan-default"
+            # Backward compatibility for generators that only emit configure preset names.
+            if "conan-release" in configure_preset_names:
+                return "conan-release"
+            if "conan-default" in configure_preset_names:
+                return "conan-default"
+        raise FileNotFoundError("Unable to resolve Conan CMake build preset name from generated CMakePresets.json")
+
+    if not CPP_PRESET_PATH.is_file() and not CPP_PRESET_FALLBACK_PATH.is_file():
         _run(["pixi", "run", "--frozen", "-e", "cpp", "cpp_bootstrap"])
 
+    preset_name = _resolve_conan_build_preset_name()
     _run(["pixi", "run", "--frozen", "-e", "cpp", "cpp_configure_release"])
     _run(
         [
@@ -142,7 +170,7 @@ def _build_cpp_runtime() -> None:
             "cmake",
             "--build",
             "--preset",
-            "conan-release",
+            preset_name,
             "--target",
             *CPP_DEPLOY_TARGETS,
             "--parallel",
@@ -162,7 +190,7 @@ def main() -> int:
 
     platform_tag, platform_dir, archive_format = _platform_info()
     dist_base_dir = REPO_ROOT / "build" / "dist"
-    dist_name = f"f8runtime-{platform_tag}"
+    dist_name = f"f8studio-{platform_tag}"
     dist_dir = dist_base_dir / dist_name
 
     if dist_dir.exists():
