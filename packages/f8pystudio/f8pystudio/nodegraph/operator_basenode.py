@@ -110,29 +110,68 @@ class F8StudioOperatorBaseNode(F8StudioBaseNode):
             if not name:
                 continue
             try:
-                if self.has_property(name):  # type: ignore[attr-defined]
-                    continue
-            except (AttributeError, RuntimeError, TypeError):
-                pass
-            try:
                 default_value = schema_default(s.valueSchema)
             except Exception:
                 default_value = None
             widget_type, items, prop_range = self._state_widget_for_schema(s.valueSchema)
             tooltip = str(s.description or "").strip() or None
+            has_prop = False
             try:
-                self.create_property(
-                    name,
-                    default_value,
-                    items=items,
-                    range=prop_range,
-                    widget_type=widget_type,
-                    widget_tooltip=tooltip,
-                    tab="State",
-                )
-            except Exception as exc:
-                logger.warning("Failed to create operator state property '%s': %s", name, exc)
-                continue
+                has_prop = bool(self.has_property(name))  # type: ignore[attr-defined]
+            except (AttributeError, RuntimeError, TypeError):
+                has_prop = False
+            if not has_prop:
+                try:
+                    self.create_property(
+                        name,
+                        default_value,
+                        items=items,
+                        range=prop_range,
+                        widget_type=widget_type,
+                        widget_tooltip=tooltip,
+                        tab="State",
+                    )
+                except Exception as exc:
+                    logger.warning("Failed to create operator state property '%s': %s", name, exc)
+                    continue
+            self._ensure_state_property_metadata(
+                name=name,
+                widget_type=widget_type,
+                items=items,
+                prop_range=prop_range,
+                tooltip=tooltip,
+            )
+
+    def _ensure_state_property_metadata(
+        self,
+        *,
+        name: str,
+        widget_type: int,
+        items: list[str] | None,
+        prop_range: tuple[float, float] | None,
+        tooltip: str | None,
+    ) -> None:
+        graph_model = self.graph.model if self.graph is not None else None
+        if graph_model is None:
+            return
+        attrs: dict[str, dict[str, dict[str, Any]]] = {
+            self.type_: {
+                name: {
+                    "widget_type": widget_type,
+                    "tab": "State",
+                }
+            }
+        }
+        if items:
+            attrs[self.type_][name]["items"] = list(items)
+        if prop_range is not None:
+            attrs[self.type_][name]["range"] = prop_range
+        if tooltip:
+            attrs[self.type_][name]["tooltip"] = tooltip
+        try:
+            graph_model.set_node_common_properties(attrs)
+        except Exception:
+            logger.exception("Failed to ensure operator state property metadata: node=%s field=%s", self.type_, name)
 
     def state_bool(self, name: str, *, default: bool) -> bool:
         value = self.get_property(name)

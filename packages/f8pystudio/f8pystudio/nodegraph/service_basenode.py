@@ -153,23 +153,65 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
             info = _state_field_info(s)
             if info is None:
                 continue
-            if self.has_property(info.name):  # type: ignore[attr-defined]
-                continue
             try:
                 default_value = schema_default(info.value_schema)
             except Exception:
                 default_value = None
             widget_type, items, prop_range = self._state_widget_for_schema(info.value_schema)
             tooltip = info.tooltip or None
-            self.create_property(
-                info.name,
-                default_value,
-                items=items,
-                range=prop_range,
+            has_prop = False
+            try:
+                has_prop = bool(self.has_property(info.name))  # type: ignore[attr-defined]
+            except (AttributeError, RuntimeError, TypeError):
+                has_prop = False
+            if not has_prop:
+                self.create_property(
+                    info.name,
+                    default_value,
+                    items=items,
+                    range=prop_range,
+                    widget_type=widget_type,
+                    widget_tooltip=tooltip,
+                    tab="State",
+                )
+            self._ensure_state_property_metadata(
+                name=info.name,
                 widget_type=widget_type,
-                widget_tooltip=tooltip,
-                tab="State",
+                items=items,
+                prop_range=prop_range,
+                tooltip=tooltip,
             )
+
+    def _ensure_state_property_metadata(
+        self,
+        *,
+        name: str,
+        widget_type: int,
+        items: list[str] | None,
+        prop_range: tuple[float, float] | None,
+        tooltip: str | None,
+    ) -> None:
+        graph_model = self.graph.model if self.graph is not None else None
+        if graph_model is None:
+            return
+        attrs: dict[str, dict[str, dict[str, Any]]] = {
+            self.type_: {
+                name: {
+                    "widget_type": widget_type,
+                    "tab": "State",
+                }
+            }
+        }
+        if items:
+            attrs[self.type_][name]["items"] = list(items)
+        if prop_range is not None:
+            attrs[self.type_][name]["range"] = prop_range
+        if tooltip:
+            attrs[self.type_][name]["tooltip"] = tooltip
+        try:
+            graph_model.set_node_common_properties(attrs)
+        except Exception:
+            logger.exception("Failed to ensure service state property metadata: node=%s field=%s", self.type_, name)
 
     @staticmethod
     def _state_widget_for_schema(value_schema) -> tuple[int, list[str] | None, tuple[float, float] | None]:
