@@ -11,7 +11,7 @@ No description.
 ## How to Run
 
 ```bash
-pixi run -e default python scripts/run_cpp_service.py --service-dir services/f8/cvkit/template_match --exe f8cvkit_template_match_service --env-var F8CVKIT_TEMPLATE_MATCH_EXE
+services/f8/cvkit/linux/f8cvkit_template_match_service
 ```
 
 - Workdir: `../../../../`
@@ -75,7 +75,7 @@ _None_
 ### Minimal Run Example
 
 ```bash
-pixi run -e default python scripts/run_cpp_service.py --service-dir services/f8/cvkit/template_match --exe f8cvkit_template_match_service --env-var F8CVKIT_TEMPLATE_MATCH_EXE
+services/f8/cvkit/linux/f8cvkit_template_match_service
 ```
 
 ### Common Pitfalls

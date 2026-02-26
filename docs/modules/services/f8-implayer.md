@@ -11,7 +11,7 @@ C++ MPV-based player service with shared-memory video output.
 ## How to Run
 
 ```bash
-pixi run -e default python scripts/run_cpp_service.py --service-dir services/f8/implayer --exe f8implayer_service --env-var F8IMPLAYER_EXE
+services/f8/implayer/linux/f8implayer_service
 ```
 
 - Workdir: `../../../`
@@ -113,7 +113,7 @@ _None_
 ### Minimal Run Example
 
 ```bash
-pixi run -e default python scripts/run_cpp_service.py --service-dir services/f8/implayer --exe f8implayer_service --env-var F8IMPLAYER_EXE
+services/f8/implayer/linux/f8implayer_service
 ```
 
 ### Common Pitfalls

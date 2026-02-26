@@ -11,7 +11,7 @@ No description.
 ## How to Run
 
 ```bash
-pixi run -e default python scripts/run_cpp_service.py --service-dir services/f8/screencap --exe f8screencap_service --env-var F8SCREENCAP_EXE
+services/f8/screencap/linux/f8screencap_service
 ```
 
 - Workdir: `../../../`
@@ -88,7 +88,7 @@ _None_
 ### Minimal Run Example
 
 ```bash
-pixi run -e default python scripts/run_cpp_service.py --service-dir services/f8/screencap --exe f8screencap_service --env-var F8SCREENCAP_EXE
+services/f8/screencap/linux/f8screencap_service
 ```
 
 ### Common Pitfalls

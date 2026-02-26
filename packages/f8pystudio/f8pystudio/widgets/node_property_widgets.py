@@ -2157,12 +2157,48 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         model = node.model
         graph_model = node.graph.model
 
-        common_props = graph_model.get_node_common_properties(node.type_)
+        common_props = graph_model.get_node_common_properties(node.type_) or {}
+        spec = _get_node_spec(node)
+        state_field_names: set[str] = set()
+        if spec is not None:
+            try:
+                for f in list(spec.stateFields or []):
+                    name = str(f.name or "").strip()
+                    if name:
+                        state_field_names.add(name)
+            except Exception:
+                state_field_names = set()
+
+        def _tab_name_for_property(prop_name: str) -> str:
+            try:
+                return str(model.get_tab_name(prop_name) or "Properties")
+            except KeyError:
+                if prop_name in state_field_names:
+                    logger.warning("Missing tab metadata for state property '%s'; fallback to State tab.", prop_name)
+                    return "State"
+                logger.warning("Missing tab metadata for property '%s'; fallback to Properties tab.", prop_name)
+                return "Properties"
+
+        def _widget_type_for_property(prop_name: str) -> int:
+            try:
+                value = model.get_widget_type(prop_name)
+            except KeyError:
+                if prop_name in state_field_names:
+                    logger.warning(
+                        "Missing widget metadata for state property '%s'; fallback to line edit.",
+                        prop_name,
+                    )
+                else:
+                    logger.warning("Missing widget metadata for property '%s'; fallback to line edit.", prop_name)
+                return NodePropWidgetEnum.QLINE_EDIT.value
+            if value is None:
+                return NodePropWidgetEnum.QLINE_EDIT.value
+            return int(value)
 
         # sort tabs and properties.
         tab_mapping = defaultdict(list)
         for prop_name, prop_val in model.custom_properties.items():
-            tab_name = model.get_tab_name(prop_name)
+            tab_name = _tab_name_for_property(str(prop_name))
             tab_mapping[tab_name].append((prop_name, prop_val))
 
         # add tabs.
@@ -2181,7 +2217,6 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
             prop_window = self.__tab_windows[tab]
             if tab == "State" and isinstance(prop_window, _F8StateStackContainer):
                 # Build the State tab from stateFields so we can attach edit/delete/add UI.
-                spec = _get_node_spec(node)
                 if spec is None:
                     editable_state = False
                 else:
@@ -2209,7 +2244,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                     if name not in values:
                         continue
                     value = values.get(name)
-                    wid_type = model.get_widget_type(name)
+                    wid_type = _widget_type_for_property(name)
                     if wid_type == 0:
                         continue
                     widget = _build_state_value_widget(
@@ -2248,7 +2283,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                         pass
                 continue
             for prop_name, value in tab_mapping[tab]:
-                wid_type = model.get_widget_type(prop_name)
+                wid_type = _widget_type_for_property(str(prop_name))
                 if wid_type == 0:
                     continue
                 widget = _build_state_value_widget(

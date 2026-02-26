@@ -1,8 +1,8 @@
 site_name: F8Studio Documentation
 site_description: Official guides for installation, module usage, and scenario-based workflows.
-site_url: https://docs.f8studio.example
-repo_name: feel8/f8studio
-repo_url: https://github.com/feel8/f8studio
+site_url: https://studio.feel8.fun
+repo_name: Feel8-fun/F8Studio
+repo_url: https://github.com/feel8-fun/f8studio
 
 docs_dir: docs
 site_dir: site

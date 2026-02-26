@@ -6,7 +6,7 @@
 ### Minimal Run Example
 
 ```bash
-pixi run -e default python scripts/run_cpp_service.py --service-dir services/f8/implayer --exe f8implayer_service --env-var F8IMPLAYER_EXE
+services/f8/implayer/linux/f8implayer_service
 ```
 
 ### Common Pitfalls

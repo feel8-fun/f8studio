@@ -13,6 +13,35 @@ from ..nodegraph.viz_operator_nodeitem import F8StudioVizOperatorNodeItem
 from ..ui_bus import UiCommand
 
 logger = logging.getLogger(__name__)
+_WEBENGINE_PROFILE_CONFIGURED = False
+
+
+def _configure_default_webengine_profile() -> None:
+    global _WEBENGINE_PROFILE_CONFIGURED
+    if _WEBENGINE_PROFILE_CONFIGURED:
+        return
+    try:
+        from PySide6 import QtWebEngineCore  # type: ignore[import-not-found]
+    except ImportError:
+        logger.exception("failed to import QtWebEngineCore for cache configuration")
+        return
+
+    app_data_dir = QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.AppDataLocation)
+    if not app_data_dir:
+        logger.error("Qt AppDataLocation is unavailable; web cache path is not configured")
+        return
+
+    cache_dir = Path(app_data_dir) / "webengine_cache"
+    storage_dir = Path(app_data_dir) / "webengine_storage"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    storage_dir.mkdir(parents=True, exist_ok=True)
+
+    profile = QtWebEngineCore.QWebEngineProfile.defaultProfile()
+    profile.setHttpCacheType(QtWebEngineCore.QWebEngineProfile.DiskHttpCache)
+    profile.setCachePath(str(cache_dir))
+    profile.setPersistentStoragePath(str(storage_dir))
+    profile.setPersistentCookiesPolicy(QtWebEngineCore.QWebEngineProfile.ForcePersistentCookies)
+    _WEBENGINE_PROFILE_CONFIGURED = True
 
 
 class _ViewerHandle(Protocol):
@@ -108,15 +137,31 @@ class _Skeleton3DViewerWindow(QtWidgets.QDialog):
             return
 
         self._view = QtWebEngineWidgets.QWebEngineView(self)
+        _configure_default_webengine_profile()
         self._view.setContextMenuPolicy(QtCore.Qt.NoContextMenu)
+        self._enable_remote_asset_access()
         self._view.loadFinished.connect(self._on_page_loaded)  # type: ignore[attr-defined]
         layout.addWidget(self._view, 1)
         self._load_index_html()
         self._on_viewer_status_changed("loading")
 
+    def _enable_remote_asset_access(self) -> None:
+        if self._view is None:
+            return
+        try:
+            from PySide6 import QtWebEngineCore  # type: ignore[import-not-found]
+
+            settings = self._view.settings()
+            settings.setAttribute(
+                QtWebEngineCore.QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls,
+                True,
+            )
+        except (AttributeError, RuntimeError, TypeError, ImportError):
+            logger.exception("failed to enable remote URL access for skeleton3d viewer")
+
     @staticmethod
     def _asset_dir() -> Path:
-        return Path(__file__).resolve().parent / "web_assets" / "skeleton3d"
+        return Path(__file__).resolve().parent / "web_assets" / "viz_three_d"
 
     def _load_index_html(self) -> None:
         if self._view is None:

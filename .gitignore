@@ -17,10 +17,10 @@ node_modules/
 *.log
 *.tmp
 tmp/
+.ccache-tmp/
 .uv-cache/
 .uv/
 .pixi/
-pixi.lock
 uv.lock
 
 # Ignore IDE-specific folder

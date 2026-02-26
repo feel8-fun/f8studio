@@ -19,9 +19,16 @@ cd f8studio
 Use pixi tasks for runtime commands:
 
 ```bash
-pixi run -e default studio
+pixi run -e default f8pystudio
 pixi run -e default runner --help
 ```
+
+Build a Studio launcher with repo icon `assets/icon.ico`:
+
+```bash
+pixi run -e ci build_studio_launcher
+```
+- Output is a Nuitka-built executable under `build/dist/` (platform-specific extension/name).
 
 ## Service Runtime Basics
 
@@ -32,6 +39,35 @@ Static discovery metadata is stored in `services/**/describe.json` and can be re
 ```bash
 pixi run -e default update_describes
 ```
+
+## C++ Build (Pixi + Conan + CMake)
+
+Bootstrap dependencies and configure/build C++ services:
+
+```bash
+pixi run -e cpp cpp_bootstrap
+pixi run -e cpp cpp_configure_release
+pixi run -e cpp cpp_build_release
+```
+
+Refresh lockfiles when dependency versions change:
+
+```bash
+pixi lock
+pixi run -e cpp cpp_lock_refresh
+```
+
+Build a distributable runtime bundle (`pixi.toml + pixi.lock + services/** + wheels/**`):
+
+```bash
+pixi run -e ci dist_ci
+```
+
+Notes:
+
+- CI on Windows uses GitHub-hosted runner images plus `msvc-dev-cmd`; no manual Visual Studio setup is needed in CI.
+- Local Windows development still requires Visual Studio Build Tools for native compilation.
+- On Linux, `libmpv` and `ytdlp` currently use Conan recipes with `apt` system requirements.
 
 ## Documentation Toolchain
 

@@ -49,6 +49,8 @@ class F8Build(ConanFile):
         # Ensure OpenCV contrib modules are available for CV services.
         # (e.g. opencv_tracking for CSRT/KCF trackers)
         self.options["opencv"].tracking = True
+        # Disable FFmpeg integration to avoid pulling ffmpeg/libx264/libx265.
+        self.options["opencv"].with_ffmpeg = False
 
     def configure(self):
         # When building shared libs, fPIC option is not needed
@@ -85,8 +87,6 @@ class F8Build(ConanFile):
         self.requires("glm/1.0.1")
 
         # Video Player
-        self.requires("libmpv/20251124")
-        self.requires("ytdlp/2025.11.12")
         self.requires("iconfontcppheaders/cci.20240620")
         self.requires("opencv/4.12.0")
         self.requires("sdl/3.2.20")

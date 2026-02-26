@@ -28,7 +28,12 @@ endif()
 
 file(MAKE_DIRECTORY "${dest_dir}")
 
-if(DEFINED clean_dest AND clean_dest)
+if(DEFINED clean_dest)
+  string(STRIP "${clean_dest}" clean_dest)
+  string(REGEX REPLACE "^\\\"(.*)\\\"$" "\\1" clean_dest "${clean_dest}")
+endif()
+
+if(DEFINED clean_dest AND NOT "${clean_dest}" STREQUAL "" AND clean_dest)
   file(GLOB _old_files
     "${dest_dir}/*.dll"
     "${dest_dir}/*.exe"
@@ -102,6 +107,23 @@ foreach(_dep IN LISTS _resolved)
     COMMAND_ERROR_IS_FATAL ANY
   )
 endforeach()
+
+if(DEFINED extra_files AND NOT "${extra_files}" STREQUAL "")
+  string(STRIP "${extra_files}" extra_files)
+  string(REGEX REPLACE "^\\\"(.*)\\\"$" "\\1" extra_files "${extra_files}")
+  string(REPLACE "|" ";" extra_files "${extra_files}")
+  foreach(_extra IN LISTS extra_files)
+    if(NOT EXISTS "${_extra}")
+      message(WARNING "deploy_service_runtime.cmake: extra file does not exist, skipping: ${_extra}")
+      continue()
+    endif()
+    get_filename_component(_extra_name "${_extra}" NAME)
+    execute_process(
+      COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_extra}" "${dest_dir}/${_extra_name}"
+      COMMAND_ERROR_IS_FATAL ANY
+    )
+  endforeach()
+endif()
 
 if(_unresolved)
   list(JOIN _unresolved "\n  " _u)
