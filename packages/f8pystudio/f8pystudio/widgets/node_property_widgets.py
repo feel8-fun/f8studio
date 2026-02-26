@@ -110,31 +110,29 @@ def _state_input_is_connected(node: Any, field_name: str) -> bool:
             connected.pop(stale_id, None)
         return False
 
-def _model_extra(obj: Any) -> dict[str, Any]:
-    try:
-        extra = obj.model_extra
-    except Exception:
-        try:
-            extra = obj.__pydantic_extra__
-        except Exception:
-            return {}
-    if not isinstance(extra, dict):
-        return {}
-    return dict(extra)
-
-
-def _extra_bool(obj: Any, key: str, default: bool = False) -> bool:
-    extra = _model_extra(obj)
-    if key in extra:
-        return bool(extra.get(key))
-    return bool(default)
-
-
 def _get_node_spec(node: Any) -> Any | None:
     try:
         return node.spec
     except Exception:
         return None
+
+
+def _node_missing_lock_info(node: Any) -> tuple[bool, str]:
+    if node is None:
+        return False, ""
+    try:
+        model = node.model
+    except Exception:
+        return False, ""
+    try:
+        f8_sys = model.f8_sys
+    except Exception:
+        return False, ""
+    if not isinstance(f8_sys, dict):
+        return False, ""
+    missing_locked = bool(f8_sys.get("missingLocked"))
+    missing_type = str(f8_sys.get("missingType") or "").strip()
+    return missing_locked, missing_type
 
 
 def _to_jsonable(value: Any) -> Any:
@@ -861,6 +859,7 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
         super().__init__(parent)
         self._node = node
         self._on_apply = on_apply
+        self._missing_locked = False
         self._editable_exec_in = False
         self._editable_exec_out = False
         self._editable_data_in = False
@@ -898,6 +897,7 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
         self._load_from_spec()
 
     def _load_from_spec(self) -> None:
+        self._missing_locked, _ = _node_missing_lock_info(self._node)
         try:
             spec = self._node.spec
         except Exception:
@@ -914,31 +914,19 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
         if spec is None:
             return
 
-        try:
-            self._editable_data_in = bool(spec.editableDataInPorts)  # type: ignore[attr-defined]
-        except Exception:
-            self._editable_data_in = _extra_bool(spec, "editableDataInPorts", False)
-        try:
-            self._editable_data_out = bool(spec.editableDataOutPorts)  # type: ignore[attr-defined]
-        except Exception:
-            self._editable_data_out = _extra_bool(spec, "editableDataOutPorts", False)
+        self._editable_data_in = bool(spec.editableDataInPorts)  # type: ignore[attr-defined]
+        self._editable_data_out = bool(spec.editableDataOutPorts)  # type: ignore[attr-defined]
         if is_operator:
-            try:
-                self._editable_exec_in = bool(spec.editableExecInPorts)  # type: ignore[attr-defined]
-            except Exception:
-                self._editable_exec_in = _extra_bool(spec, "editableExecInPorts", False)
-            try:
-                self._editable_exec_out = bool(spec.editableExecOutPorts)  # type: ignore[attr-defined]
-            except Exception:
-                self._editable_exec_out = _extra_bool(spec, "editableExecOutPorts", False)
+            self._editable_exec_in = bool(spec.editableExecInPorts)  # type: ignore[attr-defined]
+            self._editable_exec_out = bool(spec.editableExecOutPorts)  # type: ignore[attr-defined]
         else:
             self._editable_exec_in = False
             self._editable_exec_out = False
 
-        self._sec_exec_in.set_add_visible(bool(self._editable_exec_in))
-        self._sec_exec_out.set_add_visible(bool(self._editable_exec_out))
-        self._sec_data_in.set_add_visible(bool(self._editable_data_in))
-        self._sec_data_out.set_add_visible(bool(self._editable_data_out))
+        self._sec_exec_in.set_add_visible(bool(self._editable_exec_in) and not self._missing_locked)
+        self._sec_exec_out.set_add_visible(bool(self._editable_exec_out) and not self._missing_locked)
+        self._sec_data_in.set_add_visible(bool(self._editable_data_in) and not self._missing_locked)
+        self._sec_data_out.set_add_visible(bool(self._editable_data_out) and not self._missing_locked)
 
         if is_operator:
             for name in list(spec.execInPorts or []):
@@ -967,7 +955,8 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
         row.name_committed.connect(lambda _v: self._commit())
         row.setProperty("_port_dir", "exec_in" if is_in else "exec_out")
         editable = bool(self._editable_exec_in if is_in else self._editable_exec_out)
-        row.set_row_editable(allow_rename=editable, allow_delete=editable, allow_edit=editable)
+        allow_edit = editable and not self._missing_locked
+        row.set_row_editable(allow_rename=allow_edit, allow_delete=allow_edit, allow_edit=allow_edit)
         return row
 
     def _make_data_row(self, port: F8DataPortSpec, *, is_in: bool) -> _F8SpecNameRow:
@@ -981,12 +970,18 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
         row.setProperty("_port_dir", "data_in" if is_in else "data_out")
         editable = bool(self._editable_data_in if is_in else self._editable_data_out)
         # Even when spec ports are not editable, allow opening the dialog to edit UI-only fields (showOnNode).
-        row.set_row_editable(allow_rename=editable, allow_delete=editable, allow_edit=True)
+        row.set_row_editable(
+            allow_rename=bool(editable and not self._missing_locked),
+            allow_delete=bool(editable and not self._missing_locked),
+            allow_edit=not self._missing_locked,
+        )
         show = bool(self._node.data_port_show_on_node(str(port.name or ""), is_in=bool(is_in)))  # type: ignore[attr-defined]
         row.set_show_on_node(bool(show))
         return row
 
     def _toggle_data_show_on_node(self, row: _F8SpecNameRow, show_on_node: bool) -> None:
+        if self._missing_locked:
+            return
         dir_s = str(row.property("_port_dir") or "")
         is_in = dir_s == "data_in"
         port = row.property("_port")
@@ -1009,6 +1004,8 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
         return "\n".join(parts)
 
     def _edit_exec(self, row: _F8SpecNameRow) -> None:
+        if self._missing_locked:
+            return
         dir_s = str(row.property("_port_dir") or "")
         if (dir_s == "exec_in" and not self._editable_exec_in) or (dir_s == "exec_out" and not self._editable_exec_out):
             return
@@ -1019,6 +1016,8 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
         self._commit()
 
     def _edit_data(self, row: _F8SpecNameRow) -> None:
+        if self._missing_locked:
+            return
         dir_s = str(row.property("_port_dir") or "")
         ui_only = bool((dir_s == "data_in" and not self._editable_data_in) or (dir_s == "data_out" and not self._editable_data_out))
         port = row.property("_port")
@@ -1055,6 +1054,8 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
         )
 
     def _rename_data(self, row: _F8SpecNameRow, name: str) -> None:
+        if self._missing_locked:
+            return
         dir_s = str(row.property("_port_dir") or "")
         if (dir_s == "data_in" and not self._editable_data_in) or (dir_s == "data_out" and not self._editable_data_out):
             return
@@ -1069,6 +1070,8 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
         self._commit()
 
     def _delete_row(self, row: QtWidgets.QWidget) -> None:
+        if self._missing_locked:
+            return
         dir_s = str(row.property("_port_dir") or "")
         if dir_s == "exec_in" and not self._editable_exec_in:
             return
@@ -1083,6 +1086,8 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
         self._commit()
 
     def _add_exec(self, is_in: bool) -> None:
+        if self._missing_locked:
+            return
         if not (self._editable_exec_in if is_in else self._editable_exec_out):
             return
         row = self._make_exec_row("", is_in=is_in)
@@ -1090,6 +1095,8 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
         row.name_edit.setFocus()
 
     def _add_data(self, is_in: bool) -> None:
+        if self._missing_locked:
+            return
         if not (self._editable_data_in if is_in else self._editable_data_out):
             return
         port = F8DataPortSpec(
@@ -1100,6 +1107,8 @@ class _F8SpecPortEditor(QtWidgets.QWidget):
         self._edit_data(row)
 
     def _commit(self) -> None:
+        if self._missing_locked:
+            return
         if self._node is None:
             return
         spec = self._node.spec
@@ -1431,6 +1440,7 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
         super().__init__(parent)
         self._node = node
         self._on_apply = on_apply
+        self._missing_locked = False
         self._bridge_proc_hooked = False
         self._cmd_rows: dict[str, _F8CommandRow] = {}
 
@@ -1500,12 +1510,14 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
         self._apply_running_state(bool(running))
 
     def _apply_running_state(self, running: bool) -> None:
-        enabled = bool(running)
+        enabled = bool(running) and not self._missing_locked
+        reason = "Missing dependency" if self._missing_locked else "Service not running"
         for row in list(self._cmd_rows.values()):
-            row.set_invoke_enabled(enabled)
+            row.set_invoke_enabled(enabled, disabled_reason=reason)
 
     def _load(self) -> None:
         self._ensure_bridge_process_hook()
+        self._missing_locked, _ = _node_missing_lock_info(self._node)
         self._sec.clear()
         self._cmd_rows = {}
         try:
@@ -1515,11 +1527,8 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
         if not isinstance(spec, F8ServiceSpec):
             self._sec.set_add_visible(False)
             return
-        try:
-            editable = bool(spec.editableCommands)  # type: ignore[attr-defined]
-        except Exception:
-            editable = _extra_bool(spec, "editableCommands", False)
-        self._sec.set_add_visible(bool(editable))
+        editable = bool(spec.editableCommands)
+        self._sec.set_add_visible(bool(editable) and not self._missing_locked)
 
         running = self._is_service_running()
         try:
@@ -1544,8 +1553,8 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
             row = _F8CommandRow(
                 name=name,
                 description=desc,
-                allow_edit=True,
-                allow_delete=editable,
+                allow_edit=not self._missing_locked,
+                allow_delete=bool(editable) and not self._missing_locked,
                 show_on_node=bool(show_on_node),
             )
             row.invoke_clicked.connect(self._invoke_command)
@@ -1553,13 +1562,15 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
             row.delete_clicked.connect(self._delete_command)
             row.show_on_node_changed.connect(lambda v, _n=str(name): self._toggle_command_show_on_node(_n, bool(v)))  # type: ignore[attr-defined]
             try:
-                row.set_invoke_enabled(bool(running))
+                row.set_invoke_enabled(bool(running) and not self._missing_locked, disabled_reason="Missing dependency")
             except (AttributeError, RuntimeError, TypeError):
                 logger.exception("Failed to apply running-state to command row command=%s", name)
             self._cmd_rows[str(name)] = row
             self._sec.add_row(row)
 
     def _toggle_command_show_on_node(self, name: str, show_on_node: bool) -> None:
+        if self._missing_locked:
+            return
         n = str(name or "").strip()
         if not n:
             return
@@ -1676,6 +1687,8 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
             return args
 
     def _invoke_command(self, name: str) -> None:
+        if self._missing_locked:
+            return
         try:
             spec = self._node.spec
         except Exception:
@@ -1732,16 +1745,15 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "Command failed", str(e))
 
     def _add_command(self) -> None:
+        if self._missing_locked:
+            return
         try:
             spec = self._node.spec
         except Exception:
             spec = None
         if not isinstance(spec, F8ServiceSpec):
             return
-        try:
-            editable = bool(spec.editableCommands)  # type: ignore[attr-defined]
-        except Exception:
-            editable = _extra_bool(spec, "editableCommands", False)
+        editable = bool(spec.editableCommands)
         if not editable:
             return
         cmd = F8Command(name="", description=None, showOnNode=False, params=[])
@@ -1759,16 +1771,15 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
         self._load()
 
     def _edit_command(self, name: str) -> None:
+        if self._missing_locked:
+            return
         try:
             spec = self._node.spec
         except Exception:
             spec = None
         if not isinstance(spec, F8ServiceSpec):
             return
-        try:
-            editable = bool(spec.editableCommands)  # type: ignore[attr-defined]
-        except Exception:
-            editable = _extra_bool(spec, "editableCommands", False)
+        editable = bool(spec.editableCommands)
         cmds = list(spec.commands or [])
         idx = -1
         for i, c in enumerate(cmds):
@@ -1822,16 +1833,15 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
         _set_command_show_on_node_override(node, name=n, show_on_node=bool(show_on_node), base_show_on_node=bool(base_show))
 
     def _delete_command(self, name: str) -> None:
+        if self._missing_locked:
+            return
         try:
             spec = self._node.spec
         except Exception:
             spec = None
         if not isinstance(spec, F8ServiceSpec):
             return
-        try:
-            editable = bool(spec.editableCommands)  # type: ignore[attr-defined]
-        except Exception:
-            editable = _extra_bool(spec, "editableCommands", False)
+        editable = bool(spec.editableCommands)
         if not editable:
             return
         n = str(name or "").strip()
@@ -1910,16 +1920,44 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         name_layout.addWidget(QtWidgets.QLabel("name"))
         name_layout.addWidget(self.name_wgt)
         name_layout.addWidget(close_btn)
+        missing_locked, missing_type = _node_missing_lock_info(node)
+        self._missing_banner = QtWidgets.QLabel()
+        self._missing_banner.setStyleSheet(
+            "color: rgb(255, 224, 138); background: rgba(80, 60, 0, 70); border-radius: 4px; padding: 4px 6px;"
+        )
+        self._missing_banner.setVisible(bool(missing_locked))
+        if missing_locked:
+            self._missing_banner.setText(f"Missing dependency: {missing_type or 'unknown type'}")
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(4)
         layout.addLayout(name_layout)
+        layout.addWidget(self._missing_banner)
         layout.addWidget(self.__tab)
         layout.addWidget(self.type_wgt)
 
         self._port_connections = self._read_node(node)
+        if missing_locked:
+            self._apply_missing_lock_read_only()
 
     def __repr__(self):
         return "<{} object at {}>".format(self.__class__.__name__, hex(id(self)))
+
+    def _apply_missing_lock_read_only(self) -> None:
+        try:
+            self.name_wgt.setDisabled(True)
+            self.name_wgt.setToolTip("Locked: missing dependency")
+        except (AttributeError, RuntimeError, TypeError):
+            logger.exception("Failed to set name widget readonly on missing-locked node")
+        for widget in self.get_all_property_widgets():
+            if widget is self.name_wgt:
+                continue
+            try:
+                _set_read_only_widget(widget, read_only=True)
+            except Exception:
+                try:
+                    widget.setEnabled(False)
+                except Exception:
+                    logger.exception("Failed to lock property widget for missing-locked node")
 
     def _on_close(self):
         """
@@ -1968,6 +2006,9 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         """
         Open the edit dialog for a state field and apply changes.
         """
+        missing_locked, _missing_type = _node_missing_lock_info(self._node)
+        if missing_locked:
+            return
         name = str(field_name or "").strip()
         if not name:
             return
@@ -1996,10 +2037,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         if current is None:
             return
 
-        try:
-            editable = bool(spec.editableStateFields)  # type: ignore[attr-defined]
-        except Exception:
-            editable = _extra_bool(spec, "editableStateFields", False)
+        editable = bool(spec.editableStateFields)
         try:
             required = bool(current.required)
         except Exception:
@@ -2017,19 +2055,19 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         else:
             self._apply_state_field_spec_replace(name, new_field)
 
-        self._refresh()
+        self._on_spec_applied()
 
     def add_state_field(self) -> None:
+        missing_locked, _missing_type = _node_missing_lock_info(self._node)
+        if missing_locked:
+            return
         node = self._node
         if node is None:
             return
         spec = _get_node_spec(node)
         if not isinstance(spec, (F8ServiceSpec, F8OperatorSpec)):
             return
-        try:
-            editable = bool(spec.editableStateFields)  # type: ignore[attr-defined]
-        except Exception:
-            editable = _extra_bool(spec, "editableStateFields", False)
+        editable = bool(spec.editableStateFields)
         if not editable:
             return
         field = F8StateSpec(name="", valueSchema=_schema_from_json_obj({"type": "any"}), access=F8StateAccess.rw)
@@ -2040,9 +2078,12 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         if not str(new_field.name or "").strip():
             return
         self._apply_state_field_spec_add(new_field)
-        self._refresh()
+        self._on_spec_applied()
 
     def delete_state_field(self, field_name: str) -> None:
+        missing_locked, _missing_type = _node_missing_lock_info(self._node)
+        if missing_locked:
+            return
         name = str(field_name or "").strip()
         if not name:
             return
@@ -2052,10 +2093,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         spec = _get_node_spec(node)
         if not isinstance(spec, (F8ServiceSpec, F8OperatorSpec)):
             return
-        try:
-            editable = bool(spec.editableStateFields)  # type: ignore[attr-defined]
-        except Exception:
-            editable = _extra_bool(spec, "editableStateFields", False)
+        editable = bool(spec.editableStateFields)
         if not editable:
             return
         # required fields are protected
@@ -2074,7 +2112,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         if QtWidgets.QMessageBox.question(self, "Delete state field", f"Delete '{name}'?") != QtWidgets.QMessageBox.Yes:
             return
         self._apply_state_field_spec_delete(name)
-        self._refresh()
+        self._on_spec_applied()
 
     def _apply_state_field_spec_replace(self, old_name: str, new_field: F8StateSpec) -> None:
         node = self._node
@@ -2121,6 +2159,9 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         _set_state_field_ui_override(node, field_name=name, base=base or edited, edited=edited)
 
     def _toggle_state_field_show_on_node(self, field_name: str, show_on_node: bool) -> None:
+        missing_locked, _missing_type = _node_missing_lock_info(self._node)
+        if missing_locked:
+            return
         node = self._node
         if node is None:
             return
@@ -2156,6 +2197,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         """
         model = node.model
         graph_model = node.graph.model
+        missing_locked, _missing_type = _node_missing_lock_info(node)
 
         common_props = graph_model.get_node_common_properties(node.type_) or {}
         spec = _get_node_spec(node)
@@ -2220,11 +2262,8 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                 if spec is None:
                     editable_state = False
                 else:
-                    try:
-                        editable_state = bool(spec.editableStateFields)  # type: ignore[attr-defined]
-                    except Exception:
-                        editable_state = _extra_bool(spec, "editableStateFields", False)
-                prop_window.set_add_visible(bool(editable_state))
+                    editable_state = bool(spec.editableStateFields)  # type: ignore[attr-defined]
+                prop_window.set_add_visible(bool(editable_state) and not missing_locked)
                 # Map property values.
                 values = dict(model.custom_properties)
                 # Order by effective state fields (applies UI overrides).
@@ -2259,7 +2298,7 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                     if name in common_props.keys() and "tooltip" in common_props[name].keys():
                         tooltip = common_props[name]["tooltip"]
                     access = _state_field_access(node, name)
-                    read_only = access == F8StateAccess.ro or _state_input_is_connected(node, name)
+                    read_only = access == F8StateAccess.ro or _state_input_is_connected(node, name) or missing_locked
                     _set_read_only_widget(widget, read_only=bool(read_only))
                     # Delete is only allowed when editableStateFields and not required.
                     required = bool(f.required)
@@ -2320,20 +2359,14 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
                 try:
                     ui_control_raw = _state_field_ui_control(node, prop_name)
                     ui_control = str(ui_control_raw or "").strip().lower()
-                    spec = _get_node_spec(node)
-                    is_legacy_python_script_code = (
-                        isinstance(spec, F8OperatorSpec)
-                        and str(spec.operatorClass or "") == "f8.python_script"
-                        and str(prop_name) == "code"
-                    )
-                    if ui_control == "code" or is_legacy_python_script_code:
+                    if ui_control == "code":
                         ui_language = _state_field_ui_language(node, prop_name)
                         widget = _F8CodeButtonPropWidget(title=f"{node.name()} — {prop_name}", language=ui_language or "plaintext")
                         widget.set_name(prop_name)
                 except Exception:
                     logger.exception("Failed to build code editor widget for property '%s'", prop_name)
                 access = _state_field_access(node, prop_name)
-                if access == F8StateAccess.ro:
+                if access == F8StateAccess.ro or missing_locked:
                     _apply_read_only_widget(widget)
                 # Enrich tooltips for option/switch editors.
                 if isinstance(widget, (F8PropOptionCombo, F8PropMultiSelect, F8PropBoolSwitch)):
@@ -2455,14 +2488,6 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
             logger.exception("sync_from_spec failed before reload")
         self.reload()
 
-    def _refresh(self) -> None:
-        """
-        Backwards-compatible alias for triggering a node sync + UI reload.
-
-        Some editor actions (eg. state field schema edits) still call `_refresh()`.
-        """
-        self._on_spec_applied()
-
     def reload(self) -> None:
         """
         Coalesce multiple reload requests into a single UI rebuild.
@@ -2524,6 +2549,15 @@ class F8StudioNodePropEditorWidget(QtWidgets.QWidget):
         self.__tab_windows = {}
         self._option_pool_dependents = {}
         self._port_connections = self._read_node(node)
+        missing_locked, missing_type = _node_missing_lock_info(node)
+        try:
+            self._missing_banner.setVisible(bool(missing_locked))
+            if missing_locked:
+                self._missing_banner.setText(f"Missing dependency: {missing_type or 'unknown type'}")
+        except (AttributeError, RuntimeError, TypeError):
+            logger.exception("Failed to update missing banner")
+        if missing_locked:
+            self._apply_missing_lock_read_only()
         if prev_tab:
             try:
                 for i in range(self.__tab.count()):

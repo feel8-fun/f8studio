@@ -25,7 +25,7 @@ def register_pystudio_specs(registry: RuntimeNodeRegistry | None = None) -> Runt
             label="PyStudio",
             description="Service Graph Editor in Python and Qt.",
             tags=["__hidden__", "editor", "ui", "python", "py"],
-            rendererClass="",
+            rendererClass="default_svc",
             stateFields=[
                 F8StateSpec(
                     name="tickMs",

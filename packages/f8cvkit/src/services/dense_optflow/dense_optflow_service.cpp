@@ -533,7 +533,7 @@ json DenseOptflowService::describe() {
   service["serviceClass"] = "f8.cvkit.denseoptflow";
   service["label"] = "CVKit Dense Optical Flow";
   service["version"] = "0.0.1";
-  service["rendererClass"] = "defaultService";
+  service["rendererClass"] = "default_svc";
   service["tags"] = json::array({"cv", "optical_flow", "flow_field"});
   service["stateFields"] = json::array({
       state_field("inputShmName", schema_string(), "rw", "Input Video SHM", "Input SHM name (e.g. shm.xxx.video).", true),

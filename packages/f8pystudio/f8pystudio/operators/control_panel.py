@@ -41,7 +41,7 @@ class ControlPanelRuntimeNode(OperatorNode):
         dataOutPorts=[],
         execInPorts=[],
         execOutPorts=[],
-        rendererClass="",
+        rendererClass="default_op",
         editableStateFields=True,
         stateFields=[
             F8StateSpec(

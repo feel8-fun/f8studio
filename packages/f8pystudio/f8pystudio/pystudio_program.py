@@ -18,6 +18,8 @@ from .extensions import ExtensionRegistry, StudioPluginManifest
 from .pystudio_node_registry import SERVICE_CLASS, register_pystudio_specs
 
 logger = logging.getLogger(__name__)
+MISSING_SERVICE_NODE_TYPE = "svc.f8.missing.service"
+MISSING_OPERATOR_NODE_TYPE = "svc.f8.missing.operator"
 
 
 class PyStudioProgram:
@@ -110,24 +112,15 @@ class PyStudioProgram:
     @staticmethod
     def build_node_classes() -> list[type]:
         from .render_nodes import RenderNodeRegistry
-        from .nodegraph.missing_operator_basenode import F8StudioMissingOperatorBaseNode
-        from .nodegraph.missing_service_basenode import F8StudioMissingServiceBaseNode
-        from f8pysdk import (
-            F8OperatorSchemaVersion,
-            F8OperatorSpec,
-            F8ServiceSchemaVersion,
-            F8ServiceSpec,
-            F8StateAccess,
-            F8StateSpec,
-        )
-        from f8pysdk.schema_helpers import any_schema, string_schema
+        from .nodegraph.missing_operator_basenode import F8StudioOperatorMissingNode
+        from .nodegraph.missing_service_basenode import F8StudioServiceMissingNode
 
         render_node_reg = RenderNodeRegistry.instance()
         service_catalog = ServiceCatalog.instance()
 
         generated_node_cls: list[type] = []
         for svc in service_catalog.services.all():
-            base_cls = render_node_reg.get(svc.rendererClass, fallback_key="default_svc")
+            base_cls = render_node_reg.get(svc.rendererClass, node_kind="service")
             node_cls = type(
                 svc.serviceClass,
                 (base_cls,),
@@ -136,7 +129,7 @@ class PyStudioProgram:
             generated_node_cls.append(node_cls)
 
         for op in service_catalog.operators.all():
-            base_cls = render_node_reg.get(op.rendererClass, fallback_key="default_op")
+            base_cls = render_node_reg.get(op.rendererClass, node_kind="operator")
             node_cls = type(
                 op.operatorClass,
                 (base_cls,),
@@ -144,92 +137,20 @@ class PyStudioProgram:
             )
             generated_node_cls.append(node_cls)
 
-        # Always register a placeholder node class so sessions can load even if
-        # discovery is missing some operator types.
-        missing_spec = F8OperatorSpec(
-            schemaVersion=F8OperatorSchemaVersion.f8operator_1,
-            serviceClass="f8.missing",
-            operatorClass="f8.missing.operator",
-            version="0.0.1",
-            label="Missing Operator",
-            description="Placeholder for an operator node whose type is not registered in this Studio session.",
-            tags=["__missing__"],
-            dataInPorts=[],
-            dataOutPorts=[],
-            execInPorts=[],
-            execOutPorts=[],
-            editableDataInPorts=False,
-            editableDataOutPorts=False,
-            editableExecInPorts=False,
-            editableExecOutPorts=False,
-            editableStateFields=False,
-            stateFields=[
-                F8StateSpec(
-                    name="missingType",
-                    label="Missing Type",
-                    description="Original `type_` string from the session file.",
-                    valueSchema=string_schema(),
-                    access=F8StateAccess.ro,
-                    showOnNode=False,
-                    required=False,
-                ),
-                F8StateSpec(
-                    name="missingSpec",
-                    label="Missing Spec",
-                    description="Original `f8_spec` JSON from the session file.",
-                    valueSchema=any_schema(),
-                    access=F8StateAccess.ro,
-                    showOnNode=False,
-                    required=False,
-                ),
-            ],
+        missing_service_cls = type(
+            "service",
+            (F8StudioServiceMissingNode,),
+            {"__identifier__": "svc.f8.missing", "NODE_NAME": "Missing Service"},
         )
-        missing_node_cls = type(
-            "f8.missing.operator",
-            (F8StudioMissingOperatorBaseNode,),
-            {"__identifier__": "f8.missing", "NODE_NAME": "Missing Operator", "SPEC_TEMPLATE": missing_spec},
+        missing_operator_cls = type(
+            "operator",
+            (F8StudioOperatorMissingNode,),
+            {"__identifier__": "svc.f8.missing", "NODE_NAME": "Missing Operator"},
         )
-        generated_node_cls.append(missing_node_cls)
-
-        missing_service_spec = F8ServiceSpec(
-            schemaVersion=F8ServiceSchemaVersion.f8service_1,
-            serviceClass="f8.missing",
-            version="0.0.1",
-            label="Missing Service",
-            description="Placeholder for a service/container node whose type is not registered in this Studio session.",
-            tags=["__missing__"],
-            rendererClass="default_container",
-            stateFields=[
-                F8StateSpec(
-                    name="missingType",
-                    label="Missing Type",
-                    description="Original `type_` string from the session file.",
-                    valueSchema=string_schema(),
-                    access=F8StateAccess.ro,
-                    showOnNode=False,
-                    required=False,
-                ),
-                F8StateSpec(
-                    name="missingSpec",
-                    label="Missing Spec",
-                    description="Original `f8_spec` JSON from the session file.",
-                    valueSchema=any_schema(),
-                    access=F8StateAccess.ro,
-                    showOnNode=False,
-                    required=False,
-                ),
-            ],
-            editableStateFields=False,
-            editableDataInPorts=False,
-            editableDataOutPorts=False,
-            editableCommands=False,
-        )
-        missing_service_node_cls = type(
-            "f8.missing",
-            (F8StudioMissingServiceBaseNode,),
-            {"__identifier__": "svc", "NODE_NAME": "Missing Service", "SPEC_TEMPLATE": missing_service_spec},
-        )
-        generated_node_cls.append(missing_service_node_cls)
+        assert str(missing_service_cls.type_) == MISSING_SERVICE_NODE_TYPE
+        assert str(missing_operator_cls.type_) == MISSING_OPERATOR_NODE_TYPE
+        generated_node_cls.append(missing_service_cls)
+        generated_node_cls.append(missing_operator_cls)
 
         return generated_node_cls
 

@@ -799,7 +799,7 @@ def ensure_inline_state_widgets(node_item: Any) -> None:
         btn_existing = node_item._state_inline_toggles.get(name)
         if btn_existing is not None:
             try:
-                btn_existing.setFullText(label)
+                btn_existing.set_full_text(label)
             except RuntimeError:
                 pass
             try:
@@ -835,7 +835,7 @@ def ensure_inline_state_widgets(node_item: Any) -> None:
         btn.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
         btn.setArrowType(QtCore.Qt.DownArrow if expanded else QtCore.Qt.RightArrow)
 
-        btn.setFullText(label)
+        btn.set_full_text(label)
         btn.setToolTip(tip)
         btn.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         btn.setStyleSheet(

@@ -290,7 +290,19 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "Save failed", f"Failed to save:\n{p}\n\n{exc}")
 
     def _compile_runtime_action(self) -> None:
-        compiled = compile_runtime_graphs_from_studio(self.studio_graph)
+        try:
+            compiled = compile_runtime_graphs_from_studio(self.studio_graph)
+        except ValueError as exc:
+            msg = str(exc or "").strip() or "compile failed"
+            self._log_dock.append("studio", f"[compile][blocked] {msg}\n")
+            QtWidgets.QMessageBox.warning(self, "Compile blocked", msg)
+            return
+        except Exception as exc:
+            self._log_dock.append("studio", f"[compile][error] {exc}\n")
+            self._log_dock.report_exception("studio", "compile runtime graph failed", exc)
+            QtWidgets.QMessageBox.warning(self, "Compile failed", str(exc))
+            return
+
         payload = compiled.global_graph.model_dump(mode="json", by_alias=True)
         print("\n=== F8Studio RuntimeGraph (global) ===")
         print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
@@ -302,7 +314,18 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
             print(json.dumps(p, ensure_ascii=False, indent=2, default=str))
 
     def _on_deploy_action_triggered(self) -> None:
-        compiled = compile_runtime_graphs_from_studio(self.studio_graph)
+        try:
+            compiled = compile_runtime_graphs_from_studio(self.studio_graph)
+        except ValueError as exc:
+            msg = str(exc or "").strip() or "deploy blocked by invalid graph"
+            self._log_dock.append("studio", f"[deploy][blocked] {msg}\n")
+            QtWidgets.QMessageBox.warning(self, "Deploy blocked", msg)
+            return
+        except Exception as exc:
+            self._log_dock.append("studio", f"[deploy][error] {exc}\n")
+            self._log_dock.report_exception("studio", "deploy compile failed", exc)
+            QtWidgets.QMessageBox.warning(self, "Deploy failed", str(exc))
+            return
         for warning in list(compiled.warnings or ()):
             self._log_dock.append("studio", f"[compile][warn] {warning}\n")
         self._bridge.deploy(compiled)

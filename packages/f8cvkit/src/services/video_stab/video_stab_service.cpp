@@ -892,7 +892,7 @@ json VideoStabService::describe() {
   service["serviceClass"] = "f8.cvkit.videostab";
   service["label"] = "CVKit Video Stabilizer";
   service["version"] = "0.0.1";
-  service["rendererClass"] = "defaultService";
+  service["rendererClass"] = "default_svc";
   service["tags"] = json::array({"cv", "stabilization", "video"});
 
   service["stateFields"] = json::array({

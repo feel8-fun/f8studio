@@ -561,7 +561,30 @@ def compile_runtime_graphs_from_studio(studio_graph: Any) -> CompiledRuntimeGrap
         except Exception:
             return False
 
-    all_nodes = [n for n in list(studio_graph.all_nodes() or []) if not _is_disabled(n)]
+    all_graph_nodes = list(studio_graph.all_nodes() or [])
+    missing_locked_nodes: list[tuple[str, str]] = []
+    for node in all_graph_nodes:
+        node_id = ""
+        missing_type = ""
+        try:
+            node_id = str(node.id or "").strip()
+        except Exception:
+            node_id = ""
+        try:
+            model = node.model
+            f8_sys = model.f8_sys if isinstance(model.f8_sys, dict) else {}
+            if bool(f8_sys.get("missingLocked")):
+                missing_type = str(f8_sys.get("missingType") or "").strip()
+                missing_locked_nodes.append((node_id, missing_type))
+        except Exception:
+            continue
+    if missing_locked_nodes:
+        formatted = ", ".join(
+            f"{node_id or '<unknown>'}({missing_type or 'unknown'})" for node_id, missing_type in missing_locked_nodes
+        )
+        raise ValueError(f"compile blocked: missing dependency node(s): {formatted}")
+
+    all_nodes = [n for n in all_graph_nodes if not _is_disabled(n)]
     try:
         is_container_node = studio_graph._is_container_node
         is_operator_node = studio_graph._is_operator_node

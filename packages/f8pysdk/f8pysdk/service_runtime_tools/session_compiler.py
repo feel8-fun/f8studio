@@ -91,6 +91,13 @@ def _node_custom_map(node_data: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _node_f8_sys_map(node_data: dict[str, Any]) -> dict[str, Any]:
+    f8_sys = node_data.get("f8_sys")
+    if isinstance(f8_sys, dict):
+        return f8_sys
+    return {}
+
+
 def _node_properties_map(node_data: dict[str, Any]) -> dict[str, Any]:
     props = node_data.get("properties")
     if isinstance(props, dict):
@@ -148,6 +155,13 @@ def _compile_kept_nodes(
         node_id = str(raw_node_id or "").strip()
         if not node_id or not isinstance(raw_node_data, dict):
             continue
+        f8_sys = _node_f8_sys_map(raw_node_data)
+        if bool(f8_sys.get("missingLocked")):
+            missing_type = str(f8_sys.get("missingType") or "").strip()
+            raise ValueError(
+                f"session contains missing dependency node '{node_id}'"
+                + (f" (type='{missing_type}')" if missing_type else "")
+            )
         if _is_disabled_node(raw_node_data):
             warnings.append(f"skip disabled node: {node_id}")
             continue

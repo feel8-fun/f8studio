@@ -101,8 +101,16 @@ class _FakeBackendNode:
     def __init__(self) -> None:
         self.spec = None
 
-    def effective_commands(self) -> list[dict[str, Any]]:
-        return [{"name": "Run", "description": "Run command", "showOnNode": True, "params": []}]
+    def effective_commands(self) -> list[Any]:
+        return [_FakeCommand("Run", "Run command", True, [])]
+
+
+class _FakeCommand:
+    def __init__(self, name: str, description: str, show_on_node: bool, params: list[Any]) -> None:
+        self.name = name
+        self.description = description
+        self.showOnNode = show_on_node
+        self.params = list(params)
 
 
 class _InvokeNodeItem:
@@ -149,6 +157,6 @@ def test_snapshot_and_restore_selected_ids() -> None:
 def test_invoke_command_skips_when_service_not_running() -> None:
     node_item = _InvokeNodeItem(service_running=False)
 
-    invoke_command(node_item, {"name": "Run", "params": []})
+    invoke_command(node_item, _FakeCommand("Run", "Run command", True, []))
 
     assert node_item._bridge_obj.calls == []

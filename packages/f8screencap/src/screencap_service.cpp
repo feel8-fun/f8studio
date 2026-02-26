@@ -851,7 +851,7 @@ json ScreenCapService::describe() {
   service["serviceClass"] = "f8.screencap";
   service["label"] = "Screen Capture";
   service["version"] = "0.0.1";
-  service["rendererClass"] = "defaultService";
+  service["rendererClass"] = "default_svc";
   service["tags"] = json::array({"video", "capture", "shm"});
   service["stateFields"] = json::array({
       state_field("videoShmName", schema_string(), "ro", "Video SHM", "Shared memory region name", true),

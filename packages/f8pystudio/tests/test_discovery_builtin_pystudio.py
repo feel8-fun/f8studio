@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from f8pystudio.constants import SERVICE_CLASS as STUDIO_SERVICE_CLASS
+from f8pystudio.nodegraph.operator_basenode import F8StudioOperatorBaseNode
+from f8pystudio.nodegraph.service_basenode import F8StudioServiceBaseNode
 from f8pystudio.pystudio_node_registry import register_pystudio_specs
+from f8pystudio.render_nodes.registry import RenderNodeRegistry
 from f8pysdk.service_runtime_tools.catalog import ServiceCatalog
 from f8pysdk.service_runtime_tools.discovery import load_discovery_into_catalog
 
@@ -59,3 +62,11 @@ def test_discovery_builtin_pystudio_injection_is_idempotent() -> None:
     assert STUDIO_SERVICE_CLASS in second_found
     assert len(first_operators) > 0
     assert len(second_operators) == len(first_operators)
+
+
+def test_renderer_registry_fallback_service_and_operator() -> None:
+    reg = RenderNodeRegistry()
+    svc = reg.get("not_registered_service_renderer", node_kind="service")
+    op = reg.get("not_registered_operator_renderer", node_kind="operator")
+    assert svc is F8StudioServiceBaseNode
+    assert op is F8StudioOperatorBaseNode

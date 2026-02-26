@@ -774,7 +774,7 @@ json TrackingService::describe() {
   service["serviceClass"] = "f8.cvkit.tracking";
   service["label"] = "CVKit Tracking";
   service["version"] = "0.0.1";
-  service["rendererClass"] = "defaultService";
+  service["rendererClass"] = "default_svc";
   service["tags"] = json::array({"cv", "tracking"});
   service["stateFields"] = json::array({
       state_field("shmName", schema_string(), "rw", "Video SHM", "Optional SHM name override (e.g. shm.xxx.video).", true),

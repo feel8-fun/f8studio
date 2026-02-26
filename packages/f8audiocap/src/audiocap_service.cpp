@@ -485,7 +485,7 @@ nlohmann::json AudioCapService::describe() {
       {"serviceClass", "f8.audiocap"},
       {"label", "Audio Capture"},
       {"version", "0.0.1"},
-      {"rendererClass", "defaultService"},
+      {"rendererClass", "default_svc"},
       {"tags", json::array({"audio", "capture", "shm"})},
       {"stateFields",
        json::array({

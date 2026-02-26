@@ -12,10 +12,6 @@ class F8ElideToolButton(QtWidgets.QToolButton):
         self._full_text = str(text or "")
         self._apply_elide()
 
-    def setFullText(self, text: str) -> None:
-        # Backward-compatible alias for existing call sites.
-        self.set_full_text(text)
-
     def resizeEvent(self, event):  # type: ignore[override]
         super().resizeEvent(event)
         self._apply_elide()

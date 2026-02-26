@@ -2,7 +2,7 @@ from .async_runtime import AsyncRuntimeThread
 from .command_client import CommandGateway, CommandRequest, CommandResponse, NatsCommandGateway
 from .facade_qt import BridgeFacadeContext
 from .json_codec import coerce_json_dict, coerce_json_value
-from .nats_request import OkEnvelope, RequestJsonInput, parse_ok_envelope, parse_ok_response, request_json
+from .nats_request import OkEnvelope, RequestJsonInput, parse_ok_envelope, request_json
 from .process_lifecycle import (
     LocalServiceProcessGateway,
     ServiceProcessGateway,
@@ -44,6 +44,5 @@ __all__ = [
     "coerce_json_dict",
     "coerce_json_value",
     "parse_ok_envelope",
-    "parse_ok_response",
     "request_json",
 ]

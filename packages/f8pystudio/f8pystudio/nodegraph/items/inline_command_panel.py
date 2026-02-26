@@ -15,6 +15,19 @@ from .service_toolbar_host import F8ForceGlobalToolTipFilter
 logger = logging.getLogger(__name__)
 
 
+def _is_missing_locked(node_item: Any) -> bool:
+    try:
+        node = node_item._backend_node()
+    except Exception:
+        return False
+    if node is None:
+        return False
+    try:
+        return bool(node.is_missing_locked())
+    except Exception:
+        return False
+
+
 def _snapshot_selected_node_ids(node_item: Any) -> list[str]:
     try:
         graph = node_item._graph()
@@ -75,13 +88,10 @@ def invoke_command(node_item: Any, cmd: Any) -> None:
     - no params: fire immediately
     - has params: show dialog to collect args
     """
-    if isinstance(cmd, dict):
-        call = str(cmd.get("name") or "").strip()
-    else:
-        try:
-            call = str(cmd.name or "").strip()
-        except Exception:
-            call = ""
+    try:
+        call = str(cmd.name or "").strip()
+    except Exception:
+        call = ""
     if not call:
         return
     bridge = node_item._bridge()
@@ -89,6 +99,9 @@ def invoke_command(node_item: Any, cmd: Any) -> None:
         return
     sid = node_item._service_id()
     if not sid:
+        return
+    if _is_missing_locked(node_item):
+        logger.warning("Skip command invoke on missing-locked node serviceId=%s", sid)
         return
     if not node_item._is_service_running():
         return
@@ -115,13 +128,10 @@ def invoke_command(node_item: Any, cmd: Any) -> None:
             except Exception:
                 node_id = ""
             logger.exception("handle_command_ui failed nodeId=%s", node_id)
-    if isinstance(cmd, dict):
-        params = list(cmd.get("params") or [])
-    else:
-        try:
-            params = list(cmd.params or [])
-        except Exception:
-            params = []
+    try:
+        params = list(cmd.params or [])
+    except Exception:
+        params = []
 
     if not params:
         try:
@@ -140,18 +150,14 @@ def invoke_command(node_item: Any, cmd: Any) -> None:
 
 
 def prompt_command_args(node_item: Any, cmd: Any) -> dict[str, Any] | None:
-    if isinstance(cmd, dict):
-        call = str(cmd.get("name") or "").strip() or "Command"
-        params = list(cmd.get("params") or [])
-    else:
-        try:
-            call = str(cmd.name or "").strip() or "Command"
-        except Exception:
-            call = "Command"
-        try:
-            params = list(cmd.params or [])
-        except Exception:
-            params = []
+    try:
+        call = str(cmd.name or "").strip() or "Command"
+    except Exception:
+        call = "Command"
+    try:
+        params = list(cmd.params or [])
+    except Exception:
+        params = []
     if not params:
         return {}
 
@@ -169,36 +175,28 @@ def prompt_command_args(node_item: Any, cmd: Any) -> dict[str, Any] | None:
     editors: dict[str, tuple[QtWidgets.QWidget, Any]] = {}
 
     for param in params:
-        if isinstance(param, dict):
-            name = str(param.get("name") or "").strip()
-            required = bool(param.get("required") or False)
-            ui_raw = str(param.get("uiControl") or "").strip()
+        try:
+            name = str(param.name or "").strip()
+        except Exception:
+            name = ""
+        try:
+            required = bool(param.required)
+        except Exception:
+            required = False
+        try:
+            ui_raw = str(param.uiControl or "").strip()
             ui = ui_raw.lower()
-            schema = param.get("valueSchema")
-            desc_raw = param.get("description") or ""
-        else:
-            try:
-                name = str(param.name or "").strip()
-            except Exception:
-                name = ""
-            try:
-                required = bool(param.required)
-            except Exception:
-                required = False
-            try:
-                ui_raw = str(param.uiControl or "").strip()
-                ui = ui_raw.lower()
-            except Exception:
-                ui_raw = ""
-                ui = ""
-            try:
-                schema = param.valueSchema
-            except Exception:
-                schema = None
-            try:
-                desc_raw = param.description or ""
-            except Exception:
-                desc_raw = ""
+        except Exception:
+            ui_raw = ""
+            ui = ""
+        try:
+            schema = param.valueSchema
+        except Exception:
+            schema = None
+        try:
+            desc_raw = param.description or ""
+        except Exception:
+            desc_raw = ""
         if not name:
             continue
 
@@ -362,18 +360,14 @@ def prompt_command_args(node_item: Any, cmd: Any) -> dict[str, Any] | None:
         args: dict[str, Any] = {}
         missing: list[str] = []
         for param in params:
-            if isinstance(param, dict):
-                param_name = str(param.get("name") or "").strip()
-                required = bool(param.get("required") or False)
-            else:
-                try:
-                    param_name = str(param.name or "").strip()
-                except Exception:
-                    param_name = ""
-                try:
-                    required = bool(param.required)
-                except Exception:
-                    required = False
+            try:
+                param_name = str(param.name or "").strip()
+            except Exception:
+                param_name = ""
+            try:
+                required = bool(param.required)
+            except Exception:
+                required = False
             if not param_name or param_name not in editors:
                 continue
             _widget, getter = editors[param_name]
@@ -400,40 +394,25 @@ def ensure_inline_command_widget(node_item: Any) -> None:
     if node is None:
         return
     try:
-        spec = node.spec
-    except Exception:
-        spec = None
-
-    try:
         commands = list(node.effective_commands() or [])
     except Exception:
-        if spec is None:
-            commands = []
-        else:
-            try:
-                commands = list(spec.commands or [])
-            except Exception:
-                commands = []
+        commands = []
 
     visible_commands: list[Any] = []
     for command in commands:
-        if isinstance(command, dict):
-            show = bool(command.get("showOnNode") or False)
-        else:
-            try:
-                show = bool(command.showOnNode)
-            except Exception:
-                show = False
+        try:
+            show = bool(command.showOnNode)
+        except Exception:
+            show = False
         if show:
             visible_commands.append(command)
-    enabled = node_item._is_service_running()
+    missing_locked = _is_missing_locked(node_item)
+    enabled = bool(node_item._is_service_running()) and not missing_locked
 
     # Rebuild only when command list / enabled state changes.
     try:
 
         def _cmd_name_desc(command: Any) -> tuple[str, str]:
-            if isinstance(command, dict):
-                return str(command.get("name") or ""), str(command.get("description") or "")
             try:
                 return str(command.name or ""), str(command.description or "")
             except Exception:
@@ -510,18 +489,14 @@ def ensure_inline_command_widget(node_item: Any) -> None:
 
     node_item._cmd_buttons = []
     for command in visible_commands:
-        if isinstance(command, dict):
-            btn_label = str(command.get("name") or "")
-            desc = str(command.get("description") or "").strip()
-        else:
-            try:
-                btn_label = str(command.name or "")
-            except Exception:
-                btn_label = ""
-            try:
-                desc = str(command.description or "").strip()
-            except Exception:
-                desc = ""
+        try:
+            btn_label = str(command.name or "")
+        except Exception:
+            btn_label = ""
+        try:
+            desc = str(command.description or "").strip()
+        except Exception:
+            desc = ""
         button = QtWidgets.QPushButton(btn_label)
         tooltip_filter = F8ForceGlobalToolTipFilter(button)
         button.installEventFilter(tooltip_filter)
@@ -556,7 +531,8 @@ def ensure_inline_command_widget(node_item: Any) -> None:
             """
         )
         if not enabled:
-            button.setToolTip((desc + "\n" if desc else "") + "Service not running")
+            reason = "Missing dependency" if missing_locked else "Service not running"
+            button.setToolTip((desc + "\n" if desc else "") + reason)
         elif desc:
             button.setToolTip(desc)
         button.pressed.connect(lambda _c=command: _on_command_pressed(node_item, _c))  # type: ignore[attr-defined]

@@ -245,3 +245,21 @@ class F8StudioBaseNode(BaseNode):
         Hook for subclasses to rebuild ports/properties derived from `self.spec`.
         """
         return
+
+    def is_missing_locked(self) -> bool:
+        model = self.model
+        if not isinstance(model.f8_sys, dict):
+            model.f8_sys = {}
+        return bool(model.f8_sys.get("missingLocked"))
+
+    def missing_type(self) -> str:
+        model = self.model
+        if not isinstance(model.f8_sys, dict):
+            model.f8_sys = {}
+        return str(model.f8_sys.get("missingType") or "").strip()
+
+    def missing_reason(self) -> str:
+        model = self.model
+        if not isinstance(model.f8_sys, dict):
+            model.f8_sys = {}
+        return str(model.f8_sys.get("missingReason") or "").strip()

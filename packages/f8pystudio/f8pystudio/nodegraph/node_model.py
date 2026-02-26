@@ -3,7 +3,6 @@ import json
 import logging
 
 from NodeGraphQt.base.model import NodeModel
-from NodeGraphQt.errors import NodePropertyError
 
 from f8pysdk import F8OperatorSpec, F8ServiceSpec
 
@@ -27,8 +26,6 @@ class F8StudioNodeModel(NodeModel):
         self.f8_sys = {}
         self.f8_ui = {}
         self._owner_node: object | None = None
-
-    _unknown_prop_logged: set[str] = set()
 
     @staticmethod
     def _coerce_spec(value: object) -> F8OperatorSpec | F8ServiceSpec | None:
@@ -74,17 +71,7 @@ class F8StudioNodeModel(NodeModel):
                     except Exception:
                         logger.exception("Failed to sync node after f8_ui update.")
             return
-        try:
-            return super().set_property(name, value)
-        except NodePropertyError:
-            # Session compatibility: older sessions may reference properties that no longer exist
-            # after node spec/schema changes (eg. a state field label was used as a property name).
-            # Ignore these so sessions still load, and log once per property name.
-            prop = str(name)
-            if prop not in self._unknown_prop_logged:
-                self._unknown_prop_logged.add(prop)
-                logger.warning("Ignoring unknown node property during session load: %r", name)
-            return None
+        return super().set_property(name, value)
 
     @property
     def to_dict(self):
@@ -98,7 +85,6 @@ class F8StudioNodeModel(NodeModel):
 
         # Never persist runtime-only helpers into session JSON.
         node_dict.pop("_owner_node", None)
-        node_dict.pop("_unknown_prop_logged", None)
 
         spec = node_dict.get("f8_spec")
         if isinstance(spec, (F8OperatorSpec, F8ServiceSpec)):
@@ -139,3 +125,51 @@ class F8StudioNodeModel(NodeModel):
             self.f8_sys.pop("svcId", None)
         else:
             self.f8_sys["svcId"] = value
+
+    @property
+    def missingLocked(self) -> bool:
+        if not isinstance(self.f8_sys, dict):
+            self.f8_sys = {}
+        return bool(self.f8_sys.get("missingLocked"))
+
+    @missingLocked.setter
+    def missingLocked(self, value: bool) -> None:
+        if not isinstance(self.f8_sys, dict):
+            self.f8_sys = {}
+        self.f8_sys["missingLocked"] = bool(value)
+
+    @property
+    def missingType(self) -> str:
+        if not isinstance(self.f8_sys, dict):
+            self.f8_sys = {}
+        return str(self.f8_sys.get("missingType") or "").strip()
+
+    @missingType.setter
+    def missingType(self, value: str) -> None:
+        if not isinstance(self.f8_sys, dict):
+            self.f8_sys = {}
+        self.f8_sys["missingType"] = str(value or "").strip()
+
+    @property
+    def missingReason(self) -> str:
+        if not isinstance(self.f8_sys, dict):
+            self.f8_sys = {}
+        return str(self.f8_sys.get("missingReason") or "").strip()
+
+    @missingReason.setter
+    def missingReason(self, value: str) -> None:
+        if not isinstance(self.f8_sys, dict):
+            self.f8_sys = {}
+        self.f8_sys["missingReason"] = str(value or "").strip()
+
+    @property
+    def missingRendererFallback(self) -> bool:
+        if not isinstance(self.f8_sys, dict):
+            self.f8_sys = {}
+        return bool(self.f8_sys.get("missingRendererFallback"))
+
+    @missingRendererFallback.setter
+    def missingRendererFallback(self, value: bool) -> None:
+        if not isinstance(self.f8_sys, dict):
+            self.f8_sys = {}
+        self.f8_sys["missingRendererFallback"] = bool(value)

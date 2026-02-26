@@ -1,5 +1,7 @@
+import logging
+from typing import ClassVar, Literal
+
 from NodeGraphQt import NodeObject, BaseNode
-from typing import ClassVar
 
 # from .internal.base import F8BaseRenderNode
 
@@ -32,15 +34,16 @@ class RenderNodeRegistry:
 
     def __init__(self) -> None:
         self._renderers: dict[str, NodeObject] = {}
+        self._fallback_warned: set[tuple[str, str]] = set()
         self._renderers["default_svc"] = F8StudioServiceBaseNode
         self._renderers["default_op"] = F8StudioOperatorBaseNode
         self._renderers["default_container"] = F8StudioContainerBaseNode
+        self._renderers["template_match_capture"] = TemplateMatchCaptureRenderNode
         self._renderers["viz_text"] = VizTextRenderNode
         self._renderers["viz_wave"] = VizWaveRenderNode
         self._renderers["viz_video"] = VizVideoRenderNode
         self._renderers["viz_audio"] = VizAudioRenderNode
         self._renderers["viz_track"] = VizTrackRenderNode
-        self._renderers["template_match_capture"] = TemplateMatchCaptureRenderNode
         self._renderers["viz_three_d"] = VizThreeDRenderNode
         self._renderers["viz_tcode"] = VizTCodeRenderNode
 
@@ -54,10 +57,36 @@ class RenderNodeRegistry:
     def unregister(self, renderer_key: str) -> None:
         self._renderers.pop(renderer_key, None)
 
-    def get(self, renderer_key: str, fallback_key: str) -> type[NodeObject]:
-        if renderer_key not in self._renderers and fallback_key:
-            renderer_key = fallback_key
-        return self._renderers[renderer_key]
+    def get(
+        self,
+        renderer_key: str,
+        *,
+        node_kind: Literal["service", "operator"] | None = None,
+    ) -> type[NodeObject]:
+        key = str(renderer_key or "").strip()
+        if not key:
+            key = "default_op" if node_kind == "operator" else "default_svc"
+        renderer = self._renderers.get(key)
+        if renderer is not None:
+            return renderer
+
+        fallback_key = "default_op" if node_kind == "operator" else "default_svc"
+        fallback_renderer = self._renderers.get(fallback_key)
+        if fallback_renderer is None:
+            available = ", ".join(sorted(self._renderers.keys()))
+            raise KeyError(
+                f'unknown renderer key "{key}" and fallback "{fallback_key}" missing. '
+                f"available: [{available}]"
+            )
+        warn_key = (key, fallback_key)
+        if warn_key not in self._fallback_warned:
+            self._fallback_warned.add(warn_key)
+            logging.getLogger(__name__).warning(
+                "Unknown renderer '%s'; fallback to '%s'.",
+                key,
+                fallback_key,
+            )
+        return fallback_renderer
 
     def keys(self) -> list[str]:
         return list(self._renderers.keys())

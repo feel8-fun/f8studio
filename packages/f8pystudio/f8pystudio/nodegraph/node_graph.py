@@ -44,11 +44,9 @@ from .edge_rules import (
 
 _BASE_OPERATOR_CLS_ = F8StudioOperatorBaseNode
 _BASE_CONTAINER_CLS_ = F8StudioContainerBaseNode
+MISSING_SERVICE_NODE_TYPE = "svc.f8.missing.service"
+MISSING_OPERATOR_NODE_TYPE = "svc.f8.missing.operator"
 logger = logging.getLogger(__name__)
-
-_MISSING_OPERATOR_NODE_TYPE = "f8.missing.f8.missing.operator"
-_MISSING_SERVICE_NODE_TYPE = "svc.f8.missing"
-_MISSING_CONNECTION_SNAPSHOTS_KEY = "f8_missing_connections_v1"
 
 
 def _scene_rect(node: BaseNode) -> QtCore.QRectF | None:
@@ -87,7 +85,6 @@ class F8StudioGraph(NodeGraph):
         self.uuid_length = kwargs.get("uuid_length", 4)
         self.uuid_generator = shortuuid.ShortUUID()
         self._loading_session = False
-        self._missing_connection_snapshots: list[dict[str, Any]] = []
         # Tab search sends a selected "node type" string. We map display aliases
         # back to actual factory node type ids so menu category paths can be custom.
         self._tab_search_node_type_aliases: dict[str, str] = {}
@@ -857,6 +854,9 @@ class F8StudioGraph(NodeGraph):
         for node_id, node_data in nodes.items():
             if not isinstance(node_data, dict):
                 continue
+            f8_sys = node_data.get("f8_sys")
+            if isinstance(f8_sys, dict) and bool(f8_sys.get("missingLocked")):
+                continue
 
             node_type = node_data.get("type_")
             if not isinstance(node_type, str) or not node_type.strip():
@@ -1010,285 +1010,109 @@ class F8StudioGraph(NodeGraph):
             if isinstance(node_data, dict) and "id" not in node_data:
                 node_data["id"] = node_id
 
-    def _validate_session_node_types(self, layout_data: dict) -> None:
-        """
-        Validate that node classes referenced by the session are registered.
+    @staticmethod
+    def _coerce_layout_spec(spec_obj: object) -> dict[str, Any] | None:
+        if isinstance(spec_obj, dict):
+            return spec_obj
+        if isinstance(spec_obj, (F8OperatorSpec, F8ServiceSpec)):
+            return spec_obj.model_dump(mode="json")
+        return None
 
-        We intentionally do NOT auto-register node classes from session data.
-        Node registration should come from service discovery.
-        """
-        nodes = layout_data.get("nodes")
-        if not isinstance(nodes, dict):
+    @staticmethod
+    def _strip_missing_lock_for_save(node_data: dict[str, Any]) -> None:
+        f8_sys_obj = node_data.get("f8_sys")
+        if not isinstance(f8_sys_obj, dict):
             return
-
-        missing_types: set[str] = set()
-        missing_type_field = 0
-
-        for node_data in nodes.values():
-            if not isinstance(node_data, dict):
-                continue
-
-            node_type = node_data.get("type_")
-            if not isinstance(node_type, str) or not node_type.strip():
-                missing_type_field += 1
-                continue
-
-            node_type = node_type.strip()
-            if node_type not in self._node_factory.nodes:
-                missing_types.add(node_type)
-
-        if missing_type_field or missing_types:
-            parts = []
-            if missing_type_field:
-                parts.append(f"{missing_type_field} node(s) missing `type_` in session data")
-            if missing_types:
-                missing_list = ", ".join(sorted(missing_types))
-                parts.append(f"unregistered node type(s): {missing_list}")
-            msg = "Session has missing/unregistered node types: " + "; ".join(parts) + "."
-            # Non-fatal: `load_session()` may coerce these nodes to placeholders.
-            logger.warning(msg)
-
-    @staticmethod
-    def _parse_connection_ref(connection: object) -> tuple[str, str, str, str] | None:
-        if not isinstance(connection, dict):
-            return None
-        out_ref = connection.get("out")
-        in_ref = connection.get("in")
-        if not isinstance(out_ref, (list, tuple)) or len(out_ref) != 2:
-            return None
-        if not isinstance(in_ref, (list, tuple)) or len(in_ref) != 2:
-            return None
-        out_node_id = str(out_ref[0] or "").strip()
-        out_port_name = str(out_ref[1] or "").strip()
-        in_node_id = str(in_ref[0] or "").strip()
-        in_port_name = str(in_ref[1] or "").strip()
-        if not out_node_id or not in_node_id:
-            return None
-        return out_node_id, out_port_name, in_node_id, in_port_name
-
-    @classmethod
-    def _dedupe_connections(cls, connections: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        unique: list[dict[str, Any]] = []
-        seen_refs: set[tuple[str, str, str, str]] = set()
-        for connection in list(connections or []):
-            ref = cls._parse_connection_ref(connection)
-            if ref is None:
-                continue
-            if ref in seen_refs:
-                continue
-            seen_refs.add(ref)
-            unique.append(connection)
-        return unique
-
-    @staticmethod
-    def _missing_node_ids(layout_data: dict) -> set[str]:
-        nodes = layout_data.get("nodes")
-        if not isinstance(nodes, dict):
-            return set()
-        missing_ids: set[str] = set()
-        for node_id, node_data in nodes.items():
-            if not isinstance(node_data, dict):
-                continue
-            node_type = str(node_data.get("type_") or "").strip()
-            if node_type in (_MISSING_OPERATOR_NODE_TYPE, _MISSING_SERVICE_NODE_TYPE):
-                missing_ids.add(str(node_id))
-        return missing_ids
-
-    @classmethod
-    def _connections_for_node_ids(cls, connections: list[dict[str, Any]], node_ids: set[str]) -> list[dict[str, Any]]:
-        if not node_ids:
-            return []
-        kept: list[dict[str, Any]] = []
-        for connection in list(connections or []):
-            ref = cls._parse_connection_ref(connection)
-            if ref is None:
-                continue
-            out_node_id, _, in_node_id, _ = ref
-            if out_node_id in node_ids or in_node_id in node_ids:
-                kept.append(connection)
-        return kept
-
-    def _restore_missing_session_nodes(self, layout_data: dict) -> dict:
-        """
-        Restore placeholder missing nodes to their original node type/spec when
-        that original type becomes available again in the current registry.
-        """
-        nodes = layout_data.get("nodes")
-        if not isinstance(nodes, dict):
-            return layout_data
-
-        restored_count = 0
-        for node_id, node_data in nodes.items():
-            if not isinstance(node_data, dict):
-                continue
-            node_type = str(node_data.get("type_") or "").strip()
-            if node_type not in (_MISSING_OPERATOR_NODE_TYPE, _MISSING_SERVICE_NODE_TYPE):
-                continue
-
-            f8_sys = node_data.get("f8_sys")
-            if not isinstance(f8_sys, dict):
-                continue
-
-            original_type = str(f8_sys.get("missingType") or "").strip()
-            original_spec = f8_sys.get("missingSpec")
-            if not original_type or not isinstance(original_spec, dict):
-                continue
-            if original_type not in self._node_factory.nodes:
-                continue
-
-            node_data["type_"] = original_type
-            node_data["f8_spec"] = dict(original_spec)
-            restored_count += 1
-
-            custom = node_data.get("custom")
-            if isinstance(custom, dict):
-                custom.pop("missingType", None)
-                custom.pop("missingSpec", None)
-
-        if restored_count:
-            logger.info("Recovered %s missing session node(s) from stored original type/spec.", restored_count)
-        return layout_data
-
-    def _merge_missing_connection_snapshots(self, layout_data: dict) -> dict:
-        """
-        Merge persisted missing-connection snapshots into active layout
-        connections before invalid-port filtering.
-        """
-        raw_connections = layout_data.get("connections")
-        if isinstance(raw_connections, list):
-            current_connections = [c for c in raw_connections if isinstance(c, dict)]
-        else:
-            current_connections = []
-
-        snapshot_connections_raw = layout_data.get(_MISSING_CONNECTION_SNAPSHOTS_KEY)
-        if isinstance(snapshot_connections_raw, list):
-            snapshot_connections = [c for c in snapshot_connections_raw if isinstance(c, dict)]
-        else:
-            snapshot_connections = []
-
-        merged_connections = self._dedupe_connections(current_connections + snapshot_connections)
-        layout_data["connections"] = merged_connections
-
-        missing_ids = self._missing_node_ids(layout_data)
-        unresolved_snapshots = self._connections_for_node_ids(merged_connections, missing_ids)
-        self._missing_connection_snapshots = self._dedupe_connections(unresolved_snapshots)
-        layout_data.pop(_MISSING_CONNECTION_SNAPSHOTS_KEY, None)
-        return layout_data
-
-    def _attach_missing_connection_snapshots_for_save(self, layout_data: dict) -> dict:
-        missing_ids = self._missing_node_ids(layout_data)
-        if not missing_ids:
-            self._missing_connection_snapshots = []
-            layout_data.pop(_MISSING_CONNECTION_SNAPSHOTS_KEY, None)
-            return layout_data
-
-        raw_connections = layout_data.get("connections")
-        if isinstance(raw_connections, list):
-            current_connections = [c for c in raw_connections if isinstance(c, dict)]
-        else:
-            current_connections = []
-
-        current_missing_connections = self._connections_for_node_ids(current_connections, missing_ids)
-        cached_missing_connections = self._connections_for_node_ids(self._missing_connection_snapshots, missing_ids)
-        snapshots = self._dedupe_connections(cached_missing_connections + current_missing_connections)
-        self._missing_connection_snapshots = list(snapshots)
-
-        if snapshots:
-            layout_data[_MISSING_CONNECTION_SNAPSHOTS_KEY] = snapshots
-        else:
-            layout_data.pop(_MISSING_CONNECTION_SNAPSHOTS_KEY, None)
-        return layout_data
+        keys_to_remove = (
+            "missingLocked",
+            "missingType",
+            "missingReason",
+            "missingRendererFallback",
+            "missingSpec",
+            "missingOriginalName",
+        )
+        for key in keys_to_remove:
+            f8_sys_obj.pop(key, None)
 
     def _coerce_missing_session_nodes(self, layout_data: dict) -> dict:
         """
-        Replace unregistered session node types with placeholder nodes.
-
-        This prevents auto-loading from failing when discovery is incomplete.
-        Connections to these placeholders are later stripped by `_strip_invalid_connections()`.
+        Convert unknown session nodes to missing placeholders while preserving ids/spec/connections.
         """
         nodes = layout_data.get("nodes")
         if not isinstance(nodes, dict):
             return layout_data
 
-        missing_op_spec = {
-            "schemaVersion": "f8operator/1",
-            "serviceClass": "f8.missing",
-            "operatorClass": "f8.missing.operator",
-            "version": "0.0.1",
-            "label": "Missing Operator",
-            "description": "Placeholder for an operator node whose type is not registered in this Studio session.",
-            "tags": ["__missing__"],
-            "stateFields": [],
-            "editableStateFields": False,
-            "execInPorts": [],
-            "execOutPorts": [],
-            "editableExecInPorts": False,
-            "editableExecOutPorts": False,
-            "dataInPorts": [],
-            "dataOutPorts": [],
-            "editableDataInPorts": False,
-            "editableDataOutPorts": False,
-        }
-        missing_svc_spec = {
-            "schemaVersion": "f8service/1",
-            "serviceClass": "f8.missing",
-            "version": "0.0.1",
-            "label": "Missing Service",
-            "description": "Placeholder for a service/container node whose type is not registered in this Studio session.",
-            "tags": ["__missing__"],
-            "rendererClass": "default_container",
-            "stateFields": [],
-            "editableStateFields": False,
-            "dataInPorts": [],
-            "dataOutPorts": [],
-            "editableDataInPorts": False,
-            "editableDataOutPorts": False,
-            "commands": [],
-            "editableCommands": False,
-        }
-
+        converted = 0
         for node_id, node_data in nodes.items():
             if not isinstance(node_data, dict):
                 continue
-            raw_type = node_data.get("type_")
-            node_type = str(raw_type or "").strip()
-            is_registered = bool(node_type) and node_type in self._node_factory.nodes
-            if is_registered:
+
+            raw_type = str(node_data.get("type_") or "").strip()
+            if not raw_type:
+                raise NodeCreationError(f"Cannot load session node '{node_id}': missing `type_`.")
+            if raw_type in self._node_factory.nodes:
                 continue
 
-            raw_spec = node_data.get("f8_spec")
-            spec_is_operator = isinstance(raw_spec, dict) and "operatorClass" in raw_spec
-            placeholder_type = _MISSING_OPERATOR_NODE_TYPE if spec_is_operator else _MISSING_SERVICE_NODE_TYPE
-            placeholder_spec = missing_op_spec if spec_is_operator else missing_svc_spec
+            spec_payload = self._coerce_layout_spec(node_data.get("f8_spec"))
+            if spec_payload is None:
+                raise NodeCreationError(
+                    f"Cannot load unknown node type '{raw_type}' (nodeId={node_id}): missing or invalid `f8_spec`."
+                )
+            is_operator = "operatorClass" in spec_payload
+            placeholder_type = MISSING_OPERATOR_NODE_TYPE if is_operator else MISSING_SERVICE_NODE_TYPE
+            if placeholder_type not in self._node_factory.nodes:
+                raise NodeCreationError(f"Missing placeholder node class '{placeholder_type}' is not registered.")
 
-            # Preserve original payload for debugging/recovery.
+            f8_sys_obj = node_data.get("f8_sys")
+            if isinstance(f8_sys_obj, dict):
+                f8_sys = dict(f8_sys_obj)
+            else:
+                f8_sys = {}
+            f8_sys["missingLocked"] = True
+            f8_sys["missingType"] = raw_type
+            f8_sys["missingReason"] = f"unregistered node type '{raw_type}'"
+            f8_sys["missingRendererFallback"] = bool(f8_sys.get("missingRendererFallback", False))
+            f8_sys["missingSpec"] = dict(spec_payload)
+            raw_name = str(node_data.get("name") or "").strip()
+            if raw_name and not raw_name.endswith("[Missing]"):
+                f8_sys["missingOriginalName"] = raw_name
+                node_data["name"] = f"{raw_name} [Missing]"
+            node_data["f8_sys"] = f8_sys
+            node_data["type_"] = placeholder_type
+            node_data["f8_spec"] = spec_payload
+            converted += 1
+
+        if converted:
+            logger.warning("Recovered %s missing node(s) as placeholders.", converted)
+        return layout_data
+
+    def _restore_missing_session_nodes(self, layout_data: dict) -> dict:
+        """
+        Restore original type/spec for sessions that accidentally persisted placeholder node types.
+        """
+        nodes = layout_data.get("nodes")
+        if not isinstance(nodes, dict):
+            return layout_data
+
+        restored = 0
+        for _node_id, node_data in nodes.items():
+            if not isinstance(node_data, dict):
+                continue
+            node_type = str(node_data.get("type_") or "").strip()
+            if node_type not in {MISSING_OPERATOR_NODE_TYPE, MISSING_SERVICE_NODE_TYPE}:
+                continue
             f8_sys = node_data.get("f8_sys")
             if not isinstance(f8_sys, dict):
-                f8_sys = {}
-                node_data["f8_sys"] = f8_sys
-            f8_sys["missingType"] = node_type
-            if isinstance(raw_spec, dict):
-                f8_sys["missingSpec"] = raw_spec
-
-            custom = node_data.get("custom")
-            if not isinstance(custom, dict):
-                custom = {}
-            # Keep only placeholder-safe custom fields so NodeGraphQt doesn't
-            # crash when restoring unknown properties.
-            safe_custom: dict[str, Any] = {"missingType": node_type}
-            try:
-                safe_custom["missingSpec"] = json.dumps(raw_spec, ensure_ascii=False, indent=2, default=str) if raw_spec else ""
-            except Exception:
-                safe_custom["missingSpec"] = str(raw_spec or "")
-            node_data["custom"] = safe_custom
-
-            node_data["type_"] = placeholder_type
-            node_data["f8_spec"] = dict(placeholder_spec)
-            # Make placeholders easy to spot.
-            name = str(node_data.get("name") or "").strip()
-            if not name:
-                node_data["name"] = f"[Missing] {node_type or node_id}"
-
+                continue
+            missing_type = str(f8_sys.get("missingType") or "").strip()
+            missing_spec = self._coerce_layout_spec(f8_sys.get("missingSpec"))
+            if not missing_type or missing_spec is None:
+                continue
+            node_data["type_"] = missing_type
+            node_data["f8_spec"] = missing_spec
+            restored += 1
+        if restored:
+            logger.warning("Restored %s placeholder node(s) back to original type/spec from session metadata.", restored)
         return layout_data
 
     @staticmethod
@@ -1297,8 +1121,7 @@ class F8StudioGraph(NodeGraph):
         Drop session custom properties that are not present in the persisted spec.
 
         NodeGraphQt requires that every key under `custom` is a registered node
-        property. If specs evolve (fields removed/renamed) or a missing node is
-        coerced to a placeholder, leaving stale keys can crash deserialization.
+        property.
         """
         nodes = layout_data.get("nodes")
         if not isinstance(nodes, dict):
@@ -1322,31 +1145,15 @@ class F8StudioGraph(NodeGraph):
                 if name:
                     allowed.add(name)
 
-            # Placeholder/debug fields.
-            allowed.update({"missingType", "missingSpec"})
-
             if not allowed:
-                # Nothing to validate against; keep `custom` as-is.
+                node_data["custom"] = {}
                 continue
-
-            # Session compatibility:
-            # - Some older sessions may persist property keys with different casing
-            #   (eg. user-added "Event" instead of spec field "event").
-            # - Normalize by renaming case-insensitive matches to the canonical spec name.
-            allowed_lower: dict[str, str] = {a.lower(): a for a in allowed}
 
             kept: dict[str, Any] = {}
             for k, v in custom.items():
                 key = str(k)
                 if key in allowed:
                     kept[key] = v
-                    continue
-                canonical = allowed_lower.get(key.lower())
-                if canonical is None:
-                    continue
-                # Prefer existing canonical key if already present.
-                if canonical not in kept:
-                    kept[canonical] = v
 
             if kept != custom:
                 node_data["custom"] = kept
@@ -1409,7 +1216,7 @@ class F8StudioGraph(NodeGraph):
     @staticmethod
     def _is_hidden_node_class(node_cls: Any) -> bool:
         """
-        Hide nodes tagged with `__hidden__`/`__missing__` from tab search while keeping them registered.
+        Hide nodes tagged with `__hidden__` from tab search while keeping them registered.
         """
         return is_hidden_spec_node_class(node_cls)
 
@@ -1435,7 +1242,22 @@ class F8StudioGraph(NodeGraph):
     def serialize_session(self):
         data = super().serialize_session()
         stripped_layout = self._strip_port_restore_data(data)
-        stripped_layout = self._attach_missing_connection_snapshots_for_save(stripped_layout)
+        nodes = stripped_layout.get("nodes")
+        if isinstance(nodes, dict):
+            for _node_id, node_data in nodes.items():
+                if not isinstance(node_data, dict):
+                    continue
+                f8_sys_obj = node_data.get("f8_sys")
+                if isinstance(f8_sys_obj, dict) and bool(f8_sys_obj.get("missingLocked")):
+                    missing_type = str(f8_sys_obj.get("missingType") or "").strip()
+                    missing_spec = self._coerce_layout_spec(f8_sys_obj.get("missingSpec"))
+                    if missing_type and missing_spec is not None:
+                        node_data["type_"] = missing_type
+                        node_data["f8_spec"] = missing_spec
+                        missing_original_name = str(f8_sys_obj.get("missingOriginalName") or "").strip()
+                        if missing_original_name:
+                            node_data["name"] = missing_original_name
+                self._strip_missing_lock_for_save(node_data)
         return _wrap_layout_for_save(stripped_layout)
 
     def load_session(self, file_path: str) -> None:
@@ -1458,8 +1280,6 @@ class F8StudioGraph(NodeGraph):
             self._inject_node_ids(layout_data)
             layout_data = self._restore_missing_session_nodes(layout_data)
             layout_data = self._coerce_missing_session_nodes(layout_data)
-            layout_data = self._merge_missing_connection_snapshots(layout_data)
-            self._validate_session_node_types(layout_data)
             layout_data = self._merge_session_specs(layout_data)
             layout_data = self._strip_port_restore_data(layout_data)
             layout_data = self._strip_unknown_session_custom_properties(layout_data)

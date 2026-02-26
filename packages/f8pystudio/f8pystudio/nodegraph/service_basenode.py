@@ -30,14 +30,13 @@ from NodeGraphQt.qgraphics.node_overlay_disabled import XDisabledItem
 from NodeGraphQt.qgraphics.node_text_item import NodeTextItem
 from NodeGraphQt.qgraphics.port import CustomPortItem, PortItem
 
-from .port_painter import draw_exec_port, draw_square_port, EXEC_PORT_COLOR, DATA_PORT_COLOR, STATE_PORT_COLOR
+from .port_painter import draw_square_port, DATA_PORT_COLOR, STATE_PORT_COLOR
 from .service_process_toolbar import ServiceProcessToolbar
 from .service_bridge_protocol import ServiceBridge
 from .viewer import F8StudioNodeViewer
 from .items.node_item_core import (
     StateFieldInfo as _StateFieldInfo,
     port_name as _port_name,
-    service_exec_ports as _service_exec_ports,
     state_field_info as _state_field_info,
 )
 from .items.inline_command_panel import (
@@ -85,31 +84,9 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
 
         self.set_port_deletion_allowed(True)
 
-        self._build_exec_port()
         self._build_data_port()
         self._build_state_port()
         self._build_state_properties()
-
-    def _build_exec_port(self) -> None:
-        """
-        Services may optionally expose exec ports (extra schema fields).
-        """
-        exec_in, exec_out = _service_exec_ports(self.spec)
-        for p in exec_in:
-            self.add_input(
-                f"[E]{p}",
-                multi_input=False,
-                color=EXEC_PORT_COLOR,
-                painter_func=draw_exec_port,
-            )
-
-        for p in exec_out:
-            self.add_output(
-                f"{p}[E]",
-                multi_output=False,
-                color=EXEC_PORT_COLOR,
-                painter_func=draw_exec_port,
-            )
 
     def _build_data_port(self):
 
@@ -267,20 +244,6 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
         # leave "dangling" pipes in the scene, crashing during paint.
         desired_inputs: dict[str, dict[str, Any]] = {}
         desired_outputs: dict[str, dict[str, Any]] = {}
-
-        exec_in, exec_out = _service_exec_ports(self.spec)
-        for p in exec_in:
-            desired_inputs[f"[E]{p}"] = {
-                "color": EXEC_PORT_COLOR,
-                "painter_func": draw_exec_port,
-                "multi_input": False,
-            }
-        for p in exec_out:
-            desired_outputs[f"{p}[E]"] = {
-                "color": EXEC_PORT_COLOR,
-                "painter_func": draw_exec_port,
-                "multi_output": False,
-            }
 
         def _port_has_connections(port: Any) -> bool:
             if port is None:
@@ -1497,12 +1460,6 @@ class F8StudioServiceNodeItem(AbstractNodeItem):
         # Build ordered port name lists per group.
         exec_in_names: list[str] = []
         exec_out_names: list[str] = []
-        if isinstance(spec, F8ServiceSpec):
-            exec_in, exec_out = _service_exec_ports(spec)
-            for p in exec_in:
-                exec_in_names.append(f"[E]{p}")
-            for p in exec_out:
-                exec_out_names.append(f"{p}[E]")
 
         data_in_names: list[str] = []
         data_out_names: list[str] = []

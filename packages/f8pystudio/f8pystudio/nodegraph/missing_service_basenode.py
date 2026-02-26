@@ -1,70 +1,41 @@
 from __future__ import annotations
 
-import json
-import logging
-from typing import Any
+from qtpy import QtWidgets
 
-from NodeGraphQt.constants import NodePropWidgetEnum
+from f8pysdk import (
+    F8ServiceSchemaVersion,
+    F8ServiceSpec,
+)
 
-from .container_basenode import F8StudioContainerBaseNode
+from .missing_badge import MissingBadgeMixin
+from .service_basenode import F8StudioServiceBaseNode, F8StudioServiceNodeItem
 
-logger = logging.getLogger(__name__)
+class F8StudioMissingServiceNodeItem(MissingBadgeMixin, F8StudioServiceNodeItem):
+    def __init__(self, name: str = "node", parent: QtWidgets.QGraphicsItem | None = None):
+        super().__init__(name=name, parent=parent)
+        self._init_missing_badge()
+
+    def draw_node(self) -> None:
+        super().draw_node()
+        self._refresh_missing_badge()
 
 
-class F8StudioMissingServiceBaseNode(F8StudioContainerBaseNode):
+class F8StudioServiceMissingNode(F8StudioServiceBaseNode):
     """
-    Placeholder service/container node used when a session references an unregistered node type.
-
-    Session loader stores original type/spec in `f8_sys`, and mirrors them into `custom` values:
-      - missingType: original `type_` string
-      - missingSpec: JSON string of the original `f8_spec` (best-effort)
+    Placeholder service node used when a session references an unknown type.
     """
 
-    def __init__(self, qgraphics_item=None):
-        super().__init__(qgraphics_item=qgraphics_item)
-        self._ensure_missing_property("missingType", default="")
-        self._ensure_missing_property("missingSpec", default="{}", multiline=True)
+    SPEC_TEMPLATE = F8ServiceSpec(
+        schemaVersion=F8ServiceSchemaVersion.f8service_1,
+        serviceClass="f8.missing",
+        version="0.0.1",
+        label="Missing Service",
+        tags=["__hidden__"],
+    )
 
-    def _ensure_missing_property(self, name: str, *, default: Any, multiline: bool = False) -> None:
-        prop_name = str(name or "").strip()
-        if not prop_name:
-            return
-        try:
-            if self.has_property(prop_name):  # type: ignore[attr-defined]
-                return
-        except (AttributeError, RuntimeError, TypeError):
-            pass
-        try:
-            widget = NodePropWidgetEnum.QTEXT_EDIT.value if multiline else NodePropWidgetEnum.QLINE_EDIT.value
-            self.create_property(
-                prop_name,
-                default,
-                widget_type=widget,
-                widget_tooltip="Session referenced an unregistered node type; this is a placeholder.",
-                tab="Node",
-            )
-        except Exception:
-            logger.exception("Failed to create missing-service property: %s", prop_name)
+    def __init__(self, qgraphics_item: type[QtWidgets.QGraphicsItem] | None = None):
+        super().__init__(qgraphics_item=qgraphics_item or F8StudioMissingServiceNodeItem)
 
-    def sync_from_spec(self) -> None:
-        super().sync_from_spec()
 
-        try:
-            missing_type = str(self.get_property("missingType") or "").strip()
-        except Exception:
-            missing_type = ""
-        if missing_type:
-            try:
-                self.set_name(f"[Missing] {missing_type}")
-            except (AttributeError, RuntimeError, TypeError):
-                pass
-
-        try:
-            raw = self.get_property("missingSpec")
-        except Exception:
-            raw = None
-        if isinstance(raw, dict):
-            try:
-                self.set_property("missingSpec", json.dumps(raw, ensure_ascii=False, indent=2), push_undo=False)
-            except (AttributeError, RuntimeError, TypeError, ValueError):
-                pass
+# Compatibility alias.
+F8StudioMissingServiceBaseNode = F8StudioServiceMissingNode

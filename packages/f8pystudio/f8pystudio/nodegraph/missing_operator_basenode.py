@@ -1,73 +1,43 @@
 from __future__ import annotations
 
-import json
-import logging
-from typing import Any
+from qtpy import QtWidgets
 
-from NodeGraphQt.constants import NodePropWidgetEnum
+from f8pysdk import (
+    F8OperatorSchemaVersion,
+    F8OperatorSpec,
+)
 
-from .operator_basenode import F8StudioOperatorBaseNode
+from .missing_badge import MissingBadgeMixin
+from .operator_basenode import F8StudioOperatorBaseNode, F8StudioOperatorNodeItem
 
-logger = logging.getLogger(__name__)
+
+class F8StudioMissingOperatorNodeItem(MissingBadgeMixin, F8StudioOperatorNodeItem):
+    def __init__(self, name: str = "node", parent: QtWidgets.QGraphicsItem | None = None):
+        super().__init__(name=name, parent=parent)
+        self._init_missing_badge()
+
+    def draw_node(self) -> None:
+        super().draw_node()
+        self._refresh_missing_badge()
 
 
-class F8StudioMissingOperatorBaseNode(F8StudioOperatorBaseNode):
+class F8StudioOperatorMissingNode(F8StudioOperatorBaseNode):
     """
-    Placeholder operator node used when a session references an unregistered node type.
-
-    Session loader stores original type/spec in `f8_sys`, and mirrors them into `custom` values:
-      - missingType: original `type_` string
-      - missingSpec: JSON string of the original `f8_spec` (best-effort)
+    Placeholder operator node used when a session references an unknown type.
     """
 
-    def __init__(self, qgraphics_item=None):
-        super().__init__(qgraphics_item=qgraphics_item)
+    SPEC_TEMPLATE = F8OperatorSpec(
+        schemaVersion=F8OperatorSchemaVersion.f8operator_1,
+        serviceClass="f8.missing",
+        operatorClass="f8.missing.operator",
+        version="0.0.1",
+        label="Missing Operator",
+        tags=["__hidden__"],
+    )
 
-        self._ensure_missing_property("missingType", default="")
-        self._ensure_missing_property("missingSpec", default="{}", multiline=True)
+    def __init__(self, qgraphics_item: type[QtWidgets.QGraphicsItem] | None = None):
+        super().__init__(qgraphics_item=qgraphics_item or F8StudioMissingOperatorNodeItem)
 
-    def _ensure_missing_property(self, name: str, *, default: Any, multiline: bool = False) -> None:
-        prop_name = str(name or "").strip()
-        if not prop_name:
-            return
-        try:
-            if self.has_property(prop_name):  # type: ignore[attr-defined]
-                return
-        except (AttributeError, RuntimeError, TypeError):
-            pass
-        try:
-            widget = NodePropWidgetEnum.QTEXT_EDIT.value if multiline else NodePropWidgetEnum.QLINE_EDIT.value
-            self.create_property(
-                prop_name,
-                default,
-                widget_type=widget,
-                widget_tooltip="Session referenced an unregistered node type; this is a placeholder.",
-                tab="Node",
-            )
-        except Exception:
-            logger.exception("Failed to create missing-node property: %s", prop_name)
 
-    def sync_from_spec(self) -> None:
-        super().sync_from_spec()
-
-        # Ensure the node name reflects the missing type when available.
-        try:
-            missing_type = str(self.get_property("missingType") or "").strip()
-        except Exception:
-            missing_type = ""
-        if missing_type:
-            try:
-                self.set_name(f"[Missing] {missing_type}")
-            except (AttributeError, RuntimeError, TypeError):
-                pass
-
-        # Keep missingSpec reasonably readable if it was stored as a dict by older sessions.
-        try:
-            raw = self.get_property("missingSpec")
-        except Exception:
-            raw = None
-        if isinstance(raw, dict):
-            try:
-                self.set_property("missingSpec", json.dumps(raw, ensure_ascii=False, indent=2), push_undo=False)
-            except (AttributeError, RuntimeError, TypeError, ValueError):
-                pass
+# Compatibility alias.
+F8StudioMissingOperatorBaseNode = F8StudioOperatorMissingNode

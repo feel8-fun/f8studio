@@ -5,7 +5,7 @@ from typing import Protocol, TypeAlias, TypeGuard
 from f8pysdk import F8OperatorSpec, F8ServiceSpec
 
 
-HIDDEN_NODE_TAGS: frozenset[str] = frozenset({"__hidden__", "__missing__"})
+HIDDEN_NODE_TAGS: frozenset[str] = frozenset({"__hidden__"})
 SpecTemplate: TypeAlias = F8OperatorSpec | F8ServiceSpec
 
 

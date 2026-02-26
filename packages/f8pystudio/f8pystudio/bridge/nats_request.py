@@ -54,11 +54,3 @@ def parse_ok_envelope(payload: dict[str, Any]) -> OkEnvelope:
     err_obj = err if isinstance(err, dict) else {}
     msg = str(err_obj.get("message") or "").strip()
     return OkEnvelope(ok=False, result=result_obj, error_message=msg, payload=payload)
-
-
-def parse_ok_response(payload: dict[str, Any]) -> tuple[bool, dict[str, Any], str]:
-    """
-    Backward-compatible tuple adapter for older call sites.
-    """
-    parsed = parse_ok_envelope(payload)
-    return parsed.ok, parsed.result, parsed.error_message

@@ -13,28 +13,11 @@ def effective_state_fields(node: Any) -> list[Any]:
         fields = []
     return list(fields or [])
 
-
-def _fallback_state_fields(node: Any) -> list[Any]:
-    fields = effective_state_fields(node)
-    if fields:
-        return fields
-    try:
-        spec = node.spec
-    except AttributeError:
-        spec = None
-    if spec is None:
-        return []
-    try:
-        return list(spec.stateFields or [])
-    except AttributeError:
-        return []
-
-
 def state_field_schema(node: Any, prop_name: str) -> Any | None:
     prop = str(prop_name or "").strip()
     if not prop:
         return None
-    for field in _fallback_state_fields(node):
+    for field in effective_state_fields(node):
         try:
             name = str(field.name or "").strip()
         except AttributeError:
@@ -51,7 +34,7 @@ def state_field_access(node: Any, prop_name: str) -> F8StateAccess | None:
     prop = str(prop_name or "").strip()
     if not prop:
         return None
-    for field in _fallback_state_fields(node):
+    for field in effective_state_fields(node):
         try:
             name = str(field.name or "").strip()
         except AttributeError:
@@ -72,7 +55,7 @@ def state_field_ui_control(node: Any, prop_name: str) -> str:
     prop = str(prop_name or "").strip()
     if not prop:
         return ""
-    for field in _fallback_state_fields(node):
+    for field in effective_state_fields(node):
         try:
             name = str(field.name or "").strip()
         except AttributeError:
@@ -90,7 +73,7 @@ def state_field_ui_language(node: Any, prop_name: str) -> str:
     prop = str(prop_name or "").strip()
     if not prop:
         return ""
-    for field in _fallback_state_fields(node):
+    for field in effective_state_fields(node):
         try:
             name = str(field.name or "").strip()
         except AttributeError:

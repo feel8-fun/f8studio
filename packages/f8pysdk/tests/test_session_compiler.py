@@ -149,6 +149,25 @@ class SessionCompilerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             compile_runtime_graphs_from_session_layout(layout=layout, catalog=self.catalog)
 
+    def test_missing_locked_node_raises(self) -> None:
+        layout = {
+            "nodes": {
+                "svc_missing": {
+                    "id": "svc_missing",
+                    "f8_spec": self._service_spec("f8.pyengine").model_dump(mode="json"),
+                    "f8_sys": {
+                        "missingLocked": True,
+                        "missingType": "svc.some.missing",
+                    },
+                }
+            },
+            "connections": [],
+        }
+        with self.assertRaises(ValueError) as ctx:
+            compile_runtime_graphs_from_session_layout(layout=layout, catalog=self.catalog)
+        self.assertIn("missing dependency node", str(ctx.exception))
+        self.assertIn("svc_missing", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

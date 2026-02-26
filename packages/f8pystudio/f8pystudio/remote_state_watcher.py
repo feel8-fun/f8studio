@@ -50,14 +50,7 @@ def _coerce_inbound_ts_ms(ts_raw: Any, *, default: int) -> int:
 
 
 def _extract_ts_field(payload: dict[str, Any]) -> Any:
-    # Back-compat: tolerate alternative keys used by ad-hoc writers.
-    if "ts" in payload:
-        return payload.get("ts")
-    if "ts_ms" in payload:
-        return payload.get("ts_ms")
-    if "tsMs" in payload:
-        return payload.get("tsMs")
-    return None
+    return payload.get("tsMs")
 
 
 @dataclass(frozen=True)
