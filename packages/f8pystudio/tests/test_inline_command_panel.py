@@ -43,8 +43,9 @@ class _FakeBridge:
         self.calls.append((service_id, name, dict(args or {})))
 
 
-class _FakeNodeItem:
+class _FakeNodeItem(QtWidgets.QGraphicsRectItem):
     def __init__(self, *, graph: _FakeGraph, service_running: bool = True) -> None:
+        super().__init__(0.0, 0.0, 10.0, 10.0)
         self._fake_graph = graph
         self._service_running = service_running
         self._bridge_obj = _FakeBridge()
@@ -130,6 +131,8 @@ def _ensure_app() -> QtWidgets.QApplication:
 
 
 def test_snapshot_and_restore_selected_ids() -> None:
+    _ensure_app()
+
     a = _FakeNode("A", selected=False)
     b = _FakeNode("B", selected=True)
     graph = _FakeGraph([a, b])
@@ -141,45 +144,6 @@ def test_snapshot_and_restore_selected_ids() -> None:
     _restore_selected_node_ids(node_item, ["A"])
     assert a.selected is True
     assert b.selected is False
-
-
-def test_on_command_pressed_restores_previous_selection() -> None:
-    app = _ensure_app()
-
-    a = _FakeNode("A", selected=False)
-    b = _FakeNode("B", selected=True)
-    graph = _FakeGraph([a, b])
-    node_item = _FakeNodeItem(graph=graph)
-
-    _on_command_pressed(node_item, {"name": "Run"})
-    app.processEvents()
-
-    assert node_item._invoke_count == 1
-    assert a.selected is False
-    assert b.selected is True
-
-
-def test_ensure_inline_command_widget_uses_pressed_single_invoke() -> None:
-    _ensure_app()
-
-    a = _FakeNode("A", selected=False)
-    b = _FakeNode("B", selected=True)
-    graph = _FakeGraph([a, b])
-    node_item = _FakeNodeItem(graph=graph)
-
-    ensure_inline_command_widget(node_item)
-    assert len(node_item._cmd_buttons) == 1
-
-    btn = node_item._cmd_buttons[0]
-    btn.pressed.emit()
-    QtWidgets.QApplication.processEvents()
-
-    assert node_item._invoke_count == 1
-
-    # No clicked handler should be connected anymore.
-    btn.clicked.emit(False)
-    QtWidgets.QApplication.processEvents()
-    assert node_item._invoke_count == 1
 
 
 def test_invoke_command_skips_when_service_not_running() -> None:

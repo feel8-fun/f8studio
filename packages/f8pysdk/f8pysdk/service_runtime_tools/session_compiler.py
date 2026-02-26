@@ -16,7 +16,12 @@ from f8pysdk.generated import (
     F8RuntimeService,
     F8ServiceSpec,
 )
-from f8pysdk.rungraph_validation import validate_state_edge_targets_writable_or_raise, validate_state_edges_or_raise
+from f8pysdk.rungraph_validation import (
+    validate_data_edges_or_raise,
+    validate_exec_edges_or_raise,
+    validate_state_edge_targets_writable_or_raise,
+    validate_state_edges_or_raise,
+)
 
 from .catalog import ServiceCatalog
 
@@ -316,6 +321,8 @@ def compile_runtime_graphs_from_session_layout(
         nodes=runtime_nodes,
         edges=edges,
     )
+    validate_exec_edges_or_raise(graph)
+    validate_data_edges_or_raise(graph)
     validate_state_edges_or_raise(graph, forbid_cycles=True, forbid_multi_upstream=True)
     validate_state_edge_targets_writable_or_raise(graph)
     return CompiledRuntimeGraphs(

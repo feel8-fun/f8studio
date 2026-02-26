@@ -25,6 +25,8 @@ from f8pysdk.builtin_state_fields import (
     service_state_fields_with_builtins,
 )
 from f8pysdk.rungraph_validation import (
+    validate_data_edges_or_raise,
+    validate_exec_edges_or_raise,
     validate_state_edge_targets_writable_or_raise,
     validate_state_edges_or_raise,
 )
@@ -494,7 +496,9 @@ def compile_global_runtime_graph(
             compile_warnings.extend(warnings)
         for warning in warnings:
             logger.warning("%s", warning)
-    # Studio-level validation: reject invalid state wiring early.
+    # Studio-level validation: reject invalid wiring early.
+    validate_exec_edges_or_raise(graph)
+    validate_data_edges_or_raise(graph)
     validate_state_edges_or_raise(graph, forbid_cycles=True, forbid_multi_upstream=True)
     validate_state_edge_targets_writable_or_raise(graph)
     return graph

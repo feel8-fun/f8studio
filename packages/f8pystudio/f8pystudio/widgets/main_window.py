@@ -11,6 +11,7 @@ import qtawesome as qta
 from f8pysdk import F8OperatorSpec, F8ServiceSpec
 
 from ..nodegraph import F8StudioGraph
+from ..nodegraph.edge_rules import EDGE_KIND_DATA, EDGE_KIND_EXEC, EDGE_KIND_STATE
 from ..nodegraph.session import last_session_path
 from ..nodegraph.runtime_compiler import compile_runtime_graphs_from_studio
 from ..pystudio_service_bridge import PyStudioServiceBridge, PyStudioServiceBridgeConfig
@@ -172,6 +173,30 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         tb.addAction(self._deploy_action)
 
         tb.addSeparator()
+
+        self._exec_lines_action = QtGui.QAction("Exec Lines", self)
+        self._exec_lines_action.setCheckable(True)
+        self._exec_lines_action.setChecked(True)
+        self._exec_lines_action.toggled.connect(  # type: ignore[attr-defined]
+            lambda checked: self.studio_graph.set_edge_kind_visible(EDGE_KIND_EXEC, bool(checked))
+        )
+        tb.addAction(self._exec_lines_action)
+
+        self._data_lines_action = QtGui.QAction("Data Lines", self)
+        self._data_lines_action.setCheckable(True)
+        self._data_lines_action.setChecked(True)
+        self._data_lines_action.toggled.connect(  # type: ignore[attr-defined]
+            lambda checked: self.studio_graph.set_edge_kind_visible(EDGE_KIND_DATA, bool(checked))
+        )
+        tb.addAction(self._data_lines_action)
+
+        self._state_lines_action = QtGui.QAction("State Lines", self)
+        self._state_lines_action.setCheckable(True)
+        self._state_lines_action.setChecked(True)
+        self._state_lines_action.toggled.connect(  # type: ignore[attr-defined]
+            lambda checked: self.studio_graph.set_edge_kind_visible(EDGE_KIND_STATE, bool(checked))
+        )
+        tb.addAction(self._state_lines_action)
 
     def closeEvent(self, event):
         self._auto_save_session()

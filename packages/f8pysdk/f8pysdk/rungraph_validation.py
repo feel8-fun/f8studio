@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from .generated import F8Edge, F8EdgeKindEnum, F8RuntimeGraph, F8StateAccess
+from .generated import F8Edge, F8EdgeKindEnum, F8RuntimeGraph, F8RuntimeNode, F8StateAccess
 
 
 def _state_key(*, service_id: str, node_id: str, field: str) -> tuple[str, str, str]:
@@ -12,6 +12,117 @@ def _state_key(*, service_id: str, node_id: str, field: str) -> tuple[str, str, 
 def _fmt_key(k: tuple[str, str, str]) -> str:
     sid, nid, fld = k
     return f"{sid}.{nid}.{fld}"
+
+
+def validate_exec_edges_or_raise(
+    graph: F8RuntimeGraph,
+) -> None:
+    """
+    Validate exec-edge wiring constraints on a global rungraph.
+
+    Enforced:
+    - exec edges must be intra-service (`fromServiceId == toServiceId`)
+    - exec endpoints must be operator nodes (not service nodes)
+    - each exec out port has at most one downstream
+    - each exec in port has at most one upstream
+    """
+    nodes_by_key: dict[tuple[str, str], F8RuntimeNode] = {}
+    for n in list(graph.nodes or []):
+        service_id = str(n.serviceId or "").strip()
+        node_id = str(n.nodeId or "").strip()
+        if not service_id or not node_id:
+            continue
+        nodes_by_key[(service_id, node_id)] = n
+
+    out_map: dict[tuple[str, str, str], tuple[str, str, str]] = {}
+    in_map: dict[tuple[str, str, str], tuple[str, str, str]] = {}
+
+    for e in list(graph.edges or []):
+        if e.kind != F8EdgeKindEnum.exec:
+            continue
+        from_sid = str(e.fromServiceId or "").strip()
+        to_sid = str(e.toServiceId or "").strip()
+        from_op = str(e.fromOperatorId or "").strip()
+        to_op = str(e.toOperatorId or "").strip()
+        from_port = str(e.fromPort or "").strip()
+        to_port = str(e.toPort or "").strip()
+        if not (from_sid and to_sid and from_op and to_op and from_port and to_port):
+            continue
+
+        if from_sid != to_sid:
+            raise ValueError(
+                f"cross-service exec edge is not allowed: {from_sid}.{from_op}.{from_port} -> {to_sid}.{to_op}.{to_port}"
+            )
+
+        from_node = nodes_by_key.get((from_sid, from_op))
+        if from_node is None:
+            raise ValueError(f"exec edge source node not found: {from_sid}.{from_op}")
+        to_node = nodes_by_key.get((to_sid, to_op))
+        if to_node is None:
+            raise ValueError(f"exec edge target node not found: {to_sid}.{to_op}")
+
+        from_operator_class = str(from_node.operatorClass or "").strip()
+        if not from_operator_class:
+            raise ValueError(f"exec edge source must be operator node: {from_sid}.{from_op}")
+        to_operator_class = str(to_node.operatorClass or "").strip()
+        if not to_operator_class:
+            raise ValueError(f"exec edge target must be operator node: {to_sid}.{to_op}")
+
+        from_key = (from_sid, from_op, from_port)
+        to_key = (to_sid, to_op, to_port)
+
+        prev_to = out_map.get(from_key)
+        if prev_to is not None and prev_to != to_key:
+            raise ValueError(
+                "exec out port must be single-connected: "
+                f"{_fmt_key(from_key)} -> {_fmt_key(prev_to)} and {_fmt_key(to_key)}"
+            )
+        out_map[from_key] = to_key
+
+        prev_from = in_map.get(to_key)
+        if prev_from is not None and prev_from != from_key:
+            raise ValueError(
+                "exec in port must be single-connected: "
+                f"{_fmt_key(to_key)} <- {_fmt_key(prev_from)} and {_fmt_key(from_key)}"
+            )
+        in_map[to_key] = from_key
+
+
+def validate_data_edges_or_raise(
+    graph: F8RuntimeGraph,
+) -> None:
+    """
+    Validate data-edge wiring constraints on a global rungraph.
+
+    Enforced:
+    - data input port is single-upstream (multiple upstream to one input is invalid)
+    - data output ports are unrestricted (fan-out allowed)
+    """
+    inbound_map: dict[tuple[str, str, str], tuple[str, str, str]] = {}
+    for e in list(graph.edges or []):
+        if e.kind != F8EdgeKindEnum.data:
+            continue
+        from_sid = str(e.fromServiceId or "").strip()
+        to_sid = str(e.toServiceId or "").strip()
+        from_op = str(e.fromOperatorId or "").strip()
+        to_op = str(e.toOperatorId or "").strip()
+        from_port = str(e.fromPort or "").strip()
+        to_port = str(e.toPort or "").strip()
+        if not (from_sid and to_sid and from_port and to_port):
+            continue
+
+        from_node = from_op or f"$service:{from_sid}"
+        to_node = to_op or f"$service:{to_sid}"
+        from_key = (from_sid, from_node, from_port)
+        to_key = (to_sid, to_node, to_port)
+
+        prev_from = inbound_map.get(to_key)
+        if prev_from is not None and prev_from != from_key:
+            raise ValueError(
+                "multiple upstreams for data input: "
+                f"{_fmt_key(to_key)} <- {_fmt_key(prev_from)} and {_fmt_key(from_key)}"
+            )
+        inbound_map[to_key] = from_key
 
 
 def validate_state_edges_or_raise(

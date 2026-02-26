@@ -40,6 +40,14 @@ runner = "python -m f8pysdk.headless_runner"
 sdk_tests = 'python -m unittest discover -s packages/f8pysdk/tests -p "test_*.py"'
 update_describes = "python scripts/update_static_describes.py"
 
+[feature.test.dependencies]
+pytest = ">=8.4.2,<9"
+
+[feature.test.tasks]
+pytest = "python -m pytest"
+pytest_sdk = "python -m pytest -q packages/f8pysdk/tests"
+pytest_studio = "python -m pytest -q packages/f8pystudio/tests"
+
 [feature.engine.pypi-dependencies]
 f8pyengine = { path = "packages/f8pyengine", editable = true }
 
@@ -100,7 +108,7 @@ build_studio_launcher = "python scripts/build_studio_launcher.py"
 dist_ci = "python scripts/dist_ci.py"
 
 [environments]
-default = { features = ["python", "sdk", "engine", "studio", "vision"], solve-group = "default" }
+default = { features = ["python", "sdk", "engine", "studio", "vision", "test"], solve-group = "default" }
 onnx = { features = ["python", "sdk", "onnx", "vision"], solve-group = "onnx" }
 mediapipe = { features = ["python", "sdk", "vision", "mediapipe"], solve-group = "mediapipe" }
 doc = { features = ["doc"] }

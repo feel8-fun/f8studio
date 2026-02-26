@@ -7,6 +7,7 @@ from typing import Any, Generic
 
 from qtpy import QtCore, QtWidgets, QtGui
 from NodeGraphQt import NodeGraph, BaseNode
+from NodeGraphQt.constants import PortTypeEnum
 from NodeGraphQt.errors import NodeCreationError, NodeDeletionError
 from NodeGraphQt.base.commands import NodeAddedCmd, NodeMovedCmd, NodesRemovedCmd, PortConnectedCmd
 from NodeGraphQt.base.port import Port as NGPort
@@ -32,6 +33,14 @@ from ..variants.variant_repository import upsert_variant
 
 from ..constants import SERVICE_CLASS as _CANVAS_SERVICE_CLASS_
 from ..constants import STUDIO_SERVICE_ID
+from .edge_rules import (
+    EdgeRuleNodeInfo,
+    layout_node_info,
+    normalize_edge_kind,
+    port_view_name,
+    validate_layout_connection,
+    validate_runtime_connection,
+)
 
 _BASE_OPERATOR_CLS_ = F8StudioOperatorBaseNode
 _BASE_CONTAINER_CLS_ = F8StudioContainerBaseNode
@@ -510,6 +519,95 @@ class F8StudioGraph(NodeGraph):
     def _on_port_disconnected(self, in_port: NGPort, out_port: NGPort) -> None:
         self._on_port_connection_changed(in_port=in_port, out_port=out_port)
 
+    def set_edge_kind_visible(self, kind: str, visible: bool) -> None:
+        normalized = normalize_edge_kind(kind)
+        if normalized is None:
+            raise ValueError(f"unknown edge kind: {kind}")
+        viewer = self._viewer
+        if not isinstance(viewer, F8StudioNodeViewer):
+            return
+        viewer.set_edge_kind_visible(normalized, bool(visible))
+
+    def edge_kind_visible(self, kind: str) -> bool:
+        normalized = normalize_edge_kind(kind)
+        if normalized is None:
+            raise ValueError(f"unknown edge kind: {kind}")
+        viewer = self._viewer
+        if not isinstance(viewer, F8StudioNodeViewer):
+            return True
+        return bool(viewer.edge_kind_visible(normalized))
+
+    @staticmethod
+    def _ordered_port_views(port_a: Any, port_b: Any) -> tuple[Any, Any] | None:
+        if port_a.port_type == PortTypeEnum.OUT.value and port_b.port_type == PortTypeEnum.IN.value:
+            return port_a, port_b
+        if port_b.port_type == PortTypeEnum.OUT.value and port_a.port_type == PortTypeEnum.IN.value:
+            return port_b, port_a
+        return None
+
+    def _connection_views_allowed(self, port_a: Any, port_b: Any) -> tuple[bool, str]:
+        ordered = self._ordered_port_views(port_a, port_b)
+        if ordered is None:
+            return False, "connection must be between output and input ports"
+        out_view, in_view = ordered
+        out_node_id = str(out_view.node.id or "").strip()
+        in_node_id = str(in_view.node.id or "").strip()
+        if not out_node_id or not in_node_id:
+            return False, "connection endpoints are missing node ids"
+
+        try:
+            out_node = self.get_node_by_id(out_node_id)
+            in_node = self.get_node_by_id(in_node_id)
+        except (AttributeError, KeyError, RuntimeError, TypeError):
+            return False, "connection endpoint nodes not found"
+        if out_node is None or in_node is None:
+            return False, "connection endpoint nodes not found"
+
+        return validate_runtime_connection(
+            out_port_name=port_view_name(out_view),
+            in_port_name=port_view_name(in_view),
+            out_node=out_node,
+            in_node=in_node,
+        )
+
+    def _on_connection_changed(self, disconnected, connected):  # type: ignore[override]
+        if not (disconnected or connected):
+            return
+
+        valid_connected = []
+        rejected_count = 0
+        for pair in list(connected or []):
+            if not (isinstance(pair, (list, tuple)) and len(pair) == 2):
+                rejected_count += 1
+                continue
+            allowed, reason = self._connection_views_allowed(pair[0], pair[1])
+            if not allowed:
+                rejected_count += 1
+                logger.warning("Rejected invalid connection: %s", reason)
+                continue
+            valid_connected.append(pair)
+
+        if rejected_count:
+            logger.warning("Rejected %s invalid connection(s) by studio edge rules.", rejected_count)
+
+        valid_disconnected = list(disconnected or [])
+        if list(connected or []):
+            if not valid_connected:
+                valid_disconnected = []
+            else:
+                endpoints: set[Any] = set()
+                for a, b in valid_connected:
+                    endpoints.add(a)
+                    endpoints.add(b)
+                filtered = []
+                for pair in list(disconnected or []):
+                    if not (isinstance(pair, (list, tuple)) and len(pair) == 2):
+                        continue
+                    if pair[0] in endpoints or pair[1] in endpoints:
+                        filtered.append(pair)
+                valid_disconnected = filtered
+        super()._on_connection_changed(valid_disconnected, valid_connected)
+
     def begin_node_placement(self, node_type: str, node_label: str) -> None:
         viewer = self._viewer
         if isinstance(viewer, F8StudioNodeViewer):
@@ -603,13 +701,17 @@ class F8StudioGraph(NodeGraph):
             return None
 
         port_sets: dict[str, set[str] | None] = {}
+        node_info_by_id: dict[str, EdgeRuleNodeInfo | None] = {}
         for node_id, node_data in nodes.items():
+            node_id_str = str(node_id)
             if not isinstance(node_data, dict):
-                port_sets[str(node_id)] = None
+                port_sets[node_id_str] = None
+                node_info_by_id[node_id_str] = None
                 continue
+            node_info_by_id[node_id_str] = layout_node_info(node_id_str, node_data)
             spec = _coerce_spec(node_data.get("f8_spec"))
             if spec is None:
-                port_sets[str(node_id)] = None
+                port_sets[node_id_str] = None
                 continue
 
             # Apply UI overrides (eg. showOnNode) so we can strip connections
@@ -662,10 +764,11 @@ class F8StudioGraph(NodeGraph):
                     ports.add(f"{name}[S]")
                 except (AttributeError, TypeError):
                     continue
-            port_sets[str(node_id)] = ports
+            port_sets[node_id_str] = ports
 
         kept: list[dict[str, Any]] = []
         dropped = 0
+        rule_dropped = 0
         for c in conns:
             if not isinstance(c, dict):
                 dropped += 1
@@ -688,10 +791,26 @@ class F8StudioGraph(NodeGraph):
             if in_ports is not None and in_port not in in_ports:
                 dropped += 1
                 continue
+
+            allowed, _reason = validate_layout_connection(
+                out_node_id=out_nid,
+                out_port_name=out_port,
+                in_node_id=in_nid,
+                in_port_name=in_port,
+                node_info_by_id=node_info_by_id,
+            )
+            if not allowed:
+                dropped += 1
+                rule_dropped += 1
+                continue
             kept.append(c)
 
         if dropped:
-            logger.warning("Stripped %s invalid session connection(s).", dropped)
+            logger.warning(
+                "Stripped %s invalid session connection(s) (%s rule-violating).",
+                dropped,
+                rule_dropped,
+            )
         layout_data["connections"] = kept
         return layout_data
 

@@ -23,6 +23,31 @@ python -m f8pystudio.main --discovery-live
 5. Wire state/data/exec edges.
 6. Save session JSON for reuse in headless mode.
 
+## Edge Rules
+
+Studio enforces 3 independent edge kinds:
+
+- `exec` (white, thick line)
+- `data` (gray line)
+- `state` (yellow line)
+
+Rules:
+
+- `exec` can only connect `exec -> exec`.
+- `exec` endpoints must both be operator nodes in the same `svcId` (same engine instance).
+- `exec` is single-in and single-out per port (reconnect replaces the old edge).
+- `data` can only connect `data -> data`.
+- `state` can only connect `state -> state`.
+- `data`/`state` are `multiple-out, single-in`, and allow cross-service links.
+
+Legacy sessions:
+
+- Invalid connections are stripped automatically on load, with warning logs.
+
+Toolbar visibility:
+
+- Use `Exec Lines`, `Data Lines`, `State Lines` toggle actions to show/hide each edge kind independently.
+
 ## When to Use Studio
 
 Use Studio when you need:

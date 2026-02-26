@@ -15,11 +15,167 @@ from f8pysdk.generated import (  # noqa: E402
     F8StateAccess,
     F8StateSpec,
 )
-from f8pysdk.rungraph_validation import validate_state_edge_targets_writable_or_raise  # noqa: E402
+from f8pysdk.rungraph_validation import (  # noqa: E402
+    validate_data_edges_or_raise,
+    validate_exec_edges_or_raise,
+    validate_state_edge_targets_writable_or_raise,
+)
 from f8pysdk.schema_helpers import string_schema  # noqa: E402
 
 
 class RungraphValidationTests(unittest.TestCase):
+    def test_rejects_cross_service_exec_edge(self) -> None:
+        source = F8RuntimeNode(
+            nodeId="opA",
+            serviceId="svcA",
+            serviceClass="svcA",
+            operatorClass="OpA",
+        )
+        target = F8RuntimeNode(
+            nodeId="opB",
+            serviceId="svcB",
+            serviceClass="svcB",
+            operatorClass="OpB",
+        )
+        edge = F8Edge(
+            edgeId="e1",
+            fromServiceId="svcA",
+            fromOperatorId="opA",
+            fromPort="next",
+            toServiceId="svcB",
+            toOperatorId="opB",
+            toPort="in",
+            kind=F8EdgeKindEnum.exec,
+            strategy=F8EdgeStrategyEnum.latest,
+        )
+        graph = F8RuntimeGraph(graphId="g1", revision="r1", nodes=[source, target], edges=[edge])
+        with self.assertRaises(ValueError):
+            validate_exec_edges_or_raise(graph)
+
+    def test_rejects_exec_edge_with_non_operator_endpoint(self) -> None:
+        source = F8RuntimeNode(
+            nodeId="opA",
+            serviceId="svcA",
+            serviceClass="svcA",
+            operatorClass="OpA",
+        )
+        service_node = F8RuntimeNode(
+            nodeId="svcNode",
+            serviceId="svcA",
+            serviceClass="svcA",
+            operatorClass=None,
+        )
+        edge = F8Edge(
+            edgeId="e1",
+            fromServiceId="svcA",
+            fromOperatorId="opA",
+            fromPort="next",
+            toServiceId="svcA",
+            toOperatorId="svcNode",
+            toPort="in",
+            kind=F8EdgeKindEnum.exec,
+            strategy=F8EdgeStrategyEnum.latest,
+        )
+        graph = F8RuntimeGraph(graphId="g1", revision="r1", nodes=[source, service_node], edges=[edge])
+        with self.assertRaises(ValueError):
+            validate_exec_edges_or_raise(graph)
+
+    def test_rejects_exec_single_out_violation(self) -> None:
+        a = F8RuntimeNode(nodeId="opA", serviceId="svcA", serviceClass="svcA", operatorClass="OpA")
+        b = F8RuntimeNode(nodeId="opB", serviceId="svcA", serviceClass="svcA", operatorClass="OpB")
+        c = F8RuntimeNode(nodeId="opC", serviceId="svcA", serviceClass="svcA", operatorClass="OpC")
+        edges = [
+            F8Edge(
+                edgeId="e1",
+                fromServiceId="svcA",
+                fromOperatorId="opA",
+                fromPort="next",
+                toServiceId="svcA",
+                toOperatorId="opB",
+                toPort="in",
+                kind=F8EdgeKindEnum.exec,
+                strategy=F8EdgeStrategyEnum.latest,
+            ),
+            F8Edge(
+                edgeId="e2",
+                fromServiceId="svcA",
+                fromOperatorId="opA",
+                fromPort="next",
+                toServiceId="svcA",
+                toOperatorId="opC",
+                toPort="in",
+                kind=F8EdgeKindEnum.exec,
+                strategy=F8EdgeStrategyEnum.latest,
+            ),
+        ]
+        graph = F8RuntimeGraph(graphId="g1", revision="r1", nodes=[a, b, c], edges=edges)
+        with self.assertRaises(ValueError):
+            validate_exec_edges_or_raise(graph)
+
+    def test_rejects_exec_single_in_violation(self) -> None:
+        a = F8RuntimeNode(nodeId="opA", serviceId="svcA", serviceClass="svcA", operatorClass="OpA")
+        b = F8RuntimeNode(nodeId="opB", serviceId="svcA", serviceClass="svcA", operatorClass="OpB")
+        c = F8RuntimeNode(nodeId="opC", serviceId="svcA", serviceClass="svcA", operatorClass="OpC")
+        edges = [
+            F8Edge(
+                edgeId="e1",
+                fromServiceId="svcA",
+                fromOperatorId="opA",
+                fromPort="next",
+                toServiceId="svcA",
+                toOperatorId="opC",
+                toPort="in",
+                kind=F8EdgeKindEnum.exec,
+                strategy=F8EdgeStrategyEnum.latest,
+            ),
+            F8Edge(
+                edgeId="e2",
+                fromServiceId="svcA",
+                fromOperatorId="opB",
+                fromPort="next",
+                toServiceId="svcA",
+                toOperatorId="opC",
+                toPort="in",
+                kind=F8EdgeKindEnum.exec,
+                strategy=F8EdgeStrategyEnum.latest,
+            ),
+        ]
+        graph = F8RuntimeGraph(graphId="g1", revision="r1", nodes=[a, b, c], edges=edges)
+        with self.assertRaises(ValueError):
+            validate_exec_edges_or_raise(graph)
+
+    def test_rejects_data_single_input_violation(self) -> None:
+        a = F8RuntimeNode(nodeId="opA", serviceId="svcA", serviceClass="svcA", operatorClass="OpA")
+        b = F8RuntimeNode(nodeId="opB", serviceId="svcA", serviceClass="svcA", operatorClass="OpB")
+        c = F8RuntimeNode(nodeId="opC", serviceId="svcA", serviceClass="svcA", operatorClass="OpC")
+        edges = [
+            F8Edge(
+                edgeId="e1",
+                fromServiceId="svcA",
+                fromOperatorId="opA",
+                fromPort="out1",
+                toServiceId="svcA",
+                toOperatorId="opC",
+                toPort="in1",
+                kind=F8EdgeKindEnum.data,
+                strategy=F8EdgeStrategyEnum.latest,
+            ),
+            F8Edge(
+                edgeId="e2",
+                fromServiceId="svcA",
+                fromOperatorId="opB",
+                fromPort="out2",
+                toServiceId="svcA",
+                toOperatorId="opC",
+                toPort="in1",
+                kind=F8EdgeKindEnum.data,
+                strategy=F8EdgeStrategyEnum.latest,
+            ),
+        ]
+        graph = F8RuntimeGraph(graphId="g1", revision="r1", nodes=[a, b, c], edges=edges)
+        with self.assertRaises(ValueError):
+            validate_data_edges_or_raise(graph)
+
     def test_rejects_state_edge_to_readonly_target(self) -> None:
         source = F8RuntimeNode(
             nodeId="opA",

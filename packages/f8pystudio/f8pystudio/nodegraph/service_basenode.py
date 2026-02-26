@@ -98,6 +98,7 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
         for p in exec_in:
             self.add_input(
                 f"[E]{p}",
+                multi_input=False,
                 color=EXEC_PORT_COLOR,
                 painter_func=draw_exec_port,
             )
@@ -105,6 +106,7 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
         for p in exec_out:
             self.add_output(
                 f"{p}[E]",
+                multi_output=False,
                 color=EXEC_PORT_COLOR,
                 painter_func=draw_exec_port,
             )
@@ -116,6 +118,7 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
                 continue
             self.add_input(
                 f"[D]{p.name}",
+                multi_input=False,
                 color=DATA_PORT_COLOR,
             )
 
@@ -124,6 +127,7 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
                 continue
             self.add_output(
                 f"{p.name}[D]",
+                multi_output=True,
                 color=DATA_PORT_COLOR,
             )
 
@@ -137,6 +141,7 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
             if info.access in [F8StateAccess.rw, F8StateAccess.wo] or info.access_str in {"rw", "wo"}:
                 self.add_input(
                     f"[S]{info.name}",
+                    multi_input=False,
                     color=STATE_PORT_COLOR,
                     painter_func=draw_square_port,
                 )
@@ -144,6 +149,7 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
             if info.access in [F8StateAccess.rw, F8StateAccess.ro] or info.access_str in {"rw", "ro"}:
                 self.add_output(
                     f"{info.name}[S]",
+                    multi_output=True,
                     color=STATE_PORT_COLOR,
                     painter_func=draw_square_port,
                 )
@@ -264,9 +270,17 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
 
         exec_in, exec_out = _service_exec_ports(self.spec)
         for p in exec_in:
-            desired_inputs[f"[E]{p}"] = {"color": EXEC_PORT_COLOR, "painter_func": draw_exec_port}
+            desired_inputs[f"[E]{p}"] = {
+                "color": EXEC_PORT_COLOR,
+                "painter_func": draw_exec_port,
+                "multi_input": False,
+            }
         for p in exec_out:
-            desired_outputs[f"{p}[E]"] = {"color": EXEC_PORT_COLOR, "painter_func": draw_exec_port}
+            desired_outputs[f"{p}[E]"] = {
+                "color": EXEC_PORT_COLOR,
+                "painter_func": draw_exec_port,
+                "multi_output": False,
+            }
 
         def _port_has_connections(port: Any) -> bool:
             if port is None:
@@ -295,7 +309,7 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
                 except (AttributeError, RuntimeError, TypeError):
                     pass
             if show_on_node:
-                desired_inputs[port_name] = {"color": DATA_PORT_COLOR}
+                desired_inputs[port_name] = {"color": DATA_PORT_COLOR, "multi_input": False}
 
         for p in list(self.spec.dataOutPorts or []):
             try:
@@ -313,16 +327,24 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
                 except (AttributeError, RuntimeError, TypeError):
                     pass
             if show_on_node:
-                desired_outputs[port_name] = {"color": DATA_PORT_COLOR}
+                desired_outputs[port_name] = {"color": DATA_PORT_COLOR, "multi_output": True}
 
         for s in list(self.effective_state_fields() or []):
             info = _state_field_info(s)
             if info is None or not info.show_on_node:
                 continue
             if info.access in [F8StateAccess.rw, F8StateAccess.wo] or info.access_str in {"rw", "wo"}:
-                desired_inputs[f"[S]{info.name}"] = {"color": STATE_PORT_COLOR, "painter_func": draw_square_port}
+                desired_inputs[f"[S]{info.name}"] = {
+                    "color": STATE_PORT_COLOR,
+                    "painter_func": draw_square_port,
+                    "multi_input": False,
+                }
             if info.access in [F8StateAccess.rw, F8StateAccess.ro] or info.access_str in {"rw", "ro"}:
-                desired_outputs[f"{info.name}[S]"] = {"color": STATE_PORT_COLOR, "painter_func": draw_square_port}
+                desired_outputs[f"{info.name}[S]"] = {
+                    "color": STATE_PORT_COLOR,
+                    "painter_func": draw_square_port,
+                    "multi_output": True,
+                }
 
         # Remove ports that no longer exist in spec (disconnect first).
         current_input_names = set(self.inputs().keys())
@@ -361,14 +383,24 @@ class F8StudioServiceBaseNode(F8StudioBaseNode):
         for name in sorted(desired_input_names - current_input_names):
             meta = desired_inputs.get(name) or {}
             try:
-                self.add_input(name, color=meta.get("color"), painter_func=meta.get("painter_func"))
+                self.add_input(
+                    name,
+                    multi_input=bool(meta.get("multi_input", False)),
+                    color=meta.get("color"),
+                    painter_func=meta.get("painter_func"),
+                )
             except Exception as e:
                 logger.warning("Failed to add input port %r: %s", name, e)
 
         for name in sorted(desired_output_names - current_output_names):
             meta = desired_outputs.get(name) or {}
             try:
-                self.add_output(name, color=meta.get("color"), painter_func=meta.get("painter_func"))
+                self.add_output(
+                    name,
+                    multi_output=bool(meta.get("multi_output", True)),
+                    color=meta.get("color"),
+                    painter_func=meta.get("painter_func"),
+                )
             except Exception as e:
                 logger.warning("Failed to add output port %r: %s", name, e)
 

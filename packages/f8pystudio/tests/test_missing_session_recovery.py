@@ -3,6 +3,15 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
+from f8pysdk.generated import (
+    F8DataPortSpec,
+    F8OperatorSchemaVersion,
+    F8OperatorSpec,
+    F8ServiceSchemaVersion,
+    F8ServiceSpec,
+)
+from f8pysdk.schema_helpers import any_schema
+
 from f8pystudio.nodegraph.node_graph import (
     F8StudioGraph,
     _MISSING_CONNECTION_SNAPSHOTS_KEY,
@@ -12,10 +21,41 @@ from f8pystudio.nodegraph.node_graph import (
 
 
 def _new_graph_with_registry(registered_types: dict[str, Any]) -> F8StudioGraph:
-    graph = object.__new__(F8StudioGraph)
+    graph = F8StudioGraph.__new__(F8StudioGraph)
     graph._node_factory = SimpleNamespace(nodes=dict(registered_types))
     graph._missing_connection_snapshots = []
     return graph
+
+
+def _service_spec_payload(service_class: str) -> dict[str, Any]:
+    return F8ServiceSpec(
+        schemaVersion=F8ServiceSchemaVersion.f8service_1,
+        serviceClass=service_class,
+        version="0.0.1",
+        label="Service",
+    ).model_dump(mode="json")
+
+
+def _operator_spec_payload(
+    service_class: str,
+    operator_class: str,
+    *,
+    exec_in: list[str] | None = None,
+    exec_out: list[str] | None = None,
+    data_in: list[str] | None = None,
+    data_out: list[str] | None = None,
+) -> dict[str, Any]:
+    return F8OperatorSpec(
+        schemaVersion=F8OperatorSchemaVersion.f8operator_1,
+        serviceClass=service_class,
+        operatorClass=operator_class,
+        version="0.0.1",
+        label="Operator",
+        execInPorts=list(exec_in or []),
+        execOutPorts=list(exec_out or []),
+        dataInPorts=[F8DataPortSpec(name=n, valueSchema=any_schema()) for n in list(data_in or [])],
+        dataOutPorts=[F8DataPortSpec(name=n, valueSchema=any_schema()) for n in list(data_out or [])],
+    ).model_dump(mode="json")
 
 
 def test_restore_missing_placeholder_node_when_original_type_is_registered() -> None:
@@ -122,3 +162,53 @@ def test_coerce_missing_operator_uses_unified_missing_service_class() -> None:
     node = out["nodes"]["n1"]
     assert node["type_"] == _MISSING_OPERATOR_NODE_TYPE
     assert node["f8_spec"]["serviceClass"] == "f8.missing"
+
+
+def test_strip_invalid_connections_drops_cross_service_exec_and_mixed_kind() -> None:
+    layout = {
+        "nodes": {
+            "svc1": {"type_": "svc.f8.pyengine", "f8_spec": _service_spec_payload("f8.pyengine")},
+            "svc2": {"type_": "svc.f8.pyengine", "f8_spec": _service_spec_payload("f8.pyengine")},
+            "op1": {
+                "type_": "svc.f8.pyengine.op",
+                "f8_spec": _operator_spec_payload(
+                    "f8.pyengine",
+                    "f8.pyengine.op1",
+                    exec_out=["next"],
+                    data_out=["out"],
+                ),
+                "custom": {"svcId": "svc1"},
+            },
+            "op2": {
+                "type_": "svc.f8.pyengine.op",
+                "f8_spec": _operator_spec_payload(
+                    "f8.pyengine",
+                    "f8.pyengine.op2",
+                    exec_in=["in"],
+                    data_in=["din"],
+                ),
+                "custom": {"svcId": "svc2"},
+            },
+            "op3": {
+                "type_": "svc.f8.pyengine.op",
+                "f8_spec": _operator_spec_payload(
+                    "f8.pyengine",
+                    "f8.pyengine.op3",
+                    exec_in=["in"],
+                    data_in=["din"],
+                ),
+                "custom": {"svcId": "svc1"},
+            },
+        },
+        "connections": [
+            {"out": ["op1", "next[E]"], "in": ["op2", "[E]in"]},
+            {"out": ["op1", "next[E]"], "in": ["op3", "[D]din"]},
+            {"out": ["op1", "next[E]"], "in": ["op3", "[E]in"]},
+            {"out": ["op1", "out[D]"], "in": ["op2", "[D]din"]},
+        ],
+    }
+    out = F8StudioGraph._strip_invalid_connections(layout)
+    assert out["connections"] == [
+        {"out": ["op1", "next[E]"], "in": ["op3", "[E]in"]},
+        {"out": ["op1", "out[D]"], "in": ["op2", "[D]din"]},
+    ]

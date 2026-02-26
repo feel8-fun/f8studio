@@ -4,7 +4,19 @@ import logging
 from typing import Any
 
 from Qt import QtCore, QtGui, QtWidgets
+from NodeGraphQt.constants import PortTypeEnum
 from NodeGraphQt.widgets.viewer import NodeViewer
+
+from .edge_rules import (
+    EDGE_KIND_DATA,
+    EDGE_KIND_EXEC,
+    EDGE_KIND_STATE,
+    connection_kind,
+    normalize_edge_kind,
+    port_view_name,
+    validate_runtime_connection,
+)
+from .pipe_item import F8StudioPipeItem
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +52,11 @@ class F8StudioNodeViewer(NodeViewer):
         self._pending_node_label: str = ""
         self._placement_preview_rect: QtWidgets.QGraphicsRectItem | None = None
         self._placement_preview_label: QtWidgets.QGraphicsSimpleTextItem | None = None
+        self._edge_kind_visibility: dict[str, bool] = {
+            EDGE_KIND_EXEC: True,
+            EDGE_KIND_DATA: True,
+            EDGE_KIND_STATE: True,
+        }
 
         self._shortcut_search = QtWidgets.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Tab), self)
         self._shortcut_search.setContext(QtCore.Qt.WidgetShortcut)
@@ -59,6 +76,49 @@ class F8StudioNodeViewer(NodeViewer):
 
     def set_graph(self, graph: Any) -> None:
         self._f8_graph = graph
+
+    def set_edge_kind_visible(self, kind: str, visible: bool) -> None:
+        normalized = normalize_edge_kind(kind)
+        if normalized is None:
+            raise ValueError(f"unknown edge kind: {kind}")
+        self._edge_kind_visibility[normalized] = bool(visible)
+        self.refresh_edge_visibility()
+
+    def edge_kind_visible(self, kind: str) -> bool:
+        normalized = normalize_edge_kind(kind)
+        if normalized is None:
+            raise ValueError(f"unknown edge kind: {kind}")
+        return bool(self._edge_kind_visibility.get(normalized, True))
+
+    def refresh_edge_visibility(self) -> None:
+        for pipe in list(self.all_pipes() or []):
+            if isinstance(pipe, F8StudioPipeItem):
+                try:
+                    pipe.draw_path(pipe.input_port, pipe.output_port)
+                except (AttributeError, RuntimeError, TypeError):
+                    continue
+                continue
+            try:
+                out_name = port_view_name(pipe.output_port)
+                in_name = port_view_name(pipe.input_port)
+                kind = connection_kind(out_name, in_name)
+                if kind is None:
+                    pipe.draw_path(pipe.input_port, pipe.output_port)
+                    continue
+                pipe_visible = bool(self.edge_kind_visible(kind))
+                if pipe_visible:
+                    pipe_visible = all(
+                        (
+                            pipe.input_port.isVisible(),
+                            pipe.output_port.isVisible(),
+                            pipe.input_port.node.isVisible(),
+                            pipe.output_port.node.isVisible(),
+                        )
+                    )
+                pipe.setVisible(bool(pipe_visible))
+                pipe.draw_path(pipe.input_port, pipe.output_port)
+            except (AttributeError, RuntimeError, TypeError):
+                continue
 
     def begin_node_placement(self, node_type: str, node_label: str) -> None:
         pending_type = str(node_type or "").strip()
@@ -336,6 +396,59 @@ class F8StudioNodeViewer(NodeViewer):
         if graph is None:
             return
         graph.toggle_node_search()
+
+    def _validate_accept_connection(self, from_port, to_port):  # type: ignore[override]
+        if not super()._validate_accept_connection(from_port, to_port):
+            return False
+
+        out_port = None
+        in_port = None
+        if from_port.port_type == PortTypeEnum.OUT.value and to_port.port_type == PortTypeEnum.IN.value:
+            out_port = from_port
+            in_port = to_port
+        elif from_port.port_type == PortTypeEnum.IN.value and to_port.port_type == PortTypeEnum.OUT.value:
+            out_port = to_port
+            in_port = from_port
+        if out_port is None or in_port is None:
+            return False
+
+        graph = self._f8_graph
+        if graph is None:
+            return False
+
+        out_node_id = str(out_port.node.id or "").strip()
+        in_node_id = str(in_port.node.id or "").strip()
+        if not out_node_id or not in_node_id:
+            return False
+
+        try:
+            out_node = graph.get_node_by_id(out_node_id)
+            in_node = graph.get_node_by_id(in_node_id)
+        except (AttributeError, KeyError, RuntimeError, TypeError):
+            return False
+        if out_node is None or in_node is None:
+            return False
+
+        allowed, _reason = validate_runtime_connection(
+            out_port_name=port_view_name(out_port),
+            in_port_name=port_view_name(in_port),
+            out_node=out_node,
+            in_node=in_node,
+        )
+        return bool(allowed)
+
+    def establish_connection(self, start_port, end_port):  # type: ignore[override]
+        pipe = F8StudioPipeItem()
+        scene = self.scene()
+        if scene is None:
+            return
+        scene.addItem(pipe)
+        pipe.set_connections(start_port, end_port)
+        pipe.draw_path(pipe.input_port, pipe.output_port)
+        if start_port.node.selected or end_port.node.selected:
+            pipe.highlight()
+        if not start_port.node.visible or not end_port.node.visible:
+            pipe.hide()
 
     @staticmethod
     def acyclic_check(start_port, end_port) -> bool:

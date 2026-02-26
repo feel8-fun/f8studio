@@ -120,6 +120,35 @@ class SessionCompilerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             compile_runtime_graphs_from_session_layout(layout=layout, catalog=self.catalog)
 
+    def test_invalid_cross_service_exec_connection_raises(self) -> None:
+        layout = {
+            "nodes": {
+                "svc1": {
+                    "id": "svc1",
+                    "f8_spec": self._service_spec("f8.pyengine").model_dump(mode="json"),
+                },
+                "svc2": {
+                    "id": "svc2",
+                    "f8_spec": self._service_spec("f8.pyengine").model_dump(mode="json"),
+                },
+                "op1": {
+                    "id": "op1",
+                    "f8_spec": self._operator_spec("f8.pyengine", "f8.pyengine.op").model_dump(mode="json"),
+                    "custom": {"svcId": "svc1"},
+                },
+                "op2": {
+                    "id": "op2",
+                    "f8_spec": self._operator_spec("f8.pyengine", "f8.pyengine.op").model_dump(mode="json"),
+                    "custom": {"svcId": "svc2"},
+                },
+            },
+            "connections": [
+                {"out": ["op1", "next[E]"], "in": ["op2", "[E]in"]},
+            ],
+        }
+        with self.assertRaises(ValueError):
+            compile_runtime_graphs_from_session_layout(layout=layout, catalog=self.catalog)
+
 
 if __name__ == "__main__":
     unittest.main()

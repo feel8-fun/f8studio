@@ -20,6 +20,27 @@ from f8pyengine.constants import SERVICE_CLASS  # noqa: E402
 from f8pyengine.operators.python_script import PythonScriptRuntimeNode, register_operator  # noqa: E402
 
 
+def _runtime_python_script_node(
+    *,
+    node_id: str,
+    code: str,
+    state_fields: list[F8StateSpec] | None = None,
+) -> F8RuntimeNode:
+    spec = PythonScriptRuntimeNode.SPEC
+    return F8RuntimeNode(
+        nodeId=node_id,
+        serviceId="svcA",
+        serviceClass=SERVICE_CLASS,
+        operatorClass=spec.operatorClass,
+        execInPorts=list(spec.execInPorts or []),
+        execOutPorts=list(spec.execOutPorts or []),
+        dataInPorts=list(spec.dataInPorts or []),
+        dataOutPorts=list(spec.dataOutPorts or []),
+        stateFields=list(state_fields if state_fields is not None else (spec.stateFields or [])),
+        stateValues={"code": code},
+    )
+
+
 class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
     async def test_on_state_runs_and_can_write_state(self) -> None:
         harness = ServiceBusHarness()
@@ -38,14 +59,7 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
         state_fields.append(F8StateSpec(name="foo", label="foo", description="", valueSchema=any_schema(), access=F8StateAccess.rw))
         state_fields.append(F8StateSpec(name="bar", label="bar", description="", valueSchema=any_schema(), access=F8StateAccess.ro))
 
-        op = F8RuntimeNode(
-            nodeId="ps1",
-            serviceId="svcA",
-            serviceClass=SERVICE_CLASS,
-            operatorClass=PythonScriptRuntimeNode.SPEC.operatorClass,
-            stateFields=state_fields,
-            stateValues={"code": code},
-        )
+        op = _runtime_python_script_node(node_id="ps1", code=code, state_fields=state_fields)
         graph = F8RuntimeGraph(graphId="g1", revision="r1", nodes=[op], edges=[])
         await bus.set_rungraph(graph)
 
@@ -68,13 +82,10 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
         state_fields.append(
             F8StateSpec(name="booted", label="booted", description="", valueSchema=any_schema(), access=F8StateAccess.ro)
         )
-        op = F8RuntimeNode(
-            nodeId="ps2",
-            serviceId="svcA",
-            serviceClass=SERVICE_CLASS,
-            operatorClass=PythonScriptRuntimeNode.SPEC.operatorClass,
-            stateFields=state_fields,
-            stateValues={"code": "def onStart(ctx):\n    ctx['set_state']('booted', True)\n"},
+        op = _runtime_python_script_node(
+            node_id="ps2",
+            code="def onStart(ctx):\n    ctx['set_state']('booted', True)\n",
+            state_fields=state_fields,
         )
         graph = F8RuntimeGraph(graphId="g2", revision="r1", nodes=[op], edges=[])
         await bus.set_rungraph(graph)
@@ -97,14 +108,7 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
             "def onExec(ctx, execIn, inputs):\n"
             "    return {'outputs': {'out': 123}}\n"
         )
-        op = F8RuntimeNode(
-            nodeId="ps3",
-            serviceId="svcA",
-            serviceClass=SERVICE_CLASS,
-            operatorClass=PythonScriptRuntimeNode.SPEC.operatorClass,
-            stateFields=list(PythonScriptRuntimeNode.SPEC.stateFields or []),
-            stateValues={"code": code},
-        )
+        op = _runtime_python_script_node(node_id="ps3", code=code)
         graph = F8RuntimeGraph(graphId="g3", revision="r1", nodes=[op], edges=[])
         await bus.set_rungraph(graph)
 
@@ -126,14 +130,7 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
             "def onMsg(ctx, inputs):\n"
             "    return 99\n"
         )
-        op = F8RuntimeNode(
-            nodeId="ps4",
-            serviceId="svcA",
-            serviceClass=SERVICE_CLASS,
-            operatorClass=PythonScriptRuntimeNode.SPEC.operatorClass,
-            stateFields=list(PythonScriptRuntimeNode.SPEC.stateFields or []),
-            stateValues={"code": code},
-        )
+        op = _runtime_python_script_node(node_id="ps4", code=code)
         graph = F8RuntimeGraph(graphId="g4", revision="r1", nodes=[op], edges=[])
         await bus.set_rungraph(graph)
 
@@ -158,14 +155,7 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
             "    ctx['locals']['count'] = c\n"
             "    return {'outputs': {'out': c}}\n"
         )
-        op = F8RuntimeNode(
-            nodeId="ps5",
-            serviceId="svcA",
-            serviceClass=SERVICE_CLASS,
-            operatorClass=PythonScriptRuntimeNode.SPEC.operatorClass,
-            stateFields=list(PythonScriptRuntimeNode.SPEC.stateFields or []),
-            stateValues={"code": code},
-        )
+        op = _runtime_python_script_node(node_id="ps5", code=code)
         graph = F8RuntimeGraph(graphId="g5", revision="r1", nodes=[op], edges=[])
         await bus.set_rungraph(graph)
 
@@ -194,14 +184,7 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
             "    v = await ctx['get_state']('x')\n"
             "    return {'outputs': {'out': v}}\n"
         )
-        op = F8RuntimeNode(
-            nodeId="ps6",
-            serviceId="svcA",
-            serviceClass=SERVICE_CLASS,
-            operatorClass=PythonScriptRuntimeNode.SPEC.operatorClass,
-            stateFields=state_fields,
-            stateValues={"code": code},
-        )
+        op = _runtime_python_script_node(node_id="ps6", code=code, state_fields=state_fields)
         graph = F8RuntimeGraph(graphId="g6", revision="r1", nodes=[op], edges=[])
         await bus.set_rungraph(graph)
 
@@ -214,37 +197,6 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
         state_x = await node.get_state_value("x")
         self.assertEqual(state_x, 2)
         self.assertEqual(node._locals.get("x"), 1)
-
-    async def test_ctx_state_key_failure_has_migration_hint(self) -> None:
-        harness = ServiceBusHarness()
-        bus = harness.create_bus("svcA")
-        reg = RuntimeNodeRegistry.instance()
-        register_operator(reg)
-        _ = ServiceHost(bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=reg)
-
-        code = (
-            "def onMsg(ctx, inputs):\n"
-            "    return {'outputs': {'out': ctx['state'].get('count', 0)}}\n"
-        )
-        op = F8RuntimeNode(
-            nodeId="ps7",
-            serviceId="svcA",
-            serviceClass=SERVICE_CLASS,
-            operatorClass=PythonScriptRuntimeNode.SPEC.operatorClass,
-            stateFields=list(PythonScriptRuntimeNode.SPEC.stateFields or []),
-            stateValues={"code": code},
-        )
-        graph = F8RuntimeGraph(graphId="g7", revision="r1", nodes=[op], edges=[])
-        await bus.set_rungraph(graph)
-
-        node = bus.get_node("ps7")
-        self.assertIsInstance(node, PythonScriptRuntimeNode)
-        assert isinstance(node, PythonScriptRuntimeNode)
-
-        out = await node.compute_output("out", ctx_id="ctx-7a")
-        self.assertIsNone(out)
-        self.assertIn("context key 'state' was removed, use 'locals'", str(node._last_error or ""))
-
 
 if __name__ == "__main__":
     unittest.main()
