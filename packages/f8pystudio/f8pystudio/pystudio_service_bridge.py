@@ -15,6 +15,7 @@ from f8pysdk import F8Edge, F8RuntimeGraph, F8RuntimeNode
 from f8pysdk.nats_naming import ensure_token, new_id, svc_endpoint_subject, svc_micro_name
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from f8pysdk.service_bus import StateWriteOrigin
+from f8pysdk.service_bus.state_write import StateWriteError
 from .bridge.async_runtime import AsyncRuntimeThread
 from .bridge.command_client import CommandRequest, NatsCommandGateway
 from .bridge.json_codec import coerce_json_value
@@ -82,6 +83,7 @@ class PyStudioServiceBridge(QtCore.QObject):
         self._service_status_inflight: set[str] = set()
         self._service_status_req_s: dict[str, float] = {}
         self._last_compiled: CompiledRuntimeGraphs | None = None
+        self._local_state_fields_by_node: dict[str, tuple[str, ...]] = {}
         self._shutting_down: bool = False
 
         self._svc: PyStudioService | None = None
@@ -226,6 +228,7 @@ class PyStudioServiceBridge(QtCore.QObject):
         """
         # 1) start processes (sync)
         self._last_compiled = compiled
+        self._local_state_fields_by_node = self._build_local_state_field_index(compiled)
         managed: set[str] = set()
         managed_classes: dict[str, str] = {}
         for svc in list(compiled.global_graph.services or []):
@@ -423,6 +426,23 @@ class PyStudioServiceBridge(QtCore.QObject):
                 )
             )
         return tuple(sorted(targets, key=lambda t: (t.service_id, t.node_id, t.fields)))
+
+    def _build_local_state_field_index(self, compiled: CompiledRuntimeGraphs) -> dict[str, tuple[str, ...]]:
+        studio_graph = compiled.per_service.get(self.studio_service_id)
+        if studio_graph is None:
+            return {}
+        out: dict[str, tuple[str, ...]] = {}
+        for node in list(studio_graph.nodes or []):
+            node_id = str(node.nodeId or "").strip()
+            if not node_id:
+                continue
+            field_names: list[str] = []
+            for field_spec in list(node.stateFields or []):
+                name = str(field_spec.name or "").strip()
+                if name:
+                    field_names.append(name)
+            out[node_id] = self._dedupe_fields(field_names)
+        return out
 
     async def _apply_remote_state_watches_async(self, compiled: CompiledRuntimeGraphs) -> None:
         gateway = self._remote_state_gateway
@@ -839,6 +859,7 @@ class PyStudioServiceBridge(QtCore.QObject):
         compiled = self._pick_compiled(compiled, self._last_compiled)
         if compiled is None:
             return
+        self._local_state_fields_by_node = self._build_local_state_field_index(compiled)
         if not await self._ensure_studio_runtime_async():
             return
         try:
@@ -909,12 +930,20 @@ class PyStudioServiceBridge(QtCore.QObject):
         field = str(field or "").strip()
         if not field:
             return
+        allowed_fields = self._local_state_fields_by_node.get(node_id)
+        if allowed_fields is None or field not in allowed_fields:
+            return
 
         async def _do() -> None:
             if self._svc is None or self._svc.bus is None:
                 return
             try:
                 await self._svc.bus.publish_state_external(node_id, field, value, source="pystudio")
+            except StateWriteError as exc:
+                if "unknown state field" in str(exc):
+                    logger.warning("Skip local state publish for unknown field: %s.%s", node_id, field)
+                    return
+                self._report_exception("publish local state failed", exc)
             except Exception as exc:
                 self._report_exception("publish local state failed", exc)
 

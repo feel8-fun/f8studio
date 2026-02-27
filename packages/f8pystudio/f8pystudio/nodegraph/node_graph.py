@@ -15,7 +15,7 @@ from NodeGraphQt.base.port import Port as NGPort
 import shortuuid
 import logging
 
-from f8pysdk import F8OperatorSpec, F8ServiceSpec
+from f8pysdk import F8OperatorSpec, F8ServiceSpec, F8StateAccess
 from f8pysdk.nats_naming import ensure_token
 from .container_basenode import F8StudioContainerBaseNode
 from .operator_basenode import F8StudioOperatorBaseNode
@@ -1408,6 +1408,41 @@ class F8StudioGraph(NodeGraph):
         node.spec = spec  # type: ignore[attr-defined]
         node.set_ui_overrides({}, rebuild=False)  # type: ignore[attr-defined]
         node.sync_from_spec()  # type: ignore[attr-defined]
+        writable_fields: set[str] = set()
+        for field_spec in list(spec.stateFields or []):
+            field_name = str(field_spec.name or "").strip()
+            if not field_name:
+                continue
+            if field_spec.access == F8StateAccess.ro:
+                continue
+            writable_fields.add(field_name)
+
+        state_defaults: dict[str, Any] = {}
+        raw_state_fields = variant_spec_json.get("stateFields")
+        if isinstance(raw_state_fields, list):
+            for raw_field in raw_state_fields:
+                if not isinstance(raw_field, dict):
+                    continue
+                field_name = str(raw_field.get("name") or "").strip()
+                if not field_name or field_name not in writable_fields:
+                    continue
+                value_schema = raw_field.get("valueSchema")
+                if not isinstance(value_schema, dict) or "default" not in value_schema:
+                    continue
+                state_defaults[field_name] = value_schema.get("default")
+
+        for field_name, default_value in state_defaults.items():
+            has_property = False
+            try:
+                has_property = field_name in node.model.properties or field_name in node.model.custom_properties
+            except (AttributeError, RuntimeError, TypeError):
+                has_property = False
+            if not has_property:
+                continue
+            try:
+                node.set_property(field_name, default_value, push_undo=False)
+            except (AttributeError, RuntimeError, TypeError, KeyError, ValueError):
+                continue
         if not isinstance(node.model.f8_sys, dict):
             node.model.f8_sys = {}
         node.model.f8_sys["variantId"] = str(variant_id)

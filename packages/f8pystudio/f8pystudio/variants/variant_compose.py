@@ -154,8 +154,19 @@ def build_variant_record_from_node(
     if not isinstance(ui_overrides, dict):
         ui_overrides = {}
     model = node.model
-    custom_properties = model.custom_properties
-    state_values = dict(custom_properties) if isinstance(custom_properties, dict) else {}
+    model_properties = model.properties if isinstance(model.properties, dict) else {}
+    custom_properties = model.custom_properties if isinstance(model.custom_properties, dict) else {}
+    state_values: dict[str, Any] = {}
+    for state_spec in list(spec_obj.stateFields or []):
+        field_name = str(state_spec.name or "").strip()
+        if not field_name:
+            continue
+        if field_name not in model_properties and field_name not in custom_properties:
+            continue
+        try:
+            state_values[field_name] = model.get_property(field_name)
+        except (AttributeError, KeyError, RuntimeError, TypeError):
+            continue
 
     spec_json = compose_variant_spec(
         spec_obj=spec_obj,
