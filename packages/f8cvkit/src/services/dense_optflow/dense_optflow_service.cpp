@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstring>
+#include <limits>
 #include <utility>
 
 #include <nlohmann/json.hpp>
@@ -48,13 +50,6 @@ json schema_object(const json& props, const json& required = json::array()) {
   if (required.is_array()) obj["required"] = required;
   obj["additionalProperties"] = false;
   return obj;
-}
-
-json schema_array(const json& item_schema) {
-  json arr;
-  arr["type"] = "array";
-  arr["items"] = item_schema;
-  return arr;
 }
 
 json state_field(std::string name, const json& value_schema, std::string access, std::string label = {},
@@ -109,6 +104,56 @@ bool parse_double_value(const json& value, double& out) {
   return false;
 }
 
+std::uint16_t float32_to_half(float value) {
+  std::uint32_t bits = 0;
+  std::memcpy(&bits, &value, sizeof(bits));
+
+  const std::uint32_t sign = (bits >> 16) & 0x8000u;
+  const std::uint32_t exponent = (bits >> 23) & 0xFFu;
+  const std::uint32_t mantissa = bits & 0x7FFFFFu;
+
+  if (exponent == 0xFFu) {
+    if (mantissa == 0u) return static_cast<std::uint16_t>(sign | 0x7C00u);
+    const std::uint16_t nan_payload = static_cast<std::uint16_t>(mantissa >> 13);
+    return static_cast<std::uint16_t>(sign | 0x7C00u | (nan_payload ? nan_payload : 1u));
+  }
+
+  int half_exponent = static_cast<int>(exponent) - 127 + 15;
+  if (half_exponent >= 31) {
+    return static_cast<std::uint16_t>(sign | 0x7C00u);
+  }
+  if (half_exponent <= 0) {
+    if (half_exponent < -10) {
+      return static_cast<std::uint16_t>(sign);
+    }
+    std::uint32_t mant = mantissa | 0x800000u;
+    const int shift = 14 - half_exponent;
+    std::uint16_t half_mantissa = static_cast<std::uint16_t>(mant >> shift);
+    const std::uint32_t lsb = (mant >> (shift - 1)) & 1u;
+    const std::uint32_t rest = mant & ((1u << (shift - 1)) - 1u);
+    if (lsb != 0u && (rest != 0u || (half_mantissa & 1u) != 0u)) {
+      ++half_mantissa;
+    }
+    return static_cast<std::uint16_t>(sign | half_mantissa);
+  }
+
+  std::uint16_t half_mantissa = static_cast<std::uint16_t>(mantissa >> 13);
+  const std::uint32_t lsb = (mantissa >> 12) & 1u;
+  const std::uint32_t rest = mantissa & 0xFFFu;
+  if (lsb != 0u && (rest != 0u || (half_mantissa & 1u) != 0u)) {
+    ++half_mantissa;
+    if (half_mantissa == 0x0400u) {
+      half_mantissa = 0;
+      ++half_exponent;
+      if (half_exponent >= 31) {
+        return static_cast<std::uint16_t>(sign | 0x7C00u);
+      }
+    }
+  }
+
+  return static_cast<std::uint16_t>(sign | (static_cast<std::uint16_t>(half_exponent) << 10) | half_mantissa);
+}
+
 }  // namespace
 
 DenseOptflowService::DenseOptflowService(Config cfg) : cfg_(std::move(cfg)) {}
@@ -136,11 +181,13 @@ bool DenseOptflowService::start() {
 
   input_shm_name_.clear();
   compute_every_n_frames_ = 2;
-  sample_step_px_ = 16;
-  min_mag_ = 0.0;
+  flow_shm_name_ = "shm." + cfg_.service_id + ".flow";
+  flow_shm_format_ = "flow2_f16";
+  compute_scale_ = 0.5;
 
   video_.close();
   frame_bgra_.clear();
+  flow_payload_.clear();
   last_notify_seq_ = 0;
   last_frame_id_ = 0;
   last_video_open_attempt_ms_ = 0;
@@ -164,8 +211,9 @@ bool DenseOptflowService::start() {
   publish_state_if_changed("serviceClass", cfg_.service_class, "init", json::object());
   publish_state_if_changed("inputShmName", "", "init", json::object());
   publish_state_if_changed("computeEveryNFrames", compute_every_n_frames_, "init", json::object());
-  publish_state_if_changed("sampleStepPx", sample_step_px_, "init", json::object());
-  publish_state_if_changed("minMag", min_mag_, "init", json::object());
+  publish_state_if_changed("flowShmName", flow_shm_name_, "init", json::object());
+  publish_state_if_changed("flowShmFormat", flow_shm_format_, "init", json::object());
+  publish_state_if_changed("computeScale", compute_scale_, "init", json::object());
   publish_state_if_changed("lastError", "", "init", json::object());
 
   running_.store(true, std::memory_order_release);
@@ -299,31 +347,18 @@ void DenseOptflowService::on_state(const std::string& node_id, const std::string
     return;
   }
 
-  if (field == "sampleStepPx") {
-    int v = 0;
-    if (!parse_int_value(value, v)) {
-      publish_state_if_changed("lastError", "invalid sampleStepPx", "state", meta);
+  if (field == "computeScale") {
+    double v = 0.0;
+    if (!parse_double_value(value, v)) {
+      publish_state_if_changed("lastError", "invalid computeScale", "state", meta);
       return;
     }
-    v = std::max(4, std::min(128, v));
-    sample_step_px_ = v;
-    publish_state_if_changed("sampleStepPx", sample_step_px_, "state", meta);
+    compute_scale_ = std::max(0.25, std::min(1.0, v));
+    publish_state_if_changed("computeScale", compute_scale_, "state", meta);
     publish_state_if_changed("lastError", "", "state", meta);
     return;
   }
 
-  if (field == "minMag") {
-    double v = 0.0;
-    if (!parse_double_value(value, v)) {
-      publish_state_if_changed("lastError", "invalid minMag", "state", meta);
-      return;
-    }
-    v = std::max(0.0, std::min(100.0, v));
-    min_mag_ = v;
-    publish_state_if_changed("minMag", min_mag_, "state", meta);
-    publish_state_if_changed("lastError", "", "state", meta);
-    return;
-  }
 }
 
 void DenseOptflowService::on_data(const std::string& node_id, const std::string& port, const json& value,
@@ -431,9 +466,30 @@ void DenseOptflowService::process_frame_once() {
 
   const std::int64_t process_start_ms = f8::cppsdk::now_ms();
 
-  cv::Mat flow;
+  const double scale = std::max(0.25, std::min(1.0, compute_scale_));
+  compute_scale_ = scale;
+
+  cv::Mat prev_compute = prev_gray_;
+  cv::Mat gray_compute = gray;
+  if (scale < 0.999) {
+    int sw = static_cast<int>(std::lround(static_cast<double>(gray.cols) * scale));
+    int sh = static_cast<int>(std::lround(static_cast<double>(gray.rows) * scale));
+    sw = std::max(sw, 1);
+    sh = std::max(sh, 1);
+    try {
+      cv::resize(prev_gray_, prev_compute, cv::Size(sw, sh), 0.0, 0.0, cv::INTER_AREA);
+      cv::resize(gray, gray_compute, cv::Size(sw, sh), 0.0, 0.0, cv::INTER_AREA);
+    } catch (const cv::Exception& ex) {
+      ++telemetry_fail_frames_;
+      publish_state_if_changed("lastError", std::string("opencv resize failed: ") + ex.what(), "runtime", json::object());
+      prev_gray_ = gray;
+      return;
+    }
+  }
+
+  cv::Mat flow_compute;
   try {
-    cv::calcOpticalFlowFarneback(prev_gray_, gray, flow, 0.5, 3, 15, 3, 5, 1.2, 0);
+    cv::calcOpticalFlowFarneback(prev_compute, gray_compute, flow_compute, 0.5, 3, 15, 3, 5, 1.2, 0);
   } catch (const cv::Exception& ex) {
     ++telemetry_fail_frames_;
     publish_state_if_changed("lastError", std::string("opencv farneback failed: ") + ex.what(), "runtime", json::object());
@@ -441,81 +497,78 @@ void DenseOptflowService::process_frame_once() {
     return;
   }
 
-  std::uint64_t grid_points = 0;
-  std::uint64_t kept_points = 0;
-  double mag_sum = 0.0;
-  double max_mag = 0.0;
-
-  json vectors = json::array();
-  const int step = std::max(4, sample_step_px_);
-  for (int y = step / 2; y < flow.rows; y += step) {
-    for (int x = step / 2; x < flow.cols; x += step) {
-      ++grid_points;
-      const cv::Point2f d = flow.at<cv::Point2f>(y, x);
-      const double dx = static_cast<double>(d.x);
-      const double dy = static_cast<double>(d.y);
-      const double mag = std::sqrt(dx * dx + dy * dy);
-      if (mag < min_mag_) {
-        continue;
-      }
-      ++kept_points;
-      mag_sum += mag;
-      if (mag > max_mag) max_mag = mag;
-
-      json vec = json::object();
-      vec["x"] = x;
-      vec["y"] = y;
-      vec["dx"] = dx;
-      vec["dy"] = dy;
-      vec["mag"] = mag;
-      vectors.push_back(std::move(vec));
+  cv::Mat flow = flow_compute;
+  if (flow_compute.cols != gray.cols || flow_compute.rows != gray.rows) {
+    try {
+      cv::resize(flow_compute, flow, gray.size(), 0.0, 0.0, cv::INTER_LINEAR);
+      flow *= static_cast<float>(1.0 / scale);
+    } catch (const cv::Exception& ex) {
+      ++telemetry_fail_frames_;
+      publish_state_if_changed("lastError", std::string("opencv flow upscale failed: ") + ex.what(), "runtime", json::object());
+      prev_gray_ = gray;
+      return;
     }
   }
 
-  const double mean_mag = kept_points > 0 ? (mag_sum / static_cast<double>(kept_points)) : 0.0;
+  std::string shm_name = trim_copy(flow_shm_name_);
+  if (shm_name.empty()) {
+    shm_name = "shm." + cfg_.service_id + ".flow";
+    flow_shm_name_ = shm_name;
+    publish_state_if_changed("flowShmName", flow_shm_name_, "runtime", json::object());
+  }
+  if (flow_sink_.regionName() != shm_name) {
+    if (!flow_sink_.initialize(shm_name, f8::cppsdk::shm::kDefaultVideoShmBytes, f8::cppsdk::shm::kDefaultVideoShmSlots)) {
+      ++telemetry_fail_frames_;
+      publish_state_if_changed("lastError", "flow shm init failed: " + shm_name, "runtime", json::object());
+      prev_gray_ = gray;
+      return;
+    }
+  }
+  if (!flow_sink_.ensureConfigurationForFormat(static_cast<unsigned>(flow.cols), static_cast<unsigned>(flow.rows),
+                                               f8::cppsdk::kVideoFormatFlow2F16, 4)) {
+    ++telemetry_fail_frames_;
+    publish_state_if_changed("lastError", "flow shm ensureConfiguration failed", "runtime", json::object());
+    prev_gray_ = gray;
+    return;
+  }
 
-  json out = json::object();
-  out["schemaVersion"] = "f8visionFlowField/1";
-  out["frameId"] = hdr.frame_id;
-  out["tsMs"] = hdr.ts_ms;
-  out["width"] = hdr.width;
-  out["height"] = hdr.height;
-  out["model"] = "farneback";
-  out["sampleStepPx"] = step;
-  out["vectors"] = std::move(vectors);
-  out["stats"] = json::object({
-      {"gridPoints", grid_points},
-      {"keptPoints", kept_points},
-      {"meanMag", mean_mag},
-      {"maxMag", max_mag},
-  });
+  const std::size_t flow_pitch = static_cast<std::size_t>(flow_sink_.outputPitch());
+  const std::size_t flow_bytes = flow_pitch * static_cast<std::size_t>(flow.rows);
+  flow_payload_.assign(flow_bytes, std::byte{0});
+  for (int y = 0; y < flow.rows; ++y) {
+    std::byte* row = flow_payload_.data() + static_cast<std::size_t>(y) * flow_pitch;
+    for (int x = 0; x < flow.cols; ++x) {
+      const cv::Point2f d = flow.at<cv::Point2f>(y, x);
+      const std::uint16_t hu = float32_to_half(d.x);
+      const std::uint16_t hv = float32_to_half(d.y);
+      std::byte* px = row + static_cast<std::size_t>(x) * 4u;
+      px[0] = static_cast<std::byte>(hu & 0xFFu);
+      px[1] = static_cast<std::byte>((hu >> 8) & 0xFFu);
+      px[2] = static_cast<std::byte>(hv & 0xFFu);
+      px[3] = static_cast<std::byte>((hv >> 8) & 0xFFu);
+    }
+  }
 
+  if (!flow_sink_.writeFrameWithFormat(flow_payload_.data(), static_cast<unsigned>(flow_pitch), f8::cppsdk::kVideoFormatFlow2F16)) {
+    ++telemetry_fail_frames_;
+    publish_state_if_changed("lastError", "flow shm write failed", "runtime", json::object());
+    prev_gray_ = gray;
+    return;
+  }
+
+  publish_state_if_changed("flowShmFormat", flow_shm_format_, "runtime", json::object());
+  publish_state_if_changed("computeScale", compute_scale_, "runtime", json::object());
   publish_state_if_changed("lastError", "", "runtime", json::object());
-  (void)bus_->emit_data(cfg_.service_id, "flowField", out);
 
   const std::int64_t end_ts_ms = f8::cppsdk::now_ms();
-  emit_telemetry(end_ts_ms, hdr.frame_id, static_cast<double>(end_ts_ms - process_start_ms), kept_points);
+  const std::uint64_t dense_vectors = static_cast<std::uint64_t>(std::max(0, flow.cols)) *
+                                      static_cast<std::uint64_t>(std::max(0, flow.rows));
+  emit_telemetry(end_ts_ms, hdr.frame_id, static_cast<double>(end_ts_ms - process_start_ms), dense_vectors);
 
   prev_gray_ = gray;
 }
 
 json DenseOptflowService::describe() {
-  const json vector_schema = schema_object(
-      json{{"x", schema_number()}, {"y", schema_number()}, {"dx", schema_number()}, {"dy", schema_number()}, {"mag", schema_number()}});
-  const json flow_schema = schema_object(
-      json{{"schemaVersion", schema_string()},
-           {"frameId", schema_integer()},
-           {"tsMs", schema_integer()},
-           {"width", schema_integer()},
-           {"height", schema_integer()},
-           {"model", schema_string()},
-           {"sampleStepPx", schema_integer()},
-           {"vectors", schema_array(vector_schema)},
-           {"stats",
-            schema_object(json{{"gridPoints", schema_integer()},
-                               {"keptPoints", schema_integer()},
-                               {"meanMag", schema_number()},
-                               {"maxMag", schema_number()}})}});
   const json telemetry_schema = schema_object(
       json{{"tsMs", schema_integer()},
            {"frameId", schema_integer()},
@@ -527,7 +580,6 @@ json DenseOptflowService::describe() {
            {"droppedFrames", schema_integer()},
            {"vectorsPerFrame", schema_integer()},
            {"failFrames", schema_integer()}});
-
   json service;
   service["schemaVersion"] = "f8service/1";
   service["serviceClass"] = "f8.cvkit.denseoptflow";
@@ -538,22 +590,18 @@ json DenseOptflowService::describe() {
   service["stateFields"] = json::array({
       state_field("inputShmName", schema_string(), "rw", "Input Video SHM", "Input SHM name (e.g. shm.xxx.video).", true),
       state_field("computeEveryNFrames", schema_integer(2, 1, 120), "rw", "Compute Every N Frames",
-                  "Compute flow once per N new frames.", true),
-      state_field("sampleStepPx", schema_integer(16, 4, 128), "rw", "Sample Step (px)",
-                  "Grid sampling step in pixels for output vectors.", true),
-      state_field("minMag", schema_number(0.0, 0.0, 100.0), "rw", "Min Magnitude",
-                  "Drop vectors with magnitude below this threshold.", true),
-      state_field("lastError", schema_string(), "ro", "Last Error", "Last error message.", true),
+                  "Compute flow once per N new frames.", false),
+      state_field("flowShmName", schema_string(), "ro", "Flow SHM Name", "Output SHM name for UV flow field.", true),
+      state_field("flowShmFormat", schema_string(), "ro", "Flow SHM Format", "Flow payload format. Fixed to flow2_f16.", false),
+      state_field("computeScale", schema_number(0.125, 0.0625, 1.0), "rw", "Compute Scale",
+                  "Farneback compute scale, flow is upscaled back to full size.", false),
+      state_field("lastError", schema_string(), "ro", "Last Error", "Last error message.", false),
   });
   service["editableStateFields"] = false;
   service["commands"] = json::array();
   service["editableCommands"] = false;
   service["dataInPorts"] = json::array();
   service["dataOutPorts"] = json::array({
-      json{{"name", "flowField"},
-           {"valueSchema", flow_schema},
-           {"description", "Optical flow vectors in schema f8visionFlowField/1."},
-           {"required", false}},
       json{{"name", "telemetry"},
            {"valueSchema", telemetry_schema},
            {"description", "Runtime telemetry: fps/process time/vectors/failures."},

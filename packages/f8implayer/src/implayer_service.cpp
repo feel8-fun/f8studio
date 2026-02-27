@@ -47,8 +47,9 @@ json schema_string_enum(std::initializer_list<const char*> items) {
 json schema_number() {
   return json{{"type", "number"}};
 }
-json schema_number(double minimum, double maximum) {
+json schema_number(double default_value, double minimum, double maximum) {
   json s{{"type", "number"}};
+  s["default"] = default_value;
   s["minimum"] = minimum;
   s["maximum"] = maximum;
   return s;
@@ -1771,7 +1772,7 @@ json ImPlayerService::describe() {
   service["stateFields"] = json::array({
       state_field("loop", schema_boolean(), "rw", "Loop", "Repeat playlist when reaching EOF.", false),
       state_field("mediaUrl", schema_string(), "rw", "Media URL", "URI or file path to open.", true),
-      state_field("volume", schema_number(0.0, 1.0), "rw", "Volume", "0.0-1.0", true),
+      state_field("volume", schema_number(1.0, 0.0, 1.0), "rw", "Volume", "", true, "slider"),
       state_field("playing", schema_boolean(), "ro", "Playing", "Playback state.", false),
       state_field("duration", schema_number(), "ro", "Duration", "Duration (seconds).", true),
       state_field("lastError", schema_string(), "ro", "Last Error", "Last error message.", false),

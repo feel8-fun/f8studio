@@ -70,12 +70,15 @@ class DenseOptflowService final : public f8::cppsdk::LifecycleNode,
   // Input SHM settings.
   std::string input_shm_name_;
   int compute_every_n_frames_ = 2;
-  int sample_step_px_ = 16;
-  double min_mag_ = 0.0;
+  std::string flow_shm_name_;
+  std::string flow_shm_format_ = "flow2_f16";
+  double compute_scale_ = 0.5;
 
   // Video reader state.
   f8::cppsdk::VideoSharedMemoryReader video_;
+  f8::cppsdk::VideoSharedMemorySink flow_sink_;
   std::vector<std::byte> frame_bgra_;
+  std::vector<std::byte> flow_payload_;
   std::uint32_t last_notify_seq_ = 0;
   std::uint64_t last_frame_id_ = 0;
   std::int64_t last_video_open_attempt_ms_ = 0;

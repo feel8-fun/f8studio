@@ -4,10 +4,11 @@ import colorsys
 import math
 from typing import Any, Callable
 
+import numpy as np
 from qtpy import QtCore, QtGui, QtWidgets
 from NodeGraphQt.nodes.base_node import NodeBaseWidget
 
-from f8pysdk.shm import VideoShmReader
+from f8pysdk.shm import VIDEO_FORMAT_FLOW2_F16, VideoShmReader
 
 from ..nodegraph.operator_basenode import F8StudioOperatorBaseNode
 from ..nodegraph.viz_operator_nodeitem import F8StudioVizOperatorNodeItem
@@ -49,6 +50,72 @@ def _flow_color(mag: float, max_mag: float) -> tuple[int, int, int]:
     g = int(220 - 120 * t)
     b = int(220 - 200 * t)
     return r, g, b
+
+
+def _hsv_to_rgb_u8(h: np.ndarray, s: np.ndarray, v: np.ndarray) -> np.ndarray:
+    i = np.floor(h * 6.0).astype(np.int32)
+    f = h * 6.0 - i
+    p = v * (1.0 - s)
+    q = v * (1.0 - f * s)
+    t = v * (1.0 - (1.0 - f) * s)
+    m = i % 6
+
+    r = np.select([m == 0, m == 1, m == 2, m == 3, m == 4], [v, q, p, p, t], default=v)
+    g = np.select([m == 0, m == 1, m == 2, m == 3, m == 4], [t, v, v, q, p], default=p)
+    b = np.select([m == 0, m == 1, m == 2, m == 3, m == 4], [p, p, t, v, v], default=q)
+    rgb = np.stack([r, g, b], axis=2)
+    return np.clip(rgb * 255.0, 0.0, 255.0).astype(np.uint8)
+
+
+def _draw_flow_vectors(p: QtGui.QPainter, vectors: list[dict[str, Any]], scale: float, min_mag: float) -> None:
+    mags: list[float] = []
+    for item in vectors:
+        if not isinstance(item, dict):
+            continue
+        try:
+            mags.append(float(item.get("mag") or 0.0))
+        except (TypeError, ValueError):
+            continue
+    max_mag = max(mags) if mags else 1.0
+
+    for item in vectors:
+        if not isinstance(item, dict):
+            continue
+        try:
+            x = float(item.get("x"))
+            y = float(item.get("y"))
+            dx = float(item.get("dx"))
+            dy = float(item.get("dy"))
+            mag = float(item.get("mag"))
+        except (TypeError, ValueError):
+            continue
+        if mag < min_mag:
+            continue
+
+        x2 = x + dx * scale
+        y2 = y + dy * scale
+        rr, gg, bb_ = _flow_color(mag, max_mag)
+        pen = QtGui.QPen(QtGui.QColor(rr, gg, bb_, 190))
+        pen.setWidthF(1.2)
+        p.setPen(pen)
+        p.drawLine(QtCore.QPointF(x, y), QtCore.QPointF(x2, y2))
+
+        vx = x2 - x
+        vy = y2 - y
+        vlen = math.hypot(vx, vy)
+        if vlen < 1e-6:
+            continue
+        ux = vx / vlen
+        uy = vy / vlen
+        head_len = max(3.0, min(8.0, 2.0 + 0.3 * vlen))
+        c = 0.8660254037844386
+        s = 0.5
+        lx = c * ux - s * uy
+        ly = s * ux + c * uy
+        rx = c * ux + s * uy
+        ry = -s * ux + c * uy
+        p.drawLine(QtCore.QPointF(x2, y2), QtCore.QPointF(x2 - head_len * lx, y2 - head_len * ly))
+        p.drawLine(QtCore.QPointF(x2, y2), QtCore.QPointF(x2 - head_len * rx, y2 - head_len * ry))
 
 
 class _TrackVizCanvas(pg.GraphicsObject):  # type: ignore[misc]
@@ -116,6 +183,7 @@ class _TrackVizCanvas(pg.GraphicsObject):  # type: ignore[misc]
 
         tracks = payload.get("tracks") if isinstance(payload.get("tracks"), list) else []
         flow = payload.get("flow") if isinstance(payload.get("flow"), dict) else None
+        flow_dense = payload.get("flowDense") if isinstance(payload.get("flowDense"), dict) else None
 
         p.setRenderHint(QtGui.QPainter.Antialiasing, True)
         p.setRenderHint(QtGui.QPainter.TextAntialiasing, True)
@@ -235,68 +303,24 @@ class _TrackVizCanvas(pg.GraphicsObject):  # type: ignore[misc]
                     continue
                 p.drawEllipse(QtCore.QPointF(x, y), rad, rad)
 
+        try:
+            scale = float(payload.get("flowArrowScale") or 1.0)
+        except (TypeError, ValueError):
+            scale = 1.0
+        try:
+            min_mag = float(payload.get("flowArrowMinMag") or 0.0)
+        except (TypeError, ValueError):
+            min_mag = 0.0
+        scale = max(0.1, min(20.0, scale))
+        min_mag = max(0.0, min(100.0, min_mag))
+
+        if isinstance(flow_dense, dict):
+            dense_vectors = flow_dense.get("vectors") if isinstance(flow_dense.get("vectors"), list) else []
+            _draw_flow_vectors(p, dense_vectors, scale, min_mag)
+
         if isinstance(flow, dict):
             vectors = flow.get("vectors") if isinstance(flow.get("vectors"), list) else []
-            try:
-                scale = float(payload.get("flowArrowScale") or 1.0)
-            except (TypeError, ValueError):
-                scale = 1.0
-            try:
-                min_mag = float(payload.get("flowArrowMinMag") or 0.0)
-            except (TypeError, ValueError):
-                min_mag = 0.0
-            scale = max(0.1, min(20.0, scale))
-            min_mag = max(0.0, min(100.0, min_mag))
-
-            mags: list[float] = []
-            for item in vectors:
-                if not isinstance(item, dict):
-                    continue
-                try:
-                    mags.append(float(item.get("mag") or 0.0))
-                except (TypeError, ValueError):
-                    continue
-            max_mag = max(mags) if mags else 1.0
-
-            for item in vectors:
-                if not isinstance(item, dict):
-                    continue
-                try:
-                    x = float(item.get("x"))
-                    y = float(item.get("y"))
-                    dx = float(item.get("dx"))
-                    dy = float(item.get("dy"))
-                    mag = float(item.get("mag"))
-                except (TypeError, ValueError):
-                    continue
-                if mag < min_mag:
-                    continue
-
-                x2 = x + dx * scale
-                y2 = y + dy * scale
-                rr, gg, bb_ = _flow_color(mag, max_mag)
-                pen = QtGui.QPen(QtGui.QColor(rr, gg, bb_, 190))
-                pen.setWidthF(1.2)
-                p.setPen(pen)
-                p.drawLine(QtCore.QPointF(x, y), QtCore.QPointF(x2, y2))
-
-                vx = x2 - x
-                vy = y2 - y
-                vlen = math.hypot(vx, vy)
-                if vlen < 1e-6:
-                    continue
-                ux = vx / vlen
-                uy = vy / vlen
-                head_len = max(3.0, min(8.0, 2.0 + 0.3 * vlen))
-                # two wings rotated by +/- 30 deg
-                c = 0.8660254037844386
-                s = 0.5
-                lx = c * ux - s * uy
-                ly = s * ux + c * uy
-                rx = c * ux + s * uy
-                ry = -s * ux + c * uy
-                p.drawLine(QtCore.QPointF(x2, y2), QtCore.QPointF(x2 - head_len * lx, y2 - head_len * ly))
-                p.drawLine(QtCore.QPointF(x2, y2), QtCore.QPointF(x2 - head_len * rx, y2 - head_len * ry))
+            _draw_flow_vectors(p, vectors, scale, min_mag)
 
 
 class _TrackVizPane(QtWidgets.QWidget):
@@ -368,9 +392,16 @@ class _TrackVizPane(QtWidgets.QWidget):
         self._video_shm_name = ""
         self._video_shm_throttle_ms = 33
         self._video_reader: VideoShmReader | None = None
+        self._flow_reader: VideoShmReader | None = None
         self._video_frame_id = 0
+        self._flow_frame_id = 0
         self._video_frame_bytes: bytes | None = None
         self._video_size: tuple[int, int] | None = None
+        self._flow_shm_name = ""
+        self._show_dense_flow = True
+        self._show_sparse_flow = True
+        self._dense_flow_mode = "hsv"
+        self._scene_payload: dict[str, Any] | None = None
         self._video_timer = QtCore.QTimer(self)
         self._video_timer.timeout.connect(self._tick_video)  # type: ignore[attr-defined]
         self._video_timer.setInterval(33)
@@ -407,6 +438,18 @@ class _TrackVizPane(QtWidgets.QWidget):
         except (AttributeError, TypeError, ValueError):
             video_shm_name = ""
         try:
+            flow_shm_name = str(payload.get("flowShmName") or "").strip()
+        except (AttributeError, TypeError, ValueError):
+            flow_shm_name = ""
+        try:
+            dense_flow_mode = str(payload.get("denseFlowMode") or "hsv").strip().lower()
+        except (AttributeError, TypeError, ValueError):
+            dense_flow_mode = "hsv"
+        if dense_flow_mode not in ("arrows", "hsv"):
+            dense_flow_mode = "hsv"
+        show_dense_flow = bool(payload.get("showDenseFlow", True))
+        show_sparse_flow = bool(payload.get("showSparseFlow", True))
+        try:
             video_shm_throttle_ms = int(payload.get("throttleMs") or 33)
         except (AttributeError, TypeError, ValueError):
             video_shm_throttle_ms = 33
@@ -414,6 +457,10 @@ class _TrackVizPane(QtWidgets.QWidget):
         self._set_video_config(
             shm_name=video_shm_name,
             throttle_ms=video_shm_throttle_ms,
+            flow_shm_name=flow_shm_name,
+            show_dense_flow=show_dense_flow,
+            show_sparse_flow=show_sparse_flow,
+            dense_flow_mode=dense_flow_mode,
         )
         try:
             pw = int(payload.get("width") or 0)
@@ -421,8 +468,12 @@ class _TrackVizPane(QtWidgets.QWidget):
             self._scene_size = (pw, ph) if pw > 0 and ph > 0 else None
         except (AttributeError, TypeError, ValueError):
             self._scene_size = None
+        self._scene_payload = dict(payload)
+        if not self._show_sparse_flow:
+            self._scene_payload["flow"] = None
+        self._scene_payload["flowDense"] = None
         try:
-            self._canvas.set_payload(payload)
+            self._canvas.set_payload(self._scene_payload)
         except (AttributeError, RuntimeError, TypeError, ValueError):
             pass
         self._sync_canvas_geometry()
@@ -434,8 +485,18 @@ class _TrackVizPane(QtWidgets.QWidget):
         except (AttributeError, RuntimeError, TypeError):
             pass
         self._reset_video_reader()
+        self._reset_flow_reader()
 
-    def _set_video_config(self, *, shm_name: str, throttle_ms: int) -> None:
+    def _set_video_config(
+        self,
+        *,
+        shm_name: str,
+        throttle_ms: int,
+        flow_shm_name: str,
+        show_dense_flow: bool,
+        show_sparse_flow: bool,
+        dense_flow_mode: str,
+    ) -> None:
         next_throttle_ms = max(1, int(throttle_ms))
         if self._video_shm_throttle_ms != next_throttle_ms:
             self._video_shm_throttle_ms = next_throttle_ms
@@ -446,10 +507,20 @@ class _TrackVizPane(QtWidgets.QWidget):
             self._video_shm_name = next_name
             self._reset_video_reader()
 
+        next_flow_name = str(flow_shm_name or "").strip()
+        if next_flow_name != self._flow_shm_name:
+            self._flow_shm_name = next_flow_name
+            self._reset_flow_reader()
+
+        self._show_dense_flow = bool(show_dense_flow)
+        self._show_sparse_flow = bool(show_sparse_flow)
+        self._dense_flow_mode = str(dense_flow_mode or "hsv")
+
         self._sync_video_timer_with_update_state()
 
     def _sync_video_timer_with_update_state(self) -> None:
-        if self._video_shm_name and self.update_enabled():
+        has_input = bool(self._video_shm_name) or (self._show_dense_flow and bool(self._flow_shm_name))
+        if has_input and self.update_enabled():
             if not self._video_timer.isActive():
                 self._video_timer.start()
             return
@@ -496,6 +567,15 @@ class _TrackVizPane(QtWidgets.QWidget):
         self._video_size = None
         self._sync_canvas_geometry()
 
+    def _reset_flow_reader(self) -> None:
+        try:
+            if self._flow_reader is not None:
+                self._flow_reader.close()
+        except (AttributeError, RuntimeError, TypeError):
+            pass
+        self._flow_reader = None
+        self._flow_frame_id = 0
+
     def _ensure_video_reader(self) -> bool:
         if self._video_reader is not None:
             return True
@@ -512,42 +592,157 @@ class _TrackVizPane(QtWidgets.QWidget):
             self._video_reader = None
             return False
 
-    def _tick_video(self) -> None:
-        if not self.update_enabled():
-            return
-        if not self._ensure_video_reader():
-            return
-        if self._video_reader is None:
-            return
+    def _ensure_flow_reader(self) -> bool:
+        if self._flow_reader is not None:
+            return True
+        if not self._flow_shm_name:
+            return False
         try:
-            header, payload = self._video_reader.read_latest_bgra()
+            reader = VideoShmReader(self._flow_shm_name)
+            reader.open(use_event=False)
+            self._flow_reader = reader
+            return True
         except Exception as exc:
             if hasattr(self, "_status") and self._status is not None:
-                self._status.setText(f"video shm read failed: {exc}")
-            return
+                self._status.setText(f"flow shm open failed: {exc}")
+            self._flow_reader = None
+            return False
+
+    def _read_flow_uv(self) -> tuple[np.ndarray, int, int] | None:
+        if not self._ensure_flow_reader() or self._flow_reader is None:
+            return None
+        try:
+            header, payload = self._flow_reader.read_latest_frame()
+        except Exception:
+            return None
         if header is None or payload is None:
-            return
+            return None
+        if int(header.fmt) != VIDEO_FORMAT_FLOW2_F16:
+            return None
         frame_id = int(header.frame_id)
-        if frame_id == self._video_frame_id:
-            return
+        if frame_id == self._flow_frame_id:
+            return None
+        self._flow_frame_id = frame_id
 
         w = int(header.width)
         h = int(header.height)
         pitch = int(header.pitch)
-        if w <= 0 or h <= 0 or pitch <= 0:
+        if w <= 0 or h <= 0 or pitch < w * 4:
+            return None
+        row_bytes = w * 4
+        rows = []
+        for y in range(h):
+            off = y * pitch
+            rows.append(bytes(payload[off : off + row_bytes]))
+        uv = np.frombuffer(b"".join(rows), dtype="<f2").reshape(h, w, 2).astype(np.float32)
+        return uv, w, h
+
+    def _tick_video(self) -> None:
+        if not self.update_enabled():
+            return
+        if self._ensure_video_reader() and self._video_reader is not None:
+            try:
+                header, payload = self._video_reader.read_latest_bgra()
+            except Exception as exc:
+                if hasattr(self, "_status") and self._status is not None:
+                    self._status.setText(f"video shm read failed: {exc}")
+                header = None
+                payload = None
+            if header is not None and payload is not None:
+                frame_id = int(header.frame_id)
+                if frame_id != self._video_frame_id:
+                    w = int(header.width)
+                    h = int(header.height)
+                    pitch = int(header.pitch)
+                    if w > 0 and h > 0 and pitch > 0:
+                        frame_bytes = bytes(payload)
+                        self._video_frame_bytes = frame_bytes
+                        self._video_frame_id = frame_id
+                        try:
+                            img = QtGui.QImage(frame_bytes, w, h, pitch, QtGui.QImage.Format_ARGB32)
+                            safe_img = img.copy()
+                            self._video_size = (w, h)
+                            self._canvas.set_video_frame(safe_img)
+                            self._sync_canvas_geometry()
+                        except (AttributeError, RuntimeError, TypeError, ValueError):
+                            pass
+
+        if not self._show_dense_flow or not self._flow_shm_name:
             return
 
-        frame_bytes = bytes(payload)
-        self._video_frame_bytes = frame_bytes
-        self._video_frame_id = frame_id
+        flow_data = self._read_flow_uv()
+        if flow_data is None:
+            return
+        uv, w, h = flow_data
+
+        if self._dense_flow_mode == "hsv":
+            u = uv[:, :, 0]
+            v = uv[:, :, 1]
+            mag = np.sqrt(u * u + v * v)
+            angle = np.arctan2(v, u)
+            hue = ((angle + np.pi) / (2.0 * np.pi)).astype(np.float32)
+            sat = np.ones_like(hue, dtype=np.float32)
+            mag_scale = 20.0
+            if isinstance(self._scene_payload, dict):
+                try:
+                    mag_scale = max(0.1, float(self._scene_payload.get("flowArrowScale") or 1.0) * 20.0)
+                except (AttributeError, TypeError, ValueError):
+                    mag_scale = 20.0
+            val = np.clip(mag / mag_scale, 0.0, 1.0).astype(np.float32)
+            rgb = _hsv_to_rgb_u8(hue, sat, val)
+            try:
+                img = QtGui.QImage(rgb.data, w, h, w * 3, QtGui.QImage.Format_RGB888).copy()
+                self._video_size = (w, h)
+                self._canvas.set_video_frame(img)
+                self._sync_canvas_geometry()
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                return
+            if isinstance(self._scene_payload, dict):
+                self._scene_payload["flowDense"] = None
+                try:
+                    self._canvas.set_payload(dict(self._scene_payload))
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    return
+            return
+
+        if not isinstance(self._scene_payload, dict):
+            return
+        max_count = 2000
+        min_mag = 0.0
         try:
-            img = QtGui.QImage(frame_bytes, w, h, pitch, QtGui.QImage.Format_ARGB32)
-            safe_img = img.copy()
+            max_count = int(self._scene_payload.get("flowArrowMaxCount") or 2000)
+        except (AttributeError, TypeError, ValueError):
+            max_count = 2000
+        try:
+            min_mag = float(self._scene_payload.get("flowArrowMinMag") or 0.0)
+        except (AttributeError, TypeError, ValueError):
+            min_mag = 0.0
+
+        stride = int(max(4, math.sqrt(float(max(w * h, 1)) / float(max(max_count, 1)))))
+        vectors: list[dict[str, float]] = []
+        for y in range(stride // 2, h, stride):
+            for x in range(stride // 2, w, stride):
+                dx = float(uv[y, x, 0])
+                dy = float(uv[y, x, 1])
+                mag = float(np.hypot(dx, dy))
+                if mag < min_mag:
+                    continue
+                vectors.append({"x": float(x), "y": float(y), "dx": dx, "dy": dy, "mag": mag})
+                if len(vectors) >= max_count:
+                    break
+            if len(vectors) >= max_count:
+                break
+
+        self._scene_payload["flowDense"] = {
+            "schemaVersion": "f8visionFlowField/1",
+            "width": int(w),
+            "height": int(h),
+            "vectors": vectors,
+        }
+        try:
+            self._canvas.set_payload(dict(self._scene_payload))
         except (AttributeError, RuntimeError, TypeError, ValueError):
             return
-        self._video_size = (w, h)
-        self._canvas.set_video_frame(safe_img)
-        self._sync_canvas_geometry()
 
 
 class _TrackVizWidget(NodeBaseWidget):

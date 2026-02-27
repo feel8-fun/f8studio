@@ -146,7 +146,7 @@ bool VideoSharedMemorySink::initialize(const std::string& region_name, std::size
   hdr->magic = kShmMagic;
   hdr->version = 1;
   hdr->slot_count = slot_count_;
-  hdr->format = 1;
+  hdr->format = kVideoFormatBgra32;
   hdr->frame_id = 0;
   hdr->ts_ms = 0;
   hdr->active_slot = 0;
@@ -167,11 +167,23 @@ bool VideoSharedMemorySink::initialize(const std::string& region_name, std::size
   return true;
 }
 
-bool VideoSharedMemorySink::ensureConfiguration(unsigned width, unsigned height) { return configureDimensions(width, height); }
-
 bool VideoSharedMemorySink::writeFrame(const void* data, unsigned stride_bytes) {
+  return writeFrameWithFormat(data, stride_bytes, kVideoFormatBgra32);
+}
+
+bool VideoSharedMemorySink::ensureConfigurationForFormat(unsigned width, unsigned height, std::uint32_t format,
+                                                         unsigned bytes_per_pixel) {
+  if (bytes_per_pixel == 0) return false;
+  if (format == 0) return false;
+  if (!configureDimensions(width, height, bytes_per_pixel)) return false;
+  format_ = format;
+  return true;
+}
+
+bool VideoSharedMemorySink::writeFrameWithFormat(const void* data, unsigned stride_bytes, std::uint32_t format) {
   if (!data || width_ == 0 || height_ == 0 || pitch_ == 0) return false;
   if (!region_.data()) return false;
+  if (format_ != format) return false;
   auto* hdr = static_cast<ShmHeader*>(region_.data());
   if (!hdr || hdr->magic != kShmMagic) return false;
 
@@ -193,7 +205,7 @@ bool VideoSharedMemorySink::writeFrame(const void* data, unsigned stride_bytes) 
   hdr->width = width_;
   hdr->height = height_;
   hdr->pitch = pitch_;
-  hdr->format = 1;
+  hdr->format = format_;
   hdr->active_slot = slot;
   hdr->frame_id = ++frame_id_;
   hdr->ts_ms =
@@ -211,15 +223,14 @@ bool VideoSharedMemorySink::writeFrame(const void* data, unsigned stride_bytes) 
   return true;
 }
 
-bool VideoSharedMemorySink::configureDimensions(unsigned requested_width, unsigned requested_height) {
+bool VideoSharedMemorySink::configureDimensions(unsigned requested_width, unsigned requested_height, unsigned bytes_per_pixel) {
   if (requested_width == 0 || requested_height == 0) return false;
+  if (bytes_per_pixel == 0) return false;
 
-  // BGRA32 has no alignment requirement; keep requested dimensions to avoid unnecessary resampling artifacts.
+  // Keep requested dimensions to avoid unnecessary resampling artifacts.
   unsigned out_w = requested_width;
   unsigned out_h = requested_height;
-
-  const unsigned bpp = 4;
-  auto required_bytes = [&]() { return static_cast<std::size_t>(out_w) * out_h * bpp; };
+  auto required_bytes = [&]() { return static_cast<std::size_t>(out_w) * out_h * bytes_per_pixel; };
 
   while (required_bytes() > slot_payload_capacity_) {
     const double ratio = std::sqrt(static_cast<double>(slot_payload_capacity_) / static_cast<double>(required_bytes()));
@@ -235,8 +246,13 @@ bool VideoSharedMemorySink::configureDimensions(unsigned requested_width, unsign
   if (out_w == width_ && out_h == height_) return true;
   width_ = out_w;
   height_ = out_h;
-  pitch_ = out_w * bpp;
+  bytes_per_pixel_ = bytes_per_pixel;
+  pitch_ = out_w * bytes_per_pixel_;
   return true;
+}
+
+bool VideoSharedMemorySink::ensureConfiguration(unsigned width, unsigned height) {
+  return ensureConfigurationForFormat(width, height, kVideoFormatBgra32, 4);
 }
 
 bool VideoSharedMemoryReader::open(const std::string& region_name, std::size_t bytes) {
@@ -325,7 +341,7 @@ bool VideoSharedMemoryReader::waitNewFrame(std::uint32_t last_notify_seq, std::u
   return now_notify_seq != last_notify_seq;
 }
 
-bool VideoSharedMemoryReader::copyLatestFrame(std::vector<std::byte>& out_bgra, VideoSharedMemoryHeader& out_header) const {
+bool VideoSharedMemoryReader::copyLatestPayload(std::vector<std::byte>& out_payload, VideoSharedMemoryHeader& out_header) const {
   if (!region_.data() || region_.size() < sizeof(ShmHeader)) return false;
 
   VideoSharedMemoryHeader h0{};
@@ -343,10 +359,16 @@ bool VideoSharedMemoryReader::copyLatestFrame(std::vector<std::byte>& out_bgra, 
   const std::size_t bytes = static_cast<std::size_t>(h0.pitch) * h0.height;
   if (slot_off + bytes > region_.size()) return false;
 
-  out_bgra.resize(bytes);
+  out_payload.resize(bytes);
   const std::byte* base = static_cast<const std::byte*>(region_.data());
-  std::memcpy(out_bgra.data(), base + slot_off, bytes);
+  std::memcpy(out_payload.data(), base + slot_off, bytes);
   out_header = h0;
+  return true;
+}
+
+bool VideoSharedMemoryReader::copyLatestFrame(std::vector<std::byte>& out_bgra, VideoSharedMemoryHeader& out_header) const {
+  if (!copyLatestPayload(out_bgra, out_header)) return false;
+  if (out_header.format != kVideoFormatBgra32) return false;
   return true;
 }
 

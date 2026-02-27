@@ -18,6 +18,7 @@ from .win_event import Win32Event
 VIDEO_SHM_MAGIC = 0xF8A11A01
 VIDEO_SHM_VERSION = 1
 VIDEO_FORMAT_BGRA32 = 1
+VIDEO_FORMAT_FLOW2_F16 = 2
 
 _VIDEO_HEADER_STRUCT = struct.Struct("<7I4xQq4I")
 _VIDEO_NOTIFY_SEQ_OFFSET = 56
@@ -183,12 +184,12 @@ class VideoShmReader:
     def read_header(self) -> Optional[VideoShmHeader]:
         return read_video_header(self.buf)
 
-    def read_latest_bgra(self) -> Tuple[Optional[VideoShmHeader], Optional[memoryview]]:
+    def read_latest_frame(self) -> Tuple[Optional[VideoShmHeader], Optional[memoryview]]:
         buf = self.buf
         h0 = read_video_header(buf)
         if not h0 or h0.magic != VIDEO_SHM_MAGIC or h0.version != VIDEO_SHM_VERSION:
             return None, None
-        if h0.fmt != VIDEO_FORMAT_BGRA32 or h0.width <= 0 or h0.height <= 0 or h0.pitch <= 0:
+        if h0.width <= 0 or h0.height <= 0 or h0.pitch <= 0:
             return None, None
         if h0.frame_bytes > h0.payload_capacity:
             return None, None
@@ -198,6 +199,14 @@ class VideoShmReader:
         if not h1 or h1.frame_id != h0.frame_id or h1.active_slot != h0.active_slot or h1.notify_seq != h0.notify_seq:
             return None, None
         return h0, buf[h0.slot_offset_bytes : h0.slot_offset_bytes + h0.frame_bytes]
+
+    def read_latest_bgra(self) -> Tuple[Optional[VideoShmHeader], Optional[memoryview]]:
+        header, payload = self.read_latest_frame()
+        if header is None or payload is None:
+            return None, None
+        if int(header.fmt) != VIDEO_FORMAT_BGRA32:
+            return None, None
+        return header, payload
 
 
 class VideoShmWriter:
@@ -262,9 +271,11 @@ class VideoShmWriter:
             0,
         )
 
-    def write_frame_bgra(self, width: int, height: int, pitch: int, payload: bytes) -> None:
+    def write_frame(self, width: int, height: int, pitch: int, payload: bytes, fmt: int) -> None:
         buf = self.buf
         if width <= 0 or height <= 0 or pitch <= 0:
+            return
+        if fmt <= 0:
             return
         frame_bytes = int(pitch) * int(height)
         if len(payload) < frame_bytes:
@@ -289,7 +300,7 @@ class VideoShmWriter:
             int(width),
             int(height),
             int(pitch),
-            VIDEO_FORMAT_BGRA32,
+            int(fmt),
             int(self._frame_id),
             int(ts_ms),
             int(self._active_slot),
@@ -301,6 +312,9 @@ class VideoShmWriter:
         if self._event:
             self._event.pulse()
         self._futex_wake_notify_seq()
+
+    def write_frame_bgra(self, width: int, height: int, pitch: int, payload: bytes) -> None:
+        self.write_frame(width=width, height=height, pitch=pitch, payload=payload, fmt=VIDEO_FORMAT_BGRA32)
 
     def _futex_wake_notify_seq(self) -> None:
         if os.name != "posix" or _sys_futex is None:

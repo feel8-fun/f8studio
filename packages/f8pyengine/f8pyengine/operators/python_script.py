@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import time
+from dataclasses import dataclass
 from typing import Any, Callable
 
 from f8pysdk import (
@@ -19,12 +21,33 @@ from f8pysdk.capabilities import ClosableNode
 from f8pysdk.nats_naming import ensure_token
 from f8pysdk.runtime_node import OperatorNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
+from f8pysdk.shm.video import VIDEO_FORMAT_BGRA32, VIDEO_FORMAT_FLOW2_F16, VideoShmHeader, VideoShmReader
 
 from ..constants import SERVICE_CLASS
 from ._ports import exec_out_ports
 
 OPERATOR_CLASS = "f8.python_script"
 logger = logging.getLogger(__name__)
+
+try:
+    import numpy as np
+except ModuleNotFoundError:
+    np = None  # type: ignore[assignment]
+
+
+@dataclass
+class _VideoShmSubscription:
+    key: str
+    shm_name: str
+    decode_mode: str
+    use_event: bool
+    reader: VideoShmReader | None = None
+    task: asyncio.Task[object] | None = None
+    latest_packet: dict[str, Any] | None = None
+    last_frame_id: int = 0
+    last_error_sig: str | None = None
+    last_error_ts_ms: int = 0
+    error_count: int = 0
 
 
 DEFAULT_CODE = (
@@ -40,6 +63,11 @@ DEFAULT_CODE = (
     "#   - await ctx['get_state'](field)           # read state value\n"
     "#   - ctx['set_state'](field, value)          # write state (fire-and-forget)\n"
     "#   - await ctx['set_state_async'](field, value)\n"
+    "# - Video SHM helpers:\n"
+    "#   - ctx['subscribe_video_shm'](key, shm_name, decode='auto', use_event=False)\n"
+    "#   - pkt = ctx['get_video_shm'](key)          # latest cached packet or None\n"
+    "#   - ctx['unsubscribe_video_shm'](key)\n"
+    "#   - ctx['list_video_shm_subscriptions']()\n"
     "#   Note: for best UI/graph support, add the target state fields on the node (editableStateFields=True).\n"
     "# - inputs is a dict keyed by input port names\n"
     "# Return value protocol:\n"
@@ -97,6 +125,7 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
         self._pull_cache_ctx_id: str | int | None = None
         self._pull_cache_outputs: dict[str, Any] = {}
         self._state_key_hint_logged = False
+        self._video_subscriptions: dict[str, _VideoShmSubscription] = {}
 
         self._compile_and_start()
 
@@ -108,6 +137,10 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
                 self._invoke_hook_sync("onStop")
         except Exception:
             pass
+        try:
+            self._shutdown_video_subscriptions_sync()
+        except Exception:
+            pass
 
     async def close(self) -> None:
         if self._closing:
@@ -116,6 +149,7 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
         try:
             await self._invoke_hook_async("onStop")
         finally:
+            await self._shutdown_video_subscriptions_async()
             self._started = False
 
     def _log(self, message: str) -> None:
@@ -136,6 +170,243 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
             loop.create_task(_set_last_error(), name=f"python_script:lastError:{self.node_id}")
         except Exception:
             pass
+
+    @staticmethod
+    def _now_ms() -> int:
+        return int(time.time() * 1000.0)
+
+    @staticmethod
+    def _normalize_decode_mode(decode: Any) -> str:
+        mode = str(decode or "auto").strip().lower()
+        if mode in ("none", "auto"):
+            return mode
+        return "auto"
+
+    @staticmethod
+    def _header_to_dict(header: VideoShmHeader) -> dict[str, int]:
+        return {
+            "frameId": int(header.frame_id),
+            "tsMs": int(header.ts_ms),
+            "width": int(header.width),
+            "height": int(header.height),
+            "pitch": int(header.pitch),
+            "fmt": int(header.fmt),
+            "notifySeq": int(header.notify_seq),
+        }
+
+    @staticmethod
+    def _compact_rows(raw: bytes, *, width: int, height: int, pitch: int, row_bytes: int) -> bytes | None:
+        if width <= 0 or height <= 0 or pitch < row_bytes or row_bytes <= 0:
+            return None
+        if pitch == row_bytes:
+            return raw
+        compact = bytearray(row_bytes * height)
+        for y in range(height):
+            src_off = y * pitch
+            dst_off = y * row_bytes
+            compact[dst_off : dst_off + row_bytes] = raw[src_off : src_off + row_bytes]
+        return bytes(compact)
+
+    def _decode_video_payload(self, *, header: dict[str, int], raw: bytes, decode_mode: str) -> dict[str, Any] | None:
+        if decode_mode != "auto":
+            return None
+        width = int(header.get("width") or 0)
+        height = int(header.get("height") or 0)
+        pitch = int(header.get("pitch") or 0)
+        fmt = int(header.get("fmt") or 0)
+        if width <= 0 or height <= 0 or pitch <= 0:
+            return None
+
+        if fmt == VIDEO_FORMAT_BGRA32:
+            row_bytes = width * 4
+            compact = self._compact_rows(raw, width=width, height=height, pitch=pitch, row_bytes=row_bytes)
+            if compact is None:
+                return {"kind": "bgra32", "shape": [height, width, 4], "data": None}
+            data = None
+            if np is not None:
+                try:
+                    arr = np.frombuffer(compact, dtype=np.uint8)
+                    if int(arr.size) == (height * width * 4):
+                        data = arr.reshape(height, width, 4)
+                except Exception:
+                    data = None
+            return {"kind": "bgra32", "shape": [height, width, 4], "data": data}
+
+        if fmt == VIDEO_FORMAT_FLOW2_F16:
+            row_bytes = width * 4
+            compact = self._compact_rows(raw, width=width, height=height, pitch=pitch, row_bytes=row_bytes)
+            if compact is None:
+                return {"kind": "flow2_f16", "shape": [height, width, 2], "data": None}
+            data = None
+            if np is not None:
+                try:
+                    arr = np.frombuffer(compact, dtype="<f2")
+                    if int(arr.size) == (height * width * 2):
+                        data = arr.reshape(height, width, 2)
+                except Exception:
+                    data = None
+            return {"kind": "flow2_f16", "shape": [height, width, 2], "data": data}
+
+        return None
+
+    def _copy_packet_for_script(self, packet: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not isinstance(packet, dict):
+            return None
+        header_src = packet.get("header")
+        meta_src = packet.get("meta")
+        decoded_src = packet.get("decoded")
+        out: dict[str, Any] = {
+            "header": dict(header_src) if isinstance(header_src, dict) else {},
+            "raw": packet.get("raw"),
+            "meta": dict(meta_src) if isinstance(meta_src, dict) else {},
+            "decoded": None,
+        }
+        if isinstance(decoded_src, dict):
+            decoded_out: dict[str, Any] = {}
+            if "kind" in decoded_src:
+                decoded_out["kind"] = decoded_src.get("kind")
+            if "shape" in decoded_src:
+                decoded_out["shape"] = list(decoded_src.get("shape") or [])
+            if "data" in decoded_src:
+                decoded_out["data"] = decoded_src.get("data")
+            out["decoded"] = decoded_out
+        return out
+
+    def _log_video_sub_error(self, sub: _VideoShmSubscription, stage: str, exc: BaseException) -> None:
+        sub.error_count += 1
+        now_ms = self._now_ms()
+        sig = f"{stage}:{type(exc).__name__}:{exc}"
+        if sub.last_error_sig == sig and (now_ms - int(sub.last_error_ts_ms)) < 2000:
+            return
+        sub.last_error_sig = sig
+        sub.last_error_ts_ms = now_ms
+        logger.exception(
+            "[%s:python_script] video shm subscribe failed key=%s shm=%s stage=%s",
+            self.node_id,
+            sub.key,
+            sub.shm_name,
+            stage,
+            exc_info=exc,
+        )
+
+    @staticmethod
+    def _close_video_sub_reader(sub: _VideoShmSubscription) -> None:
+        reader = sub.reader
+        sub.reader = None
+        if reader is None:
+            return
+        try:
+            reader.close()
+        except Exception:
+            return
+
+    def _unsubscribe_video_shm_sync(self, key: str) -> bool:
+        key_name = str(key or "").strip()
+        if not key_name:
+            return False
+        sub = self._video_subscriptions.pop(key_name, None)
+        if sub is None:
+            return False
+        task = sub.task
+        sub.task = None
+        if task is not None and not task.done():
+            task.cancel()
+        self._close_video_sub_reader(sub)
+        return True
+
+    def _shutdown_video_subscriptions_sync(self) -> None:
+        keys = list(self._video_subscriptions.keys())
+        for key in keys:
+            self._unsubscribe_video_shm_sync(key)
+
+    async def _shutdown_video_subscriptions_async(self) -> None:
+        keys = list(self._video_subscriptions.keys())
+        tasks: list[asyncio.Task[object]] = []
+        for key in keys:
+            sub = self._video_subscriptions.pop(key, None)
+            if sub is None:
+                continue
+            task = sub.task
+            sub.task = None
+            if task is not None and not task.done():
+                task.cancel()
+                tasks.append(task)
+            self._close_video_sub_reader(sub)
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _run_video_shm_subscription(self, key: str) -> None:
+        key_name = str(key or "").strip()
+        while True:
+            sub = self._video_subscriptions.get(key_name)
+            if sub is None:
+                return
+
+            if sub.reader is None:
+                try:
+                    reader = VideoShmReader(sub.shm_name)
+                    reader.open(use_event=bool(sub.use_event))
+                    sub.reader = reader
+                except Exception as exc:
+                    self._log_video_sub_error(sub, "open", exc)
+                    await asyncio.sleep(0.2)
+                    continue
+
+            assert sub.reader is not None
+            try:
+                has_new = bool(sub.reader.wait_new_frame(timeout_ms=20))
+                if not has_new:
+                    await asyncio.sleep(0)
+                    continue
+
+                header, payload = sub.reader.read_latest_frame()
+                if header is None or payload is None:
+                    await asyncio.sleep(0)
+                    continue
+
+                frame_id = int(header.frame_id)
+                if frame_id <= 0:
+                    await asyncio.sleep(0)
+                    continue
+                if frame_id == int(sub.last_frame_id) and sub.latest_packet is not None:
+                    await asyncio.sleep(0)
+                    continue
+
+                width = int(header.width)
+                height = int(header.height)
+                pitch = int(header.pitch)
+                frame_bytes = int(header.frame_bytes)
+                if width <= 0 or height <= 0 or pitch <= 0 or frame_bytes <= 0:
+                    await asyncio.sleep(0)
+                    continue
+                if frame_bytes > int(header.payload_capacity):
+                    await asyncio.sleep(0)
+                    continue
+                if frame_bytes > len(payload):
+                    await asyncio.sleep(0)
+                    continue
+
+                raw = bytes(payload[:frame_bytes])
+                header_dict = self._header_to_dict(header)
+                decoded = self._decode_video_payload(header=header_dict, raw=raw, decode_mode=sub.decode_mode)
+                sub.latest_packet = {
+                    "header": header_dict,
+                    "raw": raw,
+                    "decoded": decoded,
+                    "meta": {
+                        "key": sub.key,
+                        "shmName": sub.shm_name,
+                        "decodeMode": sub.decode_mode,
+                        "lastUpdateMs": self._now_ms(),
+                    },
+                }
+                sub.last_frame_id = frame_id
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self._log_video_sub_error(sub, "read", exc)
+                self._close_video_sub_reader(sub)
+                await asyncio.sleep(0.2)
 
     def _build_ctx(self) -> dict[str, Any]:
         async def _emit_async(port: str, value: Any) -> None:
@@ -165,6 +436,59 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
         async def _get_state(field: str) -> Any:
             return await self.get_state_value(str(field))
 
+        def _subscribe_video_shm(key: str, shm_name: str, *, decode: str = "auto", use_event: bool = False) -> None:
+            key_name = str(key or "").strip()
+            shm = str(shm_name or "").strip()
+            if not key_name or not shm:
+                return
+            decode_mode = self._normalize_decode_mode(decode)
+            self._unsubscribe_video_shm_sync(key_name)
+            sub = _VideoShmSubscription(
+                key=key_name,
+                shm_name=shm,
+                decode_mode=decode_mode,
+                use_event=bool(use_event),
+            )
+            self._video_subscriptions[key_name] = sub
+            try:
+                loop = asyncio.get_running_loop()
+                sub.task = loop.create_task(
+                    self._run_video_shm_subscription(key_name),
+                    name=f"python_script:video_sub:{self.node_id}:{key_name}",
+                )
+            except RuntimeError:
+                sub.task = None
+
+        def _get_video_shm(key: str) -> dict[str, Any] | None:
+            key_name = str(key or "").strip()
+            if not key_name:
+                return None
+            sub = self._video_subscriptions.get(key_name)
+            if sub is None:
+                return None
+            return self._copy_packet_for_script(sub.latest_packet)
+
+        def _unsubscribe_video_shm(key: str) -> None:
+            self._unsubscribe_video_shm_sync(str(key or "").strip())
+
+        def _list_video_shm_subscriptions() -> list[dict[str, Any]]:
+            items: list[dict[str, Any]] = []
+            for key_name in sorted(self._video_subscriptions.keys()):
+                sub = self._video_subscriptions.get(key_name)
+                if sub is None:
+                    continue
+                items.append(
+                    {
+                        "key": sub.key,
+                        "shmName": sub.shm_name,
+                        "decodeMode": sub.decode_mode,
+                        "hasPacket": sub.latest_packet is not None,
+                        "lastFrameId": int(sub.last_frame_id),
+                        "errorCount": int(sub.error_count),
+                    }
+                )
+            return items
+
         return {
             "nodeId": self.node_id,
             "locals": self._locals,
@@ -175,6 +499,10 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
             "set_state": _set_state,
             "set_state_async": _set_state_async,
             "get_state": _get_state,
+            "subscribe_video_shm": _subscribe_video_shm,
+            "get_video_shm": _get_video_shm,
+            "unsubscribe_video_shm": _unsubscribe_video_shm,
+            "list_video_shm_subscriptions": _list_video_shm_subscriptions,
         }
 
     def _compile_script(self, code: str) -> dict[str, Callable[..., Any]]:
@@ -194,6 +522,7 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
     def _compile_and_start(self) -> None:
         if self._started:
             self._invoke_hook_sync("onStop")
+        self._shutdown_video_subscriptions_sync()
         self._locals = {}
         self._ctx = self._build_ctx()
         # Normalize line endings and tabs to avoid TabError on mixed indentation.

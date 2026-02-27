@@ -12,6 +12,7 @@ from f8pysdk import (
     F8StateSpec,
     boolean_schema,
     integer_schema,
+    number_schema,
     string_schema,
 )
 from f8pysdk.nats_naming import ensure_token
@@ -84,6 +85,46 @@ class VizVideoRuntimeNode(OperatorNode):
                 access=F8StateAccess.rw,
                 showOnNode=False,
             ),
+            F8StateSpec(
+                name="flowShmName",
+                label="Flow SHM Name",
+                description="Optional flow SHM mapping name (format flow2_f16).",
+                valueSchema=string_schema(default=""),
+                access=F8StateAccess.rw,
+                showOnNode=True,
+            ),
+            F8StateSpec(
+                name="flowDisplayMode",
+                label="Flow Display",
+                description="Flow rendering mode: off, hsv, or arrows.",
+                valueSchema=string_schema(default="off", enum=["off", "hsv", "arrows"]),
+                access=F8StateAccess.rw,
+                showOnNode=False,
+            ),
+            F8StateSpec(
+                name="flowMagScale",
+                label="Flow Mag Scale",
+                description="Reference max magnitude for HSV/value and arrow scaling.",
+                valueSchema=number_schema(default=20.0, minimum=0.1, maximum=500.0),
+                access=F8StateAccess.rw,
+                showOnNode=False,
+            ),
+            F8StateSpec(
+                name="flowStride",
+                label="Flow Stride",
+                description="Sampling stride for arrow rendering.",
+                valueSchema=integer_schema(default=12, minimum=2, maximum=128),
+                access=F8StateAccess.rw,
+                showOnNode=False,
+            ),
+            F8StateSpec(
+                name="scaleMode",
+                label="Scale Mode",
+                description="Video scaling mode: native (1:1) or fit.",
+                valueSchema=string_schema(default="native", enum=["native", "fit"]),
+                access=F8StateAccess.rw,
+                showOnNode=False,
+            ),
         ],
     )
 
@@ -99,6 +140,11 @@ class VizVideoRuntimeNode(OperatorNode):
         self._service_id = ""
         self._shm_name = ""
         self._throttle_ms = 33
+        self._flow_shm_name = ""
+        self._flow_display_mode = "off"
+        self._flow_mag_scale = 20.0
+        self._flow_stride = 12
+        self._scale_mode = "native"
         self._pending_task: asyncio.Task[object] | None = None
 
     def attach(self, bus: Any) -> None:
@@ -122,7 +168,7 @@ class VizVideoRuntimeNode(OperatorNode):
 
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
         f = str(field or "").strip()
-        if f not in ("serviceId", "shmName", "throttleMs"):
+        if f not in ("serviceId", "shmName", "throttleMs", "flowShmName", "flowDisplayMode", "flowMagScale", "flowStride", "scaleMode"):
             return
         await self._ensure_config_loaded()
         if f == "serviceId":
@@ -131,6 +177,18 @@ class VizVideoRuntimeNode(OperatorNode):
             self._shm_name = str(await self._get_str_state("shmName", default=self._shm_name)).strip()
         elif f == "throttleMs":
             self._throttle_ms = await self._get_int_state("throttleMs", default=self._throttle_ms, minimum=0, maximum=60000)
+        elif f == "flowShmName":
+            self._flow_shm_name = str(await self._get_str_state("flowShmName", default=self._flow_shm_name)).strip()
+        elif f == "flowDisplayMode":
+            mode = str(await self._get_str_state("flowDisplayMode", default=self._flow_display_mode)).strip().lower()
+            self._flow_display_mode = mode if mode in ("off", "hsv", "arrows") else "off"
+        elif f == "flowMagScale":
+            self._flow_mag_scale = await self._get_float_state("flowMagScale", default=self._flow_mag_scale, minimum=0.1, maximum=500.0)
+        elif f == "flowStride":
+            self._flow_stride = await self._get_int_state("flowStride", default=self._flow_stride, minimum=2, maximum=128)
+        elif f == "scaleMode":
+            mode = str(await self._get_str_state("scaleMode", default=self._scale_mode)).strip().lower()
+            self._scale_mode = mode if mode in ("native", "fit") else "native"
         await self._push_config(now_ms=int(ts_ms) if ts_ms is not None else int(time.time() * 1000))
 
     async def _ensure_config_loaded(self) -> None:
@@ -139,6 +197,13 @@ class VizVideoRuntimeNode(OperatorNode):
         self._service_id = str(await self._get_str_state("serviceId", default=str(self._initial_state.get("serviceId", "")))).strip()
         self._shm_name = str(await self._get_str_state("shmName", default=str(self._initial_state.get("shmName", "")))).strip()
         self._throttle_ms = await self._get_int_state("throttleMs", default=33, minimum=0, maximum=60000)
+        self._flow_shm_name = str(await self._get_str_state("flowShmName", default=str(self._initial_state.get("flowShmName", "")))).strip()
+        flow_mode = str(await self._get_str_state("flowDisplayMode", default=str(self._initial_state.get("flowDisplayMode", "off")))).strip().lower()
+        self._flow_display_mode = flow_mode if flow_mode in ("off", "hsv", "arrows") else "off"
+        self._flow_mag_scale = await self._get_float_state("flowMagScale", default=20.0, minimum=0.1, maximum=500.0)
+        self._flow_stride = await self._get_int_state("flowStride", default=12, minimum=2, maximum=128)
+        mode = str(await self._get_str_state("scaleMode", default=str(self._initial_state.get("scaleMode", "native")))).strip().lower()
+        self._scale_mode = mode if mode in ("native", "fit") else "native"
         self._config_loaded = True
         await self._push_config(now_ms=int(time.time() * 1000))
 
@@ -162,6 +227,11 @@ class VizVideoRuntimeNode(OperatorNode):
                 "shmName": shm_name,
                 "serviceId": str(self._service_id or "").strip(),
                 "throttleMs": int(self._throttle_ms),
+                "flowShmName": str(self._flow_shm_name or "").strip(),
+                "flowDisplayMode": str(self._flow_display_mode or "off"),
+                "flowMagScale": float(self._flow_mag_scale),
+                "flowStride": int(self._flow_stride),
+                "scaleMode": str(self._scale_mode or "native"),
             },
             ts_ms=int(now_ms),
         )
@@ -197,6 +267,24 @@ class VizVideoRuntimeNode(OperatorNode):
         except Exception:
             s = str(default)
         return s
+
+    async def _get_float_state(self, name: str, *, default: float, minimum: float, maximum: float) -> float:
+        v: Any = None
+        try:
+            v = await self.get_state_value(name)
+        except Exception:
+            v = None
+        if v is None:
+            v = self._initial_state.get(name)
+        try:
+            out = float(v) if v is not None else float(default)
+        except Exception:
+            out = float(default)
+        if out < minimum:
+            out = minimum
+        if out > maximum:
+            out = maximum
+        return out
 
 
 def register_operator(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
