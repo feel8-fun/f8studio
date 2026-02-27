@@ -51,6 +51,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
 
         self._setup_docks()
         self._deploy_action = self._create_deploy_action()
+        self._stop_all_services_action = self._create_stop_all_services_action()
         self._setup_menu()
         self._setup_toolbar()
         self._applying_runtime_state = False
@@ -140,12 +141,18 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         menu.addAction(compile_action)
 
         menu.addAction(self._deploy_action)
+        menu.addAction(self._stop_all_services_action)
 
     def _create_deploy_action(self) -> QtGui.QAction:
         deploy_action = QtGui.QAction("Send Graph", self)
         deploy_action.setShortcut("F5")
         deploy_action.triggered.connect(self._on_deploy_action_triggered)  # type: ignore[attr-defined]
         return deploy_action
+
+    def _create_stop_all_services_action(self) -> QtGui.QAction:
+        action = QtGui.QAction("Stop All Services", self)
+        action.triggered.connect(self._on_stop_all_services_triggered)  # type: ignore[attr-defined]
+        return action
 
     def _setup_toolbar(self) -> None:
         tb = self.addToolBar("Run")
@@ -171,10 +178,13 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         tb.addSeparator()
 
         # Send Graph(F5).
-        self._send_icon = qta.icon("mdi6.send", color="white")
+        self._send_icon = qta.icon("mdi6.send", color="lightgreen")
         self._deploy_action.setIcon(self._send_icon)
         self._deploy_action.setToolTip("Send graph to services (F5)")
         tb.addAction(self._deploy_action)
+        self._stop_all_services_action.setIcon(qta.icon("mdi.stop", color="pink"))
+        self._stop_all_services_action.setToolTip("Stop all service processes in graph")
+        tb.addAction(self._stop_all_services_action)
 
         tb.addSeparator()
 
@@ -366,6 +376,35 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         for warning in list(compiled.warnings or ()):
             self._log_dock.append("studio", f"[compile][warn] {warning}\n")
         self._bridge.deploy(compiled)
+
+    def _on_stop_all_services_triggered(self) -> None:
+        service_ids: set[str] = set()
+        for node in list(self.studio_graph.all_nodes() or []):
+            try:
+                spec = node.spec
+            except Exception:
+                continue
+            if not isinstance(spec, F8ServiceSpec):
+                continue
+            if str(spec.serviceClass or "") == STUDIO_SERVICE_CLASS:
+                continue
+            try:
+                service_id = str(node.id or "").strip()
+            except Exception:
+                service_id = ""
+            if service_id:
+                service_ids.add(service_id)
+
+        if not service_ids:
+            self._log_dock.append("studio", "[service] no graph service instances to stop\n")
+            return
+
+        for service_id in sorted(service_ids):
+            try:
+                self._bridge.stop_service(service_id)
+                self._log_dock.append("studio", f"[service] stop requested: {service_id}\n")
+            except Exception as exc:
+                self._log_dock.report_exception("studio", f"stop service failed ({service_id})", exc)
 
     def _on_runtime_state_updated(self, service_id: str, node_id: str, field: str, value: Any, ts_ms: Any) -> None:
         """
