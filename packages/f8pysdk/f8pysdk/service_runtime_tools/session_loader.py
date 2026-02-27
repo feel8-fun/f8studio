@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 
-SESSION_SCHEMA_VERSION_V2 = "f8studio-session/2"
+SESSION_SCHEMA_VERSION = "f8studio-session/1"
 
 
 def extract_layout(payload: Any) -> dict[str, Any]:
@@ -13,7 +13,7 @@ def extract_layout(payload: Any) -> dict[str, Any]:
         raise ValueError("session payload must be a JSON object")
 
     schema_version = str(payload.get("schemaVersion") or "").strip()
-    if schema_version == SESSION_SCHEMA_VERSION_V2:
+    if schema_version == SESSION_SCHEMA_VERSION:
         layout = payload.get("layout")
         if not isinstance(layout, dict):
             raise ValueError("v2 session payload missing `layout` object")

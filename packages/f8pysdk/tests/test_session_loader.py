@@ -9,7 +9,7 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from f8pysdk.service_runtime_tools.session_loader import (  # noqa: E402
-    SESSION_SCHEMA_VERSION_V2,
+    SESSION_SCHEMA_VERSION,
     extract_layout,
     load_session_layout,
 )
@@ -17,7 +17,7 @@ from f8pysdk.service_runtime_tools.session_loader import (  # noqa: E402
 
 class SessionLoaderTests(unittest.TestCase):
     def test_extract_layout_v2(self) -> None:
-        payload = {"schemaVersion": SESSION_SCHEMA_VERSION_V2, "layout": {"nodes": {}, "connections": []}}
+        payload = {"schemaVersion": SESSION_SCHEMA_VERSION, "layout": {"nodes": {}, "connections": []}}
         layout = extract_layout(payload)
         self.assertIn("nodes", layout)
 
@@ -27,7 +27,7 @@ class SessionLoaderTests(unittest.TestCase):
         self.assertIn("nodes", layout)
 
     def test_load_session_layout_from_file(self) -> None:
-        payload = {"schemaVersion": SESSION_SCHEMA_VERSION_V2, "layout": {"nodes": {"n1": {}}, "connections": []}}
+        payload = {"schemaVersion": SESSION_SCHEMA_VERSION, "layout": {"nodes": {"n1": {}}, "connections": []}}
         with tempfile.TemporaryDirectory() as td:
             path = os.path.join(td, "session.json")
             with open(path, "w", encoding="utf-8") as fp:

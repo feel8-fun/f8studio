@@ -26,6 +26,9 @@ logger = logging.getLogger(__name__)
 
 class F8StudioMainWin(QtWidgets.QMainWindow):
     studio_graph: F8StudioGraph
+    _exec_lines_action: QtGui.QAction
+    _data_lines_action: QtGui.QAction
+    _state_lines_action: QtGui.QAction
 
     def __init__(self, node_classes: Iterable[type], parent=None):
         super().__init__(parent)
@@ -174,29 +177,62 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
 
         tb.addSeparator()
 
-        self._exec_lines_action = QtGui.QAction("Exec Lines", self)
+        self._exec_lines_action = QtGui.QAction("EXEC", self)
         self._exec_lines_action.setCheckable(True)
         self._exec_lines_action.setChecked(True)
-        self._exec_lines_action.toggled.connect(  # type: ignore[attr-defined]
-            lambda checked: self.studio_graph.set_edge_kind_visible(EDGE_KIND_EXEC, bool(checked))
-        )
+        self._exec_lines_action.toggled.connect(self._on_exec_lines_toggled)  # type: ignore[attr-defined]
+        self._set_edge_visibility_action_icon(self._exec_lines_action, True)
         tb.addAction(self._exec_lines_action)
+        self._set_action_text_beside_icon(tb, self._exec_lines_action, italic=True)
 
-        self._data_lines_action = QtGui.QAction("Data Lines", self)
+        self._data_lines_action = QtGui.QAction("DATA", self)
         self._data_lines_action.setCheckable(True)
         self._data_lines_action.setChecked(True)
-        self._data_lines_action.toggled.connect(  # type: ignore[attr-defined]
-            lambda checked: self.studio_graph.set_edge_kind_visible(EDGE_KIND_DATA, bool(checked))
-        )
+        self._data_lines_action.toggled.connect(self._on_data_lines_toggled)  # type: ignore[attr-defined]
+        self._set_edge_visibility_action_icon(self._data_lines_action, True)
         tb.addAction(self._data_lines_action)
+        self._set_action_text_beside_icon(tb, self._data_lines_action, italic=True)
 
-        self._state_lines_action = QtGui.QAction("State Lines", self)
+        self._state_lines_action = QtGui.QAction("STATE", self)
         self._state_lines_action.setCheckable(True)
         self._state_lines_action.setChecked(True)
-        self._state_lines_action.toggled.connect(  # type: ignore[attr-defined]
-            lambda checked: self.studio_graph.set_edge_kind_visible(EDGE_KIND_STATE, bool(checked))
-        )
+        self._state_lines_action.toggled.connect(self._on_state_lines_toggled)  # type: ignore[attr-defined]
+        self._set_edge_visibility_action_icon(self._state_lines_action, True)
         tb.addAction(self._state_lines_action)
+        self._set_action_text_beside_icon(tb, self._state_lines_action, italic=True)
+
+    def _set_action_text_beside_icon(
+        self, toolbar: QtWidgets.QToolBar, action: QtGui.QAction, italic: bool = False
+    ) -> None:
+        action_widget = toolbar.widgetForAction(action)
+        if isinstance(action_widget, QtWidgets.QToolButton):
+            action_widget.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+            if italic:
+                font = QtGui.QFont(action_widget.font())
+                font.setItalic(True)
+                action_widget.setFont(font)
+
+    def _set_edge_visibility_action_icon(self, action: QtGui.QAction, visible: bool) -> None:
+        icon_name = "fa5s.eye" if visible else "fa5s.eye-slash"
+        action.setIcon(qta.icon(icon_name, color="white"))
+
+    @QtCore.Slot(bool)
+    def _on_exec_lines_toggled(self, checked: bool) -> None:
+        visible = bool(checked)
+        self.studio_graph.set_edge_kind_visible(EDGE_KIND_EXEC, visible)
+        self._set_edge_visibility_action_icon(self._exec_lines_action, visible)
+
+    @QtCore.Slot(bool)
+    def _on_data_lines_toggled(self, checked: bool) -> None:
+        visible = bool(checked)
+        self.studio_graph.set_edge_kind_visible(EDGE_KIND_DATA, visible)
+        self._set_edge_visibility_action_icon(self._data_lines_action, visible)
+
+    @QtCore.Slot(bool)
+    def _on_state_lines_toggled(self, checked: bool) -> None:
+        visible = bool(checked)
+        self.studio_graph.set_edge_kind_visible(EDGE_KIND_STATE, visible)
+        self._set_edge_visibility_action_icon(self._state_lines_action, visible)
 
     def closeEvent(self, event):
         self._auto_save_session()

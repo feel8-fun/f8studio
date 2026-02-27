@@ -14,12 +14,12 @@ from .session_compiler import (
     compile_runtime_graphs_from_session_layout,
     split_runtime_graph_by_service,
 )
-from .session_loader import SESSION_SCHEMA_VERSION_V2, extract_layout, load_session_layout
+from .session_loader import SESSION_SCHEMA_VERSION, extract_layout, load_session_layout
 
 __all__ = [
     "CompiledRuntimeGraphs",
     "OperatorSpecRegistry",
-    "SESSION_SCHEMA_VERSION_V2",
+    "SESSION_SCHEMA_VERSION",
     "ServiceCatalog",
     "ServiceProcessConfig",
     "ServiceProcessManager",
