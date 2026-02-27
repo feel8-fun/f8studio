@@ -8,6 +8,7 @@ if ROOT not in sys.path:
 
 from f8pysdk.service_bus.bus import ServiceBus, ServiceBusConfig  # noqa: E402
 from f8pysdk.service_bus.routing_data import buffer_input  # noqa: E402
+from f8pysdk.runtime_node import RuntimeNode  # noqa: E402
 
 
 class ServiceBusCapTests(unittest.TestCase):
@@ -46,6 +47,21 @@ class ServiceBusCapTests(unittest.TestCase):
 
         buf = bus._data_inputs[("n1", "in")]
         self.assertEqual(list(buf.queue), [("v2", 2), ("v3", 3)])
+
+    def test_get_state_cached_hit_and_miss(self) -> None:
+        bus = ServiceBus(ServiceBusConfig(service_id="svc"))
+        self.assertEqual(bus.get_state_cached("n1", "a", 123), 123)
+        bus._state_cache[("n1", "a")] = ("valueA", 10)
+        self.assertEqual(bus.get_state_cached("n1", "a", None), "valueA")
+
+    def test_runtime_node_get_state_cached(self) -> None:
+        node = RuntimeNode(node_id="n1")
+        self.assertEqual(node.get_state_cached("k", "d"), "d")
+
+        bus = ServiceBus(ServiceBusConfig(service_id="svc"))
+        bus._state_cache[("n1", "k")] = ("vk", 11)
+        node.attach(bus)
+        self.assertEqual(node.get_state_cached("k", "d"), "vk")
 
 
 if __name__ == "__main__":

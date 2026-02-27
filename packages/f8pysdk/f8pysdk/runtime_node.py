@@ -107,6 +107,17 @@ class RuntimeNode(BusAttachableNode, StatefulNode, DataReceivableNode, Computabl
         """
         return (await self.get_state(field)).value
 
+    def get_state_cached(self, field: str, default: Any = None) -> Any:
+        """
+        Synchronous cached state snapshot read.
+
+        This never performs IO and may return stale values. Use `get_state()` for
+        freshest value semantics.
+        """
+        if self._bus is None:
+            return default
+        return self._bus.get_state_cached(self.node_id, str(field), default)
+
 
 @dataclass
 class ServiceNode(RuntimeNode):

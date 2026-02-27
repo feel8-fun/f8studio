@@ -360,6 +360,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/dc/9b/47798a6c91d8bdb567fe2698fe81e0c6b7cb7ef4d13da4114b41d239f65d/typing_inspection-0.4.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/63/bc/d3e208028de777087e6fb2b122051a6ff7bbcca0d6df9d9c2bf1dd869ae9/websockets-16.0-cp314-cp314-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl
       - pypi: ./packages/f8pyengine
+      - pypi: ./packages/f8pyscript
       - pypi: ./packages/f8pysdk
       - pypi: ./packages/f8pystudio
       win-64:
@@ -446,6 +447,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/dc/9b/47798a6c91d8bdb567fe2698fe81e0c6b7cb7ef4d13da4114b41d239f65d/typing_inspection-0.4.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/8a/f1/ae6b937bf3126b5134ce1f482365fde31a357c784ac51852978768b5eff4/websockets-16.0-cp314-cp314-win_amd64.whl
       - pypi: ./packages/f8pyengine
+      - pypi: ./packages/f8pyscript
       - pypi: ./packages/f8pysdk
       - pypi: ./packages/f8pystudio
   doc:
@@ -1548,6 +1550,14 @@ packages:
   - numpy>=2.2.0
   - opencv-contrib-python>=4.10.0
   - mediapipe>=0.10.14
+  requires_python: '>=3.10'
+- pypi: ./packages/f8pyscript
+  name: f8pyscript
+  version: 0.1.0
+  sha256: 7128f2ac7d32306ffbda6d96f6a9296d19f30a220467660a8fca08a8ae57637c
+  requires_dist:
+  - f8pysdk
+  - numpy>=1.26.0
   requires_python: '>=3.10'
 - pypi: ./packages/f8pysdk
   name: f8pysdk

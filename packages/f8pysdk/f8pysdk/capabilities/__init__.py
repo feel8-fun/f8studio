@@ -233,6 +233,8 @@ class StateIOBus(Protocol):
 
     async def get_state(self, node_id: str, field: str) -> "StateRead": ...
 
+    def get_state_cached(self, node_id: str, field: str, default: Any = None) -> Any: ...
+
 
 @runtime_checkable
 class NodeBus(StateIOBus, DataIOBus, BusActive, Protocol):

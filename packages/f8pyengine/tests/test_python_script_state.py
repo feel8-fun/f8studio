@@ -198,5 +198,35 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state_x, 2)
         self.assertEqual(node._locals.get("x"), 1)
 
+    async def test_get_state_cached_sync_snapshot(self) -> None:
+        harness = ServiceBusHarness()
+        bus = harness.create_bus("svcA")
+        reg = RuntimeNodeRegistry.instance()
+        register_operator(reg)
+        _ = ServiceHost(bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=reg)
+
+        state_fields = list(PythonScriptRuntimeNode.SPEC.stateFields or [])
+        state_fields.append(F8StateSpec(name="x", label="x", description="", valueSchema=any_schema(), access=F8StateAccess.rw))
+        code = (
+            "def onExec(ctx, execIn, inputs):\n"
+            "    v = ctx['get_state_cached']('x', 7)\n"
+            "    return {'outputs': {'out': v}}\n"
+        )
+        op = _runtime_python_script_node(node_id="ps7", code=code, state_fields=state_fields)
+        graph = F8RuntimeGraph(graphId="g7", revision="r1", nodes=[op], edges=[])
+        await bus.set_rungraph(graph)
+
+        node = bus.get_node("ps7")
+        self.assertIsInstance(node, PythonScriptRuntimeNode)
+        assert isinstance(node, PythonScriptRuntimeNode)
+
+        out1 = await node.compute_output("out", ctx_id="ctx-7a")
+        self.assertEqual(out1, 7)
+
+        await bus.publish_state_external("ps7", "x", 33, source="test")
+        await asyncio.sleep(0.05)
+        out2 = await node.compute_output("out", ctx_id="ctx-7b")
+        self.assertEqual(out2, 33)
+
 if __name__ == "__main__":
     unittest.main()

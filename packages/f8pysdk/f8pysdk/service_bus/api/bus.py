@@ -358,6 +358,17 @@ class ServiceBus:
         self._state_cache[(node_id, field)] = (payload, 0)
         return StateRead(found=True, value=payload, ts_ms=0)
 
+    def get_state_cached(self, node_id: str, field: str, default: Any = None) -> Any:
+        """
+        Synchronous cached state snapshot read without KV/network IO.
+        """
+        node_id_s = ensure_token(node_id, label="node_id")
+        field_s = str(field)
+        cached = self._state_cache.get((node_id_s, field_s))
+        if cached is None:
+            return default
+        return cached[0]
+
     # ---- rungraph -------------------------------------------------------
     async def set_rungraph(self, graph: F8RuntimeGraph) -> None:
         await _set_rungraph_impl(self, graph)

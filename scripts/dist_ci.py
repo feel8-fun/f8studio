@@ -19,6 +19,7 @@ CPP_PRESET_FALLBACK_PATH = REPO_ROOT / "build" / "generators" / "CMakePresets.js
 PYTHON_PACKAGE_DIRS: dict[str, str] = {
     "f8pysdk": "packages/f8pysdk",
     "f8pyengine": "packages/f8pyengine",
+    "f8pyscript": "packages/f8pyscript",
     "f8pystudio": "packages/f8pystudio",
     "f8pydl": "packages/f8pydl",
     "f8pymppose": "packages/f8pymppose",

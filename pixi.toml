@@ -50,9 +50,11 @@ pytest_studio = "python -m pytest -q packages/f8pystudio/tests"
 
 [feature.engine.pypi-dependencies]
 f8pyengine = { path = "packages/f8pyengine", editable = true }
+f8pyscript = { path = "packages/f8pyscript", editable = true }
 
 [feature.engine.tasks]
 f8pyengine = "python -m f8pyengine.main"
+f8pyscript = "python -m f8pyscript.main"
 
 [feature.studio.pypi-dependencies]
 f8pystudio = { path = "packages/f8pystudio", editable = true }

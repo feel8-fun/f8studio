@@ -61,6 +61,7 @@ DEFAULT_CODE = (
     "# - ctx['execIn'] is set for exec-triggered calls\n"
     "# - State helpers:\n"
     "#   - await ctx['get_state'](field)           # read state value\n"
+    "#   - ctx['get_state_cached'](field, default=None)  # sync cached snapshot (may be stale)\n"
     "#   - ctx['set_state'](field, value)          # write state (fire-and-forget)\n"
     "#   - await ctx['set_state_async'](field, value)\n"
     "# - Video SHM helpers:\n"
@@ -436,6 +437,9 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
         async def _get_state(field: str) -> Any:
             return await self.get_state_value(str(field))
 
+        def _get_state_cached(field: str, default: Any = None) -> Any:
+            return self.get_state_cached(str(field), default)
+
         def _subscribe_video_shm(key: str, shm_name: str, *, decode: str = "auto", use_event: bool = False) -> None:
             key_name = str(key or "").strip()
             shm = str(shm_name or "").strip()
@@ -499,6 +503,7 @@ class PythonScriptRuntimeNode(OperatorNode, ClosableNode):
             "set_state": _set_state,
             "set_state_async": _set_state_async,
             "get_state": _get_state,
+            "get_state_cached": _get_state_cached,
             "subscribe_video_shm": _subscribe_video_shm,
             "get_video_shm": _get_video_shm,
             "unsubscribe_video_shm": _unsubscribe_video_shm,

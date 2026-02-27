@@ -1,0 +1,20 @@
+[project]
+name = "f8pyscript"
+version = "0.1.0"
+description = "Standalone python script runtime service for Feel8."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "f8pysdk",
+    "numpy>=1.26.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["f8pyscript"]
+
+[tool.uv]
+package = true
