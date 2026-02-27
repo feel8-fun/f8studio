@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from qtpy import QtCore, QtGui, QtWidgets
-import qtawesome as qta
 
 from f8pysdk import F8OperatorSpec, F8ServiceSpec
 
@@ -18,6 +17,7 @@ from ..pystudio_service_bridge import PyStudioServiceBridge, PyStudioServiceBrid
 from ..pystudio_node_registry import SERVICE_CLASS as STUDIO_SERVICE_CLASS
 from ..ui_notifications import show_info, show_warning
 from ..ui_bus import UiCommand, UiCommandApplier
+from ..ui_icons import StudioIcon, icon_for
 from .node_property_widgets import F8StudioSingleNodePropertiesWidget
 from .node_library_widget import F8StudioNodeLibraryWidget
 from .service_log_widget import ServiceLogDock
@@ -160,8 +160,8 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         tb.setToolButtonStyle(QtCore.Qt.ToolButtonIconOnly)
 
         # Graph file management.
-        self._open_icon = qta.icon("fa5s.folder-open", color="white")
-        self._save_icon = qta.icon("fa5s.save", color="white")
+        self._open_icon = icon_for(self, StudioIcon.FOLDER_OPEN)
+        self._save_icon = icon_for(self, StudioIcon.SAVE)
 
         self._load_from_action = QtGui.QAction("Load Session…", self)
         self._load_from_action.setIcon(self._open_icon)
@@ -178,11 +178,11 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         tb.addSeparator()
 
         # Send Graph(F5).
-        self._send_icon = qta.icon("mdi6.send", color="lightgreen")
+        self._send_icon = icon_for(self, StudioIcon.SEND)
         self._deploy_action.setIcon(self._send_icon)
         self._deploy_action.setToolTip("Send graph to services (F5)")
         tb.addAction(self._deploy_action)
-        self._stop_all_services_action.setIcon(qta.icon("mdi.stop", color="pink"))
+        self._stop_all_services_action.setIcon(icon_for(self, StudioIcon.STOP_ALL))
         self._stop_all_services_action.setToolTip("Stop all service processes in graph")
         tb.addAction(self._stop_all_services_action)
 
@@ -224,8 +224,8 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
                 action_widget.setFont(font)
 
     def _set_edge_visibility_action_icon(self, action: QtGui.QAction, visible: bool) -> None:
-        icon_name = "fa5s.eye" if visible else "fa5s.eye-slash"
-        action.setIcon(qta.icon(icon_name, color="white"))
+        token = StudioIcon.EYE if visible else StudioIcon.EYE_SLASH
+        action.setIcon(icon_for(self, token))
 
     @QtCore.Slot(bool)
     def _on_exec_lines_toggled(self, checked: bool) -> None:

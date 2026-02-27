@@ -13,7 +13,6 @@ from NodeGraphQt.custom_widgets.properties_bin.node_property_widgets import Prop
 from NodeGraphQt.custom_widgets.properties_bin.prop_widgets_base import PropLabel
 
 from qtpy import QtWidgets, QtCore, QtGui
-import qtawesome as qta
 
 from f8pysdk import (
     F8Command,
@@ -71,6 +70,7 @@ from .f8_ui_override_ops import (
 from .state_controls.readonly_policy import set_widget_read_only as _set_widget_read_only
 from ..ui_notifications import show_warning
 from ..command_ui_protocol import CommandUiHandler, CommandUiSource
+from ..ui_icons import StudioIcon, icon_for
 
 
 logger = logging.getLogger(__name__)
@@ -441,8 +441,8 @@ class _F8StateStackContainer(QtWidgets.QWidget):
         eye_btn.setCheckable(True)
         eye_btn.setChecked(bool(show_on_node))
         eye_btn.setToolTip("Show on node")
-        icon_name = "fa5s.eye" if bool(show_on_node) else "fa5s.eye-slash"
-        eye_btn.setIcon(qta.icon(icon_name, color="white"))
+        token = StudioIcon.EYE if bool(show_on_node) else StudioIcon.EYE_SLASH
+        _set_icon(eye_btn, token=token)
         eye_btn.setProperty("_state_field_name", str(name or "").strip())
         eye_btn.toggled.connect(self._on_eye_toggled)  # type: ignore[attr-defined]
 
@@ -491,8 +491,9 @@ class _F8StateStackContainer(QtWidgets.QWidget):
         name = str(btn.property("_state_field_name") or "").strip() if btn is not None else ""
         if not name:
             return
-        icon_name = "fa5s.eye" if bool(checked) else "fa5s.eye-slash"
-        btn.setIcon(qta.icon(icon_name, color="white"))
+        token = StudioIcon.EYE if bool(checked) else StudioIcon.EYE_SLASH
+        if isinstance(btn, QtWidgets.QAbstractButton):
+            _set_icon(btn, token=token)
         self.toggle_state_field_show_on_node_requested.emit(name, bool(checked))
 
     def get_widget(self, name):
@@ -512,6 +513,14 @@ def _icon_from_style(
     if not icon.isNull():
         return icon
     return QtGui.QIcon()
+
+
+def _set_icon(
+    button: QtWidgets.QAbstractButton,
+    *,
+    token: StudioIcon,
+) -> None:
+    button.setIcon(icon_for(button, token))
 
 
 class _F8SpecListSection(QtWidgets.QWidget):
@@ -631,8 +640,8 @@ class _F8SpecNameRow(QtWidgets.QWidget):
         self._update_eye_icon(bool(show))
 
     def _update_eye_icon(self, show: bool) -> None:
-        icon_name = "fa5s.eye" if bool(show) else "fa5s.eye-slash"
-        self.eye_btn.setIcon(qta.icon(icon_name, color="white"))
+        token = StudioIcon.EYE if bool(show) else StudioIcon.EYE_SLASH
+        _set_icon(self.eye_btn, token=token)
 
     def _on_eye_toggled(self, checked: bool) -> None:
         self._update_eye_icon(bool(checked))
@@ -1395,8 +1404,8 @@ class _F8CommandRow(QtWidgets.QWidget):
         self._update_eye_icon(bool(show))
 
     def _update_eye_icon(self, show: bool) -> None:
-        icon_name = "fa5s.eye" if bool(show) else "fa5s.eye-slash"
-        self._eye_btn.setIcon(qta.icon(icon_name, color="white"))
+        token = StudioIcon.EYE if bool(show) else StudioIcon.EYE_SLASH
+        _set_icon(self._eye_btn, token=token)
 
     def _on_eye_toggled(self, checked: bool) -> None:
         self._update_eye_icon(bool(checked))

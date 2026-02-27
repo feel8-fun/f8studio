@@ -8,8 +8,7 @@ from qtpy import QtCore, QtGui, QtWidgets
 
 from f8pysdk.schema_helpers import schema_type
 
-import qtawesome as qta
-
+from ...ui_icons import StudioIcon, icon_for
 from ...widgets.f8_editor_widgets import (
     F8ImageB64Editor,
     F8MultiSelect,
@@ -478,10 +477,7 @@ def make_state_inline_control(node_item: Any, state_field: StateFieldInfo) -> Qt
         btn.setAutoRaise(True)
         btn.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
         btn.setText("Edit...")
-        try:
-            btn.setIcon(qta.icon("fa5s.code", color="white"))
-        except (AttributeError, RuntimeError, TypeError):
-            pass
+        btn.setIcon(icon_for(btn, StudioIcon.CODE))
         btn.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
         if field_tooltip:
             btn.setToolTip(field_tooltip)

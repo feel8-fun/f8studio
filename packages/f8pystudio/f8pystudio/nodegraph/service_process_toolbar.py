@@ -5,8 +5,7 @@ from typing import Any, Callable
 from qtpy import QtCore, QtWidgets
 
 from ..constants import STUDIO_SERVICE_ID
-
-import qtawesome as qta
+from ..ui_icons import StudioIcon, icon_for
 
 from .service_bridge_protocol import ServiceBridge
 
@@ -41,13 +40,13 @@ class ServiceProcessToolbar(QtWidgets.QWidget):
         self._btn_sync = QtWidgets.QToolButton(self)  # deploy
         self._btn_restart = QtWidgets.QToolButton(self)
 
-        self._disable_icon = qta.icon("fa5s.toggle-on", color="white")
-        self._enable_icon = qta.icon("fa5s.toggle-off", color="white")
-        self._play_icon = qta.icon("fa5s.play", color="green")
-        self._pause_icon = qta.icon("fa5s.pause", color="yellow")
-        self._stop_icon = qta.icon("fa5s.stop", color="red")
-        self._sync_icon = qta.icon("fa5s.exchange-alt", color="white")
-        self._restart_icon = qta.icon("fa5s.redo", color="white")
+        self._disable_icon = icon_for(self, StudioIcon.TOGGLE_ON)
+        self._enable_icon = icon_for(self, StudioIcon.TOGGLE_OFF)
+        self._play_icon = icon_for(self, StudioIcon.PLAY)
+        self._pause_icon = icon_for(self, StudioIcon.PAUSE)
+        self._stop_icon = icon_for(self, StudioIcon.STOP)
+        self._sync_icon = icon_for(self, StudioIcon.REFRESH)
+        self._restart_icon = icon_for(self, StudioIcon.REDO)
 
         self._btn_disable.setAutoRaise(True)
         self._btn_toggle.setAutoRaise(True)

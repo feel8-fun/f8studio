@@ -6,10 +6,9 @@ import os
 from typing import Any, Callable
 
 from qtpy import QtCore, QtGui, QtWidgets
-import qtawesome as qta
 
 from ..ui_notifications import show_warning
-
+from ..ui_icons import StudioIcon, icon_for
 
 def _ask_save_before_close(parent: QtWidgets.QWidget) -> QtWidgets.QMessageBox.StandardButton:
     return QtWidgets.QMessageBox.question(
@@ -673,10 +672,7 @@ class F8CodeButtonPropWidget(QtWidgets.QWidget):
         self._editor_window: QtWidgets.QDialog | None = None
 
         self._btn = QtWidgets.QPushButton("Edit...")
-        try:
-            self._btn.setIcon(qta.icon("fa5s.code", color="white"))
-        except (AttributeError, RuntimeError, TypeError):
-            pass
+        self._btn.setIcon(icon_for(self._btn, StudioIcon.CODE))
         self._btn.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
         self._btn.clicked.connect(self._on_edit_clicked)  # type: ignore[attr-defined]
 
