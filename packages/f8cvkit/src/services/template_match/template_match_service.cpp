@@ -745,6 +745,7 @@ json TemplateMatchService::describe() {
   service["commands"] = json::array({
       json{{"name", "captureTemplateFrame"},
            {"description", "Capture current SHM frame as an encoded image (base64)."},
+           {"required", true},
            {"showOnNode", true},
            {"params",
             json::array({
@@ -754,7 +755,7 @@ json TemplateMatchService::describe() {
                 json{{"name", "maxWidth"}, {"valueSchema", schema_integer()}, {"required", false}},
                 json{{"name", "maxHeight"}, {"valueSchema", schema_integer()}, {"required", false}},
             })}},
-      json{{"name", "ping"}, {"description", "Health check."}, {"showOnNode", false}},
+      json{{"name", "ping"}, {"description", "Health check."}, {"required", true}, {"showOnNode", false}},
   });
   service["editableCommands"] = false;
   service["dataInPorts"] = json::array();

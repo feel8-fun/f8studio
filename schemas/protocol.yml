@@ -95,6 +95,10 @@ components:
           type: string
         description:
           type: string
+        required:
+          type: boolean
+          default: false
+          description: If true, this command is protected and cannot be deleted from editable command lists.
         showOnNode:
           type: boolean
           default: false

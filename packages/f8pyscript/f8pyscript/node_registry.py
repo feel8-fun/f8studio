@@ -124,6 +124,7 @@ def register_specs(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRe
                 F8Command(
                     name="grant_local_exec",
                     description="Grant local execution for this script session.",
+                    required=True,
                     showOnNode=True,
                     params=[
                         F8CommandParam(
@@ -137,11 +138,12 @@ def register_specs(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRe
                 F8Command(
                     name="revoke_local_exec",
                     description="Revoke local execution grant.",
+                    required=True,
                     showOnNode=True,
                     params=[],
                 ),
-                F8Command(name="restart_script", description="Recompile and restart script.", showOnNode=False, params=[]),
-                F8Command(name="status", description="Get runtime status.", showOnNode=False, params=[]),
+                F8Command(name="restart_script", description="Recompile and restart script.", required=True, showOnNode=False, params=[]),
+                F8Command(name="status", description="Get runtime status.", required=True, showOnNode=False, params=[]),
             ],
             dataInPorts=[F8DataPortSpec(name="in", description="Default data input", valueSchema=any_schema())],
             dataOutPorts=[F8DataPortSpec(name="out", description="Default data output", valueSchema=any_schema())],

@@ -1243,11 +1243,14 @@ class _F8EditCommandDialog(QtWidgets.QDialog):
         self._name = QtWidgets.QLineEdit(str(cmd.name or ""))
         self._name.setClearButtonEnabled(True)
         self._desc = QtWidgets.QPlainTextEdit(str(cmd.description or ""))
+        self._required = QtWidgets.QCheckBox()
+        self._required.setChecked(bool(cmd.required))
         self._show_on_node = QtWidgets.QCheckBox()
         self._show_on_node.setChecked(bool(cmd.showOnNode))
 
         form = QtWidgets.QFormLayout()
         form.addRow("Name", self._name)
+        form.addRow("Required", self._required)
         form.addRow("Show On Node", self._show_on_node)
         form.addRow("Description", self._desc)
 
@@ -1280,7 +1283,7 @@ class _F8EditCommandDialog(QtWidgets.QDialog):
         layout.addWidget(buttons)
 
         if self._ui_only:
-            for w in (self._name, self._desc, btn_add, btn_edit, btn_del):
+            for w in (self._name, self._required, self._desc, btn_add, btn_edit, btn_del):
                 w.setEnabled(False)
 
     def _refresh_params_list(self) -> None:
@@ -1334,8 +1337,9 @@ class _F8EditCommandDialog(QtWidgets.QDialog):
     def command(self) -> F8Command:
         name = str(self._name.text() or "").strip()
         desc = str(self._desc.toPlainText() or "").strip() or None
+        required = bool(self._required.isChecked())
         show = bool(self._show_on_node.isChecked())
-        return F8Command(name=name, description=desc, showOnNode=show, params=list(self._params))
+        return F8Command(name=name, description=desc, required=required, showOnNode=show, params=list(self._params))
 
 
 class _F8CommandRow(QtWidgets.QWidget):
@@ -1560,11 +1564,15 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
                 show_on_node = bool(c.showOnNode)
             except Exception:
                 show_on_node = False
+            try:
+                required = bool(c.required)
+            except Exception:
+                required = False
             row = _F8CommandRow(
                 name=name,
                 description=desc,
                 allow_edit=not self._missing_locked,
-                allow_delete=bool(editable) and not self._missing_locked,
+                allow_delete=bool(editable) and not self._missing_locked and not required,
                 show_on_node=bool(show_on_node),
             )
             row.invoke_clicked.connect(self._invoke_command)
@@ -1766,7 +1774,7 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
         editable = bool(spec.editableCommands)
         if not editable:
             return
-        cmd = F8Command(name="", description=None, showOnNode=False, params=[])
+        cmd = F8Command(name="", description=None, required=False, showOnNode=False, params=[])
         dlg = _F8EditCommandDialog(self, title="Add command", cmd=cmd, ui_only=False)
         if dlg.exec_() != QtWidgets.QDialog.Accepted:
             return
@@ -1842,6 +1850,15 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
         base_show = _base_command_show_on_node(spec, name=n)
         _set_command_show_on_node_override(node, name=n, show_on_node=bool(show_on_node), base_show_on_node=bool(base_show))
 
+    def _is_required_command(self, spec: F8ServiceSpec, *, name: str) -> bool:
+        n = str(name or "").strip()
+        if not n:
+            return False
+        for c in list(spec.commands or []):
+            if str(c.name or "").strip() == n:
+                return bool(c.required)
+        return False
+
     def _delete_command(self, name: str) -> None:
         if self._missing_locked:
             return
@@ -1855,6 +1872,8 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
         if not editable:
             return
         n = str(name or "").strip()
+        if self._is_required_command(spec, name=n):
+            return
         if QtWidgets.QMessageBox.question(self, "Delete command", f"Delete '{n}'?") != QtWidgets.QMessageBox.Yes:
             return
         spec2 = _spec_delete_command(spec, name=n)

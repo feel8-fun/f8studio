@@ -1027,6 +1027,7 @@ json VideoStabService::describe() {
   service["commands"] = json::array({
       json{{"name", "resetStabilizer"},
            {"description", "Reset internal trajectory/smoothing state."},
+           {"required", true},
            {"showOnNode", true}},
   });
   service["editableCommands"] = false;

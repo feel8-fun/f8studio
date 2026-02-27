@@ -1825,16 +1825,19 @@ json ImPlayerService::describe() {
   service["commands"] = json::array({
       json{{"name", "open"},
            {"description", "Open a media URL"},
+           {"required", true},
            {"showOnNode", true},
            {"params", json::array({json{{"name", "url"}, {"valueSchema", schema_string()}, {"required", true}}})}},
-      json{{"name", "play"}, {"description", "Start playback"}, {"showOnNode", true}},
-      json{{"name", "pause"}, {"description", "Pause playback"}, {"showOnNode", true}},
-      json{{"name", "stop"}, {"description", "Stop playback"}, {"showOnNode", true}},
+      json{{"name", "play"}, {"description", "Start playback"}, {"required", true}, {"showOnNode", true}},
+      json{{"name", "pause"}, {"description", "Pause playback"}, {"required", true}, {"showOnNode", true}},
+      json{{"name", "stop"}, {"description", "Stop playback"}, {"required", true}, {"showOnNode", true}},
       json{{"name", "seek"},
            {"description", "Seek"},
+           {"required", true},
            {"params", json::array({json{{"name", "position"}, {"valueSchema", schema_number()}, {"required", true}}})}},
       json{{"name", "setVolume"},
            {"description", "Set volume"},
+           {"required", true},
            {"params", json::array({json{{"name", "volume"}, {"valueSchema", schema_number()}, {"required", true}}})}},
   });
 

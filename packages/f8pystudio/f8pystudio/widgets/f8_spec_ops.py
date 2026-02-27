@@ -98,6 +98,9 @@ def replace_command(spec: F8ServiceSpec, *, name: str, cmd: F8Command) -> F8Serv
 
 def delete_command(spec: F8ServiceSpec, *, name: str) -> F8ServiceSpec:
     n = str(name or "").strip()
+    for c in list(spec.commands or []):
+        if str(c.name or "").strip() == n and bool(c.required):
+            return spec
     cmds = [c for c in list(spec.commands or []) if str(c.name or "").strip() != n]
 
     def _mutate(s: Any) -> None:

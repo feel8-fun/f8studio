@@ -882,15 +882,19 @@ json ScreenCapService::describe() {
   service["commands"] = json::array({
       json{{"name", "listDisplays"},
            {"description", "List displays/monitors (backend-specific)"},
+           {"required", true},
            {"showOnNode", false}},
       json{{"name", "pickDisplay"},
            {"description", "Interactive pick a display (hover highlight + click)"},
+           {"required", true},
            {"showOnNode", true}},
       json{{"name", "pickWindow"},
            {"description", "Interactive pick a window (hover highlight + click)"},
+           {"required", true},
            {"showOnNode", true}},
       json{{"name", "pickRegion"},
            {"description", "Interactive pick a region (click-drag to draw)"},
+           {"required", true},
            {"showOnNode", true}},
   });
   service["editableCommands"] = false;

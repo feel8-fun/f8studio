@@ -790,6 +790,7 @@ json TrackingService::describe() {
   service["commands"] = json::array({
       json{{"name", "stopTracking"},
            {"description", "Stop current tracking and return to waiting for initBox."},
+           {"required", true},
            {"showOnNode", true}},
   });
   service["editableCommands"] = false;
