@@ -1,0 +1,9 @@
+schemaVersion: f8serviceEntry/1
+serviceClass: f8.audiofeat.rhythm
+label: Audio Feature Rhythm
+version: 0.0.1
+launch:
+  command: pixi
+  args: ["run", "f8pyaudiofeat_rhythm"]
+  env: {}
+  workdir: "../../../../"

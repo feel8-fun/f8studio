@@ -57,10 +57,14 @@ pytest_studio = "python -m pytest -q packages/f8pystudio/tests"
 [feature.engine.pypi-dependencies]
 f8pyengine = { path = "packages/f8pyengine", editable = true }
 f8pyscript = { path = "packages/f8pyscript", editable = true }
+f8pyaudiofeat = { path = "packages/f8pyaudiofeat", editable = true }
+librosa = ">=0.11.0, <0.12"
 
 [feature.engine.tasks]
 f8pyengine = "python -m f8pyengine.main"
 f8pyscript = "python -m f8pyscript.main"
+f8pyaudiofeat_core = "python -m f8pyaudiofeat.main_core"
+f8pyaudiofeat_rhythm = "python -m f8pyaudiofeat.main_rhythm"
 
 [feature.studio.pypi-dependencies]
 f8pystudio = { path = "packages/f8pystudio", editable = true }
