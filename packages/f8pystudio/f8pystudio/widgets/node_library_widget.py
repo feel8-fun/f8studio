@@ -11,6 +11,7 @@ from NodeGraphQt.custom_widgets.nodes_tree import _BaseNodeTreeItem, TYPE_CATEGO
 
 from ..nodegraph.spec_visibility import is_hidden_spec_node_class, typed_spec_template_or_none
 from f8pysdk import F8OperatorSpec, F8ServiceSpec
+from ..ui_notifications import show_warning
 from ..variants.variant_ids import build_variant_node_type
 from ..variants.variant_repository import list_variants_for_base
 
@@ -299,7 +300,7 @@ class _F8StudioNodesTreeWidget(NodesTreeWidget):
             dlg.raise_()
             dlg.activateWindow()
         except Exception as exc:
-            QtWidgets.QMessageBox.warning(self, "Open variant manager failed", str(exc))
+            show_warning(self, "Open variant manager failed", str(exc))
 
     def _on_variant_manager_destroyed(self, obj: Any) -> None:
         self._variant_manager_dialogs = [dialog for dialog in self._variant_manager_dialogs if dialog is not obj]

@@ -8,6 +8,8 @@ from typing import Any, Callable
 from qtpy import QtCore, QtGui, QtWidgets
 import qtawesome as qta
 
+from ..ui_notifications import show_warning
+
 
 def _ask_save_before_close(parent: QtWidgets.QWidget) -> QtWidgets.QMessageBox.StandardButton:
     return QtWidgets.QMessageBox.question(
@@ -929,7 +931,7 @@ class F8JsonPropTextEdit(QtWidgets.QTextEdit):
         try:
             obj = json.loads(text)
         except Exception as e:
-            QtWidgets.QMessageBox.warning(self, "Invalid JSON", str(e))
+            show_warning(self, "Invalid JSON", str(e))
             self.setPlainText(self._prev_text)
             return
         self._prev_value = obj

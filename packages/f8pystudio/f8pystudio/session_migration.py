@@ -8,7 +8,7 @@ SESSION_SCHEMA_VERSION = "f8studio-session/1"
 
 
 @dataclass(frozen=True)
-class SessionEnvelopeV2:
+class SessionEnvelope:
     schema_version: str
     layout: dict[str, Any]
 
@@ -20,7 +20,7 @@ class SessionEnvelopeV2:
 
 
 def wrap_layout_for_save(layout: dict[str, Any]) -> dict[str, Any]:
-    return SessionEnvelopeV2(schema_version=SESSION_SCHEMA_VERSION, layout=layout).to_dict()
+    return SessionEnvelope(schema_version=SESSION_SCHEMA_VERSION, layout=layout).to_dict()
 
 
 def extract_layout(payload: Any) -> dict[str, Any]:

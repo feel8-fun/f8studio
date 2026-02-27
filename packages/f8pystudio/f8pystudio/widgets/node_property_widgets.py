@@ -69,6 +69,7 @@ from .f8_ui_override_ops import (
     set_state_field_ui_override as _set_state_field_ui_override,
 )
 from .state_controls.readonly_policy import set_widget_read_only as _set_widget_read_only
+from ..ui_notifications import show_warning
 from ..command_ui_protocol import CommandUiHandler, CommandUiSource
 
 
@@ -721,7 +722,7 @@ class _F8EditDataPortDialog(QtWidgets.QDialog):
         try:
             self._schema = _schema_from_json_obj(dlg.value() or {"type": "any"})
         except Exception as e:
-            QtWidgets.QMessageBox.warning(self, "Invalid schema", str(e))
+            show_warning(self, "Invalid schema", str(e))
             return
         self._refresh_schema_summary()
 
@@ -818,7 +819,7 @@ class _F8EditStateFieldDialog(QtWidgets.QDialog):
         try:
             self._schema = _schema_from_json_obj(dlg.value() or {"type": "any"})
         except Exception as e:
-            QtWidgets.QMessageBox.warning(self, "Invalid schema", str(e))
+            show_warning(self, "Invalid schema", str(e))
             return
         self._refresh_schema_summary()
 
@@ -1210,7 +1211,7 @@ class _F8EditCommandParamDialog(QtWidgets.QDialog):
         try:
             self._schema = _schema_from_json_obj(dlg.value() or {"type": "any"})
         except Exception as e:
-            QtWidgets.QMessageBox.warning(self, "Invalid schema", str(e))
+            show_warning(self, "Invalid schema", str(e))
             return
         self._refresh_schema_summary()
 
@@ -1682,7 +1683,7 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
                 if v is not None:
                     args[pname] = v
             if missing:
-                QtWidgets.QMessageBox.warning(dlg, "Missing required fields", "Please fill: " + ", ".join(missing))
+                show_warning(dlg, "Missing required fields", "Please fill: " + ", ".join(missing))
                 continue
             return args
 
@@ -1742,7 +1743,7 @@ class _F8SpecCommandEditor(QtWidgets.QWidget):
         try:
             bridge.invoke_remote_command(sid, str(cmd.name or ""), args or {})
         except Exception as e:
-            QtWidgets.QMessageBox.warning(self, "Command failed", str(e))
+            show_warning(self, "Command failed", str(e))
 
     def _add_command(self) -> None:
         if self._missing_locked:

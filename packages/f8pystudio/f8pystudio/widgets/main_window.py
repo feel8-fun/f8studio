@@ -16,6 +16,7 @@ from ..nodegraph.session import last_session_path
 from ..nodegraph.runtime_compiler import compile_runtime_graphs_from_studio
 from ..pystudio_service_bridge import PyStudioServiceBridge, PyStudioServiceBridgeConfig
 from ..pystudio_node_registry import SERVICE_CLASS as STUDIO_SERVICE_CLASS
+from ..ui_notifications import show_info, show_warning
 from ..ui_bus import UiCommand, UiCommandApplier
 from .node_property_widgets import F8StudioSingleNodePropertiesWidget
 from .node_library_widget import F8StudioNodeLibraryWidget
@@ -268,14 +269,14 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
 
     def _save_session_action(self) -> None:
         path = self.studio_graph.save_last_session()
-        QtWidgets.QMessageBox.information(self, "Session saved", f"Saved to:\n{path}")
+        show_info(self, "Session saved", f"Saved to:\n{path}")
 
     def _load_session_action(self) -> None:
         path = self.studio_graph.load_last_session()
         if not path:
-            QtWidgets.QMessageBox.information(self, "No session", f"No session file found at:\n{self._session_file}")
+            show_info(self, "No session", f"No session file found at:\n{self._session_file}")
             return
-        QtWidgets.QMessageBox.information(self, "Session loaded", f"Loaded:\n{path}")
+        show_info(self, "Session loaded", f"Loaded:\n{path}")
 
     def _load_session_from_action(self) -> None:
         try:
@@ -298,7 +299,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         except Exception as exc:
             self._log_dock.append("studio", f"[session] load failed: {exc}\n")
             self._log_dock.report_exception("studio", f"session load failed ({p})", exc)
-            QtWidgets.QMessageBox.warning(self, "Load failed", f"Failed to load:\n{p}\n\n{exc}")
+            show_warning(self, "Load failed", f"Failed to load:\n{p}\n\n{exc}")
 
     def _save_session_as_action(self) -> None:
         try:
@@ -323,7 +324,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         except Exception as exc:
             self._log_dock.append("studio", f"[session] save failed: {exc}\n")
             self._log_dock.report_exception("studio", f"session save failed ({p})", exc)
-            QtWidgets.QMessageBox.warning(self, "Save failed", f"Failed to save:\n{p}\n\n{exc}")
+            show_warning(self, "Save failed", f"Failed to save:\n{p}\n\n{exc}")
 
     def _compile_runtime_action(self) -> None:
         try:
@@ -331,12 +332,12 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         except ValueError as exc:
             msg = str(exc or "").strip() or "compile failed"
             self._log_dock.append("studio", f"[compile][blocked] {msg}\n")
-            QtWidgets.QMessageBox.warning(self, "Compile blocked", msg)
+            show_warning(self, "Compile blocked", msg)
             return
         except Exception as exc:
             self._log_dock.append("studio", f"[compile][error] {exc}\n")
             self._log_dock.report_exception("studio", "compile runtime graph failed", exc)
-            QtWidgets.QMessageBox.warning(self, "Compile failed", str(exc))
+            show_warning(self, "Compile failed", str(exc))
             return
 
         payload = compiled.global_graph.model_dump(mode="json", by_alias=True)
@@ -355,12 +356,12 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         except ValueError as exc:
             msg = str(exc or "").strip() or "deploy blocked by invalid graph"
             self._log_dock.append("studio", f"[deploy][blocked] {msg}\n")
-            QtWidgets.QMessageBox.warning(self, "Deploy blocked", msg)
+            show_warning(self, "Deploy blocked", msg)
             return
         except Exception as exc:
             self._log_dock.append("studio", f"[deploy][error] {exc}\n")
             self._log_dock.report_exception("studio", "deploy compile failed", exc)
-            QtWidgets.QMessageBox.warning(self, "Deploy failed", str(exc))
+            show_warning(self, "Deploy failed", str(exc))
             return
         for warning in list(compiled.warnings or ()):
             self._log_dock.append("studio", f"[compile][warn] {warning}\n")

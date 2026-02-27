@@ -9,6 +9,8 @@ from typing import Any, Callable
 
 from qtpy import QtCore, QtGui, QtWidgets
 
+from ..ui_notifications import show_warning
+
 _COMBO_REOPEN_GUARD_S = 0.05
 
 
@@ -661,7 +663,7 @@ class _F8ImageB64Dialog(QtWidgets.QDialog):
             with open(path, "rb") as f:
                 data = f.read()
         except Exception as exc:
-            QtWidgets.QMessageBox.warning(self, "Load failed", str(exc))
+            show_warning(self, "Load failed", str(exc))
             return
         self._b64 = _b64encode_bytes(data)
         self._changed = True

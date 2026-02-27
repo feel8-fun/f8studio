@@ -26,6 +26,7 @@ from .session import last_session_path
 from .spec_visibility import is_hidden_spec_node_class
 from ..session_migration import extract_layout as _extract_session_layout
 from ..session_migration import wrap_layout_for_save as _wrap_layout_for_save
+from ..ui_notifications import show_info, show_warning
 from ..variants.variant_ids import build_variant_node_type, parse_variant_node_type
 from ..variants.variant_repository import load_library
 from ..variants.variant_compose import build_variant_record_from_node
@@ -108,6 +109,15 @@ class F8StudioGraph(NodeGraph):
     def _on_viewer_node_placement_changed(self, active: bool, label: str) -> None:
         self.node_placement_changed.emit(bool(active), str(label or ""))
 
+    def _notification_parent(self) -> QtWidgets.QWidget | None:
+        viewer = self.viewer()
+        if viewer is None:
+            return None
+        window = viewer.window()
+        if isinstance(window, QtWidgets.QWidget):
+            return window
+        return viewer
+
     def _prompt_variant_metadata(
         self,
         *,
@@ -175,7 +185,7 @@ class F8StudioGraph(NodeGraph):
         name, description, tags = values
         record = build_variant_record_from_node(node=node, name=name, description=description, tags=tags)
         upsert_variant(record)
-        QtWidgets.QMessageBox.information(None, "Variant Saved", f"Saved variant:\n{name}")
+        show_info(self._notification_parent(), "Variant Saved", f"Saved variant:\n{name}")
 
     def _on_save_variant_menu_action(self, graph: Any, node: Any) -> None:
         _ = graph
@@ -224,7 +234,7 @@ class F8StudioGraph(NodeGraph):
 
         ok_stop, stop_msg = self._is_node_rename_allowed_when_stopped(node)
         if not ok_stop:
-            QtWidgets.QMessageBox.warning(None, self.tr("Rename Id Failed"), stop_msg)
+            show_warning(self._notification_parent(), self.tr("Rename Id Failed"), stop_msg)
             return
 
         title = self.tr("Rename ServiceId") if isinstance(spec, F8ServiceSpec) else self.tr("Rename OperatorId")
@@ -236,12 +246,12 @@ class F8StudioGraph(NodeGraph):
 
         ok_id, id_msg = self._validate_new_node_id(node=node, new_id=new_id)
         if not ok_id:
-            QtWidgets.QMessageBox.warning(None, self.tr("Rename Id Failed"), id_msg)
+            show_warning(self._notification_parent(), self.tr("Rename Id Failed"), id_msg)
             return
 
         ok_rename, rename_msg = self._rename_node_identity(node=node, new_id=new_id)
         if not ok_rename:
-            QtWidgets.QMessageBox.warning(None, self.tr("Rename Id Failed"), rename_msg)
+            show_warning(self._notification_parent(), self.tr("Rename Id Failed"), rename_msg)
 
     @staticmethod
     def _prompt_id_rename_dialog(*, title: str, label: str, value: str) -> str | None:
@@ -1499,7 +1509,7 @@ class F8StudioGraph(NodeGraph):
                 ok, msg = self._ensure_operator_in_container(node, pos=pos)
                 if not ok:
                     if msg:
-                        QtWidgets.QMessageBox.warning(None, "Container required", msg)
+                        show_warning(self._notification_parent(), "Container required", msg)
                     return None
 
             undo_cmd = NodeAddedCmd(self, node, pos=node.model.pos, emit_signal=True)
@@ -1539,7 +1549,7 @@ class F8StudioGraph(NodeGraph):
             ok, msg = self._ensure_operator_in_container(node, pos=pos)
             if not ok:
                 if msg:
-                    QtWidgets.QMessageBox.warning(None, "Container required", msg)
+                    show_warning(self._notification_parent(), "Container required", msg)
                 return
 
         super().add_node(

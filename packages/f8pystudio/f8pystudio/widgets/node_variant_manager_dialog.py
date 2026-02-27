@@ -7,6 +7,7 @@ from qtpy import QtCore, QtWidgets
 
 from f8pysdk import F8OperatorSpec, F8ServiceSpec
 
+from ..ui_notifications import show_info, show_warning
 from ..variants.variant_compose import build_variant_record_from_node
 from ..variants.variant_ids import build_variant_node_type
 from ..variants.variant_models import F8NodeVariantRecord
@@ -168,7 +169,7 @@ class NodeVariantManagerDialog(QtWidgets.QDialog):
     def _on_add_clicked(self) -> None:
         node = self._find_selected_base_node()
         if node is None:
-            QtWidgets.QMessageBox.information(
+            show_info(
                 self,
                 "No matching selected node",
                 f"Please select a node of type:\n{self._base_node_type}\nthen try again.",
@@ -176,7 +177,7 @@ class NodeVariantManagerDialog(QtWidgets.QDialog):
             return
         spec = node.spec
         if not isinstance(spec, (F8OperatorSpec, F8ServiceSpec)):
-            QtWidgets.QMessageBox.warning(self, "Unsupported node", "Selected node has no typed spec.")
+            show_warning(self, "Unsupported node", "Selected node has no typed spec.")
             return
         node_display_name = ""
         try:
@@ -194,7 +195,7 @@ class NodeVariantManagerDialog(QtWidgets.QDialog):
             return
         name, description, tags = dlg.values()
         if not name:
-            QtWidgets.QMessageBox.warning(self, "Invalid name", "Variant name cannot be empty.")
+            show_warning(self, "Invalid name", "Variant name cannot be empty.")
             return
         record = build_variant_record_from_node(node=node, name=name, description=description, tags=tags)
         upsert_variant(record)
@@ -215,7 +216,7 @@ class NodeVariantManagerDialog(QtWidgets.QDialog):
             return
         name, description, tags = dlg.values()
         if not name:
-            QtWidgets.QMessageBox.warning(self, "Invalid name", "Variant name cannot be empty.")
+            show_warning(self, "Invalid name", "Variant name cannot be empty.")
             return
         payload = selected.model_dump(mode="json")
         payload["name"] = name
@@ -267,7 +268,7 @@ class NodeVariantManagerDialog(QtWidgets.QDialog):
         try:
             import_from_json(p, mode="merge" if mode == QtWidgets.QMessageBox.Yes else "replace")
         except Exception as exc:
-            QtWidgets.QMessageBox.warning(self, "Import failed", str(exc))
+            show_warning(self, "Import failed", str(exc))
             return
         self._reload()
 
@@ -284,6 +285,6 @@ class NodeVariantManagerDialog(QtWidgets.QDialog):
         try:
             out = export_to_json(p)
         except Exception as exc:
-            QtWidgets.QMessageBox.warning(self, "Export failed", str(exc))
+            show_warning(self, "Export failed", str(exc))
             return
-        QtWidgets.QMessageBox.information(self, "Exported", f"Saved:\n{out}")
+        show_info(self, "Exported", f"Saved:\n{out}")

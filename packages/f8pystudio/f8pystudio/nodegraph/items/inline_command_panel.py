@@ -9,6 +9,7 @@ from qtpy import QtCore, QtWidgets
 from f8pysdk.schema_helpers import schema_default, schema_type
 
 from ...command_ui_protocol import CommandUiHandler, CommandUiSource
+from ...ui_notifications import show_warning
 from ...widgets.f8_editor_widgets import F8OptionCombo, F8Switch, F8ValueBar, parse_select_pool
 from .service_toolbar_host import F8ForceGlobalToolTipFilter
 
@@ -383,7 +384,7 @@ def prompt_command_args(node_item: Any, cmd: Any) -> dict[str, Any] | None:
             if value is not None:
                 args[param_name] = value
         if missing:
-            QtWidgets.QMessageBox.warning(dlg, "Missing required fields", "Please fill: " + ", ".join(missing))
+            show_warning(dlg, "Missing required fields", "Please fill: " + ", ".join(missing))
             continue
         return args
 

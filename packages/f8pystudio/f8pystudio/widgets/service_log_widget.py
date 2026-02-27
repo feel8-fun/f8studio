@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from qtpy import QtCore, QtGui, QtWidgets
 
 from ..error_reporting import ExceptionLogOnce, report_exception
+from ..ui_notifications import show_warning
 
 
 @dataclass(frozen=True)
@@ -259,4 +260,4 @@ class ServiceLogDock(QtWidgets.QDockWidget):
             p.write_text(view.toPlainText(), encoding="utf-8")
             self._last_save_dir = str(p.parent)
         except Exception as exc:
-            QtWidgets.QMessageBox.warning(self, "Save failed", f"Failed to save log file:\n{path}\n\n{exc}")
+            show_warning(self, "Save failed", f"Failed to save log file:\n{path}\n\n{exc}")
