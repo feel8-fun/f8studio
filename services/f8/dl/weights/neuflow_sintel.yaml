@@ -1,0 +1,15 @@
+schemaVersion: f8onnxModel/1
+model:
+  id: neuflow_sintel
+  displayName: NeuFlowV2 Sintel
+  provider: neuflowv2
+  task: optflow_neuflowv2
+  onnxPath: neuflow_sintel.onnx
+  onnxUrl: https://github.com/ibaiGorordo/ONNX-NeuFlowV2-Optical-Flow/releases/download/0.1.0/neuflow_sintel.onnx
+  onnxSHA256: e7104a097183da8ea56b877af4ed47e8f11034113923f77924e79629146ae145
+input:
+  width: 768
+  height: 432
+optflow:
+  flowFormat: flow2_f16
+  inputOrder: prev_now

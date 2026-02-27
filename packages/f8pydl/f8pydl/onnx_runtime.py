@@ -610,20 +610,12 @@ class OnnxNeuFlowRuntime:
             raise ValueError("NeuFlow model has no outputs.")
         self.active_providers = list(self._session.get_providers())
 
-    def prepare_input(self, frame_bgr: Any, *, compute_scale: float) -> Any:
+    def prepare_input(self, frame_bgr: Any) -> Any:
         import cv2  # type: ignore
         import numpy as np  # type: ignore
 
-        scale = max(0.0625, min(1.0, float(compute_scale)))
-        frame_in = frame_bgr
-        if scale < 0.999:
-            in_h, in_w = frame_bgr.shape[:2]
-            scaled_w = max(1, int(round(float(in_w) * scale)))
-            scaled_h = max(1, int(round(float(in_h) * scale)))
-            frame_in = cv2.resize(frame_bgr, (scaled_w, scaled_h), interpolation=cv2.INTER_AREA)
-
         resized = cv2.resize(
-            frame_in,
+            frame_bgr,
             (int(self._input_width), int(self._input_height)),
             interpolation=cv2.INTER_LINEAR,
         )

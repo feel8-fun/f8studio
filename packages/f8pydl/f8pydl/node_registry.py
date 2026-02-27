@@ -226,14 +226,6 @@ def _optflow_state_fields() -> list[F8StateSpec]:
             showOnNode=False,
         ),
         F8StateSpec(
-            name="computeScale",
-            label="Compute Scale",
-            description="Frame pre-scale before model input (0.0625~1.0).",
-            valueSchema=number_schema(default=0.125, minimum=0.0625, maximum=1.0),
-            access=F8StateAccess.rw,
-            showOnNode=False,
-        ),
-        F8StateSpec(
             name="weightsDir",
             label="Weights Dir",
             description="Directory containing *.yaml + *.onnx model files.",

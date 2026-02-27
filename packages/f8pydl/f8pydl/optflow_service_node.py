@@ -50,18 +50,6 @@ def _coerce_int(v: Any, *, default: int, minimum: int | None = None, maximum: in
     return out
 
 
-def _coerce_float(v: Any, *, default: float, minimum: float | None = None, maximum: float | None = None) -> float:
-    try:
-        out = float(v)
-    except Exception:
-        out = float(default)
-    if minimum is not None and out < minimum:
-        out = float(minimum)
-    if maximum is not None and out > maximum:
-        out = float(maximum)
-    return out
-
-
 def _coerce_str(v: Any, *, default: str = "") -> str:
     try:
         s = str(v) if v is not None else ""
@@ -279,7 +267,6 @@ class OnnxOptflowServiceNode(ServiceNode):
         self._ort_provider: Literal["auto", "cuda", "cpu"] = "auto"
         self._input_shm_name = ""
         self._compute_every_n_frames = 2
-        self._compute_scale = 0.125
         self._auto_download_weights = True
         self._download_retry_at_monotonic = 0.0
 
@@ -377,17 +364,6 @@ class OnnxOptflowServiceNode(ServiceNode):
             )
             return
 
-        if name == "computeScale":
-            self._compute_scale = _coerce_float(
-                await self.get_state_value("computeScale"),
-                default=self._compute_scale,
-                minimum=0.0625,
-                maximum=1.0,
-            )
-            self._frame_cache.reset()
-            self._new_frame_counter = 0
-            return
-
         if name == "autoDownloadWeights":
             self._auto_download_weights = _coerce_bool(
                 await self.get_state_value("autoDownloadWeights"),
@@ -444,12 +420,6 @@ class OnnxOptflowServiceNode(ServiceNode):
             default=int(self._initial_state.get("computeEveryNFrames") or 2),
             minimum=1,
             maximum=120,
-        )
-        self._compute_scale = _coerce_float(
-            await self.get_state_value("computeScale"),
-            default=float(self._initial_state.get("computeScale") or 0.125),
-            minimum=0.0625,
-            maximum=1.0,
         )
         self._auto_download_weights = _coerce_bool(
             await self.get_state_value("autoDownloadWeights"),
@@ -833,7 +803,7 @@ class OnnxOptflowServiceNode(ServiceNode):
                 bgra = rows[:, : width * 4].reshape((height, width, 4))
                 frame_bgr = np.ascontiguousarray(bgra[:, :, 0:3])
 
-                tensor = self._runtime.prepare_input(frame_bgr, compute_scale=self._compute_scale)
+                tensor = self._runtime.prepare_input(frame_bgr)
                 pair = self._frame_cache.push_and_get_pair(
                     PreparedFlowFrame(
                         frame_id=frame_id_seen,

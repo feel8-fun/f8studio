@@ -23,7 +23,6 @@ pixi run f8pydl_optflow
 | --- | --- | --- | --- | --- | --- |
 | `inputShmName` | `rw` | `false` | `true` | `string / default=` | Input SHM name (e.g. shm.xxx.video). |
 | `computeEveryNFrames` | `rw` | `false` | `true` | `integer / default=2` | Compute optical flow once per N new frames. |
-| `computeScale` | `rw` | `false` | `true` | `number / default=0.125` | Frame pre-scale before model input (0.0625~1.0). |
 | `weightsDir` | `rw` | `false` | `true` | `string / default=services/f8/dl/weights` | Directory containing *.yaml + *.onnx model files. |
 | `modelId` | `rw` | `false` | `true` | `string / default=` | Model id selected from weightsDir (ignored if modelYamlPath is set). |
 | `modelYamlPath` | `rw` | `false` | `false` | `string / default=` | Optional explicit model yaml path (overrides modelId). |
@@ -79,4 +78,3 @@ pixi run f8pydl_optflow
 
 - Verify `flowShmName` is populated and `flowShmFormat` is `flow2_f16`.
 - Start with `computeEveryNFrames=2`, then tune throughput/latency.
-- `computeScale` is retained for compatibility; fixed-shape ONNX models may see limited speed gain.

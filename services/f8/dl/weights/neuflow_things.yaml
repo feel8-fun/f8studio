@@ -1,0 +1,15 @@
+schemaVersion: f8onnxModel/1
+model:
+  id: neuflow_things
+  displayName: NeuFlowV2 Things
+  provider: neuflowv2
+  task: optflow_neuflowv2
+  onnxPath: neuflow_things.onnx
+  onnxUrl: https://github.com/ibaiGorordo/ONNX-NeuFlowV2-Optical-Flow/releases/download/0.1.0/neuflow_things.onnx
+  onnxSHA256: ec613816128d41c9e4cba8ea3c475d64d7b044e6e141fabf104e17b4001ca0e7
+input:
+  width: 768
+  height: 432
+optflow:
+  flowFormat: flow2_f16
+  inputOrder: prev_now

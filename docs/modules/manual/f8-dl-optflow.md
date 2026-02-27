@@ -18,4 +18,3 @@ pixi run f8pydl_optflow
 
 - Verify `flowShmName` is populated and `flowShmFormat` is `flow2_f16`.
 - Start with `computeEveryNFrames=2`, then tune throughput/latency.
-- `computeScale` is retained for compatibility; fixed-shape ONNX models may see limited speed gain.
