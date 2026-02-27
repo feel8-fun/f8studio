@@ -13,7 +13,8 @@ from ..nodegraph.spec_visibility import is_hidden_spec_node_class, typed_spec_te
 from f8pysdk import F8OperatorSpec, F8ServiceSpec
 from ..ui_notifications import show_warning
 from ..variants.variant_ids import build_variant_node_type
-from ..variants.variant_repository import list_variants_for_base
+from ..variants.variant_repository import delete_variant, list_variants_for_base
+from ..variants.variant_events import subscribe_variants_changed
 
 
 class _F8StudioNodesTreeWidget(NodesTreeWidget):
@@ -23,6 +24,7 @@ class _F8StudioNodesTreeWidget(NodesTreeWidget):
     _ROLE_VARIANT_ID = int(QtCore.Qt.UserRole + 4)
     _ROLE_IS_VARIANT = int(QtCore.Qt.UserRole + 5)
     _ROLE_VARIANT_NAME = int(QtCore.Qt.UserRole + 6)
+    _ROLE_CATEGORY_ID = int(QtCore.Qt.UserRole + 7)
 
     def __init__(self, parent: QtWidgets.QWidget | None = None, node_graph: Any | None = None) -> None:
         self._search_text = ""
@@ -335,9 +337,16 @@ class _F8StudioNodesTreeWidget(NodesTreeWidget):
         base_node_name = str(item.data(0, self._ROLE_NODE_NAME) or item.text(0))
         if not base_node_id:
             return
+        is_variant_item = bool(item.data(0, self._ROLE_IS_VARIANT))
+        variant_id = str(item.data(0, self._ROLE_VARIANT_ID) or "").strip()
+        variant_name = str(item.data(0, self._ROLE_VARIANT_NAME) or "").strip()
 
         action_info = menu.addAction("Show Details")
         action_manage = menu.addAction("Manage Variants...")
+        action_delete_variant = None
+        if is_variant_item and variant_id:
+            menu.addSeparator()
+            action_delete_variant = menu.addAction("Delete Variant...")
 
         variants = list_variants_for_base(base_node_id)
         if variants:
@@ -356,6 +365,14 @@ class _F8StudioNodesTreeWidget(NodesTreeWidget):
         if chosen == action_manage:
             self._open_variant_manager(base_node_type=base_node_id, base_node_name=base_node_name)
             return
+        if action_delete_variant is not None and chosen == action_delete_variant:
+            reply = QtWidgets.QMessageBox.question(self, "Delete variant", f"Delete variant '{variant_name}'?")
+            if reply != QtWidgets.QMessageBox.Yes:
+                return
+            removed = delete_variant(variant_id)
+            if not removed:
+                show_warning(self, "Delete variant failed", f"Variant not found: {variant_id}")
+            return
         if chosen in variant_actions:
             variant_id, variant_name = variant_actions[chosen]
             variant_node_type = build_variant_node_type(variant_id)
@@ -364,7 +381,29 @@ class _F8StudioNodesTreeWidget(NodesTreeWidget):
                 placement_label = f"{base_node_name}\n - {variant_name}"
             graph.begin_node_placement(variant_node_type, placement_label)
 
+    def _capture_expanded_state(self) -> tuple[set[str], set[str]]:
+        expanded_categories: set[str] = set()
+        expanded_base_nodes: set[str] = set()
+        for index in range(self.topLevelItemCount()):
+            top = self.topLevelItem(index)
+            if top is None:
+                continue
+            category_id = str(top.data(0, self._ROLE_CATEGORY_ID) or "").strip()
+            if category_id and top.isExpanded():
+                expanded_categories.add(category_id)
+            for row in range(top.childCount()):
+                child = top.child(row)
+                if child is None:
+                    continue
+                if bool(child.data(0, self._ROLE_IS_VARIANT)):
+                    continue
+                base_node_id = str(child.data(0, self._ROLE_NODE_ID) or "").strip()
+                if base_node_id and child.isExpanded():
+                    expanded_base_nodes.add(base_node_id)
+        return expanded_categories, expanded_base_nodes
+
     def _build_tree(self) -> None:
+        expanded_categories, expanded_base_nodes = self._capture_expanded_state()
         self.clear()
         if self._factory is None:
             return
@@ -403,8 +442,12 @@ class _F8StudioNodesTreeWidget(NodesTreeWidget):
             cat_item.setFirstColumnSpanned(True)
             cat_item.setFlags(QtCore.Qt.ItemIsEnabled)
             cat_item.setSizeHint(0, QtCore.QSize(100, 22))
+            cat_item.setData(0, self._ROLE_CATEGORY_ID, category)
             self.addTopLevelItem(cat_item)
-            cat_item.setExpanded(True)
+            if category in expanded_categories:
+                cat_item.setExpanded(True)
+            elif not expanded_categories:
+                cat_item.setExpanded(True)
             self._category_items[category] = cat_item
 
         for category, nodes_list in node_types_by_category.items():
@@ -419,7 +462,7 @@ class _F8StudioNodesTreeWidget(NodesTreeWidget):
                 item.setData(0, self._ROLE_BASE_NODE_ID, node_id)
                 item.setData(0, self._ROLE_NODE_NAME, node_name)
                 item.setData(0, self._ROLE_IS_VARIANT, False)
-                item.setExpanded(False)
+                item.setExpanded(node_id in expanded_base_nodes)
                 category_item.addChild(item)
 
                 node_cls = self._factory.nodes.get(node_id)
@@ -454,6 +497,7 @@ class F8StudioNodeLibraryWidget(QtWidgets.QWidget):
         super().__init__(parent)
         self.setWindowTitle("Node Library")
         self._node_graph = node_graph
+        self._unsubscribe_variants_changed: Any | None = subscribe_variants_changed(self._on_variants_changed)
 
         self._search = QtWidgets.QLineEdit(self)
         self._search.setPlaceholderText("Search nodes (name, tags, description)")
@@ -475,6 +519,7 @@ class F8StudioNodeLibraryWidget(QtWidgets.QWidget):
 
         self._search.textChanged.connect(self._on_search_text_changed)  # type: ignore[attr-defined]
         self._search_variants.toggled.connect(self._on_search_variants_toggled)  # type: ignore[attr-defined]
+        self.destroyed.connect(self._on_destroyed)  # type: ignore[attr-defined]
         if node_graph is not None:
             node_graph.nodes_registered.connect(self._on_nodes_registered)  # type: ignore[attr-defined]
             node_graph.node_placement_changed.connect(self._on_node_placement_changed)  # type: ignore[attr-defined]
@@ -494,6 +539,15 @@ class F8StudioNodeLibraryWidget(QtWidgets.QWidget):
             return
         self._tree.clearSelection()
         self._tree.setCurrentItem(None)
+
+    def _on_variants_changed(self) -> None:
+        self._tree.update()
+
+    def _on_destroyed(self, _obj: Any) -> None:
+        unsubscribe = self._unsubscribe_variants_changed
+        self._unsubscribe_variants_changed = None
+        if unsubscribe is not None:
+            unsubscribe()
 
     def set_category_label(self, category: str, label: str) -> None:
         self._tree.set_category_label(category, label)

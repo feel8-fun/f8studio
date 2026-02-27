@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass, field
+from collections.abc import Callable
 from typing import Any, Generic
 
 from qtpy import QtCore, QtWidgets, QtGui
@@ -30,7 +31,7 @@ from ..ui_notifications import show_info, show_warning
 from ..variants.variant_ids import build_variant_node_type, parse_variant_node_type
 from ..variants.variant_repository import load_library
 from ..variants.variant_compose import build_variant_record_from_node
-from ..variants.variant_repository import upsert_variant
+from ..variants.variant_repository import is_variant_name_conflict, normalize_variant_name, upsert_variant
 
 from ..constants import SERVICE_CLASS as _CANVAS_SERVICE_CLASS_
 from ..constants import STUDIO_SERVICE_ID
@@ -124,6 +125,7 @@ class F8StudioGraph(NodeGraph):
         default_name: str,
         default_description: str,
         default_tags: list[str],
+        name_validator: Callable[[str], str | None] | None = None,
     ) -> tuple[str, str, list[str]] | None:
         dialog = QtWidgets.QDialog(None)
         dialog.setWindowTitle("Save Node As Variant")
@@ -142,7 +144,21 @@ class F8StudioGraph(NodeGraph):
             QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
             parent=dialog,
         )
-        buttons.accepted.connect(dialog.accept)  # type: ignore[attr-defined]
+
+        def _on_accept() -> None:
+            candidate = str(name_edit.text() or "").strip()
+            if not candidate:
+                show_warning(dialog, "Invalid name", "Variant name cannot be empty.")
+                return
+            validator = name_validator
+            if validator is not None:
+                message = validator(candidate)
+                if message:
+                    show_warning(dialog, "Invalid name", message)
+                    return
+            dialog.accept()
+
+        buttons.accepted.connect(_on_accept)  # type: ignore[attr-defined]
         buttons.rejected.connect(dialog.reject)  # type: ignore[attr-defined]
 
         layout = QtWidgets.QVBoxLayout(dialog)
@@ -175,16 +191,38 @@ class F8StudioGraph(NodeGraph):
         default_name = str(node_display_name or node.NODE_NAME or spec.label or "").strip() or "Variant"
         default_desc = str(spec.description or "").strip()
         default_tags = [str(t) for t in list(spec.tags or []) if str(t).strip()]
+        node_type = str(node.type_ or "").strip()
+
+        def _validate_variant_name(candidate: str) -> str | None:
+            normalized_name = normalize_variant_name(candidate)
+            if is_variant_name_conflict(node_type, normalized_name):
+                return f"Variant name '{normalized_name}' already exists. Please rename."
+            return None
+
         values = self._prompt_variant_metadata(
             default_name=default_name,
             default_description=default_desc,
             default_tags=default_tags,
+            name_validator=_validate_variant_name,
         )
         if values is None:
             return
         name, description, tags = values
+        normalized_name = normalize_variant_name(name)
+        node_type = str(node.type_ or "").strip()
+        if is_variant_name_conflict(node_type, normalized_name):
+            show_warning(
+                self._notification_parent(),
+                "Invalid name",
+                f"Variant name '{normalized_name}' already exists. Please rename.",
+            )
+            return
         record = build_variant_record_from_node(node=node, name=name, description=description, tags=tags)
-        upsert_variant(record)
+        try:
+            upsert_variant(record)
+        except ValueError as exc:
+            show_warning(self._notification_parent(), "Invalid name", str(exc))
+            return
         show_info(self._notification_parent(), "Variant Saved", f"Saved variant:\n{name}")
 
     def _on_save_variant_menu_action(self, graph: Any, node: Any) -> None:
