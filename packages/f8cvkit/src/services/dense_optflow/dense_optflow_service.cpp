@@ -593,7 +593,7 @@ json DenseOptflowService::describe() {
                   "Compute flow once per N new frames.", false),
       state_field("flowShmName", schema_string(), "ro", "Flow SHM Name", "Output SHM name for UV flow field.", true),
       state_field("flowShmFormat", schema_string(), "ro", "Flow SHM Format", "Flow payload format. Fixed to flow2_f16.", false),
-      state_field("computeScale", schema_number(0.125, 0.0625, 1.0), "rw", "Compute Scale",
+      state_field("computeScale", schema_number(0.5, 0.25, 1.0), "rw", "Compute Scale",
                   "Farneback compute scale, flow is upscaled back to full size.", false),
       state_field("lastError", schema_string(), "ro", "Last Error", "Last error message.", false),
   });
