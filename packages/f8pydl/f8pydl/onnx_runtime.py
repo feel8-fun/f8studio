@@ -552,3 +552,138 @@ class OnnxClassifierRuntime:
         if float(denom) <= 0.0:
             return np.zeros_like(scores, dtype=np.float32)
         return ex / denom
+
+
+class OnnxNeuFlowRuntime:
+    def __init__(self, spec: ModelSpec, *, ort_provider: Literal["auto", "cuda", "cpu"] = "auto") -> None:
+        import onnxruntime as ort  # type: ignore
+
+        self.spec = spec
+        self.provider_warning: str = ""
+        providers = _choose_ort_providers(prefer=ort_provider)
+        try:
+            self._session = ort.InferenceSession(str(spec.onnx_path), providers=providers)
+        except Exception as exc:
+            prefer = str(ort_provider or "auto").lower()
+            if prefer in ("auto", "cuda"):
+                try:
+                    available = list(ort.get_available_providers())  # type: ignore[attr-defined]
+                except Exception:
+                    available = []
+                self.provider_warning = (
+                    f"Failed to init ORT providers={providers!r}; falling back to CPUExecutionProvider. "
+                    f"availableProviders={available!r}; error={exc}"
+                )
+                self._session = ort.InferenceSession(str(spec.onnx_path), providers=["CPUExecutionProvider"])
+            else:
+                raise
+        inputs = list(self._session.get_inputs())
+        if len(inputs) != 2:
+            raise ValueError(f"NeuFlow model must have exactly 2 inputs, got {len(inputs)}")
+        self._input_name_prev = str(inputs[0].name)
+        self._input_name_now = str(inputs[1].name)
+        shape_prev = list(inputs[0].shape) if isinstance(inputs[0].shape, list) else []
+        shape_now = list(inputs[1].shape) if isinstance(inputs[1].shape, list) else []
+        model_hw_prev = self._extract_fixed_hw(shape_prev)
+        model_hw_now = self._extract_fixed_hw(shape_now)
+        self._input_height = int(spec.input_height)
+        self._input_width = int(spec.input_width)
+        if model_hw_prev is not None and model_hw_now is not None:
+            if model_hw_prev != model_hw_now:
+                raise ValueError(
+                    f"NeuFlow inputs must share same HxW, got prev={model_hw_prev!r} now={model_hw_now!r}"
+                )
+            self._input_height = int(model_hw_prev[0])
+            self._input_width = int(model_hw_prev[1])
+            if int(spec.input_height) != self._input_height or int(spec.input_width) != self._input_width:
+                mismatch = (
+                    "Model input shape is fixed and differs from yaml input size; "
+                    f"using model shape HxW={self._input_height}x{self._input_width} "
+                    f"(yaml HxW={int(spec.input_height)}x{int(spec.input_width)})."
+                )
+                if self.provider_warning:
+                    self.provider_warning = f"{self.provider_warning}\n{mismatch}"
+                else:
+                    self.provider_warning = mismatch
+        self._output_names = [str(out.name) for out in self._session.get_outputs()]
+        if not self._output_names:
+            raise ValueError("NeuFlow model has no outputs.")
+        self.active_providers = list(self._session.get_providers())
+
+    def prepare_input(self, frame_bgr: Any, *, compute_scale: float) -> Any:
+        import cv2  # type: ignore
+        import numpy as np  # type: ignore
+
+        scale = max(0.0625, min(1.0, float(compute_scale)))
+        frame_in = frame_bgr
+        if scale < 0.999:
+            in_h, in_w = frame_bgr.shape[:2]
+            scaled_w = max(1, int(round(float(in_w) * scale)))
+            scaled_h = max(1, int(round(float(in_h) * scale)))
+            frame_in = cv2.resize(frame_bgr, (scaled_w, scaled_h), interpolation=cv2.INTER_AREA)
+
+        resized = cv2.resize(
+            frame_in,
+            (int(self._input_width), int(self._input_height)),
+            interpolation=cv2.INTER_LINEAR,
+        )
+        rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        x = rgb.astype(np.float32) / 255.0
+        x = np.transpose(x, (2, 0, 1))[None, ...]
+        return x
+
+    def infer_preprocessed(self, prev_tensor: Any, now_tensor: Any, *, output_size_hw: tuple[int, int]) -> Any:
+        import cv2  # type: ignore
+        import numpy as np  # type: ignore
+
+        if self.spec.flow_input_order == "prev_now":
+            feed = {
+                self._input_name_prev: prev_tensor,
+                self._input_name_now: now_tensor,
+            }
+        else:
+            feed = {
+                self._input_name_prev: now_tensor,
+                self._input_name_now: prev_tensor,
+            }
+        outputs = self._session.run(self._output_names, feed)
+        if not outputs:
+            raise RuntimeError("ONNX Runtime returned empty outputs for NeuFlow.")
+        raw = np.asarray(outputs[0])
+        flow_hw2 = self._to_flow_hw2(raw, np=np)
+
+        out_h = int(output_size_hw[0])
+        out_w = int(output_size_hw[1])
+        if out_h <= 0 or out_w <= 0:
+            raise ValueError(f"Invalid output size for flow resize: {(out_h, out_w)!r}")
+        in_h = int(flow_hw2.shape[0])
+        in_w = int(flow_hw2.shape[1])
+        resized = cv2.resize(flow_hw2, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
+        scale_x = float(out_w) / float(max(1, in_w))
+        scale_y = float(out_h) / float(max(1, in_h))
+        resized[..., 0] = resized[..., 0] * scale_x
+        resized[..., 1] = resized[..., 1] * scale_y
+        return np.ascontiguousarray(resized.astype(np.float32, copy=False))
+
+    @staticmethod
+    def _to_flow_hw2(raw: Any, *, np: Any) -> Any:
+        if raw.ndim == 4:
+            if raw.shape[0] != 1:
+                raise ValueError(f"Unexpected NeuFlow batch size: {raw.shape!r}")
+            if raw.shape[1] == 2:
+                return np.transpose(raw[0], (1, 2, 0)).astype(np.float32, copy=False)
+            if raw.shape[3] == 2:
+                return raw[0].astype(np.float32, copy=False)
+        if raw.ndim == 3 and raw.shape[2] == 2:
+            return raw.astype(np.float32, copy=False)
+        raise ValueError(f"Unsupported NeuFlow output shape: {raw.shape!r}")
+
+    @staticmethod
+    def _extract_fixed_hw(shape: list[Any]) -> tuple[int, int] | None:
+        if len(shape) != 4:
+            return None
+        h = shape[2]
+        w = shape[3]
+        if isinstance(h, int) and isinstance(w, int) and h > 0 and w > 0:
+            return int(h), int(w)
+        return None

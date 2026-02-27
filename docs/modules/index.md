@@ -29,6 +29,7 @@ Manual usage guidance is merged from `docs/modules/manual/*.md`.
 | `f8.dl.classifier` | DL Classifier | `0` | `16` | [DL Classifier](services/f8-dl-classifier.md) |
 | `f8.dl.detector` | DL Detector | `0` | `19` | [DL Detector](services/f8-dl-detector.md) |
 | `f8.dl.humandetector` | DL Human Detector | `0` | `19` | [DL Human Detector](services/f8-dl-humandetector.md) |
+| `f8.dl.optflow` | DL Optical Flow | `0` | `17` | [DL Optical Flow](services/f8-dl-optflow.md) |
 
 ## MediaPipe
 

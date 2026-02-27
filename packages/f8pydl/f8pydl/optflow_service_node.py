@@ -5,18 +5,16 @@ import json
 import time
 import traceback
 from collections import deque
-from dataclasses import replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
 from f8pysdk.nats_naming import ensure_token
 from f8pysdk.runtime_node import ServiceNode
-from f8pysdk.shm.video import VideoShmReader
+from f8pysdk.shm.video import VIDEO_FORMAT_BGRA32, VIDEO_FORMAT_FLOW2_F16, VideoShmReader, VideoShmWriter
 
-from .constants import CLASSIFICATION_SCHEMA_VERSION, DETECTION_SCHEMA_VERSION
 from .model_config import ModelSpec, ModelTask, build_model_index, build_model_index_with_errors, load_model_spec
-from .onnx_runtime import OnnxClassifierRuntime, OnnxYoloDetectorRuntime
-from .vision_utils import clamp_xyxy
+from .onnx_runtime import OnnxNeuFlowRuntime
 from .weights_downloader import ensure_onnx_file
 
 
@@ -29,13 +27,12 @@ def _default_weights_dir() -> Path:
     try:
         root = Path(__file__).resolve().parents[3]
         candidates.append((root / "services" / "f8" / "dl" / "weights").resolve())
-        candidates.append((root / "services" / "f8" / "detect_tracker" / "weights").resolve())
     except Exception:
         pass
-    for p in candidates:
+    for candidate in candidates:
         try:
-            if p.exists() and p.is_dir():
-                return p
+            if candidate.exists() and candidate.is_dir():
+                return candidate
         except Exception:
             continue
     return candidates[0] if candidates else Path.cwd().resolve()
@@ -72,32 +69,6 @@ def _coerce_str(v: Any, *, default: str = "") -> str:
         s = ""
     s = s.strip()
     return s if s else default
-
-
-def _coerce_str_list(v: Any) -> list[str]:
-    if isinstance(v, (list, tuple)):
-        out: list[str] = []
-        for item in v:
-            s = _coerce_str(item)
-            if s:
-                out.append(s)
-        return out
-    if isinstance(v, str):
-        raw = v.strip()
-        if not raw:
-            return []
-        try:
-            parsed = json.loads(raw)
-        except Exception:
-            parsed = None
-        if isinstance(parsed, (list, tuple)):
-            out2: list[str] = []
-            for item in parsed:
-                s = _coerce_str(item)
-                if s:
-                    out2.append(s)
-            return out2
-    return []
 
 
 def _coerce_bool(v: Any, *, default: bool) -> bool:
@@ -150,8 +121,8 @@ class _RollingWindow:
             return
         cutoff = int(now_ms) - win
         while self._q and int(self._q[0][0]) < cutoff:
-            _, v = self._q.popleft()
-            self._sum -= float(v)
+            _, value = self._q.popleft()
+            self._sum -= float(value)
 
     def mean(self, now_ms: int) -> float | None:
         self.prune(now_ms)
@@ -239,7 +210,46 @@ class _Telemetry:
         }
 
 
-class OnnxVisionServiceNode(ServiceNode):
+@dataclass(frozen=True)
+class PreparedFlowFrame:
+    frame_id: int
+    width: int
+    height: int
+    tensor: Any
+
+
+class OptflowFramePairCache:
+    def __init__(self) -> None:
+        self._prev: PreparedFlowFrame | None = None
+
+    def reset(self) -> None:
+        self._prev = None
+
+    def push_and_get_pair(self, current: PreparedFlowFrame) -> tuple[PreparedFlowFrame, PreparedFlowFrame] | None:
+        prev = self._prev
+        self._prev = current
+        if prev is None:
+            return None
+        if prev.width != current.width or prev.height != current.height:
+            return None
+        return prev, current
+
+
+def pack_flow2_f16_payload(flow_hw2: Any) -> tuple[int, bytes]:
+    import numpy as np  # type: ignore
+
+    flow = np.asarray(flow_hw2, dtype=np.float32)
+    if flow.ndim != 3 or int(flow.shape[2]) != 2:
+        raise ValueError(f"Flow must have shape HxWx2, got {flow.shape!r}")
+    height = int(flow.shape[0])
+    width = int(flow.shape[1])
+    pitch = int(width * 4)
+    flow16 = flow.astype(np.float16)
+    payload = np.ascontiguousarray(flow16.view(np.uint8)).reshape((height, pitch))
+    return pitch, payload.tobytes(order="C")
+
+
+class OnnxOptflowServiceNode(ServiceNode):
     def __init__(
         self,
         *,
@@ -247,20 +257,16 @@ class OnnxVisionServiceNode(ServiceNode):
         node: Any,
         initial_state: dict[str, Any] | None,
         service_class: str,
-        service_task: Literal["detector", "humandetector", "classifier"],
-        output_port: Literal["detections", "classifications"],
         allowed_tasks: set[ModelTask],
     ) -> None:
         super().__init__(
             node_id=ensure_token(node_id, label="node_id"),
             data_in_ports=[],
-            data_out_ports=[str(output_port), "telemetry"],
+            data_out_ports=["telemetry"],
             state_fields=[s.name for s in (node.stateFields or [])],
         )
         self._initial_state = dict(initial_state or {})
         self._service_class = str(service_class)
-        self._service_task = service_task
-        self._output_port = output_port
         self._allowed_tasks = set(allowed_tasks)
 
         self._active = True
@@ -271,38 +277,44 @@ class OnnxVisionServiceNode(ServiceNode):
         self._model_yaml_path = ""
         self._model_id = ""
         self._ort_provider: Literal["auto", "cuda", "cpu"] = "auto"
-        self._infer_every_n = 1
-        self._conf_override = -1.0
-        self._iou_override = -1.0
-        self._top_k = 5
-        self._shm_name = ""
-        self._enabled_classes: list[str] = []
-        self._per_class_k = 0
+        self._input_shm_name = ""
+        self._compute_every_n_frames = 2
+        self._compute_scale = 0.125
         self._auto_download_weights = True
         self._download_retry_at_monotonic = 0.0
 
         self._shm: VideoShmReader | None = None
         self._shm_open_name = ""
 
-        self._model: ModelSpec | None = None
-        self._det_runtime: OnnxYoloDetectorRuntime | None = None
-        self._cls_runtime: OnnxClassifierRuntime | None = None
+        self._flow_shm_name = f"shm.{self.node_id}.flow"
+        self._flow_shm_format = "flow2_f16"
+        self._flow_writer: VideoShmWriter | None = None
+        self._flow_writer_pitch = 0
+        self._flow_writer_width = 0
+        self._flow_writer_height = 0
+
+        self._runtime: OnnxNeuFlowRuntime | None = None
         self._runtime_yaml: Path | None = None
+        self._model: ModelSpec | None = None
         self._last_error = ""
         self._last_error_signature = ""
         self._last_error_repeats = 0
         self._model_index_warning = ""
+        self._runtime_warning = ""
 
-        self._last_infer_frame_id: int | None = None
         self._last_processed_frame_id: int | None = None
+        self._last_infer_frame_id: int | None = None
         self._dup_skipped_since_last_processed = 0
+        self._new_frame_counter = 0
+
+        self._frame_cache = OptflowFramePairCache()
         self._telemetry = _Telemetry()
 
     def attach(self, bus: Any) -> None:
         super().attach(bus)
         loop = asyncio.get_running_loop()
-        loop.create_task(self._ensure_config_loaded(), name=f"f8dl:init:{self.node_id}")
-        self._task = loop.create_task(self._loop(), name=f"f8dl:loop:{self.node_id}")
+        loop.create_task(self._ensure_config_loaded(), name=f"f8dl-optflow:init:{self.node_id}")
+        self._task = loop.create_task(self._loop(), name=f"f8dl-optflow:loop:{self.node_id}")
 
     async def close(self) -> None:
         t = self._task
@@ -311,6 +323,7 @@ class OnnxVisionServiceNode(ServiceNode):
             t.cancel()
             await asyncio.gather(t, return_exceptions=True)
         self._close_shm()
+        self._close_flow_writer()
 
     async def on_lifecycle(self, active: bool, meta: dict[str, Any]) -> None:
         del meta
@@ -345,46 +358,34 @@ class OnnxVisionServiceNode(ServiceNode):
             await self._reset_runtime()
             return
 
-        if name == "inferEveryN":
-            self._infer_every_n = _coerce_int(
-                await self.get_state_value("inferEveryN"),
-                default=self._infer_every_n,
-                minimum=1,
-                maximum=10000,
-            )
-            return
-
-        if name == "confThreshold":
-            self._conf_override = _coerce_float(await self.get_state_value("confThreshold"), default=self._conf_override)
-            await self._reset_runtime()
-            return
-
-        if name == "iouThreshold":
-            self._iou_override = _coerce_float(await self.get_state_value("iouThreshold"), default=self._iou_override)
-            await self._reset_runtime()
-            return
-
-        if name == "topK":
-            self._top_k = _coerce_int(await self.get_state_value("topK"), default=self._top_k, minimum=1, maximum=100)
-            return
-
-        if name == "shmName":
-            self._shm_name = _coerce_str(await self.get_state_value("shmName"), default=self._shm_name)
+        if name == "inputShmName":
+            self._input_shm_name = _coerce_str(await self.get_state_value("inputShmName"), default=self._input_shm_name)
+            self._frame_cache.reset()
+            self._new_frame_counter = 0
+            self._last_processed_frame_id = None
+            self._last_infer_frame_id = None
+            self._dup_skipped_since_last_processed = 0
             await self._maybe_reopen_shm()
             return
 
-        if name == "enabledClasses":
-            self._enabled_classes = _coerce_str_list(await self.get_state_value("enabledClasses"))
-            self._enabled_classes = self._normalize_enabled_classes(self._enabled_classes)
+        if name == "computeEveryNFrames":
+            self._compute_every_n_frames = _coerce_int(
+                await self.get_state_value("computeEveryNFrames"),
+                default=self._compute_every_n_frames,
+                minimum=1,
+                maximum=120,
+            )
             return
 
-        if name == "perClassK":
-            self._per_class_k = _coerce_int(
-                await self.get_state_value("perClassK"),
-                default=self._per_class_k,
-                minimum=0,
-                maximum=10000,
+        if name == "computeScale":
+            self._compute_scale = _coerce_float(
+                await self.get_state_value("computeScale"),
+                default=self._compute_scale,
+                minimum=0.0625,
+                maximum=1.0,
             )
+            self._frame_cache.reset()
+            self._new_frame_counter = 0
             return
 
         if name == "autoDownloadWeights":
@@ -434,41 +435,26 @@ class OnnxVisionServiceNode(ServiceNode):
         )
         v = _coerce_str(await self.get_state_value("ortProvider"), default=str(self._initial_state.get("ortProvider") or "auto")).lower()
         self._ort_provider = v if v in ("auto", "cuda", "cpu") else "auto"
-        self._infer_every_n = _coerce_int(
-            await self.get_state_value("inferEveryN"),
-            default=int(self._initial_state.get("inferEveryN") or 1),
+        self._input_shm_name = _coerce_str(
+            await self.get_state_value("inputShmName"),
+            default=str(self._initial_state.get("inputShmName") or ""),
+        )
+        self._compute_every_n_frames = _coerce_int(
+            await self.get_state_value("computeEveryNFrames"),
+            default=int(self._initial_state.get("computeEveryNFrames") or 2),
             minimum=1,
-            maximum=10000,
+            maximum=120,
         )
-        self._conf_override = _coerce_float(
-            await self.get_state_value("confThreshold"),
-            default=float(self._initial_state.get("confThreshold") or -1.0),
-        )
-        self._iou_override = _coerce_float(
-            await self.get_state_value("iouThreshold"),
-            default=float(self._initial_state.get("iouThreshold") or -1.0),
-        )
-        self._top_k = _coerce_int(
-            await self.get_state_value("topK"),
-            default=int(self._initial_state.get("topK") or 5),
-            minimum=1,
-            maximum=100,
-        )
-        self._enabled_classes = _coerce_str_list(
-            await self.get_state_value("enabledClasses"),
-        )
-        self._enabled_classes = self._normalize_enabled_classes(self._enabled_classes)
-        self._per_class_k = _coerce_int(
-            await self.get_state_value("perClassK"),
-            default=int(self._initial_state.get("perClassK") or 0),
-            minimum=0,
-            maximum=10000,
+        self._compute_scale = _coerce_float(
+            await self.get_state_value("computeScale"),
+            default=float(self._initial_state.get("computeScale") or 0.125),
+            minimum=0.0625,
+            maximum=1.0,
         )
         self._auto_download_weights = _coerce_bool(
             await self.get_state_value("autoDownloadWeights"),
             default=bool(self._initial_state.get("autoDownloadWeights", True)),
         )
-        self._shm_name = _coerce_str(await self.get_state_value("shmName"), default=str(self._initial_state.get("shmName") or ""))
         self._telemetry.set_config(
             interval_ms=_coerce_int(
                 await self.get_state_value("telemetryIntervalMs"),
@@ -485,6 +471,8 @@ class OnnxVisionServiceNode(ServiceNode):
         )
 
         self._config_loaded = True
+        await self.set_state("flowShmName", self._flow_shm_name)
+        await self.set_state("flowShmFormat", self._flow_shm_format)
         await self._publish_model_index()
 
     async def _publish_model_index(self) -> None:
@@ -522,6 +510,7 @@ class OnnxVisionServiceNode(ServiceNode):
             await self._set_last_error(msg)
         elif warning:
             await self._set_last_error(warning)
+
         payload = [i.model_id for i in idx]
         await self.set_state("availableModels", payload)
         if idx:
@@ -532,27 +521,26 @@ class OnnxVisionServiceNode(ServiceNode):
         else:
             self._model_id = ""
             await self.set_state("modelId", self._model_id)
-        await self._publish_selected_model_metadata()
-
-    async def _publish_selected_model_metadata(self) -> None:
-        try:
-            yaml_path = self._resolve_model_yaml()
-            spec = load_model_spec(yaml_path)
-        except Exception:
-            await self.set_state("modelClasses", [])
-            await self.set_state("enabledClasses", [])
-            return
-
-        await self.set_state("modelClasses", [str(x) for x in (spec.classes or [])])
-        self._enabled_classes = self._normalize_enabled_classes(
-            self._enabled_classes,
-            allowed_classes=list(spec.classes or []),
-        )
-        await self.set_state("enabledClasses", list(self._enabled_classes))
 
     async def _set_last_error(self, message: str) -> None:
         self._last_error = str(message or "")
         await self.set_state("lastError", self._last_error)
+
+    async def _emit_idle_telemetry(self, *, now_ms: int, shm_name: str) -> None:
+        if not self._telemetry.should_emit(now_ms):
+            return
+        telemetry_payload = self._telemetry.summary(
+            now_ms=now_ms,
+            node_id=self.node_id,
+            service_class=self._service_class,
+            model=self._model,
+            ort_provider=self._ort_provider,
+            shm_name=shm_name,
+            frame_id_last_seen=self._last_processed_frame_id,
+            frame_id_last_processed=self._last_processed_frame_id,
+        )
+        await self.emit("telemetry", telemetry_payload, ts_ms=now_ms)
+        self._telemetry.mark_emitted(now_ms)
 
     async def _record_exception(self, *, where: str, exc: Exception) -> None:
         signature = f"{type(exc).__name__}:{exc}"
@@ -567,85 +555,30 @@ class OnnxVisionServiceNode(ServiceNode):
         )
         await self._set_last_error(message)
 
-    async def _reset_runtime(self) -> None:
-        self._det_runtime = None
-        self._cls_runtime = None
-        self._runtime_yaml = None
-        self._model = None
-        self._last_error_signature = ""
-        self._last_error_repeats = 0
-        await self.set_state("loadedModel", "")
-        await self.set_state("lastError", "")
-        await self.set_state("ortActiveProviders", "")
-        await self._publish_selected_model_metadata()
-        if self._model_index_warning:
-            await self._set_last_error(self._model_index_warning)
+    @staticmethod
+    def _should_fallback_to_cpu(exc: Exception) -> bool:
+        message = str(exc).lower()
+        if "cudnn" in message:
+            return True
+        if "cuda" in message and ("execution_failed" in message or "non-zero status code" in message):
+            return True
+        return False
 
-    async def _maybe_reopen_shm(self) -> None:
-        want = self._resolve_shm_name()
-        if want == self._shm_open_name:
+    async def _fallback_to_cpu_after_gpu_error(self, *, exc: Exception) -> None:
+        if self._ort_provider == "cpu":
+            await self._record_exception(where="loop", exc=exc)
             return
-        self._close_shm()
-
-    def _resolve_shm_name(self) -> str:
-        shm = str(self._shm_name or "").strip()
-        if shm:
-            return shm
-        return ""
-
-    def _normalize_enabled_classes(self, values: list[str], *, allowed_classes: list[str] | None = None) -> list[str]:
-        if allowed_classes is not None:
-            model_classes = list(allowed_classes)
-            if not model_classes:
-                return []
-        else:
-            model_classes = list(self._model.classes) if self._model is not None else []
-        allowed = set(model_classes)
-        out: list[str] = []
-        seen: set[str] = set()
-        for raw in values:
-            name = _coerce_str(raw)
-            if not name:
-                continue
-            if allowed and name not in allowed:
-                continue
-            if name in seen:
-                continue
-            out.append(name)
-            seen.add(name)
-        return out
-
-    def _apply_detection_filters(self, detections: list[Any]) -> list[Any]:
-        enabled = set(self._enabled_classes)
-        filtered: list[Any] = []
-        if enabled:
-            for det in detections:
-                cls_name = str(det.cls)
-                if cls_name in enabled:
-                    filtered.append(det)
-        else:
-            filtered = list(detections)
-
-        per_class_k = int(self._per_class_k)
-        if per_class_k <= 0:
-            return filtered
-
-        grouped: dict[str, list[Any]] = {}
-        for det in filtered:
-            cls_name = str(det.cls)
-            bucket = grouped.get(cls_name)
-            if bucket is None:
-                grouped[cls_name] = [det]
-            else:
-                bucket.append(det)
-
-        picked: list[Any] = []
-        for cls_name in sorted(grouped.keys()):
-            bucket = grouped[cls_name]
-            bucket.sort(key=lambda item: float(item.conf), reverse=True)
-            picked.extend(bucket[:per_class_k])
-        picked.sort(key=lambda item: float(item.conf), reverse=True)
-        return picked
+        if self._ort_provider == "cuda":
+            await self._record_exception(where="loop", exc=exc)
+            return
+        detail = f"{type(exc).__name__}: {exc}"
+        await self._reset_runtime()
+        self._ort_provider = "cpu"
+        await self.set_state("ortProvider", "cpu")
+        await self._set_last_error(
+            "GPU inference failed; switched ortProvider to cpu automatically.\n"
+            f"reason: {detail}"
+        )
 
     def _close_shm(self) -> None:
         if self._shm is not None:
@@ -656,13 +589,24 @@ class OnnxVisionServiceNode(ServiceNode):
         self._shm = None
         self._shm_open_name = ""
 
-    def _open_shm(self, shm_name: str) -> bool:
+    def _open_shm(self, shm_name: str) -> None:
         self._close_shm()
         shm = VideoShmReader(shm_name)
         shm.open(use_event=True)
         self._shm = shm
         self._shm_open_name = shm_name
-        return True
+
+    async def _maybe_reopen_shm(self) -> None:
+        want = self._resolve_input_shm_name()
+        if want == self._shm_open_name:
+            return
+        self._close_shm()
+
+    def _resolve_input_shm_name(self) -> str:
+        shm_name = str(self._input_shm_name or "").strip()
+        if shm_name:
+            return shm_name
+        return ""
 
     def _resolve_model_yaml(self) -> Path:
         if self._model_yaml_path:
@@ -679,7 +623,7 @@ class OnnxVisionServiceNode(ServiceNode):
         )
 
     async def _ensure_runtime(self) -> bool:
-        if self._det_runtime is not None or self._cls_runtime is not None:
+        if self._runtime is not None:
             return True
 
         yaml_path = self._resolve_model_yaml()
@@ -687,38 +631,26 @@ class OnnxVisionServiceNode(ServiceNode):
         await self._ensure_onnx_available(spec)
         if spec.task not in self._allowed_tasks:
             raise ValueError(
-                f"Model task mismatch: model task={spec.task!r}, service task={self._service_task!r}, "
+                f"Model task mismatch: model task={spec.task!r}, service class={self._service_class!r}, "
                 f"allowed={sorted(self._allowed_tasks)!r}"
             )
 
-        if spec.task != "yolo_cls":
-            if self._conf_override >= 0:
-                spec = replace(spec, conf_threshold=float(self._conf_override))
-            if self._iou_override >= 0:
-                spec = replace(spec, iou_threshold=float(self._iou_override))
-
-        if spec.task == "yolo_cls":
-            runtime = OnnxClassifierRuntime(spec, ort_provider=self._ort_provider)
-            self._cls_runtime = runtime
-            providers = runtime.active_providers
-            warn = runtime.provider_warning
-        else:
-            runtime = OnnxYoloDetectorRuntime(spec, ort_provider=self._ort_provider)
-            self._det_runtime = runtime
-            providers = runtime.active_providers
-            warn = runtime.provider_warning
-
+        runtime = OnnxNeuFlowRuntime(spec, ort_provider=self._ort_provider)
+        self._runtime = runtime
         self._runtime_yaml = yaml_path
         self._model = spec
-        self._enabled_classes = self._normalize_enabled_classes(self._enabled_classes)
+        self._frame_cache.reset()
+        self._new_frame_counter = 0
+        self._last_infer_frame_id = None
+        providers = runtime.active_providers
         await self.set_state("loadedModel", f"{spec.model_id} ({spec.task})")
         await self.set_state("ortActiveProviders", json.dumps(providers))
-        await self.set_state("modelClasses", [str(x) for x in (spec.classes or [])])
-        await self.set_state("enabledClasses", list(self._enabled_classes))
+        await self.set_state("flowShmName", self._flow_shm_name)
+        await self.set_state("flowShmFormat", self._flow_shm_format)
 
         warn_parts: list[str] = []
-        if warn:
-            warn_parts.append(str(warn))
+        if runtime.provider_warning:
+            warn_parts.append(str(runtime.provider_warning))
         prefer = str(self._ort_provider or "auto").lower()
         if prefer in ("auto", "cuda"):
             try:
@@ -737,8 +669,30 @@ class OnnxVisionServiceNode(ServiceNode):
                 )
         if self._model_index_warning:
             warn_parts.append(self._model_index_warning)
-        await self._set_last_error("\n".join([x for x in warn_parts if str(x).strip()]).strip())
+        self._runtime_warning = "\n".join([x for x in warn_parts if str(x).strip()]).strip()
+        await self._set_last_error(self._runtime_warning)
         return True
+
+    async def _reset_runtime(self) -> None:
+        self._runtime = None
+        self._runtime_yaml = None
+        self._model = None
+        self._frame_cache.reset()
+        self._new_frame_counter = 0
+        self._last_processed_frame_id = None
+        self._last_infer_frame_id = None
+        self._dup_skipped_since_last_processed = 0
+        self._close_flow_writer()
+        self._last_error_signature = ""
+        self._last_error_repeats = 0
+        self._runtime_warning = ""
+        await self.set_state("loadedModel", "")
+        await self.set_state("lastError", "")
+        await self.set_state("ortActiveProviders", "")
+        await self.set_state("flowShmName", self._flow_shm_name)
+        await self.set_state("flowShmFormat", self._flow_shm_format)
+        if self._model_index_warning:
+            await self._set_last_error(self._model_index_warning)
 
     async def _ensure_onnx_available(self, spec: ModelSpec) -> None:
         if spec.onnx_path.exists():
@@ -775,6 +729,35 @@ class OnnxVisionServiceNode(ServiceNode):
                 f"{type(exc).__name__}: {exc}"
             ) from exc
 
+    def _close_flow_writer(self) -> None:
+        if self._flow_writer is not None:
+            try:
+                self._flow_writer.close()
+            except Exception:
+                self._flow_writer = None
+        self._flow_writer = None
+        self._flow_writer_width = 0
+        self._flow_writer_height = 0
+        self._flow_writer_pitch = 0
+
+    def _ensure_flow_writer(self, *, width: int, height: int, pitch: int) -> None:
+        if self._flow_writer is not None:
+            if (
+                int(self._flow_writer_width) == int(width)
+                and int(self._flow_writer_height) == int(height)
+                and int(self._flow_writer_pitch) == int(pitch)
+            ):
+                return
+            self._close_flow_writer()
+        frame_bytes = int(pitch) * int(height)
+        shm_size = max(1024 * 1024, frame_bytes * 2 + 4096)
+        writer = VideoShmWriter(shm_name=self._flow_shm_name, size=shm_size, slot_count=2)
+        writer.open()
+        self._flow_writer = writer
+        self._flow_writer_width = int(width)
+        self._flow_writer_height = int(height)
+        self._flow_writer_pitch = int(pitch)
+
     async def _loop(self) -> None:
         import numpy as np  # type: ignore
 
@@ -794,40 +777,45 @@ class OnnxVisionServiceNode(ServiceNode):
                     await asyncio.sleep(0.1)
                     continue
 
-                shm_name = self._resolve_shm_name()
-                if not shm_name:
+                input_shm_name = self._resolve_input_shm_name()
+                if not input_shm_name:
+                    await self._set_last_error("missing inputShmName")
+                    await self._emit_idle_telemetry(now_ms=int(time.time() * 1000), shm_name="")
                     await asyncio.sleep(0.05)
                     continue
 
                 if self._shm is None:
                     try:
-                        self._open_shm(shm_name)
+                        self._open_shm(input_shm_name)
                     except Exception as exc:
                         await self._record_exception(where="open_shm", exc=exc)
                         await asyncio.sleep(0.1)
                         continue
 
+                assert self._runtime is not None
                 assert self._shm is not None
                 t0 = time.perf_counter()
                 self._shm.wait_new_frame(timeout_ms=10)
-                header, payload = self._shm.read_latest_bgra()
+                header, payload = self._shm.read_latest_frame()
                 if header is None or payload is None:
+                    await self._emit_idle_telemetry(now_ms=int(time.time() * 1000), shm_name=input_shm_name)
                     continue
+                if int(header.fmt) != VIDEO_FORMAT_BGRA32:
+                    await self._set_last_error(
+                        f"input SHM format must be BGRA32(fmt={VIDEO_FORMAT_BGRA32}), got fmt={int(header.fmt)} "
+                        f"for {input_shm_name!r}"
+                    )
+                    await self._emit_idle_telemetry(now_ms=int(header.ts_ms or time.time() * 1000), shm_name=input_shm_name)
+                    await asyncio.sleep(0.05)
+                    continue
+
                 frame_id_seen = int(header.frame_id)
                 if self._last_processed_frame_id is not None and frame_id_seen == int(self._last_processed_frame_id):
                     self._dup_skipped_since_last_processed += 1
+                    await self._emit_idle_telemetry(now_ms=int(header.ts_ms or time.time() * 1000), shm_name=input_shm_name)
                     continue
                 dup_skipped = int(self._dup_skipped_since_last_processed)
                 self._dup_skipped_since_last_processed = 0
-
-                do_infer = False
-                if self._last_infer_frame_id is None:
-                    do_infer = True
-                else:
-                    do_infer = (int(header.frame_id) - int(self._last_infer_frame_id)) >= int(self._infer_every_n)
-                if not do_infer:
-                    self._last_processed_frame_id = frame_id_seen
-                    continue
 
                 width = int(header.width)
                 height = int(header.height)
@@ -838,34 +826,60 @@ class OnnxVisionServiceNode(ServiceNode):
                 if len(payload) < frame_bytes:
                     continue
                 self._last_processed_frame_id = frame_id_seen
+                self._new_frame_counter += 1
 
                 buf = np.frombuffer(payload, dtype=np.uint8)
                 rows = buf.reshape((height, pitch))
                 bgra = rows[:, : width * 4].reshape((height, width, 4))
                 frame_bgr = np.ascontiguousarray(bgra[:, :, 0:3])
 
-                t_infer0 = time.perf_counter()
-                if self._det_runtime is not None:
-                    detections, _meta = self._det_runtime.infer(frame_bgr)
-                    payload_out = self._build_detection_payload(
+                tensor = self._runtime.prepare_input(frame_bgr, compute_scale=self._compute_scale)
+                pair = self._frame_cache.push_and_get_pair(
+                    PreparedFlowFrame(
+                        frame_id=frame_id_seen,
                         width=width,
                         height=height,
-                        frame_id=frame_id_seen,
-                        ts_ms=int(header.ts_ms),
-                        detections=detections,
+                        tensor=tensor,
                     )
-                    await self.emit("detections", payload_out, ts_ms=int(header.ts_ms))
-                elif self._cls_runtime is not None:
-                    topk, _meta = self._cls_runtime.infer(frame_bgr, top_k=self._top_k)
-                    payload_out = self._build_classification_payload(
-                        frame_id=frame_id_seen,
-                        ts_ms=int(header.ts_ms),
-                        topk=topk,
+                )
+                if pair is None:
+                    await self._set_last_error("waiting for frame pair (need at least 2 valid BGRA frames)")
+                    await self._emit_idle_telemetry(now_ms=int(header.ts_ms or time.time() * 1000), shm_name=input_shm_name)
+                    continue
+
+                if (int(self._new_frame_counter) % int(self._compute_every_n_frames)) != 0:
+                    await self._emit_idle_telemetry(now_ms=int(header.ts_ms or time.time() * 1000), shm_name=input_shm_name)
+                    continue
+
+                t_infer0 = time.perf_counter()
+                prev_frame, current_frame = pair
+                try:
+                    flow = self._runtime.infer_preprocessed(
+                        prev_frame.tensor,
+                        current_frame.tensor,
+                        output_size_hw=(height, width),
                     )
-                    await self.emit("classifications", payload_out, ts_ms=int(header.ts_ms))
-                else:
-                    raise RuntimeError("Inference runtime is not initialized.")
+                except Exception as exc:
+                    if self._should_fallback_to_cpu(exc):
+                        await self._fallback_to_cpu_after_gpu_error(exc=exc)
+                        await asyncio.sleep(0.1)
+                        continue
+                    raise
+                flow_pitch, flow_payload = pack_flow2_f16_payload(flow)
+                self._ensure_flow_writer(width=width, height=height, pitch=flow_pitch)
+                assert self._flow_writer is not None
+                self._flow_writer.write_frame(
+                    width=width,
+                    height=height,
+                    pitch=flow_pitch,
+                    payload=flow_payload,
+                    fmt=VIDEO_FORMAT_FLOW2_F16,
+                )
                 t_infer1 = time.perf_counter()
+                if self._runtime_warning:
+                    await self._set_last_error(self._runtime_warning)
+                elif self._last_error:
+                    await self._set_last_error("")
 
                 self._last_infer_frame_id = frame_id_seen
                 now_ms = int(header.ts_ms)
@@ -876,73 +890,20 @@ class OnnxVisionServiceNode(ServiceNode):
                     dup_skipped=dup_skipped,
                 )
                 if self._telemetry.should_emit(now_ms):
-                    tel = self._telemetry.summary(
+                    telemetry_payload = self._telemetry.summary(
                         now_ms=now_ms,
                         node_id=self.node_id,
                         service_class=self._service_class,
                         model=self._model,
                         ort_provider=self._ort_provider,
-                        shm_name=str(self._shm_open_name or shm_name),
+                        shm_name=str(self._shm_open_name or input_shm_name),
                         frame_id_last_seen=frame_id_seen,
                         frame_id_last_processed=self._last_processed_frame_id,
                     )
-                    await self.emit("telemetry", tel, ts_ms=now_ms)
+                    await self.emit("telemetry", telemetry_payload, ts_ms=now_ms)
                     self._telemetry.mark_emitted(now_ms)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 await self._record_exception(where="loop", exc=exc)
                 await asyncio.sleep(0.1)
-
-    def _build_detection_payload(self, *, width: int, height: int, frame_id: int, ts_ms: int, detections: list[Any]) -> dict[str, Any]:
-        detections = self._apply_detection_filters(detections)
-        skeleton_protocol = "none"
-        if self._model is not None:
-            skeleton_protocol = str(self._model.skeleton_protocol or "").strip() or "none"
-        out: list[dict[str, Any]] = []
-        frame_size = (int(width), int(height))
-        for d in detections:
-            x1, y1, x2, y2 = clamp_xyxy(d.xyxy, size=frame_size)
-            item: dict[str, Any] = {
-                "cls": str(d.cls),
-                "score": float(d.conf),
-                "bbox": [int(x1), int(y1), int(x2), int(y2)],
-                "keypoints": [],
-                "obb": [],
-                "skeletonProtocol": skeleton_protocol,
-            }
-            if d.keypoints:
-                item["keypoints"] = [
-                    {
-                        "x": float(k.x),
-                        "y": float(k.y),
-                        "score": float(k.score) if k.score is not None else None,
-                    }
-                    for k in d.keypoints
-                ]
-            if d.obb:
-                item["obb"] = [[float(x), float(y)] for x, y in d.obb]
-            out.append(item)
-        return {
-            "schemaVersion": DETECTION_SCHEMA_VERSION,
-            "frameId": int(frame_id),
-            "tsMs": int(ts_ms),
-            "width": int(width),
-            "height": int(height),
-            "model": (self._model.model_id if self._model else ""),
-            "task": str(self._service_task),
-            "skeletonProtocol": skeleton_protocol,
-            "detections": out,
-        }
-
-    def _build_classification_payload(self, *, frame_id: int, ts_ms: int, topk: list[Any]) -> dict[str, Any]:
-        topk_payload = [{"cls": str(x.cls), "score": float(x.score)} for x in topk]
-        top1 = topk_payload[0] if topk_payload else {"cls": "", "score": 0.0}
-        return {
-            "schemaVersion": CLASSIFICATION_SCHEMA_VERSION,
-            "frameId": int(frame_id),
-            "tsMs": int(ts_ms),
-            "model": (self._model.model_id if self._model else ""),
-            "top1": top1,
-            "topk": topk_payload,
-        }

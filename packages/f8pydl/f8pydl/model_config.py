@@ -5,7 +5,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 
-ModelTask = Literal["yolo_det", "yolo_pose", "yolo_obb", "yolo_cls"]
+FlowInputOrder = Literal["prev_now", "now_prev"]
+ModelTask = Literal["yolo_det", "yolo_pose", "yolo_obb", "yolo_cls", "optflow_neuflowv2"]
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,10 @@ class ModelSpec:
     keypoints: list[str] | None = None
     keypoint_dims: int = 3
     top_k: int = 5
+    flow_format: str = "flow2_f16"
+    flow_input_order: FlowInputOrder = "prev_now"
+    onnx_url: str = ""
+    onnx_sha256: str = ""
     meta: dict[str, Any] | None = None
 
 
@@ -79,7 +84,30 @@ def _parse_task(v: Any) -> ModelTask | None:
         return "yolo_obb"
     if s in ("yolo_cls", "cls", "classify", "classification", "classifier"):
         return "yolo_cls"
+    if s in ("optflow_neuflowv2", "optflow", "optical_flow", "neuflowv2"):
+        return "optflow_neuflowv2"
     return None
+
+
+def _parse_flow_input_order(v: Any) -> FlowInputOrder:
+    s = _as_str(v, default="prev_now").lower()
+    if s in ("prev_now", "prev->now", "previous_current", "previous_now"):
+        return "prev_now"
+    if s in ("now_prev", "now->prev", "current_previous", "now_previous"):
+        return "now_prev"
+    raise ValueError(f"Unsupported optflow inputOrder: {s!r}")
+
+
+def _normalize_optional_sha256(v: Any) -> str:
+    s = _as_str(v).strip().lower()
+    if not s:
+        return ""
+    if len(s) != 64:
+        raise ValueError(f"Invalid onnxSHA256 length: {len(s)} (expected 64)")
+    for ch in s:
+        if ch not in "0123456789abcdef":
+            raise ValueError(f"Invalid onnxSHA256 character: {ch!r}")
+    return s
 
 
 def _coerce_str_list(v: Any) -> list[str] | None:
@@ -140,6 +168,7 @@ def load_model_spec(yaml_path: Path) -> ModelSpec:
         labels = data.get("labels") if isinstance(data.get("labels"), dict) else {}
         pose = data.get("pose") if isinstance(data.get("pose"), dict) else {}
         classification = data.get("classification") if isinstance(data.get("classification"), dict) else {}
+        optflow = data.get("optflow") if isinstance(data.get("optflow"), dict) else {}
 
         task = _parse_task(model.get("task")) or "yolo_det"
         skeleton_protocol = _normalize_skeleton_protocol(model.get("skeletonProtocol"))
@@ -150,6 +179,22 @@ def load_model_spec(yaml_path: Path) -> ModelSpec:
         if not onnx_rel:
             raise ValueError(f"Missing model.onnxPath in {yaml_path}")
         onnx_path = (yaml_path.parent / onnx_rel).resolve() if not Path(onnx_rel).is_absolute() else Path(onnx_rel)
+        onnx_url = _as_str(
+            model.get("onnxUrl"),
+            default=_as_str(
+                model.get("url"),
+                default=_as_str(data.get("onnxUrl"), default=_as_str(data.get("url"), default="")),
+            ),
+        )
+        onnx_sha256 = _normalize_optional_sha256(
+            model.get("onnxSHA256")
+            if model.get("onnxSHA256") is not None
+            else model.get("sha256")
+            if model.get("sha256") is not None
+            else data.get("onnxSHA256")
+            if data.get("onnxSHA256") is not None
+            else data.get("sha256")
+        )
 
         input_width = _as_int(inp.get("width"), default=_as_int(data.get("input_width"), default=0))
         input_height = _as_int(inp.get("height"), default=_as_int(data.get("input_height"), default=0))
@@ -163,6 +208,20 @@ def load_model_spec(yaml_path: Path) -> ModelSpec:
         keypoints = _coerce_str_list(pose.get("keypoints"))
         keypoint_dims = _as_int(pose.get("dims"), default=3)
         top_k = _as_int(classification.get("topK"), default=_as_int(data.get("top_k"), default=5))
+        flow_format = _as_str(
+            optflow.get("flowFormat"),
+            default=_as_str(data.get("flow_format"), default="flow2_f16"),
+        ).lower()
+        flow_input_order: FlowInputOrder = "prev_now"
+
+        if task == "optflow_neuflowv2":
+            flow_input_order = _parse_flow_input_order(
+                optflow.get("inputOrder") if optflow.get("inputOrder") is not None else data.get("flow_input_order")
+            )
+            if flow_format != "flow2_f16":
+                raise ValueError(f"optflow.flowFormat must be 'flow2_f16' in {yaml_path}")
+            if onnx_path.suffix.lower() != ".onnx":
+                raise ValueError(f"Optflow model file must be .onnx in {yaml_path}")
 
         meta = data.get("meta") if isinstance(data.get("meta"), dict) else {}
         return ModelSpec(
@@ -171,6 +230,8 @@ def load_model_spec(yaml_path: Path) -> ModelSpec:
             provider=provider,
             task=task,
             onnx_path=onnx_path,
+            onnx_url=onnx_url,
+            onnx_sha256=onnx_sha256,
             input_width=input_width,
             input_height=input_height,
             conf_threshold=conf_threshold,
@@ -180,6 +241,8 @@ def load_model_spec(yaml_path: Path) -> ModelSpec:
             keypoints=keypoints,
             keypoint_dims=max(1, int(keypoint_dims)),
             top_k=max(1, int(top_k)),
+            flow_format=flow_format,
+            flow_input_order=flow_input_order,
             meta=dict(meta),
         )
 
@@ -199,6 +262,10 @@ def load_model_spec(yaml_path: Path) -> ModelSpec:
 
     onnx_rel = _as_str(data.get("model_path"), default=f"{yaml_path.stem}.onnx")
     onnx_path = (yaml_path.parent / onnx_rel).resolve() if not Path(onnx_rel).is_absolute() else Path(onnx_rel)
+    onnx_url = _as_str(data.get("onnxUrl"), default=_as_str(data.get("url"), default=""))
+    onnx_sha256 = _normalize_optional_sha256(
+        data.get("onnxSHA256") if data.get("onnxSHA256") is not None else data.get("sha256")
+    )
 
     input_width = _as_int(data.get("input_width"), default=0)
     input_height = _as_int(data.get("input_height"), default=0)
@@ -214,6 +281,15 @@ def load_model_spec(yaml_path: Path) -> ModelSpec:
     keypoints = _coerce_str_list(data.get("keypoints"))
     keypoint_dims = _as_int(data.get("keypoint_dims"), default=3)
     top_k = _as_int(data.get("top_k"), default=5)
+    flow_format = _as_str(data.get("flow_format"), default="flow2_f16").lower()
+    flow_input_order: FlowInputOrder = "prev_now"
+
+    if task == "optflow_neuflowv2":
+        flow_input_order = _parse_flow_input_order(data.get("flow_input_order"))
+        if flow_format != "flow2_f16":
+            raise ValueError(f"flow_format must be 'flow2_f16' in {yaml_path}")
+        if onnx_path.suffix.lower() != ".onnx":
+            raise ValueError(f"Optflow model file must be .onnx in {yaml_path}")
 
     return ModelSpec(
         model_id=model_id,
@@ -221,6 +297,8 @@ def load_model_spec(yaml_path: Path) -> ModelSpec:
         provider=provider,
         task=task,
         onnx_path=onnx_path,
+        onnx_url=onnx_url,
+        onnx_sha256=onnx_sha256,
         input_width=input_width,
         input_height=input_height,
         conf_threshold=conf_threshold,
@@ -230,6 +308,8 @@ def load_model_spec(yaml_path: Path) -> ModelSpec:
         keypoints=keypoints,
         keypoint_dims=max(1, int(keypoint_dims)),
         top_k=max(1, int(top_k)),
+        flow_format=flow_format,
+        flow_input_order=flow_input_order,
         meta={},
     )
 

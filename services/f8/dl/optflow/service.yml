@@ -1,0 +1,9 @@
+schemaVersion: f8serviceEntry/1
+serviceClass: f8.dl.optflow
+label: DL Optical Flow
+version: 0.0.1
+launch:
+  command: pixi
+  args: ["run", "f8pydl_optflow"]
+  env: {}
+  workdir: "../../../../"

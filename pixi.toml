@@ -21,6 +21,10 @@ pip = ">=26.0.1,<27"
 numpy = ">=2.4.2, <3"
 opencv-contrib-python = ">=4.13.0.92, <5"
 
+[feature.onnx.dependencies]
+cuda-version = "12.*"
+cudnn = ">=9,<10"
+
 [feature.onnx.pypi-dependencies]
 f8pydl = { path = "packages/f8pydl", editable = true }
 onnxruntime-gpu = ">=1.24.2, <2"
@@ -30,6 +34,7 @@ pyyaml = ">=6.0.3, <7"
 f8pydl_detector = "python -m f8pydl.main_detector"
 f8pydl_humandetector = "python -m f8pydl.main_humandetector"
 f8pydl_classifier = "python -m f8pydl.main_classifier"
+f8pydl_optflow = "python -m f8pydl.main_optflow"
 f8pydl_bench = "python scripts/bench_dl_baseline.py"
 
 [feature.sdk.pypi-dependencies]

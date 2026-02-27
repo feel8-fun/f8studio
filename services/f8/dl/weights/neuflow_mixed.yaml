@@ -1,0 +1,15 @@
+schemaVersion: f8onnxModel/1
+model:
+  id: neuflow_mixed
+  displayName: NeuFlowV2 Mixed
+  provider: neuflowv2
+  task: optflow_neuflowv2
+  onnxPath: neuflow_mixed.onnx
+  onnxUrl: https://github.com/ibaiGorordo/ONNX-NeuFlowV2-Optical-Flow/releases/download/0.1.0/neuflow_mixed.onnx
+  onnxSHA256: 7a07929423133f9267e33aec322873ef1dfcb17224020f30c794e569d353624d
+input:
+  width: 768
+  height: 432
+optflow:
+  flowFormat: flow2_f16
+  inputOrder: prev_now

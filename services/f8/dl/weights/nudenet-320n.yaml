@@ -6,7 +6,8 @@ model:
   task: yolo_det
   skeletonProtocol: none
   onnxPath: nudenet-320n.onnx
-  url: https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/320n.onnx
+  onnxUrl: https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/320n.onnx
+  onnxSHA256: b3a1f48480d4d99c9df0afca57079762acfef5a4e37b35cd64e045cca717b73d
 input:
   width: 320
   height: 320

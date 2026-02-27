@@ -11,6 +11,7 @@ from f8pysdk import (
     F8StateSpec,
     any_schema,
     array_schema,
+    boolean_schema,
     integer_schema,
     number_schema,
     string_schema,
@@ -19,6 +20,8 @@ from f8pysdk.runtime_node import RuntimeNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from .constants import CLASSIFIER_SERVICE_CLASS, DETECTOR_SERVICE_CLASS, HUMAN_DETECTOR_SERVICE_CLASS
+from .constants import OPTFLOW_SERVICE_CLASS
+from .optflow_service_node import OnnxOptflowServiceNode
 from .service_node import OnnxVisionServiceNode
 
 
@@ -69,6 +72,14 @@ def _common_state_fields(
             valueSchema=string_schema(default="auto", enum=["auto", "cuda", "cpu"]),
             access=F8StateAccess.rw,
             showOnNode=True,
+        ),
+        F8StateSpec(
+            name="autoDownloadWeights",
+            label="Auto Download Weights",
+            description="When model file is missing, download from onnxUrl in model yaml.",
+            valueSchema=boolean_schema(default=True),
+            access=F8StateAccess.rw,
+            showOnNode=False,
         ),
         F8StateSpec(
             name="inferEveryN",
@@ -135,22 +146,22 @@ def _common_state_fields(
         )
     fields.extend(
         [
-        F8StateSpec(
-            name="availableModels",
-            label="Available Models",
-            description="List of model ids discovered from weightsDir.",
-            valueSchema=array_schema(items=string_schema()),
-            access=F8StateAccess.ro,
-            showOnNode=False,
-        ),
-        F8StateSpec(
-            name="modelClasses",
-            label="Model Classes",
-            description="Current loaded model class labels.",
-            valueSchema=array_schema(items=string_schema()),
-            access=F8StateAccess.ro,
-            showOnNode=False,
-        ),
+            F8StateSpec(
+                name="availableModels",
+                label="Available Models",
+                description="List of model ids discovered from weightsDir.",
+                valueSchema=array_schema(items=string_schema()),
+                access=F8StateAccess.ro,
+                showOnNode=False,
+            ),
+            F8StateSpec(
+                name="modelClasses",
+                label="Model Classes",
+                description="Current loaded model class labels.",
+                valueSchema=array_schema(items=string_schema()),
+                access=F8StateAccess.ro,
+                showOnNode=False,
+            ),
             F8StateSpec(
                 name="loadedModel",
                 label="Loaded Model",
@@ -194,6 +205,140 @@ def _common_state_fields(
         ]
     )
     return fields
+
+
+def _optflow_state_fields() -> list[F8StateSpec]:
+    return [
+        F8StateSpec(
+            name="inputShmName",
+            label="Input Video SHM",
+            description="Input SHM name (e.g. shm.xxx.video).",
+            valueSchema=string_schema(default=""),
+            access=F8StateAccess.rw,
+            showOnNode=True,
+        ),
+        F8StateSpec(
+            name="computeEveryNFrames",
+            label="Compute Every N Frames",
+            description="Compute optical flow once per N new frames.",
+            valueSchema=integer_schema(default=2, minimum=1, maximum=120),
+            access=F8StateAccess.rw,
+            showOnNode=False,
+        ),
+        F8StateSpec(
+            name="computeScale",
+            label="Compute Scale",
+            description="Frame pre-scale before model input (0.0625~1.0).",
+            valueSchema=number_schema(default=0.125, minimum=0.0625, maximum=1.0),
+            access=F8StateAccess.rw,
+            showOnNode=False,
+        ),
+        F8StateSpec(
+            name="weightsDir",
+            label="Weights Dir",
+            description="Directory containing *.yaml + *.onnx model files.",
+            valueSchema=string_schema(default="services/f8/dl/weights"),
+            access=F8StateAccess.rw,
+            showOnNode=False,
+        ),
+        F8StateSpec(
+            name="modelId",
+            label="Model Id",
+            description="Model id selected from weightsDir (ignored if modelYamlPath is set).",
+            valueSchema=string_schema(default=""),
+            access=F8StateAccess.rw,
+            uiControl="select:[availableModels]",
+            showOnNode=False,
+        ),
+        F8StateSpec(
+            name="modelYamlPath",
+            label="Model YAML Path",
+            description="Optional explicit model yaml path (overrides modelId).",
+            valueSchema=string_schema(default=""),
+            access=F8StateAccess.rw,
+            showOnNode=False,
+        ),
+        F8StateSpec(
+            name="ortProvider",
+            label="ONNX Runtime Provider",
+            description="auto prefers CUDAExecutionProvider when available.",
+            valueSchema=string_schema(default="auto", enum=["auto", "cuda", "cpu"]),
+            access=F8StateAccess.rw,
+            showOnNode=False,
+        ),
+        F8StateSpec(
+            name="autoDownloadWeights",
+            label="Auto Download Weights",
+            description="When model file is missing, download from onnxUrl in model yaml.",
+            valueSchema=boolean_schema(default=True),
+            access=F8StateAccess.rw,
+            showOnNode=False,
+        ),
+        F8StateSpec(
+            name="availableModels",
+            label="Available Models",
+            description="List of model ids discovered from weightsDir.",
+            valueSchema=array_schema(items=string_schema()),
+            access=F8StateAccess.ro,
+            showOnNode=False,
+        ),
+        F8StateSpec(
+            name="loadedModel",
+            label="Loaded Model",
+            description="Current loaded model id/task.",
+            valueSchema=string_schema(default=""),
+            access=F8StateAccess.ro,
+            showOnNode=False,
+        ),
+        F8StateSpec(
+            name="ortActiveProviders",
+            label="ORT Active Providers",
+            description="JSON list of active ONNX Runtime providers for this session.",
+            valueSchema=string_schema(default=""),
+            access=F8StateAccess.ro,
+            showOnNode=False,
+        ),
+        F8StateSpec(
+            name="flowShmName",
+            label="Flow SHM Name",
+            description="Output flow SHM name.",
+            valueSchema=string_schema(default=""),
+            access=F8StateAccess.ro,
+            showOnNode=True,
+        ),
+        F8StateSpec(
+            name="flowShmFormat",
+            label="Flow SHM Format",
+            description="Flow payload format. Fixed to flow2_f16.",
+            valueSchema=string_schema(default="flow2_f16"),
+            access=F8StateAccess.ro,
+            showOnNode=False,
+        ),
+        F8StateSpec(
+            name="lastError",
+            label="Last Error",
+            description="Last runtime error string (best-effort).",
+            valueSchema=string_schema(default=""),
+            access=F8StateAccess.ro,
+            showOnNode=False,
+        ),
+        F8StateSpec(
+            name="telemetryIntervalMs",
+            label="Telemetry Interval (ms)",
+            description="Emit telemetry summaries every N milliseconds (0 disables).",
+            valueSchema=integer_schema(default=1000, minimum=0, maximum=60000),
+            access=F8StateAccess.wo,
+            showOnNode=False,
+        ),
+        F8StateSpec(
+            name="telemetryWindowMs",
+            label="Telemetry Window (ms)",
+            description="Rolling window for telemetry averages (ms).",
+            valueSchema=integer_schema(default=2000, minimum=100, maximum=60000),
+            access=F8StateAccess.wo,
+            showOnNode=False,
+        ),
+    ]
 
 
 def _register_classifier(reg: RuntimeNodeRegistry) -> None:
@@ -343,9 +488,48 @@ def _register_human_detector(reg: RuntimeNodeRegistry) -> None:
     reg.register_service(HUMAN_DETECTOR_SERVICE_CLASS, _factory, overwrite=True)
 
 
+def _register_optflow(reg: RuntimeNodeRegistry) -> None:
+    reg.register_service_spec(
+        F8ServiceSpec(
+            schemaVersion=F8ServiceSchemaVersion.f8service_1,
+            serviceClass=OPTFLOW_SERVICE_CLASS,
+            version="0.0.1",
+            label="DL Optical Flow",
+            description="ONNXRuntime NeuFlowV2 dense optical flow service (flow SHM output).",
+            tags=["onnx", "vision", "optical_flow", "flow_shm"],
+            rendererClass="default_svc",
+            stateFields=_optflow_state_fields(),
+            dataOutPorts=[
+                F8DataPortSpec(
+                    name="telemetry",
+                    description="Periodic telemetry summaries (fps + timings).",
+                    valueSchema=any_schema(),
+                ),
+            ],
+            editableStateFields=False,
+            editableDataInPorts=False,
+            editableDataOutPorts=False,
+            editableCommands=False,
+        ),
+        overwrite=True,
+    )
+
+    def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
+        return OnnxOptflowServiceNode(
+            node_id=node_id,
+            node=node,
+            initial_state=initial_state,
+            service_class=OPTFLOW_SERVICE_CLASS,
+            allowed_tasks={"optflow_neuflowv2"},
+        )
+
+    reg.register_service(OPTFLOW_SERVICE_CLASS, _factory, overwrite=True)
+
+
 def register_specs(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
     reg = registry or RuntimeNodeRegistry.instance()
     _register_classifier(reg)
     _register_detector(reg)
     _register_human_detector(reg)
+    _register_optflow(reg)
     return reg
