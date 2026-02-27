@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 
 FlowInputOrder = Literal["prev_now", "now_prev"]
-ModelTask = Literal["yolo_det", "yolo_pose", "yolo_obb", "yolo_cls", "optflow_neuflowv2"]
+ModelTask = Literal["yolo_det", "yolo_pose", "yolo_obb", "yolo_cls", "optflow_neuflowv2", "tcn_wave"]
 
 
 @dataclass(frozen=True)
@@ -86,6 +86,8 @@ def _parse_task(v: Any) -> ModelTask | None:
         return "yolo_cls"
     if s in ("optflow_neuflowv2", "optflow", "optical_flow", "neuflowv2"):
         return "optflow_neuflowv2"
+    if s in ("tcn_wave", "tcn", "temporal_wave", "temporal_conv", "conv_tcn"):
+        return "tcn_wave"
     return None
 
 
@@ -222,6 +224,8 @@ def load_model_spec(yaml_path: Path) -> ModelSpec:
                 raise ValueError(f"optflow.flowFormat must be 'flow2_f16' in {yaml_path}")
             if onnx_path.suffix.lower() != ".onnx":
                 raise ValueError(f"Optflow model file must be .onnx in {yaml_path}")
+        if task == "tcn_wave" and onnx_path.suffix.lower() != ".onnx":
+            raise ValueError(f"TCN wave model file must be .onnx in {yaml_path}")
 
         meta = data.get("meta") if isinstance(data.get("meta"), dict) else {}
         return ModelSpec(
@@ -290,6 +294,8 @@ def load_model_spec(yaml_path: Path) -> ModelSpec:
             raise ValueError(f"flow_format must be 'flow2_f16' in {yaml_path}")
         if onnx_path.suffix.lower() != ".onnx":
             raise ValueError(f"Optflow model file must be .onnx in {yaml_path}")
+    if task == "tcn_wave" and onnx_path.suffix.lower() != ".onnx":
+        raise ValueError(f"TCN wave model file must be .onnx in {yaml_path}")
 
     return ModelSpec(
         model_id=model_id,

@@ -1,0 +1,12 @@
+schemaVersion: f8onnxModel/1
+model:
+  id: deepfungen_vr_conv_tcn_8
+  displayName: VR Conv TCN 8
+  provider: DeepFunGen
+  task: tcn_wave
+  skeletonProtocol: none
+  onnxPath: deepfungen_vr_conv_tcn_8.onnx
+  onnxSHA256: 04c3fd60a734e0b32eebcd9a6c105540a88f5e17fda7fb6329281806da2e381d
+input:
+  width: 224
+  height: 224

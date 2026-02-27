@@ -1,0 +1,12 @@
+schemaVersion: f8onnxModel/1
+model:
+  id: deepfungen_conv_tcn_62
+  displayName: Conv TCN 62
+  provider: DeepFunGen
+  task: tcn_wave
+  skeletonProtocol: none
+  onnxPath: deepfungen_conv_tcn_62.onnx
+  onnxSHA256: 746778c933616f636c17be1c4bd729716d44f29cc657d80bed894d35d5d39440
+input:
+  width: 224
+  height: 224

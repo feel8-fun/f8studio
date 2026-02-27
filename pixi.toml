@@ -35,6 +35,7 @@ f8pydl_detector = "python -m f8pydl.main_detector"
 f8pydl_humandetector = "python -m f8pydl.main_humandetector"
 f8pydl_classifier = "python -m f8pydl.main_classifier"
 f8pydl_optflow = "python -m f8pydl.main_optflow"
+f8pydl_tcnwave = "python -m f8pydl.main_tcnwave"
 f8pydl_bench = "python scripts/bench_dl_baseline.py"
 
 [feature.sdk.pypi-dependencies]

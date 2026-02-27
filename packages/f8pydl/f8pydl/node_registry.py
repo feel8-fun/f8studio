@@ -20,9 +20,10 @@ from f8pysdk.runtime_node import RuntimeNode
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 
 from .constants import CLASSIFIER_SERVICE_CLASS, DETECTOR_SERVICE_CLASS, HUMAN_DETECTOR_SERVICE_CLASS
-from .constants import OPTFLOW_SERVICE_CLASS
+from .constants import OPTFLOW_SERVICE_CLASS, TCNWAVE_SERVICE_CLASS
 from .optflow_service_node import OnnxOptflowServiceNode
 from .service_node import OnnxVisionServiceNode
+from .tcnwave_service_node import OnnxTcnWaveServiceNode
 
 
 def _common_state_fields(
@@ -142,26 +143,29 @@ def _common_state_fields(
                     access=F8StateAccess.rw,
                     showOnNode=True,
                 ),
+                F8StateSpec(
+                    name="modelClasses",
+                    label="Model Classes",
+                    description="Current loaded model class labels.",
+                    valueSchema=array_schema(items=string_schema()),
+                    access=F8StateAccess.ro,
+                    showOnNode=False,
+                )
             ]
         )
+    fields.append(
+        F8StateSpec(
+            name="availableModels",
+            label="Available Models",
+            description="List of model ids discovered from weightsDir.",
+            valueSchema=array_schema(items=string_schema()),
+            access=F8StateAccess.ro,
+            showOnNode=False,
+        )
+    )
+    
     fields.extend(
         [
-            F8StateSpec(
-                name="availableModels",
-                label="Available Models",
-                description="List of model ids discovered from weightsDir.",
-                valueSchema=array_schema(items=string_schema()),
-                access=F8StateAccess.ro,
-                showOnNode=False,
-            ),
-            F8StateSpec(
-                name="modelClasses",
-                label="Model Classes",
-                description="Current loaded model class labels.",
-                valueSchema=array_schema(items=string_schema()),
-                access=F8StateAccess.ro,
-                showOnNode=False,
-            ),
             F8StateSpec(
                 name="loadedModel",
                 label="Loaded Model",
@@ -331,6 +335,48 @@ def _optflow_state_fields() -> list[F8StateSpec]:
             showOnNode=False,
         ),
     ]
+
+
+def _tcn_wave_state_fields() -> list[F8StateSpec]:
+    fields = _common_state_fields(
+        include_thresholds=False,
+        include_top_k=False,
+        include_class_filter=False,
+    )
+    fields.extend(
+        [
+            F8StateSpec(
+                name="outputScale",
+                label="Output Scale",
+                description="Denormalization scale applied to raw model output values.",
+                valueSchema=number_schema(default=10.0),
+                access=F8StateAccess.rw,
+                showOnNode=False,
+            ),
+            F8StateSpec(
+                name="outputBias",
+                label="Output Bias",
+                description="Denormalization bias applied after outputScale.",
+                valueSchema=number_schema(default=0.0),
+                access=F8StateAccess.rw,
+                showOnNode=False,
+            ),
+        ]
+    )
+    fields.append(
+        F8StateSpec(
+            name="useVrFocusCrop",
+            label="VR Focus Crop",
+            description=(
+                "Apply focus crop before inference. "
+                "This assumes SHM already provides the target eye view and crops top 20% + left/right 10%."
+            ),
+            valueSchema=boolean_schema(default=False),
+            access=F8StateAccess.rw,
+            showOnNode=True,
+        )
+    )
+    return fields
 
 
 def _register_classifier(reg: RuntimeNodeRegistry) -> None:
@@ -518,10 +564,54 @@ def _register_optflow(reg: RuntimeNodeRegistry) -> None:
     reg.register_service(OPTFLOW_SERVICE_CLASS, _factory, overwrite=True)
 
 
+def _register_tcn_wave(reg: RuntimeNodeRegistry) -> None:
+    reg.register_service_spec(
+        F8ServiceSpec(
+            schemaVersion=F8ServiceSchemaVersion.f8service_1,
+            serviceClass=TCNWAVE_SERVICE_CLASS,
+            version="0.0.1",
+            label="DL TCN Wave",
+            description="ONNXRuntime temporal convolution wave inference service (port output).",
+            tags=["onnx", "vision", "temporal", "wave", "signal"],
+            rendererClass="default_svc",
+            stateFields=_tcn_wave_state_fields(),
+            dataOutPorts=[
+                F8DataPortSpec(
+                    name="predictedChange",
+                    description="Temporal model output value per frame.",
+                    valueSchema=number_schema(),
+                ),
+                F8DataPortSpec(
+                    name="telemetry",
+                    description="Periodic telemetry summaries (fps + timings).",
+                    valueSchema=any_schema(),
+                ),
+            ],
+            editableStateFields=False,
+            editableDataInPorts=False,
+            editableDataOutPorts=False,
+            editableCommands=False,
+        ),
+        overwrite=True,
+    )
+
+    def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
+        return OnnxTcnWaveServiceNode(
+            node_id=node_id,
+            node=node,
+            initial_state=initial_state,
+            service_class=TCNWAVE_SERVICE_CLASS,
+            allowed_tasks={"tcn_wave"},
+        )
+
+    reg.register_service(TCNWAVE_SERVICE_CLASS, _factory, overwrite=True)
+
+
 def register_specs(registry: RuntimeNodeRegistry | None = None) -> RuntimeNodeRegistry:
     reg = registry or RuntimeNodeRegistry.instance()
     _register_classifier(reg)
     _register_detector(reg)
     _register_human_detector(reg)
     _register_optflow(reg)
+    _register_tcn_wave(reg)
     return reg

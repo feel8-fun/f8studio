@@ -679,3 +679,193 @@ class OnnxNeuFlowRuntime:
         if isinstance(h, int) and isinstance(w, int) and h > 0 and w > 0:
             return int(h), int(w)
         return None
+
+
+class OnnxTemporalWaveRuntime:
+    def __init__(
+        self,
+        spec: ModelSpec,
+        *,
+        ort_provider: Literal["auto", "cuda", "cpu"] = "auto",
+        output_scale: float = 10.0,
+        output_bias: float = 0.0,
+    ) -> None:
+        import onnxruntime as ort  # type: ignore
+
+        self.spec = spec
+        self.provider_warning: str = ""
+        self.output_scale = float(output_scale)
+        self.output_bias = float(output_bias)
+        providers = _choose_ort_providers(prefer=ort_provider)
+        try:
+            self._session = ort.InferenceSession(str(spec.onnx_path), providers=providers)
+        except Exception as exc:
+            prefer = str(ort_provider or "auto").lower()
+            if prefer in ("auto", "cuda"):
+                try:
+                    available = list(ort.get_available_providers())  # type: ignore[attr-defined]
+                except Exception:
+                    available = []
+                self.provider_warning = (
+                    f"Failed to init ORT providers={providers!r}; falling back to CPUExecutionProvider. "
+                    f"availableProviders={available!r}; error={exc}"
+                )
+                self._session = ort.InferenceSession(str(spec.onnx_path), providers=["CPUExecutionProvider"])
+            else:
+                raise
+
+        inputs = list(self._session.get_inputs())
+        if len(inputs) != 1:
+            raise ValueError(f"Temporal wave model must have exactly 1 input, got {len(inputs)}")
+        outputs = list(self._session.get_outputs())
+        if not outputs:
+            raise ValueError("Temporal wave model must have at least 1 output")
+
+        self._input_name = str(inputs[0].name)
+        self._output_name = str(outputs[0].name)
+        self.active_providers = list(self._session.get_providers())
+
+        self._sequence_length = 10
+        self._channels = 3
+        self._input_height = int(spec.input_height)
+        self._input_width = int(spec.input_width)
+
+        input_shape = list(inputs[0].shape) if isinstance(inputs[0].shape, list) else []
+        fixed = self._extract_fixed_input_shape(input_shape)
+        if fixed is not None:
+            self._sequence_length = int(fixed[0])
+            self._channels = int(fixed[1])
+            self._input_height = int(fixed[2])
+            self._input_width = int(fixed[3])
+            if (
+                int(spec.input_height) != self._input_height
+                or int(spec.input_width) != self._input_width
+            ):
+                mismatch = (
+                    "Model input shape is fixed and differs from yaml input size; "
+                    f"using model shape HxW={self._input_height}x{self._input_width} "
+                    f"(yaml HxW={int(spec.input_height)}x{int(spec.input_width)})."
+                )
+                if self.provider_warning:
+                    self.provider_warning = f"{self.provider_warning}\n{mismatch}"
+                else:
+                    self.provider_warning = mismatch
+
+        output_shape = list(outputs[0].shape) if isinstance(outputs[0].shape, list) else []
+        self._output_length = self._extract_output_length(output_shape)
+
+    @property
+    def sequence_length(self) -> int:
+        return int(self._sequence_length)
+
+    @property
+    def channels(self) -> int:
+        return int(self._channels)
+
+    @property
+    def input_height(self) -> int:
+        return int(self._input_height)
+
+    @property
+    def input_width(self) -> int:
+        return int(self._input_width)
+
+    @property
+    def output_length(self) -> int | None:
+        return self._output_length
+
+    def prepare_frame(self, frame_bgr: Any) -> Any:
+        import cv2  # type: ignore
+        import numpy as np  # type: ignore
+
+        if self._channels != 3:
+            raise ValueError(f"Temporal wave runtime currently supports 3-channel input, got {self._channels}")
+        resized = cv2.resize(
+            frame_bgr,
+            (int(self._input_width), int(self._input_height)),
+            interpolation=cv2.INTER_LINEAR,
+        )
+        rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        x = rgb.astype(np.float32) / 255.0
+        x = np.transpose(x, (2, 0, 1))
+        return np.ascontiguousarray(x)
+
+    def infer_sequence(self, sequence_chw: Any) -> Any:
+        import numpy as np  # type: ignore
+
+        sequence = np.asarray(sequence_chw, dtype=np.float32)
+        if sequence.ndim != 4:
+            raise ValueError(f"Temporal wave sequence must have shape SxCxHxW, got {sequence.shape!r}")
+        if int(sequence.shape[0]) != int(self._sequence_length):
+            raise ValueError(
+                f"Temporal wave expected sequence length {self._sequence_length}, got {int(sequence.shape[0])}"
+            )
+        if int(sequence.shape[1]) != int(self._channels):
+            raise ValueError(f"Temporal wave expected channels {self._channels}, got {int(sequence.shape[1])}")
+        if int(sequence.shape[2]) != int(self._input_height) or int(sequence.shape[3]) != int(self._input_width):
+            raise ValueError(
+                "Temporal wave sequence size mismatch: "
+                f"expected CxHxW={self._channels}x{self._input_height}x{self._input_width}, "
+                f"got {int(sequence.shape[1])}x{int(sequence.shape[2])}x{int(sequence.shape[3])}"
+            )
+
+        input_tensor = np.ascontiguousarray(sequence[None, ...])
+        outputs = self._session.run([self._output_name], {self._input_name: input_tensor})
+        if not outputs:
+            raise RuntimeError("ONNX Runtime returned empty outputs for temporal wave model.")
+        raw = np.asarray(outputs[0], dtype=np.float32)
+        flat = self._flatten_output(raw, np=np)
+        scaled = flat * self.output_scale + self.output_bias
+        return np.ascontiguousarray(scaled.astype(np.float32, copy=False))
+
+    @staticmethod
+    def _extract_fixed_input_shape(shape: list[Any]) -> tuple[int, int, int, int] | None:
+        if len(shape) != 5:
+            raise ValueError(f"Temporal wave input must be rank-5 [B,S,C,H,W], got {shape!r}")
+        batch = shape[0]
+        sequence = shape[1]
+        channels = shape[2]
+        height = shape[3]
+        width = shape[4]
+        if isinstance(batch, int) and batch not in (0, 1):
+            raise ValueError(f"Temporal wave batch dimension must be 1 (or dynamic), got {batch}")
+        if not isinstance(sequence, int) or sequence <= 0:
+            return None
+        if not isinstance(channels, int) or channels <= 0:
+            return None
+        if not isinstance(height, int) or height <= 0:
+            return None
+        if not isinstance(width, int) or width <= 0:
+            return None
+        return int(sequence), int(channels), int(height), int(width)
+
+    @staticmethod
+    def _extract_output_length(shape: list[Any]) -> int | None:
+        if not shape:
+            return 1
+        if len(shape) == 1:
+            dim0 = shape[0]
+            if isinstance(dim0, int) and dim0 > 0:
+                return int(dim0)
+            return None
+        if len(shape) == 2:
+            batch = shape[0]
+            out_dim = shape[1]
+            if isinstance(batch, int) and batch not in (0, 1):
+                raise ValueError(f"Temporal wave output batch must be 1 (or dynamic), got {batch}")
+            if isinstance(out_dim, int) and out_dim > 0:
+                return int(out_dim)
+            return None
+        raise ValueError(f"Unsupported temporal wave output shape: {shape!r}")
+
+    @staticmethod
+    def _flatten_output(raw: Any, *, np: Any) -> Any:
+        if raw.ndim == 0:
+            return np.asarray([float(raw)], dtype=np.float32)
+        if raw.ndim == 1:
+            return raw.astype(np.float32, copy=False)
+        if raw.ndim == 2:
+            if int(raw.shape[0]) != 1:
+                raise ValueError(f"Temporal wave output batch must be 1, got {raw.shape!r}")
+            return raw[0].astype(np.float32, copy=False)
+        raise ValueError(f"Unsupported temporal wave output ndim: {raw.ndim}")
