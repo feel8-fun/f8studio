@@ -120,6 +120,11 @@ class VideoStabService final : public f8::cppsdk::LifecycleNode,
   double min_distance_ = 8.0;
   double ransac_reproj_threshold_ = 3.0;
   int reset_on_failure_frames_ = 5;
+  bool scene_cut_enabled_ = true;
+  double scene_cut_frame_diff_threshold_ = 18.0;
+  double scene_cut_track_ratio_threshold_ = 0.25;
+  int scene_cut_cooldown_frames_ = 5;
+  std::uint64_t scene_change_count_ = 0;
 
   // Tracking state.
   bool has_prev_gray_ = false;
@@ -130,6 +135,7 @@ class VideoStabService final : public f8::cppsdk::LifecycleNode,
   MotionParams trajectory_raw_params_{};
   MotionParams trajectory_smooth_params_{};
   int consecutive_failures_ = 0;
+  int scene_cut_cooldown_remaining_ = 0;
 
   std::uint64_t telemetry_observed_frames_ = 0;
   std::uint64_t telemetry_processed_frames_ = 0;

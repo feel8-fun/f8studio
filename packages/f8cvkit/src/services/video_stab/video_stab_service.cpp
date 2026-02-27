@@ -206,6 +206,8 @@ bool VideoStabService::start() {
   trajectory_raw_params_ = MotionParams{};
   trajectory_smooth_params_ = MotionParams{};
   consecutive_failures_ = 0;
+  scene_change_count_ = 0;
+  scene_cut_cooldown_remaining_ = 0;
 
   input_last_notify_seq_ = 0;
   input_last_frame_id_ = 0;
@@ -232,6 +234,11 @@ bool VideoStabService::start() {
   publish_state_if_changed("minDistance", min_distance_, "init", json::object());
   publish_state_if_changed("ransacReprojThreshold", ransac_reproj_threshold_, "init", json::object());
   publish_state_if_changed("resetOnFailureFrames", reset_on_failure_frames_, "init", json::object());
+  publish_state_if_changed("sceneCutEnabled", scene_cut_enabled_, "init", json::object());
+  publish_state_if_changed("sceneCutFrameDiffThreshold", scene_cut_frame_diff_threshold_, "init", json::object());
+  publish_state_if_changed("sceneCutTrackRatioThreshold", scene_cut_track_ratio_threshold_, "init", json::object());
+  publish_state_if_changed("sceneCutCooldownFrames", scene_cut_cooldown_frames_, "init", json::object());
+  publish_state_if_changed("sceneChangeCount", scene_change_count_, "init", json::object());
   publish_state_if_changed("lastError", "", "init", json::object());
 
   running_.store(true, std::memory_order_release);
@@ -495,6 +502,53 @@ void VideoStabService::on_state(const std::string& node_id, const std::string& f
     publish_state_if_changed("lastError", "", "state", meta);
     return;
   }
+
+  if (field == "sceneCutEnabled") {
+    if (!value.is_boolean()) {
+      publish_state_if_changed("lastError", "invalid sceneCutEnabled", "state", meta);
+      return;
+    }
+    scene_cut_enabled_ = value.get<bool>();
+    publish_state_if_changed("sceneCutEnabled", scene_cut_enabled_, "state", meta);
+    publish_state_if_changed("lastError", "", "state", meta);
+    return;
+  }
+
+  if (field == "sceneCutFrameDiffThreshold") {
+    double v = 0.0;
+    if (!parse_double_field(value, v)) {
+      publish_state_if_changed("lastError", "invalid sceneCutFrameDiffThreshold", "state", meta);
+      return;
+    }
+    scene_cut_frame_diff_threshold_ = std::max(1.0, std::min(80.0, v));
+    publish_state_if_changed("sceneCutFrameDiffThreshold", scene_cut_frame_diff_threshold_, "state", meta);
+    publish_state_if_changed("lastError", "", "state", meta);
+    return;
+  }
+
+  if (field == "sceneCutTrackRatioThreshold") {
+    double v = 0.0;
+    if (!parse_double_field(value, v)) {
+      publish_state_if_changed("lastError", "invalid sceneCutTrackRatioThreshold", "state", meta);
+      return;
+    }
+    scene_cut_track_ratio_threshold_ = std::max(0.01, std::min(0.95, v));
+    publish_state_if_changed("sceneCutTrackRatioThreshold", scene_cut_track_ratio_threshold_, "state", meta);
+    publish_state_if_changed("lastError", "", "state", meta);
+    return;
+  }
+
+  if (field == "sceneCutCooldownFrames") {
+    int v = 0;
+    if (!parse_int_field(value, v)) {
+      publish_state_if_changed("lastError", "invalid sceneCutCooldownFrames", "state", meta);
+      return;
+    }
+    scene_cut_cooldown_frames_ = std::max(0, std::min(120, v));
+    publish_state_if_changed("sceneCutCooldownFrames", scene_cut_cooldown_frames_, "state", meta);
+    publish_state_if_changed("lastError", "", "state", meta);
+    return;
+  }
 }
 
 void VideoStabService::on_data(const std::string& node_id, const std::string& port, const json& value,
@@ -536,6 +590,7 @@ void VideoStabService::reset_stabilizer_internal(const json& meta, const std::st
   trajectory_raw_params_ = MotionParams{};
   trajectory_smooth_params_ = MotionParams{};
   consecutive_failures_ = 0;
+  scene_cut_cooldown_remaining_ = 0;
 }
 
 bool VideoStabService::ensure_input_open() {
@@ -648,8 +703,12 @@ void VideoStabService::process_frame_once() {
 
   cv::Mat stabilized = src_bgra.clone();
   bool motion_valid = false;
+  bool scene_changed = false;
   int inlier_count = 0;
   int tracked_points = 0;
+  int prev_points_count = 0;
+  double scene_cut_frame_diff = 0.0;
+  double scene_cut_track_ratio = 1.0;
   MotionParams raw_params{};
   MotionParams correction_raw_params{};
   MotionParams correction_smooth_params{};
@@ -666,6 +725,7 @@ void VideoStabService::process_frame_once() {
 
     try {
       cv::goodFeaturesToTrack(prev_gray_, prev_pts, max_corner_count_, quality_level_, min_distance_);
+      prev_points_count = static_cast<int>(prev_pts.size());
       if (prev_pts.size() >= 8) {
         cv::calcOpticalFlowPyrLK(prev_gray_, gray, prev_pts, curr_pts, status, err);
       }
@@ -699,7 +759,34 @@ void VideoStabService::process_frame_once() {
     }
 
     tracked_points = static_cast<int>(curr_valid.size());
-    if (tracked_points >= 8) {
+    cv::Mat gray_diff;
+    cv::absdiff(prev_gray_, gray, gray_diff);
+    scene_cut_frame_diff = cv::mean(gray_diff)[0];
+    const int track_ratio_denominator = std::max(prev_points_count, 1);
+    scene_cut_track_ratio = static_cast<double>(tracked_points) / static_cast<double>(track_ratio_denominator);
+
+    if (scene_cut_cooldown_remaining_ > 0) {
+      --scene_cut_cooldown_remaining_;
+    }
+
+    const bool scene_cut_by_track_drop =
+        scene_cut_frame_diff >= scene_cut_frame_diff_threshold_ &&
+        (scene_cut_track_ratio <= scene_cut_track_ratio_threshold_ || tracked_points < 8);
+    const bool scene_cut_by_hard_diff = scene_cut_frame_diff >= (scene_cut_frame_diff_threshold_ * 1.8);
+    const bool scene_cut_triggered =
+        scene_cut_enabled_ && scene_cut_cooldown_remaining_ <= 0 && (scene_cut_by_track_drop || scene_cut_by_hard_diff);
+
+    if (scene_cut_triggered) {
+      scene_changed = true;
+      ++scene_change_count_;
+      publish_state_if_changed("sceneChangeCount", scene_change_count_, "runtime", json::object());
+      reset_stabilizer_internal(json::object(), "scene_cut");
+      scene_cut_cooldown_remaining_ = scene_cut_cooldown_frames_;
+      prev_gray_ = gray;
+      has_prev_gray_ = true;
+      consecutive_failures_ = 0;
+      publish_state_if_changed("lastError", "", "runtime", json::object());
+    } else if (tracked_points >= 8) {
       cv::Mat inliers;
       try {
         if (motion_model_ == MotionModel::Affine) {
@@ -782,10 +869,12 @@ void VideoStabService::process_frame_once() {
     }
 
     if (!motion_valid) {
-      ++telemetry_fail_frames_;
-      ++consecutive_failures_;
-      if (consecutive_failures_ >= reset_on_failure_frames_) {
-        reset_stabilizer_internal(json::object(), "consecutive_failures");
+      if (!scene_changed) {
+        ++telemetry_fail_frames_;
+        ++consecutive_failures_;
+        if (consecutive_failures_ >= reset_on_failure_frames_) {
+          reset_stabilizer_internal(json::object(), "consecutive_failures");
+        }
       }
     } else {
       consecutive_failures_ = 0;
@@ -816,6 +905,10 @@ void VideoStabService::process_frame_once() {
   motion["model"] = motion_model_state_;
   motion["stabilizationMode"] = stabilization_mode_state_;
   motion["valid"] = motion_valid;
+  motion["sceneChanged"] = scene_changed;
+  motion["sceneChangeCount"] = scene_change_count_;
+  motion["sceneCutFrameDiff"] = scene_cut_frame_diff;
+  motion["sceneCutTrackRatio"] = scene_cut_track_ratio;
   motion["inlierCount"] = inlier_count;
   motion["trackedPoints"] = tracked_points;
   motion["rawTx"] = raw_params.tx;
@@ -853,6 +946,10 @@ json VideoStabService::describe() {
            {"model", schema_string()},
            {"stabilizationMode", schema_string()},
            {"valid", schema_boolean()},
+           {"sceneChanged", schema_boolean()},
+           {"sceneChangeCount", schema_integer()},
+           {"sceneCutFrameDiff", schema_number()},
+           {"sceneCutTrackRatio", schema_number()},
            {"inlierCount", schema_integer()},
            {"trackedPoints", schema_integer()},
            {"rawTx", schema_number()},
@@ -913,6 +1010,16 @@ json VideoStabService::describe() {
                   "RANSAC reprojection threshold."),
       state_field("resetOnFailureFrames", schema_integer(5, 1, 120), "rw", "Reset On Failure Frames",
                   "Reset internal stabilizer state after N consecutive failures.", false),
+      state_field("sceneCutEnabled", schema_boolean(), "rw", "Scene Cut Enabled",
+                  "Enable scene cut detection and reset-on-cut behavior.", false),
+      state_field("sceneCutFrameDiffThreshold", schema_number(18.0, 1.0, 80.0), "rw", "Cut Frame Diff Threshold",
+                  "Scene cut threshold for mean(abs(gray-prevGray)).", false),
+      state_field("sceneCutTrackRatioThreshold", schema_number(0.25, 0.01, 0.95), "rw", "Cut Track Ratio Threshold",
+                  "Scene cut threshold for trackedPoints/max(prevPoints,1).", false),
+      state_field("sceneCutCooldownFrames", schema_integer(5, 0, 120), "rw", "Cut Cooldown Frames",
+                  "Suppress repeated scene cut triggers for N frames after a cut.", false),
+      state_field("sceneChangeCount", schema_integer(), "ro", "Scene Change Count",
+                  "Monotonic counter incremented when a scene cut is detected.", false),
       state_field("lastError", schema_string(), "ro", "Last Error", "Last error message.", false),
   });
   service["editableStateFields"] = false;
