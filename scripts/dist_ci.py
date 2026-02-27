@@ -45,11 +45,11 @@ def _run(command: list[str]) -> None:
     subprocess.run(command, check=True, cwd=REPO_ROOT, env=command_env)
 
 
-def _platform_info() -> tuple[str, str, str]:
+def _platform_info() -> tuple[str, str]:
     if os.name == "nt":
-        return ("windows-x86_64", "win", "zip")
+        return ("windows-x86_64", "win")
     if sys.platform.startswith("linux"):
-        return ("linux-x86_64", "linux", "gztar")
+        return ("linux-x86_64", "linux")
     raise RuntimeError(f"Unsupported platform for dist packaging: {sys.platform}")
 
 
@@ -194,15 +194,20 @@ def _build_cpp_runtime() -> None:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build full runtime distribution bundle (CI packaging path).")
+    parser.add_argument(
+        "--archive",
+        action="store_true",
+        help="Also emit compressed archive in build/dist (zip on Windows, tar.gz on Linux).",
+    )
     return parser
 
 
 def main() -> int:
-    _build_parser().parse_args()
+    args = _build_parser().parse_args()
 
     _build_cpp_runtime()
 
-    platform_tag, platform_dir, archive_format = _platform_info()
+    platform_tag, platform_dir = _platform_info()
     dist_base_dir = REPO_ROOT / "build" / "dist"
     dist_name = f"f8studio-{platform_tag}"
     dist_dir = dist_base_dir / dist_name
@@ -239,13 +244,16 @@ def main() -> int:
     )
     (dist_dir / "README.md").write_text(readme_text, encoding="utf-8")
 
-    archive_path = shutil.make_archive(
-        base_name=str(dist_base_dir / dist_name),
-        format=archive_format,
-        root_dir=dist_base_dir,
-        base_dir=dist_name,
-    )
-    print(f"dist archive: {archive_path}")
+    if args.archive:
+        archive_format = "zip" if os.name == "nt" else "gztar"
+        archive_path = shutil.make_archive(
+            base_name=str(dist_base_dir / dist_name),
+            format=archive_format,
+            root_dir=dist_base_dir,
+            base_dir=dist_name,
+        )
+        print(f"dist archive: {archive_path}")
+    print(f"dist directory: {dist_dir}")
     return 0
 
 

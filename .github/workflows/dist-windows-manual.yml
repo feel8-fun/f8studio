@@ -44,4 +44,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: f8studio-windows-${{ steps.sha.outputs.sha7 }}
-          path: build/dist/f8studio-windows-x86_64.zip
+          path: build/dist/f8studio-windows-x86_64

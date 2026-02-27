@@ -382,7 +382,7 @@ components:
           pattern: ^[a-z0-9]+(\.[a-z0-9]+)+$
         rendererClass:
           type: string
-          default: defaultService
+          default: default_svc
           description: Optional custom UI renderer key for the node (e.g., realtimePlot, 3dViewer)
         rendererProps:
           type: object
@@ -471,7 +471,7 @@ components:
           pattern: ^[a-z0-9]+(\.[a-z0-9]+)+$
         rendererClass:
           type: string
-          default: defaultOperator
+          default: default_op
           description: Optional custom UI renderer key for this operator node (e.g., realtimePlot, 3dViewer)
         rendererProps:
           type: object

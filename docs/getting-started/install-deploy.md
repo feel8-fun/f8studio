@@ -63,6 +63,9 @@ Build a distributable runtime bundle (`pixi.toml + pixi.lock + services/** + whe
 pixi run -e ci dist_ci
 ```
 
+- Output directory is `build/dist/f8studio-<platform-tag>`.
+- Optional archive output can be enabled with `pixi run -e ci dist_ci --archive`.
+
 Notes:
 
 - CI on Windows uses GitHub-hosted runner images plus `msvc-dev-cmd`; no manual Visual Studio setup is needed in CI.
