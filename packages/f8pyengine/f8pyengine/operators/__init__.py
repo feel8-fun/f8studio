@@ -19,6 +19,7 @@ from .mix_silence_fill import MixSilenceFillRuntimeNode
 from .pull import PullRuntimeNode
 from .program_wave import ProgramWaveRuntimeNode
 from .sequence_player import SequencePlayerRuntimeNode
+from .playback_sync import PlaybackSyncRuntimeNode
 
 __all__ = [
     "PrintRuntimeNode",
@@ -40,4 +41,5 @@ __all__ = [
     "LovenseProgramAdapterRuntimeNode",
     "ButtplugBridgeRuntimeNode",
     "MixSilenceFillRuntimeNode",
+    "PlaybackSyncRuntimeNode",
 ]
