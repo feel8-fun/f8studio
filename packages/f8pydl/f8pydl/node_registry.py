@@ -373,7 +373,7 @@ def _tcn_wave_state_fields() -> list[F8StateSpec]:
             ),
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
-            showOnNode=True,
+            showOnNode=False,
         )
     )
     return fields
