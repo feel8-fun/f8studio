@@ -116,8 +116,22 @@ def _launcher_binary_name() -> str:
     return "f8studio"
 
 
+def _is_running_inside_ci_env() -> bool:
+    if os.environ.get("PIXI_ENVIRONMENT_NAME") != "ci":
+        return False
+    project_root = os.environ.get("PIXI_PROJECT_ROOT")
+    if project_root is None:
+        return False
+    return Path(project_root).resolve() == REPO_ROOT.resolve()
+
+
 def _bundle_studio_launcher(dist_dir: Path) -> None:
-    _run(["pixi", "run", "--frozen", "-e", "ci", "build_studio_launcher"])
+    if _is_running_inside_ci_env():
+        print("Building studio launcher in current ci Pixi environment")
+        _run(["python", "scripts/build_studio_launcher.py"])
+    else:
+        print("Building studio launcher via pixi ci environment")
+        _run(["pixi", "run", "--frozen", "-e", "ci", "build_studio_launcher"])
 
     launcher_path = REPO_ROOT / "build" / "dist" / _launcher_binary_name()
     if not launcher_path.is_file():
