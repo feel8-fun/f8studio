@@ -1,4 +1,3 @@
-import json
 import os
 import sys
 import unittest
@@ -15,6 +14,7 @@ from f8pysdk.builtin_state_fields import (  # noqa: E402
 )
 from f8pysdk.generated import F8StateAccess, F8StateSpec  # noqa: E402
 from f8pysdk.nats_naming import kv_key_node_state  # noqa: E402
+from f8pysdk.service_bus.codec import decode_obj  # noqa: E402
 from f8pysdk.schema_helpers import boolean_schema, string_schema  # noqa: E402
 from f8pysdk.testing import ServiceBusHarness  # noqa: E402
 
@@ -124,7 +124,7 @@ class LifecycleBootstrapTests(unittest.IsolatedAsyncioTestCase):
         raw = await bus._transport.kv_get(key)
         await bus.stop()
         self.assertIsNotNone(raw)
-        payload = json.loads(raw.decode("utf-8")) if raw is not None else {}
+        payload = decode_obj(raw) if raw is not None else {}
         self.assertEqual(payload.get("origin"), "runtime")
 
 

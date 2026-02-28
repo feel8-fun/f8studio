@@ -8,6 +8,7 @@
 #include <cstring>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <thread>
 
 #if !defined(_WIN32)
@@ -23,11 +24,21 @@
 
 #include "f8cppsdk/data_bus.h"
 #include "f8cppsdk/f8_naming.h"
+#include "f8cppsdk/msg_codec.h"
 #include "f8cppsdk/nats_client.h"
 #include "f8cppsdk/service_bus.h"
 #include "f8cppsdk/state_kv.h"
 
 using json = nlohmann::json;
+
+bool decode_payload(const std::vector<std::uint8_t>& bytes, json& out) {
+  return f8::cppsdk::decode_json(bytes.data(), bytes.size(), out);
+}
+
+bool decode_payload(const std::optional<std::vector<std::uint8_t>>& bytes, json& out) {
+  if (!bytes.has_value()) return false;
+  return decode_payload(bytes.value(), out);
+}
 
 namespace {
 
@@ -270,7 +281,8 @@ TEST(ServiceBusIntegration, SetStateEndpointWritesKVAndEnforcesAccess) {
   // Ready payload should match pysdk schema.
   auto ready_raw = bus.kv().get(f8::cppsdk::kv_key_ready());
   ASSERT_TRUE(ready_raw.has_value());
-  json ready = json::parse(std::string(reinterpret_cast<const char*>(ready_raw->data()), ready_raw->size()), nullptr, false);
+  json ready = json::object();
+  ASSERT_TRUE(f8::cppsdk::decode_json(ready_raw->data(), ready_raw->size(), ready));
   ASSERT_TRUE(ready.is_object());
   EXPECT_EQ(ready.value("serviceId", ""), "svcB");
   EXPECT_TRUE(ready.value("ready", false));
@@ -308,11 +320,10 @@ TEST(ServiceBusIntegration, SetStateEndpointWritesKVAndEnforcesAccess) {
   req_ok["args"] = json{{"nodeId", "svcB"}, {"field", "foo"}, {"value", 123}};
   req_ok["meta"] = json{{"traceId", "t1"}};
 
-  const std::string req_ok_s = req_ok.dump();
-  auto resp_bytes =
-      caller.request(set_state_subject, std::vector<std::uint8_t>(req_ok_s.begin(), req_ok_s.end()), 1000);
+  auto resp_bytes = caller.request(set_state_subject, f8::cppsdk::encode_json(req_ok), 1000);
   ASSERT_TRUE(resp_bytes.has_value());
-  json resp = json::parse(std::string(reinterpret_cast<const char*>(resp_bytes->data()), resp_bytes->size()), nullptr, false);
+  json resp = json::object();
+  ASSERT_TRUE(decode_payload(resp_bytes, resp));
   ASSERT_TRUE(resp.is_object());
   EXPECT_TRUE(resp.value("ok", false));
 
@@ -323,7 +334,8 @@ TEST(ServiceBusIntegration, SetStateEndpointWritesKVAndEnforcesAccess) {
 
   auto kv_raw = bus.kv().get(f8::cppsdk::kv_key_node_state("svcB", "foo"));
   ASSERT_TRUE(kv_raw.has_value());
-  json kv_payload = json::parse(std::string(reinterpret_cast<const char*>(kv_raw->data()), kv_raw->size()), nullptr, false);
+  json kv_payload = json::object();
+  ASSERT_TRUE(f8::cppsdk::decode_json(kv_raw->data(), kv_raw->size(), kv_payload));
   ASSERT_TRUE(kv_payload.is_object());
   EXPECT_EQ(kv_payload.value("actor", ""), "svcB");
   EXPECT_EQ(kv_payload.value("origin", ""), "external");
@@ -335,12 +347,10 @@ TEST(ServiceBusIntegration, SetStateEndpointWritesKVAndEnforcesAccess) {
   req_ro["reqId"] = "r2";
   req_ro["args"] = json{{"nodeId", "svcB"}, {"field", "bar"}, {"value", 1}};
   req_ro["meta"] = json::object();
-  const std::string req_ro_s = req_ro.dump();
-  auto resp_ro_bytes =
-      caller.request(set_state_subject, std::vector<std::uint8_t>(req_ro_s.begin(), req_ro_s.end()), 1000);
+  auto resp_ro_bytes = caller.request(set_state_subject, f8::cppsdk::encode_json(req_ro), 1000);
   ASSERT_TRUE(resp_ro_bytes.has_value());
-  json resp_ro = json::parse(std::string(reinterpret_cast<const char*>(resp_ro_bytes->data()), resp_ro_bytes->size()), nullptr,
-                             false);
+  json resp_ro = json::object();
+  ASSERT_TRUE(decode_payload(resp_ro_bytes, resp_ro));
   ASSERT_TRUE(resp_ro.is_object());
   EXPECT_FALSE(resp_ro.value("ok", true));
   ASSERT_TRUE(resp_ro.contains("error") && resp_ro["error"].is_object());

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from collections import deque
 from typing import Any, TYPE_CHECKING
@@ -24,6 +23,7 @@ from .cross_state import (
 from ..error_utils import log_error_once
 from ..domain.state_pipeline import publish_state
 from ..routing.data_flow import precreate_input_buffers_for_cross_in, sync_subscriptions
+from ..codec import encode_obj
 
 if TYPE_CHECKING:
     from ..api.bus import ServiceBus
@@ -40,7 +40,7 @@ def _with_rungraph_ts(graph: F8RuntimeGraph, ts_ms: int) -> F8RuntimeGraph:
 
 def _encode_rungraph_bytes(graph: F8RuntimeGraph) -> bytes:
     payload = graph.model_dump(mode="json", by_alias=True)
-    return json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+    return encode_obj(payload)
 
 
 def _log_rungraph_error_once(bus: "ServiceBus", key: str, message: str, exc: BaseException | None = None) -> None:

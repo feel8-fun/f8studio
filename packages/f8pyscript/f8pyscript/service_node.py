@@ -835,6 +835,12 @@ class PythonScriptServiceNode(ServiceNode, CommandableNode, ClosableNode):
                 if wait_s > 0:
                     await asyncio.sleep(wait_s)
 
+                # Re-check lifecycle gates after sleep to avoid a late extra tick
+                # when pause/deactivate arrives during the wait interval.
+                if not self._started or self._paused or not self._tick_enabled:
+                    next_deadline = time.monotonic()
+                    continue
+
                 current_ts_ms = self._now_ms()
                 delta_ms = max(0, current_ts_ms - last_tick_ts)
                 last_tick_ts = current_ts_ms

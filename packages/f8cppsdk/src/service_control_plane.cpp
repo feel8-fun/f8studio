@@ -8,6 +8,7 @@
 #include "f8cppsdk/f8_naming.h"
 #include "f8cppsdk/generated/protocol_models.h"
 #include "f8cppsdk/kv_store.h"
+#include "f8cppsdk/msg_codec.h"
 #include "f8cppsdk/service_control_plane.h"
 #include "f8cppsdk/time_utils.h"
 
@@ -32,15 +33,11 @@ struct Envelope {
 Envelope parse_envelope(const void* data, std::size_t len) {
   Envelope out;
   out.raw = json::object();
-  if (data != nullptr && len > 0) {
-    try {
-      out.raw = json::parse(std::string(static_cast<const char*>(data), len), nullptr, false);
-    } catch (...) {
-      out.raw = json::object();
-    }
-    if (!out.raw.is_object()) {
-      out.raw = json::object();
-    }
+  if (data != nullptr && len > 0 && !decode_json(data, len, out.raw)) {
+    out.raw = json::object();
+  }
+  if (!out.raw.is_object()) {
+    out.raw = json::object();
   }
   if (out.raw.contains("reqId") && out.raw["reqId"].is_string()) {
     out.req_id = out.raw["reqId"].get<std::string>();
@@ -196,8 +193,8 @@ void ServiceControlPlaneServer::respond(microRequest* req, const std::string& re
   } else {
     payload["error"] = json(nullptr);
   }
-  const auto out = payload.dump();
-  (void)microRequest_Respond(req, out.data(), out.size());
+  const auto out = encode_json(payload);
+  (void)microRequest_Respond(req, reinterpret_cast<const char*>(out.data()), out.size());
 }
 
 void ServiceControlPlaneServer::handle_request(microRequest* msg, const std::string& endpoint) {

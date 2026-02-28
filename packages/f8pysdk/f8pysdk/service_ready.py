@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from typing import Any
 
 from .nats_naming import kv_key_ready
 from .nats_transport import NatsTransport
 from .time_utils import now_ms
+from .service_bus.codec import decode_obj
 
 
 log = logging.getLogger(__name__)
@@ -51,8 +51,8 @@ async def wait_service_ready(
         raw = None
     if raw:
         try:
-            payload = json.loads(raw.decode("utf-8"))
-        except Exception:
+            payload = decode_obj(raw)
+        except ValueError:
             payload = {}
         if _accept(payload):
             return
@@ -64,8 +64,8 @@ async def wait_service_ready(
         if fut.done():
             return
         try:
-            payload = json.loads((value or b"{}").decode("utf-8"))
-        except Exception:
+            payload = decode_obj(value or b"")
+        except ValueError:
             payload = {}
         if _accept(payload):
             fut.set_result(None)
@@ -84,8 +84,8 @@ async def wait_service_ready(
             raw2 = None
         if raw2:
             try:
-                payload2: Any = json.loads(raw2.decode("utf-8"))
-            except Exception:
+                payload2: Any = decode_obj(raw2)
+            except ValueError:
                 payload2 = {}
             if _accept(payload2):
                 return

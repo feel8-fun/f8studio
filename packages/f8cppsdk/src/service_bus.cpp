@@ -16,6 +16,7 @@
 #include "f8cppsdk/data_bus.h"
 #include "f8cppsdk/f8_naming.h"
 #include "f8cppsdk/generated/protocol_models.h"
+#include "f8cppsdk/msg_codec.h"
 #include "f8cppsdk/rungraph_routes.h"
 #include "f8cppsdk/state_kv.h"
 #include "f8cppsdk/time_utils.h"
@@ -328,10 +329,7 @@ void ServiceBus::apply_data_routes_from_rungraph(const json& graph_obj) {
       if (data == nullptr || len < 0) return;
 
       json payload = json::object();
-      try {
-        const std::string s(reinterpret_cast<const char*>(data), static_cast<std::size_t>(len));
-        payload = json::parse(s, nullptr, false);
-      } catch (...) {
+      if (!decode_json(data, static_cast<std::size_t>(len), payload)) {
         return;
       }
       if (!payload.is_object()) return;
@@ -478,10 +476,7 @@ bool ServiceBus::start() {
         const std::string field = key.substr(field_begin);
 
         nlohmann::json payload = nlohmann::json::object();
-        try {
-          const std::string s(reinterpret_cast<const char*>(bytes.data()), bytes.size());
-          payload = nlohmann::json::parse(s, nullptr, false);
-        } catch (...) {
+        if (!decode_json(bytes.data(), bytes.size(), payload)) {
           return;
         }
         if (!payload.is_object()) return;
@@ -732,7 +727,7 @@ bool ServiceBus::on_set_rungraph(const json& graph_obj, const json& meta, std::s
     if (!error_code.empty()) {
       return false;
     }
-    const auto bytes = persisted.dump();
+    const auto bytes = encode_json(persisted);
     (void)kv_.put(kv_key_rungraph(), bytes.data(), bytes.size());
   } catch (const std::exception& ex) {
     error_code = "INTERNAL";
@@ -804,8 +799,10 @@ void ServiceBus::load_active_from_kv() {
     if (!raw.has_value()) {
       return;
     }
-    const std::string s(reinterpret_cast<const char*>(raw->data()), raw->size());
-    json payload = json::parse(s, nullptr, false);
+    json payload = json::object();
+    if (!decode_json(raw->data(), raw->size(), payload)) {
+      return;
+    }
     if (!payload.is_object() || !payload.contains("value")) {
       return;
     }
@@ -887,11 +884,7 @@ ServiceBus::StateRead ServiceBus::get_state(const std::string& node_id, const st
     return StateRead{false, json(nullptr), std::nullopt};
   }
   json payload = json::object();
-  try {
-    payload = json::parse(std::string(reinterpret_cast<const char*>(raw->data()), raw->size()), nullptr, false);
-  } catch (...) {
-    payload = json::object();
-  }
+  (void)decode_json(raw->data(), raw->size(), payload);
   if (!payload.is_object() || !payload.contains("value")) {
     return StateRead{true, json::binary(*raw), std::int64_t{0}};
   }
@@ -1091,10 +1084,7 @@ void ServiceBus::apply_rungraph_local(const json& graph_obj, std::string& error_
           if (targets.empty()) return;
 
           nlohmann::json payload = nlohmann::json::object();
-          try {
-            const std::string s(reinterpret_cast<const char*>(bytes.data()), bytes.size());
-            payload = nlohmann::json::parse(s, nullptr, false);
-          } catch (...) {
+          if (!decode_json(bytes.data(), bytes.size(), payload)) {
             return;
           }
           if (!payload.is_object()) return;
@@ -1181,10 +1171,7 @@ void ServiceBus::apply_rungraph_local(const json& graph_obj, std::string& error_
     if (marker == std::string::npos) continue;
 
     nlohmann::json payload = nlohmann::json::object();
-    try {
-      const std::string s(reinterpret_cast<const char*>(raw->data()), raw->size());
-      payload = nlohmann::json::parse(s, nullptr, false);
-    } catch (...) {
+    if (!decode_json(raw->data(), raw->size(), payload)) {
       continue;
     }
     if (!payload.is_object()) continue;

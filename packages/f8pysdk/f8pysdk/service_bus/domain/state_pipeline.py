@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import enum
-import json
 import logging
 from dataclasses import dataclass
 from typing import Any, TYPE_CHECKING
@@ -13,6 +12,7 @@ from ...nats_naming import ensure_token, kv_key_node_state
 from ..error_utils import log_error_once
 from ..state_write import StateWriteContext, StateWriteError, StateWriteOrigin, StateWriteSource
 from ...time_utils import now_ms
+from ..codec import encode_obj
 
 if TYPE_CHECKING:
     from ..api.bus import ServiceBus
@@ -299,7 +299,7 @@ async def publish_state(
             "state_debug[%s] publish_state node=%s field=%s ts=%s origin=%s source=%s"
             % (bus.service_id, node_id, field, str(payload.get("ts")), ctx.origin.value, update.source)
         )
-    await bus._transport.kv_put(key, json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8"))
+    await bus._transport.kv_put(key, encode_obj(payload))
     bus._state_cache[(node_id, field)] = (update.value, int(payload["ts"]))
     if deliver_local:
         # Local writes (actor == self.service_id) do not round-trip through the KV watcher.

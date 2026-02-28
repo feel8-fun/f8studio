@@ -5,6 +5,7 @@ add_library(f8cppsdk
   src/service_bus.cpp
   src/state_kv.cpp
   src/data_bus.cpp
+  src/msg_codec.cpp
   src/rungraph_routes.cpp
   src/time_utils.cpp
   src/f8_naming.cpp

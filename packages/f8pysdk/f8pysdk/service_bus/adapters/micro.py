@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any, TYPE_CHECKING
 
@@ -10,6 +9,7 @@ from nats.micro.service import EndpointConfig  # type: ignore[import-not-found]
 from ...capabilities import CommandableNode
 from ...generated import F8RuntimeGraph
 from ...nats_naming import cmd_channel_subject, ensure_token, new_id, svc_endpoint_subject, svc_micro_name
+from ..codec import decode_obj, encode_obj
 from ..state_write import StateWriteError, StateWriteSource
 
 if TYPE_CHECKING:
@@ -60,8 +60,8 @@ class _ServiceBusMicroEndpoints:
         req: dict[str, Any] = {}
         if data:
             try:
-                req = json.loads(data.decode("utf-8"))
-            except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+                req = decode_obj(data)
+            except ValueError:
                 req = {}
         if not isinstance(req, dict):
             req = {}
@@ -79,7 +79,7 @@ class _ServiceBusMicroEndpoints:
             "result": result if ok else None,
             "error": error if not ok else None,
         }
-        await req.respond(json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8"))
+        await req.respond(encode_obj(payload))
 
     async def _set_active_req(self, req: Any, active: bool, *, cmd: str) -> None:
         req_id, _raw, _args, meta = self._parse_envelope(req.data)

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
-import json
 import logging
 import time
 from dataclasses import dataclass
@@ -16,6 +15,7 @@ from f8pysdk.nats_naming import ensure_token, new_id, svc_endpoint_subject, svc_
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from f8pysdk.service_bus import StateWriteOrigin
 from f8pysdk.service_bus.state_write import StateWriteError
+from f8pysdk.service_bus.codec import decode_obj, encode_obj
 from .bridge.async_runtime import AsyncRuntimeThread
 from .bridge.command_client import CommandRequest, NatsCommandGateway
 from .bridge.json_codec import coerce_json_value
@@ -159,12 +159,10 @@ class PyStudioServiceBridge(QtCore.QObject):
         if not raw:
             return None
         try:
-            decoded = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
+            decoded = decode_obj(raw)
+        except ValueError:
             return None
-        if isinstance(decoded, dict):
-            return decoded
-        return None
+        return decoded
 
     @QtCore.Slot(str, object, object)
     def _on_remote_command_response(self, req_id: str, result: object, err: object) -> None:
@@ -518,9 +516,7 @@ class PyStudioServiceBridge(QtCore.QObject):
         if nc is None:
             return None
 
-        payload = json.dumps({"reqId": new_id(), "args": {}, "meta": {"actor": "studio", "cmd": "status"}}, ensure_ascii=False).encode(
-            "utf-8"
-        )
+        payload = encode_obj({"reqId": new_id(), "args": {}, "meta": {"actor": "studio", "cmd": "status"}})
         try:
             msg = await nc.request(svc_endpoint_subject(sid, "status"), payload, timeout=0.4)
         except Exception:
@@ -589,10 +585,9 @@ class PyStudioServiceBridge(QtCore.QObject):
             return False
 
         cmd = "activate" if bool(active) else "deactivate"
-        payload = json.dumps(
-            {"reqId": new_id(), "args": {"active": bool(active)}, "meta": {"actor": "studio", "cmd": cmd}},
-            ensure_ascii=False,
-        ).encode("utf-8")
+        payload = encode_obj(
+            {"reqId": new_id(), "args": {"active": bool(active)}, "meta": {"actor": "studio", "cmd": cmd}}
+        )
         for _ in range(2):
             try:
                 msg = await nc.request(svc_endpoint_subject(sid, cmd), payload, timeout=0.5)
@@ -639,9 +634,7 @@ class PyStudioServiceBridge(QtCore.QObject):
             return False
 
         subject = svc_endpoint_subject(sid, "terminate")
-        payload = json.dumps({"reqId": new_id(), "args": {}, "meta": {"actor": "studio", "cmd": "terminate"}}, ensure_ascii=False).encode(
-            "utf-8"
-        )
+        payload = encode_obj({"reqId": new_id(), "args": {}, "meta": {"actor": "studio", "cmd": "terminate"}})
         for _ in range(2):
             try:
                 msg = await nc.request(subject, payload, timeout=0.4)
@@ -972,15 +965,13 @@ class PyStudioServiceBridge(QtCore.QObject):
             if nc is None:
                 return
             subject = svc_endpoint_subject(service_id, "set_state")
-            payload = json.dumps(
+            payload = encode_obj(
                 {
                     "reqId": new_id(),
                     "args": {"nodeId": node_id, "field": field, "value": value_json},
                     "meta": {"actor": "studio", "source": "ui"},
-                },
-                ensure_ascii=False,
-                default=str,
-            ).encode("utf-8")
+                }
+            )
             for _ in range(3):
                 try:
                     msg = await nc.request(subject, payload, timeout=0.5)
@@ -1272,10 +1263,7 @@ class PyStudioServiceBridge(QtCore.QObject):
             return
 
         cmd = "activate" if active else "deactivate"
-        payload = json.dumps(
-            {"reqId": new_id(), "args": {"active": bool(active)}, "meta": {"actor": "studio", "cmd": cmd}},
-            ensure_ascii=False,
-        ).encode("utf-8")
+        payload = encode_obj({"reqId": new_id(), "args": {"active": bool(active)}, "meta": {"actor": "studio", "cmd": cmd}})
 
         for sid in service_ids:
             subject = svc_endpoint_subject(sid, cmd)

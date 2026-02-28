@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import importlib
-import json
 import logging
 import signal
 import threading
@@ -31,6 +30,7 @@ def _load_injector(ref: str) -> Callable[[Any], str | None]:
 
 
 async def _deploy_runtime_graph(*, nats_url: str, service_id: str, graph: Any) -> None:
+    from f8pysdk.service_bus.codec import decode_obj, encode_obj
     from f8pysdk.nats_naming import kv_bucket_for_service, new_id, svc_endpoint_subject
     from f8pysdk.nats_transport import NatsTransport, NatsTransportConfig
     from f8pysdk.service_ready import wait_service_ready
@@ -46,7 +46,7 @@ async def _deploy_runtime_graph(*, nats_url: str, service_id: str, graph: Any) -
             "args": {"graph": graph_payload},
             "meta": {"source": "headless"},
         }
-        request_bytes = json.dumps(request_payload, ensure_ascii=False, default=str).encode("utf-8")
+        request_bytes = encode_obj(request_payload)
         response_bytes = await transport.request(
             svc_endpoint_subject(service_id, "set_rungraph"),
             request_bytes,
@@ -55,7 +55,7 @@ async def _deploy_runtime_graph(*, nats_url: str, service_id: str, graph: Any) -
         )
         if not response_bytes:
             raise RuntimeError(f"set_rungraph failed for serviceId={service_id}: empty response")
-        response_payload = json.loads(response_bytes.decode("utf-8"))
+        response_payload = decode_obj(response_bytes)
         if not isinstance(response_payload, dict):
             raise RuntimeError(f"set_rungraph failed for serviceId={service_id}: invalid response")
         if response_payload.get("ok") is True:

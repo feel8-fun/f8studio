@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any, Protocol
+
+from f8pysdk.service_bus.codec import decode_obj, encode_obj
 
 
 class NatsRequester(Protocol):
@@ -26,17 +27,17 @@ class OkEnvelope:
 
 async def request_json(nc: NatsRequester, req: RequestJsonInput) -> dict[str, Any]:
     """
-    Send request and parse JSON response.
+    Send request and parse MsgPack response.
     """
-    raw_payload = json.dumps(req.payload, ensure_ascii=False, default=str).encode("utf-8")
+    raw_payload = encode_obj(req.payload)
     message = await nc.request(str(req.subject), raw_payload, timeout=float(req.timeout_s))
     raw = bytes(message.data or b"")
     if not raw:
         raise RuntimeError("empty response")
-    decoded = json.loads(raw.decode("utf-8"))
-    if not isinstance(decoded, dict):
-        raise RuntimeError("response is not a JSON object")
-    return decoded
+    try:
+        return decode_obj(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"response is not a valid MsgPack object: {exc}") from exc
 
 
 def parse_ok_envelope(payload: dict[str, Any]) -> OkEnvelope:

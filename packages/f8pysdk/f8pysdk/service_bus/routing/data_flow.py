@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from collections import deque
 from dataclasses import dataclass, field
@@ -12,6 +11,7 @@ from ...generated import F8Edge, F8EdgeStrategyEnum
 from ...nats_naming import data_subject, ensure_token
 from ..error_utils import log_error_once
 from ...time_utils import now_ms
+from ..codec import decode_obj, encode_obj
 
 if TYPE_CHECKING:
     from ..api.bus import ServiceBus
@@ -80,7 +80,7 @@ async def emit_data(bus: "ServiceBus", node_id: str, port: str, value: Any, *, t
         subject = bus._cross_out_subjects.get((node_id, port)) or ""
     if not subject:
         return
-    payload = json.dumps({"value": value, "ts": ts}, ensure_ascii=False, default=str).encode("utf-8")
+    payload = encode_obj({"value": value, "ts": ts})
     await bus._transport.publish(subject, payload)
 
 
@@ -220,13 +220,10 @@ async def on_cross_data_msg(bus: "ServiceBus", subject: str, payload: bytes) -> 
     value: Any = None
     ts: int | None = None
     try:
-        msg = json.loads(payload.decode("utf-8")) if payload else {}
-        if isinstance(msg, dict):
-            value = msg.get("value")
-            ts = msg.get("ts")
-        else:
-            value = msg
-    except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+        msg = decode_obj(payload)
+        value = msg.get("value")
+        ts = msg.get("ts")
+    except ValueError:
         value = payload
 
     ts_i = int(ts) if ts is not None else now_ms()

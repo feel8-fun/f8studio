@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
@@ -14,6 +13,7 @@ from f8pysdk.nats_naming import (
 )
 from f8pysdk.nats_transport import NatsTransport, NatsTransportConfig
 from f8pysdk.time_utils import now_ms
+from f8pysdk.service_bus.codec import decode_obj
 
 logger = logging.getLogger(__name__)
 
@@ -211,8 +211,8 @@ class RemoteStateWatcher:
         if allowed_fields is not None and allowed_fields and str(field) not in allowed_fields:
             return
         try:
-            payload = json.loads(value.decode("utf-8")) if value else {}
-        except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+            payload = decode_obj(value)
+        except ValueError:
             payload = {}
         meta: dict[str, Any] = {}
         if isinstance(payload, dict):

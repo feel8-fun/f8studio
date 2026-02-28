@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from typing import Any, TYPE_CHECKING
 
 from ...generated import F8Edge, F8EdgeKindEnum, F8StateAccess, F8RuntimeGraph
@@ -16,6 +15,7 @@ from ..error_utils import log_error_once
 from ..domain.state_pipeline import coerce_state_value, publish_state, validate_state_update
 from ..state_write import StateWriteContext, StateWriteError, StateWriteOrigin, StateWriteSource
 from ...time_utils import now_ms
+from ..codec import decode_obj
 
 if TYPE_CHECKING:
     from ..api.bus import ServiceBus
@@ -197,8 +197,8 @@ async def on_remote_state_kv(
     if not targets:
         return
     try:
-        payload = json.loads(value.decode("utf-8")) if value else {}
-    except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+        payload = decode_obj(value)
+    except ValueError:
         payload = {}
     if isinstance(payload, dict):
         v = payload.get("value")

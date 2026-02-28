@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from typing import Any, TYPE_CHECKING
 
@@ -11,6 +10,7 @@ from ..adapters.micro import _ServiceBusMicroEndpoints
 from ..domain.state_pipeline import publish_state
 from ..state_write import StateWriteOrigin
 from ..state_write import StateWriteSource
+from ..codec import encode_obj
 
 if TYPE_CHECKING:
     from ..api.bus import ServiceBus
@@ -130,7 +130,7 @@ async def announce_ready(bus: "ServiceBus", ready: bool, *, reason: str) -> None
         "reason": str(reason or ""),
         "ts": int(now_ms()),
     }
-    raw = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+    raw = encode_obj(payload)
     await bus._transport.kv_put(bus._ready_key, raw)
 
 
@@ -182,6 +182,30 @@ async def apply_active(
     changed = active != bus._active
     bus._active = active
 
+    payload = {"source": str(source or "runtime"), **(dict(meta or {}))}
+
+    # Apply lifecycle change to local nodes/hooks first so pause/resume takes effect
+    # with minimal latency; persist `active` state right after.
+    if changed:
+        for node in list(bus._nodes.values()):
+            if not isinstance(node, LifecycleNode):
+                continue
+            r = node.on_lifecycle(bool(active), dict(payload))
+            if asyncio.iscoroutine(r):
+                await r
+
+        for hook in list(bus._service_hooks):
+            try:
+                if bool(active):
+                    r = hook.on_activate(bus, dict(payload))
+                else:
+                    r = hook.on_deactivate(bus, dict(payload))
+                if asyncio.iscoroutine(r):
+                    await r
+            except Exception as exc:
+                phase = "on_activate" if bool(active) else "on_deactivate"
+                log.error("service hook failed: %s %s", phase, type(hook).__name__, exc_info=exc)
+
     if persist:
         await publish_state(
             bus,
@@ -192,27 +216,3 @@ async def apply_active(
             source=source or StateWriteSource.runtime,
             meta={"lifecycle": True, **(dict(meta or {}))},
         )
-
-    if not changed:
-        return
-
-    payload = {"source": str(source or "runtime"), **(dict(meta or {}))}
-
-    for node in list(bus._nodes.values()):
-        if not isinstance(node, LifecycleNode):
-            continue
-        r = node.on_lifecycle(bool(active), dict(payload))
-        if asyncio.iscoroutine(r):
-            await r
-
-    for hook in list(bus._service_hooks):
-        try:
-            if bool(active):
-                r = hook.on_activate(bus, dict(payload))
-            else:
-                r = hook.on_deactivate(bus, dict(payload))
-            if asyncio.iscoroutine(r):
-                await r
-        except Exception as exc:
-            phase = "on_activate" if bool(active) else "on_deactivate"
-            log.error("service hook failed: %s %s", phase, type(hook).__name__, exc_info=exc)

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -8,6 +7,7 @@ from f8pysdk import F8RuntimeGraph
 from f8pysdk.nats_naming import kv_bucket_for_service, new_id, svc_endpoint_subject
 from f8pysdk.nats_transport import NatsTransport, NatsTransportConfig
 from f8pysdk.service_ready import wait_service_ready
+from f8pysdk.service_bus.codec import decode_obj, encode_obj
 
 from .nats_request import parse_ok_envelope
 
@@ -59,7 +59,7 @@ class NatsRungraphGateway:
                 "args": {"graph": payload},
                 "meta": {"source": str(req.source or "studio")},
             }
-            request_bytes = json.dumps(request_payload, ensure_ascii=False, default=str).encode("utf-8")
+            request_bytes = encode_obj(request_payload)
             response_bytes = await transport.request(
                 svc_endpoint_subject(service_id, "set_rungraph"),
                 request_bytes,
@@ -68,8 +68,9 @@ class NatsRungraphGateway:
             )
             if not response_bytes:
                 return RungraphDeployResult(service_id=service_id, success=False, error_message="empty response")
-            response_payload = json.loads(response_bytes.decode("utf-8"))
-            if not isinstance(response_payload, dict):
+            try:
+                response_payload = decode_obj(response_bytes)
+            except ValueError:
                 return RungraphDeployResult(service_id=service_id, success=False, error_message="invalid response")
             parsed = parse_ok_envelope(response_payload)
             return RungraphDeployResult(

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import time
 import uuid
 from typing import Any
@@ -9,6 +8,7 @@ from f8pysdk import F8Edge, F8EdgeKindEnum, F8EdgeStrategyEnum, F8RuntimeGraph, 
 from f8pysdk.nats_naming import ensure_token, kv_bucket_for_service, kv_key_rungraph, new_id, svc_endpoint_subject, svc_micro_name
 from f8pysdk.nats_transport import NatsTransport, NatsTransportConfig
 from f8pysdk.service_ready import wait_service_ready
+from f8pysdk.service_bus.codec import decode_obj, encode_obj
 
 
 def _now_rev() -> str:
@@ -214,10 +214,10 @@ async def deploy_to_service(*, service_id: str, nats_url: str, graph: F8RuntimeG
     try:
         await wait_service_ready(tr, timeout_s=6.0)
         graph_payload = graph.model_dump(mode="json", by_alias=True)
-        payload = json.dumps(graph_payload, ensure_ascii=False, default=str).encode("utf-8")
+        payload = encode_obj(graph_payload)
         # Endpoint-only mode: deploy via service endpoint (allows validation/rejection).
         req = {"reqId": new_id(), "args": {"graph": graph_payload}, "meta": {"source": "deploy"}}
-        req_bytes = json.dumps(req, ensure_ascii=False, default=str).encode("utf-8")
+        req_bytes = encode_obj(req)
         resp_raw = await tr.request(
             svc_endpoint_subject(service_id, "set_rungraph"),
             req_bytes,
@@ -227,8 +227,8 @@ async def deploy_to_service(*, service_id: str, nats_url: str, graph: F8RuntimeG
         if not resp_raw:
             raise RuntimeError("set_rungraph request failed: empty response")
         try:
-            resp = json.loads(resp_raw.decode("utf-8"))
-        except Exception:
+            resp = decode_obj(resp_raw)
+        except ValueError:
             resp = {}
         if isinstance(resp, dict) and resp.get("ok") is True:
             return

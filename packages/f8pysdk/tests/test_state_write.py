@@ -1,4 +1,3 @@
-import json
 import os
 import sys
 import unittest
@@ -22,6 +21,7 @@ from f8pysdk.runtime_node import RuntimeNode  # noqa: E402
 from f8pysdk.service_bus.bus import ServiceBus, ServiceBusConfig  # noqa: E402
 from f8pysdk.service_bus.state_publish import validate_state_update  # noqa: E402
 from f8pysdk.service_bus.state_write import StateWriteContext, StateWriteError, StateWriteOrigin  # noqa: E402
+from f8pysdk.service_bus.codec import decode_obj  # noqa: E402
 from f8pysdk.testing import InMemoryCluster, InMemoryTransport, ServiceBusHarness  # noqa: E402
 
 
@@ -109,7 +109,7 @@ class StateWriteTests(unittest.IsolatedAsyncioTestCase):
         await bus.publish_state_runtime("svc", "status", 7, ts_ms=42)
         key = kv_key_node_state(node_id="svc", field="status")
         raw = await transport.kv_get(key)
-        payload = json.loads(raw.decode("utf-8")) if raw else {}
+        payload = decode_obj(raw) if raw else {}
         self.assertEqual(payload.get("source"), "runtime")
         self.assertEqual(payload.get("origin"), "runtime")
 
@@ -124,7 +124,7 @@ class StateWriteTests(unittest.IsolatedAsyncioTestCase):
 
         key = kv_key_node_state(node_id="svc", field="status")
         raw = await transport.kv_get(key)
-        payload = json.loads(raw.decode("utf-8")) if raw else {}
+        payload = decode_obj(raw) if raw else {}
         self.assertEqual(payload.get("value"), 7)
 
     async def test_cross_service_state_edge(self) -> None:

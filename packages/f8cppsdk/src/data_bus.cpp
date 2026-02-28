@@ -3,6 +3,7 @@
 #include <nlohmann/json.hpp>
 
 #include "f8cppsdk/f8_naming.h"
+#include "f8cppsdk/msg_codec.h"
 #include "f8cppsdk/nats_client.h"
 #include "f8cppsdk/time_utils.h"
 
@@ -16,7 +17,7 @@ bool publish_data(NatsClient& nats, const std::string& from_service_id, const st
   json payload;
   payload["value"] = value;
   payload["ts"] = ts;
-  const auto bytes = payload.dump();
+  const auto bytes = encode_json(payload);
   const auto subject = data_subject(from_service_id, from_node_id, port_id);
   return nats.publish(subject, bytes.data(), bytes.size());
 }

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
@@ -24,6 +23,7 @@ from ...nats_naming import (
 )
 from ...nats_transport import NatsTransport, NatsTransportConfig
 from ..payload import coerce_inbound_ts_ms, extract_ts_field
+from ..codec import decode_obj
 from ..state_publish import (
     publish_state as _publish_state_impl,
 )
@@ -338,8 +338,8 @@ class ServiceBus:
             return StateRead(found=False, value=None, ts_ms=None)
 
         try:
-            payload = json.loads(raw.decode("utf-8"))
-        except Exception:
+            payload = decode_obj(raw)
+        except ValueError:
             # Preserve old `get_state_with_ts` behavior: treat unparseable values
             # as "found" and return raw bytes.
             self._state_cache[(node_id, field)] = (raw, 0)

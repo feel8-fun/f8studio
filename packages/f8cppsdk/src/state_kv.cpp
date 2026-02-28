@@ -7,6 +7,7 @@
 
 #include "f8cppsdk/f8_naming.h"
 #include "f8cppsdk/kv_store.h"
+#include "f8cppsdk/msg_codec.h"
 #include "f8cppsdk/time_utils.h"
 
 namespace f8::cppsdk {
@@ -21,7 +22,7 @@ bool kv_set_ready(KvStore& kv, const std::string& service_id, bool ready, const 
   payload["ready"] = ready;
   payload["reason"] = reason;
   payload["ts"] = ts;
-  const auto raw = payload.dump();
+  const auto raw = encode_json(payload);
   return kv.put(kv_key_ready(), raw.data(), raw.size());
 }
 
@@ -50,7 +51,7 @@ bool kv_set_node_state(KvStore& kv, const std::string& service_id, const std::st
   }
 
   const auto key = kv_key_node_state(node_id, field);
-  const auto raw = payload.dump();
+  const auto raw = encode_json(payload);
   return kv.put(key, raw.data(), raw.size());
 }
 
