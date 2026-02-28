@@ -19,6 +19,7 @@ from f8pysdk.shm.video import VideoShmWriter  # noqa: E402
 from f8pysdk.testing import ServiceBusHarness  # noqa: E402
 
 from f8pyscript.constants import SERVICE_CLASS  # noqa: E402
+from f8pyscript.main import PythonScriptServiceProgram  # noqa: E402
 from f8pyscript.node_registry import register_specs  # noqa: E402
 from f8pyscript.service_node import PythonScriptServiceNode  # noqa: E402
 
@@ -42,6 +43,11 @@ def _service_node(*, code: str, state_fields: list[F8StateSpec] | None = None, s
 
 
 class PyScriptServiceNodeTests(unittest.IsolatedAsyncioTestCase):
+    def test_program_defaults_data_delivery_to_both(self) -> None:
+        program = PythonScriptServiceProgram()
+        cfg = program.build_runtime_config(service_id="svcA", nats_url="mem://")
+        self.assertEqual(str(cfg.bus.data_delivery), "both")
+
     async def _build_runtime(self) -> tuple[object, object, PythonScriptServiceNode]:
         harness = ServiceBusHarness()
         bus = harness.create_bus("svcA")

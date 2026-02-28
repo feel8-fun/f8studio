@@ -9,7 +9,7 @@ from f8pysdk.generated import F8RuntimeGraph
 from f8pysdk.json_unwrap import unwrap_json_value
 from f8pysdk.runtime_node_registry import RuntimeNodeRegistry
 from f8pysdk.service_cli import ServiceCliTemplate
-from f8pysdk.service_runtime import ServiceRuntime
+from f8pysdk.service_runtime import ServiceRuntime, ServiceRuntimeConfig
 
 from .constants import SERVICE_CLASS
 from .node_registry import register_specs
@@ -26,6 +26,14 @@ class PythonScriptServiceProgram(ServiceCliTemplate, RungraphHook):
 
     def register_specs(self, registry: RuntimeNodeRegistry) -> None:
         register_specs(registry)
+
+    def build_runtime_config(self, *, service_id: str, nats_url: str) -> ServiceRuntimeConfig:
+        return ServiceRuntimeConfig.from_values(
+            service_id=service_id,
+            service_class=self.service_class,
+            nats_url=nats_url,
+            data_delivery="both",
+        )
 
     async def setup(self, runtime: ServiceRuntime) -> None:
         self._runtime = runtime
