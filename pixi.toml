@@ -65,6 +65,7 @@ librosa = ">=0.11.0, <0.12"
 [feature.engine.tasks]
 f8pyengine = "python -m f8pyengine.main"
 f8pyscript = "python -m f8pyscript.main"
+f8pyexpr = "python -m f8pyscript.main_expr"
 f8pyaudiofeat_core = "python -m f8pyaudiofeat.main_core"
 f8pyaudiofeat_rhythm = "python -m f8pyaudiofeat.main_rhythm"
 

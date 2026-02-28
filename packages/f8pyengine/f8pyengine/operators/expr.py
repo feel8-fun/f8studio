@@ -318,17 +318,20 @@ class ExprRuntimeNode(OperatorNode):
         self._initial_state = dict(initial_state or {})
         self._code = self._normalize_code(self._initial_state.get("code") or "input")
         self._allow_numpy = _coerce_bool(self._initial_state.get("allowNumpy"), default=False)
+        self._unpack_dict_outputs = _coerce_bool(self._initial_state.get("unpackDictOutputs"), default=False)
         self._compiled: CodeType | None = None
         self._compile_error: str | None = None
         self._recompile()
 
         self._last_ctx_id: str | int | None = None
-        self._last_out: Any = None
+        self._last_outputs: dict[str, Any] = {}
         self._dirty: bool = True
         self._last_eval_exc_sig: str = ""
         self._last_eval_exc_log_ts_ms: int = 0
         self._last_pull_exc_sig: str = ""
         self._last_pull_exc_log_ts_ms: int = 0
+        self._last_unmatched_exc_sig: str = ""
+        self._last_unmatched_exc_log_ts_ms: int = 0
 
     def _should_log_repeating_error(self, sig: str, *, now_ms: int, kind: str) -> bool:
         if kind == "eval":
@@ -350,6 +353,15 @@ class ExprRuntimeNode(OperatorNode):
                 self._last_pull_exc_log_ts_ms = int(now_ms)
                 return True
             return False
+        if kind == "unmatched":
+            if sig != self._last_unmatched_exc_sig:
+                self._last_unmatched_exc_sig = sig
+                self._last_unmatched_exc_log_ts_ms = int(now_ms)
+                return True
+            if (int(now_ms) - int(self._last_unmatched_exc_log_ts_ms)) >= 5000:
+                self._last_unmatched_exc_log_ts_ms = int(now_ms)
+                return True
+            return False
 
         return True
 
@@ -359,6 +371,10 @@ class ExprRuntimeNode(OperatorNode):
         if name == "allowNumpy":
             self._allow_numpy = _coerce_bool(value, default=False)
             self._recompile()
+            self._dirty = True
+            return
+        if name == "unpackDictOutputs":
+            self._unpack_dict_outputs = _coerce_bool(value, default=False)
             self._dirty = True
             return
         if name != "code":
@@ -371,6 +387,8 @@ class ExprRuntimeNode(OperatorNode):
         del ts_ms, meta
         name = str(field or "").strip()
         if name == "allowNumpy":
+            return _coerce_bool(value, default=False)
+        if name == "unpackDictOutputs":
             return _coerce_bool(value, default=False)
         if name == "code":
             return self._normalize_code(value)
@@ -403,11 +421,45 @@ class ExprRuntimeNode(OperatorNode):
                 env[k] = _wrap_value(v)
         return env
 
+    def _default_output_port(self) -> str | None:
+        if "out" in self.data_out_ports:
+            return "out"
+        if self.data_out_ports:
+            return str(self.data_out_ports[0])
+        return None
+
+    def _normalize_output_value(self, value: Any) -> Any:
+        if isinstance(value, _JsonRef):
+            return value.unwrap()
+        return value
+
+    def _extract_outputs(self, result: Any) -> dict[str, Any]:
+        outputs: dict[str, Any] = {}
+
+        if isinstance(result, dict) and self._unpack_dict_outputs:
+            for key, value in result.items():
+                key_s = str(key)
+                if key_s in self.data_out_ports:
+                    outputs[key_s] = self._normalize_output_value(value)
+                    continue
+                now_ms = int(time.time() * 1000.0)
+                sig = f"unmatched_port:{key_s}"
+                if self._should_log_repeating_error(sig, now_ms=now_ms, kind="unmatched"):
+                    logger.warning("[%s:expr] unpack key has no matching output port: %s", self.node_id, key_s)
+            return outputs
+
+        default_port = self._default_output_port()
+        if default_port is None:
+            return outputs
+        outputs[default_port] = self._normalize_output_value(result)
+        return outputs
+
     async def compute_output(self, port: str, ctx_id: str | int | None = None) -> Any:
-        if str(port or "") != "out":
+        out_port = str(port or "")
+        if out_port not in self.data_out_ports:
             return None
         if not self._dirty and ctx_id is not None and ctx_id == self._last_ctx_id:
-            return self._last_out
+            return self._last_outputs.get(out_port)
 
         pulled: dict[str, Any] = {}
         for p in list(self.data_in_ports or []):
@@ -428,8 +480,6 @@ class ExprRuntimeNode(OperatorNode):
                 names=self._build_eval_names(pulled),
                 allow_numpy=self._allow_numpy,
             )
-            if isinstance(out, _JsonRef):
-                out = out.unwrap()
         except Exception as exc:
             now_ms = int(time.time() * 1000.0)
             sig = f"{type(exc).__name__}:{exc}"
@@ -437,10 +487,10 @@ class ExprRuntimeNode(OperatorNode):
                 logger.warning("[%s:expr] eval failed: %s", self.node_id, exc)
             out = None
 
-        self._last_out = out
+        self._last_outputs = self._extract_outputs(out)
         self._last_ctx_id = ctx_id
         self._dirty = False
-        return out
+        return self._last_outputs.get(out_port)
 
 
 ExprRuntimeNode.SPEC = F8OperatorSpec(
@@ -448,7 +498,7 @@ ExprRuntimeNode.SPEC = F8OperatorSpec(
     serviceClass=SERVICE_CLASS,
     operatorClass=OPERATOR_CLASS,
     version="0.0.1",
-    label="Expr",
+    label="Python Expr",
     description="Evaluate a small expression using input values (math/logic/extraction).",
     tags=["expr", "math", "logic", "transform", "lightweight"],
     dataInPorts=[
@@ -458,12 +508,22 @@ ExprRuntimeNode.SPEC = F8OperatorSpec(
         F8DataPortSpec(name="out", description="Expression result.", valueSchema=any_schema(), required=False),
     ],
     editableDataInPorts=True,
-    editableDataOutPorts=False,
+    editableDataOutPorts=True,
     stateFields=[
         F8StateSpec(
             name="allowNumpy",
             label="Allow Numpy",
             description="Enable numpy calls in expressions (np.*, numpy.*).",
+            uiControl="toggle",
+            valueSchema=boolean_schema(default=False),
+            access=F8StateAccess.rw,
+            showOnNode=False,
+            required=False,
+        ),
+        F8StateSpec(
+            name="unpackDictOutputs",
+            label="Unpack Dict Outputs",
+            description="When enabled, dict results are emitted by matching output port names.",
             uiControl="toggle",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,

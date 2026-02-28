@@ -214,6 +214,77 @@ class ExprNodeTests(unittest.IsolatedAsyncioTestCase):
         out = await node.compute_output("out", ctx_id=6)
         self.assertEqual(float(out), 1.0)
 
+    async def test_dict_result_without_unpack_emits_single_out_value(self) -> None:
+        harness = ServiceBusHarness()
+        bus = harness.create_bus("svcA")
+        reg = RuntimeNodeRegistry.instance()
+        register_operator(reg)
+        _ = ServiceHost(bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=reg)
+
+        op = F8RuntimeNode(
+            nodeId="e7",
+            serviceId="svcA",
+            serviceClass=SERVICE_CLASS,
+            operatorClass=ExprRuntimeNode.SPEC.operatorClass,
+            stateFields=list(ExprRuntimeNode.SPEC.stateFields or []),
+            stateValues={"code": "{'a': input + 1, 'b': input + 2}", "unpackDictOutputs": False},
+            dataInPorts=[
+                F8DataPortSpec(name="input", description="", valueSchema=any_schema(), required=False),
+            ],
+            dataOutPorts=[
+                F8DataPortSpec(name="out", description="", valueSchema=any_schema(), required=False),
+                F8DataPortSpec(name="a", description="", valueSchema=any_schema(), required=False),
+            ],
+        )
+        graph = F8RuntimeGraph(graphId="g7", revision="r1", nodes=[op], edges=[])
+        await bus.set_rungraph(graph)
+
+        node = bus.get_node("e7")
+        assert isinstance(node, ExprRuntimeNode)
+        buffer_input(bus, "e7", "input", 10, ts_ms=0, edge=None, ctx_id=None)
+
+        out = await node.compute_output("out", ctx_id=7)
+        out_a = await node.compute_output("a", ctx_id=7)
+        self.assertEqual(out, {"a": 11, "b": 12})
+        self.assertIsNone(out_a)
+
+    async def test_dict_result_with_unpack_maps_to_matching_output_ports(self) -> None:
+        harness = ServiceBusHarness()
+        bus = harness.create_bus("svcA")
+        reg = RuntimeNodeRegistry.instance()
+        register_operator(reg)
+        _ = ServiceHost(bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=reg)
+
+        op = F8RuntimeNode(
+            nodeId="e8",
+            serviceId="svcA",
+            serviceClass=SERVICE_CLASS,
+            operatorClass=ExprRuntimeNode.SPEC.operatorClass,
+            stateFields=list(ExprRuntimeNode.SPEC.stateFields or []),
+            stateValues={"code": "{'a': input + 1, 'b': input + 2, 'z': 999}", "unpackDictOutputs": True},
+            dataInPorts=[
+                F8DataPortSpec(name="input", description="", valueSchema=any_schema(), required=False),
+            ],
+            dataOutPorts=[
+                F8DataPortSpec(name="out", description="", valueSchema=any_schema(), required=False),
+                F8DataPortSpec(name="a", description="", valueSchema=any_schema(), required=False),
+                F8DataPortSpec(name="b", description="", valueSchema=any_schema(), required=False),
+            ],
+        )
+        graph = F8RuntimeGraph(graphId="g8", revision="r1", nodes=[op], edges=[])
+        await bus.set_rungraph(graph)
+
+        node = bus.get_node("e8")
+        assert isinstance(node, ExprRuntimeNode)
+        buffer_input(bus, "e8", "input", 20, ts_ms=0, edge=None, ctx_id=None)
+
+        out_a = await node.compute_output("a", ctx_id=8)
+        out_b = await node.compute_output("b", ctx_id=8)
+        out_default = await node.compute_output("out", ctx_id=8)
+        self.assertEqual(out_a, 21)
+        self.assertEqual(out_b, 22)
+        self.assertIsNone(out_default)
+
 
 if __name__ == "__main__":
     unittest.main()

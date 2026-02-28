@@ -1,0 +1,9 @@
+schemaVersion: f8serviceEntry/1
+serviceClass: f8.pyexpr
+label: Python Expr Service
+version: 0.0.1
+launch:
+  command: pixi
+  args: ["run", "f8pyexpr"]
+  env: {}
+  workdir: "../../../"
