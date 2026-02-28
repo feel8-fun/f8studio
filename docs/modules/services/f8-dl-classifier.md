@@ -26,10 +26,10 @@ pixi run f8pydl_classifier
 | `modelId` | `rw` | `false` | `true` | `string / default=` | Model id selected from weightsDir (ignored if modelYamlPath is set). |
 | `modelYamlPath` | `rw` | `false` | `false` | `string / default=` | Optional explicit model yaml path (overrides modelId). |
 | `ortProvider` | `rw` | `false` | `true` | `string / enum[auto, cuda, cpu] / default=auto` | auto prefers CUDAExecutionProvider when available. |
+| `autoDownloadWeights` | `rw` | `false` | `false` | `boolean / default=True` | When model file is missing, download from onnxUrl in model yaml. |
 | `inferEveryN` | `rw` | `false` | `true` | `integer / default=1` | Run model inference every N frames (>=1). |
 | `topK` | `rw` | `false` | `true` | `integer / default=5` | Number of top classes to emit. |
 | `availableModels` | `ro` | `false` | `false` | `array[string]` | List of model ids discovered from weightsDir. |
-| `modelClasses` | `ro` | `false` | `false` | `array[string]` | Current loaded model class labels. |
 | `loadedModel` | `ro` | `false` | `false` | `string / default=` | Current loaded model id/task. |
 | `ortActiveProviders` | `ro` | `false` | `false` | `string / default=` | JSON list of active ONNX Runtime providers for this session. |
 | `lastError` | `ro` | `false` | `false` | `string / default=` | Last runtime error string (best-effort). |

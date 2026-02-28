@@ -256,7 +256,7 @@ _None_
 | `elapsedSec` | `true` | `true` | `number` | Elapsed seconds since start. |
 
 ### Envelope (`f8.envelope`)
-Tracks upper/lower envelopes and emits a normalized value (0..1).
+Tracks upper/lower envelopes and emits normalized + confidence outputs.
 
 - Exec in ports: none
 - Exec out ports: none
@@ -270,7 +270,21 @@ Tracks upper/lower envelopes and emits a normalized value (0..1).
 | `fall_alpha` | `rw` | `false` | `true` | `number / default=0.05` | Smoothing factor when moving away from the envelope. |
 | `min_span` | `rw` | `false` | `true` | `number / default=0.25` | Minimum enforced envelope span. |
 | `sma_window` | `rw` | `false` | `true` | `number / default=10` | Window size for SMA mode. |
-| `margin` | `rw` | `false` | `false` | `number / default=0.0` | Extra margin added to the lower/upper envelopes before normalization. |
+| `margin` | `rw` | `false` | `false` | `number / default=0.0` | Extra margin added to envelopes before normalization. |
+| `jumpEnabled` | `rw` | `false` | `false` | `boolean / default=True` | Enable consecutive-frame jump detection and reseed. |
+| `jumpSpanMult` | `rw` | `false` | `false` | `number / default=4.0` | Distance threshold in envelope-span units for jump detection. |
+| `jumpConsecutiveFrames` | `rw` | `false` | `false` | `number / default=4` | Consecutive far frames required before jump trigger. |
+| `jumpReseedFrames` | `rw` | `false` | `false` | `number / default=8` | Blend length (frames) after jump reset. |
+| `jumpResetConfidence` | `rw` | `false` | `false` | `boolean / default=True` | Reset confidence history when jump reset is triggered. |
+| `confidenceEnabled` | `rw` | `false` | `false` | `boolean / default=True` | Enable periodicity confidence estimation. |
+| `confidenceWindow` | `rw` | `false` | `false` | `number / default=128` | Sliding window size for autocorrelation confidence. |
+| `confidenceMinLag` | `rw` | `false` | `false` | `number / default=4` | Minimum lag used in autocorrelation scan. |
+| `confidenceMaxLag` | `rw` | `false` | `false` | `number / default=48` | Maximum lag used in autocorrelation scan. |
+| `confidencePeakProminence` | `rw` | `false` | `false` | `number / default=0.1` | Minimum local prominence for valid autocorrelation peaks. |
+| `confidenceMinPeaks` | `rw` | `false` | `false` | `number / default=1` | Minimum valid autocorrelation peaks before full confidence. |
+| `confidenceSmoothingAlpha` | `rw` | `false` | `false` | `number / default=0.25` | EMA smoothing factor for confidence output. |
+| `confidenceNoiseFloor` | `rw` | `false` | `false` | `number / default=0.0001` | Minimum energy needed before periodicity confidence can rise. |
+| `confidenceResetOnMissing` | `rw` | `false` | `false` | `boolean / default=False` | Decay confidence when input is missing. |
 | `svcId` | `ro` | `false` | `false` | `string` | Readonly: current service instance id (svcId). |
 | `operatorId` | `ro` | `false` | `false` | `string` | Readonly: current operator/node id (operatorId). |
 
@@ -287,6 +301,7 @@ Tracks upper/lower envelopes and emits a normalized value (0..1).
 | `lower` | `true` | `true` | `number` | Estimated lower envelope. |
 | `upper` | `true` | `true` | `number` | Estimated upper envelope. |
 | `normalized` | `true` | `true` | `number` | Normalized value (0..1). |
+| `confidence` | `true` | `true` | `number / default=0.0` | Periodicity confidence estimate (0..1). |
 
 ### Axis Envelope (`f8.axis_envelope`)
 Estimate normalized amplitudes along major/minor axes from 2D input.
@@ -526,7 +541,7 @@ Execute Python code with onStart/onState/onMsg/onExec/onStop hooks.
 
 | Name | Access | Required | On Node | Schema | Description |
 | --- | --- | --- | --- | --- | --- |
-| `code` | `rw` | `false` | `false` | `string / default=# Define hooks (any subset is ok):<br># - onStart(ctx)<br># - onState(ctx, field, value, tsMs=None)      # called on state updates (except 'code')<br># - onMsg(ctx, inputs)                        # called on data arrival (push mode) or as fallback for exec<br># - onExec(ctx, execIn, inputs)               # called on exec trigger (pull mode)<br># - onStop(ctx)<br># - ctx['locals'] is preserved between calls (script-local memory)<br># - ctx['execIn'] is set for exec-triggered calls<br># - State helpers:<br>#   - await ctx['get_state'](field)           # read state value<br>#   - ctx['set_state'](field, value)          # write state (fire-and-forget)<br>#   - await ctx['set_state_async'](field, value)<br>#   Note: for best UI/graph support, add the target state fields on the node (editableStateFields=True).<br># - inputs is a dict keyed by input port names<br># Return value protocol:<br># - onMsg: return {'outputs': {...}} or any value (emits to 'out' if present)<br># - onExec: return {'exec': ['exec','exec2'], 'outputs': {...}}<br>#   - 'exec' selects exec out port(s) to trigger (defaults to pass-through)<br>#   - 'outputs' is a dict mapping dataOutPort -> value<br><br>def onStart(ctx):<br>    ctx['log']('python_script started')<br><br>def onState(ctx, field, value, tsMs=None):<br>    # Example: react to a state change.<br>    # ctx['log'](f'state {field}={value} tsMs={tsMs}')<br>    return<br><br>def onMsg(ctx, inputs):<br>    msg = inputs.get('msg')<br>    return {'outputs': {'out': msg}}<br><br>def onExec(ctx, execIn, inputs):<br>    # Example: choose different exec outputs by execIn port name.<br>    if execIn == 'exec2':<br>        return {'exec': ['exec2'], 'outputs': {'out': inputs.get('msg')}}<br>    return {'exec': ['exec'], 'outputs': {'out': inputs.get('msg')}}<br><br>def onStop(ctx):<br>    ctx['log']('python_script stopped')<br>` | Python source code defining onStart(ctx), onMsg(ctx, inputs), onStop(ctx). |
+| `code` | `rw` | `false` | `false` | `string / default=# Define hooks (any subset is ok):<br># - onStart(ctx)<br># - onState(ctx, field, value, tsMs=None)      # called on state updates (except 'code')<br># - onMsg(ctx, inputs)                        # called on data arrival (push mode) or as fallback for exec<br># - onExec(ctx, execIn, inputs)               # called on exec trigger (pull mode)<br># - onStop(ctx)<br># - ctx['locals'] is preserved between calls (script-local memory)<br># - ctx['execIn'] is set for exec-triggered calls<br># - State helpers:<br>#   - await ctx['get_state'](field)           # read state value<br>#   - ctx['get_state_cached'](field, default=None)  # sync cached snapshot (may be stale)<br>#   - ctx['set_state'](field, value)          # write state (fire-and-forget)<br>#   - await ctx['set_state_async'](field, value)<br># - Video SHM helpers:<br>#   - ctx['subscribe_video_shm'](key, shm_name, decode='auto', use_event=False)<br>#   - pkt = ctx['get_video_shm'](key)          # latest cached packet or None<br>#   - ctx['unsubscribe_video_shm'](key)<br>#   - ctx['list_video_shm_subscriptions']()<br>#   Note: for best UI/graph support, add the target state fields on the node (editableStateFields=True).<br># - inputs is a dict keyed by input port names<br># Return value protocol:<br># - onMsg: return {'outputs': {...}} or any value (emits to 'out' if present)<br># - onExec: return {'exec': ['exec','exec2'], 'outputs': {...}}<br>#   - 'exec' selects exec out port(s) to trigger (defaults to pass-through)<br>#   - 'outputs' is a dict mapping dataOutPort -> value<br><br>def onStart(ctx):<br>    ctx['log']('python_script started')<br><br>def onState(ctx, field, value, tsMs=None):<br>    # Example: react to a state change.<br>    # ctx['log'](f'state {field}={value} tsMs={tsMs}')<br>    return<br><br>def onMsg(ctx, inputs):<br>    msg = inputs.get('msg')<br>    return {'outputs': {'out': msg}}<br><br>def onExec(ctx, execIn, inputs):<br>    # Example: choose different exec outputs by execIn port name.<br>    if execIn == 'exec2':<br>        return {'exec': ['exec2'], 'outputs': {'out': inputs.get('msg')}}<br>    return {'exec': ['exec'], 'outputs': {'out': inputs.get('msg')}}<br><br>def onStop(ctx):<br>    ctx['log']('python_script stopped')<br>` | Python source code defining onStart(ctx), onMsg(ctx, inputs), onStop(ctx). |
 | `lastError` | `wo` | `false` | `false` | `string / default=` | Last script error (compile/runtime). |
 | `svcId` | `ro` | `false` | `false` | `string` | Readonly: current service instance id (svcId). |
 | `operatorId` | `ro` | `false` | `false` | `string` | Readonly: current operator/node id (operatorId). |
@@ -543,7 +558,7 @@ Execute Python code with onStart/onState/onMsg/onExec/onStop hooks.
 | --- | --- | --- | --- | --- |
 | `out` | `true` | `true` | `any` | Script output |
 
-### Expr (`f8.expr`)
+### Python Expr (`f8.expr`)
 Evaluate a small expression using input values (math/logic/extraction).
 
 - Exec in ports: none
@@ -554,6 +569,7 @@ Evaluate a small expression using input values (math/logic/extraction).
 | Name | Access | Required | On Node | Schema | Description |
 | --- | --- | --- | --- | --- | --- |
 | `allowNumpy` | `rw` | `false` | `false` | `boolean / default=False` | Enable numpy calls in expressions (np.*, numpy.*). |
+| `unpackDictOutputs` | `rw` | `false` | `false` | `boolean / default=False` | When enabled, dict results are emitted by matching output port names. |
 | `code` | `rw` | `false` | `true` | `string / default=x` | Single-line expression (no statements). Available: abs/min/max/round/float/int, math.*, comprehensions. Numpy (np.*, numpy.*) is available only when Allow Numpy is enabled. |
 | `svcId` | `ro` | `false` | `false` | `string` | Readonly: current service instance id (svcId). |
 | `operatorId` | `ro` | `false` | `false` | `string` | Readonly: current operator/node id (operatorId). |
@@ -749,6 +765,89 @@ Outputs A by default; when A is silent for a while, crossfades to B as filler.
 | `alpha` | `true` | `true` | `number` | Crossfade factor (0=A, 1=B) |
 | `silent` | `true` | `true` | `number` | 1 if A is considered silent else 0 |
 
+### Playback Sync (`f8.playback_sync`)
+Extrapolates IMPlayer playback position between sparse telemetry updates.
+
+- Exec in ports: none
+- Exec out ports: none
+
+#### State Fields
+
+| Name | Access | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- | --- |
+| `maxExtrapolateMs` | `rw` | `false` | `false` | `integer / default=1000` | Limit extrapolation horizon to avoid drift when telemetry is stale (0 = unlimited). |
+| `playbackRate` | `rw` | `false` | `false` | `number / default=1.0` | Rate multiplier used for extrapolation when playing. |
+| `clampToDuration` | `rw` | `false` | `false` | `boolean / default=True` | Clamp estimated position to latest duration when available. |
+| `svcId` | `ro` | `false` | `false` | `string` | Readonly: current service instance id (svcId). |
+| `operatorId` | `ro` | `false` | `false` | `string` | Readonly: current operator/node id (operatorId). |
+
+#### Data Input Ports
+
+| Name | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- |
+| `playback` | `false` | `true` | `any` | Playback payload from f8.implayer/playback (position/duration/playing/videoId). |
+
+#### Data Output Ports
+
+| Name | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- |
+| `position` | `true` | `true` | `number` | Estimated playback position (seconds). |
+| `rawPosition` | `true` | `false` | `number` | Latest raw position from playback payload (seconds). |
+| `duration` | `true` | `false` | `number` | Latest duration (seconds). |
+| `playing` | `true` | `false` | `boolean` | Latest playing flag. |
+| `videoId` | `true` | `false` | `string` | Latest video id. |
+| `ageMs` | `true` | `false` | `integer` | Age of latest playback sample in milliseconds. |
+| `stale` | `true` | `false` | `boolean` | True if sample age exceeds max extrapolation window. |
+
+### Handy Out (`f8.handy_out`)
+Drive The Handy via HDSP using normalized 0..1 input values.
+
+- Exec in ports: `exec`
+- Exec out ports: none
+
+#### State Fields
+
+| Name | Access | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- | --- |
+| `enabled` | `rw` | `false` | `true` | `boolean / default=True` | Enable/disable Handy output. |
+| `connectionKey` | `rw` | `false` | `true` | `string / default=` | The Handy X-Connection-Key value. |
+| `baseUrl` | `rw` | `false` | `true` | `string / default=https://www.handyfeeling.com/api/handy/v2` | Handy API base URL. |
+| `ensureHdspMode` | `rw` | `false` | `true` | `boolean / default=True` | Automatically set mode=HDSP before sending position commands. |
+| `invert` | `rw` | `false` | `true` | `boolean / default=False` | Invert 0..1 input mapping before percent conversion. |
+| `minPercent` | `rw` | `false` | `true` | `number / default=0.0` | Mapped output minimum in percent. |
+| `maxPercent` | `rw` | `false` | `true` | `number / default=100.0` | Mapped output maximum in percent. |
+| `defaultDurationMs` | `rw` | `false` | `true` | `integer / default=100` | Default /hdsp/xpt duration when durationMs input is not provided. |
+| `requestTimeoutMs` | `rw` | `false` | `false` | `integer / default=5000` | HTTP request timeout for Handy API calls. |
+| `minSendIntervalMs` | `rw` | `false` | `true` | `integer / default=0` | Minimum interval between sent commands (0 means follow tick rate). |
+| `immediateResponse` | `rw` | `false` | `false` | `boolean / default=False` | Default immediateResponse value for /hdsp/xpt. |
+| `stopOnTarget` | `rw` | `false` | `false` | `boolean / default=False` | Default stopOnTarget value for /hdsp/xpt. |
+| `lastError` | `ro` | `false` | `true` | `string / default=` | Last runtime error message. |
+| `lastHttpStatus` | `ro` | `false` | `true` | `integer / default=0` | Last HTTP status code from Handy API. |
+| `lastResult` | `ro` | `false` | `true` | `number / default=0.0` | Last Handy RPC result value. |
+| `sentCommands` | `ro` | `false` | `false` | `integer / default=0` | Total successfully sent HDSP commands. |
+| `droppedCommands` | `ro` | `false` | `false` | `integer / default=0` | Commands dropped due to backoff or minSendInterval filtering. |
+| `lastSentTsMs` | `ro` | `false` | `false` | `integer / default=0` | Timestamp of the last successful HDSP command. |
+| `svcId` | `ro` | `false` | `false` | `string` | Readonly: current service instance id (svcId). |
+| `operatorId` | `ro` | `false` | `false` | `string` | Readonly: current operator/node id (operatorId). |
+
+#### Data Input Ports
+
+| Name | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- |
+| `value` | `true` | `true` | `number` | Normalized position input (0..1). |
+| `durationMs` | `false` | `true` | `number / default=100` | Optional duration override for /hdsp/xpt. |
+| `immediateResponse` | `false` | `true` | `boolean / default=False` | Optional immediate response override for /hdsp/xpt. |
+| `stopOnTarget` | `false` | `true` | `boolean / default=False` | Optional stopOnTarget override for /hdsp/xpt. |
+
+#### Data Output Ports
+
+| Name | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- |
+| `sentPosition` | `true` | `true` | `number / default=0.0` | Last sent position percent (0..100). |
+| `httpStatus` | `true` | `true` | `integer / default=0` | Last HTTP status code. |
+| `result` | `true` | `true` | `number / default=0.0` | Last RPC result code. |
+| `error` | `true` | `true` | `string / default=` | Last runtime error. |
+
 ## Usage Guide (Manual)
 
 ### Recommended Use Cases
@@ -766,6 +865,7 @@ pixi run -e default engine
 
 - Keep time-base generation (`tick`, `phase`, `program_wave`) separated from mapping stages (`range_map`, `smooth_filter`, `rate_limiter`).
 - Use dedicated adapter operators (`lovense_program_adapter`, `buttplug_bridge`) to isolate protocol translation from signal logic.
+- `f8.expr` is an operator inside `f8.pyengine`; if you need a standalone service-level expression runtime, use `f8.pyexpr`.
 - For reusable chains, keep clear input/output contracts and avoid hidden side effects.
 
 ### Common Pitfalls

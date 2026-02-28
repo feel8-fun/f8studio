@@ -26,13 +26,14 @@ pixi run f8pydl_humandetector
 | `modelId` | `rw` | `false` | `true` | `string / default=` | Model id selected from weightsDir (ignored if modelYamlPath is set). |
 | `modelYamlPath` | `rw` | `false` | `false` | `string / default=` | Optional explicit model yaml path (overrides modelId). |
 | `ortProvider` | `rw` | `false` | `true` | `string / enum[auto, cuda, cpu] / default=auto` | auto prefers CUDAExecutionProvider when available. |
+| `autoDownloadWeights` | `rw` | `false` | `false` | `boolean / default=True` | When model file is missing, download from onnxUrl in model yaml. |
 | `inferEveryN` | `rw` | `false` | `true` | `integer / default=1` | Run model inference every N frames (>=1). |
 | `confThreshold` | `rw` | `false` | `false` | `number / default=-1.0` | Override confidence threshold (negative uses model yaml). |
 | `iouThreshold` | `rw` | `false` | `false` | `number / default=-1.0` | Override IoU threshold for NMS (negative uses model yaml). |
 | `enabledClasses` | `rw` | `false` | `false` | `array[string]` | Optional class whitelist for output. Empty means all classes. |
 | `perClassK` | `rw` | `false` | `true` | `integer / default=0` | Per-class top-K by score (<=0 means unlimited). |
-| `availableModels` | `ro` | `false` | `false` | `array[string]` | List of model ids discovered from weightsDir. |
 | `modelClasses` | `ro` | `false` | `false` | `array[string]` | Current loaded model class labels. |
+| `availableModels` | `ro` | `false` | `false` | `array[string]` | List of model ids discovered from weightsDir. |
 | `loadedModel` | `ro` | `false` | `false` | `string / default=` | Current loaded model id/task. |
 | `ortActiveProviders` | `ro` | `false` | `false` | `string / default=` | JSON list of active ONNX Runtime providers for this session. |
 | `lastError` | `ro` | `false` | `false` | `string / default=` | Last runtime error string (best-effort). |

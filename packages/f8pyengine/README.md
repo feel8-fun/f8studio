@@ -50,3 +50,15 @@ Pattern->phase wiring example (reusable):
   - `stop` (boolean)
 
 Feature-index state fields (`*FeatureIndex`) allow selecting a specific feature per output type; `-1` broadcasts to all matching features.
+
+### The Handy HDSP output
+
+`Handy Out` (`operatorClass=f8.handy_out`) drives The Handy over REST v2 HDSP using normalized input.
+
+- Exec-driven sink: `tick.exec -> handy_out.exec`
+- Data input: `signal(0..1) -> handy_out.value`
+- Auto mode: `ensureHdspMode=true` sends `PUT /mode {\"mode\":2}` when needed
+- Motion command: `PUT /hdsp/xpt` with mapped `position` (0..100), `duration`, `immediateResponse`, `stopOnTarget`
+- Mapping: `value(0..1)` -> clamp -> optional `invert` -> `[minPercent, maxPercent]`
+- Header auth: `X-Connection-Key = connectionKey`
+- Rate-limit aware: consumes `X-RateLimit-*` headers and applies temporary backoff

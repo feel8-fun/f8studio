@@ -22,11 +22,12 @@ pixi run f8pydl_optflow
 | Name | Access | Required | On Node | Schema | Description |
 | --- | --- | --- | --- | --- | --- |
 | `inputShmName` | `rw` | `false` | `true` | `string / default=` | Input SHM name (e.g. shm.xxx.video). |
-| `computeEveryNFrames` | `rw` | `false` | `true` | `integer / default=2` | Compute optical flow once per N new frames. |
-| `weightsDir` | `rw` | `false` | `true` | `string / default=services/f8/dl/weights` | Directory containing *.yaml + *.onnx model files. |
-| `modelId` | `rw` | `false` | `true` | `string / default=` | Model id selected from weightsDir (ignored if modelYamlPath is set). |
+| `computeEveryNFrames` | `rw` | `false` | `false` | `integer / default=2` | Compute optical flow once per N new frames. |
+| `weightsDir` | `rw` | `false` | `false` | `string / default=services/f8/dl/weights` | Directory containing *.yaml + *.onnx model files. |
+| `modelId` | `rw` | `false` | `false` | `string / default=` | Model id selected from weightsDir (ignored if modelYamlPath is set). |
 | `modelYamlPath` | `rw` | `false` | `false` | `string / default=` | Optional explicit model yaml path (overrides modelId). |
-| `ortProvider` | `rw` | `false` | `true` | `string / enum[auto, cuda, cpu] / default=auto` | auto prefers CUDAExecutionProvider when available. |
+| `ortProvider` | `rw` | `false` | `false` | `string / enum[auto, cuda, cpu] / default=auto` | auto prefers CUDAExecutionProvider when available. |
+| `autoDownloadWeights` | `rw` | `false` | `false` | `boolean / default=True` | When model file is missing, download from onnxUrl in model yaml. |
 | `availableModels` | `ro` | `false` | `false` | `array[string]` | List of model ids discovered from weightsDir. |
 | `loadedModel` | `ro` | `false` | `false` | `string / default=` | Current loaded model id/task. |
 | `ortActiveProviders` | `ro` | `false` | `false` | `string / default=` | JSON list of active ONNX Runtime providers for this session. |

@@ -21,7 +21,7 @@ pixi run f8pyscript
 
 | Name | Access | Required | On Node | Schema | Description |
 | --- | --- | --- | --- | --- | --- |
-| `code` | `rw` | `false` | `false` | `string / default=# Hooks (all optional):<br># - onStart(ctx)<br># - onStop(ctx)<br># - onPause(ctx, meta=None)<br># - onResume(ctx, meta=None)<br># - onState(ctx, field, value, tsMs=None)<br># - onData(ctx, port, value, tsMs=None)<br># - onTick(ctx, tick)<br># - onCommand(ctx, name, args, meta=None)<br>#<br># Tick payload: {'seq': int, 'tsMs': int, 'deltaMs': int}<br># Permission: ctx['permission'] -> {'localExecGranted', 'expiresTsMs'}<br>#<br>def onStart(ctx):<br>    ctx['log']('pyscript started')<br><br>def onStop(ctx):<br>    ctx['log']('pyscript stopped')<br>` | Python source code. |
+| `code` | `rw` | `false` | `false` | `string / default=# Hooks (all optional):<br># - onStart(ctx)<br># - onStop(ctx)<br># - onPause(ctx, meta=None)<br># - onResume(ctx, meta=None)<br># - onState(ctx, field, value, tsMs=None)<br># - onData(ctx, port, value, tsMs=None)<br># - onTick(ctx, tick)<br># - onCommand(ctx, name, args, meta=None)<br>#<br># Tick payload: {'seq': int, 'tsMs': int, 'deltaMs': int}<br># State read:<br># - await ctx['get_state'](field)                # freshest path<br># - ctx['get_state_cached'](field, default=None) # sync cached snapshot, may be stale<br># Permission: ctx['permission'] -> {'localExecGranted', 'expiresTsMs'}<br>#<br>def onStart(ctx):<br>    ctx['log']('pyscript started')<br><br>def onStop(ctx):<br>    ctx['log']('pyscript stopped')<br>` | Python source code. |
 | `lastError` | `ro` | `false` | `false` | `string / default=` | Last script compile/runtime error. |
 | `tickEnabled` | `rw` | `false` | `true` | `boolean / default=False` | Enable onTick scheduler. |
 | `tickMs` | `rw` | `false` | `true` | `integer / default=100` | onTick interval in milliseconds. |
@@ -93,3 +93,7 @@ Supported hooks:
 - `onCommand(ctx, name, args, meta)`
 
 `ctx['exec_local'](...)` is gated by command `grant_local_exec` and can be revoked via `revoke_local_exec`.
+
+State helpers:
+- `await ctx['get_state'](field)` for freshest reads.
+- `ctx['get_state_cached'](field, default=None)` for sync cached snapshots in hot paths.

@@ -8,28 +8,21 @@ Manual usage guidance is merged from `docs/modules/manual/*.md`.
 
 | Service | Label | Operators | State Fields | Link |
 | --- | --- | --- | --- | --- |
-| `f8.audiocap` | Audio Capture | `0` | `13` | [Audio Capture](services/f8-audiocap.md) |
-| `f8.implayer` | IM Player | `0` | `18` | [IM Player](services/f8-implayer.md) |
-| `f8.pyengine` | PyEngine | `23` | `3` | [PyEngine](services/f8-pyengine.md) |
-| `f8.screencap` | Screen Capture | `0` | `16` | [Screen Capture](services/f8-screencap.md) |
-
-## CVKit
-
-| Service | Label | Operators | State Fields | Link |
-| --- | --- | --- | --- | --- |
-| `f8.cvkit.denseoptflow` | CVKit Dense Optical Flow | `0` | `7` | [CVKit Dense Optical Flow](services/f8-cvkit-denseoptflow.md) |
-| `f8.cvkit.templatematch` | CVKit Template Match | `0` | `7` | [CVKit Template Match](services/f8-cvkit-templatematch.md) |
-| `f8.cvkit.tracking` | CVKit Tracking | `0` | `7` | [CVKit Tracking](services/f8-cvkit-tracking.md) |
-| `f8.cvkit.videostab` | CVKit Video Stabilizer | `0` | `13` | [CVKit Video Stabilizer](services/f8-cvkit-videostab.md) |
+| `f8.audiofeat.core` | Audio Feature Core | `0` | `8` | [Audio Feature Core](services/f8-audiofeat-core.md) |
+| `f8.audiofeat.rhythm` | Audio Feature Rhythm | `0` | `6` | [Audio Feature Rhythm](services/f8-audiofeat-rhythm.md) |
+| `f8.pyengine` | PyEngine | `25` | `3` | [PyEngine](services/f8-pyengine.md) |
+| `f8.pyexpr` | Python Expr Service | `0` | `6` | [Python Expr Service](services/f8-pyexpr.md) |
+| `f8.pyscript` | Python Script Service | `0` | `11` | [Python Script Service](services/f8-pyscript.md) |
 
 ## Deep Learning
 
 | Service | Label | Operators | State Fields | Link |
 | --- | --- | --- | --- | --- |
 | `f8.dl.classifier` | DL Classifier | `0` | `16` | [DL Classifier](services/f8-dl-classifier.md) |
-| `f8.dl.detector` | DL Detector | `0` | `19` | [DL Detector](services/f8-dl-detector.md) |
-| `f8.dl.humandetector` | DL Human Detector | `0` | `19` | [DL Human Detector](services/f8-dl-humandetector.md) |
+| `f8.dl.detector` | DL Detector | `0` | `20` | [DL Detector](services/f8-dl-detector.md) |
+| `f8.dl.humandetector` | DL Human Detector | `0` | `20` | [DL Human Detector](services/f8-dl-humandetector.md) |
 | `f8.dl.optflow` | DL Optical Flow | `0` | `17` | [DL Optical Flow](services/f8-dl-optflow.md) |
+| `f8.dl.tcnwave` | DL TCN Wave | `0` | `18` | [DL TCN Wave](services/f8-dl-tcnwave.md) |
 
 ## MediaPipe
 
