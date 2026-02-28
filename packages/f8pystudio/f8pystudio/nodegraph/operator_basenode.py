@@ -469,12 +469,13 @@ class F8StudioOperatorNodeItem(F8StudioServiceNodeItem):
         # setting `view._container_item`; keep it always defined to avoid crashes
         # during interactive moves before binding.
         self._container_item = None
+        self._drag_start_xy: tuple[float, float] | None = None
+        self._drag_start_container_id: str = ""
 
     def itemChange(self, change, value):  # type: ignore[override]
         """
         Keep operator interaction behaviors:
         - highlight pipes on selection
-        - clamp operator nodes to container bounds while dragging
         """
         if change == QtWidgets.QGraphicsItem.ItemSelectedChange and self.scene():
             try:
@@ -490,37 +491,58 @@ class F8StudioOperatorNodeItem(F8StudioServiceNodeItem):
             except (AttributeError, RuntimeError, TypeError):
                 pass
 
-        if change == QtWidgets.QGraphicsItem.ItemPositionChange and self.scene():
-            return self._clamp_pos_to_container(value)
-
         return super().itemChange(change, value)
 
-    def _clamp_pos_to_container(self, proposed_pos: QtCore.QPointF) -> QtCore.QPointF:
-        """
-        Clamp the node's top-left position so the entire node stays within
-        its service container bounds (in scene coordinates).
-        """
-        container = self._container_item
-        if container is None:
-            return proposed_pos
+    def mousePressEvent(self, event):  # type: ignore[override]
+        if event.button() == QtCore.Qt.LeftButton:
+            try:
+                p = self.xy_pos
+                self._drag_start_xy = (float(p[0]), float(p[1]))
+            except (AttributeError, RuntimeError, TypeError, ValueError, IndexError):
+                self._drag_start_xy = None
+            container = self._container_item
+            if container is None:
+                self._drag_start_container_id = ""
+            else:
+                try:
+                    self._drag_start_container_id = str(container.id or "").strip()
+                except (AttributeError, RuntimeError, TypeError):
+                    self._drag_start_container_id = ""
+        super().mousePressEvent(event)
 
-        container_rect = container.mapToScene(container.boundingRect()).boundingRect()
-        padding = 2.0
-        container_rect = container_rect.adjusted(padding, padding, -padding, -padding)
-
-        brect = self.boundingRect()
-        node_w = brect.width()
-        node_h = brect.height()
-
-        x_min = container_rect.left()
-        y_min = container_rect.top()
-        x_max = container_rect.right() - node_w
-        y_max = container_rect.bottom() - node_h
-
-        x_new = x_min if x_max < x_min else min(max(proposed_pos.x(), x_min), x_max)
-        y_new = y_min if y_max < y_min else min(max(proposed_pos.y(), y_min), y_max)
-
-        return QtCore.QPointF(x_new, y_new)
+    def mouseReleaseEvent(self, event):  # type: ignore[override]
+        super().mouseReleaseEvent(event)
+        if event.button() != QtCore.Qt.LeftButton:
+            return
+        start_xy = self._drag_start_xy
+        start_container_id = str(self._drag_start_container_id or "")
+        self._drag_start_xy = None
+        self._drag_start_container_id = ""
+        if start_xy is None:
+            return
+        viewer = self.viewer()
+        if viewer is None:
+            return
+        graph = None
+        try:
+            graph = viewer.f8_graph
+        except (AttributeError, RuntimeError, TypeError):
+            graph = None
+        if graph is None:
+            return
+        try:
+            graph.on_operator_drop(
+                node_id=str(self.id or ""),
+                start_pos=start_xy,
+                start_container_id=start_container_id,
+            )
+        except Exception:
+            node_id = ""
+            try:
+                node_id = str(self.id or "")
+            except (AttributeError, RuntimeError, TypeError):
+                node_id = ""
+            logger.exception("operator drop rebind failed for node id=%s", node_id)
 
     def _ensure_service_toolbar(self, viewer: Any | None) -> None:  # type: ignore[override]
         return

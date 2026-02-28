@@ -2218,6 +2218,182 @@ class F8StudioGraph(NodeGraph):
         """
         return
 
+    def _container_by_id(self, container_id: str) -> _BASE_CONTAINER_CLS_ | None:
+        cid = str(container_id or "").strip()
+        if not cid:
+            return None
+        node = self.get_node_by_id(cid)
+        if node is None:
+            return None
+        if not self._is_container_node(node):
+            return None
+        return node
+
+    @staticmethod
+    def _set_node_scene_pos(node: Any, *, x: float, y: float) -> None:
+        try:
+            node.view.xy_pos = [float(x), float(y)]
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            pass
+        try:
+            node.model.pos = [float(x), float(y)]
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            pass
+
+    def _unbind_operator_from_container(
+        self,
+        *,
+        operator: _BASE_OPERATOR_CLS_,
+        container: _BASE_CONTAINER_CLS_ | None,
+    ) -> None:
+        if container is None:
+            return
+        try:
+            container.remove_child(operator)
+            return
+        except (AttributeError, RuntimeError, TypeError):
+            pass
+        try:
+            container._child_nodes = [n for n in list(container._child_nodes or []) if n is not operator and n.id != operator.id]
+        except (AttributeError, RuntimeError, TypeError):
+            pass
+        try:
+            container.view._child_views = [
+                v for v in list(container.view._child_views or []) if v is not operator.view and v.id != operator.id
+            ]
+        except (AttributeError, RuntimeError, TypeError):
+            pass
+        try:
+            if operator.view._container_item is container:
+                operator.view._container_item = None
+        except (AttributeError, RuntimeError, TypeError):
+            pass
+
+    def _disconnect_invalid_connections_for_operator(self, operator: _BASE_OPERATOR_CLS_) -> int:
+        dropped = 0
+        seen_pairs: set[tuple[int, int]] = set()
+        for out_port in list(operator.output_ports() or []):
+            for in_port in list(out_port.connected_ports() or []):
+                key = (id(out_port), id(in_port))
+                if key in seen_pairs:
+                    continue
+                seen_pairs.add(key)
+                allowed, _reason = validate_runtime_connection(
+                    out_port_name=str(out_port.name() or ""),
+                    in_port_name=str(in_port.name() or ""),
+                    out_node=out_port.node(),
+                    in_node=in_port.node(),
+                )
+                if allowed:
+                    continue
+                try:
+                    out_port.disconnect_from(in_port, push_undo=False, emit_signal=False)
+                    dropped += 1
+                except (AttributeError, RuntimeError, TypeError):
+                    continue
+        for in_port in list(operator.input_ports() or []):
+            for out_port in list(in_port.connected_ports() or []):
+                key = (id(out_port), id(in_port))
+                if key in seen_pairs:
+                    continue
+                seen_pairs.add(key)
+                allowed, _reason = validate_runtime_connection(
+                    out_port_name=str(out_port.name() or ""),
+                    in_port_name=str(in_port.name() or ""),
+                    out_node=out_port.node(),
+                    in_node=in_port.node(),
+                )
+                if allowed:
+                    continue
+                try:
+                    out_port.disconnect_from(in_port, push_undo=False, emit_signal=False)
+                    dropped += 1
+                except (AttributeError, RuntimeError, TypeError):
+                    continue
+        return dropped
+
+    def on_operator_drop(
+        self,
+        *,
+        node_id: str,
+        start_pos: tuple[float, float],
+        start_container_id: str,
+    ) -> tuple[bool, str]:
+        nid = str(node_id or "").strip()
+        if not nid:
+            return False, "missing node id"
+        node = self.get_node_by_id(nid)
+        if node is None:
+            return False, f"node not found: {nid}"
+        if not self._is_operator_node(node):
+            return True, ""
+
+        operator = node
+        service_class = str(operator.spec.serviceClass or "")
+        if service_class == _CANVAS_SERVICE_CLASS_:
+            return True, ""
+
+        old_container = self._container_by_id(start_container_id)
+        target_container = self._container_at_node(operator)
+
+        old_container_id = ""
+        if old_container is not None:
+            try:
+                old_container_id = str(old_container.id or "").strip()
+            except (AttributeError, RuntimeError, TypeError):
+                old_container_id = ""
+        target_container_id = ""
+        if target_container is not None:
+            try:
+                target_container_id = str(target_container.id or "").strip()
+            except (AttributeError, RuntimeError, TypeError):
+                target_container_id = ""
+
+        if old_container_id and old_container_id == target_container_id:
+            return True, ""
+        current_service_id = ""
+        try:
+            current_service_id = str(operator.svcId or "").strip()
+        except (AttributeError, RuntimeError, TypeError):
+            current_service_id = ""
+        if current_service_id and current_service_id == target_container_id:
+            return True, ""
+
+        sx, sy = float(start_pos[0]), float(start_pos[1])
+        if target_container is None:
+            self._set_node_scene_pos(operator, x=sx, y=sy)
+            msg = "Operator nodes must be dropped inside a compatible service container."
+            show_warning(self._notification_parent(), "Move Operator Failed", msg)
+            return False, msg
+
+        target_service_class = str(target_container.spec.serviceClass or "")
+        if target_service_class != service_class:
+            self._set_node_scene_pos(operator, x=sx, y=sy)
+            msg = (
+                "Operator serviceClass does not match target container serviceClass. "
+                f"operator={service_class}, container={target_service_class}"
+            )
+            show_warning(self._notification_parent(), "Move Operator Failed", msg)
+            return False, msg
+
+        self._unbind_operator_from_container(operator=operator, container=old_container)
+        if not self._bind_operator_to_container(operator, target_container):
+            self._set_node_scene_pos(operator, x=sx, y=sy)
+            if old_container is not None:
+                self._bind_operator_to_container(operator, old_container)
+            msg = "Failed to bind operator to target service container."
+            show_warning(self._notification_parent(), "Move Operator Failed", msg)
+            return False, msg
+
+        dropped_count = self._disconnect_invalid_connections_for_operator(operator)
+        if dropped_count > 0:
+            show_warning(
+                self._notification_parent(),
+                "Operator Moved",
+                f"Moved operator to service `{target_container_id}` and dropped {dropped_count} invalid connection(s).",
+            )
+        return True, ""
+
     def _ensure_operator_in_container(
         self,
         node: Any,
