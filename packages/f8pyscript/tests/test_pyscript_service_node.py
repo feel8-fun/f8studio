@@ -158,7 +158,8 @@ class PyScriptServiceNodeTests(unittest.IsolatedAsyncioTestCase):
         code = (
             "async def onCommand(ctx, name, args, meta=None):\n"
             "    if name == 'run_echo':\n"
-            "        return await ctx['exec_local']('echo', ['hello'])\n"
+            "        import sys\n"
+            "        return await ctx['exec_local'](sys.executable, ['-c', \"print('hello')\"])\n"
             "    return {'name': name}\n"
         )
 

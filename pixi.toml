@@ -43,8 +43,10 @@ f8pysdk = { path = "packages/f8pysdk", editable = true }
 
 [feature.sdk.tasks]
 runner = "python -m f8pysdk.headless_runner"
-sdk_tests = 'python -m unittest discover -s packages/f8pysdk/tests -p "test_*.py"'
 update_describes = "python scripts/update_static_describes.py"
+protocol_codegen_py = "python -m datamodel_code_generator --input schemas/protocol.yml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --output packages/f8pysdk/f8pysdk/generated/__init__.py --use-default --strict-nullable --allow-population-by-field-name --use-title-as-name --use-annotated"
+protocol_codegen_cpp = "python scripts/gen_cpp_protocol_models.py --protocol schemas/protocol.yml --out packages/f8cppsdk/include/f8cppsdk/generated/protocol_models.h"
+protocol_codegen_all = "python -m datamodel_code_generator --input schemas/protocol.yml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --output packages/f8pysdk/f8pysdk/generated/__init__.py --use-default --strict-nullable --allow-population-by-field-name --use-title-as-name --use-annotated && python scripts/gen_cpp_protocol_models.py --protocol schemas/protocol.yml --out packages/f8cppsdk/include/f8cppsdk/generated/protocol_models.h"
 
 [feature.test.dependencies]
 pytest = ">=8.4.2,<9"

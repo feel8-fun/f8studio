@@ -32,10 +32,14 @@ def test_video_shm_flow2f16_roundtrip() -> None:
         assert int(header.height) == height
         assert int(header.pitch) == pitch
         assert bytes(frame) == payload
+        frame.release()
+        frame = None
 
         bgra_header, bgra_frame = reader.read_latest_bgra()
         assert bgra_header is None
         assert bgra_frame is None
+        if bgra_frame is not None:
+            bgra_frame.release()
     finally:
         reader.close()
         writer.close(unlink=True)
