@@ -50,6 +50,9 @@ class F8StudioNodeViewer(NodeViewer):
         self._f8_mmb_prev_pos: QtCore.QPoint | None = None
         self._pending_node_type: str | None = None
         self._pending_node_label: str = ""
+        self._pending_graph_insert_request: Any | None = None
+        self._pending_graph_label: str = ""
+        self._pending_graph_size: tuple[float, float] | None = None
         self._placement_preview_rect: QtWidgets.QGraphicsRectItem | None = None
         self._placement_preview_label: QtWidgets.QGraphicsSimpleTextItem | None = None
         self._edge_kind_visibility: dict[str, bool] = {
@@ -125,6 +128,7 @@ class F8StudioNodeViewer(NodeViewer):
         if not pending_type:
             self.cancel_node_placement()
             return
+        self.cancel_graph_placement()
         self._pending_node_type = pending_type
         self._pending_node_label = str(node_label or "").strip()
         self._ensure_placement_preview_items()
@@ -137,19 +141,51 @@ class F8StudioNodeViewer(NodeViewer):
             return
         self._pending_node_type = None
         self._pending_node_label = ""
-        self._set_placement_preview_visible(False)
+        if self._pending_graph_insert_request is None:
+            self._set_placement_preview_visible(False)
         self._update_cursor_state()
-        self.node_placement_changed.emit(False, "")
+        self.node_placement_changed.emit(bool(self._pending_graph_insert_request is not None), self._pending_graph_label)
 
     def is_node_placement_active(self) -> bool:
         return self._pending_node_type is not None
+
+    def begin_graph_placement(self, request: Any, label: str) -> None:
+        if request is None:
+            self.cancel_graph_placement()
+            return
+        self.cancel_node_placement()
+        self._pending_graph_insert_request = request
+        self._pending_graph_label = str(label or "").strip()
+        bbox = request.source_bbox
+        width = max(1.0, float(bbox.width))
+        height = max(1.0, float(bbox.height))
+        self._pending_graph_size = (width, height)
+        self._ensure_placement_preview_items()
+        self._update_placement_preview_at(self.mapFromGlobal(QtGui.QCursor.pos()))
+        self._update_cursor_state()
+        shown_label = self._pending_graph_label or "Insert Graph"
+        self.node_placement_changed.emit(True, shown_label)
+
+    def cancel_graph_placement(self) -> None:
+        if self._pending_graph_insert_request is None:
+            return
+        self._pending_graph_insert_request = None
+        self._pending_graph_label = ""
+        self._pending_graph_size = None
+        if self._pending_node_type is None:
+            self._set_placement_preview_visible(False)
+        self._update_cursor_state()
+        self.node_placement_changed.emit(bool(self._pending_node_type is not None), self._pending_node_label)
+
+    def is_graph_placement_active(self) -> bool:
+        return self._pending_graph_insert_request is not None
 
     def showEvent(self, event):
         super().showEvent(event)
         self.setFocus()
 
     def enterEvent(self, event):  # type: ignore[override]
-        if self.is_node_placement_active():
+        if self.is_node_placement_active() or self.is_graph_placement_active():
             self._update_placement_preview_at(self.mapFromGlobal(QtGui.QCursor.pos()))
         return super().enterEvent(event)
 
@@ -173,7 +209,7 @@ class F8StudioNodeViewer(NodeViewer):
         try:
             if self._f8_mmb_panning:
                 self.setCursor(QtCore.Qt.ClosedHandCursor)
-            elif self._pending_node_type is not None:
+            elif self._pending_node_type is not None or self._pending_graph_insert_request is not None:
                 self.setCursor(QtCore.Qt.CrossCursor)
             else:
                 self.unsetCursor()
@@ -216,7 +252,7 @@ class F8StudioNodeViewer(NodeViewer):
         label_item.setVisible(visible)
 
     def _update_placement_preview_at(self, view_pos: QtCore.QPoint) -> None:
-        if not self.is_node_placement_active():
+        if not self.is_node_placement_active() and not self.is_graph_placement_active():
             return
         self._ensure_placement_preview_items()
         rect_item = self._placement_preview_rect
@@ -225,12 +261,22 @@ class F8StudioNodeViewer(NodeViewer):
             return
 
         label_text = self._pending_node_label or (self._pending_node_type or "")
-        label_item.setText(label_text)
-        text_rect = label_item.boundingRect()
-
         top_left = self.mapToScene(view_pos)
         x = float(top_left.x()) + self._PREVIEW_OFFSET_X
         y = float(top_left.y()) + self._PREVIEW_OFFSET_Y
+        if self.is_graph_placement_active() and self._pending_graph_size is not None:
+            graph_width, graph_height = self._pending_graph_size
+            label_text = self._pending_graph_label or "Insert Graph"
+            label_item.setText(label_text)
+            rect_item.setRect(float(top_left.x()), float(top_left.y()), float(graph_width), float(graph_height))
+            label_x = float(top_left.x()) + self._PREVIEW_PADDING_X
+            label_y = float(top_left.y()) + self._PREVIEW_PADDING_Y
+            label_item.setPos(label_x, label_y)
+            self._set_placement_preview_visible(True)
+            return
+
+        label_item.setText(label_text)
+        text_rect = label_item.boundingRect()
         width = float(text_rect.width()) + (self._PREVIEW_PADDING_X * 2.0)
         height = float(text_rect.height()) + (self._PREVIEW_PADDING_Y * 2.0)
         rect_item.setRect(x, y, width, height)
@@ -264,10 +310,15 @@ class F8StudioNodeViewer(NodeViewer):
         )
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
-        if event.key() == QtCore.Qt.Key_Escape and self.is_node_placement_active():
-            self.cancel_node_placement()
-            event.accept()
-            return
+        if event.key() == QtCore.Qt.Key_Escape:
+            if self.is_graph_placement_active():
+                self.cancel_graph_placement()
+                event.accept()
+                return
+            if self.is_node_placement_active():
+                self.cancel_node_placement()
+                event.accept()
+                return
 
         event.setAccepted(False)
         super().keyPressEvent(event)
@@ -323,6 +374,30 @@ class F8StudioNodeViewer(NodeViewer):
 
     def mousePressEvent(self, event):
         self.setFocus()
+        if self.is_graph_placement_active():
+            if event.button() == QtCore.Qt.RightButton:
+                self.cancel_graph_placement()
+                event.accept()
+                return
+            if event.button() == QtCore.Qt.LeftButton:
+                graph = self._f8_graph
+                request = self._pending_graph_insert_request
+                if graph is None or request is None:
+                    event.accept()
+                    return
+                scene_pos = self.mapToScene(event.pos())
+                try:
+                    graph.apply_insert_graph(
+                        request,
+                        anchor_x=float(scene_pos.x()),
+                        anchor_y=float(scene_pos.y()),
+                    )
+                    self.cancel_graph_placement()
+                except Exception:
+                    logger.exception("failed to insert graph from placement request")
+                event.accept()
+                return
+
         if self.is_node_placement_active():
             if event.button() == QtCore.Qt.RightButton:
                 self.cancel_node_placement()
@@ -363,7 +438,7 @@ class F8StudioNodeViewer(NodeViewer):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        if self.is_node_placement_active():
+        if self.is_node_placement_active() or self.is_graph_placement_active():
             self._update_placement_preview_at(event.pos())
         # Force MMB to pan only (no ALT+MMB zoom).
         if self._f8_mmb_panning and self._f8_mmb_prev_pos is not None:

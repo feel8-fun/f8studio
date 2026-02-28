@@ -7,27 +7,27 @@ from qtpy import QtCore, QtGui, QtSvg, QtWidgets
 
 
 class StudioIcon(Enum):
-    FOLDER_OPEN = "fa5s.folder-open"
-    SAVE = "fa5s.save"
-    SEND = "mdi6.send"
-    STOP_ALL = "mdi.stop"
-    STOP = "fa5s.stop"
-    PLAY = "fa5s.play"
-    PAUSE = "fa5s.pause"
-    REFRESH = "fa5s.exchange-alt"
-    REDO = "fa5s.redo"
-    TOGGLE_ON = "fa5s.toggle-on"
-    TOGGLE_OFF = "fa5s.toggle-off"
-    CODE = "fa5s.code"
-    EYE = "fa5s.eye"
-    EYE_SLASH = "fa5s.eye-slash"
+    FOLDER_OPEN = "folder-open.svg"
+    FOLDER_PLUS = "folder-plus.svg"
+    SAVE = "save.svg"
+    SEND = "send.svg"
+    STOP_ALL = "stop-all.svg"
+    STOP = "stop.svg"
+    PLAY = "play.svg"
+    PAUSE = "pause.svg"
+    REFRESH = "refresh.svg"
+    REDO = "redo.svg"
+    TOGGLE_ON = "toggle-on.svg"
+    TOGGLE_OFF = "toggle-off.svg"
+    CODE = "code.svg"
+    EYE = "eye.svg"
+    EYE_SLASH = "eye-slash.svg"
 
 
 def icon_for(widget: QtWidgets.QWidget, token: StudioIcon) -> QtGui.QIcon:
-    icon_name = _ICON_MAP[token]
-    icon = _render_svg_icon(widget, token, icon_name)
+    icon = _render_svg_icon(widget, token, token.value)
     if icon.isNull():
-        raise RuntimeError(f"icon renderer returned null icon token={token.value}")
+        raise RuntimeError(f"icon renderer returned null icon token={token.name}")
     return icon
 
 
@@ -80,22 +80,4 @@ _ICON_COLORS: dict[StudioIcon, QtGui.QColor] = {
     StudioIcon.STOP: QtGui.QColor("#E05252"),
     StudioIcon.STOP_ALL: QtGui.QColor("#E05252"),
     StudioIcon.SEND: QtGui.QColor("#7EDB8A"),
-}
-
-
-_ICON_MAP: dict[StudioIcon, str] = {
-    StudioIcon.FOLDER_OPEN: "folder-open.svg",
-    StudioIcon.SAVE: "save.svg",
-    StudioIcon.SEND: "send.svg",
-    StudioIcon.STOP_ALL: "stop-all.svg",
-    StudioIcon.STOP: "stop.svg",
-    StudioIcon.PLAY: "play.svg",
-    StudioIcon.PAUSE: "pause.svg",
-    StudioIcon.REFRESH: "refresh.svg",
-    StudioIcon.REDO: "redo.svg",
-    StudioIcon.TOGGLE_ON: "toggle-on.svg",
-    StudioIcon.TOGGLE_OFF: "toggle-off.svg",
-    StudioIcon.CODE: "code.svg",
-    StudioIcon.EYE: "eye.svg",
-    StudioIcon.EYE_SLASH: "eye-slash.svg",
 }

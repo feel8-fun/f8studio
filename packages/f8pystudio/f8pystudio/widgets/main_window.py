@@ -128,6 +128,11 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         load_from_action.triggered.connect(self._load_session_from_action)  # type: ignore[attr-defined]
         menu.addAction(load_from_action)
 
+        insert_action = QtWidgets.QAction("Insert Graph…", self)
+        insert_action.setShortcut("Ctrl+Shift+I")
+        insert_action.triggered.connect(self._insert_graph_from_action)  # type: ignore[attr-defined]
+        menu.addAction(insert_action)
+
         save_as_action = QtWidgets.QAction("Save Session As…", self)
         save_as_action.setShortcut("Ctrl+Shift+S")
         save_as_action.triggered.connect(self._save_session_as_action)  # type: ignore[attr-defined]
@@ -161,6 +166,7 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
 
         # Graph file management.
         self._open_icon = icon_for(self, StudioIcon.FOLDER_OPEN)
+        self._insert_icon = icon_for(self, StudioIcon.FOLDER_PLUS)
         self._save_icon = icon_for(self, StudioIcon.SAVE)
 
         self._load_from_action = QtGui.QAction("Load Session…", self)
@@ -168,6 +174,12 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
         self._load_from_action.setToolTip("Load session from file… (Ctrl+Shift+O)")
         self._load_from_action.triggered.connect(self._load_session_from_action)  # type: ignore[attr-defined]
         tb.addAction(self._load_from_action)
+
+        self._insert_graph_action = QtGui.QAction("Insert Graph…", self)
+        self._insert_graph_action.setIcon(self._insert_icon)
+        self._insert_graph_action.setToolTip("Insert session graph at cursor… (Ctrl+Shift+I)")
+        self._insert_graph_action.triggered.connect(self._insert_graph_from_action)  # type: ignore[attr-defined]
+        tb.addAction(self._insert_graph_action)
 
         self._save_as_action = QtGui.QAction("Save Session As…", self)
         self._save_as_action.setIcon(self._save_icon)
@@ -335,6 +347,38 @@ class F8StudioMainWin(QtWidgets.QMainWindow):
             self._log_dock.append("studio", f"[session] save failed: {exc}\n")
             self._log_dock.report_exception("studio", f"session save failed ({p})", exc)
             show_warning(self, "Save failed", f"Failed to save:\n{p}\n\n{exc}")
+
+    def _insert_graph_from_action(self) -> None:
+        try:
+            start_dir = str(self._session_dialog_dir or "")
+        except Exception:
+            start_dir = ""
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Insert Graph",
+            start_dir,
+            "F8 Studio Session (*.json);;JSON (*.json);;All Files (*)",
+        )
+        p = str(path or "").strip()
+        if not p:
+            return
+        try:
+            request = self.studio_graph.prepare_insert_graph_from_file(p)
+        except Exception as exc:
+            self._log_dock.append("studio", f"[insert] prepare failed: {exc}\n")
+            self._log_dock.report_exception("studio", f"insert graph prepare failed ({p})", exc)
+            show_warning(self, "Insert failed", f"Failed to prepare insert:\n{p}\n\n{exc}")
+            return
+
+        self._session_dialog_dir = str(Path(p).resolve().parent)
+        if request.node_count <= 0:
+            show_warning(self, "Insert blocked", f"Graph has no nodes:\n{p}")
+            return
+
+        graph_name = Path(p).name
+        placement_label = f"Insert: {graph_name}\n{request.node_count} nodes"
+        self.studio_graph.begin_graph_placement(request, label=placement_label)
+        self._log_dock.append("studio", f"[insert] click canvas to place: {graph_name} ({request.node_count} nodes)\n")
 
     def _compile_runtime_action(self) -> None:
         try:
