@@ -1,7 +1,7 @@
 site_name: F8Studio Documentation
 site_description: Official guides for installation, module usage, and scenario-based workflows.
 site_url: https://studio.feel8.fun
-repo_name: Feel8-fun/F8Studio
+repo_name: Feel8-Fun/F8Studio
 repo_url: https://github.com/feel8-fun/f8studio
 
 docs_dir: docs
@@ -31,9 +31,10 @@ nav:
           - Screen Capture: modules/services/f8-screencap.md
   - Scenarios:
       - Overview: scenarios/index.md
-      - "Scene 01: Offline Video Tracking": scenarios/scene-01-offline-video-tracking.md
-      - "Scene 02: Desktop Live Tracking": scenarios/scene-02-desktop-live-tracking.md
-      - "Scene 03: Realtime Pose Control": scenarios/scene-03-realtime-pose-control.md
+      - "Scene 01: CVKit Template Tracking": scenarios/scene-01-cvkit_template_tracking.md
+      - "Scene 02: GameMod Skeleton": scenarios/scene-02-gamemod_skeleton.md
+      - "Scene 03: Audio Driven TCode": scenarios/scene-03-audio_driven.md
+      - "Scene 04: Functional TCode Generation": scenarios/scene-04-functional_tcode.md
   - Deep Dives:
       - Lovense Local API: LovenseLocalAPI.md
       - Lovense Mock Server: LovenseMockServer.md

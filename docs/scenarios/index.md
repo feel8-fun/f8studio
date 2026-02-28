@@ -1,15 +1,17 @@
 # Scenarios
 
-These scenarios show complete workflows with concrete topology, setup steps, and validation checks.
+This section provides four scenario guides that map directly to the session scripts, with practical setup, key parameters, and validation checks.
 
 ## Scene List
 
-1. [Scene 01: Offline Video Tracking](scene-01-offline-video-tracking.md)
-2. [Scene 02: Desktop Live Tracking](scene-02-desktop-live-tracking.md)
-3. [Scene 03: Realtime Pose Control](scene-03-realtime-pose-control.md)
-4. [Scene 04: Motion-First Auto Tracking](scene-04-motion-first-auto-tracking.md)
+1. [Scene 01: CVKit Template Tracking](scene-01-cvkit_template_tracking.md)
+2. [Scene 02: GameMod Skeleton](scene-02-gamemod_skeleton.md)
+3. [Scene 03: Audio Driven TCode](scene-03-audio_driven.md)
+4. [Scene 04: Functional TCode Generation](scene-04-functional_tcode.md)
 
-## Media Policy
+## Script Downloads
 
-- Tutorial images are stored in `docs/media/images/**`.
-- Videos are externally hosted and embedded by URL.
+1. [scene-01-cvkit_template_tracking.json](scripts/scene-01-cvkit_template_tracking.json)
+2. [scene-02-gamemod_skeleton.json](scripts/scene-02-gamemod_skeleton.json)
+3. [scene-03-audio_driven.json](scripts/scene-03-audio_driven.json)
+4. [scene-04-functional_tcode.json](scripts/scene-04-functional_tcode.json)
