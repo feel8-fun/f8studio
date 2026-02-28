@@ -20,6 +20,7 @@ PYTHON_PACKAGE_DIRS: dict[str, str] = {
     "f8pysdk": "packages/f8pysdk",
     "f8pyengine": "packages/f8pyengine",
     "f8pyscript": "packages/f8pyscript",
+    "f8pyaudiofeat": "packages/f8pyaudiofeat",
     "f8pystudio": "packages/f8pystudio",
     "f8pydl": "packages/f8pydl",
     "f8pymppose": "packages/f8pymppose",
