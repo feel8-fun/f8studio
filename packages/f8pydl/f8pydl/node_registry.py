@@ -138,6 +138,18 @@ def _detection_sorter_state_fields() -> list[F8StateSpec]:
             required=True,
             showOnNode=True,
         ),
+        F8StateSpec(
+            name="temperature",
+            label="Temperature",
+            description=(
+                "Randomness applied to score-ranked detections. 0 keeps deterministic sorting;"
+                " larger values increasingly explore lower-ranked detections."
+            ),
+            valueSchema=number_schema(default=0.0, minimum=0.0),
+            access=F8StateAccess.rw,
+            required=True,
+            showOnNode=True,
+        ),
     ]
 
 

@@ -34,7 +34,7 @@ Manual usage guidance is merged from `docs/modules/manual/*.md` and `docs/module
 | --- | --- | --- | --- | --- |
 | `f8.dl.classifier` | DL Classifier | `0` | `12` | [DL Classifier](services/f8-dl-classifier.md) |
 | `f8.dl.detector` | DL Detector | `0` | `16` | [DL Detector](services/f8-dl-detector.md) |
-| `f8.dl.detsorter` | DL Detection Sorter | `0` | `5` | [DL Detection Sorter](services/f8-dl-detsorter.md) |
+| `f8.dl.detsorter` | DL Detection Sorter | `0` | `6` | [DL Detection Sorter](services/f8-dl-detsorter.md) |
 | `f8.dl.humandetector` | DL Human Detector | `0` | `16` | [DL Human Detector](services/f8-dl-humandetector.md) |
 | `f8.dl.optflow` | DL Optical Flow | `0` | `12` | [DL Optical Flow](services/f8-dl-optflow.md) |
 | `f8.dl.tcnwave` | DL TCN Wave | `0` | `14` | [DL TCN Wave](services/f8-dl-tcnwave.md) |

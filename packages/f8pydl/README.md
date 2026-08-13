@@ -22,6 +22,7 @@ Detection sorter notes (`f8.dl.detsorter`):
 - Supports `scalar1_f32` directly and `flow2_f16` by converting flow vectors to magnitude.
 - If detection payload `width`/`height` differs from score-map `width`/`height`, bbox coordinates are rescaled to score-map space before scoring.
 - Sort behavior is controlled by `sortDirection` (`desc` default, or `asc`) and `scoreAggregation` (`mean` default, or `max` / `sum` / `median`).
+- `temperature` adds Gumbel/softmax-style sampling without replacement after scores are normalized. `0` (default) preserves deterministic sorting; larger values produce increasingly random orders while retaining the configured score preference.
 - Keeps original detection `score` values and only reorders `detections`.
 
 Weight YAML notes (`f8onnxModel/1`):

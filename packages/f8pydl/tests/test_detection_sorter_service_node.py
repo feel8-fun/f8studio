@@ -29,6 +29,7 @@ from f8pydl.detection_sorter_service_node import (
     rescale_bbox_to_score_map,
     sort_detection_payload,
 )
+from f8pydl.node_registry import create_pydl_registry
 
 
 class _BusStub:
@@ -386,6 +387,110 @@ class DetectionSorterHelpersTests(unittest.TestCase):
         assert sorted_payload is not None
         self.assertEqual([item["cls"] for item in sorted_payload["detections"]], ["valid", "bad-a", "bad-b"])
 
+    def test_sort_detection_payload_zero_temperature_is_deterministic(self) -> None:
+        score_map = np.asarray([[1.0, 2.0, 3.0]], dtype=np.float32)
+        payload = _make_detection_payload(
+            [
+                {"cls": "low", "bbox": [0, 0, 1, 1]},
+                {"cls": "medium", "bbox": [1, 0, 2, 1]},
+                {"cls": "high", "bbox": [2, 0, 3, 1]},
+            ],
+            width=3,
+            height=1,
+        )
+
+        sorted_payload = sort_detection_payload(
+            payload,
+            score_map=score_map,
+            sort_direction="desc",
+            score_aggregation="mean",
+            temperature=0.0,
+            random_generator=np.random.default_rng(2),
+        )
+
+        self.assertIsNotNone(sorted_payload)
+        assert sorted_payload is not None
+        self.assertEqual([item["cls"] for item in sorted_payload["detections"]], ["high", "medium", "low"])
+
+    def test_sort_detection_payload_temperature_samples_reproducible_order(self) -> None:
+        score_map = np.asarray([[1.0, 2.0, 3.0]], dtype=np.float32)
+        payload = _make_detection_payload(
+            [
+                {"cls": "low", "bbox": [0, 0, 1, 1]},
+                {"cls": "medium", "bbox": [1, 0, 2, 1]},
+                {"cls": "high", "bbox": [2, 0, 3, 1]},
+            ],
+            width=3,
+            height=1,
+        )
+
+        first = sort_detection_payload(
+            payload,
+            score_map=score_map,
+            sort_direction="desc",
+            score_aggregation="mean",
+            temperature=1.0,
+            random_generator=np.random.default_rng(2),
+        )
+        second = sort_detection_payload(
+            payload,
+            score_map=score_map,
+            sort_direction="desc",
+            score_aggregation="mean",
+            temperature=1.0,
+            random_generator=np.random.default_rng(2),
+        )
+
+        self.assertIsNotNone(first)
+        self.assertIsNotNone(second)
+        assert first is not None
+        assert second is not None
+        first_order = [item["cls"] for item in first["detections"]]
+        second_order = [item["cls"] for item in second["detections"]]
+        self.assertEqual(first_order, ["medium", "low", "high"])
+        self.assertEqual(second_order, first_order)
+
+    def test_sort_detection_payload_temperature_respects_ascending_preference(self) -> None:
+        score_map = np.asarray([[1.0, 2.0, 3.0]], dtype=np.float32)
+        payload = _make_detection_payload(
+            [
+                {"cls": "low", "bbox": [0, 0, 1, 1]},
+                {"cls": "medium", "bbox": [1, 0, 2, 1]},
+                {"cls": "high", "bbox": [2, 0, 3, 1]},
+            ],
+            width=3,
+            height=1,
+        )
+
+        top_counts = {"low": 0, "medium": 0, "high": 0}
+        random_generator = np.random.default_rng(12345)
+        for _ in range(2000):
+            sorted_payload = sort_detection_payload(
+                payload,
+                score_map=score_map,
+                sort_direction="asc",
+                score_aggregation="mean",
+                temperature=0.5,
+                random_generator=random_generator,
+            )
+            assert sorted_payload is not None
+            top_counts[sorted_payload["detections"][0]["cls"]] += 1
+
+        self.assertGreater(top_counts["low"], top_counts["medium"])
+        self.assertGreater(top_counts["medium"], top_counts["high"])
+
+
+class DetectionSorterRegistryTests(unittest.TestCase):
+    def test_detection_sorter_exposes_non_negative_temperature_state(self) -> None:
+        registry = create_pydl_registry()
+        spec = registry.service_spec("f8.dl.detsorter")
+
+        self.assertIsNotNone(spec)
+        assert spec is not None
+        temperature_state = next(state for state in spec.stateFields if state.name == "temperature")
+        self.assertEqual(temperature_state.valueSchema.default, 0.0)
+        self.assertEqual(temperature_state.valueSchema.minimum, 0.0)
+
 
 class DetectionSorterServiceNodeTests(unittest.IsolatedAsyncioTestCase):
     async def test_service_node_keeps_event_loop_responsive_during_sort(self) -> None:
@@ -426,6 +531,33 @@ class DetectionSorterServiceNodeTests(unittest.IsolatedAsyncioTestCase):
         node = DetectionSorterServiceNode(node_id="sorterZ", node=SimpleNamespace(stateFields=[]), initial_state=None)
         with self.assertRaises(ValueError):
             _ = await node.validate_state("clsWeights", "{", ts_ms=0, meta={})
+
+    async def test_validate_state_temperature_accepts_non_negative_finite_number(self) -> None:
+        node = DetectionSorterServiceNode(node_id="sorterTemperature", node=SimpleNamespace(stateFields=[]), initial_state=None)
+
+        validated = await node.validate_state("temperature", 0.75, ts_ms=0, meta={})
+
+        self.assertEqual(validated, 0.75)
+
+    async def test_validate_state_temperature_rejects_invalid_values(self) -> None:
+        node = DetectionSorterServiceNode(node_id="sorterTemperature", node=SimpleNamespace(stateFields=[]), initial_state=None)
+
+        for invalid_value in (-0.01, float("nan"), float("inf"), True, "invalid"):
+            with self.subTest(value=invalid_value), self.assertRaises(ValueError):
+                _ = await node.validate_state("temperature", invalid_value, ts_ms=0, meta={})
+
+    async def test_service_node_loads_and_updates_temperature(self) -> None:
+        node = DetectionSorterServiceNode(
+            node_id="sorterTemperature",
+            node=SimpleNamespace(stateFields=[]),
+            initial_state={"temperature": 0.25},
+        )
+
+        await node._ensure_config_loaded()
+        self.assertEqual(node._temperature, 0.25)
+
+        await node.on_state("temperature", 1.5)
+        self.assertEqual(node._temperature, 1.5)
 
     async def test_service_node_sorts_scalar_map_and_emits(self) -> None:
         frame = _make_scalar_frame(

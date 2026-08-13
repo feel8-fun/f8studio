@@ -50,6 +50,7 @@ pixi run -e onnx f8pydl_detsorter
 | `clsWeights` | `rw` | `true` | `false` | `string / default={}` | JSON map of detection cls -> weight multiplier applied to score-map metric. Keys without a prefix are exact cls matches. Keys with 're:' prefix are Python regex patterns matched via fullmatch(). All matching rules are multiplied together. Unspecified classes default to weight 1.0. Example: {"person": 2.0, "car": 0.7, "re:^dog_.*$": 1.3} |
 | `sortDirection` | `rw` | `true` | `true` | `string / enum[desc, asc] / default=desc` | Prefer larger scores first (desc) or smaller scores first (asc). |
 | `scoreAggregation` | `rw` | `true` | `true` | `string / enum[mean, max, sum, median] / default=mean` | ROI reduction mode used to rank each bbox. |
+| `temperature` | `rw` | `true` | `true` | `number / default=0.0` | Randomness applied to score-ranked detections. 0 keeps deterministic sorting; larger values increasingly explore lower-ranked detections. |
 | `active` | `rw` | `true` | `false` | `boolean / default=True` | Service lifecycle state (activate/deactivate). |
 | `svcId` | `ro` | `true` | `false` | `string` | Readonly: current service instance id (svcId). |
 
@@ -58,6 +59,7 @@ pixi run -e onnx f8pydl_detsorter
 - `clsWeights` (Class Weights, `rw`): JSON map of detection cls -> weight multiplier applied to score-map metric. Keys without a prefix are exact cls matches. Keys with 're:' prefix are Python regex patterns matched via fullmatch(). All matching rules are multiplied together. Unspecified classes default to weight 1.0. Example: {"person": 2.0, "car": 0.7, "re:^dog_.*$": 1.3} Schema: `string / default={}`.
 - `sortDirection` (Sort Direction, `rw`): Prefer larger scores first (desc) or smaller scores first (asc). Schema: `string / enum[desc, asc] / default=desc`.
 - `scoreAggregation` (Score Aggregation, `rw`): ROI reduction mode used to rank each bbox. Schema: `string / enum[mean, max, sum, median] / default=mean`.
+- `temperature` (Temperature, `rw`): Randomness applied to score-ranked detections. 0 keeps deterministic sorting; larger values increasingly explore lower-ranked detections. Schema: `number / default=0.0`.
 - `active` (Active, `rw`): Service lifecycle state (activate/deactivate). Schema: `boolean / default=True`.
 - `svcId` (Service Id, `ro`): Readonly: current service instance id (svcId). Schema: `string`.
 

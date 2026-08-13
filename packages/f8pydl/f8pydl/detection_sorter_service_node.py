@@ -11,7 +11,7 @@ from typing import Any, Literal, Protocol
 
 import numpy as np
 
-from f8pysdk.codec import coerce_int, coerce_str
+from f8pysdk.codec import coerce_float, coerce_int, coerce_str, parse_float
 from f8pysdk.f8_naming import ensure_token
 from f8pysdk.nodes import ServiceNode
 from f8pysdk.time_utils import now_ms
@@ -64,6 +64,16 @@ def _coerce_score_aggregation(value: Any, *, default: ScoreAggregation = "mean")
     if text == "median":
         return "median"
     return "mean"
+
+
+def _coerce_temperature(value: Any, *, default: float = 0.0) -> float:
+    return coerce_float(
+        value,
+        default=default,
+        minimum=0.0,
+        allow_bool=False,
+        finite_only=True,
+    )
 
 
 def _payload_int(payload: dict[str, Any], key: str) -> int | None:
@@ -233,12 +243,47 @@ class RankedDetection:
     rank_score: float | None
 
 
+def _sort_valid_detections(
+    ranked: list[RankedDetection],
+    *,
+    sort_direction: SortDirection,
+    temperature: float,
+    random_generator: np.random.Generator | None,
+) -> None:
+    reverse = sort_direction == "desc"
+    if temperature <= 0.0 or len(ranked) < 2:
+        ranked.sort(key=lambda item: float(item.rank_score), reverse=reverse)
+        return
+
+    rank_scores = np.asarray([float(item.rank_score) for item in ranked], dtype=np.float64)
+    if not np.all(np.isfinite(rank_scores)):
+        ranked.sort(key=lambda item: float(item.rank_score), reverse=reverse)
+        return
+
+    lowest_score = float(np.min(rank_scores))
+    score_span = float(np.max(rank_scores)) - lowest_score
+    if score_span > 0.0:
+        utilities = (rank_scores - lowest_score) / score_span
+        if sort_direction == "asc":
+            utilities = 1.0 - utilities
+    else:
+        utilities = np.zeros(len(ranked), dtype=np.float64)
+
+    rng = random_generator if random_generator is not None else np.random.default_rng()
+    sampling_keys = utilities + (temperature * rng.gumbel(size=len(ranked)))
+    randomized = list(zip(ranked, sampling_keys, strict=True))
+    randomized.sort(key=lambda item: float(item[1]), reverse=True)
+    ranked[:] = [item[0] for item in randomized]
+
+
 def sort_detection_payload(
     detections_payload: dict[str, Any],
     *,
     score_map: np.ndarray,
     sort_direction: SortDirection,
     score_aggregation: ScoreAggregation,
+    temperature: float = 0.0,
+    random_generator: np.random.Generator | None = None,
     cls_weights_exact: dict[str, float] | None = None,
     cls_weights_regex: list[tuple[re.Pattern[str], float]] | None = None,
 ) -> dict[str, Any] | None:
@@ -304,8 +349,12 @@ def sort_detection_payload(
         else:
             valid_ranked.append(item)
 
-    reverse = sort_direction == "desc"
-    valid_ranked.sort(key=lambda item: float(item.rank_score), reverse=reverse)
+    _sort_valid_detections(
+        valid_ranked,
+        sort_direction=sort_direction,
+        temperature=_coerce_temperature(temperature),
+        random_generator=random_generator,
+    )
     ordered = valid_ranked + invalid_ranked
     if not ordered:
         return None
@@ -328,6 +377,8 @@ class DetectionSorterServiceNode(ServiceNode):
         self._config_loaded = False
         self._sort_direction: SortDirection = "desc"
         self._score_aggregation: ScoreAggregation = "mean"
+        self._temperature = 0.0
+        self._random_generator = np.random.default_rng()
         self._cls_weights_exact: dict[str, float] = {}
         self._cls_weights_regex: list[tuple[re.Pattern[str], float]] = []
         self._last_error = ""
@@ -362,6 +413,7 @@ class DetectionSorterServiceNode(ServiceNode):
             return
         self._sort_direction = _coerce_sort_direction(self._read_initial_or_cached_state("sortDirection", "desc"))
         self._score_aggregation = _coerce_score_aggregation(self._read_initial_or_cached_state("scoreAggregation", "mean"))
+        self._temperature = _coerce_temperature(self._read_initial_or_cached_state("temperature", 0.0))
         cls_weights_text = coerce_str(self._read_initial_or_cached_state("clsWeights", "{}"), default="{}")
         self._set_cls_weights(cls_weights_text)
         self._config_loaded = True
@@ -379,6 +431,11 @@ class DetectionSorterServiceNode(ServiceNode):
             if aggregation not in ("mean", "max", "sum", "median"):
                 raise ValueError("invalid scoreAggregation (expected mean, max, sum, or median)")
             return aggregation
+        if name == "temperature":
+            temperature = parse_float(value, allow_bool=False, finite_only=True)
+            if temperature is None or temperature < 0.0:
+                raise ValueError("invalid temperature (expected a finite number greater than or equal to 0)")
+            return temperature
         if name == "clsWeights":
             text = coerce_str(value, default="{}")
             _ = _parse_cls_weights_json(text)
@@ -394,6 +451,9 @@ class DetectionSorterServiceNode(ServiceNode):
             return
         if name == "scoreAggregation":
             self._score_aggregation = _coerce_score_aggregation(value, default=self._score_aggregation)
+            return
+        if name == "temperature":
+            self._temperature = _coerce_temperature(value, default=self._temperature)
             return
         if name == "clsWeights":
             text = coerce_str(value, default="{}")
@@ -511,6 +571,8 @@ class DetectionSorterServiceNode(ServiceNode):
                 score_map=score_map,
                 sort_direction=self._sort_direction,
                 score_aggregation=self._score_aggregation,
+                temperature=self._temperature,
+                random_generator=self._random_generator,
                 cls_weights_exact=self._cls_weights_exact,
                 cls_weights_regex=self._cls_weights_regex,
             )
