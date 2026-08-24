@@ -47,6 +47,7 @@ from ...ui.components.wave import (
 from ...editor_assist.protocol import editor_assist_context_for_field
 from ...editor_assist.workspace import EditorAssistContext
 from ...nodegraph.state_pool_resolver import resolve_pool_items
+from ...nodegraph.state_schema import schema_array_item_type
 from ...nodegraph.node_text_fields import node_text_editor_binding, resolve_node
 from ...nodegraph.ui_state_mutations import set_state_inline_expanded, state_inline_expanded
 from .node_item_core import StateFieldInfo, state_field_info
@@ -561,9 +562,7 @@ def build_state_inline_control(
         return resolve_pool_items(value)
 
     read_only = (
-        _preview_force_read_only(node_item)
-        or access_s == "ro"
-        or node_item._is_state_inline_input_connected(name)
+        _preview_force_read_only(node_item) or access_s == "ro" or node_item._is_state_inline_input_connected(name)
     )
     spec = StateControlSpec(
         name=name,
@@ -578,6 +577,7 @@ def build_state_inline_control(
         select_pool_field=select_pool_field,
         multiselect_pool_field=multiselect_pool_field,
         is_image_b64=schema_type_value == "string" and (ui in {"image", "image_b64", "img"} or "b64" in name.lower()),
+        range_integer=schema_array_item_type(schema) == "integer",
     )
     try:
         graph = node_item._graph()
@@ -621,7 +621,9 @@ def build_state_inline_control(
         code_title=f"{node_item.name} - {spec.label}",
         code_value_getter=text_binding.value_getter if text_binding is not None else _get_fallback_code_value,
         code_value_setter=text_binding.value_setter if text_binding is not None else _set_fallback_code_value,
-        code_target_exists_provider=text_binding.target_exists if text_binding is not None else _fallback_code_target_exists,
+        code_target_exists_provider=text_binding.target_exists
+        if text_binding is not None
+        else _fallback_code_target_exists,
         assist_context=_editor_assist_context(
             graph,
             node_id=node_id,
@@ -738,7 +740,11 @@ def ensure_state_inline_controls(node_item: Any) -> None:
                 pass
 
         ctrl_sig = state_inline_control_serial(node_item, info)
-        if name in node_item._state_inline_proxies and ctrl_sig and ctrl_sig == node_item._state_inline_ctrl_serial.get(name, ""):
+        if (
+            name in node_item._state_inline_proxies
+            and ctrl_sig
+            and ctrl_sig == node_item._state_inline_ctrl_serial.get(name, "")
+        ):
             continue
 
         # Default collapsed; restore persisted expand state from ui overrides.

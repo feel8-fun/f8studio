@@ -89,19 +89,39 @@ class VizWaveRuntimeNode(StudioVizRuntimeNodeBase):
         if not port:
             return
         await self._ensure_config_loaded()
-        try:
-            val = float(value)
-        except (TypeError, ValueError):
+        samples = self._numeric_samples(port, value)
+        if not samples:
             return
         ts = int(ts_ms) if ts_ms is not None else int(time.time() * 1000)
-        buf = self._series.get(port)
-        if buf is None:
-            buf = []
-            self._series[port] = buf
-        buf.append((ts, val))
+        for series_name, val in samples.items():
+            buf = self._series.get(series_name)
+            if buf is None:
+                buf = []
+                self._series[series_name] = buf
+            buf.append((ts, val))
         self._dirty = True
         self._prune_points(window_ms=self._window_ms, buffer_limit=self._buffer_limit, now_ms=ts)
         await self._schedule_refresh(now_ms=ts)
+
+    def _numeric_samples(self, port: str, value: Any) -> dict[str, float]:
+        nested = value.get("axes") if isinstance(value, dict) else None
+        payload = nested if isinstance(nested, dict) else value
+        if isinstance(payload, dict):
+            allowed = set(self.data_in_ports or [])
+            out: dict[str, float] = {}
+            for name, raw in payload.items():
+                series_name = str(name or "").strip()
+                if not series_name or series_name not in allowed:
+                    continue
+                try:
+                    out[series_name] = float(raw)
+                except (TypeError, ValueError):
+                    continue
+            return out
+        try:
+            return {port: float(value)}
+        except (TypeError, ValueError):
+            return {}
 
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
         f = str(field or "").strip()

@@ -23,7 +23,7 @@ from ...editor_assist.workspace import EditorAssistContext
 from ...ui.support.qt_lifecycle import qt_object_is_valid
 from ...ui.support.ui_notifications import show_warning
 from ...ui.support.ui_icons import StudioIcon, icon_for
-from .controls import F8Dial, F8ImageB64Editor, F8MultiSelect, F8OptionCombo, F8Switch, F8ValueBar
+from .controls import F8Dial, F8ImageB64Editor, F8MultiSelect, F8OptionCombo, F8RangeBar, F8Switch, F8ValueBar
 from ..support.json_text_editor import attach_json_enhancements
 from ..support.monaco_editor_host import open_code_editor_window
 
@@ -959,6 +959,58 @@ class F8ValueBarEditor(QtWidgets.QWidget):
 
     def _emit(self, value: Any) -> None:
         out = int(value) if self._data_type is int else float(value)
+        self.value_changed.emit(self.get_name(), out)
+
+
+class F8RangeBarEditor(QtWidgets.QWidget):
+    """Property-value editor wrapper for a two-value range slider."""
+
+    value_changed = QtCore.Signal(str, object)
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None, *, data_type: type[int] | type[float]) -> None:
+        super().__init__(parent)
+        self._name = ""
+        self._data_type = data_type
+        self._min: float | int | None = None
+        self._max: float | int | None = None
+        self._bar = F8RangeBar(integer=(data_type is int), minimum=0.0, maximum=1.0)
+        self._bar.valueCommitted.connect(self._emit)  # type: ignore[attr-defined]
+
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self._bar, 1)
+
+    def set_name(self, name: str) -> None:
+        self._name = str(name or "")
+
+    def get_name(self) -> str:
+        return self._name
+
+    def set_min(self, value: Any) -> None:
+        self._min = value
+        self._bar.set_range(self._min, self._max)
+
+    def set_max(self, value: Any) -> None:
+        self._max = value
+        self._bar.set_range(self._min, self._max)
+
+    def set_value(self, value: Any) -> None:
+        self._bar.set_value(value)
+
+    def get_value(self) -> Any:
+        values = self._bar.value()
+        if self._data_type is int:
+            return [int(values[0]), int(values[1])]
+        return [float(values[0]), float(values[1])]
+
+    def set_read_only(self, read_only: bool) -> None:
+        self._bar.set_read_only(bool(read_only))
+
+    def _emit(self, value: Any) -> None:
+        if self._data_type is int:
+            out = [int(value[0]), int(value[1])]
+        else:
+            out = [float(value[0]), float(value[1])]
         self.value_changed.emit(self.get_name(), out)
 
 

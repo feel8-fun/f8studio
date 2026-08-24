@@ -21,7 +21,7 @@ from f8pysdk.specs import (
     F8TerminateRequest,
 )
 from f8pysdk.f8_naming import ensure_token, new_id, svc_endpoint_key
-from f8pysdk.codec import decode_as, decode_obj, encode_obj
+from f8pysdk.codec import decode_as, decode_obj, encode_obj, validate_as
 
 from .runtime_request import RuntimeRequester
 
@@ -239,7 +239,10 @@ async def request_set_remote_state(
     payload = encode_obj(
         F8SetStateRequest(
             reqId=new_id(),
-            args=F8SetStateArgs(nodeId=nid, field=state_field, value=value),
+            args=validate_as(
+                F8SetStateArgs,
+                {"nodeId": nid, "field": state_field, "value": value},
+            ),
             meta={"actor": "studio", "source": "ui"},
         )
     )

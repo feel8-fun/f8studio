@@ -7,7 +7,7 @@ from qtpy import QtCore, QtGui, QtWidgets
 from NodeGraphQt.custom_widgets.properties_bin.node_property_factory import NodePropertyWidgetFactory
 
 from f8pysdk.codec import copy_model
-from f8pysdk.specs import F8StateAccess, F8StateSpec, integer_schema, number_schema, string_schema
+from f8pysdk.specs import F8StateAccess, F8StateSpec, array_schema, integer_schema, number_schema, string_schema
 from f8pystudio.nodegraph.items.state_inline_controls import (
     build_state_inline_control,
     ensure_state_inline_controls,
@@ -16,11 +16,12 @@ from f8pystudio.nodegraph.items.state_inline_controls import (
 )
 from f8pystudio.nodegraph.items.node_item_core import StateFieldInfo
 from f8pystudio.nodegraph.items.service_toolbar_host import F8ForceGlobalToolTipFilter
-from f8pystudio.ui.components.controls import F8Dial, F8OptionCombo
+from f8pystudio.ui.components.controls import F8Dial, F8OptionCombo, F8RangeBar
 from f8pystudio.ui.components.state_editors import (
     F8CodeButtonEditor,
     F8DialEditor,
     F8IncrementButtonEditor,
+    F8RangeBarEditor,
     F8WrapLineEditor,
 )
 from f8pystudio.ui.support.state_panel_controls import build_state_panel_control
@@ -119,8 +120,6 @@ def _wave_preview_field() -> StateFieldInfo:
     )
 
 
-
-
 def _wave_heatmap_field() -> StateFieldInfo:
     return StateFieldInfo(
         name="heatmap",
@@ -149,6 +148,7 @@ def _selected_axis_field() -> StateFieldInfo:
         ui_language=None,
         value_schema=None,
     )
+
 
 def _wave_pattern_field() -> StateFieldInfo:
     return StateFieldInfo(
@@ -432,8 +432,6 @@ def test_build_state_inline_control_wave_preview_restores_widget() -> None:
     assert isinstance(control, WavePreviewControl)
 
 
-
-
 def test_build_state_inline_control_wave_heatmap_restores_widget() -> None:
     _ensure_app()
     node_item = _FakeNodeItem(code_value="")
@@ -620,6 +618,32 @@ def test_build_state_panel_control_dial_uses_dial_editor() -> None:
     )
 
     assert isinstance(widget, F8DialEditor)
+
+
+def test_build_state_panel_control_range_slider_uses_one_two_value_editor() -> None:
+    _ensure_app()
+    field = F8StateSpec(
+        name="outputRange",
+        label="Output Range",
+        valueSchema=array_schema(
+            items=number_schema(minimum=0.0, maximum=1.0),
+            default=[0.2, 0.8],
+        ),
+        access=F8StateAccess.rw,
+        uiControl="range_slider",
+    )
+    node = _FakePropertyNode(field)
+    widget = build_state_panel_control(
+        node=node,
+        prop_name="outputRange",
+        widget_type=1,
+        widget_factory=NodePropertyWidgetFactory(),
+    )
+
+    assert isinstance(widget, F8RangeBarEditor)
+    range_bar = widget.findChild(F8RangeBar)
+    assert range_bar is not None
+    assert range_bar.layout().count() == 2
 
 
 def test_build_state_panel_control_dial_noloop_sets_loop_mode() -> None:
@@ -886,6 +910,7 @@ def test_sync_state_inline_controls_from_graph_property_updates_wave_heatmap() -
 
     assert seen == [[0.0, 1.0, 0.0]]
 
+
 def test_build_state_inline_control_wave_pattern_restores_widget() -> None:
     _ensure_app()
     node_item = _FakeNodeItem(code_value="")
@@ -973,6 +998,7 @@ def test_wave_pattern_editor_preserves_hidden_points_when_max_t_shrinks() -> Non
 
     assert node_item._backend.get_property("points") == [[1.0, 0.1], [6.0, 0.6], [12.0, 1.2]]
 
+
 def test_wave_pattern_editor_add_move_delete_updates_backend_points() -> None:
     _ensure_app()
     node_item = _FakeNodeItem(code_value="")
@@ -1012,7 +1038,9 @@ def test_wave_pattern_editor_add_move_delete_updates_backend_points() -> None:
     assert len(points_after_add) == 3
 
     rect = graph_draw_rect(control.rect())
-    move_from = point_to_widget_pos(points_after_add[1][0], points_after_add[1][1], rect=rect, max_t=10.0, y_range=(0.0, 1.0))
+    move_from = point_to_widget_pos(
+        points_after_add[1][0], points_after_add[1][1], rect=rect, max_t=10.0, y_range=(0.0, 1.0)
+    )
     move_to = QtCore.QPointF(move_from.x() + 20.0, move_from.y() + 18.0)
     control.mousePressEvent(
         _mouse_event(
@@ -1043,7 +1071,9 @@ def test_wave_pattern_editor_add_move_delete_updates_backend_points() -> None:
     assert points_after_move[1][0] > points_after_add[1][0]
     assert points_after_move[1][1] < points_after_add[1][1]
 
-    moved_pos = point_to_widget_pos(points_after_move[1][0], points_after_move[1][1], rect=rect, max_t=10.0, y_range=(0.0, 1.0))
+    moved_pos = point_to_widget_pos(
+        points_after_move[1][0], points_after_move[1][1], rect=rect, max_t=10.0, y_range=(0.0, 1.0)
+    )
     control.mousePressEvent(
         _mouse_event(
             QtCore.QEvent.Type.MouseButtonPress,

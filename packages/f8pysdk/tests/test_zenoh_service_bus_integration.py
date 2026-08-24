@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from f8pysdk.bus import ServiceBus, ServiceBusConfig
-from f8pysdk.codec import decode_as, encode_obj
+from f8pysdk.codec import decode_as, encode_obj, validate_as
 from f8pysdk.f8_naming import cmd_channel_key, svc_endpoint_key
 from f8pysdk.nodes import RuntimeNode, ServiceNode
 from f8pysdk.service_runtime_tools.deploy.readiness import wait_service_ready
@@ -287,7 +287,10 @@ def test_two_python_service_buses_roundtrip_over_zenoh() -> None:
                 endpoint="set_state",
                 payload=F8SetStateRequest(
                     reqId="set-state-b",
-                    args=F8SetStateArgs(nodeId="sink", field="input", value="endpoint"),
+                    args=validate_as(
+                        F8SetStateArgs,
+                        {"nodeId": "sink", "field": "input", "value": "endpoint"},
+                    ),
                     meta={"source": "test"},
                 ),
                 reply_type=F8SetStateReply,

@@ -8,7 +8,7 @@ from typing import Any, TYPE_CHECKING
 
 import msgspec
 
-from ...codec import decode_as, decode_obj, encode_obj
+from ...codec import decode_as, decode_obj, dump_json, encode_obj, validate_as
 from ...generated import (
     Code,
     F8ActivateRequest,
@@ -369,7 +369,8 @@ class ServiceBusControlHandlers:
             return
         req_id = self._req_id(payload.reqId)
         node_id_s = str(payload.args.nodeId or "").strip()
-        field_s = str(payload.args.field or "").strip()
+        args_mapping = dump_json(payload.args)
+        field_s = str(args_mapping.get("field") or "").strip() if isinstance(args_mapping, dict) else ""
         value = payload.args.value
         if not node_id_s or not field_s:
             await req.respond(
@@ -438,7 +439,10 @@ class ServiceBusControlHandlers:
                 F8SetStateReply(
                     reqId=req_id,
                     ok=True,
-                    result=F8SetStateReplyResult(nodeId=node_id_s, field=field_s),
+                    result=validate_as(
+                        F8SetStateReplyResult,
+                        {"nodeId": node_id_s, "field": field_s},
+                    ),
                     error=None,
                 )
             )

@@ -298,7 +298,7 @@ def _run_supervisor(
         popen_kwargs["start_new_session"] = True
     else:
         try:
-            popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
         except AttributeError:
             pass
     proc = subprocess.Popen(list(child_cmd), **popen_kwargs)

@@ -5,7 +5,7 @@ from typing import Any
 
 from qtpy import QtCore, QtGui, QtWidgets
 
-from f8pystudio.ui.components.controls import F8Dial, F8OptionCombo
+from f8pystudio.ui.components.controls import F8Dial, F8OptionCombo, F8RangeBar
 from f8pystudio.ui.support.state_builders import StateControlSpec, build_inline_control_binding
 from f8pystudio.ui.components.state_editors import F8IncrementButtonEditor, F8WrapLineEditor
 
@@ -136,6 +136,37 @@ def test_select_builder_refresh_options_preserves_selected_value() -> None:
     assert widget.count() == 3
     assert widget.value() == "b"
     assert widget._popup is None
+
+
+def test_range_slider_builder_edits_min_and_max_in_one_control() -> None:
+    _ensure_app()
+    state = {"value": [0.2, 0.8]}
+    calls: list[tuple[Any, bool]] = []
+    binding = _build_inline_binding(
+        spec=StateControlSpec(
+            name="outputRange",
+            label="Output Range",
+            ui_control="range_slider",
+            ui_language="plaintext",
+            schema_type="array",
+            enum_items=[],
+            minimum=0.0,
+            maximum=1.0,
+        ),
+        state=state,
+        calls=calls,
+    )
+
+    widget = binding.widget
+    assert isinstance(widget, F8RangeBar)
+    assert widget.layout().count() == 2
+    assert widget.value() == [0.2, 0.8]
+
+    widget.lower_bar().valueCommitted.emit(0.35)
+    assert calls[-1] == ([0.35, 0.8], True)
+
+    widget.upper_bar().valueChanging.emit(0.1)
+    assert calls[-1] == ([0.35, 0.35], False)
 
 
 def test_button_builder_marks_invalid_numeric_schema() -> None:

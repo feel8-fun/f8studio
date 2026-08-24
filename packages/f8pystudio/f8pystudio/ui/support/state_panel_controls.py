@@ -13,6 +13,7 @@ from ...nodegraph.node_text_fields import node_text_editor_binding
 from ...nodegraph.state_pool_resolver import build_node_pool_resolver, parse_multiselect_pool, parse_select_pool
 from ...nodegraph.state_schema import (
     effective_state_fields,
+    schema_array_item_type,
     schema_enum_items,
     schema_numeric_range,
     schema_type_any,
@@ -73,7 +74,6 @@ def _node_graph_and_id(node: Any) -> tuple[Any | None, str]:
     return graph, node_id
 
 
-
 def build_state_panel_control(
     *,
     node: Any,
@@ -90,7 +90,6 @@ def build_state_panel_control(
         register_option_pool_dependent=register_option_pool_dependent,
     )
     return _build_state_panel_control(context)
-
 
 
 def _build_state_panel_control(context: ControlBuildContext) -> Any:
@@ -122,6 +121,7 @@ def _build_state_panel_control(context: ControlBuildContext) -> Any:
         multiselect_pool_field=multiselect_pool_field,
         is_image_b64=schema_t == "string"
         and (ui_control_name in {"image", "image_b64", "img"} or "b64" in prop_name.lower()),
+        range_integer=schema_array_item_type(schema) == "integer",
     )
     try:
         title = f"{node.name()} - {prop_name}"
@@ -133,7 +133,9 @@ def _build_state_panel_control(context: ControlBuildContext) -> Any:
         pool_resolver=pool_resolver,
         editor_title=title,
         assist_context=_editor_assist_context_for_field(node, prop_name, ui_language),
-        assist_context_provider=lambda current_node=node, current_prop=prop_name, current_lang=ui_language: _editor_assist_context_for_field(
+        assist_context_provider=lambda current_node=node,
+        current_prop=prop_name,
+        current_lang=ui_language: _editor_assist_context_for_field(
             current_node,
             current_prop,
             current_lang,
@@ -156,10 +158,8 @@ def _build_state_panel_control(context: ControlBuildContext) -> Any:
     return binding.widget
 
 
-
 def set_widget_read_only(widget: Any, *, read_only: bool) -> None:
     set_control_read_only(widget, read_only=read_only)
-
 
 
 def state_field_is_readonly(access: F8StateAccess | None) -> bool:
@@ -169,21 +169,22 @@ def state_field_is_readonly(access: F8StateAccess | None) -> bool:
 
 
 __all__ = [
-    'ControlBuildContext',
-    'ControlBuildResult',
-    'StateFieldDescriptor',
-    'F8StateAccess',
-    'build_state_panel_control',
-    'effective_state_fields',
-    'parse_multiselect_pool',
-    'parse_select_pool',
-    'schema_enum_items',
-    'schema_numeric_range',
-    'schema_type_any',
-    'set_widget_read_only',
-    'state_field_access',
-    'state_field_is_readonly',
-    'state_field_label',
-    'state_field_schema',
-    'state_field_ui_control',
+    "ControlBuildContext",
+    "ControlBuildResult",
+    "StateFieldDescriptor",
+    "F8StateAccess",
+    "build_state_panel_control",
+    "effective_state_fields",
+    "parse_multiselect_pool",
+    "parse_select_pool",
+    "schema_enum_items",
+    "schema_array_item_type",
+    "schema_numeric_range",
+    "schema_type_any",
+    "set_widget_read_only",
+    "state_field_access",
+    "state_field_is_readonly",
+    "state_field_label",
+    "state_field_schema",
+    "state_field_ui_control",
 ]

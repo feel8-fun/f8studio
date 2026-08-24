@@ -7,7 +7,15 @@ from qtpy import QtCore, QtWidgets
 
 from ...editor_assist.session import EditorSessionKey
 from ...editor_assist.workspace import EditorAssistContext
-from ..components.controls import F8Dial, F8ImageB64Editor, F8MultiSelect, F8OptionCombo, F8Switch, F8ValueBar
+from ..components.controls import (
+    F8Dial,
+    F8ImageB64Editor,
+    F8MultiSelect,
+    F8OptionCombo,
+    F8RangeBar,
+    F8Switch,
+    F8ValueBar,
+)
 from ...ui.support.ui_control import parse_ui_control
 from ..components.state_editors import (
     F8BoolSwitchEditor,
@@ -18,6 +26,7 @@ from ..components.state_editors import (
     F8MultiSelectEditor,
     F8NumberLineEditor,
     F8OptionComboEditor,
+    F8RangeBarEditor,
     F8ValueBarEditor,
     F8WrapLineEditor,
 )
@@ -43,6 +52,7 @@ class StateControlSpec:
     select_pool_field: str | None = None
     multiselect_pool_field: str | None = None
     is_image_b64: bool = False
+    range_integer: bool = False
 
 
 @dataclass(frozen=True)
@@ -84,7 +94,13 @@ def set_control_read_only(widget: QtWidgets.QWidget, *, read_only: bool) -> None
     if isinstance(widget, F8ValueBarEditor):
         widget.set_read_only(bool(read_only))
         return
+    if isinstance(widget, F8RangeBarEditor):
+        widget.set_read_only(bool(read_only))
+        return
     if isinstance(widget, F8ValueBar):
+        widget.set_read_only(bool(read_only))
+        return
+    if isinstance(widget, F8RangeBar):
         widget.set_read_only(bool(read_only))
         return
     if isinstance(widget, F8Dial):
@@ -235,6 +251,18 @@ def build_panel_control_binding(
             widget.set_min(spec.minimum)
         if spec.maximum is not None:
             widget.set_max(spec.maximum)
+        return _binding(widget, apply_value=widget.set_value)
+
+    if ui == "range_slider":
+        widget = F8RangeBarEditor(data_type=int if spec.range_integer else float)
+        widget.set_name(spec.name)
+        if spec.minimum is not None:
+            widget.set_min(spec.minimum)
+        if spec.maximum is not None:
+            widget.set_max(spec.maximum)
+        if spec.schema_type != "array":
+            widget.setEnabled(False)
+            widget.setToolTip("Range slider requires an array state schema with two numeric values.")
         return _binding(widget, apply_value=widget.set_value)
 
     if spec.schema_type in {"integer", "number"}:
@@ -470,6 +498,27 @@ def build_inline_control_binding(
         _apply_slider_value(value_getter())
         widget.set_read_only(bool(read_only))
         return _binding(widget, apply_value=_apply_slider_value)
+
+    if ui == "range_slider":
+        widget = F8RangeBar(
+            widget_parent,
+            integer=spec.range_integer,
+            minimum=0.0,
+            maximum=1.0,
+        )
+        widget.set_range(spec.minimum, spec.maximum)
+
+        def _apply_range_value(value: Any) -> None:
+            widget.set_value(value)
+
+        widget.valueChanging.connect(lambda value: value_setter(value, push_undo=False))  # type: ignore[attr-defined]
+        widget.valueCommitted.connect(lambda value: value_setter(value, push_undo=True))  # type: ignore[attr-defined]
+        _apply_range_value(value_getter())
+        if spec.schema_type != "array":
+            widget.setEnabled(False)
+            widget.setToolTip("Range slider requires an array state schema with two numeric values.")
+        widget.set_read_only(bool(read_only))
+        return _binding(widget, apply_value=_apply_range_value)
 
     if spec.schema_type == "integer" or ui in {"spinbox", "int"}:
         return _build_inline_number_binding(

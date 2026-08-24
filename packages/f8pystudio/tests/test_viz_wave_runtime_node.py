@@ -5,7 +5,7 @@ import unittest
 from typing import Any
 from unittest.mock import patch
 
-from f8pysdk.specs import F8RuntimeNode
+from f8pysdk.specs import F8DataPortSpec, F8RuntimeNode, number_schema
 
 from f8pystudio.operators.viz_wave import OPERATOR_CLASS, VizWaveRuntimeNode
 from f8pystudio.studio_specs.identifiers import SERVICE_CLASS
@@ -108,6 +108,28 @@ class VizWaveRuntimeNodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(runtime._refresh_task)
         self.assertIsNone(runtime._scheduled_refresh_ms)
         self.assertTrue(task.cancelled())
+
+    async def test_atomic_axis_frame_is_expanded_and_filtered_by_declared_ports(self) -> None:
+        node = _runtime_node()
+        node.dataInPorts = [
+            F8DataPortSpec(name=axis, description="", valueSchema=number_schema())
+            for axis in ("L0", "L1", "L2")
+        ]
+        runtime = _InlineStateVizWaveRuntimeNode(
+            node_id="vizwave1",
+            node=node,
+            runtime_state={},
+            initial_state={"throttleMs": 100},
+        )
+
+        with patch("f8pystudio.operators.viz_wave.emit_ui_command"):
+            await runtime.on_data(
+                "L0",
+                {"axes": {"L0": 0.1, "L1": 0.2, "L2": 0.3, "R0": 0.9}},
+                ts_ms=123,
+            )
+
+        self.assertEqual(runtime._series, {"L0": [(123, 0.1)], "L1": [(123, 0.2)], "L2": [(123, 0.3)]})
 
 
 if __name__ == "__main__":

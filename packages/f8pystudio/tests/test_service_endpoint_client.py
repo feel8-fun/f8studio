@@ -4,7 +4,7 @@ import asyncio
 from typing import Any
 
 from f8pysdk.f8_naming import svc_endpoint_key
-from f8pysdk.codec import encode_obj
+from f8pysdk.codec import decode_obj, encode_obj
 
 from f8pystudio.bridge.service_endpoint_client import (
     request_service_status,
@@ -234,3 +234,5 @@ def test_request_set_remote_state_returns_reject_details() -> None:
     assert result.reject_code == "INVALID_ARGS"
     assert result.reject_message == "invalid field"
     assert requester.calls[0][0] == svc_endpoint_key("svc_demo", "set_state")
+    request_payload = decode_obj(requester.calls[0][1])
+    assert request_payload["args"]["field"] == "gain"

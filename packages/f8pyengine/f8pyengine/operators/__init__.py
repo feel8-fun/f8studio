@@ -10,6 +10,7 @@ from .udp_out import UdpOutRuntimeNode
 from .skeleton_decoder import SkeletonDecoderRuntimeNode
 from .skeleton_selector import SkeletonSelectorRuntimeNode
 from .relative_pose_axes import RelativePoseAxesRuntimeNode
+from .contact_pose_axes import ContactPoseAxesRuntimeNode
 from .stream_watchdog import StreamWatchdogRuntimeNode
 from .tick import TickRuntimeNode
 from .envelope import EnvelopeRuntimeNode
@@ -56,6 +57,7 @@ __all__ = [
     "SkeletonDecoderRuntimeNode",
     "SkeletonSelectorRuntimeNode",
     "RelativePoseAxesRuntimeNode",
+    "ContactPoseAxesRuntimeNode",
     "StreamWatchdogRuntimeNode",
     "CosineRuntimeNode",
     "TCodeRuntimeNode",

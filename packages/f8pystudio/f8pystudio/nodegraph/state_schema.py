@@ -170,6 +170,10 @@ def schema_enum_items(schema: Any) -> list[str]:
 def schema_numeric_range(schema: Any) -> tuple[float | None, float | None]:
     if schema is None:
         return None, None
+    if isinstance(schema, dict) and schema.get("type") == "array":
+        return schema_numeric_range(schema.get("items"))
+    if isinstance(schema, F8ArrayTypeSchema):
+        return schema_numeric_range(schema.items)
     mins: list[float] = []
     maxs: list[float] = []
 
@@ -209,3 +213,11 @@ def schema_numeric_range(schema: Any) -> tuple[float | None, float | None]:
     lo = min(mins) if mins else None
     hi = max(maxs) if maxs else None
     return lo, hi
+
+
+def schema_array_item_type(schema: Any) -> str:
+    if isinstance(schema, dict) and schema.get("type") == "array":
+        return schema_type_any(schema.get("items"))
+    if isinstance(schema, F8ArrayTypeSchema):
+        return schema_type_any(schema.items)
+    return ""

@@ -20,6 +20,8 @@ from f8pysdk.specs import (  # noqa: E402
     F8RuntimeGraph,
     F8RuntimeNode,
     F8ServiceSpec,
+    F8SetStateReply,
+    F8SetStateRequest,
     F8StateAccess,
     F8StateSpec,
 )
@@ -33,7 +35,7 @@ from f8pysdk.service_bus.internal.micro import ServiceBusControlHandlers  # noqa
 from f8pysdk.service_bus.state.options import StatePublishOptions  # noqa: E402
 from f8pysdk.service_bus.state.pipeline import publish_state, validate_state_update  # noqa: E402
 from f8pysdk.state import StateWriteContext, StateWriteError, StateWriteOrigin  # noqa: E402
-from f8pysdk.codec import decode_as, decode_obj, encode_obj  # noqa: E402
+from f8pysdk.codec import decode_as, decode_obj, dump_json, encode_obj, validate_as  # noqa: E402
 from f8pysdk.testing import InMemoryCluster, InMemoryTransport, ServiceBusHarness  # noqa: E402
 
 
@@ -156,6 +158,30 @@ class _FakeReq:
 
 
 class StateWriteTests(unittest.IsolatedAsyncioTestCase):
+    async def test_set_state_endpoint_uses_wire_field_name_across_generated_aliases(self) -> None:
+        bus = AsyncMock()
+        endpoint = ServiceBusControlHandlers(bus)
+        req = _FakeReq(
+            validate_as(
+                F8SetStateRequest,
+                {
+                    "reqId": "r1",
+                    "args": {"nodeId": "sink", "field": "input", "value": "endpoint"},
+                    "meta": {"source": "test"},
+                },
+            )
+        )
+
+        await endpoint._set_state(req)
+
+        bus.publish_state_external.assert_awaited_once()
+        call = bus.publish_state_external.await_args
+        self.assertEqual(call.args[:3], ("sink", "input", "endpoint"))
+        self.assertIsNotNone(req.response)
+        reply = decode_as(req.response or b"", F8SetStateReply)
+        self.assertTrue(reply.ok)
+        self.assertEqual(dump_json(reply.result), {"nodeId": "sink", "field": "input"})
+
     async def test_external_cannot_write_ro(self) -> None:
         bus = ServiceBus(ServiceBusConfig(service_id="svc"))
         bus._graph = object()

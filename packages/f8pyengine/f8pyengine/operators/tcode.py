@@ -11,6 +11,7 @@ from f8pysdk.specs import (
     F8RuntimeNode,
     F8StateAccess,
     F8StateSpec,
+    complex_object_schema,
     number_schema,
     string_schema,
 )
@@ -61,9 +62,11 @@ class TCodeRuntimeNode(OperatorNode):
                 interval_ms = self._initial_state.get("intervalMs", 20)
         interval_i = max(1, _js_round(float(interval_ms)))
 
+        frame_raw = await self.pull("frame", ctx_id=ctx_id)
+        frame_axes = _frame_axes(frame_raw)
         commands: list[str] = []
         for axis in AXES:
-            raw_value = await self.pull(axis, ctx_id=ctx_id)
+            raw_value = frame_axes.get(axis) if frame_axes is not None else await self.pull(axis, ctx_id=ctx_id)
             numeric = parse_number(raw_value)
             if numeric is None:
                 continue
@@ -100,12 +103,20 @@ TCodeRuntimeNode.SPEC = F8OperatorSpec(
     description="Generates TCode v0.3 command strings from normalized axis values.",
     tags=["transform", "tcode", "osr", "command", "string"],
     dataInPorts=[
+        F8DataPortSpec(
+            name="frame",
+            description="Optional atomic axis frame. When present, scalar axis inputs are not pulled.",
+            valueSchema=complex_object_schema(
+                properties={"axes": complex_object_schema(properties={axis: number_schema() for axis in AXES})}
+            ),
+            showOnNode=True,
+        ),
         *[
             F8DataPortSpec(
                 name=axis,
                 description=f"Axis {axis} (0..1).",
                 valueSchema=number_schema(minimum=0.0, maximum=1.0),
-                showOnNode=True if i == 0 else False,
+                showOnNode=i < 6,
             )
             for i, axis in enumerate(AXES)
         ],
@@ -131,6 +142,14 @@ TCodeRuntimeNode.SPEC = F8OperatorSpec(
         )
     ],
 )
+
+
+def _frame_axes(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    nested = value.get("axes")
+    payload = nested if isinstance(nested, dict) else value
+    return payload if any(axis in payload for axis in AXES) else None
 
 def register_operator(registry: Registry) -> Registry:
     registry.register_operator(TCodeRuntimeNode.SPEC, TCodeRuntimeNode, overwrite=True)

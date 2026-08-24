@@ -45,6 +45,12 @@ def test_tcode_axes_accept_normalized_values() -> None:
         _assert_normalized_number_port(TCodeRuntimeNode, axis)
 
 
+def test_tcode_exposes_all_sr6_axes_on_the_graph_node() -> None:
+    visible = {str(port.name) for port in TCodeRuntimeNode.SPEC.dataInPorts or [] if port.showOnNode is True}
+    assert {"L0", "L1", "L2", "R0", "R1", "R2"} <= visible
+    assert {"V0", "V1", "A0", "A1"}.isdisjoint(visible)
+
+
 def test_sensitive_output_configuration_is_redacted_on_publish() -> None:
     assert _state_spec(LovenseOutRuntimeNode, "commandUrl").redactOnPublish is True
     assert _state_spec(ButtplugOutRuntimeNode, "wsUrl").redactOnPublish is True

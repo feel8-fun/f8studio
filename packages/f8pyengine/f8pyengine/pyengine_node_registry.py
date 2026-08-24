@@ -16,6 +16,7 @@ from .operators.udp_out import register_operator as register_udp_out_operator
 from .operators.skeleton_decoder import register_operator as register_skeleton_decoder_operator
 from .operators.skeleton_selector import register_operator as register_skeleton_selector_operator
 from .operators.relative_pose_axes import register_operator as register_relative_pose_axes_operator
+from .operators.contact_pose_axes import register_operator as register_contact_pose_axes_operator
 from .operators.stream_watchdog import register_operator as register_stream_watchdog_operator
 from .operators.exec_sequence import register_operator as register_exec_sequence_operator
 from .operators.branching import register_operator as register_branching_operator
@@ -104,6 +105,7 @@ def register_pyengine_specs(registry: Registry) -> Registry:
     register_skeleton_decoder_operator(registry)
     register_skeleton_selector_operator(registry)
     register_relative_pose_axes_operator(registry)
+    register_contact_pose_axes_operator(registry)
     register_stream_watchdog_operator(registry)
     register_udp_out_operator(registry)
     register_tcode_operator(registry)

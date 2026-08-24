@@ -585,6 +585,13 @@ class ServiceProcessManager:
         else:
             workdir = workdir.resolve()
 
+        creationflags = 0
+        if os.name == "nt":
+            try:
+                creationflags = subprocess.CREATE_NO_WINDOW
+            except AttributeError:
+                logger.debug("subprocess.CREATE_NO_WINDOW unavailable for service_id=%s", service_id, exc_info=True)
+
         proc = subprocess.Popen(
             cmd,
             cwd=str(workdir),
@@ -596,6 +603,7 @@ class ServiceProcessManager:
             encoding="utf-8",
             errors="replace",
             bufsize=1,
+            creationflags=creationflags,
         )
         with self._entries_lock:
             self._procs[service_id] = proc

@@ -1,0 +1,9 @@
+schemaVersion: f8serviceEntry/1
+serviceClass: f8.fallendoll
+label: Fallen Doll Source
+version: 0.1.0
+launch:
+  command: pixi
+  args: ["run", "-e", "studio-runtime", "f8pyfallendoll"]
+  env: {}
+  workdir: "../../../../"

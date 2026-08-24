@@ -4,14 +4,8 @@ channels = ["conda-forge"]
 name = "feel8-build"
 version = "0.4.0"
 description = "Feel8 meta package"
-platforms = ["win-64", "linux-64"]
+platforms = ["win-64", { name = "linux-glibc-2-34", platform = "linux-64", glibc = "2.34" }]
 preview = ["pixi-build"]
-
-[system-requirements]
-# Pixi uses `system-requirements` to determine the compatible manylinux tag for PyPI wheels on linux.
-# PySide6 6.10.1 wheels are published as `manylinux_2_34_x86_64`, so we must require glibc >= 2.34
-# for the linux environment solve to succeed.
-libc = { family = "glibc", version = "2.34" }
 
 [feature.python.dependencies]
 python = ">=3.14.3,<3.15"
@@ -69,7 +63,7 @@ pytest_sdk = "python -m pytest -q packages/f8pysdk/tests"
 pytest_studio = "python -m pytest -q packages/f8pystudio/tests"
 # Keep the initial repo-level static guards narrow and green. We can widen the
 # checked surface incrementally as more packages are annotated and cleaned up.
-lint = "ruff check packages/f8proclauncher/f8proclauncher packages/f8pystudio/f8pystudio/global_hotkeys packages/f8pymppose/f8pymppose packages/f8pyscript/f8pyscript packages/f8pyaudiofeat/f8pyaudiofeat packages/f8pydl/f8pydl packages/f8pystudio_ext_viz_tcode/f8pystudio_ext_viz_tcode packages/f8pystudio_ext_template_match/f8pystudio_ext_template_match packages/f8pysdk/f8pysdk packages/f8pyengine/f8pyengine"
+lint = "ruff check packages/f8proclauncher/f8proclauncher packages/f8pyfallendoll/f8pyfallendoll packages/f8pystudio/f8pystudio/global_hotkeys packages/f8pymppose/f8pymppose packages/f8pyscript/f8pyscript packages/f8pyaudiofeat/f8pyaudiofeat packages/f8pydl/f8pydl packages/f8pystudio_ext_viz_tcode/f8pystudio_ext_viz_tcode packages/f8pystudio_ext_template_match/f8pystudio_ext_template_match packages/f8pysdk/f8pysdk packages/f8pyengine/f8pyengine"
 typecheck = "basedpyright -p pyrightconfig.json"
 quality_exceptions = "python packages/f8pystudio/tools/quality/except_metrics.py packages --exclude-glob '**/tests/**' --max-broad 844 --max-silent 40"
 lint_imports = "lint-imports"
@@ -90,12 +84,14 @@ scikit-learn = ">=1.8.0,<2"
 f8pyengine = { path = "packages/f8pyengine", editable = true }
 f8pyscript = { path = "packages/f8pyscript", editable = true }
 f8proclauncher = { path = "packages/f8proclauncher", editable = true }
+f8pyfallendoll = { path = "packages/f8pyfallendoll", editable = true }
 
 [feature.engine.tasks]
 f8pyengine = "python -m f8pyengine.main"
 f8pyscript = "python -m f8pyscript.main_script"
 f8pyexpr = "python -m f8pyscript.main_expr"
 f8proclauncher = "python -m f8proclauncher.main"
+f8pyfallendoll = "python -m f8pyfallendoll.main"
 
 [feature.studio.pypi-dependencies]
 f8pystudio = { path = "packages/f8pystudio", editable = true }

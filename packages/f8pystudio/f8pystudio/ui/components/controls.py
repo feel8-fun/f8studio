@@ -172,6 +172,7 @@ def _choose_best_view_for_scene_point(views: list[Any], scene_pos: QtCore.QPoint
             continue
     return candidates[0] if candidates else None
 
+
 class _F8ComboPopup(QtWidgets.QFrame):
     valueSelected = QtCore.Signal(int)
 
@@ -656,6 +657,11 @@ class F8ValueBar(QtWidgets.QWidget):
         self._value: float | int = float(value) if value is not None else float(self._min)
         self._dragging = False
         self._read_only = False
+        self._text_prefix = ""
+
+    def set_text_prefix(self, prefix: str) -> None:
+        self._text_prefix = str(prefix or "").strip()
+        self.update()
 
     def set_read_only(self, read_only: bool) -> None:
         self._read_only = bool(read_only)
@@ -738,7 +744,8 @@ class F8ValueBar(QtWidgets.QWidget):
             p.setBrush(fill)
             p.drawRoundedRect(fill_rect, radius, radius)
 
-        text = self._format_value(self._value)
+        value_text = self._format_value(self._value)
+        text = f"{self._text_prefix} {value_text}" if self._text_prefix else value_text
         p.setPen(QtGui.QColor(235, 235, 235, 255 if interactive else 120))
         p.drawText(rect, QtCore.Qt.AlignCenter, text)
 
@@ -777,6 +784,99 @@ class F8ValueBar(QtWidgets.QWidget):
             self.valueCommitted.emit(v2)
         else:
             self.valueChanging.emit(v2)
+
+
+class F8RangeBar(QtWidgets.QWidget):
+    """Two compact value bars for editing a numeric ``[minimum, maximum]`` range."""
+
+    valueChanging = QtCore.Signal(object)  # list[float|int]
+    valueCommitted = QtCore.Signal(object)  # list[float|int]
+
+    def __init__(
+        self,
+        parent: QtWidgets.QWidget | None = None,
+        *,
+        minimum: float = 0.0,
+        maximum: float = 1.0,
+        value: Any = None,
+        integer: bool = False,
+    ) -> None:
+        super().__init__(parent)
+        self._integer = bool(integer)
+        self._lower_bar = F8ValueBar(self, minimum=minimum, maximum=maximum, integer=integer)
+        self._upper_bar = F8ValueBar(self, minimum=minimum, maximum=maximum, integer=integer)
+        self._lower_bar.set_text_prefix("Min")
+        self._upper_bar.set_text_prefix("Max")
+        self._lower_bar.valueChanging.connect(lambda raw: self._on_bar_value(0, raw, commit=False))  # type: ignore[attr-defined]
+        self._lower_bar.valueCommitted.connect(lambda raw: self._on_bar_value(0, raw, commit=True))  # type: ignore[attr-defined]
+        self._upper_bar.valueChanging.connect(lambda raw: self._on_bar_value(1, raw, commit=False))  # type: ignore[attr-defined]
+        self._upper_bar.valueCommitted.connect(lambda raw: self._on_bar_value(1, raw, commit=True))  # type: ignore[attr-defined]
+
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        layout.addWidget(self._lower_bar, 1)
+        layout.addWidget(self._upper_bar, 1)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        self.set_value(value if value is not None else [minimum, maximum])
+
+    def set_range(self, minimum: float | int | None, maximum: float | int | None) -> None:
+        current = self.value()
+        self._lower_bar.set_range(minimum, maximum)
+        self._upper_bar.set_range(minimum, maximum)
+        self.set_value(current)
+
+    def set_value(self, value: Any) -> None:
+        lower, upper = self._coerce_pair(value)
+        with QtCore.QSignalBlocker(self._lower_bar):
+            self._lower_bar.set_value(lower)
+        with QtCore.QSignalBlocker(self._upper_bar):
+            self._upper_bar.set_value(upper)
+
+    def value(self) -> list[float | int]:
+        return [self._lower_bar.value(), self._upper_bar.value()]
+
+    def set_read_only(self, read_only: bool) -> None:
+        self._lower_bar.set_read_only(bool(read_only))
+        self._upper_bar.set_read_only(bool(read_only))
+
+    def is_read_only(self) -> bool:
+        return self._lower_bar.is_read_only() and self._upper_bar.is_read_only()
+
+    def lower_bar(self) -> F8ValueBar:
+        return self._lower_bar
+
+    def upper_bar(self) -> F8ValueBar:
+        return self._upper_bar
+
+    def _coerce_pair(self, value: Any) -> tuple[float | int, float | int]:
+        if isinstance(value, (list, tuple)) and len(value) >= 2:
+            lower_raw, upper_raw = value[0], value[1]
+        else:
+            lower_raw, upper_raw = self._lower_bar.value(), self._upper_bar.value()
+        self._lower_bar.set_value(lower_raw)
+        self._upper_bar.set_value(upper_raw)
+        lower = self._lower_bar.value()
+        upper = self._upper_bar.value()
+        if lower > upper:
+            lower, upper = upper, lower
+        return lower, upper
+
+    def _on_bar_value(self, index: int, raw: Any, *, commit: bool) -> None:
+        current = self.value()
+        current[index] = raw
+        lower, upper = current
+        if lower > upper:
+            if index == 0:
+                lower = upper
+            else:
+                upper = lower
+        self.set_value([lower, upper])
+        value = self.value()
+        if commit:
+            self.valueCommitted.emit(value)
+        else:
+            self.valueChanging.emit(value)
 
 
 class F8Dial(QtWidgets.QWidget):
@@ -910,7 +1010,7 @@ class F8Dial(QtWidgets.QWidget):
             painter.drawArc(ring_rect, 90 * 16, -int(round(fraction * 360.0 * 16.0)))
 
         center = ring_rect.center()
-        indicator_radius = (ring_rect.width() / 2.0)
+        indicator_radius = ring_rect.width() / 2.0
         indicator_x = center.x() + math.cos((fraction * 2.0 * math.pi) - (math.pi / 2.0)) * indicator_radius
         indicator_y = center.y() + math.sin((fraction * 2.0 * math.pi) - (math.pi / 2.0)) * indicator_radius
         knob_radius = max(3.5, ring_width * 0.42)
@@ -927,7 +1027,8 @@ class F8Dial(QtWidgets.QWidget):
         painter.setFont(font)
         metrics = QtGui.QFontMetrics(font)
         while pixel_size > 8 and (
-            metrics.horizontalAdvance(display_text) > inner_rect.width() * 0.92 or metrics.height() > inner_rect.height() * 0.8
+            metrics.horizontalAdvance(display_text) > inner_rect.width() * 0.92
+            or metrics.height() > inner_rect.height() * 0.8
         ):
             pixel_size -= 1
             font.setPixelSize(pixel_size)
@@ -1310,7 +1411,9 @@ class F8MultiSelect(QtWidgets.QWidget):
         row.addWidget(btn_clear)
         row.addStretch(1)
 
-        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel, parent=dlg)
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel, parent=dlg
+        )
         buttons.accepted.connect(dlg.accept)  # type: ignore[attr-defined]
         buttons.rejected.connect(dlg.reject)  # type: ignore[attr-defined]
 
