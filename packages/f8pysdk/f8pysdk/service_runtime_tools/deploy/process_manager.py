@@ -596,6 +596,7 @@ class ServiceProcessManager:
             encoding="utf-8",
             errors="replace",
             bufsize=1,
+            start_new_session=os.name != "nt",
         )
         with self._entries_lock:
             self._procs[service_id] = proc

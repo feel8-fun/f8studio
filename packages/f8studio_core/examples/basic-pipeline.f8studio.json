@@ -1,0 +1,99 @@
+{
+  "schemaVersion": "f8studio-document/1",
+  "projectId": "example_project",
+  "graphId": "basic_pipeline",
+  "graphRevision": 1,
+  "layoutRevision": 1,
+  "nodes": [
+    {
+      "kind": "service",
+      "nodeId": "engine",
+      "name": "Python Engine",
+      "serviceId": "engine",
+      "serviceClass": "f8.pyengine",
+      "spec": {
+        "serviceClass": "f8.pyengine",
+        "label": "Python Engine"
+      }
+    },
+    {
+      "kind": "operator",
+      "nodeId": "source",
+      "name": "Source",
+      "serviceId": "engine",
+      "serviceClass": "f8.pyengine",
+      "operatorClass": "example.source",
+      "spec": {
+        "serviceClass": "f8.pyengine",
+        "operatorClass": "example.source",
+        "label": "Source",
+        "dataOutPorts": [
+          {
+            "name": "out",
+            "valueSchema": {"type": "number"}
+          }
+        ]
+      },
+      "ports": [
+        {
+          "portId": "data:output:out",
+          "name": "out",
+          "runtimeName": "out",
+          "kind": "data",
+          "direction": "output",
+          "dataSpec": {
+            "name": "out",
+            "valueSchema": {"type": "number"}
+          }
+        }
+      ]
+    },
+    {
+      "kind": "operator",
+      "nodeId": "sink",
+      "name": "Sink",
+      "serviceId": "engine",
+      "serviceClass": "f8.pyengine",
+      "operatorClass": "example.sink",
+      "spec": {
+        "serviceClass": "f8.pyengine",
+        "operatorClass": "example.sink",
+        "label": "Sink",
+        "dataInPorts": [
+          {
+            "name": "input",
+            "valueSchema": {"type": "number"}
+          }
+        ]
+      },
+      "ports": [
+        {
+          "portId": "data:input:input",
+          "name": "input",
+          "runtimeName": "input",
+          "kind": "data",
+          "direction": "input",
+          "dataSpec": {
+            "name": "input",
+            "valueSchema": {"type": "number"}
+          }
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "edgeId": "source_to_sink",
+      "fromNodeId": "source",
+      "fromPortId": "data:output:out",
+      "toNodeId": "sink",
+      "toPortId": "data:input:input",
+      "kind": "data"
+    }
+  ],
+  "layout": [
+    {"nodeId": "engine", "x": 0, "y": 0, "width": 760, "height": 360},
+    {"nodeId": "source", "x": 120, "y": 100},
+    {"nodeId": "sink", "x": 460, "y": 100}
+  ]
+}

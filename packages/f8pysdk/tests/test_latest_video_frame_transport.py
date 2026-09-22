@@ -28,6 +28,7 @@ def test_zenoh_video_frame_codec_roundtrip() -> None:
         fmt=VIDEO_FORMAT_BGRA32,
         frame_id=7,
         ts_ms=1234,
+        stream_epoch="0123456789abcdef0123456789abcdef",
     )
     frame = decode_zenoh_video_frame(raw)
     assert frame is not None
@@ -38,6 +39,7 @@ def test_zenoh_video_frame_codec_roundtrip() -> None:
         assert frame.fmt == VIDEO_FORMAT_BGRA32
         assert frame.frame_id == 7
         assert frame.ts_ms == 1234
+        assert frame.stream_epoch == "0123456789abcdef0123456789abcdef"
         assert frame.payload_bytes() == payload
     finally:
         frame.release()

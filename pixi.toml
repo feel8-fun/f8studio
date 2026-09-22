@@ -210,6 +210,47 @@ build_studio_launcher = "python scripts/build_studio_launcher.py"
 
 [feature.launcher-runtime]
 
+[feature.web-studio.dependencies]
+nodejs = ">=24,<25"
+
+[feature.web-studio.pypi-dependencies]
+f8studio-core = { path = "packages/f8studio_core", editable = true }
+f8media-protocol = { path = "packages/f8media_protocol", editable = true }
+f8media-gateway = { path = "packages/f8media_gateway", editable = true }
+f8studio-server = { path = "packages/f8studio_server", editable = true }
+f8pysdk = { path = "packages/f8pysdk", editable = true }
+aiortc = ">=1.14,<2"
+
+[feature.web-studio.tasks]
+studio_media_gateway = "python -m f8media_gateway"
+studio_server = "python -m f8studio_server"
+studio_web_dev = "npm --prefix packages/f8studio_web run dev"
+studio_web_build = "npm --prefix packages/f8studio_web run build"
+
+[feature.web-studio-test.dependencies]
+pytest = ">=8.4.2,<9"
+
+[feature.web-studio-test.pypi-dependencies]
+httpx = ">=0.28,<1"
+basedpyright = ">=1.31,<2"
+
+[feature.web-studio-test.tasks]
+studio_core_test = "python -m pytest -q packages/f8studio_core/tests"
+studio_server_test = "python -m pytest -q packages/f8studio_server/tests"
+studio_media_gateway_test = "python -m pytest -q packages/f8media_gateway/tests"
+studio_web_test = "npm --prefix packages/f8studio_web run test"
+studio_web_typecheck = "npm --prefix packages/f8studio_web run typecheck"
+studio_web_e2e = { cmd = "npm --prefix packages/f8studio_web run test:e2e", depends-on = ["studio_web_build"] }
+studio_python_typecheck = "basedpyright -p pyrightconfig.web-studio.json"
+studio_no_qt_check = "python scripts/web_studio/check_no_qt.py"
+studio_dependency_probe = "python scripts/web_studio/probe_environment.py"
+studio_runtime_probe = "python scripts/web_studio/probe_real_runtime.py"
+studio_media_probe = "python scripts/web_studio/probe_webrtc_media.py"
+studio_real_video_probe = "python scripts/web_studio/probe_real_video.py"
+studio_media_bench = "python scripts/web_studio/benchmark_media.py"
+studio_stream_restart_probe = "python scripts/web_studio/probe_stream_restart.py"
+studio_p3_combined_bench = "python scripts/web_studio/benchmark_p3_combined.py"
+
 [environments]
 # Pixi tasks are feature-scoped, not environment-scoped. If a task's feature is
 # included by multiple environments (for example both `default` and
@@ -224,3 +265,6 @@ doc = { features = ["python", "doc"] }
 cpp = { features = ["cpp"], solve-group = "cpp" }
 ci = { features = ["ci"], solve-group = "ci" }
 launcher = { features = ["launcher"], solve-group = "launcher" }
+web-studio = { features = ["python", "web-studio"], solve-group = "web-studio" }
+web-studio-test = { features = ["python", "web-studio", "web-studio-test"], solve-group = "web-studio" }
+web-studio-runtime = { features = ["python", "sdk", "engine"], solve-group = "web-studio" }

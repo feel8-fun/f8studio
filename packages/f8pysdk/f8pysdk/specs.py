@@ -6,6 +6,10 @@ Prefer importing generated protocol types and schema/spec helper functions from
 
 from __future__ import annotations
 
+from ._specs.builtin_fields import (
+    operator_state_fields_with_builtins,
+    service_state_fields_with_builtins,
+)
 from ._specs.edit_policy import (
     EditableCollectionName,
     SpecLike,
@@ -338,7 +342,9 @@ __all__ = [
     "is_required_state_field",
     "json_data_port",
     "number_schema",
+    "operator_state_fields_with_builtins",
     "palette_category_from_spec",
+    "service_state_fields_with_builtins",
     "schema_default",
     "schema_type",
     "spec_edit_policy",

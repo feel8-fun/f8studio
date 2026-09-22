@@ -131,9 +131,14 @@ class ServiceCatalog:
             ServiceCatalog._instance = ServiceCatalog()
         return ServiceCatalog._instance
 
-    def __init__(self) -> None:
-        self.services = ServiceSpecRegistry.instance()
-        self.operators = OperatorSpecRegistry.instance()
+    def __init__(
+        self,
+        *,
+        services: ServiceSpecRegistry | None = None,
+        operators: OperatorSpecRegistry | None = None,
+    ) -> None:
+        self.services = services or ServiceSpecRegistry()
+        self.operators = operators or OperatorSpecRegistry()
         self._service_entry_paths: dict[str, Path] = {}
 
     def service_entry_path(self, service_class: str) -> Path | None:
