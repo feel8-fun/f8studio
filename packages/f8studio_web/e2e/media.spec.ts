@@ -43,6 +43,7 @@ test('plays changing WebRTC video and renders interactive 3D without overflow', 
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await page.goto('/');
   await expect(page.locator('.connection-online')).toBeVisible();
+  await page.getByRole('complementary', { name: 'Workspace navigation' }).getByRole('button', { name: 'Video' }).click();
 
   await page.getByRole('button', { name: 'Connect' }).click();
   await expect(page.locator('.media-status')).toContainText('fps');
@@ -93,7 +94,7 @@ test('plays WebRTC audio and renders a nonflat waveform', async ({ page }, testI
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await page.goto('/');
   await expect(page.locator('.connection-online')).toBeVisible();
-  await page.getByRole('tab', { name: 'Audio' }).click();
+  await page.getByRole('complementary', { name: 'Workspace navigation' }).getByRole('button', { name: 'Audio' }).click();
   await page.getByRole('button', { name: 'Play' }).click();
   await expect(page.locator('.media-status')).toContainText('48000 Hz');
 
@@ -168,6 +169,7 @@ test('stopping during video negotiation releases the remote session', async ({ p
     markRequestFinished?.();
   });
   await page.goto('/');
+  await page.getByRole('complementary', { name: 'Workspace navigation' }).getByRole('button', { name: 'Video' }).click();
   await page.getByRole('button', { name: 'Connect' }).click();
   await requestReachedServer;
   await page.getByRole('button', { name: 'Stop' }).click();
@@ -183,6 +185,7 @@ test('stopping during video negotiation releases the remote session', async ({ p
 test('measures 1080p displayed video latency from the capture marker', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', '1080p latency is measured once on the desktop viewport');
   await page.goto('/');
+  await page.getByRole('complementary', { name: 'Workspace navigation' }).getByRole('button', { name: 'Video' }).click();
   await page.getByLabel('Video source').fill('synthetic://bars-1080p');
   await page.getByRole('button', { name: 'Main' }).click();
   await page.getByRole('button', { name: 'Connect' }).click();

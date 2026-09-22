@@ -6,7 +6,20 @@ from typing import NoReturn
 import msgspec
 
 from f8pysdk.f8_naming import ensure_token
-from f8pysdk.specs import F8StateAccess, data_port_payload_kind
+from f8pysdk.specs import (
+    F8AnyTypeSchema,
+    F8ArrayTypeSchema,
+    F8BooleanTypeSchema,
+    F8ComplexObjectTypeSchema,
+    F8DataTypeSchema,
+    F8IntegerTypeSchema,
+    F8JsonValue,
+    F8NullTypeSchema,
+    F8NumberTypeSchema,
+    F8StateAccess,
+    F8StringTypeSchema,
+    data_port_payload_kind,
+)
 
 from .catalog import ports_for_spec
 from .models import (
@@ -51,6 +64,70 @@ def _edge_port_kind(port: GraphPort) -> GraphEdgeKind:
     return GraphEdgeKind.state
 
 
+def _validate_schema_value(value: F8JsonValue, schema: F8DataTypeSchema, path: str) -> None:
+    if isinstance(schema, F8AnyTypeSchema):
+        return
+    if isinstance(schema, F8StringTypeSchema):
+        if not isinstance(value, str):
+            _fail("invalid_state_value", f"{path} must be a string")
+        if not isinstance(schema.enum, msgspec.UnsetType) and value not in schema.enum:
+            _fail("invalid_state_value", f"{path} must be one of {schema.enum}")
+        return
+    if isinstance(schema, F8BooleanTypeSchema):
+        if not isinstance(value, bool):
+            _fail("invalid_state_value", f"{path} must be a boolean")
+        if not isinstance(schema.enum, msgspec.UnsetType) and value not in schema.enum:
+            _fail("invalid_state_value", f"{path} must be one of {schema.enum}")
+        return
+    if isinstance(schema, F8NullTypeSchema):
+        if value is not None:
+            _fail("invalid_state_value", f"{path} must be null")
+        return
+    if isinstance(schema, (F8NumberTypeSchema, F8IntegerTypeSchema)):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            expected = "an integer" if isinstance(schema, F8IntegerTypeSchema) else "a finite number"
+            _fail("invalid_state_value", f"{path} must be {expected}")
+        if isinstance(schema, F8IntegerTypeSchema) and not isinstance(value, int):
+            _fail("invalid_state_value", f"{path} must be an integer")
+        numeric = float(value)
+        if not isinstance(schema.enum, msgspec.UnsetType) and value not in schema.enum:
+            _fail("invalid_state_value", f"{path} must be one of {schema.enum}")
+        if not isinstance(schema.minimum, msgspec.UnsetType) and numeric < schema.minimum:
+            _fail("invalid_state_value", f"{path} must be at least {schema.minimum}")
+        if not isinstance(schema.maximum, msgspec.UnsetType) and numeric > schema.maximum:
+            _fail("invalid_state_value", f"{path} must be at most {schema.maximum}")
+        if not isinstance(schema.exclusiveMinimum, msgspec.UnsetType) and numeric <= schema.exclusiveMinimum:
+            _fail("invalid_state_value", f"{path} must be greater than {schema.exclusiveMinimum}")
+        if not isinstance(schema.exclusiveMaximum, msgspec.UnsetType) and numeric >= schema.exclusiveMaximum:
+            _fail("invalid_state_value", f"{path} must be less than {schema.exclusiveMaximum}")
+        if not isinstance(schema.multipleOf, msgspec.UnsetType):
+            quotient = numeric / schema.multipleOf
+            if not math.isclose(quotient, round(quotient), rel_tol=1e-9, abs_tol=1e-9):
+                _fail("invalid_state_value", f"{path} must be a multiple of {schema.multipleOf}")
+        return
+    if isinstance(schema, F8ArrayTypeSchema):
+        if not isinstance(value, (list, tuple)):
+            _fail("invalid_state_value", f"{path} must be an array")
+        for index, item in enumerate(value):
+            _validate_schema_value(item, schema.items, f"{path}[{index}]")
+        return
+    assert isinstance(schema, F8ComplexObjectTypeSchema)
+    if not isinstance(value, dict):
+        _fail("invalid_state_value", f"{path} must be an object")
+    required = () if isinstance(schema.required, msgspec.UnsetType) else schema.required
+    missing = [name for name in required if name not in value]
+    if missing:
+        _fail("invalid_state_value", f"{path} is missing required fields: {', '.join(missing)}")
+    if schema.additionalProperties is False:
+        unexpected = sorted(set(value) - set(schema.properties))
+        if unexpected:
+            _fail("invalid_state_value", f"{path} has unexpected fields: {', '.join(unexpected)}")
+    for name, item in value.items():
+        property_schema = schema.properties.get(name)
+        if property_schema is not None:
+            _validate_schema_value(item, property_schema, f"{path}.{name}")
+
+
 def _validate_node(node: GraphNode, service_nodes: dict[str, ServiceNode]) -> None:
     _validate_token(node.node_id, "node_id")
     _validate_token(node.service_id, "service_id")
@@ -93,6 +170,7 @@ def _validate_node(node: GraphNode, service_nodes: dict[str, ServiceNode]) -> No
             msgspec.json.encode(value)
         except (TypeError, ValueError) as exc:
             _fail("invalid_state_value", f"state value is not JSON compatible: {node.node_id}.{field_name}: {exc}")
+        _validate_schema_value(value, field.valueSchema, f"{node.node_id}.{field_name}")
 
 
 def _validate_edges(document: StudioDocument, nodes: dict[str, GraphNode]) -> None:

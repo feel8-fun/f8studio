@@ -5,6 +5,7 @@ const baseURL = process.env.F8STUDIO_E2E_BASE_URL ?? 'http://127.0.0.1:8240';
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: '**/graph-performance.spec.ts',
   outputDir: './test-results',
   timeout: 30_000,
   expect: { timeout: 10_000 },

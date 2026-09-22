@@ -7,6 +7,10 @@ import msgspec
 
 from f8pysdk.service_runtime_tools.inventory import ServiceCatalog, load_discovery_into_catalog
 from f8pysdk.specs import F8OperatorSpec, F8ServiceDescribe, F8ServiceSpec
+from f8studio_core.graph import NodeCatalog
+from f8studio_core.graph.models import GraphNode
+
+from .models import CreateCatalogNodeRequest
 
 
 class CatalogSnapshot(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
@@ -49,6 +53,33 @@ class CatalogService:
             )
         )
         return CatalogSnapshot(services=services, operators=operators)
+
+    def create_node(self, request: CreateCatalogNodeRequest) -> GraphNode:
+        snapshot = self.snapshot()
+        catalog = NodeCatalog(services=snapshot.services, operators=snapshot.operators)
+        if request.kind == "service":
+            try:
+                return catalog.create_service_node(
+                    node_id=request.node_id,
+                    service_class=request.service_class,
+                    name=request.name,
+                )
+            except KeyError as exc:
+                raise ValueError(f"unknown serviceClass: {request.service_class}") from exc
+        if request.operator_class is None or request.service_id is None:
+            raise ValueError("operatorClass and serviceId are required for operator nodes")
+        try:
+            return catalog.create_operator_node(
+                node_id=request.node_id,
+                service_id=request.service_id,
+                service_class=request.service_class,
+                operator_class=request.operator_class,
+                name=request.name,
+            )
+        except KeyError as exc:
+            raise ValueError(
+                f"unknown operator: {request.service_class}/{request.operator_class}"
+            ) from exc
 
 
 __all__ = ["CatalogService", "CatalogSnapshot"]

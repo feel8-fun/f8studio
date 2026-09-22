@@ -35,6 +35,7 @@ from f8studio_core.graph import (
 from .application import StudioApplication
 from .models import (
     BrowserRtcConfiguration,
+    CreateCatalogNodeRequest,
     CreateProjectRequest,
     DeployProjectRequest,
     ServiceActiveRequest,
@@ -231,6 +232,11 @@ def create_app(
     async def catalog() -> F8JsonValue:
         return _json_value(studio.catalog.snapshot())
 
+    @app.post("/api/catalog/nodes")
+    async def create_catalog_node(request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, CreateCatalogNodeRequest)
+        return _json_value(await asyncio.to_thread(studio.catalog.create_node, payload))
+
     @app.get("/api/runtime/monitors")
     async def runtime_monitors() -> F8JsonValue:
         return _json_value(await studio.monitors.snapshot())
@@ -368,6 +374,11 @@ def create_app(
     async def deploy_project(project_id: str, request: Request) -> F8JsonValue:
         payload = await _decode_body(request, DeployProjectRequest)
         return _json_value(await studio.jobs.submit(project_id, payload))
+
+    @app.get("/api/projects/{project_id}/deployments/latest")
+    async def latest_deployment(project_id: str) -> F8JsonValue:
+        await asyncio.to_thread(studio.projects.get, project_id)
+        return _json_value(await studio.jobs.latest(project_id))
 
     @app.get("/api/jobs/{job_id}")
     async def get_job(job_id: str) -> F8JsonValue:

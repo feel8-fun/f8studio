@@ -4,7 +4,7 @@
 
 ## 当前结论
 
-P0、P1、P2、P3 和 P3.5 已在当前 Linux 主机完成验证。P2 包含持久化项目、图编辑 API、可靠事件游标、部署 job、服务控制、运行时 monitor、真实 PyEngine 联调，以及 13 个无 Qt Studio runtime operators。P3 已完成 WebRTC main/thumbnail、真实 screencap -> Zenoh -> WebRTC、FLOW/SCALAR、服务端精确 overlay、WebRTC 音频与波形、Three.js 骨架、重启恢复、浏览器显示延迟和 30 分钟稳定性验证。P3.5 将 Zenoh 订阅、媒体转换、aiortc peer 和编码执行迁入独立 `f8media_gateway` 进程，Studio Server 只依赖轻量 `f8media_protocol` 并代理 typed HTTP 信令。多 peer 软件编码在组合负载下的 main 为 26.86-27.52 FPS，低于 28 FPS 初始预算，因此 P3 原型完成不等于媒体性能完全对等；进程隔离已完成，硬件/共享编码仍是发布前优化项。`f8studio_core`、`f8media_protocol`、`f8media_gateway`、`f8studio_server` 和 `f8studio_web` 均为独立包；Web Studio 与服务运行时环境都不组合旧 `studio` feature。
+P0、P1、P2、P3、P3.5 和 P4 已在当前 Linux 主机完成验证。P4 使用 React Flow 接入权威项目文档和 catalog，已具备项目创建/选择、可持久化缩放的 service canvas 与 operator 嵌套、动态端口、typed data/state/exec/command 连接规则、data edge policy、约束拖放、级联删除、子图复制、多选、撤销/重做、自动持久化重开、schema 驱动的 Inspector 与 inline state controls、上游 state 只读联动、部署/停止，以及 draft/layout/deployed revision 和逐服务部署错误展示。隐藏的内置 `f8.pystudio` service 会在首次添加其 operator 时以固定 `studio` id 原子创建，因此从空图可直接完成 Studio runtime 工作流。300 节点/600 边交互预算已通过，1000 节点/2000 边压力曲线已有证据。P2 包含持久化项目、图编辑 API、可靠事件游标、部署 job、服务控制、运行时 monitor、真实 PyEngine 联调，以及 13 个无 Qt Studio runtime operators。P3 已完成 WebRTC main/thumbnail、真实 screencap -> Zenoh -> WebRTC、FLOW/SCALAR、服务端精确 overlay、WebRTC 音频与波形、Three.js 骨架、重启恢复、浏览器显示延迟和 30 分钟稳定性验证。P3.5 将 Zenoh 订阅、媒体转换、aiortc peer 和编码执行迁入独立 `f8media_gateway` 进程，Studio Server 只依赖轻量 `f8media_protocol` 并代理 typed HTTP 信令。多 peer 软件编码在组合负载下的 main 为 26.86-27.52 FPS，低于 28 FPS 初始预算，因此 P3 原型完成不等于媒体性能完全对等；进程隔离已完成，硬件/共享编码仍是发布前优化项。`f8studio_core`、`f8media_protocol`、`f8media_gateway`、`f8studio_server` 和 `f8studio_web` 均为独立包；Web Studio 与服务运行时环境都不组合旧 `studio` feature。
 
 ## 基线
 
@@ -32,7 +32,7 @@ P0、P1、P2、P3 和 P3.5 已在当前 Linux 主机完成验证。P2 包含持�
 | P2 无界面运行时 | 完成（Linux） | typed HTTP/WS、13 个 Studio 算子、真实 PyEngine、内置 Studio graph/presentation、部分部署、断连和关闭均已验证 |
 | P3 视频与 3D 原型 | 完成（Linux，性能降级已记录） | 视频/数值/精确 overlay/音频/Three.js/重启/延迟/5 分钟组合与 30 分钟稳定性均有真实证据；组合 main 未达 28 FPS，见下方限制 |
 | P3.5 媒体网关进程隔离 | 完成（Linux） | `f8media-api/1`、远程代理、独立 PID、真实 screencap 链路和父进程关闭回收均已验证；共享/native 编码待后续优化 |
-| P4 Web 图编辑 | 未开始 | 当前页面是连接到真实 health API 的工作区壳 |
+| P4 Web 图编辑 | 完成（Linux） | 空图到内置 Studio runtime 的创建、配置、部署、monitor、再次修改和重开闭环通过；service/operator 容器、typed 连线、edge policy、动态状态控件、历史与冲突恢复均有测试；300/600 预算通过并记录 1000/2000 压力曲线 |
 | P5 本地业务能力 | 未开始 | 依据下方功能台账逐项迁移 |
 | P6 AI / CLI / MCP | 未开始 | 旧实现仍依赖 Qt 图适配器 |
 | P7 移除 Qt | 未开始 | 旧 Qt 应用仍作为行为参照保留 |
@@ -44,7 +44,7 @@ P0、P1、P2、P3 和 P3.5 已在当前 Linux 主机完成验证。P2 包含持�
 | 领域 | 现有能力 | 新目标 | 状态 |
 | --- | --- | --- | --- |
 | 图文档 | 节点、服务容器、data/state/exec/command 边、布局 | 纯数据文档、显式端口类型、graph/layout revision | 核心完成 |
-| 图操作 | 创建、删除、连接、动态 spec、undo/redo | 原子 typed patch、幂等、冲突和历史 | 核心完成 |
+| 图操作 | 创建、删除、连接、动态 spec、undo/redo | 原子 typed patch、幂等、冲突和历史 | Web 基础编辑、端口方向/kind/payload/基数/cycle/exec service 约束、data queue/latest policy、service 级联删除、约束重绑定、原子容器复制与显式 service binding 完成 |
 | 编译部署 | NodeGraphQt 对象编译为 runtime graph | 纯文档确定性编译、异步部署 job | 核心与 API 完成；真实 PyEngine 部署通过 |
 | 服务运行时 | 发现、启停、状态、命令、监控、受管进程 | 无 Qt application service | 基础完成；真实 Zenoh、状态、exec 与关闭通过 |
 | Studio 算子 | text/track/wave/video/audio/3D、control、expr、patch hub 等 | 后端算子与前端 renderer 分离 | 13 个后端算子全部迁移；Web renderer 属于 P3/P4/P5 |
@@ -57,16 +57,17 @@ P0、P1、P2、P3 和 P3.5 已在当前 Linux 主机完成验证。P2 包含持�
 | 游戏/设备 | Unity/VaM、UDP、串口、外部进程 | 原生能力留后端，Web 配置与观察 | 待迁移 |
 | 快捷键 | Qt/OS 全局快捷键 | Web 局部快捷键 + 后端原生全局适配 | 待迁移 |
 | Agent | provider、会话、工具、审批、图构建 | 统一 application service，无 Qt bridge | 待迁移 |
-| Web/API 壳 | 无独立产品入口 | loopback FastAPI、health/capabilities、React 工作区 | typed 图/项目/job/runtime/monitor API 与 WS 事件已建 |
+| Web/API 壳 | 无独立产品入口 | loopback FastAPI、health/capabilities、React 工作区 | typed 图/项目/job/runtime/monitor API 与 WS 事件已建；React Flow 主工作区已接入 |
 
 ## 当前验证
 
 ```text
-pixi run -e web-studio-test studio_core_test            18 passed
+pixi run -e web-studio-test studio_core_test            21 passed
 pixi run -e web-studio-test studio_media_gateway_test   23 passed
-pixi run -e web-studio-test studio_server_test          37 passed
-pixi run -e web-studio-test studio_web_test             1 passed
-pixi run -e web-studio-test studio_web_e2e              7 passed, 1 skipped（desktop/mobile；1080p 延迟仅 desktop）
+pixi run -e web-studio-test studio_server_test          38 passed
+pixi run -e web-studio-test studio_web_test             15 passed
+pixi run -e web-studio-test studio_web_e2e              19 passed, 3 skipped（desktop/mobile；service 鼠标缩放、runtime Inspector 与 1080p 延迟仅 desktop）
+pixi run -e web-studio-test studio_graph_bench           1 passed（300/600 预算 + 1000/2000 压力曲线）
 pixi run -e web-studio-test studio_python_typecheck     0 errors
 pixi run -e web-studio-test studio_web_typecheck        passed
 pixi run -e web-studio-test studio_no_qt_check          passed
@@ -99,7 +100,9 @@ P3 当前 Linux 证据：真实 Uvicorn HTTP 信令可建立 aiortc peer，`synt
 
 组合 5 分钟场景额外包含一条音频：main 26.86 FPS、四路 thumbnail 7.69-7.73 FPS、CPU 191.1%、控制响应 p95 47.38 ms、错误 0、资源计数归零。30 分钟稳定性场景按退出条件运行 main + 4 thumbnails + 10 Hz 3D 骨架事件 + 2 Hz graph/monitor HTTP 控制：main 27.52 FPS、thumbnail 7.66-7.69 FPS、CPU 177.5%、3,474 次控制请求 p95 43.18 ms、16,877 条 presentation 事件、队列峰值 1、错误 0。任务数负载态 42、峰值 58、清理后 2；RSS 活跃样本约 500-693 MiB，最后 5 分钟净增 19.9 MiB（门槛 50 MiB），清理后 522.4 MiB；video/audio session/source 全部归零。原始证据位于 `docs/plans/evidence/p3-combined-5m.json` 与 `docs/plans/evidence/p3-stability-30m.json`。组合 main 未达 28 FPS，已定位为多 peer 软件编码瓶颈；不宣称媒体性能完全对等。
 
-Playwright 使用本机 Google Chrome 在 1440x900 与 390x844 视口验证：视频元素像素随帧变化、点击画面可查询带 frameId 的 latest raw 数值、Three.js framebuffer 非空、轨道拖拽改变画面、WebRTC 音频波形非平坦、布局无横向/纵向溢出，且页面无未处理错误。1080p main 使用帧内 16 位 capture clock marker 和 `requestVideoFrameCallback` 测得 60 个显示帧 p95 68 ms；localhost 浏览器和 producer 共用系统时钟，未使用 HTTP ping 代替视频延迟。截图保存在测试产物目录；Three.js 和图标均从本地 bundle 加载，无 CDN。
+Playwright 使用本机 Google Chrome 在 1440x900 与 390x844 视口验证：视频元素像素随帧变化、点击画面可查询带 frameId 的 latest raw 数值、Three.js framebuffer 非空、轨道拖拽改变画面、WebRTC 音频波形非平坦、布局无横向/纵向溢出，且页面无未处理错误。Graph Editor 用例验证 operator 以 React Flow `parentId` 嵌套在 service 中、拖入兼容容器会原子更新 binding/layout、移动 service 会对其 operator 做严格相同的绝对位移、选中 service 后可从四边和四角缩放且宽高会持久化、缩放后子节点仍在容器内且 viewport 不重置、删除 service 会级联删除 operator、inline slider 会持久化 typed state，以及 exec/data 连线和 data queue policy 会写入项目文档。RW state 行只显示一次名称并将释放的宽度用于 editor；接入上游 state 后保持原 input/select/checkbox DOM 与对齐，仅切换为锁定状态。内置 Value Stepper 用例从空项目开始，原子创建隐藏的 `studio` service 和 operator，完成 state 配置、部署、Ready monitor、再次修改、draft/deployed revision 分离及刷新恢复。operator 的 React Flow wrapper 固定为 260 px；compact code/wrapline/JSON 控件使用单行输入和内部截断，长文本不再参与节点 intrinsic width。desktop/mobile 截图显示 state input/control/output 同排、长表达式不撑宽节点且节点没有重叠。无效连接规则由前端纯函数测试与后端 mutation 校验覆盖；端口使用 24 px 交互热区和 10 px 可见圆点，移动端 typed connection 连续 5 次压力重复通过；空白区拖放回滚当前没有稳定的浏览器手势用例。1080p main 使用帧内 16 位 capture clock marker 和 `requestVideoFrameCallback` 测得 60 个显示帧最新 p95 75 ms；localhost 浏览器和 producer 共用系统时钟，未使用 HTTP ping 代替视频延迟。截图保存在测试产物目录；Three.js 和图标均从本地 bundle 加载，无 CDN。
+
+P4 复杂图基准从真实 catalog 创建当前可见行数最多的 `f8.pyengine/f8.handy_out`（每节点 18 行），通过真实 HTTP patch 构图，再由正式 GraphWorkspace 加载和交互。300 节点/600 边场景：批量提交 771.6 ms、首次可交互 1.727 s、拖拽 60.0 FPS、帧时间 p95 16.8 ms、UI 交互 p95 19.1 ms、GC 后 JS heap 22.2 MiB；1000 节点/2000 边压力场景：提交 2.503 s、首次可交互 4.562 s、拖拽 59.8 FPS、UI 交互 p95 22.7 ms、heap 46.8 MiB。两种场景均只挂载视口内 21 个节点和 44 条边。1000 节点拖拽后的完整文档持久化确认耗时 2.089 s，作为压力曲线记录，不属于即时拖拽反馈预算。原始证据位于 `docs/plans/evidence/p4-graph-performance.json`。
 
 真实 Zenoh publisher 关闭并重开后，producer epoch 改变，现有 WebRTC session/source 保持单实例并在 0.372 秒恢复出帧；结束后资源计数归零。该结果满足 5 秒恢复预算，且没有重新执行图操作。
 
@@ -109,7 +112,7 @@ Playwright 使用本机 Google Chrome 在 1440x900 与 390x844 视口验证：�
 
 `probe_studio_presentation.py` 已通过真实 Uvicorn、Zenoh 和 WebSocket：经 HTTP 创建并部署仅包含内置 `studio` 服务与 `f8.viz.three_d` 的项目，写入 `worldUp=-z` 后收到 `presentation.command / viz.three_d.world_up`。精简 server 现在明确依赖 `websockets`，因此生产 `/api/events` 不再依赖环境中偶然存在的 Uvicorn extra。部分部署测试固定了一个服务成功、另一个 Zenoh 断连时的 `partially_failed` 和逐服务结果；runtime 请求断连固定映射为 HTTP 503。
 
-P1 测试覆盖文档编解码与新格式样例、真实 `services/f8/engine/describe.json` 目录、data/state/exec/command、动态 spec、patch hub、跨服务 half-edge、自动采样、组件 fragment、禁用节点、payload 不匹配、状态环、原子回滚、revision 冲突、幂等及 undo/redo。语义 hash 不含布局和事务 revision，并对节点、边及 JSON mapping 的插入顺序稳定。
+P1 测试覆盖文档编解码与新格式样例、真实 `services/f8/engine/describe.json` 目录、data/state/exec/command、动态 spec、patch hub、跨服务 half-edge、自动采样、组件 fragment、禁用节点、payload 不匹配、状态环、原子回滚、revision 冲突、幂等及 undo/redo。state mutation 现在按权威 value schema 递归校验类型、enum、数值边界、multipleOf、数组 items、对象 required/properties/additionalProperties，前端 JSON 可序列化不再是唯一约束。语义 hash 不含布局和事务 revision，并对节点、边及 JSON mapping 的插入顺序稳定。
 
 项目 mutation 与 request id 幂等记录已在同一 SQLite 事务提交，默认每项目保留 2048 条，并已验证进程重启后重放与冲突。幂等重放不重复发布 `graph.committed`。undo/redo 历史仍属于当前进程中的项目 session；持久版本历史属于后续项目/资产工作。每次提交都要求精确 graph/layout revision，因此过期客户端不能覆盖新提交。
 
@@ -133,6 +136,7 @@ pixi run -e web-studio-test studio_media_gateway_test
 pixi run -e web-studio-test studio_server_test
 pixi run -e web-studio-test studio_web_test
 pixi run -e web-studio-test studio_web_e2e
+pixi run -e web-studio-test studio_graph_bench
 pixi run -e web-studio-test studio_python_typecheck
 pixi run -e web-studio-test studio_web_typecheck
 pixi run -e web-studio-test studio_no_qt_check

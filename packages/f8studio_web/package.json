@@ -8,10 +8,12 @@
     "build": "tsc -b && vite build",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:graph-performance": "playwright test --config playwright.graph-performance.config.ts",
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
     "@types/three": "^0.180.0",
+    "@xyflow/react": "^12.11.6",
     "lucide-react": "^1.47.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

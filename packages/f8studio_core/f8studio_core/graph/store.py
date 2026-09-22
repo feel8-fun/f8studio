@@ -16,6 +16,8 @@ from .models import (
     CreateNodeOp,
     DeleteNodeOp,
     DisconnectEdgeOp,
+    GraphEdge,
+    GraphEdgeKind,
     GraphNode,
     GraphOperation,
     InsertFragmentOp,
@@ -164,17 +166,25 @@ def _apply_operation(document: StudioDocument, operation: GraphOperation) -> Stu
         return msgspec.structs.replace(document, nodes=(*document.nodes, operation.node), layout=layout)
 
     if isinstance(operation, DeleteNodeOp):
-        if not any(node.node_id == operation.node_id for node in document.nodes):
+        target = next((node for node in document.nodes if node.node_id == operation.node_id), None)
+        if target is None:
             raise OperationTargetError(f"node not found: {operation.node_id}")
+        removed_node_ids = {target.node_id}
+        if isinstance(target, ServiceNode):
+            removed_node_ids.update(
+                node.node_id
+                for node in document.nodes
+                if isinstance(node, OperatorNode) and node.service_id == target.service_id
+            )
         return msgspec.structs.replace(
             document,
-            nodes=tuple(node for node in document.nodes if node.node_id != operation.node_id),
+            nodes=tuple(node for node in document.nodes if node.node_id not in removed_node_ids),
             edges=tuple(
                 edge
                 for edge in document.edges
-                if edge.from_node_id != operation.node_id and edge.to_node_id != operation.node_id
+                if edge.from_node_id not in removed_node_ids and edge.to_node_id not in removed_node_ids
             ),
-            layout=tuple(item for item in document.layout if item.node_id != operation.node_id),
+            layout=tuple(item for item in document.layout if item.node_id not in removed_node_ids),
         )
 
     if isinstance(operation, ConnectEdgeOp):
@@ -223,7 +233,21 @@ def _apply_operation(document: StudioDocument, operation: GraphOperation) -> Stu
             raise OperationTargetError(f"node not found: {operation.node_id}")
         if not isinstance(node, OperatorNode):
             raise OperationTargetError(f"only operators can be rebound: {operation.node_id}")
-        return _replace_node(document, _replace_operator_node(node, service_id=operation.service_id))
+        rebound = _replace_node(document, _replace_operator_node(node, service_id=operation.service_id))
+        rebound_nodes = {item.node_id: item for item in rebound.nodes}
+
+        def valid_edge(edge: GraphEdge) -> bool:
+            if edge.kind != GraphEdgeKind.exec:
+                return True
+            source = rebound_nodes[edge.from_node_id]
+            target = rebound_nodes[edge.to_node_id]
+            return (
+                isinstance(source, OperatorNode)
+                and isinstance(target, OperatorNode)
+                and source.service_id == target.service_id
+            )
+
+        return msgspec.structs.replace(rebound, edges=tuple(edge for edge in rebound.edges if valid_edge(edge)))
 
     if isinstance(operation, SetNodeEnabledOp):
         node = next((item for item in document.nodes if item.node_id == operation.node_id), None)

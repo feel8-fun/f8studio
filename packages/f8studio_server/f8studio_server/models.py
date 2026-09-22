@@ -45,6 +45,15 @@ class CreateProjectRequest(msgspec.Struct, frozen=True, kw_only=True, rename="ca
     project_id: str | None = None
 
 
+class CreateCatalogNodeRequest(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
+    kind: Literal["service", "operator"]
+    node_id: str
+    service_class: str
+    service_id: str | None = None
+    operator_class: str | None = None
+    name: str | None = None
+
+
 class UpdateProjectRequest(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
     name: str
     description: str = ""
@@ -124,6 +133,7 @@ class ServiceCommandRequest(msgspec.Struct, frozen=True, kw_only=True, rename="c
 
 
 __all__ = [
+    "CreateCatalogNodeRequest",
     "CreateProjectRequest",
     "DeployJob",
     "DeployProjectRequest",

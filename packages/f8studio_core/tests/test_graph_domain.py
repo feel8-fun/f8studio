@@ -22,8 +22,10 @@ from f8pysdk.specs import (
 )
 from f8studio_core import compile_document, semantic_graph_revision
 from f8studio_core.graph import (
+    BindOperatorServiceOp,
     ConnectEdgeOp,
     CreateNodeOp,
+    DeleteNodeOp,
     EdgeStrategy,
     GraphEdge,
     GraphEdgeKind,
@@ -227,6 +229,144 @@ def test_graph_store_applies_atomically_and_keeps_revisions_separate() -> None:
             )
         )
     assert store.snapshot() == moved.document
+
+
+def test_service_container_delete_cascades_to_bound_operators() -> None:
+    _, service, source, sink = base_nodes()
+    initial = StudioDocument(
+        schema_version="f8studio-document/1",
+        project_id="project1",
+        graph_id="graph1",
+        graph_revision=0,
+        layout_revision=0,
+        nodes=(service, source, sink),
+        layout=(
+            NodeLayout(node_id="engine", x=10, y=20),
+            NodeLayout(node_id="source", x=40, y=80),
+            NodeLayout(node_id="sink", x=280, y=80),
+        ),
+    )
+    store = GraphStore(initial)
+
+    deleted = store.apply(
+        PatchRequest(
+            request_id="delete-container",
+            expected_graph_revision=0,
+            expected_layout_revision=0,
+            operations=(DeleteNodeOp(node_id="engine"),),
+        )
+    )
+
+    assert deleted.document.nodes == ()
+    assert deleted.document.layout == ()
+
+
+def test_operator_rebind_drops_exec_edges_that_cross_service_boundaries() -> None:
+    catalog, service, source, sink = base_nodes()
+    second_service = catalog.create_service_node(node_id="engine2", service_class="f8.pyengine")
+    exec_edge = GraphEdge(
+        edge_id="sequence",
+        from_node_id="source",
+        from_port_id=find_port_id(source, name="next", kind=PortKind.exec, direction=PortDirection.output),
+        to_node_id="sink",
+        to_port_id=find_port_id(sink, name="run", kind=PortKind.exec, direction=PortDirection.input),
+        kind=GraphEdgeKind.exec,
+    )
+    data_edge = GraphEdge(
+        edge_id="values",
+        from_node_id="source",
+        from_port_id=find_port_id(source, name="out", kind=PortKind.data, direction=PortDirection.output),
+        to_node_id="sink",
+        to_port_id=find_port_id(sink, name="input", kind=PortKind.data, direction=PortDirection.input),
+        kind=GraphEdgeKind.data,
+    )
+    store = GraphStore(
+        StudioDocument(
+            schema_version="f8studio-document/1",
+            project_id="project1",
+            graph_id="graph1",
+            graph_revision=0,
+            layout_revision=0,
+            nodes=(service, second_service, source, sink),
+            edges=(exec_edge, data_edge),
+        )
+    )
+
+    rebound = store.apply(
+        PatchRequest(
+            request_id="rebind",
+            expected_graph_revision=0,
+            expected_layout_revision=0,
+            operations=(BindOperatorServiceOp(node_id="source", service_id="engine2"),),
+        )
+    )
+
+    rebound_source = next(node for node in rebound.document.nodes if node.node_id == "source")
+    assert isinstance(rebound_source, OperatorNode)
+    assert rebound_source.service_id == "engine2"
+    assert rebound.document.edges == (data_edge,)
+
+
+def test_state_mutations_enforce_value_schema_type_range_and_enum() -> None:
+    service_spec = F8ServiceSpec(serviceClass="f8.pyengine", label="Python Engine")
+    operator_spec = F8OperatorSpec(
+        serviceClass="f8.pyengine",
+        operatorClass="test.controls",
+        label="Controls",
+        stateFields=[
+            F8StateSpec(
+                name="level",
+                valueSchema=number_schema(default=0.5, minimum=0.0, maximum=1.0),
+                access=F8StateAccess.rw,
+            ),
+            F8StateSpec(
+                name="mode",
+                valueSchema=string_schema(default="auto", enum=["auto", "manual"]),
+                access=F8StateAccess.rw,
+            ),
+        ],
+    )
+    catalog = NodeCatalog(services=[service_spec], operators=[operator_spec])
+    service = catalog.create_service_node(node_id="engine", service_class="f8.pyengine")
+    operator = catalog.create_operator_node(
+        node_id="controls",
+        service_id="engine",
+        service_class="f8.pyengine",
+        operator_class="test.controls",
+    )
+    store = GraphStore(
+        StudioDocument(
+            schema_version="f8studio-document/1",
+            project_id="project1",
+            graph_id="graph1",
+            graph_revision=0,
+            layout_revision=0,
+            nodes=(service, operator),
+        )
+    )
+
+    invalid_values = (("level", "high", "finite number"), ("level", 2.0, "at most"), ("mode", "other", "one of"))
+    for index, (field, value, message) in enumerate(invalid_values):
+        with pytest.raises(GraphValidationError, match=message):
+            store.apply(
+                PatchRequest(
+                    request_id=f"invalid-state-{index}",
+                    expected_graph_revision=0,
+                    expected_layout_revision=0,
+                    operations=(SetNodeStateOp(node_id="controls", field=field, value=value),),
+                )
+            )
+
+    updated = store.apply(
+        PatchRequest(
+            request_id="valid-state",
+            expected_graph_revision=0,
+            expected_layout_revision=0,
+            operations=(SetNodeStateOp(node_id="controls", field="level", value=0.75),),
+        )
+    )
+    updated_operator = next(node for node in updated.document.nodes if node.node_id == "controls")
+    assert updated_operator.state_values["level"] == 0.75
 
 
 def test_graph_store_does_not_commit_when_persistence_callback_fails() -> None:

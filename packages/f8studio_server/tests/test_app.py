@@ -455,6 +455,9 @@ def test_project_patch_api_persists_and_reports_revision_conflicts(tmp_path: Pat
                 json={"projectId": "project1", "name": "Example"},
             )
             assert created.status_code == 201
+            latest_deployment = await client.get("/api/projects/project1/deployments/latest")
+            assert latest_deployment.status_code == 200
+            assert latest_deployment.json() is None
             catalog = NodeCatalog(services=[F8ServiceSpec(serviceClass="f8.pyengine", label="Engine")])
             engine = catalog.create_service_node(node_id="engine", service_class="f8.pyengine")
             patch = PatchRequest(
@@ -521,6 +524,38 @@ def test_project_patch_api_persists_and_reports_revision_conflicts(tmp_path: Pat
             loaded = await client.get("/api/projects/project1")
             assert loaded.status_code == 200
             assert loaded.json()["document"]["graphRevision"] == 3
+
+    asyncio.run(scenario())
+
+
+def test_catalog_creates_valid_graph_nodes_with_authoritative_ports(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        app = create_app(web_dist=tmp_path, data_dir=tmp_path / "data", service_roots=())
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            service = await client.post(
+                "/api/catalog/nodes",
+                json={"kind": "service", "nodeId": "studio", "serviceClass": "f8.pystudio"},
+            )
+            assert service.status_code == 200
+            assert service.json()["kind"] == "service"
+            assert service.json()["serviceId"] == "studio"
+            assert service.json()["ports"]
+
+            operator = await client.post(
+                "/api/catalog/nodes",
+                json={
+                    "kind": "operator",
+                    "nodeId": "video",
+                    "serviceId": "studio",
+                    "serviceClass": "f8.pystudio",
+                    "operatorClass": "f8.viz.video",
+                },
+            )
+            assert operator.status_code == 200
+            assert operator.json()["kind"] == "operator"
+            assert operator.json()["serviceId"] == "studio"
+            assert operator.json()["ports"]
 
     asyncio.run(scenario())
 

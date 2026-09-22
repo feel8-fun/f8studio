@@ -1,11 +1,13 @@
 import { AudioLines, Boxes, CircleDot, Cuboid, Settings2, Video } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 
 import { fetchHealth } from '../api/client';
 import type { HealthStatus } from '../api/contracts';
-import { WebRtcVideo } from '../media/WebRtcVideo';
-import { WebRtcAudio } from '../media/WebRtcAudio';
-import { SkeletonViewport } from '../three/SkeletonViewport';
+import { GraphWorkspace } from '../graph/GraphWorkspace';
+
+const WebRtcVideo = lazy(() => import('../media/WebRtcVideo').then((module) => ({ default: module.WebRtcVideo })));
+const WebRtcAudio = lazy(() => import('../media/WebRtcAudio').then((module) => ({ default: module.WebRtcAudio })));
+const SkeletonViewport = lazy(() => import('../three/SkeletonViewport').then((module) => ({ default: module.SkeletonViewport })));
 
 type ConnectionState =
   | { readonly kind: 'connecting' }
@@ -14,7 +16,7 @@ type ConnectionState =
 
 export function App() {
   const [connection, setConnection] = useState<ConnectionState>({ kind: 'connecting' });
-  const [view, setView] = useState<'video' | 'audio' | 'three'>('video');
+  const [view, setView] = useState<'graph' | 'video' | 'audio' | 'three'>('graph');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -50,6 +52,7 @@ export function App() {
       </header>
 
       <aside className="rail" aria-label="Workspace navigation">
+        <button className={`rail-button ${view === 'graph' ? 'rail-button-active' : ''}`} type="button" aria-label="Graph" title="Graph" onClick={() => setView('graph')}><Boxes size={20} /></button>
         <button className={`rail-button ${view === 'video' ? 'rail-button-active' : ''}`} type="button" aria-label="Video" title="Video" onClick={() => setView('video')}>
           <Video size={20} />
         </button>
@@ -59,22 +62,24 @@ export function App() {
         <button className={`rail-button ${view === 'audio' ? 'rail-button-active' : ''}`} type="button" aria-label="Audio" title="Audio" onClick={() => setView('audio')}>
           <AudioLines size={20} />
         </button>
-        <button className="rail-button" type="button" aria-label="Graph" title="Graph" disabled><Boxes size={20} /></button>
       </aside>
 
       <section className="workspace" aria-labelledby="workspace-title">
         <div className="workspace-toolbar">
-          <h1 id="workspace-title">Media Lab</h1>
-          <div className="view-tabs" role="tablist" aria-label="Media view">
+          <h1 id="workspace-title">{view === 'graph' ? 'Graph Editor' : 'Media Lab'}</h1>
+          {view !== 'graph' && <div className="view-tabs" role="tablist" aria-label="Media view">
             <button role="tab" aria-selected={view === 'video'} onClick={() => setView('video')}>Video</button>
             <button role="tab" aria-selected={view === 'audio'} onClick={() => setView('audio')}>Audio</button>
             <button role="tab" aria-selected={view === 'three'} onClick={() => setView('three')}>3D</button>
-          </div>
+          </div>}
         </div>
         <div className="workspace-content">
-          {view === 'video' && <WebRtcVideo />}
-          {view === 'audio' && <WebRtcAudio />}
-          {view === 'three' && <SkeletonViewport />}
+          {view === 'graph' && <GraphWorkspace />}
+          <Suspense fallback={<div className="view-loading" role="status">Loading view...</div>}>
+            {view === 'video' && <WebRtcVideo />}
+            {view === 'audio' && <WebRtcAudio />}
+            {view === 'three' && <SkeletonViewport />}
+          </Suspense>
           {connection.kind === 'offline' && <div className="connection-error">{connection.message}</div>}
         </div>
       </section>
