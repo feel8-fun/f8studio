@@ -19,6 +19,7 @@ from .data_expr import DataExprRuntimeNode, register_operator as register_data_e
 from .state_expr import StateExprRuntimeNode, register_operator as register_state_expr
 from .viz_track import VizTrackRuntimeNode, register_operator as register_viz_track
 from .viz_three_d import VizThreeDRuntimeNode, register_operator as register_viz_three_d
+from .viz_tcode import VizTCodeRuntimeNode, register_operator as register_viz_tcode
 
 __all__ = [
     "VizTextRuntimeNode",
@@ -34,6 +35,7 @@ __all__ = [
     "StateExprRuntimeNode",
     "VizTrackRuntimeNode",
     "VizThreeDRuntimeNode",
+    "VizTCodeRuntimeNode",
     "create_operator_registry",
     "register_operator",
 ]
@@ -70,12 +72,18 @@ def _register_presentation_factories(registry: Registry, presentation: Presentat
         created.presentation = presentation
         return created
 
+    def tcode_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> VizTCodeRuntimeNode:
+        created = VizTCodeRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
+        created.presentation = presentation
+        return created
+
     registry.register_operator_factory(SERVICE_CLASS, "f8.viz.text", text_factory, overwrite=True)
     registry.register_operator_factory(SERVICE_CLASS, "f8.viz.wave", wave_factory, overwrite=True)
     registry.register_operator_factory(SERVICE_CLASS, "f8.viz.video", video_factory, overwrite=True)
     registry.register_operator_factory(SERVICE_CLASS, "f8.viz.audio", audio_factory, overwrite=True)
     registry.register_operator_factory(SERVICE_CLASS, "f8.viz.track", track_factory, overwrite=True)
     registry.register_operator_factory(SERVICE_CLASS, "f8.viz.three_d", three_d_factory, overwrite=True)
+    registry.register_operator_factory(SERVICE_CLASS, "f8.viz.tcode", tcode_factory, overwrite=True)
 
 
 def register_operator(registry: Registry, *, presentation: PresentationOutlet) -> Registry:
@@ -95,6 +103,7 @@ def register_operator(registry: Registry, *, presentation: PresentationOutlet) -
     reg = register_state_expr(reg)
     reg = register_viz_track(reg)
     reg = register_viz_three_d(reg)
+    reg = register_viz_tcode(reg)
     _register_presentation_factories(reg, presentation)
     return reg
 

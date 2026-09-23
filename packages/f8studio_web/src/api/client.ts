@@ -20,7 +20,24 @@ import {
   type PatchResult,
   type ProjectRecord,
   type ProjectSummary,
+  type PresentationCommand,
   type RuntimeMonitor,
+  type RuntimeNodeState,
+  type AssetKind,
+  type AssetRecord,
+  type AssetSummary,
+  type AssetVersion,
+  type EditorAnalysis,
+  type EditorSession,
+  type EditorLanguageResult,
+  type HotkeyBinding,
+  type JsonValue,
+  type LocalCapability,
+  type ProjectVersion,
+  type RegisterHotkeyInput,
+  type SerialPortInfo,
+  type SkeletonUdpVerification,
+  type UnityInstallPlan,
 } from './contracts';
 
 export class ApiError extends Error {
@@ -188,6 +205,40 @@ export async function fetchRuntimeMonitors(signal?: AbortSignal): Promise<readon
   return body as unknown as readonly RuntimeMonitor[];
 }
 
+export async function fetchRuntimeNodeState(
+  serviceId: string,
+  nodeId: string,
+  fields: readonly string[],
+  signal?: AbortSignal,
+): Promise<RuntimeNodeState> {
+  const body = await requestJson(
+    `/api/runtime/services/${encodeURIComponent(serviceId)}/nodes/${encodeURIComponent(nodeId)}/state:read`,
+    jsonRequest('POST', { fields }, signal),
+  );
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    throw new Error('Runtime node state does not match f8studio-api/1');
+  }
+  const state = body as Record<string, unknown>;
+  if (state.serviceId !== serviceId || state.nodeId !== nodeId || !Array.isArray(state.fields) ||
+      !state.fields.every((entry) => typeof entry === 'object' && entry !== null &&
+        typeof (entry as Record<string, unknown>).field === 'string' &&
+        typeof (entry as Record<string, unknown>).found === 'boolean')) {
+    throw new Error('Runtime node state does not match f8studio-api/1');
+  }
+  return body as unknown as RuntimeNodeState;
+}
+
+export async function fetchPresentationSnapshot(signal?: AbortSignal): Promise<readonly PresentationCommand[]> {
+  const body = await requestJson('/api/presentation', { signal });
+  if (!Array.isArray(body) || !body.every((value) => {
+    if (typeof value !== 'object' || value === null) return false;
+    const command = value as Record<string, unknown>;
+    return typeof command.nodeId === 'string' && typeof command.command === 'string' &&
+      typeof command.payload === 'object' && command.payload !== null && !Array.isArray(command.payload);
+  })) throw new Error('Presentation snapshot does not match f8studio-api/1');
+  return body as unknown as readonly PresentationCommand[];
+}
+
 export async function fetchHealth(signal?: AbortSignal): Promise<HealthStatus> {
   const response = await fetch('/api/health', { signal });
   if (!response.ok) {
@@ -251,8 +302,8 @@ export async function closeAudioSession(sessionId: string): Promise<void> {
   }
 }
 
-export async function closeMediaSession(sessionId: string): Promise<void> {
-  const response = await fetch(`/api/media/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
+export async function closeMediaSession(sessionId: string, keepalive = false): Promise<void> {
+  const response = await fetch(`/api/media/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE', keepalive });
   if (!response.ok && response.status !== 404) {
     throw new Error(`Media session close failed with HTTP ${response.status}`);
   }
@@ -265,4 +316,196 @@ export async function fetchMediaSample(source: string, x: number, y: number): Pr
   const body: unknown = await response.json();
   if (!isMediaSample(body)) throw new Error('Media sample does not match f8studio-api/1');
   return body;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+export async function fetchAssets(kind?: AssetKind, signal?: AbortSignal): Promise<readonly AssetSummary[]> {
+  const query = kind === undefined ? '' : `?kind=${encodeURIComponent(kind)}`;
+  const body = await requestJson(`/api/assets${query}`, { signal });
+  if (!Array.isArray(body)) throw new Error('Asset list does not match f8studio-api/1');
+  return body as readonly AssetSummary[];
+}
+
+export async function fetchAsset(assetId: string, signal?: AbortSignal): Promise<AssetRecord> {
+  const body = await requestJson(`/api/assets/${encodeURIComponent(assetId)}`, { signal });
+  if (!isObject(body) || typeof body.assetId !== 'string') throw new Error('Asset does not match f8studio-api/1');
+  return body as unknown as AssetRecord;
+}
+
+export async function createAsset(input: {
+  readonly kind: AssetKind;
+  readonly name: string;
+  readonly description?: string;
+  readonly tags?: readonly string[];
+  readonly content: JsonValue;
+}): Promise<AssetRecord> {
+  const body = await requestJson('/api/assets', jsonRequest('POST', input));
+  if (!isObject(body) || typeof body.assetId !== 'string') throw new Error('Created asset does not match f8studio-api/1');
+  return body as unknown as AssetRecord;
+}
+
+export async function updateAsset(assetId: string, input: {
+  readonly name: string;
+  readonly description?: string;
+  readonly tags?: readonly string[];
+  readonly content: JsonValue;
+}): Promise<AssetRecord> {
+  const body = await requestJson(`/api/assets/${encodeURIComponent(assetId)}`, jsonRequest('PUT', input));
+  if (!isObject(body) || typeof body.assetId !== 'string') throw new Error('Updated asset does not match f8studio-api/1');
+  return body as unknown as AssetRecord;
+}
+
+export async function deleteAsset(assetId: string): Promise<void> {
+  const response = await fetch(`/api/assets/${encodeURIComponent(assetId)}`, { method: 'DELETE' });
+  if (!response.ok) throw new ApiError(`Delete failed with HTTP ${response.status}`, response.status);
+}
+
+export async function fetchAssetVersions(assetId: string): Promise<readonly AssetVersion[]> {
+  const body = await requestJson(`/api/assets/${encodeURIComponent(assetId)}/versions`);
+  if (!Array.isArray(body)) throw new Error('Asset versions do not match f8studio-api/1');
+  return body as readonly AssetVersion[];
+}
+
+export async function createProjectVersion(projectId: string, name: string): Promise<ProjectVersion> {
+  const body = await requestJson(`/api/projects/${encodeURIComponent(projectId)}/versions`, jsonRequest('POST', { name }));
+  if (!isObject(body) || typeof body.versionId !== 'string') throw new Error('Project version does not match f8studio-api/1');
+  return body as unknown as ProjectVersion;
+}
+
+export async function fetchProjectVersions(projectId: string): Promise<readonly ProjectVersion[]> {
+  const body = await requestJson(`/api/projects/${encodeURIComponent(projectId)}/versions`);
+  if (!Array.isArray(body)) throw new Error('Project versions do not match f8studio-api/1');
+  return body as readonly ProjectVersion[];
+}
+
+export async function restoreProjectVersion(projectId: string, versionId: string): Promise<ProjectRecord> {
+  const body = await requestJson(
+    `/api/projects/${encodeURIComponent(projectId)}/versions/${encodeURIComponent(versionId)}/restore`,
+    { method: 'POST' },
+  );
+  if (!isProjectRecord(body)) throw new Error('Restored project does not match f8studio-api/1');
+  return body;
+}
+
+export async function createEditorSession(
+  language: 'python' | 'json',
+  text: string,
+  filename: string,
+): Promise<EditorSession> {
+  const body = await requestJson('/api/editor/sessions', jsonRequest('POST', { language, text, filename }));
+  if (!isObject(body) || typeof body.sessionId !== 'string') throw new Error('Editor session does not match f8studio-api/1');
+  return body as unknown as EditorSession;
+}
+
+export async function updateEditorSession(sessionId: string, version: number, text: string): Promise<EditorSession> {
+  const body = await requestJson(
+    `/api/editor/sessions/${encodeURIComponent(sessionId)}`,
+    jsonRequest('PUT', { version, text }),
+  );
+  if (!isObject(body) || typeof body.sessionId !== 'string') throw new Error('Editor session does not match f8studio-api/1');
+  return body as unknown as EditorSession;
+}
+
+export async function analyzeEditorSession(sessionId: string): Promise<EditorAnalysis> {
+  const body = await requestJson(`/api/editor/sessions/${encodeURIComponent(sessionId)}/analyze`, { method: 'POST' });
+  if (!isObject(body) || !Array.isArray(body.diagnostics)) throw new Error('Editor diagnostics do not match f8studio-api/1');
+  return body as unknown as EditorAnalysis;
+}
+
+async function requestEditorLanguage(
+  sessionId: string,
+  operation: 'completion' | 'hover',
+  line: number,
+  column: number,
+): Promise<EditorLanguageResult> {
+  const body = await requestJson(
+    `/api/editor/sessions/${encodeURIComponent(sessionId)}/${operation}`,
+    jsonRequest('POST', { line, column }),
+  );
+  if (!isObject(body) || typeof body.sessionId !== 'string' || !('result' in body)) {
+    throw new Error(`Editor ${operation} does not match f8studio-api/1`);
+  }
+  return body as unknown as EditorLanguageResult;
+}
+
+export async function requestEditorCompletion(sessionId: string, line: number, column: number): Promise<EditorLanguageResult> {
+  return requestEditorLanguage(sessionId, 'completion', line, column);
+}
+
+export async function requestEditorHover(sessionId: string, line: number, column: number): Promise<EditorLanguageResult> {
+  return requestEditorLanguage(sessionId, 'hover', line, column);
+}
+
+export async function closeEditorSession(sessionId: string): Promise<void> {
+  const response = await fetch(`/api/editor/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
+  if (!response.ok && response.status !== 404) throw new ApiError(`Editor close failed with HTTP ${response.status}`, response.status);
+}
+
+export async function fetchLocalCapabilities(signal?: AbortSignal): Promise<readonly LocalCapability[]> {
+  const body = await requestJson('/api/local/capabilities', { signal });
+  if (!Array.isArray(body)) throw new Error('Local capabilities do not match f8studio-api/1');
+  return body as readonly LocalCapability[];
+}
+
+export async function fetchSerialPorts(): Promise<readonly SerialPortInfo[]> {
+  const body = await requestJson('/api/local/serial-ports');
+  if (!Array.isArray(body)) throw new Error('Serial ports do not match f8studio-api/1');
+  return body as readonly SerialPortInfo[];
+}
+
+export async function detectModdingTarget(targetPath: string): Promise<Readonly<Record<string, JsonValue>>> {
+  const body = await requestJson('/api/local/modding/detect', jsonRequest('POST', { targetPath }));
+  if (!isObject(body)) throw new Error('Modding detection does not match f8studio-api/1');
+  return body as Readonly<Record<string, JsonValue>>;
+}
+
+export async function previewUnityInstall(targetPath: string): Promise<UnityInstallPlan> {
+  const body = await requestJson('/api/local/modding/unity/preview', jsonRequest('POST', { targetPath, offline: true }));
+  if (!isObject(body) || typeof body.planId !== 'string') throw new Error('Unity plan does not match f8studio-api/1');
+  return body as unknown as UnityInstallPlan;
+}
+
+export async function applyUnityInstall(planId: string, confirm: boolean): Promise<JsonValue> {
+  return await requestJson('/api/local/modding/unity/apply', jsonRequest('POST', { planId, confirm })) as JsonValue;
+}
+
+export async function verifySkeletonUdp(port: number): Promise<SkeletonUdpVerification> {
+  const body = await requestJson('/api/local/modding/verify-udp', jsonRequest('POST', { port }));
+  if (!isObject(body) || typeof body.verified !== 'boolean') throw new Error('UDP verification does not match f8studio-api/1');
+  return body as unknown as SkeletonUdpVerification;
+}
+
+export async function fetchHotkeys(projectId?: string): Promise<readonly HotkeyBinding[]> {
+  const query = projectId === undefined ? '' : `?project_id=${encodeURIComponent(projectId)}`;
+  const body = await requestJson(`/api/local/hotkeys${query}`);
+  if (!Array.isArray(body)) throw new Error('Hotkeys do not match f8studio-api/1');
+  return body as readonly HotkeyBinding[];
+}
+
+export async function registerHotkey(input: RegisterHotkeyInput): Promise<HotkeyBinding> {
+  const body = await requestJson('/api/local/hotkeys', jsonRequest('POST', input));
+  if (!isObject(body) || typeof body.bindingId !== 'string') throw new Error('Hotkey does not match f8studio-api/1');
+  return body as unknown as HotkeyBinding;
+}
+
+export async function unregisterHotkey(bindingId: string): Promise<void> {
+  const response = await fetch(`/api/local/hotkeys/${encodeURIComponent(bindingId)}`, { method: 'DELETE' });
+  if (!response.ok) throw new ApiError(`Hotkey delete failed with HTTP ${response.status}`, response.status);
+}
+
+export async function invokeRuntimeCommand(serviceId: string, call: string, params: Readonly<Record<string, JsonValue>>): Promise<JsonValue> {
+  return await requestJson(
+    `/api/runtime/services/${encodeURIComponent(serviceId)}/commands`,
+    jsonRequest('POST', { call, params }),
+  ) as JsonValue;
+}
+
+export async function setRuntimeState(serviceId: string, nodeId: string, field: string, value: JsonValue): Promise<JsonValue> {
+  return await requestJson(
+    `/api/runtime/services/${encodeURIComponent(serviceId)}/state`,
+    jsonRequest('POST', { nodeId, field, value }),
+  ) as JsonValue;
 }

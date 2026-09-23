@@ -23,6 +23,7 @@ from f8studio_server.models import (
     BrowserIceServer,
     BrowserRtcConfiguration,
     RuntimeActionResult,
+    RuntimeStateField,
     ServiceDeployResult,
     ServiceRuntimeStatus,
 )
@@ -33,6 +34,7 @@ class FakeRuntimeGateway:
     def __init__(self) -> None:
         self.deploy_calls: list[str] = []
         self.closed = False
+        self.state_values: dict[tuple[str, str, str], F8JsonValue] = {}
 
     async def start_monitoring(self, callback: RuntimeMonitorCallback) -> None:
         del callback
@@ -70,6 +72,15 @@ class FakeRuntimeGateway:
     ) -> RuntimeActionResult:
         del service_id, node_id, field, value
         return RuntimeActionResult(success=True)
+
+    async def read_state(self, service_id: str, *, node_id: str, field: str) -> RuntimeStateField:
+        key = (service_id, node_id, field)
+        return RuntimeStateField(
+            field=field,
+            found=key in self.state_values,
+            value=self.state_values.get(key),
+            ts_ms=123 if key in self.state_values else None,
+        )
 
     async def invoke_command(
         self,
@@ -121,6 +132,30 @@ async def create_audio_offer() -> str:
         return peer.localDescription.sdp
     finally:
         await peer.close()
+
+
+def test_runtime_state_read_returns_retained_node_values(tmp_path: Path) -> None:
+    runtime = FakeRuntimeGateway()
+    runtime.state_values[("capture", "capture", "captureRunning")] = True
+    runtime.state_values[("capture", "capture", "videoWidth")] = 1920
+    app = create_app(web_dist=tmp_path, data_dir=tmp_path / "data", runtime=runtime, service_roots=())
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/runtime/services/capture/nodes/capture/state:read",
+            json={"fields": ["captureRunning", "videoWidth", "videoHeight"]},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "serviceId": "capture",
+        "nodeId": "capture",
+        "fields": [
+            {"field": "captureRunning", "found": True, "value": True, "tsMs": 123},
+            {"field": "videoWidth", "found": True, "value": 1920, "tsMs": 123},
+            {"field": "videoHeight", "found": False, "value": None, "tsMs": None},
+        ],
+    }
 
 
 def test_media_api_rejects_invalid_source_and_quality(tmp_path: Path) -> None:

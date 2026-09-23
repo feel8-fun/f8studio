@@ -8,7 +8,7 @@ from typing import Protocol, cast
 import msgspec
 
 from f8pysdk.bus import BusBackend
-from f8pysdk.codec import decode_as, encode_obj
+from f8pysdk.codec import decode_as, decode_obj, encode_obj
 from f8pysdk.f8_naming import cmd_channel_key, ensure_token, new_id, svc_endpoint_key
 from f8pysdk.rungraph_fingerprint import build_rungraph_deploy_fingerprint
 from f8pysdk.runtime_transport import RuntimeTransport
@@ -38,8 +38,9 @@ from f8pysdk.specs import (
     F8TerminateRequest,
 )
 from f8pysdk.zenoh_transport import ZenohTransport, ZenohTransportConfig
+from f8pysdk.zenoh_naming import zenoh_state_key
 
-from .models import RuntimeActionResult, ServiceDeployResult, ServiceRuntimeStatus
+from .models import RuntimeActionResult, RuntimeStateField, ServiceDeployResult, ServiceRuntimeStatus
 
 
 RuntimeMonitorCallback = Callable[[str, bytes], Awaitable[None]]
@@ -72,6 +73,8 @@ class RuntimeGateway(Protocol):
         field: str,
         value: F8JsonValue,
     ) -> RuntimeActionResult: ...
+
+    async def read_state(self, service_id: str, *, node_id: str, field: str) -> RuntimeStateField: ...
 
     async def invoke_command(
         self,
@@ -111,6 +114,8 @@ class ZenohRuntimeGateway:
     config: RuntimeConfig = field(default_factory=RuntimeConfig)
     _transport: RuntimeTransport | None = field(default=None, init=False, repr=False)
     _monitor_subscription: RuntimeSubscription | None = field(default=None, init=False, repr=False)
+    _state_subscription: RuntimeSubscription | None = field(default=None, init=False, repr=False)
+    _state_values: dict[str, bytes] = field(default_factory=dict, init=False, repr=False)
     _connect_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
 
     def _build_transport(self) -> RuntimeTransport:
@@ -149,20 +154,34 @@ class ZenohRuntimeGateway:
             self._transport = None
             monitor_subscription = self._monitor_subscription
             self._monitor_subscription = None
+            state_subscription = self._state_subscription
+            self._state_subscription = None
+            self._state_values.clear()
         if monitor_subscription is not None:
             await monitor_subscription.unsubscribe()
+        if state_subscription is not None:
+            await state_subscription.unsubscribe()
         if transport is not None:
             await transport.close()
 
     async def start_monitoring(self, callback: RuntimeMonitorCallback) -> None:
-        if self._monitor_subscription is not None:
-            return
         transport = await self._connected_transport()
-        subscription = await transport.subscribe(
-            "f8/svc/*/nodes/*/data/monitor",
-            cb=callback,
-        )
-        self._monitor_subscription = cast(RuntimeSubscription, subscription)
+        if self._monitor_subscription is None:
+            subscription = await transport.subscribe(
+                "f8/svc/*/nodes/*/data/monitor",
+                cb=callback,
+            )
+            self._monitor_subscription = cast(RuntimeSubscription, subscription)
+        if self._state_subscription is None:
+            state_subscription = await transport.retained_watch(
+                "f8/svc/*/state/nodes/*/state/**",
+                cb=self._ingest_state,
+                with_initial=True,
+            )
+            self._state_subscription = cast(RuntimeSubscription, state_subscription)
+
+    async def _ingest_state(self, key: str, payload: bytes) -> None:
+        self._state_values[key] = bytes(payload)
 
     async def _request(self, key: str, payload: bytes, *, timeout_s: float | None = None) -> bytes:
         transport = await self._connected_transport()
@@ -336,6 +355,31 @@ class ZenohRuntimeGateway:
             success=response.ok,
             result={"nodeId": node_id, "field": field} if response.ok else None,
             error_message="" if response.ok else _error_message(response.error) or "set_state rejected",
+        )
+
+    async def read_state(self, service_id: str, *, node_id: str, field: str) -> RuntimeStateField:
+        service_id = ensure_token(service_id, label="service_id")
+        node_id = ensure_token(node_id, label="node_id")
+        normalized_field = field.strip()
+        if not normalized_field:
+            raise ValueError("state field must be non-empty")
+        await self._connected_transport()
+        raw = self._state_values.get(zenoh_state_key(service_id, node_id=node_id, field=normalized_field))
+        if raw is None:
+            return RuntimeStateField(field=normalized_field, found=False)
+        decoded = decode_obj(raw)
+        if "value" not in decoded:
+            raise ValueError(
+                f"invalid retained state envelope service_id={service_id} "
+                f"node_id={node_id} field={normalized_field}"
+            )
+        timestamp = decoded.get("tsMs", decoded.get("ts", decoded.get("ts_ms")))
+        ts_ms = int(timestamp) if isinstance(timestamp, (int, float)) and not isinstance(timestamp, bool) else None
+        return RuntimeStateField(
+            field=normalized_field,
+            found=True,
+            value=cast(F8JsonValue, decoded["value"]),
+            ts_ms=ts_ms,
         )
 
     async def invoke_command(

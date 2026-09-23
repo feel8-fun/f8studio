@@ -127,6 +127,30 @@ class ServiceStateRequest(msgspec.Struct, frozen=True, kw_only=True, rename="cam
     value: F8JsonValue
 
 
+class RuntimeStateReadRequest(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
+    fields: tuple[str, ...]
+
+
+class RuntimeStateField(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
+    field: str
+    found: bool
+    value: F8JsonValue = None
+    ts_ms: int | None = None
+
+
+class RuntimeNodeState(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
+    service_id: str
+    node_id: str
+    fields: tuple[RuntimeStateField, ...]
+
+
+class PresentationCommand(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
+    node_id: str
+    command: str
+    payload: dict[str, F8JsonValue]
+    ts_ms: int | None = None
+
+
 class ServiceCommandRequest(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
     call: str
     params: dict[str, F8JsonValue] = msgspec.field(default_factory=dict)

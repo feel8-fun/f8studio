@@ -22,21 +22,23 @@ interface NegotiatedAudio {
   readonly channels: number;
 }
 
-function drawWaveform(canvas: HTMLCanvasElement, analyser: AnalyserNode): void {
+function drawAudio(canvas: HTMLCanvasElement, analyser: AnalyserNode, mode: 'waveform' | 'spectrum'): void {
   const width = canvas.width;
   const height = canvas.height;
   const context = canvas.getContext('2d');
   if (context === null) throw new Error('2D canvas context is unavailable');
-  const samples = new Uint8Array(analyser.fftSize);
-  analyser.getByteTimeDomainData(samples);
+  const samples = new Uint8Array(mode === 'waveform' ? analyser.fftSize : analyser.frequencyBinCount);
+  if (mode === 'waveform') analyser.getByteTimeDomainData(samples);
+  else analyser.getByteFrequencyData(samples);
   context.fillStyle = '#080a0c';
   context.fillRect(0, 0, width, height);
-  context.strokeStyle = '#65c99e';
+  context.strokeStyle = mode === 'waveform' ? '#65c99e' : '#62a9e8';
   context.lineWidth = 2;
   context.beginPath();
   for (let index = 0; index < samples.length; index += 1) {
     const x = index * width / Math.max(1, samples.length - 1);
-    const y = (samples[index] ?? 128) / 255 * height;
+    const normalized = (samples[index] ?? (mode === 'waveform' ? 128 : 0)) / 255;
+    const y = mode === 'waveform' ? normalized * height : height - normalized * height;
     if (index === 0) context.moveTo(x, y);
     else context.lineTo(x, y);
   }
@@ -48,6 +50,7 @@ export function WebRtcAudio() {
   const [status, setStatus] = useState<AudioStatus>({ kind: 'idle' });
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(0.5);
+  const [visualization, setVisualization] = useState<'waveform' | 'spectrum'>('waveform');
   const audioRef = useRef<HTMLAudioElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
@@ -55,6 +58,9 @@ export function WebRtcAudio() {
   const negotiatedRef = useRef<NegotiatedAudio | null>(null);
   const graphRef = useRef<AudioGraph | null>(null);
   const operationRef = useRef(0);
+  const visualizationRef = useRef<'waveform' | 'spectrum'>('waveform');
+
+  useEffect(() => { visualizationRef.current = visualization; }, [visualization]);
 
   const disposeGraph = useCallback(() => {
     const graph = graphRef.current;
@@ -175,7 +181,7 @@ export function WebRtcAudio() {
       gain.connect(context.destination);
       let animationFrame = 0;
       const render = () => {
-        drawWaveform(canvas, analyser);
+        drawAudio(canvas, analyser, visualizationRef.current);
         animationFrame = requestAnimationFrame(render);
         const current = graphRef.current;
         if (current !== null && current.context === context) {
@@ -243,6 +249,10 @@ export function WebRtcAudio() {
         )}
       </div>
       <div className="audio-stage">
+        <div className="audio-visualization-mode segment" role="tablist" aria-label="Audio visualization">
+          <button role="tab" aria-selected={visualization === 'waveform'} className={visualization === 'waveform' ? 'selected' : ''} onClick={() => setVisualization('waveform')}>Wave</button>
+          <button role="tab" aria-selected={visualization === 'spectrum'} className={visualization === 'spectrum' ? 'selected' : ''} onClick={() => setVisualization('spectrum')}>Spectrum</button>
+        </div>
         <audio ref={audioRef} playsInline />
         <canvas ref={canvasRef} data-testid="audio-waveform" width={1200} height={360} />
         <div className={`media-status status-${status.kind}`} role="status">

@@ -27,6 +27,7 @@ from f8studio_server.studio_runtime.operators import (
     StateExprRuntimeNode,
     VizAudioRuntimeNode,
     VizThreeDRuntimeNode,
+    VizTCodeRuntimeNode,
     VizTrackRuntimeNode,
 )
 
@@ -46,6 +47,24 @@ class CapturingPresentationOutlet:
         self.commands.append((node_id, command, payload, ts_ms))
 
 
+def test_event_presentation_outlet_retains_latest_commands_until_detach() -> None:
+    async def scenario() -> None:
+        events = EventJournal(server_epoch="test")
+        outlet = EventPresentationOutlet(events)
+        outlet.emit("video1", "viz.video.set", {"videoStreamKey": "f8/test/video"}, ts_ms=10)
+        outlet.emit("text1", "viz.text.update", {"value": "ready"}, ts_ms=11)
+        assert [(item.node_id, item.command) for item in outlet.snapshot()] == [
+            ("video1", "viz.video.set"),
+            ("text1", "viz.text.update"),
+        ]
+
+        outlet.emit("video1", "viz.video.detach", {}, ts_ms=12)
+        assert [(item.node_id, item.command) for item in outlet.snapshot()] == [("text1", "viz.text.update")]
+        await outlet.close()
+
+    asyncio.run(scenario())
+
+
 def test_studio_registry_is_isolated_and_injects_presentation_outlet() -> None:
     first_outlet = CapturingPresentationOutlet()
     second_outlet = CapturingPresentationOutlet()
@@ -54,7 +73,7 @@ def test_studio_registry_is_isolated_and_injects_presentation_outlet() -> None:
     first_registry = Registry.wrap(first)
     describe = first_registry.describe(SERVICE_CLASS)
 
-    assert len(describe.operators) == 13
+    assert len(describe.operators) == 14
     assert first is not second
     audio_spec = next(spec for spec in describe.operators if str(spec.operatorClass) == "f8.viz.audio")
     node = first_registry.create_operator_node(
@@ -72,6 +91,33 @@ def test_studio_registry_is_isolated_and_injects_presentation_outlet() -> None:
 
     assert isinstance(node, VizAudioRuntimeNode)
     assert node.presentation is first_outlet
+
+
+def test_tcode_operator_is_static_and_emits_local_renderer_commands() -> None:
+    async def scenario() -> None:
+        outlet = CapturingPresentationOutlet()
+        registry = Registry.wrap(create_studio_registry(presentation=outlet))
+        node = registry.create_operator_node(
+            node_id="tcode1",
+            node=F8RuntimeNode(
+                nodeId="tcode1",
+                serviceId="studio",
+                serviceClass=SERVICE_CLASS,
+                operatorClass=VizTCodeRuntimeNode.SPEC.operatorClass,
+                dataInPorts=list(VizTCodeRuntimeNode.SPEC.dataInPorts),
+                stateFields=list(VizTCodeRuntimeNode.SPEC.stateFields),
+            ),
+            initial_state={"model": "SR6"},
+        )
+        assert isinstance(node, VizTCodeRuntimeNode)
+        await node.on_data("tcode", "L05000 R09999", ts_ms=123)
+        assert [command for _, command, _, _ in outlet.commands] == [
+            "viz.tcode.set_model",
+            "viz.tcode.write",
+        ]
+        assert outlet.commands[-1][2] == {"line": "L05000 R09999\n"}
+
+    asyncio.run(scenario())
 
 
 def test_presentation_outlet_publishes_unreliable_scoped_event() -> None:

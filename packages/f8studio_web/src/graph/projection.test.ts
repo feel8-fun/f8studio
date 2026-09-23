@@ -3,6 +3,8 @@ import { expect, test } from 'vitest';
 import type { StudioDocument } from '../api/contracts';
 import {
   absoluteFlowPosition,
+  COMPACT_SERVICE_WIDTH,
+  compactServiceHeight,
   duplicateFragment,
   operatorHeight,
   projectDocument,
@@ -10,6 +12,7 @@ import {
   reconcileProjectedNodes,
   SERVICE_MIN_HEIGHT,
   SERVICE_WIDTH,
+  VIDEO_PREVIEW_HEIGHT,
 } from './projection';
 
 const document: StudioDocument = {
@@ -88,7 +91,7 @@ test('projects services before their nested operators using relative flow positi
   expect(projected.nodes[1]).toMatchObject({
     id: 'source',
     parentId: 'engine',
-    style: { width: 260, height: 80 },
+    style: { width: 240, height: 64 },
     position: { x: 55, y: 110 },
   });
   expect(absoluteFlowPosition(projected.nodes[1]!, projected.nodes)).toEqual({ x: 180, y: 350 });
@@ -114,6 +117,32 @@ test('uses persisted service dimensions while enforcing canvas minimums', () => 
     width: SERVICE_WIDTH,
     height: SERVICE_MIN_HEIGHT,
   });
+
+  const legacyDefault: StudioDocument = {
+    ...structuredClone(document),
+    layout: document.layout.map((layout) => layout.nodeId === 'engine'
+      ? { ...layout, width: 620, height: 320 }
+      : layout),
+  };
+  expect(projectDocument(legacyDefault).nodes[0]?.style).toMatchObject({
+    width: SERVICE_WIDTH,
+    height: 320,
+  });
+});
+
+test('collapses services without operator children to their own visible rows', () => {
+  const leafDocument: StudioDocument = {
+    ...structuredClone(document),
+    nodes: document.nodes.filter((node) => node.kind === 'service'),
+    edges: [],
+    layout: [{ nodeId: 'engine', x: 125, y: 240, width: 620, height: 320, collapsed: false }],
+  };
+  const service = leafDocument.nodes[0];
+  expect(service).toBeDefined();
+  expect(projectDocument(leafDocument).nodes[0]?.style).toEqual({
+    width: COMPACT_SERVICE_WIDTH,
+    height: compactServiceHeight(service!),
+  });
 });
 
 test('reuses unchanged projected graph objects after a server round trip', () => {
@@ -133,7 +162,7 @@ test('preserves measured dimensions while replacing changed projected node data'
   const current = projectDocument(document);
   current.nodes[1] = {
     ...current.nodes[1]!,
-    measured: { width: 260, height: 80 },
+    measured: { width: 240, height: 64 },
     selected: true,
   };
   const changedDocument: StudioDocument = {
@@ -148,7 +177,7 @@ test('preserves measured dimensions while replacing changed projected node data'
   expect(nodes[1]).not.toBe(current.nodes[1]);
   expect(nodes[1]).toMatchObject({
     data: { graphNode: { name: 'Renamed Source' } },
-    measured: { width: 260, height: 80 },
+    measured: { width: 240, height: 64 },
     selected: true,
   });
 });
@@ -156,7 +185,7 @@ test('preserves measured dimensions while replacing changed projected node data'
 test('sizes compact operators from their fixed port-row geometry', () => {
   const operator = document.nodes.find((node) => node.kind === 'operator');
   expect(operator).toBeDefined();
-  expect(operatorHeight(operator!)).toBe(80);
+  expect(operatorHeight(operator!)).toBe(64);
   expect(operatorHeight({
     ...operator!,
     ports: [
@@ -164,7 +193,17 @@ test('sizes compact operators from their fixed port-row geometry', () => {
       { portId: 'state:input:a', name: 'a', runtimeName: 'a', kind: 'state', direction: 'input' },
       { portId: 'state:input:b', name: 'b', runtimeName: 'b', kind: 'state', direction: 'input' },
     ],
-  })).toBe(136);
+  })).toBe(112);
+
+  expect(operatorHeight({
+    ...operator!,
+    operatorClass: 'f8.viz.video',
+    spec: {
+      ...operator!.spec,
+      operatorClass: 'f8.viz.video',
+      rendererClass: 'viz_video',
+    },
+  })).toBe(64 + VIDEO_PREVIEW_HEIGHT);
 });
 
 test('duplicates a service with its operators, internal edges, and absolute layout', () => {

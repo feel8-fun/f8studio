@@ -330,6 +330,9 @@ class ServiceProcessManager:
         with self._entries_lock:
             return list(self._procs.keys())
 
+    def has_launcher(self, service_class: str) -> bool:
+        return self._catalog.service_entry_path(service_class) is not None
+
     def _start_reader(self, *, service_id: str, proc: subprocess.Popen[Any], on_output: Any | None) -> None:
         if on_output is None:
             return

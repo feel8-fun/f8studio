@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import logging
 from collections.abc import Mapping
-from typing import cast
+from typing import Protocol, cast
 from uuid import uuid4
 
 import msgspec
@@ -25,6 +25,14 @@ from .runtime import RuntimeGateway
 logger = logging.getLogger(__name__)
 
 
+class ServiceProcessController(Protocol):
+    def can_start(self, service_class: str) -> bool: ...
+
+    def is_running(self, service_id: str) -> bool: ...
+
+    async def start(self, service_id: str, *, service_class: str) -> object: ...
+
+
 def _request_fingerprint(request: DeployProjectRequest) -> str:
     return hashlib.sha256(canonical_json_bytes(request)).hexdigest()
 
@@ -37,11 +45,13 @@ class DeployCoordinator:
         repository: JobRepository,
         runtime: RuntimeGateway,
         events: EventJournal,
+        processes: ServiceProcessController | None = None,
     ) -> None:
         self._projects = projects
         self._repository = repository
         self._runtime = runtime
         self._events = events
+        self._processes = processes
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._lock = asyncio.Lock()
         self._repository.mark_interrupted_jobs_failed(timestamp=utc_now_text())
@@ -194,19 +204,56 @@ class DeployCoordinator:
         *,
         force_apply: bool,
     ) -> ServiceDeployResult:
+        service_class = "<unknown>"
         try:
+            service_class = self._service_class(service_id, graph)
+            await self._ensure_process(service_id, service_class=service_class)
             return await self._runtime.deploy(
                 service_id=service_id,
                 graph=graph,
                 force_apply=force_apply,
             )
         except Exception as exc:
-            logger.exception("service deployment failed service_id=%s", service_id)
+            logger.exception(
+                "service deployment failed service_id=%s service_class=%s",
+                service_id,
+                service_class,
+            )
             return ServiceDeployResult(
                 service_id=service_id,
                 success=False,
-                error_message=f"{type(exc).__name__}: {exc}",
+                error_message=(
+                    f"serviceId={service_id} serviceClass={service_class}: "
+                    f"{type(exc).__name__}: {exc}"
+                ),
             )
+
+    async def _ensure_process(self, service_id: str, *, service_class: str) -> None:
+        processes = self._processes
+        if processes is None or not processes.can_start(service_class) or processes.is_running(service_id):
+            return
+        try:
+            status = await self._runtime.status(service_id)
+        except (TimeoutError, OSError):
+            await processes.start(service_id, service_class=service_class)
+            if not processes.is_running(service_id):
+                raise RuntimeError("managed service process exited during startup")
+            return
+        if status.service_class != service_class:
+            raise ValueError(
+                f"endpoint serviceClass mismatch: expected {service_class}, got {status.service_class}"
+            )
+
+    @staticmethod
+    def _service_class(service_id: str, graph: F8RuntimeGraph) -> str:
+        services = () if isinstance(graph.services, msgspec.UnsetType) else graph.services
+        service = next((item for item in services if str(item.serviceId) == service_id), None)
+        if service is None:
+            raise ValueError(f"compiled runtime graph has no service metadata for {service_id}")
+        service_class = str(service.serviceClass).strip()
+        if not service_class:
+            raise ValueError(f"compiled runtime graph has empty serviceClass for {service_id}")
+        return service_class
 
     async def _publish_job(self, event_type: str, job: DeployJob) -> None:
         payload = cast(dict[str, F8JsonValue], msgspec.to_builtins(job, str_keys=True))
@@ -217,4 +264,4 @@ class DeployCoordinator:
         )
 
 
-__all__ = ["DeployCoordinator"]
+__all__ = ["DeployCoordinator", "ServiceProcessController"]

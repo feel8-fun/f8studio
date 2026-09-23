@@ -6,9 +6,13 @@ requires-python = ">=3.14,<3.15"
 dependencies = [
     "f8studio-core",
     "f8media-protocol",
+    "f8unitymods-setup>=0.2,<1",
     "fastapi>=0.120,<1",
     "uvicorn>=0.35,<1",
     "websockets>=16,<17",
+    "basedpyright>=1.31,<2",
+    "pyserial>=3.5,<4",
+    "python-xlib>=0.33,<1; sys_platform == 'linux'",
 ]
 
 [project.optional-dependencies]

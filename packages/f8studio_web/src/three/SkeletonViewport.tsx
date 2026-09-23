@@ -1,8 +1,9 @@
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 
 import { isSkeletonScene, type SkeletonScene } from '../api/contracts';
+import { usePresentationConnected, usePresentationOutputs } from '../presentation/PresentationStore';
 
 const demoScene: SkeletonScene = {
   tsMs: 0,
@@ -28,11 +29,6 @@ const demoScene: SkeletonScene = {
   ],
 };
 
-function eventSocketUrl(): string {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${protocol}//${window.location.host}/api/events`;
-}
-
 function worldUpVector(token: string): THREE.Vector3 {
   switch (token.toLowerCase()) {
     case '+x': return new THREE.Vector3(1, 0, 0);
@@ -50,70 +46,21 @@ export function SkeletonViewport() {
   const worldRootRef = useRef<THREE.Group | null>(null);
   const skeletonGroupRef = useRef<THREE.Group | null>(null);
   const isLiveRef = useRef(false);
-  const [scene, setScene] = useState<SkeletonScene>(demoScene);
-  const [isLive, setIsLive] = useState(false);
-  const [connected, setConnected] = useState(false);
-  const [socketError, setSocketError] = useState<string | null>(null);
+  const outputs = usePresentationOutputs();
+  const connected = usePresentationConnected();
+  const scene = useMemo(() => {
+    const candidates = [...outputs.values()]
+      .filter((output) => output.renderer === 'three_d' && isSkeletonScene(output.payload))
+      .sort((left, right) => right.updatedAt - left.updatedAt);
+    const candidate = candidates[0]?.payload;
+    return candidate !== undefined && isSkeletonScene(candidate) ? candidate : demoScene;
+  }, [outputs]);
+  const isLive = scene !== demoScene;
   const nodeCount = useMemo(() => scene.people.reduce((total, person) => total + person.nodes.length, 0), [scene]);
 
   useEffect(() => {
     isLiveRef.current = isLive;
   }, [isLive]);
-
-  useEffect(() => {
-    let stopped = false;
-    let socket: WebSocket | null = null;
-    let retry: number | null = null;
-    const open = () => {
-      socket = new WebSocket(eventSocketUrl());
-      socket.onopen = () => {
-        setConnected(true);
-        setSocketError(null);
-      };
-      socket.onerror = () => setSocketError('Event stream connection failed');
-      socket.onclose = () => {
-        setConnected(false);
-        if (!stopped) retry = window.setTimeout(open, 1000);
-      };
-      socket.onmessage = (event) => {
-        let envelope: unknown;
-        try {
-          envelope = JSON.parse(String(event.data));
-        } catch (error: unknown) {
-          console.error('Invalid JSON received from the presentation event stream', error);
-          setSocketError('Invalid event received');
-          return;
-        }
-        if (typeof envelope !== 'object' || envelope === null) return;
-        const record = envelope as Record<string, unknown>;
-        if (record.type !== 'presentation.command' || typeof record.payload !== 'object' || record.payload === null) return;
-        const presentation = record.payload as Record<string, unknown>;
-        if (presentation.command === 'viz.three_d.set' && isSkeletonScene(presentation.payload)) {
-          setScene(presentation.payload);
-          setIsLive(true);
-          setSocketError(null);
-          return;
-        }
-        if (presentation.command === 'viz.three_d.detach') {
-          setScene(demoScene);
-          setIsLive(false);
-          return;
-        }
-        if (presentation.command === 'viz.three_d.world_up' && typeof presentation.payload === 'object' && presentation.payload !== null) {
-          const payload = presentation.payload as Record<string, unknown>;
-          if (typeof payload.worldUp === 'string') {
-            setScene((current) => ({ ...current, worldUp: payload.worldUp as string }));
-          }
-        }
-      };
-    };
-    open();
-    return () => {
-      stopped = true;
-      if (retry !== null) window.clearTimeout(retry);
-      socket?.close();
-    };
-  }, []);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -219,7 +166,6 @@ export function SkeletonViewport() {
         <span>{isLive ? 'Live' : 'Preview'}</span>
         <span>{scene.people.length} people</span>
         <span>{nodeCount} joints</span>
-        {socketError !== null && <span className="error-text">{socketError}</span>}
       </div>
     </section>
   );

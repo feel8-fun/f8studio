@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from threading import RLock
 from uuid import uuid4
 
+import msgspec
+
 from f8pysdk.f8_naming import ensure_token
 from f8studio_core.graph import (
     GraphStore,
@@ -83,6 +85,23 @@ class ProjectService:
 
     def validate(self, document: StudioDocument) -> None:
         validate_document(document)
+
+    def restore(self, project_id: str, snapshot: StudioDocument) -> ProjectRecord:
+        project_id = ensure_token(project_id, label="project_id")
+        if snapshot.project_id != project_id:
+            raise ValueError("snapshot projectId does not match target project")
+        with self._lock:
+            current = self.get(project_id).document
+            restored = msgspec.structs.replace(
+                snapshot,
+                graph_id=current.graph_id,
+                graph_revision=current.graph_revision + 1,
+                layout_revision=current.layout_revision + 1,
+            )
+            validate_document(restored)
+            record = self._repository.replace_document(project_id, restored)
+            self._stores[project_id] = GraphStore(restored)
+            return record
 
     def patch(self, project_id: str, request: PatchRequest) -> ProjectMutationResult:
         return self._mutate(project_id, action="patch", request=request)

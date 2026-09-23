@@ -3,14 +3,22 @@ import { MarkerType, type Edge, type Node, type XYPosition } from '@xyflow/react
 import type { GraphNode, GraphOperation, NodeLayout, StudioDocument } from '../api/contracts';
 import { nodePortRows } from './portRows';
 
-export const SERVICE_WIDTH = 620;
-export const SERVICE_MIN_HEIGHT = 320;
-export const OPERATOR_WIDTH = 260;
-export const OPERATOR_MIN_HEIGHT = 80;
-export const CONTAINER_INSET_X = 32;
-export const CONTAINER_INSET_Y = 96;
-export const OPERATOR_GAP_X = 24;
-export const OPERATOR_GAP_Y = 28;
+export const SERVICE_WIDTH = 524;
+export const SERVICE_MIN_HEIGHT = 240;
+export const COMPACT_SERVICE_WIDTH = 280;
+export const OPERATOR_WIDTH = 240;
+export const OPERATOR_MIN_HEIGHT = 64;
+export const VIDEO_PREVIEW_HEIGHT = 135;
+export const PORT_ROW_HEIGHT = 24;
+export const CONTAINER_INSET_X = 16;
+export const CONTAINER_INSET_Y = 76;
+export const OPERATOR_GAP_X = 12;
+export const OPERATOR_GAP_Y = 16;
+
+const NODE_VERTICAL_CHROME = 40;
+const CONTAINER_CONTENT_GAP = 12;
+const CONTAINER_BOTTOM_INSET = 16;
+const LEGACY_SERVICE_WIDTH = 620;
 
 export interface StudioNodeData extends Record<string, unknown> {
   readonly graphNode: GraphNode;
@@ -95,12 +103,30 @@ export function reconcileProjectedEdges(current: Edge[], projected: readonly Edg
 }
 
 export function operatorHeight(node: GraphNode): number {
-  return Math.max(OPERATOR_MIN_HEIGHT, 52 + Math.max(1, nodePortRows(node).length) * 28);
+  const previewHeight = node.kind === 'operator' &&
+    (node.operatorClass === 'f8.viz.video' || node.spec.rendererClass === 'viz_video')
+    ? VIDEO_PREVIEW_HEIGHT
+    : 0;
+  return Math.max(
+    OPERATOR_MIN_HEIGHT,
+    NODE_VERTICAL_CHROME + Math.max(1, nodePortRows(node).length) * PORT_ROW_HEIGHT + previewHeight,
+  );
 }
 
-function operatorPositions(children: readonly GraphNode[]): ReadonlyMap<string, XYPosition> {
+export function compactServiceHeight(node: GraphNode): number {
+  return Math.max(
+    OPERATOR_MIN_HEIGHT,
+    NODE_VERTICAL_CHROME + Math.max(1, nodePortRows(node).length) * PORT_ROW_HEIGHT,
+  );
+}
+
+export function serviceChildInsetY(service: GraphNode): number {
+  return compactServiceHeight(service) + CONTAINER_CONTENT_GAP;
+}
+
+function operatorPositions(service: GraphNode, children: readonly GraphNode[]): ReadonlyMap<string, XYPosition> {
   const positions = new Map<string, XYPosition>();
-  let y = CONTAINER_INSET_Y;
+  let y = serviceChildInsetY(service);
   for (let index = 0; index < children.length; index += 2) {
     const left = children[index];
     const right = children[index + 1];
@@ -111,15 +137,19 @@ function operatorPositions(children: readonly GraphNode[]): ReadonlyMap<string, 
   return positions;
 }
 
-function serviceSize(layout: NodeLayout | undefined, children: readonly GraphNode[]): { width: number; height: number } {
-  const positions = operatorPositions(children);
+function serviceSize(service: GraphNode, layout: NodeLayout | undefined, children: readonly GraphNode[]): { width: number; height: number } {
+  if (children.length === 0) {
+    return { width: COMPACT_SERVICE_WIDTH, height: compactServiceHeight(service) };
+  }
+  const positions = operatorPositions(service, children);
   const contentBottom = children.reduce((bottom, child) => {
     const position = positions.get(child.nodeId);
     return position === undefined ? bottom : Math.max(bottom, position.y + operatorHeight(child));
-  }, CONTAINER_INSET_Y);
+  }, serviceChildInsetY(service));
+  const persistedWidth = layout?.width === LEGACY_SERVICE_WIDTH ? null : layout?.width;
   return {
-    width: Math.max(layout?.width ?? SERVICE_WIDTH, SERVICE_WIDTH),
-    height: Math.max(layout?.height ?? SERVICE_MIN_HEIGHT, SERVICE_MIN_HEIGHT, contentBottom + 32),
+    width: Math.max(persistedWidth ?? SERVICE_WIDTH, SERVICE_WIDTH),
+    height: Math.max(layout?.height ?? SERVICE_MIN_HEIGHT, SERVICE_MIN_HEIGHT, contentBottom + CONTAINER_BOTTOM_INSET),
   };
 }
 
@@ -135,10 +165,11 @@ export function constrainOperatorPosition(
   width: number,
   height: number,
   childHeight = OPERATOR_MIN_HEIGHT,
+  topInset = CONTAINER_INSET_Y,
 ): XYPosition {
   return {
     x: Math.max(CONTAINER_INSET_X, Math.min(position.x, width - OPERATOR_WIDTH - CONTAINER_INSET_X)),
-    y: Math.max(CONTAINER_INSET_Y, Math.min(position.y, height - childHeight - 32)),
+    y: Math.max(topInset, Math.min(position.y, height - childHeight - CONTAINER_BOTTOM_INSET)),
   };
 }
 
@@ -170,7 +201,7 @@ export function projectDocument(document: StudioDocument): {
     const layout = layouts.get(service.nodeId);
     const position = layout === undefined ? serviceDefaultPosition(serviceIndex) : { x: layout.x, y: layout.y };
     const children = operatorsByServiceId.get(service.serviceId) ?? [];
-    const size = serviceSize(layout, children);
+    const size = serviceSize(service, layout, children);
     return {
       id: service.nodeId,
       type: 'studio',
@@ -186,7 +217,7 @@ export function projectDocument(document: StudioDocument): {
   const defaultPositions = new Map<string, XYPosition>();
   for (const service of services) {
     const children = operatorsByServiceId.get(service.serviceId) ?? [];
-    for (const [nodeId, position] of operatorPositions(children)) defaultPositions.set(nodeId, position);
+    for (const [nodeId, position] of operatorPositions(service, children)) defaultPositions.set(nodeId, position);
   }
   const operatorNodes: StudioFlowNode[] = operators.map((operator) => {
     const parent = serviceFlowNodes.get(operator.serviceId);
@@ -213,6 +244,7 @@ export function projectDocument(document: StudioDocument): {
         width,
         height,
         operatorHeight(operator),
+        serviceChildInsetY(parent.data.graphNode),
       ),
       data: { graphNode: operator, childCount: 0 },
       zIndex: 1,
@@ -254,6 +286,7 @@ export function duplicateFragment(
     node.id,
     absoluteFlowPosition(node, projected.nodes),
   ]));
+  const projectedById = new Map(projected.nodes.map((node) => [node.id, node]));
   const nodes: GraphNode[] = selectedNodes.map((node) => {
     const nodeId = nodeIds.get(node.nodeId);
     if (nodeId === undefined) throw new Error(`Missing duplicated node id for ${node.nodeId}`);
@@ -276,12 +309,15 @@ export function duplicateFragment(
     const position = absolutePositions.get(node.nodeId);
     if (nodeId === undefined || position === undefined) throw new Error(`Missing duplicated layout for ${node.nodeId}`);
     const currentLayout = document.layout.find((item) => item.nodeId === node.nodeId);
+    const projectedNode = projectedById.get(node.nodeId);
+    const projectedWidth = typeof projectedNode?.style?.width === 'number' ? projectedNode.style.width : undefined;
+    const projectedHeight = typeof projectedNode?.style?.height === 'number' ? projectedNode.style.height : undefined;
     return {
       nodeId,
       x: position.x + 40,
       y: position.y + 40,
-      width: node.kind === 'service' ? currentLayout?.width ?? SERVICE_WIDTH : currentLayout?.width,
-      height: node.kind === 'service' ? currentLayout?.height ?? SERVICE_MIN_HEIGHT : currentLayout?.height,
+      width: node.kind === 'service' ? projectedWidth : currentLayout?.width,
+      height: node.kind === 'service' ? projectedHeight : currentLayout?.height,
       collapsed: false,
     };
   });

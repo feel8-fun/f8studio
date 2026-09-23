@@ -48,6 +48,15 @@ struct X11Runtime {
   int src_y = 0;
   int src_w = 0;
   int src_h = 0;
+
+  ~X11Runtime() {
+#if defined(__linux__) && !defined(_WIN32)
+    if (dpy) {
+      XCloseDisplay(dpy);
+      dpy = nullptr;
+    }
+#endif
+  }
 };
 
 std::int64_t now_ms_steady() {

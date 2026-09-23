@@ -48,7 +48,7 @@ f8pydl_bench = "python scripts/bench_dl_baseline.py"
 
 [feature.sdk.pypi-dependencies]
 f8pysdk = { path = "packages/f8pysdk", editable = true }
-eclipse-zenoh = ">=1.9.0"
+eclipse-zenoh = ">=1.9.0,<1.10"
 
 [feature.sdk.tasks]
 update_describes = "python scripts/update_static_describes.py"
@@ -219,7 +219,11 @@ f8media-protocol = { path = "packages/f8media_protocol", editable = true }
 f8media-gateway = { path = "packages/f8media_gateway", editable = true }
 f8studio-server = { path = "packages/f8studio_server", editable = true }
 f8pysdk = { path = "packages/f8pysdk", editable = true }
+f8unitymods-setup = { path = "external/f8unitymods", editable = true }
 aiortc = ">=1.14,<2"
+basedpyright = ">=1.31,<2"
+pyserial = ">=3.5,<4"
+python-xlib = ">=0.33,<1"
 
 [feature.web-studio.tasks]
 studio_media_gateway = "python -m f8media_gateway"

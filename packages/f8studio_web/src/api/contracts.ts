@@ -191,6 +191,7 @@ export type GraphOperation =
   | { readonly op: 'disconnectEdge'; readonly edgeId: string }
   | { readonly op: 'setNodeLayout'; readonly layout: NodeLayout }
   | { readonly op: 'renameNode'; readonly nodeId: string; readonly name: string }
+  | { readonly op: 'replaceNode'; readonly node: GraphNode }
   | { readonly op: 'bindOperatorService'; readonly nodeId: string; readonly serviceId: string }
   | { readonly op: 'setNodeEnabled'; readonly nodeId: string; readonly enabled: boolean }
   | { readonly op: 'setNodeState'; readonly nodeId: string; readonly field: string; readonly value: JsonValue }
@@ -238,6 +239,19 @@ export interface RuntimeMonitor {
   readonly queue?: { readonly depth?: number };
   readonly timing?: { readonly processMsP95?: number; readonly latencyMsP95?: number };
   readonly error?: { readonly currentMessage?: string; readonly lastMessage?: string };
+}
+
+export interface RuntimeStateField {
+  readonly field: string;
+  readonly found: boolean;
+  readonly value: JsonValue;
+  readonly tsMs: number | null;
+}
+
+export interface RuntimeNodeState {
+  readonly serviceId: string;
+  readonly nodeId: string;
+  readonly fields: readonly RuntimeStateField[];
 }
 
 export function isDeployJob(value: unknown): value is DeployJob {
@@ -315,6 +329,130 @@ export interface MediaSample {
   readonly value: number | null | Readonly<Record<string, number | null>>;
   readonly streamId: string;
   readonly streamEpoch: string;
+}
+
+export type AssetKind = 'component' | 'variant' | 'modding_recipe';
+
+export interface AssetSummary {
+  readonly assetId: string;
+  readonly kind: AssetKind;
+  readonly name: string;
+  readonly description: string;
+  readonly tags: readonly string[];
+  readonly currentVersion: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface AssetRecord extends AssetSummary {
+  readonly content: JsonValue;
+}
+
+export interface AssetVersion {
+  readonly assetId: string;
+  readonly version: number;
+  readonly createdAt: string;
+  readonly content: JsonValue;
+}
+
+export interface ProjectVersion {
+  readonly versionId: string;
+  readonly projectId: string;
+  readonly name: string;
+  readonly createdAt: string;
+  readonly document: StudioDocument;
+}
+
+export interface EditorDiagnostic {
+  readonly severity: 'error' | 'warning' | 'information';
+  readonly message: string;
+  readonly source: string;
+  readonly path: string;
+  readonly range: {
+    readonly start: { readonly line: number; readonly column: number };
+    readonly end: { readonly line: number; readonly column: number };
+  };
+  readonly rule?: string | null;
+}
+
+export interface EditorSession {
+  readonly sessionId: string;
+  readonly language: 'python' | 'json';
+  readonly filename: string;
+  readonly version: number;
+  readonly text: string;
+}
+
+export interface EditorAnalysis {
+  readonly sessionId: string;
+  readonly version: number;
+  readonly diagnostics: readonly EditorDiagnostic[];
+  readonly engine: string;
+}
+
+export interface EditorLanguageResult {
+  readonly sessionId: string;
+  readonly version: number;
+  readonly result: JsonValue;
+}
+
+export interface LocalCapability {
+  readonly capability: string;
+  readonly status: 'available' | 'unavailable' | 'unverified';
+  readonly backend: string;
+  readonly reason: string;
+}
+
+export interface SerialPortInfo {
+  readonly device: string;
+  readonly description: string;
+  readonly hardwareId: string;
+}
+
+export interface UnityInstallPlan {
+  readonly planId: string;
+  readonly targetPath: string;
+  readonly actions: readonly string[];
+  readonly blockingErrors: readonly string[];
+  readonly filesToWrite: readonly string[];
+  readonly filesToPreserve: readonly string[];
+  readonly graphBuildPlan: JsonValue;
+  readonly raw: JsonValue;
+}
+
+export interface SkeletonUdpVerification {
+  readonly bindAddress: string;
+  readonly port: number;
+  readonly packetCount: number;
+  readonly decodedFrameCount: number;
+  readonly modelNames: readonly string[];
+  readonly decoderErrors: readonly string[];
+  readonly verified: boolean;
+}
+
+export interface HotkeyBinding {
+  readonly bindingId: string;
+  readonly accelerator: string;
+  readonly projectId: string;
+  readonly nodeId: string;
+  readonly field: string;
+  readonly status: 'configured' | 'registered' | 'disabled' | 'error';
+  readonly message: string;
+}
+
+export interface RegisterHotkeyInput {
+  readonly accelerator: string;
+  readonly projectId: string;
+  readonly nodeId: string;
+  readonly field: string;
+  readonly bindingId?: string;
+}
+
+export interface PresentationCommand {
+  readonly nodeId: string;
+  readonly command: string;
+  readonly payload: Readonly<Record<string, JsonValue>>;
+  readonly tsMs: number | null;
 }
 
 export interface SkeletonNode {

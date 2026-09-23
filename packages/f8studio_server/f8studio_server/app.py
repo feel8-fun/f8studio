@@ -33,11 +33,28 @@ from f8studio_core.graph import (
 )
 
 from .application import StudioApplication
+from .assets import (
+    AssetExport,
+    AssetKind,
+    CreateAssetRequest,
+    CreateProjectVersionRequest,
+    UpdateAssetRequest,
+)
+from .editor import CreateEditorSessionRequest, EditorPositionRequest, UpdateEditorDocumentRequest
+from .local_integration import (
+    ApplyUnityInstallRequest,
+    DetectModdingTargetRequest,
+    PreviewUnityInstallRequest,
+    RegisterHotkeyRequest,
+    VerifySkeletonUdpRequest,
+)
 from .models import (
     BrowserRtcConfiguration,
     CreateCatalogNodeRequest,
     CreateProjectRequest,
     DeployProjectRequest,
+    RuntimeNodeState,
+    RuntimeStateReadRequest,
     ServiceActiveRequest,
     ServiceCommandRequest,
     ServiceStartRequest,
@@ -197,7 +214,7 @@ def create_app(
         logger.exception("unhandled Web Studio API error", exc_info=exc)
         return JSONResponse(
             status_code=500,
-            content={"detail": {"code": "internal_error", "message": f"{type(exc).__name__}: {exc}"}},
+            content={"detail": {"code": "internal_error", "message": "An internal server error occurred"}},
         )
 
     @app.get("/api/health")
@@ -237,9 +254,56 @@ def create_app(
         payload = await _decode_body(request, CreateCatalogNodeRequest)
         return _json_value(await asyncio.to_thread(studio.catalog.create_node, payload))
 
+    @app.get("/api/assets")
+    async def list_assets(kind: AssetKind | None = None) -> F8JsonValue:
+        return _json_value(await asyncio.to_thread(studio.assets.list_assets, kind))
+
+    @app.post("/api/assets", status_code=201)
+    async def create_asset(request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, CreateAssetRequest)
+        record = await asyncio.to_thread(studio.assets.create, payload)
+        await studio.events.publish(event_type="asset.created", scope=f"asset:{record.asset_id}", payload=_json_value(record))
+        return _json_value(record)
+
+    @app.post("/api/assets/import", status_code=201)
+    async def import_asset(request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, AssetExport)
+        record = await asyncio.to_thread(studio.assets.import_asset, payload)
+        await studio.events.publish(event_type="asset.created", scope=f"asset:{record.asset_id}", payload=_json_value(record))
+        return _json_value(record)
+
+    @app.get("/api/assets/{asset_id}")
+    async def get_asset(asset_id: str) -> F8JsonValue:
+        return _json_value(await asyncio.to_thread(studio.assets.get, asset_id))
+
+    @app.put("/api/assets/{asset_id}")
+    async def update_asset(asset_id: str, request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, UpdateAssetRequest)
+        record = await asyncio.to_thread(studio.assets.update, asset_id, payload)
+        await studio.events.publish(event_type="asset.updated", scope=f"asset:{record.asset_id}", payload=_json_value(record))
+        return _json_value(record)
+
+    @app.delete("/api/assets/{asset_id}", status_code=204)
+    async def delete_asset(asset_id: str) -> Response:
+        await asyncio.to_thread(studio.assets.delete, asset_id)
+        await studio.events.publish(event_type="asset.deleted", scope=f"asset:{asset_id}", payload={"assetId": asset_id})
+        return Response(status_code=204)
+
+    @app.get("/api/assets/{asset_id}/versions")
+    async def list_asset_versions(asset_id: str) -> F8JsonValue:
+        return _json_value(await asyncio.to_thread(studio.assets.versions, asset_id))
+
+    @app.get("/api/assets/{asset_id}/export")
+    async def export_asset(asset_id: str) -> F8JsonValue:
+        return _json_value(await asyncio.to_thread(studio.assets.export, asset_id))
+
     @app.get("/api/runtime/monitors")
     async def runtime_monitors() -> F8JsonValue:
         return _json_value(await studio.monitors.snapshot())
+
+    @app.get("/api/presentation")
+    async def presentation_snapshot() -> F8JsonValue:
+        return _json_value(studio.presentation.snapshot())
 
     @app.post("/api/media/sessions", status_code=201)
     async def create_media_session(request: Request) -> F8JsonValue:
@@ -323,6 +387,110 @@ def create_app(
         )
         return _json_value(record)
 
+    @app.get("/api/projects/{project_id}/versions")
+    async def list_project_versions(project_id: str) -> F8JsonValue:
+        await asyncio.to_thread(studio.projects.get, project_id)
+        return _json_value(await asyncio.to_thread(studio.assets.list_project_versions, project_id))
+
+    @app.post("/api/projects/{project_id}/versions", status_code=201)
+    async def create_project_version(project_id: str, request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, CreateProjectVersionRequest)
+        record = await asyncio.to_thread(studio.projects.get, project_id)
+        version = await asyncio.to_thread(
+            studio.assets.create_project_version,
+            project_id,
+            payload.name,
+            record.document,
+        )
+        return _json_value(version)
+
+    @app.post("/api/projects/{project_id}/versions/{version_id}/restore")
+    async def restore_project_version(project_id: str, version_id: str) -> F8JsonValue:
+        version = await asyncio.to_thread(studio.assets.get_project_version, project_id, version_id)
+        record = await asyncio.to_thread(studio.projects.restore, project_id, version.document)
+        await asyncio.to_thread(studio.local.refresh_hotkeys)
+        await studio.events.publish(
+            event_type="graph.committed",
+            scope=f"project:{project_id}",
+            payload={"requestId": f"restore:{version_id}", "graphChanged": True, "layoutChanged": True, "document": _json_value(record.document)},
+        )
+        return _json_value(record)
+
+    @app.post("/api/editor/sessions", status_code=201)
+    async def create_editor_session(request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, CreateEditorSessionRequest)
+        return _json_value(await asyncio.to_thread(studio.editor.create, payload))
+
+    @app.get("/api/editor/sessions/{session_id}")
+    async def get_editor_session(session_id: str) -> F8JsonValue:
+        return _json_value(await asyncio.to_thread(studio.editor.get, session_id))
+
+    @app.put("/api/editor/sessions/{session_id}")
+    async def update_editor_session(session_id: str, request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, UpdateEditorDocumentRequest)
+        return _json_value(await asyncio.to_thread(studio.editor.update, session_id, payload))
+
+    @app.post("/api/editor/sessions/{session_id}/analyze")
+    async def analyze_editor_session(session_id: str) -> F8JsonValue:
+        return _json_value(await asyncio.to_thread(studio.editor.analyze, session_id))
+
+    @app.post("/api/editor/sessions/{session_id}/completion")
+    async def editor_completion(session_id: str, request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, EditorPositionRequest)
+        return _json_value(await asyncio.to_thread(studio.editor.completion, session_id, payload))
+
+    @app.post("/api/editor/sessions/{session_id}/hover")
+    async def editor_hover(session_id: str, request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, EditorPositionRequest)
+        return _json_value(await asyncio.to_thread(studio.editor.hover, session_id, payload))
+
+    @app.delete("/api/editor/sessions/{session_id}", status_code=204)
+    async def close_editor_session(session_id: str) -> Response:
+        await asyncio.to_thread(studio.editor.close_session, session_id)
+        return Response(status_code=204)
+
+    @app.get("/api/local/capabilities")
+    async def local_capabilities() -> F8JsonValue:
+        return _json_value(studio.local.capabilities())
+
+    @app.get("/api/local/serial-ports")
+    async def serial_ports() -> F8JsonValue:
+        return _json_value(await asyncio.to_thread(studio.local.serial_ports))
+
+    @app.post("/api/local/modding/detect")
+    async def detect_modding_target(request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, DetectModdingTargetRequest)
+        return _json_value(await asyncio.to_thread(studio.local.detect_modding_target, payload))
+
+    @app.post("/api/local/modding/unity/preview")
+    async def preview_unity_install(request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, PreviewUnityInstallRequest)
+        return _json_value(await asyncio.to_thread(studio.local.preview_unity_install, payload))
+
+    @app.post("/api/local/modding/unity/apply")
+    async def apply_unity_install(request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, ApplyUnityInstallRequest)
+        return _json_value(await asyncio.to_thread(studio.local.apply_unity_install, payload))
+
+    @app.post("/api/local/modding/verify-udp")
+    async def verify_skeleton_udp(request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, VerifySkeletonUdpRequest)
+        return _json_value(await studio.local.verify_skeleton_udp(payload))
+
+    @app.get("/api/local/hotkeys")
+    async def list_hotkeys(project_id: str | None = None) -> F8JsonValue:
+        return _json_value(await asyncio.to_thread(studio.local.list_hotkeys, project_id))
+
+    @app.post("/api/local/hotkeys", status_code=201)
+    async def register_hotkey(request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, RegisterHotkeyRequest)
+        return _json_value(await asyncio.to_thread(studio.local.register_hotkey, payload))
+
+    @app.delete("/api/local/hotkeys/{binding_id}", status_code=204)
+    async def unregister_hotkey(binding_id: str) -> Response:
+        await asyncio.to_thread(studio.local.unregister_hotkey, binding_id)
+        return Response(status_code=204)
+
     @app.post("/api/projects/{project_id}/validate")
     async def validate_project(project_id: str, request: Request) -> F8JsonValue:
         payload = await _decode_body(request, ValidateDocumentRequest)
@@ -338,6 +506,7 @@ def create_app(
     async def commit_graph(project_id: str, mutation: ProjectMutationResult) -> F8JsonValue:
         event_payload = _patch_payload(mutation.result)
         if not mutation.replayed:
+            await asyncio.to_thread(studio.local.refresh_hotkeys)
             await studio.events.publish(
                 event_type="graph.committed",
                 scope=f"project:{project_id}",
@@ -429,6 +598,17 @@ def create_app(
                 value=payload.value,
             ),
         )
+
+    @app.post("/api/runtime/services/{service_id}/nodes/{node_id}/state:read")
+    async def read_node_state(service_id: str, node_id: str, request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, RuntimeStateReadRequest)
+        normalized_fields = tuple(dict.fromkeys(field.strip() for field in payload.fields if field.strip()))
+        if len(normalized_fields) > 128:
+            raise HTTPException(status_code=422, detail="at most 128 state fields may be read at once")
+        fields = await asyncio.gather(
+            *(studio.runtime.read_state(service_id, node_id=node_id, field=field) for field in normalized_fields)
+        )
+        return _json_value(RuntimeNodeState(service_id=service_id, node_id=node_id, fields=tuple(fields)))
 
     @app.post("/api/runtime/services/{service_id}/commands")
     async def invoke_service_command(service_id: str, request: Request) -> F8JsonValue:

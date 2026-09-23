@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import type { GraphNode, JsonValue, StateSpec } from '../api/contracts';
+import type { GraphNode, JsonValue, RuntimeStateField, StateSpec } from '../api/contracts';
 
 export function isJsonValue(value: unknown): value is JsonValue {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
@@ -44,6 +44,7 @@ export function StateFieldControl({
   disabled,
   connected = false,
   compact = false,
+  runtimeValue,
   onCommit,
 }: {
   readonly node: GraphNode;
@@ -51,12 +52,14 @@ export function StateFieldControl({
   readonly disabled: boolean;
   readonly connected?: boolean;
   readonly compact?: boolean;
+  readonly runtimeValue?: RuntimeStateField;
   readonly onCommit: (value: JsonValue) => void;
 }) {
-  const value = fieldValue(node, field.name);
+  const readOnly = field.access === 'ro';
+  const configuredValue = fieldValue(node, field.name);
+  const value = readOnly && runtimeValue?.found === true ? runtimeValue.value : configuredValue;
   const [draft, setDraft] = useState(displayValue(value));
   useEffect(() => setDraft(displayValue(value)), [value]);
-  const readOnly = field.access === 'ro';
   const controlDisabled = disabled || connected;
   const control = controlName(field.uiControl);
   const options = useMemo(() => {
@@ -90,7 +93,7 @@ export function StateFieldControl({
   if (readOnly) {
     return <label className={`${shellClass} state-control-readonly`} title={title}>
       {!compact && <span>{label}</span>}
-      <output>{displayValue(value)}</output>
+      <output>{runtimeValue?.found === false ? 'Unavailable' : displayValue(value)}</output>
       {connected && !compact && <small aria-hidden="true">Upstream</small>}
     </label>;
   }

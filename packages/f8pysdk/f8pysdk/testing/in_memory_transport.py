@@ -92,6 +92,9 @@ class _WatchHandle:
     async def stop(self) -> None:
         self._cluster.remove_retained_watch(self._pattern, self._cb)
 
+    async def unsubscribe(self) -> None:
+        await self.stop()
+
 
 class _ServeHandle:
     def __init__(
@@ -191,6 +194,4 @@ class InMemoryTransport:
             for key, value in list(self._cluster.retained.items()):
                 if _match_pattern(pattern, key):
                     await cb(key, bytes(value))
-        handle = _WatchHandle(self._cluster, pattern, cb)
-        task = asyncio.create_task(asyncio.sleep(0), name=f"mem_retained_watch:{pattern}")
-        return (handle, task)
+        return _WatchHandle(self._cluster, pattern, cb)

@@ -244,15 +244,11 @@ test('nests operators in compatible services and cascades container deletion', a
   const pyEngineButton = page.getByRole('button', { name: /PyEngine/ });
   await pyEngineButton.click();
   await pyEngineButton.click();
-  if ((page.viewportSize()?.width ?? 0) > 560) {
-    await expect(page.locator('.react-flow__node.flow-node-service')).toHaveCount(2);
-  } else {
-    await expect.poll(async () => page.evaluate(async (selectedProjectId) => {
-      const response = await fetch(`/api/projects/${selectedProjectId}`);
-      const record = await response.json() as { document: { nodes: { kind: string }[] } };
-      return record.document.nodes.filter((node) => node.kind === 'service').length;
-    }, projectId)).toBe(2);
-  }
+  await expect.poll(async () => page.evaluate(async (selectedProjectId) => {
+    const response = await fetch(`/api/projects/${selectedProjectId}`);
+    const record = await response.json() as { document: { nodes: { kind: string }[] } };
+    return record.document.nodes.filter((node) => node.kind === 'service').length;
+  }, projectId)).toBe(2);
 
   await page.getByLabel('Search nodes').fill('Bandpass Filter');
   await page.locator('.catalog-list button:not(:disabled)').filter({ hasText: 'Bandpass Filter' }).click();
@@ -379,7 +375,7 @@ test('nests operators in compatible services and cascades container deletion', a
     await expect(page.locator('.connection-online')).toBeVisible();
   }
 
-  await expect(services.nth(0).locator('.service-child-count')).toHaveText('0 ops');
+  await expect(services.nth(0).locator('.service-child-count')).toHaveCount(0);
   await expect(services.nth(1).locator('.service-child-count')).toHaveText('1 ops');
   await expect.poll(async () => {
     const [serviceBox, operatorBox] = await Promise.all([services.nth(1).boundingBox(), operator.boundingBox()]);
@@ -538,7 +534,7 @@ test('keeps long inline state editors within fixed node rows', async ({ page }, 
   await expect.poll(async () => operator.evaluate((element) => ({
     width: Number.parseFloat(getComputedStyle(element).width),
     overflow: element.scrollWidth - element.clientWidth,
-  }))).toEqual({ width: 260, overflow: 0 });
+  }))).toEqual({ width: 240, overflow: 0 });
   await page.screenshot({ path: testInfo.outputPath('compact-inline-state.png'), fullPage: true });
 });
 

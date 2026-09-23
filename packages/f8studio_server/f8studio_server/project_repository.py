@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from f8studio_core.graph import PatchResult, decode_document, encode_document
+from f8studio_core.graph import PatchResult, StudioDocument, decode_document, encode_document
 
 from .models import ProjectRecord, ProjectSummary
 
@@ -185,6 +185,28 @@ class ProjectRepository:
         record = self.get_project(project_id)
         if record is None:
             raise FileNotFoundError(f"project not found after update: {project_id}")
+        return record
+
+    def replace_document(self, project_id: str, document: StudioDocument) -> ProjectRecord:
+        timestamp = utc_now_text()
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """UPDATE projects
+                   SET updated_at = ?, graph_revision = ?, layout_revision = ?, document = ?
+                   WHERE project_id = ?""",
+                (
+                    timestamp,
+                    document.graph_revision,
+                    document.layout_revision,
+                    encode_document(document),
+                    project_id,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise FileNotFoundError(f"project not found: {project_id}")
+        record = self.get_project(project_id)
+        if record is None:
+            raise FileNotFoundError(f"project not found after restore: {project_id}")
         return record
 
     def lookup_request(self, project_id: str, request_id: str) -> StoredRequest | None:

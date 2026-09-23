@@ -33,6 +33,9 @@ class ManagedServiceProcesses:
         self._events = events
         self._loop: asyncio.AbstractEventLoop | None = None
 
+    def can_start(self, service_class: str) -> bool:
+        return self._manager.has_launcher(service_class)
+
     async def start(self, service_id: str, *, service_class: str) -> ManagedProcessResult:
         self._loop = asyncio.get_running_loop()
         config = ServiceProcessConfig(

@@ -16,7 +16,7 @@ import {
   type OnNodeDrag,
   type ResizeParams,
 } from '@xyflow/react';
-import { Copy, Play, Plus, Redo2, RotateCcw, Search, Square, Trash2 } from 'lucide-react';
+import { Braces, Check, Copy, Keyboard, Play, Plus, Redo2, RotateCcw, Search, Square, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -28,28 +28,39 @@ import {
   fetchCatalog,
   fetchDeployJob,
   fetchLatestDeployment,
+  fetchHotkeys,
   fetchProject,
   fetchProjects,
   fetchRuntimeMonitors,
+  fetchRuntimeNodeState,
   patchProject,
+  registerHotkey,
   stopRuntimeService,
+  unregisterHotkey,
 } from '../api/client';
+import { isStudioDocument } from '../api/contracts';
 import type {
   CatalogSnapshot,
   DeployJob,
   GraphEdge,
   GraphNode,
   GraphOperation,
+  GraphPort,
+  HotkeyBinding,
   JsonValue,
   OperatorSpec,
   ProjectRecord,
   ProjectSummary,
   RuntimeMonitor,
+  RuntimeStateField,
   ServiceSpec,
+  StateSpec,
 } from '../api/contracts';
 import { connectionError, edgeKindForPort } from './connectionRules';
 import {
   absoluteFlowPosition,
+  COMPACT_SERVICE_WIDTH,
+  compactServiceHeight,
   constrainOperatorPosition,
   duplicateFragment,
   OPERATOR_MIN_HEIGHT,
@@ -60,6 +71,7 @@ import {
   reconcileProjectedNodes,
   SERVICE_MIN_HEIGHT,
   SERVICE_WIDTH,
+  serviceChildInsetY,
   type StudioFlowNode,
 } from './projection';
 import { StateFieldControl } from './StateFieldControl';
@@ -70,7 +82,122 @@ const SELECTED_PROJECT_KEY = 'f8studio.selectedProjectId';
 const STUDIO_SERVICE_CLASS = 'f8.pystudio';
 const STUDIO_SERVICE_ID = 'studio';
 
+function hotkeyEligible(field: StateSpec): boolean {
+  if (field.access !== 'rw') return false;
+  const control = (field.uiControl ?? '').split('[', 1)[0]?.trim().toLowerCase() ?? '';
+  if (control === 'button') return field.valueSchema.type === 'integer' || field.valueSchema.type === 'number';
+  return ['select', 'dropdown', 'dropbox', 'combo', 'combobox'].includes(control) ||
+    (field.valueSchema.enum?.length ?? 0) > 0;
+}
+
+function HotkeyEditor({ projectId, node, field, disabled }: {
+  readonly projectId: string;
+  readonly node: GraphNode;
+  readonly field: StateSpec;
+  readonly disabled: boolean;
+}) {
+  const [binding, setBinding] = useState<HotkeyBinding | null>(null);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetchHotkeys(projectId).then((bindings) => {
+      if (controller.signal.aborted) return;
+      const current = bindings.find((item) => item.nodeId === node.nodeId && item.field === field.name) ?? null;
+      setBinding(current);
+      setDraft(current?.accelerator ?? '');
+      setError(null);
+    }, (reason: unknown) => {
+      if (!controller.signal.aborted) setError(errorMessage(reason));
+    });
+    return () => controller.abort();
+  }, [field.name, node.nodeId, projectId]);
+
+  const save = async () => {
+    if (draft.trim() === '') return;
+    setBusy(true);
+    setError(null);
+    try {
+      const saved = await registerHotkey({
+        accelerator: draft,
+        projectId,
+        nodeId: node.nodeId,
+        field: field.name,
+        ...(binding === null ? {} : { bindingId: binding.bindingId }),
+      });
+      setBinding(saved);
+      setDraft(saved.accelerator);
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    if (binding === null) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await unregisterHotkey(binding.bindingId);
+      setBinding(null);
+      setDraft('');
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return <div className="hotkey-editor">
+    <div className="hotkey-heading"><Keyboard size={13} /><span>Global hotkey</span>{binding !== null && <i className={`hotkey-status hotkey-status-${binding.status}`} title={binding.message || binding.status} />}</div>
+    <div className="hotkey-input-row">
+      <input aria-label={`${field.label ?? field.name} global hotkey`} value={draft} placeholder="Ctrl+Alt+P" disabled={disabled || busy} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void save(); } }} />
+      <button className="icon-button bordered" type="button" aria-label={`Save ${field.label ?? field.name} global hotkey`} title="Save global hotkey" disabled={disabled || busy || draft.trim() === ''} onClick={() => void save()}><Check size={14} /></button>
+      <button className="icon-button bordered" type="button" aria-label={`Clear ${field.label ?? field.name} global hotkey`} title="Clear global hotkey" disabled={disabled || busy || binding === null} onClick={() => void remove()}><X size={14} /></button>
+    </div>
+    {error !== null && <small role="alert">{error}</small>}
+  </div>;
+}
+
+function NodeSchemaEditor({ node, busy, commit }: {
+  readonly node: GraphNode;
+  readonly busy: boolean;
+  readonly commit: (operations: readonly GraphOperation[]) => Promise<void>;
+}) {
+  const [text, setText] = useState(() => JSON.stringify({ spec: node.spec, ports: node.ports }, null, 2));
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { setText(JSON.stringify({ spec: node.spec, ports: node.ports }, null, 2)); setError(null); }, [node]);
+  const apply = async () => {
+    try {
+      const parsed: unknown = JSON.parse(text);
+      if (typeof parsed !== 'object' || parsed === null) throw new Error('Schema document must be an object');
+      const value = parsed as Record<string, unknown>;
+      if (typeof value.spec !== 'object' || value.spec === null || !Array.isArray(value.ports)) {
+        throw new Error('Schema document requires spec and ports');
+      }
+      const ports = value.ports as readonly GraphPort[];
+      const replacement: GraphNode = node.kind === 'operator'
+        ? { ...node, spec: value.spec as OperatorSpec, ports }
+        : { ...node, spec: value.spec as ServiceSpec, ports };
+      await commit([{ op: 'replaceNode', node: replacement }]);
+      setError(null);
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : 'Schema update failed');
+    }
+  };
+  return <details className="node-schema-editor">
+    <summary><Braces size={14} />Schema</summary>
+    <textarea value={text} onChange={(event) => setText(event.target.value)} disabled={busy} spellCheck={false} aria-label="Node schema JSON" />
+    {error !== null && <p role="alert">{error}</p>}
+    <button className="command-button" type="button" disabled={busy} onClick={() => void apply()}>Apply schema</button>
+  </details>;
+}
+
 function NodeInspector({
+  projectId,
   node,
   services,
   monitor,
@@ -79,6 +206,7 @@ function NodeInspector({
   bindService,
   connectedStateInputs,
 }: {
+  readonly projectId: string;
   readonly node: GraphNode;
   readonly services: readonly GraphNode[];
   readonly monitor: RuntimeMonitor | null;
@@ -88,6 +216,55 @@ function NodeInspector({
   readonly connectedStateInputs: ReadonlySet<string>;
 }) {
   const fields = node.spec.stateFields ?? [];
+  const [runtimeValues, setRuntimeValues] = useState<Readonly<Record<string, RuntimeStateField>>>({});
+  const reportedStateError = useRef(false);
+  const readonlyFieldNames = useMemo(
+    () => fields.filter((field) => field.access === 'ro' && field.name !== 'svcId' && field.name !== 'operatorId')
+      .map((field) => field.name),
+    [fields],
+  );
+  const readonlyFieldKey = readonlyFieldNames.join('\u0000');
+  useEffect(() => {
+    const controller = new AbortController();
+    const names = readonlyFieldKey === '' ? [] : readonlyFieldKey.split('\u0000');
+    const load = async () => {
+      if (names.length === 0) {
+        setRuntimeValues({});
+        return;
+      }
+      try {
+        const state = await fetchRuntimeNodeState(node.serviceId, node.nodeId, names, controller.signal);
+        if (!controller.signal.aborted) {
+          setRuntimeValues(Object.fromEntries(state.fields.map((field) => [field.field, field])));
+          reportedStateError.current = false;
+        }
+      } catch (reason: unknown) {
+        if (controller.signal.aborted) return;
+        setRuntimeValues({});
+        if (!reportedStateError.current) {
+          reportedStateError.current = true;
+          console.error(`Failed to read runtime state for ${node.nodeId}`, reason);
+        }
+      }
+    };
+    void load();
+    const timer = window.setInterval(() => void load(), 1500);
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+    };
+  }, [node.nodeId, node.serviceId, readonlyFieldKey]);
+
+  const runtimeValue = (field: StateSpec): RuntimeStateField | undefined => {
+    if (field.access !== 'ro') return undefined;
+    if (field.name === 'svcId') {
+      return { field: field.name, found: true, value: node.serviceId, tsMs: null };
+    }
+    if (field.name === 'operatorId') {
+      return { field: field.name, found: true, value: node.nodeId, tsMs: null };
+    }
+    return runtimeValues[field.name] ?? { field: field.name, found: false, value: null, tsMs: null };
+  };
   return <>
     <label className="inspector-field"><span>Name</span><input key={`${node.nodeId}:${node.name}`} disabled={busy} defaultValue={node.name} onBlur={(event) => {
       const name = event.target.value.trim();
@@ -109,14 +286,21 @@ function NodeInspector({
       <dt>Latency p95</dt><dd>{(monitor.timing?.latencyMsP95 ?? 0).toFixed(1)} ms</dd>
     </dl>}
     {fields.length > 0 && <h2>State</h2>}
-    <div className="inspector-fields">{fields.map((field) => <StateFieldControl
-      key={field.name}
-      node={node}
-      field={field}
-      disabled={busy}
-      connected={connectedStateInputs.has(`${node.nodeId}:${field.name}`)}
-      onCommit={(value) => void commit([{ op: 'setNodeState', nodeId: node.nodeId, field: field.name, value }])}
-    />)}</div>
+    <div className="inspector-fields">{fields.map((field) => {
+      const connected = connectedStateInputs.has(`${node.nodeId}:${field.name}`);
+      return <div className="inspector-state-field" key={field.name}>
+        <StateFieldControl
+          node={node}
+          field={field}
+          disabled={busy}
+          connected={connected}
+          runtimeValue={runtimeValue(field)}
+          onCommit={(value) => void commit([{ op: 'setNodeState', nodeId: node.nodeId, field: field.name, value }])}
+        />
+        {hotkeyEligible(field) && <HotkeyEditor projectId={projectId} node={node} field={field} disabled={busy || connected} />}
+      </div>;
+    })}</div>
+    <NodeSchemaEditor node={node} busy={busy} commit={commit} />
     <button className="danger-command" type="button" disabled={busy} onClick={() => void commit([{ op: 'deleteNode', nodeId: node.nodeId }])}><Trash2 size={15} /> {node.kind === 'service' ? 'Delete service and operators' : 'Delete node'}</button>
   </>;
 }
@@ -191,9 +375,11 @@ function GraphWorkspaceInner() {
   const fittedProjectId = useRef<string | null>(null);
   const mutationInFlight = useRef(false);
   const connectedStateInputsCache = useRef<ReadonlySet<string>>(new Set());
+  const projectRef = useRef<ProjectRecord | null>(null);
   const nodesInitialized = useNodesInitialized();
-  const { fitView } = useReactFlow<StudioFlowNode, Edge>();
+  const { fitView, screenToFlowPosition } = useReactFlow<StudioFlowNode, Edge>();
   const projectId = project?.projectId ?? null;
+  projectRef.current = project;
 
   const reloadProject = useCallback(async (projectId: string) => {
     const [loaded, latestDeployment] = await Promise.all([
@@ -236,6 +422,56 @@ function GraphWorkspaceInner() {
   useEffect(() => {
     if (project !== null) localStorage.setItem(SELECTED_PROJECT_KEY, project.projectId);
   }, [project]);
+
+  useEffect(() => {
+    if (projectId === null) return;
+    let disposed = false;
+    let socket: WebSocket | null = null;
+    let retry = 0;
+    let retryTimer: number | null = null;
+    const connect = () => {
+      if (disposed) return;
+      socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/events`);
+      socket.onopen = () => {
+        retry = 0;
+        void fetchProject(projectId).then((record) => {
+          if (!disposed && record.document.graphRevision > (projectRef.current?.document.graphRevision ?? -1)) {
+            setProject(record);
+          }
+        }, (reason: unknown) => {
+          if (!disposed) setError((current) => current ?? errorMessage(reason));
+        });
+      };
+      socket.onmessage = (event) => {
+        let decoded: unknown;
+        try { decoded = JSON.parse(String(event.data)); }
+        catch (reason) { console.error('Invalid graph event JSON', reason); return; }
+        if (typeof decoded !== 'object' || decoded === null) return;
+        const envelope = decoded as Record<string, unknown>;
+        if (envelope.type !== 'graph.committed' || envelope.scope !== `project:${projectId}` ||
+          typeof envelope.payload !== 'object' || envelope.payload === null) return;
+        const payload = envelope.payload as Record<string, unknown>;
+        if (typeof payload.requestId !== 'string' || !payload.requestId.startsWith('hotkey:')) return;
+        const document = payload.document;
+        if (!isStudioDocument(document)) return;
+        setProject((current) => {
+          if (current === null || current.projectId !== projectId ||
+            document.graphRevision <= current.document.graphRevision) return current;
+          return { ...current, document };
+        });
+      };
+      socket.onclose = () => {
+        if (!disposed) retryTimer = window.setTimeout(connect, Math.min(5000, 300 * 2 ** retry++));
+      };
+      socket.onerror = () => socket?.close();
+    };
+    connect();
+    return () => {
+      disposed = true;
+      socket?.close();
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
+    };
+  }, [projectId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -331,7 +567,13 @@ function GraphWorkspaceInner() {
     }
     const width = typeof service.style?.width === 'number' ? service.style.width : SERVICE_WIDTH;
     const height = typeof service.style?.height === 'number' ? service.style.height : SERVICE_MIN_HEIGHT;
-    const relative = constrainOperatorPosition(operator.position, width, height);
+    const relative = constrainOperatorPosition(
+      operator.position,
+      width,
+      height,
+      operatorHeight(operator.data.graphNode),
+      serviceChildInsetY(service.data.graphNode),
+    );
     const currentLayout = project.document.layout.find((layout) => layout.nodeId === nodeId);
     void commit([
       { op: 'bindOperatorService', nodeId, serviceId },
@@ -430,8 +672,8 @@ function GraphWorkspaceInner() {
             nodeId: node.nodeId,
             x: 80 + (serviceIndex % 2) * (SERVICE_WIDTH + 80),
             y: 80 + Math.floor(serviceIndex / 2) * (SERVICE_MIN_HEIGHT + 80),
-            width: SERVICE_WIDTH,
-            height: SERVICE_MIN_HEIGHT,
+            width: COMPACT_SERVICE_WIDTH,
+            height: compactServiceHeight(node),
             collapsed: false,
           },
         };
@@ -513,7 +755,7 @@ function GraphWorkspaceInner() {
     void commit(deleted.map((edge): GraphOperation => ({ op: 'disconnectEdge', edgeId: edge.id })));
   }, [commit, selectedEdgeId]);
 
-  const moveNode: OnNodeDrag<StudioFlowNode> = useCallback((_event, node) => {
+  const moveNode: OnNodeDrag<StudioFlowNode> = useCallback((event, node) => {
     if (project === null || busy) return;
     const projected = projectDocument(project.document);
     const graphNode = project.document.nodes.find((candidate) => candidate.nodeId === node.id);
@@ -545,8 +787,12 @@ function GraphWorkspaceInner() {
             nodeId: candidate.id,
             x: absolute.x + (candidate.id === node.id ? 0 : delta.x),
             y: absolute.y + (candidate.id === node.id ? 0 : delta.y),
-            width: candidate.id === node.id ? currentLayout?.width ?? SERVICE_WIDTH : currentLayout?.width,
-            height: candidate.id === node.id ? currentLayout?.height ?? SERVICE_MIN_HEIGHT : currentLayout?.height,
+            width: candidate.id === node.id && typeof candidate.style?.width === 'number'
+              ? candidate.style.width
+              : currentLayout?.width,
+            height: candidate.id === node.id && typeof candidate.style?.height === 'number'
+              ? candidate.style.height
+              : currentLayout?.height,
             collapsed: currentLayout?.collapsed ?? false,
           },
         }];
@@ -561,12 +807,18 @@ function GraphWorkspaceInner() {
       x: absolute.x + (node.measured?.width ?? OPERATOR_WIDTH) / 2,
       y: absolute.y + (node.measured?.height ?? OPERATOR_MIN_HEIGHT) / 2,
     };
+    const changedTouch = 'changedTouches' in event ? event.changedTouches.item(0) : null;
+    const dropPosition = 'clientX' in event
+      ? screenToFlowPosition({ x: event.clientX, y: event.clientY })
+      : changedTouch === null
+        ? center
+        : screenToFlowPosition({ x: changedTouch.clientX, y: changedTouch.clientY });
     const target = projected.nodes.find((candidate) => {
       if (candidate.data.graphNode.kind !== 'service') return false;
       const width = typeof candidate.style?.width === 'number' ? candidate.style.width : SERVICE_WIDTH;
       const height = typeof candidate.style?.height === 'number' ? candidate.style.height : SERVICE_MIN_HEIGHT;
-      return center.x >= candidate.position.x && center.x <= candidate.position.x + width &&
-        center.y >= candidate.position.y && center.y <= candidate.position.y + height;
+      return dropPosition.x >= candidate.position.x && dropPosition.x <= candidate.position.x + width &&
+        dropPosition.y >= candidate.position.y && dropPosition.y <= candidate.position.y + height;
     });
     if (target === undefined) {
       restoreProjection();
@@ -585,6 +837,7 @@ function GraphWorkspaceInner() {
       width,
       height,
       node.measured?.height ?? OPERATOR_MIN_HEIGHT,
+      serviceChildInsetY(target.data.graphNode),
     );
     const currentLayout = project.document.layout.find((layout) => layout.nodeId === node.id);
     const operations: GraphOperation[] = [];
@@ -603,7 +856,7 @@ function GraphWorkspaceInner() {
       },
     });
     void commit(operations);
-  }, [busy, commit, nodes, project, restoreProjection]);
+  }, [busy, commit, nodes, project, restoreProjection, screenToFlowPosition]);
 
   const history = useCallback(async (action: 'undo' | 'redo') => {
     if (project === null || busy) return;
@@ -748,6 +1001,7 @@ function GraphWorkspaceInner() {
         bounds.width,
         bounds.height,
         operatorHeight(child),
+        serviceChildInsetY(service),
       );
       const childLayout = project.document.layout.find((layout) => layout.nodeId === child.nodeId);
       operations.push({
@@ -869,7 +1123,7 @@ function GraphWorkspaceInner() {
 
       <aside className="graph-inspector" aria-label="Inspector">
         <h2>Inspector</h2>
-        {selectedNode !== null ? <NodeInspector node={selectedNode} services={project?.document.nodes ?? []} monitor={selectedMonitor} busy={busy} commit={commit} bindService={bindOperatorService} connectedStateInputs={connectedStateInputs} /> :
+        {selectedNode !== null && project !== null ? <NodeInspector projectId={project.projectId} node={selectedNode} services={project.document.nodes} monitor={selectedMonitor} busy={busy} commit={commit} bindService={bindOperatorService} connectedStateInputs={connectedStateInputs} /> :
           selectedEdge !== null ? <EdgeInspector edge={selectedEdge} nodes={project?.document.nodes ?? []} busy={busy} replace={replaceEdge} remove={removeEdge} /> :
             <p>Select a node or connection to inspect it.</p>}
         {deployment !== null && deployment.serviceResults.some((result) => !result.success) && <div className="deploy-errors">{deployment.serviceResults.filter((result) => !result.success).map((result) => <p key={result.serviceId}><strong>{result.serviceId}</strong>{result.errorMessage}</p>)}</div>}

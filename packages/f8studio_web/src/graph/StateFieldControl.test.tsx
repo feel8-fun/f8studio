@@ -37,6 +37,38 @@ test('renders upstream-driven state as read-only', () => {
   expect(screen.queryByRole('status')).not.toBeInTheDocument();
 });
 
+test('renders live retained values for readonly state without a null placeholder', () => {
+  const readonlyField: StateSpec = {
+    name: 'videoWidth', label: 'Video Width', access: 'ro', valueSchema: { type: 'integer' },
+  };
+  render(<StateFieldControl
+    node={{ ...node, spec: { ...node.spec, stateFields: [readonlyField] } }}
+    field={readonlyField}
+    disabled={false}
+    runtimeValue={{ field: 'videoWidth', found: true, value: 1920, tsMs: 123 }}
+    onCommit={vi.fn()}
+  />);
+
+  expect(screen.getByText('1920')).toBeInTheDocument();
+  expect(screen.queryByText('null')).not.toBeInTheDocument();
+});
+
+test('labels missing readonly runtime state as unavailable', () => {
+  const readonlyField: StateSpec = {
+    name: 'captureRunning', label: 'Capture Running', access: 'ro', valueSchema: { type: 'boolean' },
+  };
+  render(<StateFieldControl
+    node={{ ...node, spec: { ...node.spec, stateFields: [readonlyField] } }}
+    field={readonlyField}
+    disabled={false}
+    runtimeValue={{ field: 'captureRunning', found: false, value: null, tsMs: null }}
+    onCommit={vi.fn()}
+  />);
+
+  expect(screen.getByText('Unavailable')).toBeInTheDocument();
+  expect(screen.queryByText('null')).not.toBeInTheDocument();
+});
+
 test('keeps the compact numeric input mounted when upstream drives its value', () => {
   const numberField: StateSpec = {
     name: 'level', label: 'Level', access: 'rw', valueSchema: { type: 'number', default: 0.5 },

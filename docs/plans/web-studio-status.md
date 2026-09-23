@@ -1,10 +1,10 @@
 # Web Studio 迁移状态
 
-最后更新：2026-09-22。目标方案：[web-studio-migration.md](web-studio-migration.md)。
+最后更新：2026-09-23。目标方案：[web-studio-migration.md](web-studio-migration.md)。
 
 ## 当前结论
 
-P0、P1、P2、P3、P3.5 和 P4 已在当前 Linux 主机完成验证。P4 使用 React Flow 接入权威项目文档和 catalog，已具备项目创建/选择、可持久化缩放的 service canvas 与 operator 嵌套、动态端口、typed data/state/exec/command 连接规则、data edge policy、约束拖放、级联删除、子图复制、多选、撤销/重做、自动持久化重开、schema 驱动的 Inspector 与 inline state controls、上游 state 只读联动、部署/停止，以及 draft/layout/deployed revision 和逐服务部署错误展示。隐藏的内置 `f8.pystudio` service 会在首次添加其 operator 时以固定 `studio` id 原子创建，因此从空图可直接完成 Studio runtime 工作流。300 节点/600 边交互预算已通过，1000 节点/2000 边压力曲线已有证据。P2 包含持久化项目、图编辑 API、可靠事件游标、部署 job、服务控制、运行时 monitor、真实 PyEngine 联调，以及 13 个无 Qt Studio runtime operators。P3 已完成 WebRTC main/thumbnail、真实 screencap -> Zenoh -> WebRTC、FLOW/SCALAR、服务端精确 overlay、WebRTC 音频与波形、Three.js 骨架、重启恢复、浏览器显示延迟和 30 分钟稳定性验证。P3.5 将 Zenoh 订阅、媒体转换、aiortc peer 和编码执行迁入独立 `f8media_gateway` 进程，Studio Server 只依赖轻量 `f8media_protocol` 并代理 typed HTTP 信令。多 peer 软件编码在组合负载下的 main 为 26.86-27.52 FPS，低于 28 FPS 初始预算，因此 P3 原型完成不等于媒体性能完全对等；进程隔离已完成，硬件/共享编码仍是发布前优化项。`f8studio_core`、`f8media_protocol`、`f8media_gateway`、`f8studio_server` 和 `f8studio_web` 均为独立包；Web Studio 与服务运行时环境都不组合旧 `studio` feature。
+P0、P1、P2、P3、P3.5、P4 和 P5 已在当前 Linux 主机完成验证。P5 新增本地资产/不可变版本/项目快照、component 捕获与插入、variant 状态应用、节点 schema 写回、从本地 bundle 加载的 Monaco、每会话 `basedpyright-langserver --stdio` completion/hover 和确定性诊断、音频频谱、曲线/track/TCode presentation renderer、节点内 Video Viz 实时预览、Template Match 浏览器截图裁剪、Unity detect/preview/confirm-apply、完整 UDP 骨架帧验证、串口枚举、Web 局部快捷键，以及 SQLite 持久化的无 Qt Win32/X11 全局快捷键后端。新链路不导入或启动 `f8pystudio`/Qt。P4 使用 React Flow 接入权威项目文档和 catalog，已具备项目创建/选择、可持久化缩放的 service canvas 与 operator 嵌套、动态端口、typed data/state/exec/command 连接规则、data edge policy、约束拖放、级联删除、子图复制、多选、撤销/重做、自动持久化重开、schema 驱动的 Inspector 与 inline state controls、上游 state 只读联动、部署/停止，以及 draft/layout/deployed revision 和逐服务部署错误展示。P3.5 将 Zenoh 订阅、媒体转换、aiortc peer 和编码执行迁入独立 `f8media_gateway` 进程。多 peer 软件编码在组合负载下的 main 为 26.86-27.52 FPS，低于 28 FPS 初始预算；硬件/共享编码仍是发布前优化项。`f8studio_core`、`f8media_protocol`、`f8media_gateway`、`f8studio_server` 和 `f8studio_web` 均为独立包；Web Studio 与服务运行时环境都不组合旧 `studio` feature。
 
 ## 基线
 
@@ -18,7 +18,7 @@ P0、P1、P2、P3、P3.5 和 P4 已在当前 Linux 主机完成验证。P4 使�
 | Node | 24.21.0（Pixi `web-studio` 环境） |
 | FastAPI / Uvicorn | 0.141.1 / 0.53.0 |
 | aiortc / PyAV | 1.15.0 / 17.1.0 |
-| eclipse-zenoh | 1.10.1 |
+| eclipse-zenoh | 1.9.0（与当前原生 Zenoh 运行时保持兼容） |
 | 首发浏览器范围 | Windows/Linux Chromium；Linux Google Chrome E2E 已通过，Windows 待验证 |
 
 `studio_dependency_probe` 已成功导入 FastAPI、Zenoh、aiortc、PyAV，当前 Linux 构建报告 H.264、VP8、VP9 软件编码器可见。这只证明依赖和 codec 注册可用，不是 WebRTC 性能通过。
@@ -33,7 +33,7 @@ P0、P1、P2、P3、P3.5 和 P4 已在当前 Linux 主机完成验证。P4 使�
 | P3 视频与 3D 原型 | 完成（Linux，性能降级已记录） | 视频/数值/精确 overlay/音频/Three.js/重启/延迟/5 分钟组合与 30 分钟稳定性均有真实证据；组合 main 未达 28 FPS，见下方限制 |
 | P3.5 媒体网关进程隔离 | 完成（Linux） | `f8media-api/1`、远程代理、独立 PID、真实 screencap 链路和父进程关闭回收均已验证；共享/native 编码待后续优化 |
 | P4 Web 图编辑 | 完成（Linux） | 空图到内置 Studio runtime 的创建、配置、部署、monitor、再次修改和重开闭环通过；service/operator 容器、typed 连线、edge policy、动态状态控件、历史与冲突恢复均有测试；300/600 预算通过并记录 1000/2000 压力曲线 |
-| P5 本地业务能力 | 未开始 | 依据下方功能台账逐项迁移 |
+| P5 本地业务能力 | 完成（Linux；平台/硬件门禁保留） | 本地资产、schema、Monaco/LSP、renderer、两个扩展、Unity/UDP/串口及原生快捷键实现完成；X11 焦点外触发通过，Windows 热键、真实游戏安装和真实串口需目标机验证 |
 | P6 AI / CLI / MCP | 未开始 | 旧实现仍依赖 Qt 图适配器 |
 | P7 移除 Qt | 未开始 | 旧 Qt 应用仍作为行为参照保留 |
 
@@ -47,15 +47,15 @@ P0、P1、P2、P3、P3.5 和 P4 已在当前 Linux 主机完成验证。P4 使�
 | 图操作 | 创建、删除、连接、动态 spec、undo/redo | 原子 typed patch、幂等、冲突和历史 | Web 基础编辑、端口方向/kind/payload/基数/cycle/exec service 约束、data queue/latest policy、service 级联删除、约束重绑定、原子容器复制与显式 service binding 完成 |
 | 编译部署 | NodeGraphQt 对象编译为 runtime graph | 纯文档确定性编译、异步部署 job | 核心与 API 完成；真实 PyEngine 部署通过 |
 | 服务运行时 | 发现、启停、状态、命令、监控、受管进程 | 无 Qt application service | 基础完成；真实 Zenoh、状态、exec 与关闭通过 |
-| Studio 算子 | text/track/wave/video/audio/3D、control、expr、patch hub 等 | 后端算子与前端 renderer 分离 | 13 个后端算子全部迁移；Web renderer 属于 P3/P4/P5 |
+| Studio 算子 | text/track/wave/video/audio/3D、control、expr、patch hub 等 | 后端算子与前端 renderer 分离 | 14 个后端算子静态注册，新增 `f8.viz.tcode`；不走旧插件加载器 |
 | 视频 | BGRA、FLOW2_F16、SCALAR1_F32 latest-frame | WebRTC 分级预览、精确 overlay、数值查询 | 垂直原型完成；传输 v2 携带 producer epoch，overlay 按 source/stream/epoch/frame/timestamp 精确匹配，超时隐藏并计数 |
 | 3D | Three.js 骨架、world-up、多人 | 本地打包 Three.js + 有界数据通道 | 垂直原型完成：本地 Three.js、world-up、多人协议、事件重连和显式资源释放 |
-| 音频与曲线 | 播放、波形、频谱、track | WebRTC 音轨和降采样绘制 | P3 音频播放与 RAF 波形完成；频谱与通用曲线/track renderer 留在 P5 |
-| 编辑器 | Monaco、Python stubs/LSP | 浏览器 Monaco + 后端 LSP 会话 | 待迁移 |
-| 项目与资产 | 项目、版本、组件、变体、导入导出、云同步 | 后端持久化和类型化 API | 项目文档与元数据完成；版本/组件/同步待迁移 |
-| 本地扩展 | template_match、viz_tcode | 显式后端注册与 TS renderer 注册 | 待迁移 |
-| 游戏/设备 | Unity/VaM、UDP、串口、外部进程 | 原生能力留后端，Web 配置与观察 | 待迁移 |
-| 快捷键 | Qt/OS 全局快捷键 | Web 局部快捷键 + 后端原生全局适配 | 待迁移 |
+| 音频与曲线 | 播放、波形、频谱、track | WebRTC 音轨和降采样绘制 | 完成：波形/频谱切换、RAF 曲线、track canvas 与有界 presentation 最新值 |
+| 编辑器 | Monaco、Python stubs/LSP | 浏览器 Monaco + 后端 LSP 会话 | 完成：本地 Monaco worker、临时 workspace/support files、持久 LSP completion/hover、结构化 diagnostics 与清理 |
+| 项目与资产 | 项目、版本、组件、变体、导入导出、云同步 | 后端持久化和类型化 API | 本地范围完成：不可变资产版本、项目快照恢复、导入导出、component 捕获/插入、variant 应用；远端 Asset Cloud 是外部系统，按“无外部依赖”前提不纳入 P5 |
+| 本地扩展 | template_match、viz_tcode | 显式后端注册与 TS renderer 注册 | 完成：Template Match 原图坐标 ROI/canvas PNG 写回；TCode 算子静态注册并由本地 TS renderer 渲染，无 CDN |
+| 游戏/设备 | Unity/VaM、UDP、串口、外部进程 | 原生能力留后端，Web 配置与观察 | Linux 实现完成：Unity preview/显式确认、SDK 完整帧 UDP 验证、串口枚举、catalog allowlist 进程；真实游戏/串口待硬件验证，Unreal/VaM 无仓库自有 installer，保留显式 capability 门禁 |
+| 快捷键 | Qt/OS 全局快捷键 | Web 局部快捷键 + 后端原生全局适配 | 完成：Web 局部快捷键；Inspector 字段绑定；SQLite 持久化；无 Qt Win32 `RegisterHotKey` worker 与 X11 grab/event backend；图提交后校验刷新；触发时原子提交 state、同步 runtime 并推送 graph event。当前 X11 主机经 XTEST 验证焦点外 grab/event；Windows 实机仍为发布门禁，无 DISPLAY 时明确 unavailable |
 | Agent | provider、会话、工具、审批、图构建 | 统一 application service，无 Qt bridge | 待迁移 |
 | Web/API 壳 | 无独立产品入口 | loopback FastAPI、health/capabilities、React 工作区 | typed 图/项目/job/runtime/monitor API 与 WS 事件已建；React Flow 主工作区已接入 |
 
@@ -64,9 +64,9 @@ P0、P1、P2、P3、P3.5 和 P4 已在当前 Linux 主机完成验证。P4 使�
 ```text
 pixi run -e web-studio-test studio_core_test            21 passed
 pixi run -e web-studio-test studio_media_gateway_test   23 passed
-pixi run -e web-studio-test studio_server_test          38 passed
-pixi run -e web-studio-test studio_web_test             15 passed
-pixi run -e web-studio-test studio_web_e2e              19 passed, 3 skipped（desktop/mobile；service 鼠标缩放、runtime Inspector 与 1080p 延迟仅 desktop）
+pixi run -e web-studio-test studio_server_test          57 passed
+pixi run -e web-studio-test studio_web_test             25 passed
+pixi run -e web-studio-test studio_web_e2e              22 passed, 4 skipped（desktop/mobile；service 鼠标缩放、runtime Inspector、全局快捷键配置与 1080p 延迟仅 desktop）
 pixi run -e web-studio-test studio_graph_bench           1 passed（300/600 预算 + 1000/2000 压力曲线）
 pixi run -e web-studio-test studio_python_typecheck     0 errors
 pixi run -e web-studio-test studio_web_typecheck        passed
@@ -74,6 +74,7 @@ pixi run -e web-studio-test studio_no_qt_check          passed
 pixi run -e web-studio-test studio_dependency_probe     passed
 pixi run -e web-studio studio_web_build                 passed
 pixi run -e web-studio-test studio_media_bench          passed
+pixi run pytest_sdk                                     262 passed
 pixi run -e cpp cpp_test_release                         27 passed
 pixi run -e web-studio-test studio_stream_restart_probe passed（0.372 秒恢复）
 pixi run -e web-studio-test studio_real_video_probe     passed（C++ screencap，1920x1080）
@@ -83,6 +84,14 @@ pixi run -e web-studio npm --prefix packages/f8studio_web audit --json
 ```
 
 尚未验证：Windows 求解/运行、硬件编码、非 Chromium 浏览器和远端跨主机时钟。它们属于发布平台补充，不能据当前 Linux 软件编码结果宣称通过。
+
+P5 当前 Linux 证据：Studio Server 新表与 API 在同一 SQLite 事务边界保存 local asset/current version、不可变 asset version 和 project snapshot；component/variant payload 在写入和导入时按 typed schema 校验，导出再导入保留完整版本历史，project restore 作为新 revision 提交。Assets 工作区可捕获整个项目 fragment、重映射 node/edge/service id 后原子插入，也可将 variant stateValues 应用到明确目标节点。Graph Inspector 的 `spec + ports` 编辑通过 `replaceNode` 进入后端图校验，不直接篡改浏览器投影。
+
+Monaco、editor/json worker 和所有 renderer 均来自本地 Vite bundle。Python 会话创建隔离 workspace 和 support files，持有独立 `basedpyright-langserver --stdio` 生命周期并提供 completion/hover；保存使用严格递增 document version，显式 Analyze 返回结构化 diagnostics，关闭应用会回收进程和临时目录。服务测试实际请求了 completion、hover 和错误/正确代码 diagnostics。生产构建将 Monaco 保持为按需加载 chunk；当前压缩前约 2.26 MiB，属于后续加载体积优化项，不影响首屏主 bundle。
+
+App 级 PresentationStore 统一持有 presentation WebSocket、快照和 32-node 上限，Graph、Live Outputs 与 3D 视图按节点订阅同一事实源。Video Viz 在 React Flow 节点中保留固定 16:9 区域，并与独立 Live Outputs 视图通过 source/quality 引用计数池共享 WebRTC peer/session；最后一个消费者释放后关闭浏览器 peer 和 Gateway session，视频帧不进入 React state。真实 C++ screencap 验证得到 640x360、`readyState=4` 的节点内播放；移动节点前后 `<video>` DOM 与 `MediaStream` 对象保持相同且只有一次媒体协商，切换到无预览项目后 Gateway session 计数恢复基线。Web renderer 另覆盖 text、wave、track 与 TCode；音频页增加 AnalyserNode 频谱。`f8.viz.tcode` 是第 14 个静态内置算子，旧插件 loader 和 CDN `osr-emu` 均不参与。Template Match 直接调用 runtime command，在浏览器按实际 image bounds 将 pointer ROI 换算到原图像素并用 canvas 编码 PNG，再通过 runtime state API 写回 `templateImagePngB64`。
+
+本机集成遵守 detect -> preview exact writes -> `confirm=true` -> apply；没有在自动测试中对真实游戏目录执行写入。UDP verifier 绑定默认端口 39540，并以 `f8pysdk.motion.decode_skeleton_datagram` 成功解码完整 `modelName + bones` 帧为通过条件，随机 datagram 不计成功。TCode/serial 物理输出没有由 P5 UI 自动 arm，图模板仍要求 250 ms watchdog。全局快捷键保留旧 Control Panel 的 button 递增与 select 下一项语义：binding 指向明确的 project/node/field，OS 线程经主 asyncio loop 提交权威 graph revision，并尝试同步已部署 runtime；原生后端 unavailable 或字段删除/被上游 state 驱动时显示 disabled/error，不注册无效按键。伪 Win32/native backend 测试覆盖规范化、键码、注册、注销、持久化和真实 graph/runtime 触发，Playwright 覆盖 Inspector 保存及重开。当前 `DISPLAY=:0` X11 主机还以 XTEST 向失焦窗口注入 `Ctrl+Alt+Shift+P`，实际 root passive grab 收到事件；该探针发现并修复了 `owner_events` 与 `array.array` modifier mapping/Num Lock 两个问题。Windows 桌面、真实 Unity/VaM/Unreal 目标和串口设备仍必须在相应发布机上验证，不能用 Linux capability 状态替代。
 
 P3.5 当前 Linux 证据：正式 `studio_server` CLI 在 PID 2132966 启动受管 `f8media_gateway` PID 2132996，分别监听 `127.0.0.1:8260` 与 `127.0.0.1:8261`。`/api/media/gateway` 返回 `f8media-api/1`、独立 gateway epoch 和子进程 PID。经 Studio 原 URL 代理，synthetic WebRTC 解码出变化的 640x360 帧；真实 C++ screencap -> Zenoh v2 -> Gateway -> WebRTC 解码出变化的 1920x1080 main 帧。中断 Studio 后两个 PID 与两个监听端口均消失。单元/集成测试另覆盖网关资源清理、422/404 透传、断连 503、协议错配、端口占用时 PID 所有权校验和 managed process 回收。
 
@@ -100,9 +109,9 @@ P3 当前 Linux 证据：真实 Uvicorn HTTP 信令可建立 aiortc peer，`synt
 
 组合 5 分钟场景额外包含一条音频：main 26.86 FPS、四路 thumbnail 7.69-7.73 FPS、CPU 191.1%、控制响应 p95 47.38 ms、错误 0、资源计数归零。30 分钟稳定性场景按退出条件运行 main + 4 thumbnails + 10 Hz 3D 骨架事件 + 2 Hz graph/monitor HTTP 控制：main 27.52 FPS、thumbnail 7.66-7.69 FPS、CPU 177.5%、3,474 次控制请求 p95 43.18 ms、16,877 条 presentation 事件、队列峰值 1、错误 0。任务数负载态 42、峰值 58、清理后 2；RSS 活跃样本约 500-693 MiB，最后 5 分钟净增 19.9 MiB（门槛 50 MiB），清理后 522.4 MiB；video/audio session/source 全部归零。原始证据位于 `docs/plans/evidence/p3-combined-5m.json` 与 `docs/plans/evidence/p3-stability-30m.json`。组合 main 未达 28 FPS，已定位为多 peer 软件编码瓶颈；不宣称媒体性能完全对等。
 
-Playwright 使用本机 Google Chrome 在 1440x900 与 390x844 视口验证：视频元素像素随帧变化、点击画面可查询带 frameId 的 latest raw 数值、Three.js framebuffer 非空、轨道拖拽改变画面、WebRTC 音频波形非平坦、布局无横向/纵向溢出，且页面无未处理错误。Graph Editor 用例验证 operator 以 React Flow `parentId` 嵌套在 service 中、拖入兼容容器会原子更新 binding/layout、移动 service 会对其 operator 做严格相同的绝对位移、选中 service 后可从四边和四角缩放且宽高会持久化、缩放后子节点仍在容器内且 viewport 不重置、删除 service 会级联删除 operator、inline slider 会持久化 typed state，以及 exec/data 连线和 data queue policy 会写入项目文档。RW state 行只显示一次名称并将释放的宽度用于 editor；接入上游 state 后保持原 input/select/checkbox DOM 与对齐，仅切换为锁定状态。内置 Value Stepper 用例从空项目开始，原子创建隐藏的 `studio` service 和 operator，完成 state 配置、部署、Ready monitor、再次修改、draft/deployed revision 分离及刷新恢复。operator 的 React Flow wrapper 固定为 260 px；compact code/wrapline/JSON 控件使用单行输入和内部截断，长文本不再参与节点 intrinsic width。desktop/mobile 截图显示 state input/control/output 同排、长表达式不撑宽节点且节点没有重叠。无效连接规则由前端纯函数测试与后端 mutation 校验覆盖；端口使用 24 px 交互热区和 10 px 可见圆点，移动端 typed connection 连续 5 次压力重复通过；空白区拖放回滚当前没有稳定的浏览器手势用例。1080p main 使用帧内 16 位 capture clock marker 和 `requestVideoFrameCallback` 测得 60 个显示帧最新 p95 75 ms；localhost 浏览器和 producer 共用系统时钟，未使用 HTTP ping 代替视频延迟。截图保存在测试产物目录；Three.js 和图标均从本地 bundle 加载，无 CDN。
+Playwright 使用本机 Google Chrome 在 1440x900 与 390x844 视口验证：视频元素像素随帧变化、点击画面可查询带 frameId 的 latest raw 数值、Three.js framebuffer 非空、轨道拖拽改变画面、WebRTC 音频波形非平坦、布局无横向/纵向溢出，且页面无未处理错误。Graph Editor 用例验证 operator 以 React Flow `parentId` 嵌套在 service 中、拖入兼容容器会原子更新 binding/layout、移动 service 会对其 operator 做严格相同的绝对位移、选中 service 后可从四边和四角缩放且宽高会持久化、缩放后子节点仍在容器内且 viewport 不重置、删除 service 会级联删除 operator、inline slider 会持久化 typed state，以及 exec/data 连线和 data queue policy 会写入项目文档。RW state 行只显示一次名称并将释放的宽度用于 editor；接入上游 state 后保持原 input/select/checkbox DOM 与对齐，仅切换为锁定状态。内置 Value Stepper 用例从空项目开始，原子创建隐藏的 `studio` service 和 operator，完成 state 配置、部署、Ready monitor、再次修改、draft/deployed revision 分离及刷新恢复。无 operator 子节点的 service 固定按自身可见端口收缩到 280 px，容器 service 默认 524 px，operator 为 240 px；标题/端口行压缩到 34/24 px，同时保留端口 24 px 交互热区。compact code/wrapline/JSON 控件使用单行输入和内部截断，长文本不再参与节点 intrinsic width。desktop/mobile 截图显示 state input/control/output 同排、长表达式不撑宽节点且节点没有重叠。无效连接规则由前端纯函数测试与后端 mutation 校验覆盖；移动端 typed connection 连续 5 次压力重复通过；空白区拖放回滚当前没有稳定的浏览器手势用例。1080p main 使用帧内 16 位 capture clock marker 和 `requestVideoFrameCallback` 测得 60 个显示帧最新 p95 75 ms；localhost 浏览器和 producer 共用系统时钟，未使用 HTTP ping 代替视频延迟。截图保存在测试产物目录；Three.js 和图标均从本地 bundle 加载，无 CDN。
 
-P4 复杂图基准从真实 catalog 创建当前可见行数最多的 `f8.pyengine/f8.handy_out`（每节点 18 行），通过真实 HTTP patch 构图，再由正式 GraphWorkspace 加载和交互。300 节点/600 边场景：批量提交 771.6 ms、首次可交互 1.727 s、拖拽 60.0 FPS、帧时间 p95 16.8 ms、UI 交互 p95 19.1 ms、GC 后 JS heap 22.2 MiB；1000 节点/2000 边压力场景：提交 2.503 s、首次可交互 4.562 s、拖拽 59.8 FPS、UI 交互 p95 22.7 ms、heap 46.8 MiB。两种场景均只挂载视口内 21 个节点和 44 条边。1000 节点拖拽后的完整文档持久化确认耗时 2.089 s，作为压力曲线记录，不属于即时拖拽反馈预算。原始证据位于 `docs/plans/evidence/p4-graph-performance.json`。
+P4 复杂图基准从真实 catalog 创建当前可见行数最多的 `f8.pyengine/f8.handy_out`（每节点 18 行），通过真实 HTTP patch 构图，再由正式 GraphWorkspace 加载和交互。300 节点/600 边场景：批量提交 755.1 ms、首次可交互 1.680 s、拖拽 60.0 FPS、帧时间 p95 16.8 ms、UI 交互 p95 26.2 ms、GC 后 JS heap 24.6 MiB；1000 节点/2000 边压力场景：提交 3.276 s、首次可交互 4.589 s、拖拽 59.9 FPS、UI 交互 p95 26.5 ms、heap 46.6 MiB。两种场景均只挂载视口内 25 个节点和 52 条边。1000 节点拖拽后的完整文档持久化确认耗时 3.371 s，作为压力曲线记录，不属于即时拖拽反馈预算。原始证据位于 `docs/plans/evidence/p4-graph-performance.json`。
 
 真实 Zenoh publisher 关闭并重开后，producer epoch 改变，现有 WebRTC session/source 保持单实例并在 0.372 秒恢复出帧；结束后资源计数归零。该结果满足 5 秒恢复预算，且没有重新执行图操作。
 
@@ -141,6 +150,7 @@ pixi run -e web-studio-test studio_python_typecheck
 pixi run -e web-studio-test studio_web_typecheck
 pixi run -e web-studio-test studio_no_qt_check
 pixi run -e web-studio-test studio_dependency_probe
+pixi run pytest_sdk
 pixi run -e web-studio-test studio_media_bench
 pixi run -e web-studio-test studio_stream_restart_probe
 pixi run -e web-studio-test studio_p3_combined_bench
