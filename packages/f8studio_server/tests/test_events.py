@@ -52,3 +52,21 @@ def test_unreliable_events_drop_when_subscriber_queue_is_full() -> None:
         await journal.close_stream(stream.subscription_id)
 
     asyncio.run(scenario())
+
+
+def test_log_history_retains_recent_service_output_and_deployment_errors() -> None:
+    async def scenario() -> None:
+        journal = EventJournal(server_epoch="epoch1", log_retention=2)
+        await journal.publish(event_type="graph.committed", scope="project:p1", payload={})
+        await journal.publish(event_type="service.log", scope="service:capture", payload={"line": "started"}, reliable=False)
+        failure = await journal.publish(
+            event_type="deploy.finished", scope="project:p1", payload={"status": "failed"},
+        )
+        latest = await journal.publish(
+            event_type="runtime.error", scope="server", payload={"message": "endpoint timed out"},
+        )
+
+        assert await journal.recent_logs() == (failure, latest)
+        assert await journal.recent_logs(limit=1) == (latest,)
+
+    asyncio.run(scenario())

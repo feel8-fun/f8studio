@@ -79,7 +79,10 @@ class ManagedServiceProcesses:
         self._loop = None
 
     def _on_output(self, service_id: str, line: str) -> None:
-        logger.info("service output service_id=%s: %s", service_id, line.rstrip())
+        line = line.rstrip()[:8192]
+        if not line:
+            return
+        logger.info("service output service_id=%s: %s", service_id, line)
         loop = self._loop
         if loop is None or loop.is_closed():
             return

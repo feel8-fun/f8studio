@@ -1,9 +1,10 @@
-import { Activity, Archive, AudioLines, Bot, Boxes, CircleDot, Code2, Cuboid, Plug, Settings2, Video, type LucideIcon } from 'lucide-react';
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { Activity, Archive, AudioLines, Bot, Boxes, CircleDot, Code2, Cuboid, Plug, ScrollText, Settings2, Video, type LucideIcon } from 'lucide-react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 
 import { fetchHealth } from '../api/client';
 import type { HealthStatus } from '../api/contracts';
 import { GraphWorkspace } from '../graph/GraphWorkspace';
+import { LogsWorkspace } from '../logs/LogsWorkspace';
 import { PresentationProvider } from '../presentation/PresentationStore';
 
 const WebRtcVideo = lazy(() => import('../media/WebRtcVideo').then((module) => ({ default: module.WebRtcVideo })));
@@ -15,7 +16,15 @@ const PresentationWorkspace = lazy(() => import('../presentation/PresentationWor
 const LocalWorkspace = lazy(() => import('../local/LocalWorkspace').then((module) => ({ default: module.LocalWorkspace })));
 const AgentWorkspace = lazy(() => import('../agents/AgentWorkspace').then((module) => ({ default: module.AgentWorkspace })));
 
-type WorkspaceView = 'graph' | 'agent' | 'assets' | 'code' | 'outputs' | 'video' | 'audio' | 'three' | 'local';
+type WorkspaceView = 'graph' | 'agent' | 'assets' | 'code' | 'outputs' | 'video' | 'audio' | 'three' | 'local' | 'logs';
+interface LocationView { readonly view: WorkspaceView; readonly nodeId: string | null }
+
+function readLocationView(): LocationView {
+  const params = new URLSearchParams(window.location.search);
+  const requested = params.get('view');
+  const view = WORKSPACES.some((item) => item.view === requested) ? requested as WorkspaceView : 'graph';
+  return { view, nodeId: view === 'outputs' || view === 'three' ? params.get('node') : null };
+}
 
 interface WorkspaceDefinition {
   readonly view: WorkspaceView;
@@ -34,6 +43,7 @@ const WORKSPACES: readonly WorkspaceDefinition[] = [
   { view: 'three', label: '3D', title: 'Media Lab', icon: Cuboid },
   { view: 'audio', label: 'Audio', title: 'Media Lab', icon: AudioLines },
   { view: 'local', label: 'Local integrations', title: 'Local Integrations', icon: Plug },
+  { view: 'logs', label: 'Logs', title: 'Log Center', icon: ScrollText },
 ];
 
 type ConnectionState =
@@ -43,7 +53,25 @@ type ConnectionState =
 
 export function App() {
   const [connection, setConnection] = useState<ConnectionState>({ kind: 'connecting' });
-  const [view, setView] = useState<WorkspaceView>('graph');
+  const [locationView, setLocationView] = useState<LocationView>(readLocationView);
+  const { view, nodeId } = locationView;
+  const navigate = useCallback((nextView: WorkspaceView, nextNodeId: string | null = null) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('view', nextView);
+    if (nextNodeId === null) url.searchParams.delete('node');
+    else url.searchParams.set('node', nextNodeId);
+    window.history.pushState(null, '', url);
+    setLocationView({ view: nextView, nodeId: nextNodeId });
+  }, []);
+  const showOutput = useCallback((outputNodeId: string, threeD: boolean) => {
+    navigate(threeD ? 'three' : 'outputs', outputNodeId);
+  }, [navigate]);
+
+  useEffect(() => {
+    const onPopState = () => setLocationView(readLocationView());
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -65,11 +93,11 @@ export function App() {
       const target = WORKSPACES[index]?.view;
       if (target === undefined) return;
       event.preventDefault();
-      setView(target);
+      navigate(target);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [navigate]);
 
   const statusText =
     connection.kind === 'connecting'
@@ -81,7 +109,15 @@ export function App() {
   return (
     <PresentationProvider><main className="studio-shell">
       <header className="topbar">
-        <div className="brand">Feel8 Studio</div>
+        <div className="topbar-identity">
+          <div className="brand">Feel8 Studio</div>
+          <h1 id="workspace-title">{WORKSPACES.find((workspace) => workspace.view === view)?.title}</h1>
+        </div>
+        {(view === 'video' || view === 'audio' || view === 'three') && <div className="view-tabs" role="tablist" aria-label="Media view">
+          <button role="tab" aria-selected={view === 'video'} onClick={() => navigate('video')}>Video</button>
+          <button role="tab" aria-selected={view === 'audio'} onClick={() => navigate('audio')}>Audio</button>
+          <button role="tab" aria-selected={view === 'three'} onClick={() => navigate('three')}>3D</button>
+        </div>}
         <div className={`connection connection-${connection.kind}`} role="status">
           <CircleDot size={14} aria-hidden="true" />
           <span>{statusText}</span>
@@ -98,29 +134,22 @@ export function App() {
           aria-label={label}
           title={label}
           key={target}
-          onClick={() => setView(target)}
+          onClick={() => navigate(target)}
         ><Icon size={20} /></button>)}
       </aside>
 
       <section className="workspace" aria-labelledby="workspace-title">
-        <div className="workspace-toolbar">
-          <h1 id="workspace-title">{WORKSPACES.find((workspace) => workspace.view === view)?.title}</h1>
-          {(view === 'video' || view === 'audio' || view === 'three') && <div className="view-tabs" role="tablist" aria-label="Media view">
-            <button role="tab" aria-selected={view === 'video'} onClick={() => setView('video')}>Video</button>
-            <button role="tab" aria-selected={view === 'audio'} onClick={() => setView('audio')}>Audio</button>
-            <button role="tab" aria-selected={view === 'three'} onClick={() => setView('three')}>3D</button>
-          </div>}
-        </div>
         <div className="workspace-content">
-          {view === 'graph' && <GraphWorkspace />}
+          {view === 'graph' && <GraphWorkspace onShowOutput={showOutput} />}
           <Suspense fallback={<div className="view-loading" role="status">Loading view...</div>}>
             {view === 'video' && <WebRtcVideo />}
             {view === 'audio' && <WebRtcAudio />}
-            {view === 'three' && <SkeletonViewport />}
+            {view === 'three' && <SkeletonViewport nodeId={nodeId} />}
             {view === 'assets' && <AssetsWorkspace />}
             {view === 'code' && <CodeWorkspace />}
-            {view === 'outputs' && <PresentationWorkspace />}
+            {view === 'outputs' && <PresentationWorkspace nodeId={nodeId} />}
             {view === 'local' && <LocalWorkspace />}
+            {view === 'logs' && <LogsWorkspace />}
             {view === 'agent' && <AgentWorkspace />}
           </Suspense>
           {connection.kind === 'offline' && <div className="connection-error">{connection.message}</div>}

@@ -41,14 +41,18 @@ class EventJournal:
         *,
         server_epoch: str,
         retention: int = 2048,
+        log_retention: int = 1000,
         subscriber_queue_size: int = 256,
     ) -> None:
         if retention < 1:
             raise ValueError("event retention must be positive")
+        if log_retention < 1:
+            raise ValueError("log retention must be positive")
         if subscriber_queue_size < 1:
             raise ValueError("subscriber queue size must be positive")
         self._server_epoch = server_epoch
         self._events: deque[EventEnvelope] = deque(maxlen=retention)
+        self._logs: deque[EventEnvelope] = deque(maxlen=log_retention)
         self._subscriber_queue_size = subscriber_queue_size
         self._subscribers: dict[str, asyncio.Queue[EventEnvelope]] = {}
         self._sequence = 0
@@ -79,6 +83,13 @@ class EventJournal:
             )
             if reliable:
                 self._events.append(event)
+            if (
+                event_type == "service.log"
+                or event_type.startswith("deploy.")
+                or event_type.startswith("service.process_")
+                or event_type in {"runtime.error", "media.error", "server.error"}
+            ):
+                self._logs.append(event)
             for subscription_id, queue in tuple(self._subscribers.items()):
                 if queue.full():
                     if not reliable:
@@ -87,6 +98,12 @@ class EventJournal:
                     continue
                 queue.put_nowait(event)
             return event
+
+    async def recent_logs(self, *, limit: int = 500) -> tuple[EventEnvelope, ...]:
+        if limit < 1:
+            raise ValueError("log limit must be positive")
+        async with self._lock:
+            return tuple(self._logs)[-limit:]
 
     async def open_stream(
         self,

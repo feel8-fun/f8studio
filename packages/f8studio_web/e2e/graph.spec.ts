@@ -152,6 +152,93 @@ test('creates a graph node and restores the persisted project after reload', asy
   expect(pageErrors).toEqual([]);
 });
 
+test('shows a live 3D node preview and opens its focused view in the same tab', async ({ page }, testInfo) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  await page.goto('/');
+  await expect(page.locator('.connection-online')).toBeVisible();
+  await page.locator('.project-control').getByRole('button', { name: 'New project' }).click();
+  await page.getByLabel('Search nodes').fill('3D Viz');
+  await page.locator('.catalog-list button:not(:disabled)').filter({ hasText: '3D Viz' }).click();
+  const operator = page.locator('.react-flow__node.flow-node-operator');
+  await expect(operator).toHaveCount(1);
+  const nodeId = await operator.getAttribute('data-id');
+  if (nodeId === null) throw new Error('3D operator has no node id');
+
+  await page.route('**/api/presentation', async (route) => route.fulfill({ json: [{
+    nodeId, command: 'viz.three_d.scene', tsMs: Date.now(),
+    payload: {
+      tsMs: Date.now(), worldUp: '+y', people: [{
+        name: 'Test', bbox: null, skeletonProtocol: 'test', skeletonEdges: [[0, 1]],
+        nodes: [
+          { index: 0, name: 'Root', pos: [0, 0, 0], rot: null },
+          { index: 1, name: 'Head', pos: [0, 2, 0], rot: null },
+        ],
+      }],
+    },
+  }] }));
+  await page.reload();
+  await expect(page.locator('.connection-online')).toBeVisible();
+  await page.locator('.react-flow__controls-fitview').click();
+  const preview = page.getByTestId(`three-preview-${nodeId}`);
+  await expect(preview.locator('canvas')).toBeVisible();
+  await expect.poll(() => preview.locator('canvas').evaluate((canvas) => {
+    const context = canvas.getContext('webgl2');
+    if (context === null) return 0;
+    const pixels = new Uint8Array(canvas.width * canvas.height * 4);
+    context.readPixels(0, 0, canvas.width, canvas.height, context.RGBA, context.UNSIGNED_BYTE, pixels);
+    let visible = 0;
+    for (let index = 0; index < pixels.length; index += 4) {
+      if ((pixels[index] ?? 0) + (pixels[index + 1] ?? 0) + (pixels[index + 2] ?? 0) > 0) visible += 1;
+    }
+    return visible;
+  })).toBeGreaterThan(1_000);
+  await page.screenshot({ path: testInfo.outputPath('three-node-preview.png'), fullPage: true });
+
+  await operator.getByRole('button', { name: 'Open 3D Viz output view' }).click();
+  await expect(page).toHaveURL(new RegExp(`view=three&node=${nodeId}`));
+  await expect(page.getByTestId('three-stage').locator('canvas')).toBeVisible();
+  await page.goBack();
+  await expect(page.getByTestId(`three-preview-${nodeId}`)).toBeVisible();
+  expect(pageErrors).toEqual([]);
+});
+
+test('keeps one WebRTC session when opening a video node in the focused output view', async ({ page }) => {
+  let negotiations = 0;
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/media/sessions') negotiations += 1;
+  });
+  await page.goto('/');
+  await expect(page.locator('.connection-online')).toBeVisible();
+  await page.locator('.project-control').getByRole('button', { name: 'New project' }).click();
+  await page.getByLabel('Search nodes').fill('Video Viz');
+  await page.locator('.catalog-list button:not(:disabled)').filter({ hasText: 'Video Viz' }).click();
+  const operator = page.locator('.react-flow__node.flow-node-operator');
+  const nodeId = await operator.getAttribute('data-id');
+  if (nodeId === null) throw new Error('Video operator has no node id');
+  await page.route('**/api/presentation', async (route) => route.fulfill({ json: [{
+    nodeId, command: 'viz.video.show', tsMs: Date.now(),
+    payload: { videoStreamKey: 'synthetic://bars', scaleMode: 'fit' },
+  }] }));
+  negotiations = 0;
+  await page.reload();
+  const preview = page.getByTestId(`video-preview-${nodeId}`);
+  await expect.poll(() => preview.locator('video').evaluate((video) => video.readyState)).toBe(4);
+  await preview.locator('video').evaluate((video) => {
+    const observed = window as typeof window & { f8ObservedStream?: MediaStream | null };
+    observed.f8ObservedStream = video.srcObject as MediaStream | null;
+  });
+
+  await operator.getByRole('button', { name: 'Open Video Viz output view' }).click();
+  await expect(page).toHaveURL(new RegExp(`view=outputs&node=${nodeId}`));
+  await expect.poll(() => page.locator('.output-panel video').evaluate((video) => video.readyState)).toBe(4);
+  expect(await page.locator('.output-panel video').evaluate((video) => {
+    const observed = window as typeof window & { f8ObservedStream?: MediaStream | null };
+    return video.srcObject === observed.f8ObservedStream;
+  })).toBe(true);
+  expect(negotiations).toBe(1);
+});
+
 test('resizes service canvases and restores their persisted dimensions', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name === 'mobile', 'Precise mouse resizing is covered on desktop');
   const pageErrors: string[] = [];

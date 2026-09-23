@@ -75,28 +75,17 @@ class DeployCoordinator:
             compiled = await asyncio.to_thread(compile_document, document)
             semantic_revision = semantic_graph_revision(document)
             timestamp = utc_now_text()
-            duplicate = None
-            if not request.force_apply:
-                duplicate = await asyncio.to_thread(
-                    self._repository.find_successful,
-                    project_id,
-                    semantic_revision,
-                )
             job = DeployJob(
                 job_id=uuid4().hex,
                 request_id=request.request_id,
                 project_id=project_id,
                 source_graph_revision=document.graph_revision,
                 source_semantic_revision=semantic_revision,
-                status=JobStatus.succeeded if duplicate is not None else JobStatus.queued,
+                status=JobStatus.queued,
                 created_at=timestamp,
                 updated_at=timestamp,
-                service_results=() if duplicate is None else duplicate.service_results,
             )
             await asyncio.to_thread(self._repository.create, job, request_fingerprint=fingerprint)
-            if duplicate is not None:
-                await self._publish_job("deploy.deduplicated", job)
-                return job
             task = asyncio.create_task(
                 self._run(job, compiled.per_service, force_apply=request.force_apply),
                 name=f"deploy:{job.job_id}",

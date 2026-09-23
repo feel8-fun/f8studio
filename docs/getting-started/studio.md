@@ -41,6 +41,7 @@ Service nodes represent deployable runtime processes. Operator nodes execute ins
 | Code | Local Monaco editor with completion, hover and diagnostics |
 | Local | Unity setup, serial devices, skeleton verification and hotkeys |
 | Agents | Deterministic or model-backed graph construction and diagnosis |
+| Logs | Recent service output, deployment results, runtime errors, and media signaling errors |
 
 Graph changes are saved to the local SQLite store. Layout and graph revisions are tracked separately, and other open tabs receive committed changes over the event stream without rebuilding the whole page.
 

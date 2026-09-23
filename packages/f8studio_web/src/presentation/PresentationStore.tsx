@@ -2,8 +2,9 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useS
 
 import { fetchPresentationSnapshot } from '../api/client';
 import type { JsonValue, PresentationCommand } from '../api/contracts';
+import { extensionRendererForCommand, extensionRendererById } from '../extensions/registry';
 
-export type PresentationRenderer = 'text' | 'wave' | 'track' | 'tcode' | 'video' | 'three_d';
+export type PresentationRenderer = 'text' | 'wave' | 'track' | 'video' | 'three_d' | (string & {});
 
 export interface PresentationOutput {
   readonly nodeId: string;
@@ -32,10 +33,9 @@ function rendererFor(command: string): PresentationRenderer | null {
   if (command.startsWith('viz.text.')) return 'text';
   if (command.startsWith('viz.wave.')) return 'wave';
   if (command.startsWith('viz.track.')) return 'track';
-  if (command.startsWith('viz.tcode.')) return 'tcode';
   if (command.startsWith('viz.video.')) return 'video';
   if (command.startsWith('viz.three_d.')) return 'three_d';
-  return null;
+  return extensionRendererForCommand(command)?.id ?? null;
 }
 
 export class PresentationStore {
@@ -110,10 +110,9 @@ export class PresentationStore {
     const updatedAt = command.tsMs ?? Date.now();
     if (prior !== undefined && prior.updatedAt > updatedAt) return;
     const priorPayload = prior?.renderer === renderer ? prior.payload : {};
-    const payload = renderer === 'tcode'
-      ? command.command === 'viz.tcode.reset'
-        ? { ...priorPayload, line: '' }
-        : { ...priorPayload, ...command.payload }
+    const extensionReducer = extensionRendererById(renderer)?.reduce;
+    const payload = extensionReducer !== undefined
+      ? extensionReducer(command.command, priorPayload, command.payload)
       : renderer === 'three_d' && command.command === 'viz.three_d.world_up'
         ? { ...priorPayload, ...command.payload }
         : command.payload;

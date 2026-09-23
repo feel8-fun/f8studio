@@ -210,15 +210,30 @@ def create_app(
 
     @app.exception_handler(MediaGatewayRequestError)
     async def media_gateway_request_error(_request: Request, exc: MediaGatewayRequestError) -> JSONResponse:
+        await studio.events.publish(
+            event_type="media.error",
+            scope="server",
+            payload={"operation": "Media gateway", "message": str(exc.detail)},
+        )
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
     @app.exception_handler(MediaGatewayUnavailable)
     async def media_gateway_unavailable(_request: Request, exc: MediaGatewayUnavailable) -> JSONResponse:
+        await studio.events.publish(
+            event_type="media.error",
+            scope="server",
+            payload={"operation": "Media gateway", "message": str(exc)},
+        )
         return JSONResponse(status_code=503, content={"detail": str(exc)})
 
     @app.exception_handler(Exception)
     async def unhandled_error(_request: Request, exc: Exception) -> JSONResponse:
         logger.exception("unhandled Web Studio API error", exc_info=exc)
+        await studio.events.publish(
+            event_type="server.error",
+            scope="server",
+            payload={"message": f"{type(exc).__name__}: {exc}"},
+        )
         return JSONResponse(
             status_code=500,
             content={"detail": {"code": "internal_error", "message": "An internal server error occurred"}},
@@ -234,6 +249,12 @@ def create_app(
             server_epoch=studio.server_epoch,
         )
         return status.to_json_object()
+
+    @app.get("/api/logs")
+    async def recent_logs(limit: int = 500) -> F8JsonValue:
+        if limit < 1 or limit > 1000:
+            raise ValueError("log limit must be between 1 and 1000")
+        return _json_value(await studio.events.recent_logs(limit=limit))
 
     @app.get("/api/capabilities")
     async def capabilities() -> F8JsonValue:
@@ -515,6 +536,11 @@ def create_app(
             return _json_value(await call)
         except (TimeoutError, OSError, RuntimeError, ValueError) as exc:
             logger.warning("runtime request failed operation=%s", operation, exc_info=exc)
+            await studio.events.publish(
+                event_type="runtime.error",
+                scope="server",
+                payload={"operation": operation, "message": f"{type(exc).__name__}: {exc}"},
+            )
             raise HTTPException(status_code=503, detail=f"{type(exc).__name__}: {exc}") from exc
 
     @app.post("/api/projects/{project_id}/patch")

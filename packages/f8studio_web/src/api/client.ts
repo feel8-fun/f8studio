@@ -8,6 +8,7 @@ import {
   isDeployJob,
   isProjectRecord,
   isStudioDocument,
+  isStudioLogEvent,
   type CatalogSnapshot,
   type DeployJob,
   type GraphNode,
@@ -20,6 +21,7 @@ import {
   type PatchResult,
   type ProjectRecord,
   type ProjectSummary,
+  type StudioLogEvent,
   type PresentationCommand,
   type RuntimeMonitor,
   type RuntimeNodeState,
@@ -98,6 +100,14 @@ export async function fetchProjects(signal?: AbortSignal): Promise<readonly Proj
     throw new Error('Project list does not match f8studio-api/1');
   }
   return body as unknown as readonly ProjectSummary[];
+}
+
+export async function fetchLogs(signal?: AbortSignal): Promise<readonly StudioLogEvent[]> {
+  const body = await requestJson('/api/logs', { signal });
+  if (!Array.isArray(body) || !body.every(isStudioLogEvent)) {
+    throw new Error('Log history does not match f8studio-api/1');
+  }
+  return body;
 }
 
 export async function fetchAgentProviders(signal?: AbortSignal): Promise<readonly AgentProviderSummary[]> {

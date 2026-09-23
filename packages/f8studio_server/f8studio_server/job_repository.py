@@ -138,21 +138,6 @@ class JobRepository:
             return None
         return _text(row[0]), self._job_from_row(row[1:])
 
-    def find_successful(self, project_id: str, semantic_revision: str) -> DeployJob | None:
-        with self._connect() as connection:
-            row = connection.execute(
-                """
-                SELECT job_id, request_id, project_id, source_graph_revision,
-                       source_semantic_revision, status, created_at, updated_at,
-                       service_results, error_message
-                FROM deploy_jobs
-                WHERE project_id = ? AND source_semantic_revision = ? AND status = ?
-                ORDER BY updated_at DESC LIMIT 1
-                """,
-                (project_id, semantic_revision, JobStatus.succeeded.value),
-            ).fetchone()
-        return None if row is None else self._job_from_row(row)
-
     def latest_for_project(self, project_id: str) -> DeployJob | None:
         with self._connect() as connection:
             row = connection.execute(

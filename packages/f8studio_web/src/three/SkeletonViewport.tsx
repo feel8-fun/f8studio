@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 
 import { isSkeletonScene, type SkeletonScene } from '../api/contracts';
-import { usePresentationConnected, usePresentationOutputs } from '../presentation/PresentationStore';
+import { usePresentationConnected, usePresentationOutput, usePresentationOutputs } from '../presentation/PresentationStore';
 
 const demoScene: SkeletonScene = {
   tsMs: 0,
@@ -41,20 +41,21 @@ function worldUpVector(token: string): THREE.Vector3 {
   }
 }
 
-export function SkeletonViewport() {
+export function SkeletonViewport({ nodeId = null, compact = false }: { readonly nodeId?: string | null; readonly compact?: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const worldRootRef = useRef<THREE.Group | null>(null);
   const skeletonGroupRef = useRef<THREE.Group | null>(null);
   const isLiveRef = useRef(false);
   const outputs = usePresentationOutputs();
+  const selectedOutput = usePresentationOutput(nodeId ?? '');
   const connected = usePresentationConnected();
   const scene = useMemo(() => {
-    const candidates = [...outputs.values()]
+    const candidates = (nodeId === null ? [...outputs.values()] : selectedOutput === null ? [] : [selectedOutput])
       .filter((output) => output.renderer === 'three_d' && isSkeletonScene(output.payload))
       .sort((left, right) => right.updatedAt - left.updatedAt);
     const candidate = candidates[0]?.payload;
     return candidate !== undefined && isSkeletonScene(candidate) ? candidate : demoScene;
-  }, [outputs]);
+  }, [outputs, selectedOutput, nodeId]);
   const isLive = scene !== demoScene;
   const nodeCount = useMemo(() => scene.people.reduce((total, person) => total + person.nodes.length, 0), [scene]);
 
@@ -70,13 +71,17 @@ export function SkeletonViewport() {
     threeScene.fog = new THREE.Fog('#0d1112', 10, 28);
     const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 100);
     camera.position.set(5, 3.2, 6);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const renderer = new THREE.WebGLRenderer({
+      antialias: !compact,
+      powerPreference: compact ? 'low-power' : 'high-performance',
+      preserveDrawingBuffer: compact,
+    });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, compact ? 1 : 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     host.append(renderer.domElement);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.set(0, 1.2, 0);
-    controls.enableDamping = true;
+    controls.enableDamping = !compact;
     threeScene.add(new THREE.HemisphereLight('#d9f4ff', '#27312a', 2.4));
     const keyLight = new THREE.DirectionalLight('#fff2cb', 3.2);
     keyLight.position.set(4, 7, 3);
@@ -99,13 +104,16 @@ export function SkeletonViewport() {
     observer.observe(host);
     resize();
     let frameHandle = 0;
-    const render = () => {
+    let lastFrame = 0;
+    const render = (timestamp: number) => {
+      frameHandle = requestAnimationFrame(render);
+      if (compact && timestamp - lastFrame < 66) return;
+      lastFrame = timestamp;
       controls.update();
       if (!isLiveRef.current) skeletonGroup.rotation.y += 0.0025;
       renderer.render(threeScene, camera);
-      frameHandle = requestAnimationFrame(render);
     };
-    render();
+    frameHandle = requestAnimationFrame(render);
     return () => {
       cancelAnimationFrame(frameHandle);
       observer.disconnect();
@@ -115,7 +123,7 @@ export function SkeletonViewport() {
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, []);
+  }, [compact]);
 
   useEffect(() => {
     const root = worldRootRef.current;
@@ -159,14 +167,14 @@ export function SkeletonViewport() {
   }, [scene]);
 
   return (
-    <section className="three-workspace" aria-label="3D skeleton viewer">
+    <section className={`three-workspace ${compact ? 'three-workspace-compact' : ''}`} aria-label="3D skeleton viewer">
       <div ref={hostRef} className="three-stage" data-testid="three-stage" />
-      <div className="scene-hud">
+      {!compact && <div className="scene-hud">
         <span className={connected ? 'live-dot online' : 'live-dot'} />
         <span>{isLive ? 'Live' : 'Preview'}</span>
         <span>{scene.people.length} people</span>
         <span>{nodeCount} joints</span>
-      </div>
+      </div>}
     </section>
   );
 }

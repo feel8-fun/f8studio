@@ -4,6 +4,10 @@
 
 ## 当前结论
 
+P7 后的图编辑精修新增 Node Library 分组、手动 command 调用、节点内 3D 预览、按节点定位的同页输出视图、可固定排序的 Live Outputs，以及前端本地扩展注册边界。已修复同一保存图再次运行时只命中历史成功记录、未检查现场服务的部署错误；日志中心展示当前服务进程生命周期内有界保留的服务输出、部署结果、运行时/API 错误和媒体网关请求错误。页面标题与产品名已合并到顶栏。第三方扩展包安装和通用 Zenoh 数据桥接仍待实施；跨浏览器标签共享同一个 WebRTC peer 未实现。细节与验收见 [web-studio-refinement.md](web-studio-refinement.md)。
+
+2026-09-23 对已保存的 `Untitled 10` 图（revision 89）实测：不改动 Screen Capture → Video Viz 连线，重启 Studio 后再次部署从 `queued` 进入 `succeeded`，Screen Capture 的 `captureRunning=true`、输出 1920×1080，浏览器节点预览解码出 640×360 视频帧。日志中心可回看服务启动与部署过程。
+
 P0、P1、P2、P3、P3.5、P4、P5、P6 和 P7 已在当前 Linux 主机完成验证。P7 已删除旧 Qt Studio、两个旧扩展包及 Unity 子模块中的 PySide setup UI，移除 Qt/NodeGraphQt/PyQtGraph 依赖和旧 `studio` feature，并将 OpenCV 切换到 headless 发行包。正式启动器现在启动 Web Studio、等待 HTTP health 后打开浏览器；生产 wheel 内嵌本地 Web bundle，非 editable 离线安装 smoke 已通过。Windows 干净构建与实机运行仍是发布门禁，当前不宣称通过。
 
 P6 新增 SQLite 持久化的 Agent 会话/消息/工具进度/产物/审批，确定性建图与诊断闭环，服务端 provider 注册，Web Agent 工作区，以及复用同一 HTTP/application service 的 CLI 和 MCP。OpenAI、Anthropic、Gemini 与 Ollama 的凭据只从服务端环境读取；当前主机没有模型凭据，因此真实模型 smoke 明确跳过，未宣称供应商在线请求通过。P5 新增本地资产/不可变版本/项目快照、component 捕获与插入、variant 状态应用、节点 schema 写回、从本地 bundle 加载的 Monaco、每会话 `basedpyright-langserver --stdio` completion/hover 和确定性诊断、音频频谱、曲线/track/TCode presentation renderer、节点内 Video Viz 实时预览、Template Match 浏览器截图裁剪、Unity detect/preview/confirm-apply、完整 UDP 骨架帧验证、串口枚举、Web 局部快捷键，以及 SQLite 持久化的无 Qt Win32/X11 全局快捷键后端。P4 使用 React Flow 接入权威项目文档和 catalog，已具备项目创建/选择、可持久化缩放的 service canvas 与 operator 嵌套、动态端口、typed data/state/exec/command 连接规则、data edge policy、约束拖放、级联删除、子图复制、多选、撤销/重做、自动持久化重开、schema 驱动的 Inspector 与 inline state controls、上游 state 只读联动、部署/停止，以及 draft/layout/deployed revision 和逐服务部署错误展示。P3.5 将 Zenoh 订阅、媒体转换、aiortc peer 和编码执行迁入独立 `f8media_gateway` 进程。多 peer 软件编码在组合负载下的 main 为 26.86-27.52 FPS，低于 28 FPS 初始预算；硬件/共享编码仍是发布前优化项。`f8studio_core`、`f8media_protocol`、`f8media_gateway`、`f8studio_server` 和 `f8studio_web` 均为独立包。
@@ -66,9 +70,9 @@ P6 新增 SQLite 持久化的 Agent 会话/消息/工具进度/产物/审批，�
 ```text
 pixi run -e web-studio-test studio_core_test            21 passed
 pixi run -e web-studio-test studio_media_gateway_test   23 passed
-pixi run -e web-studio-test studio_server_test          63 passed
-pixi run -e web-studio-test studio_web_test             27 passed
-pixi run -e web-studio-test studio_web_e2e              24 passed, 4 skipped（desktop/mobile；service 鼠标缩放、runtime Inspector、全局快捷键配置与 1080p 延迟仅 desktop）
+pixi run -e web-studio-test studio_server_test          65 passed
+pixi run -e web-studio-test studio_web_test             30 passed
+pixi run -e web-studio-test studio_web_e2e              34 passed, 4 skipped（desktop/mobile；service 鼠标缩放、runtime Inspector、全局快捷键配置与 1080p 延迟仅 desktop）
 pixi run -e web-studio-test studio_graph_bench           1 passed（300/600 预算 + 1000/2000 压力曲线）
 pixi run -e web-studio-test studio_python_typecheck     0 errors
 pixi run -e web-studio-test studio_web_typecheck        passed

@@ -179,7 +179,7 @@ async def wait_for_terminal_job(coordinator: DeployCoordinator, job_id: str) -> 
     raise AssertionError("deploy job did not finish")
 
 
-def test_deploy_job_runs_and_semantic_duplicate_skips_runtime(tmp_path: Path) -> None:
+def test_deploy_job_checks_runtime_again_for_same_saved_graph(tmp_path: Path) -> None:
     async def scenario() -> None:
         database_path = tmp_path / "studio.sqlite3"
         projects = ProjectService(ProjectRepository(database_path))
@@ -213,8 +213,9 @@ def test_deploy_job_runs_and_semantic_duplicate_skips_runtime(tmp_path: Path) ->
             DeployProjectRequest(request_id="deploy2", expected_graph_revision=1),
         )
 
-        assert duplicate.status == JobStatus.succeeded
-        assert runtime.deploy_calls == ["engine"]
+        assert duplicate.job_id != first.job_id
+        assert await wait_for_terminal_job(coordinator, duplicate.job_id) == JobStatus.succeeded
+        assert runtime.deploy_calls == ["engine", "engine"]
         await coordinator.close()
 
     asyncio.run(scenario())
@@ -336,6 +337,17 @@ def test_deploy_starts_launchable_service_when_endpoint_is_offline(tmp_path: Pat
         assert runtime.status_calls == ["capture"]
         assert processes.start_calls == [("capture", "f8.screencap")]
         assert runtime.deploy_calls == ["capture"]
+        processes.stop("capture")
+        repeated = await coordinator.submit(
+            "project1",
+            DeployProjectRequest(request_id="deploy2", expected_graph_revision=1),
+        )
+        assert await wait_for_terminal_job(coordinator, repeated.job_id) == JobStatus.succeeded
+        assert processes.start_calls == [
+            ("capture", "f8.screencap"),
+            ("capture", "f8.screencap"),
+        ]
+        assert runtime.deploy_calls == ["capture", "capture"]
         await coordinator.close()
 
     asyncio.run(scenario())

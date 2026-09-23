@@ -123,6 +123,21 @@ async def create_video_offer() -> str:
         await peer.close()
 
 
+def test_recent_logs_endpoint_exposes_bounded_service_output(tmp_path: Path) -> None:
+    studio = StudioApplication(data_dir=tmp_path / "data", runtime=FakeRuntimeGateway(), service_roots=())
+    app = create_app(web_dist=tmp_path, application=studio)
+
+    asyncio.run(studio.events.publish(
+        event_type="service.log", scope="service:capture",
+        payload={"serviceId": "capture", "line": "capture started"}, reliable=False,
+    ))
+    response = asyncio.run(request(app, "/api/logs?limit=1"))
+
+    assert response.status_code == 200
+    assert response.json()[0]["payload"] == {"serviceId": "capture", "line": "capture started"}
+    assert asyncio.run(request(app, "/api/logs?limit=1001")).status_code == 422
+
+
 async def create_audio_offer() -> str:
     peer = RTCPeerConnection()
     peer.addTransceiver("audio", direction="recvonly")

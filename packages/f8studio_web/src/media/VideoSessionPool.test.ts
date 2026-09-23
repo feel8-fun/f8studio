@@ -55,7 +55,10 @@ test('shares one negotiation and releases it after the final consumer', async ()
   expect(transport.closeSession).not.toHaveBeenCalled();
 
   second.release();
-  await vi.runAllTimersAsync();
+  await vi.advanceTimersByTimeAsync(1499);
+  expect(peer.close).not.toHaveBeenCalled();
+  expect(transport.closeSession).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(1);
   expect(peer.close).toHaveBeenCalledTimes(1);
   expect(transport.closeSession).toHaveBeenCalledWith('session-1');
 });
@@ -78,13 +81,17 @@ test('cancels deferred shutdown when a replacement consumer mounts', async () =>
   const first = pool.acquire('f8/video', 'thumbnail');
   await vi.waitFor(() => expect(transport.createSession).toHaveBeenCalledTimes(1));
   first.release();
+  await vi.advanceTimersByTimeAsync(750);
   const replacement = pool.acquire('f8/video', 'thumbnail');
-  await vi.runAllTimersAsync();
+  await vi.advanceTimersByTimeAsync(500);
+  replacement.release();
+  await vi.advanceTimersByTimeAsync(250);
 
   expect(transport.createPeer).toHaveBeenCalledTimes(1);
   expect(transport.closeSession).not.toHaveBeenCalled();
-  replacement.release();
-  await vi.runAllTimersAsync();
+  await vi.advanceTimersByTimeAsync(1249);
+  expect(transport.closeSession).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(1);
   expect(transport.closeSession).toHaveBeenCalledTimes(1);
 });
 

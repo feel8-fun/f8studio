@@ -1,10 +1,12 @@
 import { Handle, NodeResizer, Position, type NodeProps, type ResizeParams } from '@xyflow/react';
-import { Box, Boxes } from 'lucide-react';
+import { Box, Boxes, ExternalLink, Play } from 'lucide-react';
 import { createContext, useContext } from 'react';
 
-import type { JsonValue } from '../api/contracts';
+import type { CommandSpec, GraphNode, JsonValue } from '../api/contracts';
 import { usePresentationOutput } from '../presentation/PresentationStore';
 import { PresentationVideo } from '../presentation/PresentationVideo';
+import { hasExtensionNodeRendererClass } from '../extensions/registry';
+import { SkeletonOutputPreview } from '../three/SkeletonOutputPreview';
 import { nodePortRows } from './portRows';
 import { PORT_ROW_HEIGHT, SERVICE_MIN_HEIGHT, SERVICE_WIDTH, type StudioFlowNode } from './projection';
 import { StateFieldControl } from './StateFieldControl';
@@ -14,9 +16,14 @@ export interface GraphNodeInteraction {
   readonly connectedStateInputs: ReadonlySet<string>;
   readonly resizeService: (nodeId: string, bounds: ResizeParams) => void;
   readonly setState: (nodeId: string, field: string, value: JsonValue) => void;
+  readonly openCommand: (node: GraphNode, command: CommandSpec) => void;
+  readonly showOutput: (nodeId: string, threeD: boolean) => void;
 }
 
 export const GraphNodeInteractionContext = createContext<GraphNodeInteraction | null>(null);
+
+const BUILTIN_OUTPUT_CLASSES = new Set(['f8.viz.text', 'f8.viz.wave', 'f8.viz.track', 'f8.viz.video', 'f8.viz.three_d']);
+const BUILTIN_RENDERER_CLASSES = new Set(['viz_text', 'viz_wave', 'viz_track', 'viz_video', 'viz_three_d']);
 
 function InlineVideoPreview({ nodeId, enabled }: { readonly nodeId: string; readonly enabled: boolean }) {
   const output = usePresentationOutput(nodeId);
@@ -32,6 +39,10 @@ export function StudioNodeView({ data, selected }: NodeProps<StudioFlowNode>) {
   const node = data.graphNode;
   const showsVideoPreview = node.kind === 'operator' &&
     (node.operatorClass === 'f8.viz.video' || node.spec.rendererClass === 'viz_video');
+  const rendererClass = typeof node.spec.rendererClass === 'string' ? node.spec.rendererClass : '';
+  const hasOutputView = node.kind === 'operator' &&
+    (BUILTIN_OUTPUT_CLASSES.has(node.operatorClass) || BUILTIN_RENDERER_CLASSES.has(rendererClass) || hasExtensionNodeRendererClass(rendererClass));
+  const isThreeD = node.kind === 'operator' && (node.operatorClass === 'f8.viz.three_d' || node.spec.rendererClass === 'viz_three_d');
   const interaction = useContext(GraphNodeInteractionContext);
   const rows = nodePortRows(node);
   const visibleRows = rows.length === 0 ? [{ key: 'empty' }] : rows;
@@ -91,10 +102,18 @@ export function StudioNodeView({ data, selected }: NodeProps<StudioFlowNode>) {
           <strong>{node.name}</strong>
           <span>{node.kind === 'service' ? node.serviceClass : node.operatorClass}</span>
         </div>
+        {hasOutputView && <button type="button" className="node-view-button nodrag" title="Open output view" aria-label={`Open ${node.name} output view`}
+          onClick={() => interaction?.showOutput(node.nodeId, isThreeD)}><ExternalLink size={13} /></button>}
         {node.kind === 'service' && data.childCount > 0 && <span className="service-child-count">{data.childCount} ops</span>}
         {!node.enabled && <span className="node-disabled">Off</span>}
       </header>
       {showsVideoPreview && <InlineVideoPreview nodeId={node.nodeId} enabled={node.enabled} />}
+      {isThreeD && <SkeletonOutputPreview nodeId={node.nodeId} enabled={node.enabled} className="studio-node-inline-three nodrag nowheel" />}
+      {(node.spec.commands ?? []).some((command) => command.showOnNode) && <div className="node-command-actions nodrag nowheel">
+        {(node.spec.commands ?? []).filter((command) => command.showOnNode).map((command) => <button key={command.name} type="button"
+          title={command.description ?? `Run ${command.name}`} disabled={!node.enabled || interaction?.busy !== false}
+          onClick={() => interaction?.openCommand(node, command)}><Play size={11} />{command.name}</button>)}
+      </div>}
       {portRows}
     </article>
   </>;

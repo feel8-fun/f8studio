@@ -10,6 +10,7 @@ export const OPERATOR_WIDTH = 240;
 export const OPERATOR_MIN_HEIGHT = 64;
 export const VIDEO_PREVIEW_HEIGHT = 135;
 export const PORT_ROW_HEIGHT = 24;
+export const COMMAND_ACTION_HEIGHT = 30;
 export const CONTAINER_INSET_X = 16;
 export const CONTAINER_INSET_Y = 76;
 export const OPERATOR_GAP_X = 12;
@@ -104,19 +105,22 @@ export function reconcileProjectedEdges(current: Edge[], projected: readonly Edg
 
 export function operatorHeight(node: GraphNode): number {
   const previewHeight = node.kind === 'operator' &&
-    (node.operatorClass === 'f8.viz.video' || node.spec.rendererClass === 'viz_video')
+    (node.operatorClass === 'f8.viz.video' || node.spec.rendererClass === 'viz_video' ||
+      node.operatorClass === 'f8.viz.three_d' || node.spec.rendererClass === 'viz_three_d')
     ? VIDEO_PREVIEW_HEIGHT
     : 0;
+  const commandHeight = (node.spec.commands ?? []).some((command) => command.showOnNode) ? COMMAND_ACTION_HEIGHT : 0;
   return Math.max(
     OPERATOR_MIN_HEIGHT,
-    NODE_VERTICAL_CHROME + Math.max(1, nodePortRows(node).length) * PORT_ROW_HEIGHT + previewHeight,
+    NODE_VERTICAL_CHROME + Math.max(1, nodePortRows(node).length) * PORT_ROW_HEIGHT + previewHeight + commandHeight,
   );
 }
 
 export function compactServiceHeight(node: GraphNode): number {
+  const commandHeight = (node.spec.commands ?? []).some((command) => command.showOnNode) ? COMMAND_ACTION_HEIGHT : 0;
   return Math.max(
     OPERATOR_MIN_HEIGHT,
-    NODE_VERTICAL_CHROME + Math.max(1, nodePortRows(node).length) * PORT_ROW_HEIGHT,
+    NODE_VERTICAL_CHROME + Math.max(1, nodePortRows(node).length) * PORT_ROW_HEIGHT + commandHeight,
   );
 }
 

@@ -1,8 +1,8 @@
 import { Check, Crop, ImageDown } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 
-import { invokeRuntimeCommand, setRuntimeState } from '../api/client';
-import type { JsonValue } from '../api/contracts';
+import { invokeRuntimeCommand, setRuntimeState } from '../../api/client';
+import type { JsonValue } from '../../api/contracts';
 
 interface Point { readonly x: number; readonly y: number }
 interface Selection { readonly start: Point; readonly end: Point }

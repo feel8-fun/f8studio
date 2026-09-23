@@ -31,6 +31,8 @@ const defaultTransport: VideoSessionTransport = {
   closeSession: (sessionId) => closeMediaSession(sessionId, true),
 };
 
+const RELEASE_GRACE_MS = 1500;
+
 class PooledVideoSession {
   private readonly listeners = new Set<Listener>();
   private snapshot: VideoSessionSnapshot = { kind: 'connecting', stream: null };
@@ -213,7 +215,7 @@ export class VideoSessionPool {
           if (session.referenceCount() !== 0) return;
           this.entries.delete(key);
           session.close();
-        }, 0);
+        }, RELEASE_GRACE_MS);
       },
     };
   }

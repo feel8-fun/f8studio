@@ -16,7 +16,7 @@ import {
   type OnNodeDrag,
   type ResizeParams,
 } from '@xyflow/react';
-import { Braces, Check, Copy, Keyboard, Play, Plus, Redo2, RotateCcw, Search, Square, Trash2, X } from 'lucide-react';
+import { Braces, Check, Copy, Keyboard, Play, Plus, Redo2, RotateCcw, Square, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -41,6 +41,7 @@ import {
 import { isStudioDocument } from '../api/contracts';
 import type {
   CatalogSnapshot,
+  CommandSpec,
   DeployJob,
   GraphEdge,
   GraphNode,
@@ -76,6 +77,8 @@ import {
 } from './projection';
 import { StateFieldControl } from './StateFieldControl';
 import { GraphNodeInteractionContext, StudioNodeView } from './StudioNodeView';
+import { CommandDialog } from './CommandDialog';
+import { NodeCatalog } from './NodeCatalog';
 
 const nodeTypes = { studio: StudioNodeView };
 const SELECTED_PROJECT_KEY = 'f8studio.selectedProjectId';
@@ -205,6 +208,7 @@ function NodeInspector({
   commit,
   bindService,
   connectedStateInputs,
+  onCommand,
 }: {
   readonly projectId: string;
   readonly node: GraphNode;
@@ -214,6 +218,7 @@ function NodeInspector({
   readonly commit: (operations: readonly GraphOperation[]) => Promise<void>;
   readonly bindService: (nodeId: string, serviceId: string) => void;
   readonly connectedStateInputs: ReadonlySet<string>;
+  readonly onCommand: (node: GraphNode, command: CommandSpec) => void;
 }) {
   const fields = node.spec.stateFields ?? [];
   const [runtimeValues, setRuntimeValues] = useState<Readonly<Record<string, RuntimeStateField>>>({});
@@ -300,6 +305,10 @@ function NodeInspector({
         {hotkeyEligible(field) && <HotkeyEditor projectId={projectId} node={node} field={field} disabled={busy || connected} />}
       </div>;
     })}</div>
+    {(node.spec.commands ?? []).length > 0 && <><h2>Commands</h2><div className="inspector-commands">
+      {(node.spec.commands ?? []).map((command) => <button key={command.name} type="button" className="command-button" disabled={busy}
+        title={command.description} onClick={() => onCommand(node, command)}><Play size={13} />{command.name}</button>)}
+    </div></>}
     <NodeSchemaEditor node={node} busy={busy} commit={commit} />
     <button className="danger-command" type="button" disabled={busy} onClick={() => void commit([{ op: 'deleteNode', nodeId: node.nodeId }])}><Trash2 size={15} /> {node.kind === 'service' ? 'Delete service and operators' : 'Delete node'}</button>
   </>;
@@ -361,13 +370,13 @@ function documentIsNewer(next: ProjectRecord['document'], current: ProjectRecord
     (next.graphRevision === current.graphRevision && next.layoutRevision > current.layoutRevision);
 }
 
-function GraphWorkspaceInner() {
+function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId: string, threeD: boolean) => void }) {
   const [projects, setProjects] = useState<readonly ProjectSummary[]>([]);
   const [project, setProject] = useState<ProjectRecord | null>(null);
   const [catalog, setCatalog] = useState<CatalogSnapshot | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<StudioFlowNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const [search, setSearch] = useState('');
+  const [activeCommand, setActiveCommand] = useState<{ readonly node: GraphNode; readonly command: CommandSpec } | null>(null);
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -609,6 +618,7 @@ function GraphWorkspaceInner() {
       await reloadProject(projectId);
       setSelectedNodeId(null);
       setSelectedEdgeId(null);
+      setActiveCommand(null);
     } catch (reason) {
       setError(errorMessage(reason));
     } finally {
@@ -626,6 +636,7 @@ function GraphWorkspaceInner() {
       setDeployment(null);
       setSelectedNodeId(null);
       setSelectedEdgeId(null);
+      setActiveCommand(null);
     } catch (reason) {
       setError(errorMessage(reason));
     } finally {
@@ -938,11 +949,6 @@ function GraphWorkspaceInner() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [duplicateSelection]);
 
-  const query = search.trim().toLowerCase();
-  const services = useMemo(() => (catalog?.services ?? []).filter((spec) => !spec.hiddenInPalette &&
-    `${spec.label} ${spec.serviceClass} ${(spec.tags ?? []).join(' ')}`.toLowerCase().includes(query)), [catalog, query]);
-  const operators = useMemo(() => (catalog?.operators ?? []).filter((spec) => !spec.hiddenInPalette &&
-    `${spec.label} ${spec.operatorClass} ${(spec.tags ?? []).join(' ')}`.toLowerCase().includes(query)), [catalog, query]);
   const selectedNode = project?.document.nodes.find((node) => node.nodeId === selectedNodeId) ?? null;
   const selectedEdge = project?.document.edges.find((edge) => edge.edgeId === selectedEdgeId) ?? null;
   const connectedStateInputs = useMemo(() => {
@@ -1035,12 +1041,17 @@ function GraphWorkspaceInner() {
   const setNodeState = useCallback((nodeId: string, field: string, value: JsonValue) => {
     void commitRef.current([{ op: 'setNodeState', nodeId, field, value }]);
   }, []);
+  const openCommand = useCallback((node: GraphNode, command: CommandSpec) => {
+    setActiveCommand({ node, command });
+  }, []);
   const nodeInteraction = useMemo(() => ({
     busy,
     connectedStateInputs,
     resizeService,
     setState: setNodeState,
-  }), [busy, connectedStateInputs, resizeService, setNodeState]);
+    openCommand,
+    showOutput: onShowOutput,
+  }), [busy, connectedStateInputs, resizeService, setNodeState, openCommand, onShowOutput]);
   const selectedMonitor = selectedNode === null ? null : monitors.find((monitor) => monitor.nodeId === selectedNode.nodeId) ??
     (selectedNode.kind === 'service' ? monitors.find((monitor) => monitor.serviceId === selectedNode.serviceId) ?? null : null);
   const locked = busy || saving;
@@ -1058,24 +1069,8 @@ function GraphWorkspaceInner() {
             <button type="button" className="small-icon-button" title="New project" aria-label="New project" disabled={busy} onClick={() => void addProject()}><Plus size={16} /></button>
           </div>
         </div>
-        <label className="catalog-search">
-          <Search size={15} />
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search nodes" aria-label="Search nodes" />
-        </label>
-        <div className="catalog-list">
-          <h2>Services</h2>
-          {services.map((spec) => <button key={spec.serviceClass} type="button" disabled={busy || project === null} onClick={() => void addSpec(spec)}>
-            <strong>{spec.label}</strong><span>{spec.serviceClass}</span>
-          </button>)}
-          <h2>Operators</h2>
-          {operators.map((spec) => {
-            const bound = project?.document.nodes.some((node) => node.kind === 'service' && node.serviceClass === spec.serviceClass) ?? false;
-            const createsBuiltInService = spec.serviceClass === STUDIO_SERVICE_CLASS;
-            return <button key={`${spec.serviceClass}:${spec.operatorClass}`} type="button" disabled={busy || project === null || (!bound && !createsBuiltInService)} title={bound || createsBuiltInService ? spec.description : `Requires ${spec.serviceClass}`} onClick={() => void addSpec(spec)}>
-              <strong>{spec.label}</strong><span>{spec.operatorClass}</span>
-            </button>;
-          })}
-        </div>
+        <NodeCatalog catalog={catalog} projectServiceClasses={new Set(project?.document.nodes.filter((node) => node.kind === 'service').map((node) => node.serviceClass))}
+          canAdd={!busy && project !== null} onAdd={(spec) => void addSpec(spec)} />
       </aside>
 
       <section className="graph-canvas" aria-label="Graph canvas">
@@ -1134,16 +1129,17 @@ function GraphWorkspaceInner() {
 
       <aside className="graph-inspector" aria-label="Inspector">
         <h2>Inspector</h2>
-        {selectedNode !== null && project !== null ? <NodeInspector projectId={project.projectId} node={selectedNode} services={project.document.nodes} monitor={selectedMonitor} busy={busy} commit={commit} bindService={bindOperatorService} connectedStateInputs={connectedStateInputs} /> :
+        {selectedNode !== null && project !== null ? <NodeInspector projectId={project.projectId} node={selectedNode} services={project.document.nodes} monitor={selectedMonitor} busy={busy} commit={commit} bindService={bindOperatorService} connectedStateInputs={connectedStateInputs} onCommand={openCommand} /> :
           selectedEdge !== null ? <EdgeInspector edge={selectedEdge} nodes={project?.document.nodes ?? []} busy={busy} replace={replaceEdge} remove={removeEdge} /> :
             <p>Select a node or connection to inspect it.</p>}
         {deployment !== null && deployment.serviceResults.some((result) => !result.success) && <div className="deploy-errors">{deployment.serviceResults.filter((result) => !result.success).map((result) => <p key={result.serviceId}><strong>{result.serviceId}</strong>{result.errorMessage}</p>)}</div>}
       </aside>
+      {activeCommand !== null && <CommandDialog key={`${activeCommand.node.nodeId}:${activeCommand.command.name}`} node={activeCommand.node} command={activeCommand.command} onClose={() => setActiveCommand(null)} />}
       <div className={`graph-save-blocker ${saving ? 'graph-save-blocker-active' : ''}`} aria-hidden="true" />
     </div>
   );
 }
 
-export function GraphWorkspace() {
-  return <ReactFlowProvider><GraphWorkspaceInner /></ReactFlowProvider>;
+export function GraphWorkspace({ onShowOutput }: { readonly onShowOutput: (nodeId: string, threeD: boolean) => void }) {
+  return <ReactFlowProvider><GraphWorkspaceInner onShowOutput={onShowOutput} /></ReactFlowProvider>;
 }

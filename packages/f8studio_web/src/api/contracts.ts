@@ -23,6 +23,25 @@ export interface CapabilitiesResponse {
 
 export type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 
+export interface StudioLogEvent {
+  readonly eventId: string;
+  readonly serverEpoch: string;
+  readonly sequence: number;
+  readonly type: string;
+  readonly scope: string;
+  readonly timestamp: string;
+  readonly payload: JsonValue;
+}
+
+export function isStudioLogEvent(value: unknown): value is StudioLogEvent {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const event = value as Record<string, unknown>;
+  return typeof event.eventId === 'string' && typeof event.serverEpoch === 'string' &&
+    typeof event.sequence === 'number' && typeof event.type === 'string' &&
+    typeof event.scope === 'string' && typeof event.timestamp === 'string' &&
+    'payload' in event;
+}
+
 export type AgentRunStatus = 'idle' | 'running' | 'waiting_for_approval' | 'succeeded' | 'failed' | 'cancelled';
 export type AgentToolCallStatus = 'queued' | 'running' | 'waiting_for_approval' | 'succeeded' | 'failed' | 'denied' | 'cancelled';
 export type AgentApprovalStatus = 'pending' | 'approved' | 'denied' | 'expired' | 'invalidated' | 'cancelled';
@@ -139,6 +158,21 @@ export interface DataPortSpec {
   readonly [key: string]: JsonValue | ValueSchema | undefined;
 }
 
+export interface CommandParamSpec {
+  readonly name: string;
+  readonly valueSchema: ValueSchema;
+  readonly description?: string;
+  readonly required?: boolean;
+  readonly uiControl?: string;
+}
+
+export interface CommandSpec {
+  readonly name: string;
+  readonly description?: string;
+  readonly showOnNode?: boolean;
+  readonly params?: readonly CommandParamSpec[];
+}
+
 export interface ServiceSpec {
   readonly serviceClass: string;
   readonly label: string;
@@ -148,9 +182,10 @@ export interface ServiceSpec {
   readonly paletteCategory?: string;
   readonly hiddenInPalette?: boolean;
   readonly stateFields?: readonly StateSpec[];
+  readonly commands?: readonly CommandSpec[];
   readonly dataInPorts?: readonly DataPortSpec[];
   readonly dataOutPorts?: readonly DataPortSpec[];
-  readonly [key: string]: JsonValue | readonly StateSpec[] | readonly DataPortSpec[] | undefined;
+  readonly [key: string]: JsonValue | readonly StateSpec[] | readonly CommandSpec[] | readonly DataPortSpec[] | undefined;
 }
 
 export interface OperatorSpec {
@@ -163,11 +198,12 @@ export interface OperatorSpec {
   readonly paletteCategory?: string;
   readonly hiddenInPalette?: boolean;
   readonly stateFields?: readonly StateSpec[];
+  readonly commands?: readonly CommandSpec[];
   readonly dataInPorts?: readonly DataPortSpec[];
   readonly dataOutPorts?: readonly DataPortSpec[];
   readonly execInPorts?: readonly string[];
   readonly execOutPorts?: readonly string[];
-  readonly [key: string]: JsonValue | readonly StateSpec[] | readonly DataPortSpec[] | undefined;
+  readonly [key: string]: JsonValue | readonly StateSpec[] | readonly CommandSpec[] | readonly DataPortSpec[] | undefined;
 }
 
 export interface CatalogSnapshot {
