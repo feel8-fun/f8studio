@@ -10,9 +10,10 @@ Canonical service documentation lives under `Modules > Services`; this page is t
 | `f8.audiocap` | Audio Capture | No description. | `0` | [Open](../modules/services/f8-audiocap.md) |
 | `f8.audiofeat.core` | Audio Feature Core | Zenoh latest-audio core feature extraction service (rms, onset, centroid). | `0` | [Open](../modules/services/f8-audiofeat-core.md) |
 | `f8.audiofeat.rhythm` | Audio Feature Rhythm | Rhythm analysis service consuming core features (tempo + pulse clarity). | `0` | [Open](../modules/services/f8-audiofeat-rhythm.md) |
+| `f8.cppengine` | CppEngine | C++ execution engine for high-frequency Feel8 operator graphs. | `44` | [Open](../modules/services/f8-cppengine.md) |
 | `f8.implayer` | IM Player | C++ MPV-based player service with Zenoh latest-frame video output. | `0` | [Open](../modules/services/f8-implayer.md) |
 | `f8.proclauncher` | Proc Launcher | Launches an external OS process (optionally detached). | `0` | [Open](../modules/services/f8-proclauncher.md) |
-| `f8.pyengine` | PyEngine | Python-based execution engine for Feel8 operators. | `48` | [Open](../modules/services/f8-pyengine.md) |
+| `f8.pyengine` | PyEngine | Python-based execution engine for Feel8 operators. | `42` | [Open](../modules/services/f8-pyengine.md) |
 | `f8.pyexpr` | Python Expr Service | Standalone expression runtime service for simplified data-flow transforms. | `0` | [Open](../modules/services/f8-pyexpr.md) |
 | `f8.pyscript` | Python Script Service | Standalone python script runtime service with lifecycle/tick/command hooks. | `0` | [Open](../modules/services/f8-pyscript.md) |
 | `f8.screencap` | Screen Capture | No description. | `0` | [Open](../modules/services/f8-screencap.md) |

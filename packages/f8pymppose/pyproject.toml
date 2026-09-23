@@ -7,7 +7,7 @@ requires-python = ">=3.10"
 dependencies = [
     "f8pysdk",
     "numpy>=2.2.0",
-    "opencv-contrib-python>=4.10.0",
+    "opencv-contrib-python-headless>=4.10.0",
     "mediapipe>=0.10.14",
 ]
 

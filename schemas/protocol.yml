@@ -1288,7 +1288,7 @@ components:
             - f8service/1
         serviceClass:
           type: string
-          description: Slash-separated id, e.g., f8/engine. Avoid dots to keep NodeGraphQt palettes stable.
+          description: Slash-separated id, e.g., f8/engine. Avoid dots so identifiers remain URL and key-expression friendly.
           pattern: ^[a-z0-9]+(\.[a-z0-9]+)+$
         rendererClass:
           type: string
@@ -1372,7 +1372,7 @@ components:
           type: string
           description:
             Slash-separated id for the backend service this operator belongs to (e.g., f8/engine).
-            Avoid dots to keep NodeGraphQt palettes stable.
+            Avoid dots so identifiers remain URL and key-expression friendly.
           pattern: ^[a-z0-9]+(\.[a-z0-9]+)+$
         rendererClass:
           type: string

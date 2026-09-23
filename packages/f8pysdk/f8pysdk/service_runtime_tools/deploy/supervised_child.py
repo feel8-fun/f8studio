@@ -349,7 +349,7 @@ def _run_supervisor(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run a service child bound to the PyStudio parent process.")
+    parser = argparse.ArgumentParser(description="Run a service child bound to the Studio parent process.")
     parser.add_argument("--parent-pid", required=True, type=int)
     parser.add_argument("--poll-s", default=0.5, type=float)
     parser.add_argument("--soft-wait-s", default=2.0, type=float)

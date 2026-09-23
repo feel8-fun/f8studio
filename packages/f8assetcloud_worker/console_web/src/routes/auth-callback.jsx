@@ -29,8 +29,8 @@ export function AuthCallbackRoute() {
         </h2>
         <p className="mt-3 text-sm leading-6 text-slate-300">
           {isSuccess
-            ? 'PyStudio should already be completing the sign-in flow in the background.'
-            : 'The browser sign-in did not finish cleanly. Return to PyStudio and try again if needed.'}
+            ? 'Feel8 Studio should already be completing the sign-in flow in the background.'
+            : 'The browser sign-in did not finish cleanly. Return to Feel8 Studio and try again if needed.'}
         </p>
         {!isSuccess && (error || errorDescription) ? (
           <p className="mt-4 text-sm text-rose-200">{errorDescription ? `${error}: ${errorDescription}` : error}</p>

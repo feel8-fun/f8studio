@@ -8,7 +8,7 @@ dependencies = [
     "f8pysdk",
     "numpy>=2.2.0",
     "onnxruntime-gpu>=1.17.0",
-    "opencv-contrib-python>=4.10.0",
+    "opencv-contrib-python-headless>=4.10.0",
     "pyyaml>=6.0.0",
 ]
 

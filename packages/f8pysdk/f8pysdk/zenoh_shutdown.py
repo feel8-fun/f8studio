@@ -37,7 +37,7 @@ def close_zenoh_session_best_effort(
 
     Zenoh shutdown can occasionally block in native code. Using asyncio.to_thread()
     for that path leaves a non-daemon ThreadPoolExecutor worker behind, which can
-    keep PyStudio alive after the Qt window is already gone.
+    keep a headless Studio or service process alive after shutdown has begun.
     """
 
     done = threading.Event()

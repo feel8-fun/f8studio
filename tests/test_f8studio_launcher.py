@@ -134,15 +134,15 @@ class LauncherInstallCommandTest(unittest.TestCase):
         )
         start_mock.assert_called_once()
         start_args, start_kwargs = start_mock.call_args
-        self.assertEqual(start_args, (["pixi", "run", "-e", "studio-runtime", "f8pystudio"],))
+        self.assertEqual(
+            start_args,
+            ([
+                "pixi", "run", "-e", "studio-runtime", "studio_server",
+                "--host", "127.0.0.1", "--port", "8210",
+            ],),
+        )
         self.assertEqual(start_kwargs["cwd"], self.root)
         self.assertIn("env", start_kwargs)
-        self.assertIn(self.module.LAUNCH_READY_FILE_ENV, start_kwargs["env"])
-        self.assertIn(self.module.LAUNCH_DISMISS_FILE_ENV, start_kwargs["env"])
-        ready_file_path = Path(start_kwargs["env"][self.module.LAUNCH_READY_FILE_ENV])
-        dismiss_file_path = Path(start_kwargs["env"][self.module.LAUNCH_DISMISS_FILE_ENV])
-        self.assertEqual(ready_file_path.name, self.module.LAUNCH_READY_SIGNAL_FILENAME)
-        self.assertEqual(dismiss_file_path.name, self.module.LAUNCH_DISMISS_SIGNAL_FILENAME)
 
         complete_mock.assert_called_once()
         complete_args, complete_kwargs = complete_mock.call_args
@@ -150,17 +150,18 @@ class LauncherInstallCommandTest(unittest.TestCase):
         self.assertIs(complete_kwargs["launch_proc"], launch_proc)
         self.assertEqual(complete_kwargs["min_visible_s"], self.module.SPLASH_MIN_VISIBLE_S)
         self.assertEqual(complete_kwargs["fade_duration_s"], self.module.SPLASH_FADE_DURATION_S)
-        self.assertEqual(complete_kwargs["launch_ready_file"].name, self.module.LAUNCH_READY_SIGNAL_FILENAME)
-        self.assertEqual(complete_kwargs["launch_dismiss_file"].name, self.module.LAUNCH_DISMISS_SIGNAL_FILENAME)
+        self.assertEqual(complete_kwargs["health_url"], "http://127.0.0.1:8210/api/health")
+        self.assertEqual(complete_kwargs["app_url"], "http://127.0.0.1:8210")
+        self.assertTrue(complete_kwargs["open_browser"])
 
     def test_run_subprocess_hides_windows_console(self) -> None:
         with mock.patch.object(self.module.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run_mock:
-            self.module._run_subprocess(["pixi", "run", "f8pystudio"], check=False)
+            self.module._run_subprocess(["pixi", "run", "studio_server"], check=False)
 
         expected_kwargs: dict[str, object] = {"check": False}
         if self.module.os.name == "nt":
             expected_kwargs["creationflags"] = self.module.subprocess.CREATE_NO_WINDOW
-        run_mock.assert_called_once_with(["pixi", "run", "f8pystudio"], **expected_kwargs)
+        run_mock.assert_called_once_with(["pixi", "run", "studio_server"], **expected_kwargs)
 
     def test_run_subprocess_with_status_waits_for_process_completion(self) -> None:
         status_window = mock.Mock()
@@ -172,7 +173,7 @@ class LauncherInstallCommandTest(unittest.TestCase):
             mock.patch.object(self.module.subprocess, "Popen", return_value=proc) as popen_mock,
         ):
             completed = self.module._run_subprocess_with_status(
-                ["pixi", "run", "-e", "studio-runtime", "f8pystudio"],
+                ["pixi", "run", "-e", "studio-runtime", "studio_server"],
                 cwd=self.root,
                 check=False,
                 status_title="f8studio",
@@ -183,7 +184,7 @@ class LauncherInstallCommandTest(unittest.TestCase):
         if self.module.os.name == "nt":
             expected_popen_kwargs["creationflags"] = self.module.subprocess.CREATE_NO_WINDOW
         popen_mock.assert_called_once_with(
-            ["pixi", "run", "-e", "studio-runtime", "f8pystudio"],
+            ["pixi", "run", "-e", "studio-runtime", "studio_server"],
             **expected_popen_kwargs,
         )
         self.assertEqual(completed.returncode, 0)
@@ -197,13 +198,18 @@ class LauncherInstallCommandTest(unittest.TestCase):
         proc = mock.Mock()
         proc.poll.side_effect = [None, None, None, None]
 
-        with mock.patch.object(self.module, "_launch_ready_signal_received", side_effect=[False, False, True]):
+        with (
+            mock.patch.object(self.module, "_server_is_ready", side_effect=[False, False, True]),
+            mock.patch.object(self.module, "_open_studio_browser", return_value=True) as browser_mock,
+        ):
             returncode = self.module._complete_startup_splash(
                 status_window,
                 launch_proc=proc,
                 min_visible_s=2.0,
                 fade_duration_s=1.0,
-                launch_ready_file=Path("ready.signal"),
+                health_url="http://127.0.0.1:8210/api/health",
+                app_url="http://127.0.0.1:8210",
+                open_browser=True,
             )
 
         self.assertIsNone(returncode)
@@ -211,20 +217,23 @@ class LauncherInstallCommandTest(unittest.TestCase):
         self.assertGreaterEqual(status_window.wait.call_count, 2)
         status_window.set_message.assert_called_once_with(self.module.SPLASH_READY_MESSAGE)
         status_window.fade_out.assert_called_once_with(duration_s=1.0)
+        browser_mock.assert_called_once_with("http://127.0.0.1:8210")
 
-    def test_complete_startup_splash_waits_for_ready_signal_after_minimum_visible_time(self) -> None:
+    def test_complete_startup_splash_waits_for_health_after_minimum_visible_time(self) -> None:
         status_window = mock.Mock()
         status_window.elapsed_s.side_effect = [2.1]
         proc = mock.Mock()
         proc.poll.side_effect = [None, None, None, None]
 
-        with mock.patch.object(self.module, "_launch_ready_signal_received", side_effect=[False, True]) as ready_mock:
+        with mock.patch.object(self.module, "_server_is_ready", side_effect=[False, True]) as ready_mock:
             returncode = self.module._complete_startup_splash(
                 status_window,
                 launch_proc=proc,
                 min_visible_s=2.0,
                 fade_duration_s=1.0,
-                launch_ready_file=Path("ready.signal"),
+                health_url="http://127.0.0.1:8210/api/health",
+                app_url="http://127.0.0.1:8210",
+                open_browser=False,
             )
 
         self.assertIsNone(returncode)
@@ -232,26 +241,6 @@ class LauncherInstallCommandTest(unittest.TestCase):
         status_window.wait.assert_called()
         status_window.set_message.assert_called_once_with(self.module.SPLASH_READY_MESSAGE)
         status_window.fade_out.assert_called_once_with(duration_s=1.0)
-
-    def test_complete_startup_splash_closes_immediately_for_blocking_dialog_signal(self) -> None:
-        status_window = mock.Mock()
-        status_window.elapsed_s.side_effect = [0.3]
-        proc = mock.Mock()
-        proc.poll.side_effect = [None]
-
-        with mock.patch.object(self.module, "_launch_dismiss_signal_received", side_effect=[True]):
-            returncode = self.module._complete_startup_splash(
-                status_window,
-                launch_proc=proc,
-                min_visible_s=2.0,
-                fade_duration_s=1.0,
-                launch_dismiss_file=Path("dismiss.signal"),
-            )
-
-        self.assertIsNone(returncode)
-        status_window.close.assert_called_once_with()
-        status_window.set_message.assert_not_called()
-        status_window.fade_out.assert_not_called()
 
     def test_complete_startup_splash_returns_early_exit_code(self) -> None:
         status_window = mock.Mock()
@@ -264,6 +253,9 @@ class LauncherInstallCommandTest(unittest.TestCase):
             launch_proc=proc,
             min_visible_s=2.0,
             fade_duration_s=1.0,
+            health_url="http://127.0.0.1:8210/api/health",
+            app_url="http://127.0.0.1:8210",
+            open_browser=False,
         )
 
         self.assertEqual(returncode, 7)

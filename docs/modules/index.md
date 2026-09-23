@@ -11,9 +11,10 @@ Manual usage guidance is merged from `docs/modules/manual/*.md` and `docs/module
 | `f8.audiocap` | Audio Capture | `0` | `12` | [Audio Capture](services/f8-audiocap.md) |
 | `f8.audiofeat.core` | Audio Feature Core | `0` | `6` | [Audio Feature Core](services/f8-audiofeat-core.md) |
 | `f8.audiofeat.rhythm` | Audio Feature Rhythm | `0` | `5` | [Audio Feature Rhythm](services/f8-audiofeat-rhythm.md) |
+| `f8.cppengine` | CppEngine | `44` | `3` | [CppEngine](services/f8-cppengine.md) |
 | `f8.implayer` | IM Player | `0` | `23` | [IM Player](services/f8-implayer.md) |
 | `f8.proclauncher` | Proc Launcher | `0` | `5` | [Proc Launcher](services/f8-proclauncher.md) |
-| `f8.pyengine` | PyEngine | `48` | `3` | [PyEngine](services/f8-pyengine.md) |
+| `f8.pyengine` | PyEngine | `42` | `3` | [PyEngine](services/f8-pyengine.md) |
 | `f8.pyexpr` | Python Expr Service | `0` | `5` | [Python Expr Service](services/f8-pyexpr.md) |
 | `f8.pyscript` | Python Script Service | `0` | `5` | [Python Script Service](services/f8-pyscript.md) |
 | `f8.screencap` | Screen Capture | `0` | `15` | [Screen Capture](services/f8-screencap.md) |

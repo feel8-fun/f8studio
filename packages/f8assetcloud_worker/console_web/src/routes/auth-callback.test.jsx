@@ -29,7 +29,7 @@ describe('AuthCallbackRoute', () => {
     renderRoute('/auth-callback?status=success');
 
     expect(screen.getByText('Desktop sign-in complete')).toBeTruthy();
-    expect(screen.getByText('PyStudio should already be completing the sign-in flow in the background.')).toBeTruthy();
+    expect(screen.getByText('Feel8 Studio should already be completing the sign-in flow in the background.')).toBeTruthy();
     expect(screen.getByText('This page will return to the portal automatically in a moment.')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Open Portal' }).getAttribute('href')).toBe('/login');
     expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 2500);
@@ -41,7 +41,7 @@ describe('AuthCallbackRoute', () => {
     renderRoute('/auth-callback?status=error&error=access_denied&error_description=User%20cancelled');
 
     expect(screen.getByText('Desktop sign-in needs attention')).toBeTruthy();
-    expect(screen.getByText('The browser sign-in did not finish cleanly. Return to PyStudio and try again if needed.')).toBeTruthy();
+    expect(screen.getByText('The browser sign-in did not finish cleanly. Return to Feel8 Studio and try again if needed.')).toBeTruthy();
     expect(screen.getByText('access_denied: User cancelled')).toBeTruthy();
     expect(setTimeoutSpy).not.toHaveBeenCalled();
   });

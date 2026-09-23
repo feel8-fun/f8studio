@@ -55,10 +55,10 @@ pixi run -e onnx f8pydl_humandetector
 | `inferEveryN` | `rw` | `true` | `true` | `integer / default=1` | Run model inference every N frames (>=1). |
 | `confThreshold` | `rw` | `true` | `false` | `number / default=-1.0` | Override confidence threshold (negative uses model yaml). |
 | `iouThreshold` | `rw` | `true` | `false` | `number / default=-1.0` | Override IoU threshold for NMS (negative uses model yaml). |
-| `enabledClasses` | `rw` | `true` | `false` | `array[string] / default=[]` | Optional class whitelist for output. Empty means all classes. |
+| `enabledClasses` | `rw` | `true` | `false` | `array[string]` | Optional class whitelist for output. Empty means all classes. |
 | `perClassK` | `rw` | `true` | `true` | `integer / default=0` | Per-class top-K by score (<=0 means unlimited). |
-| `modelClasses` | `ro` | `true` | `false` | `array[string] / default=[]` | Current loaded model class labels. |
-| `availableModels` | `ro` | `true` | `false` | `array[string] / default=[]` | List of model ids discovered from weightsDir. |
+| `modelClasses` | `ro` | `true` | `false` | `array[string]` | Current loaded model class labels. |
+| `availableModels` | `ro` | `true` | `false` | `array[string]` | List of model ids discovered from weightsDir. |
 | `loadedModel` | `ro` | `true` | `false` | `string / default=` | Current loaded model id/task. |
 | `ortActiveProviders` | `ro` | `true` | `false` | `string / default=` | JSON list of active ONNX Runtime providers for this session. |
 | `active` | `rw` | `true` | `false` | `boolean / default=True` | Service lifecycle state (activate/deactivate). |

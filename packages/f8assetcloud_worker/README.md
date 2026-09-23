@@ -218,9 +218,9 @@ Variable precedence:
 - Owner-facing subscriber list endpoints no longer expose subscriber email addresses. Email is admin-only data.
 - Large request bodies are size-checked both before and after gzip decompression; over-limit uploads are rejected with `413`.
 
-## Desktop browser sign-in notes
+## Native client browser sign-in notes
 
-PyStudio desktop sign-in uses the system browser plus a temporary loopback callback (`http://127.0.0.1:<port>/callback`).
+The native-client authorization contract uses the system browser plus a temporary loopback callback (`http://127.0.0.1:<port>/callback`). The registered Studio client id is `f8studio`.
 
 Desktop flow summary:
 
@@ -230,24 +230,15 @@ Desktop flow summary:
 - `POST /v1/auth/desktop/refresh` rotates the short-lived access token
 - `POST /v1/auth/desktop/revoke` invalidates the saved refresh token
 
-PyStudio stores only the desktop `refreshToken` in keyring. Browser session cookies are not persisted locally.
+Clients must store only the desktop `refreshToken` in the OS credential store. Browser session cookies are not persisted locally.
 
-Key variables for switching environments:
-
-- PyStudio: `F8_ASSET_CLOUD_BASE_URL`
-- Worker / Better Auth: `AUTH_BASE_URL`
-- Cross-origin local dev: `CORS_ALLOWED_ORIGINS`
-
-Release builds of PyStudio are expected to stay pinned to the official backend (`https://assetcloud.feel8.fun`). Custom `F8_ASSET_CLOUD_BASE_URL` overrides are intended for local development and testing.
+Key worker variables are `AUTH_BASE_URL` and, for cross-origin local development, `CORS_ALLOWED_ORIGINS`.
 
 Friendly callback pages now live at:
 
 - `/auth-complete`
 - `/auth-error`
 
-For the full flow and configuration matrix, see:
-
-- `../../docs/developers/assetcloud-desktop-browser-auth.md`
 
 ## Local development
 

@@ -31,7 +31,7 @@ No description.
 ### How to Run
 
 ```bash
-../win/f8cvkit_flow_metric_service.exe
+../linux/f8cvkit_flow_metric_service
 ```
 
 - Workdir: `./`

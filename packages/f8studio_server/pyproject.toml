@@ -20,6 +20,11 @@ dependencies = [
     "mcp[cli]>=1.24,<2",
 ]
 
+[project.scripts]
+f8studio-server = "f8studio_server.__main__:main"
+f8studio-cli = "f8studio_server.cli:main"
+f8studio-mcp = "f8studio_server.mcp_server:main"
+
 [project.optional-dependencies]
 embedded-media = ["f8media-gateway"]
 

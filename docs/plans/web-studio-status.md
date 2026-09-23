@@ -4,7 +4,9 @@
 
 ## 当前结论
 
-P0、P1、P2、P3、P3.5、P4、P5 和 P6 已在当前 Linux 主机完成验证。P6 新增 SQLite 持久化的 Agent 会话/消息/工具进度/产物/审批，确定性建图与诊断闭环，服务端 provider 注册，Web Agent 工作区，以及复用同一 HTTP/application service 的 CLI 和 MCP。OpenAI、Anthropic、Gemini 与 Ollama 的凭据只从服务端环境读取；当前主机没有模型凭据，因此真实模型 smoke 明确跳过，未宣称供应商在线请求通过。P5 新增本地资产/不可变版本/项目快照、component 捕获与插入、variant 状态应用、节点 schema 写回、从本地 bundle 加载的 Monaco、每会话 `basedpyright-langserver --stdio` completion/hover 和确定性诊断、音频频谱、曲线/track/TCode presentation renderer、节点内 Video Viz 实时预览、Template Match 浏览器截图裁剪、Unity detect/preview/confirm-apply、完整 UDP 骨架帧验证、串口枚举、Web 局部快捷键，以及 SQLite 持久化的无 Qt Win32/X11 全局快捷键后端。新链路不导入或启动 `f8pystudio`/Qt。P4 使用 React Flow 接入权威项目文档和 catalog，已具备项目创建/选择、可持久化缩放的 service canvas 与 operator 嵌套、动态端口、typed data/state/exec/command 连接规则、data edge policy、约束拖放、级联删除、子图复制、多选、撤销/重做、自动持久化重开、schema 驱动的 Inspector 与 inline state controls、上游 state 只读联动、部署/停止，以及 draft/layout/deployed revision 和逐服务部署错误展示。P3.5 将 Zenoh 订阅、媒体转换、aiortc peer 和编码执行迁入独立 `f8media_gateway` 进程。多 peer 软件编码在组合负载下的 main 为 26.86-27.52 FPS，低于 28 FPS 初始预算；硬件/共享编码仍是发布前优化项。`f8studio_core`、`f8media_protocol`、`f8media_gateway`、`f8studio_server` 和 `f8studio_web` 均为独立包；Web Studio 与服务运行时环境都不组合旧 `studio` feature。
+P0、P1、P2、P3、P3.5、P4、P5、P6 和 P7 已在当前 Linux 主机完成验证。P7 已删除旧 Qt Studio、两个旧扩展包及 Unity 子模块中的 PySide setup UI，移除 Qt/NodeGraphQt/PyQtGraph 依赖和旧 `studio` feature，并将 OpenCV 切换到 headless 发行包。正式启动器现在启动 Web Studio、等待 HTTP health 后打开浏览器；生产 wheel 内嵌本地 Web bundle，非 editable 离线安装 smoke 已通过。Windows 干净构建与实机运行仍是发布门禁，当前不宣称通过。
+
+P6 新增 SQLite 持久化的 Agent 会话/消息/工具进度/产物/审批，确定性建图与诊断闭环，服务端 provider 注册，Web Agent 工作区，以及复用同一 HTTP/application service 的 CLI 和 MCP。OpenAI、Anthropic、Gemini 与 Ollama 的凭据只从服务端环境读取；当前主机没有模型凭据，因此真实模型 smoke 明确跳过，未宣称供应商在线请求通过。P5 新增本地资产/不可变版本/项目快照、component 捕获与插入、variant 状态应用、节点 schema 写回、从本地 bundle 加载的 Monaco、每会话 `basedpyright-langserver --stdio` completion/hover 和确定性诊断、音频频谱、曲线/track/TCode presentation renderer、节点内 Video Viz 实时预览、Template Match 浏览器截图裁剪、Unity detect/preview/confirm-apply、完整 UDP 骨架帧验证、串口枚举、Web 局部快捷键，以及 SQLite 持久化的无 Qt Win32/X11 全局快捷键后端。P4 使用 React Flow 接入权威项目文档和 catalog，已具备项目创建/选择、可持久化缩放的 service canvas 与 operator 嵌套、动态端口、typed data/state/exec/command 连接规则、data edge policy、约束拖放、级联删除、子图复制、多选、撤销/重做、自动持久化重开、schema 驱动的 Inspector 与 inline state controls、上游 state 只读联动、部署/停止，以及 draft/layout/deployed revision 和逐服务部署错误展示。P3.5 将 Zenoh 订阅、媒体转换、aiortc peer 和编码执行迁入独立 `f8media_gateway` 进程。多 peer 软件编码在组合负载下的 main 为 26.86-27.52 FPS，低于 28 FPS 初始预算；硬件/共享编码仍是发布前优化项。`f8studio_core`、`f8media_protocol`、`f8media_gateway`、`f8studio_server` 和 `f8studio_web` 均为独立包。
 
 ## 基线
 
@@ -35,7 +37,7 @@ P0、P1、P2、P3、P3.5、P4、P5 和 P6 已在当前 Linux 主机完成验证�
 | P4 Web 图编辑 | 完成（Linux） | 空图到内置 Studio runtime 的创建、配置、部署、monitor、再次修改和重开闭环通过；service/operator 容器、typed 连线、edge policy、动态状态控件、历史与冲突恢复均有测试；300/600 预算通过并记录 1000/2000 压力曲线 |
 | P5 本地业务能力 | 完成（Linux；平台/硬件门禁保留） | 本地资产、schema、Monaco/LSP、renderer、两个扩展、Unity/UDP/串口及原生快捷键实现完成；X11 焦点外触发通过，Windows 热键、真实游戏安装和真实串口需目标机验证 |
 | P6 AI / CLI / MCP | 完成（Linux；真实模型按凭据门禁） | 确定性 build/diagnose、精确审批、会话/产物、CLI、MCP 与跨页面 `graph.committed` 闭环通过；本机无 provider key，真实请求明确跳过 |
-| P7 移除 Qt | 未开始 | 旧 Qt 应用仍作为行为参照保留 |
+| P7 移除 Qt | 完成（Linux；Windows 发布验证待完成） | 旧 Qt 包/UI/依赖和 feature 已删除；headless OpenCV、Web 启动器、嵌入式前端 wheel、仓库/运行时 Qt 审计和离线安装 smoke 通过 |
 
 ## 功能迁移台账
 
@@ -71,6 +73,8 @@ pixi run -e web-studio-test studio_graph_bench           1 passed（300/600 预�
 pixi run -e web-studio-test studio_python_typecheck     0 errors
 pixi run -e web-studio-test studio_web_typecheck        passed
 pixi run -e web-studio-test studio_no_qt_check          passed
+pixi run -e web-studio-test studio_release_smoke        passed（6 个非 editable wheel；内嵌 Web bundle）
+pixi run -e ci dist_ci                                  passed（Linux 原生服务、wheels、Web bundle、单文件启动器）
 pixi run -e web-studio-test studio_dependency_probe     passed
 pixi run -e web-studio studio_web_build                 passed
 pixi run -e web-studio-test studio_media_bench          passed
@@ -85,6 +89,10 @@ pixi run -e web-studio npm --prefix packages/f8studio_web audit --json
 ```
 
 尚未验证：Windows 求解/运行、硬件编码、非 Chromium 浏览器和远端跨主机时钟。它们属于发布平台补充，不能据当前 Linux 软件编码结果宣称通过。
+
+P7 当前 Linux 证据：旧 `packages/f8pystudio`、`f8pystudio_ext_template_match`、`f8pystudio_ext_viz_tcode` 及其 Qt 测试和脚本已删除；扩展能力已由 P5 的静态后端/前端注册实现。Unity 子模块删除独立 PySide/PyInstaller setup UI，保留 typed setup 包供 Web Studio 和 CLI 使用。Pixi 根清单、各 Python 包清单、子模块清单和 lockfile 均不再声明 Qt，视觉依赖使用 `opencv-contrib-python-headless`。`studio_no_qt_check` 会扫描保留 Python 源码的禁止 import、TOML 依赖、已安装 distribution、已加载 module、环境中的 Qt 动态库、旧包路径和应用构造边界。
+
+`studio-runtime` 不包含 Node 工具链或旧 `studio` feature；启动器执行 `studio_server` 并以 `/api/health` 判断就绪。发布构建先生成本地 Web bundle，再将其装入 `f8studio-server` wheel。`studio_release_smoke` 在临时 venv 中非 editable 安装六个本地 wheel，确认本地包来自 `site-packages`、没有 Qt distribution、内嵌首页和 health 可访问。以上证据仅覆盖当前 Linux 主机；Windows clean solve、launcher、wheel/zip 安装和 Win32 快捷键仍需 Windows 发布机验证。
 
 P6 当前 Linux 证据：`StudioAutomationTools` 是浏览器、内置 Agent、HTTP、CLI 和 MCP 的统一业务边界；所有 patch 继续使用相同 revision、幂等和事务规则，并发布同一种 `graph.committed`。Playwright 在两个同时打开的页面中由 Agent 提交 patch，Graph 页面无需刷新即出现 service/operator；外部 API 的 graph-only 和 layout-only 新 revision 也按序同步，不重新应用旧事件。实际无浏览器 CLI 在独立数据目录完成建图、两次审批、校验、真实 `f8.pystudio` 部署和 monitor 读取；MCP 测试覆盖公开工具注册及 patch/approval 参数原样透传。新入口不导入 `f8pystudio`、Qt 或 GUI graph adapter。
 

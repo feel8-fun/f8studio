@@ -3,13 +3,10 @@
   "pythonVersion": "3.14",
   "include": [
     "packages/f8proclauncher/f8proclauncher",
-    "packages/f8pystudio/f8pystudio/global_hotkeys",
     "packages/f8pymppose/f8pymppose",
     "packages/f8pyscript/f8pyscript",
     "packages/f8pyaudiofeat/f8pyaudiofeat",
     "packages/f8pydl/f8pydl",
-    "packages/f8pystudio_ext_viz_tcode/f8pystudio_ext_viz_tcode",
-    "packages/f8pystudio_ext_template_match/f8pystudio_ext_template_match",
     "packages/f8pysdk/f8pysdk",
     "packages/f8pyengine/f8pyengine"
   ],

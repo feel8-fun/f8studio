@@ -35,6 +35,22 @@ async function zoomOutViewport(page: Page): Promise<string> {
   return viewportTransform(page);
 }
 
+async function fitHandlesInViewport(page: Page, nodeIds: readonly string[]): Promise<void> {
+  const initial = await viewportTransform(page);
+  await page.locator('.react-flow__controls-fitview').click();
+  await expect.poll(() => viewportTransform(page)).not.toBe(initial);
+  await expect.poll(async () => {
+    const canvasBox = await page.locator('.react-flow').boundingBox();
+    if (canvasBox === null) return false;
+    const handleBoxes = await Promise.all(nodeIds.map((nodeId) =>
+      page.locator(`[data-nodeid="${nodeId}"]`).first().boundingBox()));
+    return handleBoxes.every((box) => box !== null &&
+      box.x >= canvasBox.x && box.y >= canvasBox.y &&
+      box.x + box.width <= canvasBox.x + canvasBox.width &&
+      box.y + box.height <= canvasBox.y + canvasBox.height);
+  }).toBe(true);
+}
+
 async function observeNodeStability(page: Page, nodeId: string): Promise<void> {
   await page.evaluate((observedNodeId) => {
     const element = document.querySelector<HTMLElement>(`.react-flow__node[data-id="${observedNodeId}"]`);
@@ -452,6 +468,7 @@ test('edits inline state and configures typed exec and data connections', async 
     };
   }, projectId);
 
+  await fitHandlesInViewport(page, [graph.tickId, graph.detrendId, graph.printId]);
   const zoomedViewport = await zoomOutViewport(page);
   await observeNodeStability(page, graph.tickId);
   const sidePanelsBeforeSave = await sidePanelVisualState(page);

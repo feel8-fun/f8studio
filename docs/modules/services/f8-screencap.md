@@ -31,7 +31,7 @@ No description.
 ### How to Run
 
 ```bash
-win/f8screencap_service.exe
+linux/f8screencap_service
 ```
 
 - Workdir: `./`

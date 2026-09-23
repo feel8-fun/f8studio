@@ -3,6 +3,8 @@ __pycache__/
 *.py[oc]
 build/
 dist/
+packages/f8studio_server/f8studio_server/web_dist/*
+!packages/f8studio_server/f8studio_server/web_dist/.gitkeep
 wheels/
 *.egg-info
 

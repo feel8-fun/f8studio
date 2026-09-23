@@ -6,7 +6,7 @@ This document explains the **Comm Bus** design shared across:
 
 - `f8pysdk` (Python runtime SDK)
 - `f8cppsdk` (C++ runtime SDK)
-- `f8pystudio` (PyStudio / the editor UI)
+- `f8studio_server` and `f8studio_web` (the local Web Studio application)
 
 It focuses on **synchronization and propagation**:
 
@@ -18,7 +18,7 @@ It focuses on **synchronization and propagation**:
 
 - Python: `packages/f8pysdk/f8pysdk/service_bus/api/bus.py`
 - C++: `packages/f8cppsdk/src/service_bus.cpp`
-- Studio: `packages/f8pystudio/f8pystudio/remote_state_watcher.py`, `packages/f8pystudio/f8pystudio/bridge/service_endpoint_client.py`
+- Studio: `packages/f8studio_server/f8studio_server/runtime.py`, `packages/f8studio_server/f8studio_server/app.py`
 
 ---
 
@@ -61,7 +61,7 @@ config:
   theme: mc
 ---
 flowchart TB
-  Studio["PyStudio (UI)"]:::studio
+  Studio["Web Studio"]:::studio
   subgraph Zenoh["Zenoh Runtime Fabric"]
     PubSub["Pub/Sub<br/>(data + state updates)"]:::zenoh
     Retained["Retained State<br/>(latest values)"]:::zenoh
@@ -207,7 +207,7 @@ Both Python and C++ write MsgPack maps with a compatible shape (fields may vary 
 
 ``` mermaid
 sequenceDiagram
-  participant UI as PyStudio UI
+  participant UI as Web Studio
   participant Z as Zenoh Queryable (request/reply)
   participant Bus as ServiceBus (runtime)
   participant State as Service-Owned State
@@ -226,8 +226,8 @@ sequenceDiagram
 
 Studio-side implementation:
 
-- “Observe”: `packages/f8pystudio/f8pystudio/bridge/remote_state_watcher.py` (watch runtime state directly; no monitor node required)
-- “Edit”: `packages/f8pystudio/f8pystudio/bridge/service_endpoint_client.py::request_set_remote_state(...)`
+- “Observe”: `f8studio_server.runtime.RuntimeGateway` reads retained runtime state for the browser API.
+- “Edit”: `f8studio_server.app.set_service_state(...)` forwards typed state writes through the runtime gateway.
 
 ---
 
@@ -278,13 +278,13 @@ sequenceDiagram
 
 A key invariant: **the `rungraph` KV snapshot represents a successfully applied graph** (not “just requested”).
 
-Studio deploys via the `set_rungraph` endpoint and receives an explicit accept/reject response (see `packages/f8pystudio/f8pystudio/deploy.py::deploy_to_service(...)`).
+Studio deploys via the `set_rungraph` endpoint and receives an explicit accept/reject response through `packages/f8studio_server/f8studio_server/runtime.py`.
 
 ### Deploy/apply sequence (simplified)
 
 ``` mermaid
 sequenceDiagram
-  participant Studio as PyStudio
+  participant Studio as Web Studio
   participant Z as Zenoh Queryable
   participant Bus as ServiceBus
   participant State as Service-Owned State
@@ -450,11 +450,11 @@ flowchart TB
 - Control plane, state writes, and ready flag: `packages/f8cppsdk/src/service_bus.cpp`
 - Rungraph + cross-state logic: `packages/f8cppsdk/src/service_bus.cpp`
 
-### Studio (`f8pystudio`)
+### Web Studio
 
-- Watch remote service state: `packages/f8pystudio/f8pystudio/bridge/remote_state_watcher.py`
-- Write remote state via endpoint: `packages/f8pystudio/f8pystudio/bridge/service_endpoint_client.py`
-- Deploy rungraph (endpoint-only): `packages/f8pystudio/f8pystudio/deploy.py`
+- Watch and read remote service state: `packages/f8studio_server/f8studio_server/runtime.py`
+- Browser state and deployment endpoints: `packages/f8studio_server/f8studio_server/app.py`
+- Deployment job lifecycle: `packages/f8studio_server/f8studio_server/jobs.py`
 
 ---
 

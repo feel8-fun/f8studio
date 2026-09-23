@@ -31,7 +31,7 @@ No description.
 ### How to Run
 
 ```bash
-../win/f8cvkit_tracking_service.exe
+../linux/f8cvkit_tracking_service
 ```
 
 - Workdir: `./`

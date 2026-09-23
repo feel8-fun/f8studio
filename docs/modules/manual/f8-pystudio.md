@@ -14,4 +14,4 @@
 
 - Do not rely on `f8.pystudio` nodes for core runtime behavior if the graph must run correctly without Studio.
 - Heavy use of local previews and visual nodes still costs local CPU and memory.
-- For the broader UI workflow, pair this page with the Studio quickstart and the PyStudio guide.
+- For the broader UI workflow, pair this page with the Web Studio quickstart.

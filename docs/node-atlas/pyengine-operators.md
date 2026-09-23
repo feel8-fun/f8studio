@@ -7,9 +7,6 @@
 | --- | --- | --- | --- |
 | `f8.tick` | Tick | Source operator that generates periodic exec ticks. | [Open](../modules/services/f8-pyengine.md#operator-f8-tick) |
 | `f8.exec_sequence` | Sequence | Exec flow splitter: triggers its exec outputs in order (requires DFS scheduling). | [Open](../modules/services/f8-pyengine.md#operator-f8-exec-sequence) |
-| `f8.exec_branch` | Exec Branch | Mutually-exclusive exec branch selected by low-frequency state. | [Open](../modules/services/f8-pyengine.md#operator-f8-exec-branch) |
-| `f8.exec_merge` | Exec Merge | Merge mutually-exclusive exec branches into one continuation. | [Open](../modules/services/f8-pyengine.md#operator-f8-exec-merge) |
-| `f8.data_mux` | Data Mux | Select one data input by low-frequency state and expose it as one output. | [Open](../modules/services/f8-pyengine.md#operator-f8-data-mux) |
 | `f8.cosine` | Cosine | Cosine phase transform. | [Open](../modules/services/f8-pyengine.md#operator-f8-cosine) |
 | `f8.tempest` | Tempest | Tempest phase transform (phase-modulated cosine). | [Open](../modules/services/f8-pyengine.md#operator-f8-tempest) |
 | `f8.phase` | Phase | Phase accumulator. | [Open](../modules/services/f8-pyengine.md#operator-f8-phase) |
@@ -22,9 +19,6 @@
 | `f8.serial_out` | Serial Out | Writes incoming values to a serial port (pyserial). | [Open](../modules/services/f8-pyengine.md#operator-f8-serial-out) |
 | `f8.udp_in` | UDP In | Receives UDP packets and exposes explicit raw/text/json views plus packet metadata. | [Open](../modules/services/f8-pyengine.md#operator-f8-udp-in) |
 | `f8.skeleton_decoder` | Skeleton Decoder | Decodes udp_in packet payloads into skeleton streams with chunk reassembly. | [Open](../modules/services/f8-pyengine.md#operator-f8-skeleton-decoder) |
-| `f8.skeleton_selector` | Skeleton Selector | Select a character by stable exporter profile, role, and role index. | [Open](../modules/services/f8-pyengine.md#operator-f8-skeleton-selector) |
-| `f8.relative_pose_axes` | Relative Pose Axes | Convert a target bone pose into reference-local L0/L1/L2 and R0/R1/R2 signals. | [Open](../modules/services/f8-pyengine.md#operator-f8-relative-pose-axes) |
-| `f8.stream_watchdog` | Stream Watchdog | Invalidate stale timestamped data and gate exec flow when a stream stops. | [Open](../modules/services/f8-pyengine.md#operator-f8-stream-watchdog) |
 | `f8.udp_out` | UDP Out | Sends incoming values to a UDP host/port. | [Open](../modules/services/f8-pyengine.md#operator-f8-udp-out) |
 | `f8.tcode` | TCode | Generates TCode v0. | [Open](../modules/services/f8-pyengine.md#operator-f8-tcode) |
 | `f8.python_script` | Python Script | Execute Python code with onStart/onState/onMsg/onExec/onStop hooks. | [Open](../modules/services/f8-pyengine.md#operator-f8-python-script) |

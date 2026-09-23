@@ -751,13 +751,13 @@ test('desktop browser auth renders a confirmation page and exchanges an authoriz
   const state = 'desktop-state-1';
   const codeVerifier = 'desktop-code-verifier-1';
   const codeChallenge = pkceChallenge(codeVerifier);
-  const authorizePath = `/v1/auth/desktop/authorize?client_id=pystudio&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`;
+  const authorizePath = `/v1/auth/desktop/authorize?client_id=f8studio&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`;
 
   const pageResponse = await app.fetch(new Request(`http://worker.test${authorizePath}`), env, {});
   assert.equal(pageResponse.status, 200);
   assert.match(pageResponse.headers.get('content-type') || '', /text\/html/);
   const pageHtml = await pageResponse.text();
-  assert.match(pageHtml, /Continue to PyStudio/);
+  assert.match(pageHtml, /Continue to Feel8 Studio/);
   assert.match(pageHtml, /name="email"/);
   const pageCsrfCookie = responseCookie(pageResponse.headers);
   const pageCsrfToken = desktopCsrfTokenFromHtml(pageHtml);
@@ -765,7 +765,7 @@ test('desktop browser auth renders a confirmation page and exchanges an authoriz
   assert.ok(pageCsrfToken);
 
   const authorizeBody = new URLSearchParams({
-    client_id: 'pystudio',
+    client_id: 'f8studio',
     redirect_uri: redirectUri,
     state,
     code_challenge: codeChallenge,
@@ -794,7 +794,7 @@ test('desktop browser auth renders a confirmation page and exchanges an authoriz
   const tokenResponse = await jsonRequest(app, env, '/v1/auth/desktop/token', {
     method: 'POST',
     payload: {
-      clientId: 'pystudio',
+      clientId: 'f8studio',
       redirectUri,
       code,
       codeVerifier,
@@ -816,7 +816,7 @@ test('desktop browser auth renders a confirmation page and exchanges an authoriz
   const secondExchange = await jsonRequest(app, env, '/v1/auth/desktop/token', {
     method: 'POST',
     payload: {
-      clientId: 'pystudio',
+      clientId: 'f8studio',
       redirectUri,
       code,
       codeVerifier,
@@ -841,7 +841,7 @@ test('desktop browser auth can authorize directly from an existing browser sessi
   const codeVerifier = 'desktop-code-verifier-existing';
   const codeChallenge = pkceChallenge(codeVerifier);
   const authorizePageResponse = await app.fetch(new Request(
-    `http://worker.test/v1/auth/desktop/authorize?client_id=pystudio&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`,
+    `http://worker.test/v1/auth/desktop/authorize?client_id=f8studio&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`,
     {
       headers: {
         cookie: desktopUser.cookie,
@@ -852,7 +852,7 @@ test('desktop browser auth can authorize directly from an existing browser sessi
   const authorizePageHtml = await authorizePageResponse.text();
   assert.match(authorizePageHtml, /Continue as/);
   const authorizeBody = new URLSearchParams({
-    client_id: 'pystudio',
+    client_id: 'f8studio',
     redirect_uri: redirectUri,
     state,
     code_challenge: codeChallenge,
@@ -877,7 +877,7 @@ test('desktop browser auth can authorize directly from an existing browser sessi
   const tokenResponse = await jsonRequest(app, env, '/v1/auth/desktop/token', {
     method: 'POST',
     payload: {
-      clientId: 'pystudio',
+      clientId: 'f8studio',
       redirectUri,
       code,
       codeVerifier,
@@ -905,11 +905,11 @@ test('desktop refresh rotates tokens and revoke invalidates the refresh token', 
   const state = 'desktop-refresh-state';
   const codeVerifier = 'desktop-refresh-verifier';
   const codeChallenge = pkceChallenge(codeVerifier);
-  const authorizePath = `/v1/auth/desktop/authorize?client_id=pystudio&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`;
+  const authorizePath = `/v1/auth/desktop/authorize?client_id=f8studio&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`;
   const authorizePage = await app.fetch(new Request(`http://worker.test${authorizePath}`), env, {});
   assert.equal(authorizePage.status, 200);
   const authorizeBody = new URLSearchParams({
-    client_id: 'pystudio',
+    client_id: 'f8studio',
     redirect_uri: redirectUri,
     state,
     code_challenge: codeChallenge,
@@ -934,7 +934,7 @@ test('desktop refresh rotates tokens and revoke invalidates the refresh token', 
   const tokenResponse = await jsonRequest(app, env, '/v1/auth/desktop/token', {
     method: 'POST',
     payload: {
-      clientId: 'pystudio',
+      clientId: 'f8studio',
       redirectUri,
       code,
       codeVerifier,
@@ -990,7 +990,7 @@ test('desktop browser auth page shows a Google button when Google auth is config
   const codeVerifier = 'desktop-google-page-verifier';
   const codeChallenge = pkceChallenge(codeVerifier);
   const pageResponse = await app.fetch(new Request(
-    `http://worker.test/v1/auth/desktop/authorize?client_id=pystudio&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`,
+    `http://worker.test/v1/auth/desktop/authorize?client_id=f8studio&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`,
   ), env, {});
   assert.equal(pageResponse.status, 200);
   const pageHtml = await pageResponse.text();
@@ -1013,7 +1013,7 @@ test('desktop browser auth page hides Google sign-in when registration is disabl
   const codeVerifier = 'desktop-google-disabled-verifier';
   const codeChallenge = pkceChallenge(codeVerifier);
   const pageResponse = await app.fetch(new Request(
-    `http://worker.test/v1/auth/desktop/authorize?client_id=pystudio&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`,
+    `http://worker.test/v1/auth/desktop/authorize?client_id=f8studio&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`,
   ), env, {});
   assert.equal(pageResponse.status, 200);
   const pageHtml = await pageResponse.text();
@@ -1035,7 +1035,7 @@ test('desktop browser Google sign-in start is rejected when registration is disa
   const codeVerifier = 'desktop-google-disabled-start-verifier';
   const codeChallenge = pkceChallenge(codeVerifier);
   const authorizeResponse = await app.fetch(new Request(
-    `http://worker.test/v1/auth/desktop/authorize?client_id=pystudio&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256&social_provider=google&social_start=1`,
+    `http://worker.test/v1/auth/desktop/authorize?client_id=f8studio&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256&social_provider=google&social_start=1`,
   ), env, {});
   assert.equal(authorizeResponse.status, 400);
   const pageHtml = await authorizeResponse.text();
@@ -1055,7 +1055,7 @@ test('desktop browser Google sign-in start redirects to the provider and preserv
   const codeVerifier = 'desktop-google-start-verifier';
   const codeChallenge = pkceChallenge(codeVerifier);
   const authorizeResponse = await app.fetch(new Request(
-    `http://worker.test/v1/auth/desktop/authorize?client_id=pystudio&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256&social_provider=google&social_start=1`,
+    `http://worker.test/v1/auth/desktop/authorize?client_id=f8studio&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256&social_provider=google&social_start=1`,
   ), env, {});
   assert.equal(authorizeResponse.status, 302);
   const location = String(authorizeResponse.headers.get('location') || '');

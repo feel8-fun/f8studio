@@ -14,7 +14,7 @@ An output node owns:
 - low-frequency connection status
 - actionable, deduplicated error reporting
 
-PyStudio renders the node's declared specification. It must not import device
+Web Studio renders the node's declared specification. It must not import device
 SDKs or maintain a global device registry. Engine services host and schedule the
 node, but they do not own its protocol connection.
 
@@ -83,5 +83,5 @@ A new protocol integration should require only:
 4. optional tagged output components
 5. operator documentation
 
-Adding a protocol must not require changes to PyStudio, ServiceBus, Zenoh, or a
+Adding a protocol must not require changes to Web Studio, ServiceBus, Zenoh, or a
 global engine device manager.
