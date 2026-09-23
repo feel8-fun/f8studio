@@ -27,6 +27,9 @@ import {
   type AssetRecord,
   type AssetSummary,
   type AssetVersion,
+  type AgentProviderSummary,
+  type AgentSession,
+  type AgentSessionSummary,
   type EditorAnalysis,
   type EditorSession,
   type EditorLanguageResult,
@@ -39,6 +42,13 @@ import {
   type SkeletonUdpVerification,
   type UnityInstallPlan,
 } from './contracts';
+
+function isAgentSession(value: unknown): value is AgentSession {
+  if (!isObject(value)) return false;
+  return typeof value.sessionId === 'string' && typeof value.projectId === 'string' &&
+    typeof value.title === 'string' && typeof value.status === 'string' &&
+    Array.isArray(value.messages) && Array.isArray(value.toolCalls) && Array.isArray(value.artifacts);
+}
 
 export class ApiError extends Error {
   constructor(
@@ -88,6 +98,76 @@ export async function fetchProjects(signal?: AbortSignal): Promise<readonly Proj
     throw new Error('Project list does not match f8studio-api/1');
   }
   return body as unknown as readonly ProjectSummary[];
+}
+
+export async function fetchAgentProviders(signal?: AbortSignal): Promise<readonly AgentProviderSummary[]> {
+  const body = await requestJson('/api/agents/providers', { signal });
+  if (!Array.isArray(body) || !body.every((value) => isObject(value) &&
+    typeof value.providerId === 'string' && typeof value.displayName === 'string' &&
+    typeof value.configured === 'boolean' && Array.isArray(value.models))) {
+    throw new Error('Agent providers do not match f8studio-api/1');
+  }
+  return body as unknown as readonly AgentProviderSummary[];
+}
+
+export async function fetchAgentSessions(projectId: string, signal?: AbortSignal): Promise<readonly AgentSessionSummary[]> {
+  const query = new URLSearchParams({ project_id: projectId });
+  const body = await requestJson(`/api/agents/sessions?${query.toString()}`, { signal });
+  if (!Array.isArray(body) || !body.every((value) => isObject(value) &&
+    typeof value.sessionId === 'string' && typeof value.projectId === 'string' &&
+    typeof value.status === 'string')) {
+    throw new Error('Agent sessions do not match f8studio-api/1');
+  }
+  return body as unknown as readonly AgentSessionSummary[];
+}
+
+export async function fetchAgentSession(sessionId: string, signal?: AbortSignal): Promise<AgentSession> {
+  const body = await requestJson(`/api/agents/sessions/${encodeURIComponent(sessionId)}`, { signal });
+  if (!isAgentSession(body)) throw new Error('Agent session does not match f8studio-api/1');
+  return body;
+}
+
+export async function createAgentSession(input: {
+  readonly projectId: string;
+  readonly title: string;
+  readonly providerId: string;
+  readonly modelId: string;
+}): Promise<AgentSession> {
+  const body = await requestJson('/api/agents/sessions', jsonRequest('POST', input));
+  if (!isAgentSession(body)) throw new Error('Created agent session does not match f8studio-api/1');
+  return body;
+}
+
+export async function startAgentRun(sessionId: string, prompt: string): Promise<AgentSession> {
+  const body = await requestJson(
+    `/api/agents/sessions/${encodeURIComponent(sessionId)}/runs`,
+    jsonRequest('POST', { prompt }),
+  );
+  if (!isAgentSession(body)) throw new Error('Started agent session does not match f8studio-api/1');
+  return body;
+}
+
+export async function resolveAgentApproval(
+  sessionId: string,
+  approvalId: string,
+  argumentsHash: string,
+  approved: boolean,
+): Promise<AgentSession> {
+  const body = await requestJson(
+    `/api/agents/sessions/${encodeURIComponent(sessionId)}/approvals/${encodeURIComponent(approvalId)}`,
+    jsonRequest('POST', { approved, argumentsHash }),
+  );
+  if (!isAgentSession(body)) throw new Error('Resolved agent session does not match f8studio-api/1');
+  return body;
+}
+
+export async function cancelAgentRun(sessionId: string): Promise<AgentSession> {
+  const body = await requestJson(
+    `/api/agents/sessions/${encodeURIComponent(sessionId)}/runs/current`,
+    { method: 'DELETE' },
+  );
+  if (!isAgentSession(body)) throw new Error('Cancelled agent session does not match f8studio-api/1');
+  return body;
 }
 
 export async function createProject(name: string, signal?: AbortSignal): Promise<ProjectRecord> {

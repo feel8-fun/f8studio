@@ -224,12 +224,20 @@ aiortc = ">=1.14,<2"
 basedpyright = ">=1.31,<2"
 pyserial = ">=3.5,<4"
 python-xlib = ">=0.33,<1"
+httpx = ">=0.28,<1"
+agent-framework-core = ">=1.7,<2"
+agent-framework-openai = ">=1.7,<2"
+agent-framework-anthropic = ">=1.0.0b260521,<2"
+mcp = { version = ">=1.24,<2", extras = ["cli"] }
 
 [feature.web-studio.tasks]
 studio_media_gateway = "python -m f8media_gateway"
 studio_server = "python -m f8studio_server"
 studio_web_dev = "npm --prefix packages/f8studio_web run dev"
 studio_web_build = "npm --prefix packages/f8studio_web run build"
+studio_cli = "python -m f8studio_server.cli"
+studio_mcp = "python -m f8studio_server.mcp_server"
+studio_agent_model_smoke = "python scripts/web_studio/probe_agent_model.py"
 
 [feature.web-studio-test.dependencies]
 pytest = ">=8.4.2,<9"

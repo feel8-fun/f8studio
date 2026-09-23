@@ -1,4 +1,4 @@
-import { Activity, Archive, AudioLines, Boxes, CircleDot, Code2, Cuboid, Plug, Settings2, Video, type LucideIcon } from 'lucide-react';
+import { Activity, Archive, AudioLines, Bot, Boxes, CircleDot, Code2, Cuboid, Plug, Settings2, Video, type LucideIcon } from 'lucide-react';
 import { lazy, Suspense, useEffect, useState } from 'react';
 
 import { fetchHealth } from '../api/client';
@@ -13,8 +13,9 @@ const AssetsWorkspace = lazy(() => import('../assets/AssetsWorkspace').then((mod
 const CodeWorkspace = lazy(() => import('../editor/CodeWorkspace').then((module) => ({ default: module.CodeWorkspace })));
 const PresentationWorkspace = lazy(() => import('../presentation/PresentationWorkspace').then((module) => ({ default: module.PresentationWorkspace })));
 const LocalWorkspace = lazy(() => import('../local/LocalWorkspace').then((module) => ({ default: module.LocalWorkspace })));
+const AgentWorkspace = lazy(() => import('../agents/AgentWorkspace').then((module) => ({ default: module.AgentWorkspace })));
 
-type WorkspaceView = 'graph' | 'assets' | 'code' | 'outputs' | 'video' | 'audio' | 'three' | 'local';
+type WorkspaceView = 'graph' | 'agent' | 'assets' | 'code' | 'outputs' | 'video' | 'audio' | 'three' | 'local';
 
 interface WorkspaceDefinition {
   readonly view: WorkspaceView;
@@ -25,6 +26,7 @@ interface WorkspaceDefinition {
 
 const WORKSPACES: readonly WorkspaceDefinition[] = [
   { view: 'graph', label: 'Graph', title: 'Graph Editor', icon: Boxes },
+  { view: 'agent', label: 'Agent', title: 'Agent', icon: Bot },
   { view: 'assets', label: 'Assets', title: 'Assets', icon: Archive },
   { view: 'code', label: 'Code', title: 'Code & Schema', icon: Code2 },
   { view: 'outputs', label: 'Outputs', title: 'Live Outputs', icon: Activity },
@@ -119,6 +121,7 @@ export function App() {
             {view === 'code' && <CodeWorkspace />}
             {view === 'outputs' && <PresentationWorkspace />}
             {view === 'local' && <LocalWorkspace />}
+            {view === 'agent' && <AgentWorkspace />}
           </Suspense>
           {connection.kind === 'offline' && <div className="connection-error">{connection.message}</div>}
         </div>

@@ -4,7 +4,7 @@
 
 ## 当前结论
 
-P0、P1、P2、P3、P3.5、P4 和 P5 已在当前 Linux 主机完成验证。P5 新增本地资产/不可变版本/项目快照、component 捕获与插入、variant 状态应用、节点 schema 写回、从本地 bundle 加载的 Monaco、每会话 `basedpyright-langserver --stdio` completion/hover 和确定性诊断、音频频谱、曲线/track/TCode presentation renderer、节点内 Video Viz 实时预览、Template Match 浏览器截图裁剪、Unity detect/preview/confirm-apply、完整 UDP 骨架帧验证、串口枚举、Web 局部快捷键，以及 SQLite 持久化的无 Qt Win32/X11 全局快捷键后端。新链路不导入或启动 `f8pystudio`/Qt。P4 使用 React Flow 接入权威项目文档和 catalog，已具备项目创建/选择、可持久化缩放的 service canvas 与 operator 嵌套、动态端口、typed data/state/exec/command 连接规则、data edge policy、约束拖放、级联删除、子图复制、多选、撤销/重做、自动持久化重开、schema 驱动的 Inspector 与 inline state controls、上游 state 只读联动、部署/停止，以及 draft/layout/deployed revision 和逐服务部署错误展示。P3.5 将 Zenoh 订阅、媒体转换、aiortc peer 和编码执行迁入独立 `f8media_gateway` 进程。多 peer 软件编码在组合负载下的 main 为 26.86-27.52 FPS，低于 28 FPS 初始预算；硬件/共享编码仍是发布前优化项。`f8studio_core`、`f8media_protocol`、`f8media_gateway`、`f8studio_server` 和 `f8studio_web` 均为独立包；Web Studio 与服务运行时环境都不组合旧 `studio` feature。
+P0、P1、P2、P3、P3.5、P4、P5 和 P6 已在当前 Linux 主机完成验证。P6 新增 SQLite 持久化的 Agent 会话/消息/工具进度/产物/审批，确定性建图与诊断闭环，服务端 provider 注册，Web Agent 工作区，以及复用同一 HTTP/application service 的 CLI 和 MCP。OpenAI、Anthropic、Gemini 与 Ollama 的凭据只从服务端环境读取；当前主机没有模型凭据，因此真实模型 smoke 明确跳过，未宣称供应商在线请求通过。P5 新增本地资产/不可变版本/项目快照、component 捕获与插入、variant 状态应用、节点 schema 写回、从本地 bundle 加载的 Monaco、每会话 `basedpyright-langserver --stdio` completion/hover 和确定性诊断、音频频谱、曲线/track/TCode presentation renderer、节点内 Video Viz 实时预览、Template Match 浏览器截图裁剪、Unity detect/preview/confirm-apply、完整 UDP 骨架帧验证、串口枚举、Web 局部快捷键，以及 SQLite 持久化的无 Qt Win32/X11 全局快捷键后端。新链路不导入或启动 `f8pystudio`/Qt。P4 使用 React Flow 接入权威项目文档和 catalog，已具备项目创建/选择、可持久化缩放的 service canvas 与 operator 嵌套、动态端口、typed data/state/exec/command 连接规则、data edge policy、约束拖放、级联删除、子图复制、多选、撤销/重做、自动持久化重开、schema 驱动的 Inspector 与 inline state controls、上游 state 只读联动、部署/停止，以及 draft/layout/deployed revision 和逐服务部署错误展示。P3.5 将 Zenoh 订阅、媒体转换、aiortc peer 和编码执行迁入独立 `f8media_gateway` 进程。多 peer 软件编码在组合负载下的 main 为 26.86-27.52 FPS，低于 28 FPS 初始预算；硬件/共享编码仍是发布前优化项。`f8studio_core`、`f8media_protocol`、`f8media_gateway`、`f8studio_server` 和 `f8studio_web` 均为独立包；Web Studio 与服务运行时环境都不组合旧 `studio` feature。
 
 ## 基线
 
@@ -34,7 +34,7 @@ P0、P1、P2、P3、P3.5、P4 和 P5 已在当前 Linux 主机完成验证。P5 
 | P3.5 媒体网关进程隔离 | 完成（Linux） | `f8media-api/1`、远程代理、独立 PID、真实 screencap 链路和父进程关闭回收均已验证；共享/native 编码待后续优化 |
 | P4 Web 图编辑 | 完成（Linux） | 空图到内置 Studio runtime 的创建、配置、部署、monitor、再次修改和重开闭环通过；service/operator 容器、typed 连线、edge policy、动态状态控件、历史与冲突恢复均有测试；300/600 预算通过并记录 1000/2000 压力曲线 |
 | P5 本地业务能力 | 完成（Linux；平台/硬件门禁保留） | 本地资产、schema、Monaco/LSP、renderer、两个扩展、Unity/UDP/串口及原生快捷键实现完成；X11 焦点外触发通过，Windows 热键、真实游戏安装和真实串口需目标机验证 |
-| P6 AI / CLI / MCP | 未开始 | 旧实现仍依赖 Qt 图适配器 |
+| P6 AI / CLI / MCP | 完成（Linux；真实模型按凭据门禁） | 确定性 build/diagnose、精确审批、会话/产物、CLI、MCP 与跨页面 `graph.committed` 闭环通过；本机无 provider key，真实请求明确跳过 |
 | P7 移除 Qt | 未开始 | 旧 Qt 应用仍作为行为参照保留 |
 
 ## 功能迁移台账
@@ -56,7 +56,7 @@ P0、P1、P2、P3、P3.5、P4 和 P5 已在当前 Linux 主机完成验证。P5 
 | 本地扩展 | template_match、viz_tcode | 显式后端注册与 TS renderer 注册 | 完成：Template Match 原图坐标 ROI/canvas PNG 写回；TCode 算子静态注册并由本地 TS renderer 渲染，无 CDN |
 | 游戏/设备 | Unity/VaM、UDP、串口、外部进程 | 原生能力留后端，Web 配置与观察 | Linux 实现完成：Unity preview/显式确认、SDK 完整帧 UDP 验证、串口枚举、catalog allowlist 进程；真实游戏/串口待硬件验证，Unreal/VaM 无仓库自有 installer，保留显式 capability 门禁 |
 | 快捷键 | Qt/OS 全局快捷键 | Web 局部快捷键 + 后端原生全局适配 | 完成：Web 局部快捷键；Inspector 字段绑定；SQLite 持久化；无 Qt Win32 `RegisterHotKey` worker 与 X11 grab/event backend；图提交后校验刷新；触发时原子提交 state、同步 runtime 并推送 graph event。当前 X11 主机经 XTEST 验证焦点外 grab/event；Windows 实机仍为发布门禁，无 DISPLAY 时明确 unavailable |
-| Agent | provider、会话、工具、审批、图构建 | 统一 application service，无 Qt bridge | 待迁移 |
+| Agent | provider、会话、工具、审批、图构建 | 统一 application service，无 Qt bridge | 完成：确定性/OpenAI/Anthropic/Gemini/Ollama 服务端注册、持久会话、工具/产物、取消、revision/hash/expiry 审批和 build/diagnose 闭环；真实供应商连接依凭据验证 |
 | Web/API 壳 | 无独立产品入口 | loopback FastAPI、health/capabilities、React 工作区 | typed 图/项目/job/runtime/monitor API 与 WS 事件已建；React Flow 主工作区已接入 |
 
 ## 当前验证
@@ -64,9 +64,9 @@ P0、P1、P2、P3、P3.5、P4 和 P5 已在当前 Linux 主机完成验证。P5 
 ```text
 pixi run -e web-studio-test studio_core_test            21 passed
 pixi run -e web-studio-test studio_media_gateway_test   23 passed
-pixi run -e web-studio-test studio_server_test          57 passed
-pixi run -e web-studio-test studio_web_test             25 passed
-pixi run -e web-studio-test studio_web_e2e              22 passed, 4 skipped（desktop/mobile；service 鼠标缩放、runtime Inspector、全局快捷键配置与 1080p 延迟仅 desktop）
+pixi run -e web-studio-test studio_server_test          63 passed
+pixi run -e web-studio-test studio_web_test             27 passed
+pixi run -e web-studio-test studio_web_e2e              24 passed, 4 skipped（desktop/mobile；service 鼠标缩放、runtime Inspector、全局快捷键配置与 1080p 延迟仅 desktop）
 pixi run -e web-studio-test studio_graph_bench           1 passed（300/600 预算 + 1000/2000 压力曲线）
 pixi run -e web-studio-test studio_python_typecheck     0 errors
 pixi run -e web-studio-test studio_web_typecheck        passed
@@ -78,12 +78,19 @@ pixi run pytest_sdk                                     262 passed
 pixi run -e cpp cpp_test_release                         27 passed
 pixi run -e web-studio-test studio_stream_restart_probe passed（0.372 秒恢复）
 pixi run -e web-studio-test studio_real_video_probe     passed（C++ screencap，1920x1080）
+pixi run -e web-studio studio_agent_model_smoke         skipped（未配置 `OPENAI_API_KEY`）
 P3 SDK / detection targeted tests                       40 passed
 pixi run -e web-studio npm --prefix packages/f8studio_web audit --json
                                                         0 vulnerabilities
 ```
 
 尚未验证：Windows 求解/运行、硬件编码、非 Chromium 浏览器和远端跨主机时钟。它们属于发布平台补充，不能据当前 Linux 软件编码结果宣称通过。
+
+P6 当前 Linux 证据：`StudioAutomationTools` 是浏览器、内置 Agent、HTTP、CLI 和 MCP 的统一业务边界；所有 patch 继续使用相同 revision、幂等和事务规则，并发布同一种 `graph.committed`。Playwright 在两个同时打开的页面中由 Agent 提交 patch，Graph 页面无需刷新即出现 service/operator；外部 API 的 graph-only 和 layout-only 新 revision 也按序同步，不重新应用旧事件。实际无浏览器 CLI 在独立数据目录完成建图、两次审批、校验、真实 `f8.pystudio` 部署和 monitor 读取；MCP 测试覆盖公开工具注册及 patch/approval 参数原样透传。新入口不导入 `f8pystudio`、Qt 或 GUI graph adapter。
+
+Agent 审批记录绑定 `approvalId`、`toolCallId`、规范 JSON 的 SHA-256 参数 hash、目标 graph revision 和五分钟有效期；错误 hash、过期或并发 revision 变化不会执行工具。取消会同步关闭 pending approval/tool call，并明确说明已完成副作用不回滚；部署失败使 tool 与 run 失败并分别记录 traceback ID。catalog/graph/tool result 保存摘要，patch、最终 deployment 与当前项目 monitor 保存为可展开产物，避免把无关服务 telemetry 或重复 catalog 塞入会话。OpenAI、Anthropic、Gemini 和 Ollama 通过服务端环境变量配置，API 只返回 provider/model/configured；密钥响应测试和前端 bundle 审查通过。真实模型探针使用 `store=False` 的 OpenAI Responses 调用，但本机没有 `OPENAI_API_KEY`，因此仅记录 skip；确定性 provider 已覆盖完整工具闭环。
+
+Provider 配置分别使用 `OPENAI_API_KEY` / `F8STUDIO_OPENAI_MODEL`、`ANTHROPIC_API_KEY` / `F8STUDIO_ANTHROPIC_MODEL`、`GEMINI_API_KEY`（或 `GOOGLE_API_KEY`）/ `F8STUDIO_GEMINI_MODEL`，以及 `F8STUDIO_OLLAMA_MODEL`；对应 endpoint 均可用同名前缀的 `*_ENDPOINT` 覆盖。无头入口为 `pixi run -e web-studio studio_cli --url http://127.0.0.1:8260 ...` 和 `pixi run -e web-studio studio_mcp --studio-url http://127.0.0.1:8260`。
 
 P5 当前 Linux 证据：Studio Server 新表与 API 在同一 SQLite 事务边界保存 local asset/current version、不可变 asset version 和 project snapshot；component/variant payload 在写入和导入时按 typed schema 校验，导出再导入保留完整版本历史，project restore 作为新 revision 提交。Assets 工作区可捕获整个项目 fragment、重映射 node/edge/service id 后原子插入，也可将 variant stateValues 应用到明确目标节点。Graph Inspector 的 `spec + ports` 编辑通过 `replaceNode` 进入后端图校验，不直接篡改浏览器投影。
 

@@ -23,6 +23,86 @@ export interface CapabilitiesResponse {
 
 export type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 
+export type AgentRunStatus = 'idle' | 'running' | 'waiting_for_approval' | 'succeeded' | 'failed' | 'cancelled';
+export type AgentToolCallStatus = 'queued' | 'running' | 'waiting_for_approval' | 'succeeded' | 'failed' | 'denied' | 'cancelled';
+export type AgentApprovalStatus = 'pending' | 'approved' | 'denied' | 'expired' | 'invalidated' | 'cancelled';
+
+export interface AgentProviderSummary {
+  readonly providerId: string;
+  readonly displayName: string;
+  readonly models: readonly string[];
+  readonly configured: boolean;
+  readonly deterministic: boolean;
+}
+
+export interface AgentMessage {
+  readonly messageId: string;
+  readonly role: 'user' | 'assistant' | 'system';
+  readonly content: string;
+  readonly createdAt: string;
+}
+
+export interface AgentToolCall {
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly arguments: Readonly<Record<string, JsonValue>>;
+  readonly argumentsHash: string;
+  readonly targetGraphRevision: number | null;
+  readonly status: AgentToolCallStatus;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly result: JsonValue;
+  readonly errorMessage: string;
+  readonly tracebackId: string;
+}
+
+export interface AgentApproval {
+  readonly approvalId: string;
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly argumentsHash: string;
+  readonly targetGraphRevision: number;
+  readonly expiresAt: string;
+  readonly status: AgentApprovalStatus;
+  readonly resolvedAt: string | null;
+}
+
+export interface AgentArtifact {
+  readonly artifactId: string;
+  readonly kind: 'graph_patch' | 'diagnostics' | 'deployment' | 'monitor' | 'text';
+  readonly title: string;
+  readonly payload: JsonValue;
+  readonly createdAt: string;
+}
+
+export interface AgentSessionSummary {
+  readonly sessionId: string;
+  readonly projectId: string;
+  readonly title: string;
+  readonly providerId: string;
+  readonly modelId: string;
+  readonly status: AgentRunStatus;
+  readonly updatedAt: string;
+  readonly messageCount: number;
+}
+
+export interface AgentSession {
+  readonly sessionId: string;
+  readonly projectId: string;
+  readonly title: string;
+  readonly providerId: string;
+  readonly modelId: string;
+  readonly status: AgentRunStatus;
+  readonly updatedAt: string;
+  readonly createdAt: string;
+  readonly messages: readonly AgentMessage[];
+  readonly toolCalls: readonly AgentToolCall[];
+  readonly artifacts: readonly AgentArtifact[];
+  readonly approval: AgentApproval | null;
+  readonly errorMessage: string;
+  readonly tracebackId: string;
+}
+
 export interface ValueSchema {
   readonly type?: string;
   readonly default?: JsonValue;

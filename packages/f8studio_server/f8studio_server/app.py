@@ -33,6 +33,11 @@ from f8studio_core.graph import (
 )
 
 from .application import StudioApplication
+from .agents import (
+    CreateAgentSessionRequest,
+    ResolveAgentApprovalRequest,
+    StartAgentRunRequest,
+)
 from .assets import (
     AssetExport,
     AssetKind,
@@ -62,7 +67,6 @@ from .models import (
     UpdateProjectRequest,
     ValidateDocumentRequest,
 )
-from .projects import ProjectMutationResult
 from .runtime import RuntimeConfig, RuntimeGateway
 
 
@@ -237,7 +241,7 @@ def create_app(
             web_rtc_video=True,
             web_rtc_audio=True,
             three_d=True,
-            agent_tools=False,
+            agent_tools=True,
         )
         return {"protocol_version": API_PROTOCOL_VERSION, "capabilities": report.to_json_object()}
 
@@ -298,8 +302,8 @@ def create_app(
         return _json_value(await asyncio.to_thread(studio.assets.export, asset_id))
 
     @app.get("/api/runtime/monitors")
-    async def runtime_monitors() -> F8JsonValue:
-        return _json_value(await studio.monitors.snapshot())
+    async def runtime_monitors(project_id: str | None = None) -> F8JsonValue:
+        return await studio.tools.monitor_snapshot(project_id)
 
     @app.get("/api/presentation")
     async def presentation_snapshot() -> F8JsonValue:
@@ -496,23 +500,12 @@ def create_app(
         payload = await _decode_body(request, ValidateDocumentRequest)
         if payload.document.project_id != project_id:
             raise ValueError("document projectId does not match route project id")
-        await asyncio.to_thread(studio.projects.validate, payload.document)
+        await asyncio.to_thread(studio.tools.validate_document, payload.document)
         return {
             "valid": True,
             "graphRevision": payload.document.graph_revision,
             "layoutRevision": payload.document.layout_revision,
         }
-
-    async def commit_graph(project_id: str, mutation: ProjectMutationResult) -> F8JsonValue:
-        event_payload = _patch_payload(mutation.result)
-        if not mutation.replayed:
-            await asyncio.to_thread(studio.local.refresh_hotkeys)
-            await studio.events.publish(
-                event_type="graph.committed",
-                scope=f"project:{project_id}",
-                payload=event_payload,
-            )
-        return event_payload
 
     async def runtime_result(operation: str, call: Awaitable[object]) -> F8JsonValue:
         try:
@@ -524,25 +517,59 @@ def create_app(
     @app.post("/api/projects/{project_id}/patch")
     async def patch_project(project_id: str, request: Request) -> F8JsonValue:
         payload = await _decode_body(request, PatchRequest)
-        result = await asyncio.to_thread(studio.projects.patch, project_id, payload)
-        return await commit_graph(project_id, result)
+        return _patch_payload(await studio.tools.apply_patch(project_id, payload))
+
+    @app.post("/api/projects/{project_id}/patch:preview")
+    async def preview_project_patch(project_id: str, request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, PatchRequest)
+        result = await asyncio.to_thread(studio.tools.preview_patch, project_id, payload)
+        return _patch_payload(result)
 
     @app.post("/api/projects/{project_id}/undo")
     async def undo_project(project_id: str, request: Request) -> F8JsonValue:
         payload = await _decode_body(request, HistoryRequest)
-        result = await asyncio.to_thread(studio.projects.undo, project_id, payload)
-        return await commit_graph(project_id, result)
+        return _patch_payload(await studio.tools.undo(project_id, payload))
 
     @app.post("/api/projects/{project_id}/redo")
     async def redo_project(project_id: str, request: Request) -> F8JsonValue:
         payload = await _decode_body(request, HistoryRequest)
-        result = await asyncio.to_thread(studio.projects.redo, project_id, payload)
-        return await commit_graph(project_id, result)
+        return _patch_payload(await studio.tools.redo(project_id, payload))
 
     @app.post("/api/projects/{project_id}/deploy", status_code=202)
     async def deploy_project(project_id: str, request: Request) -> F8JsonValue:
         payload = await _decode_body(request, DeployProjectRequest)
-        return _json_value(await studio.jobs.submit(project_id, payload))
+        return _json_value(await studio.tools.deploy(project_id, payload))
+
+    @app.get("/api/agents/providers")
+    async def agent_providers() -> F8JsonValue:
+        return _json_value(studio.agents.providers())
+
+    @app.get("/api/agents/sessions")
+    async def agent_sessions(project_id: str | None = None) -> F8JsonValue:
+        return _json_value(await asyncio.to_thread(studio.agents.list, project_id))
+
+    @app.post("/api/agents/sessions", status_code=201)
+    async def create_agent_session(request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, CreateAgentSessionRequest)
+        return _json_value(await asyncio.to_thread(studio.agents.create, payload))
+
+    @app.get("/api/agents/sessions/{session_id}")
+    async def get_agent_session(session_id: str) -> F8JsonValue:
+        return _json_value(await asyncio.to_thread(studio.agents.get, session_id))
+
+    @app.post("/api/agents/sessions/{session_id}/runs", status_code=202)
+    async def start_agent_run(session_id: str, request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, StartAgentRunRequest)
+        return _json_value(await studio.agents.start_run(session_id, payload))
+
+    @app.post("/api/agents/sessions/{session_id}/approvals/{approval_id}")
+    async def resolve_agent_approval(session_id: str, approval_id: str, request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, ResolveAgentApprovalRequest)
+        return _json_value(await studio.agents.resolve_approval(session_id, approval_id, payload))
+
+    @app.delete("/api/agents/sessions/{session_id}/runs/current")
+    async def cancel_agent_run(session_id: str) -> F8JsonValue:
+        return _json_value(await studio.agents.cancel(session_id))
 
     @app.get("/api/projects/{project_id}/deployments/latest")
     async def latest_deployment(project_id: str) -> F8JsonValue:

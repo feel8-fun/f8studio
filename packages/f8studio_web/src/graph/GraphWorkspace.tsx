@@ -356,6 +356,11 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Unknown graph operation error';
 }
 
+function documentIsNewer(next: ProjectRecord['document'], current: ProjectRecord['document']): boolean {
+  return next.graphRevision > current.graphRevision ||
+    (next.graphRevision === current.graphRevision && next.layoutRevision > current.layoutRevision);
+}
+
 function GraphWorkspaceInner() {
   const [projects, setProjects] = useState<readonly ProjectSummary[]>([]);
   const [project, setProject] = useState<ProjectRecord | null>(null);
@@ -435,7 +440,8 @@ function GraphWorkspaceInner() {
       socket.onopen = () => {
         retry = 0;
         void fetchProject(projectId).then((record) => {
-          if (!disposed && record.document.graphRevision > (projectRef.current?.document.graphRevision ?? -1)) {
+          const current = projectRef.current;
+          if (!disposed && (current === null || documentIsNewer(record.document, current.document))) {
             setProject(record);
           }
         }, (reason: unknown) => {
@@ -451,12 +457,11 @@ function GraphWorkspaceInner() {
         if (envelope.type !== 'graph.committed' || envelope.scope !== `project:${projectId}` ||
           typeof envelope.payload !== 'object' || envelope.payload === null) return;
         const payload = envelope.payload as Record<string, unknown>;
-        if (typeof payload.requestId !== 'string' || !payload.requestId.startsWith('hotkey:')) return;
         const document = payload.document;
         if (!isStudioDocument(document)) return;
         setProject((current) => {
           if (current === null || current.projectId !== projectId ||
-            document.graphRevision <= current.document.graphRevision) return current;
+            !documentIsNewer(document, current.document)) return current;
           return { ...current, document };
         });
       };
@@ -534,7 +539,13 @@ function GraphWorkspaceInner() {
     setError(null);
     try {
       const result = await patchProject(project.projectId, project.document, operations);
-      setProject({ ...project, document: result.document });
+      setProject((current) => {
+        const base = current?.projectId === project.projectId ? current : project;
+        if (documentIsNewer(base.document, result.document)) return base;
+        if (base.document.graphRevision === result.document.graphRevision &&
+          base.document.layoutRevision === result.document.layoutRevision) return base;
+        return { ...base, document: result.document };
+      });
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 409) {
         await reloadProject(project.projectId);

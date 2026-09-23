@@ -112,7 +112,7 @@ test('creates a graph node and restores the persisted project after reload', asy
       document: { graphRevision: number; layoutRevision: number; nodes: { nodeId: string }[] };
     };
     const node = project.document.nodes[0];
-    if (node === undefined) throw new Error('Expected a graph node before conflict test');
+    if (node === undefined) throw new Error('Expected a graph node before external update test');
     const response = await fetch(`/api/projects/${selectedProjectId}/patch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -123,12 +123,9 @@ test('creates a graph node and restores the persisted project after reload', asy
         operations: [{ op: 'renameNode', nodeId: node.nodeId, name: 'PyEngine External' }],
       }),
     });
-    if (!response.ok) throw new Error(`Concurrent patch failed with HTTP ${response.status}`);
+    if (!response.ok) throw new Error(`External patch failed with HTTP ${response.status}`);
   }, projectId);
 
-  await page.locator('.studio-node').click();
-  await page.getByRole('button', { name: 'Duplicate selection' }).click();
-  await expect(page.getByRole('alert')).toContainText('Reloaded the latest revision');
   await expect(page.locator('.studio-node')).toContainText('PyEngine External');
   await page.locator('.studio-node').click();
   await page.getByRole('button', { name: 'Duplicate selection' }).click();

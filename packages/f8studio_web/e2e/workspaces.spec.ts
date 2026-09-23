@@ -16,7 +16,7 @@ test('local workspaces operate without Qt', async ({ page }, testInfo) => {
   await expect(page.getByRole('button', { name: new RegExp(assetName) }).first()).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('assets-workspace.png'), fullPage: true });
 
-  await page.keyboard.press('Control+3');
+  await page.keyboard.press('Control+4');
   await expect(page.getByRole('heading', { name: 'Code & Schema' })).toBeVisible();
   await expect(page.locator('.monaco-editor')).toBeVisible();
   await page.getByRole('button', { name: 'Analyze' }).click();

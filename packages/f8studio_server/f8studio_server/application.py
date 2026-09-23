@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 from pathlib import Path
@@ -22,6 +21,8 @@ from f8pysdk.generated import (
 from f8pysdk.specs import F8JsonValue
 from f8studio_core.graph import GraphNode, PatchRequest, RevisionConflictError, SetNodeStateOp, StudioDocument
 
+from .agents import AgentService
+from .automation_tools import StudioAutomationTools
 from .catalog import CatalogService
 from .assets import AssetRepository
 from .editor import EditorSessionService
@@ -96,6 +97,19 @@ class StudioApplication:
             events=self.events,
             processes=self.processes,
         )
+        self.tools = StudioAutomationTools(
+            catalog=self.catalog,
+            projects=self.projects,
+            jobs=self.jobs,
+            monitors=self.monitors,
+            events=self.events,
+            refresh_hotkeys=self.local.refresh_hotkeys,
+        )
+        self.agents = AgentService(
+            database_path=project_repository.database_path,
+            tools=self.tools,
+            events=self.events,
+        )
 
     async def start(self) -> None:
         await self.media_gateway.start()
@@ -105,6 +119,7 @@ class StudioApplication:
         await self.local.start()
 
     async def close(self) -> None:
+        await self.agents.close()
         await self.local.close()
         await self.jobs.close()
         await self.media_gateway.close()
@@ -135,7 +150,7 @@ class StudioApplication:
             raise ValueError("global hotkey target is driven by an upstream state connection")
 
     async def _activate_hotkey(self, binding: HotkeyBinding) -> None:
-        mutation = None
+        result = None
         node: GraphNode | None = None
         next_value: F8JsonValue = None
         for _attempt in range(2):
@@ -148,32 +163,13 @@ class StudioApplication:
                 operations=(SetNodeStateOp(node_id=current_node.node_id, field=field.name, value=next_value),),
             )
             try:
-                mutation = await asyncio.to_thread(self.projects.patch, binding.project_id, request)
+                result = await self.tools.apply_patch(binding.project_id, request)
                 node = current_node
                 break
             except RevisionConflictError:
                 continue
-        if mutation is None or node is None:
+        if result is None or node is None:
             raise RevisionConflictError("global hotkey could not commit after a concurrent graph change")
-        if not mutation.replayed:
-            result = mutation.result
-            payload = cast(
-                F8JsonValue,
-                msgspec.to_builtins(
-                    {
-                        "requestId": result.request_id,
-                        "graphChanged": result.graph_changed,
-                        "layoutChanged": result.layout_changed,
-                        "document": result.document,
-                    },
-                    str_keys=True,
-                ),
-            )
-            await self.events.publish(
-                event_type="graph.committed",
-                scope=f"project:{binding.project_id}",
-                payload=payload,
-            )
         try:
             await self.runtime.set_state(
                 node.service_id,

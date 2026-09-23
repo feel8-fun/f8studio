@@ -453,7 +453,7 @@ def test_health_and_capabilities_report_current_scope(tmp_path: Path) -> None:
         "web_rtc_video": True,
         "web_rtc_audio": True,
         "three_d": True,
-        "agent_tools": False,
+        "agent_tools": True,
     }
 
 
