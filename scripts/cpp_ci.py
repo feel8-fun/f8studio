@@ -137,6 +137,22 @@ def _generated_presets_path() -> Path:
     raise FileNotFoundError(f"Expected Conan-generated preset file is missing. Checked: {checked_paths}")
 
 
+def _cmake_build_directory() -> Path:
+    return _generated_presets_path().parent.parent
+
+
+def _pixi_gtest_cmake_directory() -> Path | None:
+    pixi_cpp_env = _pixi_cpp_env_path()
+    candidates = (
+        pixi_cpp_env / "lib" / "cmake" / "GTest",
+        pixi_cpp_env / "Library" / "lib" / "cmake" / "GTest",
+    )
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
 def _bootstrap() -> None:
     if USER_PRESETS_PATH.is_file():
         USER_PRESETS_PATH.unlink()
@@ -219,16 +235,20 @@ def _configure() -> None:
 def _configure_release(*, build_tests: bool) -> None:
     conan_presets = _select_conan_release_presets()
     build_tests_value = "ON" if build_tests else "OFF"
+    configure_args = [
+        _cpp_tool("cmake"),
+        "--preset",
+        conan_presets.configure_preset_name,
+        f"-DBUILD_TESTS={build_tests_value}",
+        "-DF8_DEPLOY_SERVICE_CLEAN=OFF",
+        "-DF8_DEPLOY_SERVICE_RUNTIME_POST_BUILD=OFF",
+        f"-DPKG_CONFIG_EXECUTABLE={_cpp_tool('pkg-config')}",
+    ]
+    gtest_cmake_directory = _pixi_gtest_cmake_directory()
+    if build_tests and gtest_cmake_directory is not None:
+        configure_args.append(f"-DGTest_DIR={gtest_cmake_directory}")
     _run(
-        [
-            _cpp_tool("cmake"),
-            "--preset",
-            conan_presets.configure_preset_name,
-            f"-DBUILD_TESTS={build_tests_value}",
-            "-DF8_DEPLOY_SERVICE_CLEAN=OFF",
-            "-DF8_DEPLOY_SERVICE_RUNTIME_POST_BUILD=OFF",
-            f"-DPKG_CONFIG_EXECUTABLE={_cpp_tool('pkg-config')}",
-        ],
+        configure_args,
         use_pixi_cpp_paths=True,
     )
 
@@ -276,7 +296,7 @@ def _test() -> None:
         [
             _cpp_tool("ctest"),
             "--test-dir",
-            "build",
+            str(_cmake_build_directory()),
             "--output-on-failure",
             "-R",
             "f8cppsdk_tests",

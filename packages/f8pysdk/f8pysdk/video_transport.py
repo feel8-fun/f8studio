@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import struct
 import time
+from uuid import UUID, uuid4
 from dataclasses import dataclass, field
 from types import TracebackType
 from typing import Any, Protocol
@@ -10,12 +11,12 @@ from .binary_stream_transport import ZenohLatestBinaryStreamTransport
 
 
 ZENOH_VIDEO_FRAME_MAGIC = 0xF85A1001
-ZENOH_VIDEO_FRAME_SCHEMA_VERSION = 1
+ZENOH_VIDEO_FRAME_SCHEMA_VERSION = 2
 VIDEO_FORMAT_BGRA32 = 1
 VIDEO_FORMAT_FLOW2_F16 = 2
 VIDEO_FORMAT_SCALAR1_F32 = 3
 
-_ZENOH_VIDEO_FRAME_HEADER_STRUCT = struct.Struct("<8IQq")
+_ZENOH_VIDEO_FRAME_HEADER_STRUCT = struct.Struct("<8IQqQQ")
 
 
 @dataclass
@@ -27,6 +28,7 @@ class LatestVideoFrame:
     frame_id: int
     ts_ms: int
     payload: memoryview
+    stream_epoch: str = "00000000000000000000000000000000"
     _released: bool = field(default=False, init=False, repr=False)
 
     @property
@@ -86,6 +88,7 @@ def encode_zenoh_video_frame(
     fmt: int,
     frame_id: int,
     ts_ms: int,
+    stream_epoch: str = "00000000000000000000000000000000",
 ) -> bytes:
     width_i = int(width)
     height_i = int(height)
@@ -93,6 +96,12 @@ def encode_zenoh_video_frame(
     fmt_i = int(fmt)
     frame_id_i = int(frame_id)
     ts_ms_i = int(ts_ms)
+    try:
+        epoch_int = UUID(hex=stream_epoch).int
+    except ValueError as exc:
+        raise ValueError("stream_epoch must be a 32-digit UUID hex value") from exc
+    epoch_high = epoch_int >> 64
+    epoch_low = epoch_int & 0xFFFF_FFFF_FFFF_FFFF
     if width_i <= 0 or height_i <= 0 or pitch_i <= 0:
         raise ValueError("width, height, and pitch must be positive")
     if fmt_i <= 0:
@@ -115,6 +124,8 @@ def encode_zenoh_video_frame(
             frame_bytes,
             frame_id_i,
             ts_ms_i,
+            epoch_high,
+            epoch_low,
         )
         return header + bytes(payload_view[:frame_bytes])
     finally:
@@ -137,6 +148,8 @@ def decode_zenoh_video_frame(raw: bytes | bytearray | memoryview) -> LatestVideo
         payload_bytes = int(fields[7])
         frame_id = int(fields[8])
         ts_ms = int(fields[9])
+        epoch_high = int(fields[10])
+        epoch_low = int(fields[11])
         if magic != ZENOH_VIDEO_FRAME_MAGIC or version != ZENOH_VIDEO_FRAME_SCHEMA_VERSION:
             return None
         if header_bytes < _ZENOH_VIDEO_FRAME_HEADER_STRUCT.size:
@@ -155,6 +168,7 @@ def decode_zenoh_video_frame(raw: bytes | bytearray | memoryview) -> LatestVideo
             fmt=fmt,
             frame_id=frame_id,
             ts_ms=ts_ms,
+            stream_epoch=f"{(epoch_high << 64) | epoch_low:032x}",
             payload=payload,
         )
     except (BufferError, TypeError, ValueError, struct.error):
@@ -189,6 +203,7 @@ class ZenohLatestVideoFrameTransport:
             )
         self._raw = raw_transport
         self._frame_id = 0
+        self._stream_epoch = uuid4().hex
 
     @classmethod
     def open_publisher(
@@ -279,6 +294,7 @@ class ZenohLatestVideoFrameTransport:
             fmt=fmt,
             frame_id=self._frame_id,
             ts_ms=int(ts_ms) if ts_ms is not None else int(time.time() * 1000),
+            stream_epoch=self._stream_epoch,
         )
         self._raw.publish_raw(raw)
 

@@ -1,7 +1,7 @@
 # Unity Modding Architecture
 
 Unity support is split across a pinned exporter toolchain, shared typed protocol
-code, PyEngine motion operators, and the PyStudio guided workflow. The split is
+code, PyEngine motion operators, and the Web Studio guided workflow. The split is
 intentional: game-specific discovery and C# builds stay in the submodule, while
 packet interpretation and graph behavior remain part of the F8Studio public
 runtime.
@@ -13,7 +13,7 @@ runtime.
 | `external/f8unitymods` | Git submodule | Unity profiles, backend detection, managed installation, C# exporters, release assets |
 | `packages/f8pysdk/f8pysdk/motion` | F8 Python SDK | Typed skeleton models and binary/JSON decoding |
 | `packages/f8pyengine/f8pyengine/operators` | PyEngine | Stable selection, relative pose axes, watchdog, TCode processing |
-| `packages/f8pystudio/f8pystudio/modding` | PyStudio | Detect/preview/apply/verify orchestration, recipes, graph plans |
+| `packages/f8studio_server/f8studio_server/local_integration.py` | Web Studio server | Detect/preview/apply/verify orchestration and local safety boundary |
 | `scripts/unitymods_ci.py` | Root build | Submodule validation, build/package dispatch, SHA-256 bundle manifest |
 
 `external/f8unitymods` is the only authoritative Unity checkout. Runtime code

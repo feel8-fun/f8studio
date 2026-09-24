@@ -756,7 +756,7 @@ void ScreenCapService::publish_static_state() {
 
   set_if_changed("serviceClass", cfg_.service_class);
   set_if_changed("videoFormat", "bgra32");
-  set_if_changed("videoFrameSchemaVersion", 1);
+  set_if_changed("videoFrameSchemaVersion", static_cast<int>(f8::cppsdk::kZenohVideoFrameSchemaVersion));
 
   set_if_changed("mode", cfg_.mode);
   set_if_changed("fps", cfg_.fps);

@@ -287,7 +287,9 @@ void MpvPlayer::seek(double positionSeconds) {
     return;
   const std::string pos = std::to_string(positionSeconds);
   const char* cmd[] = {"seek", pos.c_str(), "absolute", nullptr};
-  mpv_command(mpv_, cmd);
+  const int status = mpv_command_async(mpv_, 0, cmd);
+  if (status < 0)
+    spdlog::warn("mpv seek request failed: {}", mpv_error_string(status));
 }
 
 bool MpvPlayer::setHwdec(const std::string& hwdec) {
@@ -579,6 +581,8 @@ void MpvPlayer::eventLoop() {
       mpv_event* event = mpv_wait_event(mpv_, 0);
       if (!event || event->event_id == MPV_EVENT_NONE)
         break;
+      if (event->event_id == MPV_EVENT_COMMAND_REPLY && event->error < 0)
+        spdlog::warn("mpv command failed: {}", mpv_error_string(event->error));
       processEvent(*event);
       if (event->event_id == MPV_EVENT_SHUTDOWN) {
         stopRequested_.store(true, std::memory_order_relaxed);

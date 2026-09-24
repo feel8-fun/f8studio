@@ -18,8 +18,8 @@ constexpr std::uint32_t kVideoFormatFlow2F16 = 2;
 constexpr std::uint32_t kVideoFormatScalar1F32 = 3;
 
 inline constexpr std::uint32_t kZenohVideoFrameMagic = 0xF85A1001u;
-inline constexpr std::uint32_t kZenohVideoFrameSchemaVersion = 1u;
-inline constexpr std::uint32_t kZenohVideoFrameHeaderBytes = 48u;
+inline constexpr std::uint32_t kZenohVideoFrameSchemaVersion = 2u;
+inline constexpr std::uint32_t kZenohVideoFrameHeaderBytes = 64u;
 
 struct VideoFrameView {
   unsigned width = 0;
@@ -30,6 +30,8 @@ struct VideoFrameView {
   std::int64_t ts_ms = 0;
   const std::byte* payload = nullptr;
   std::size_t payload_bytes = 0;
+  std::uint64_t stream_epoch_high = 0;
+  std::uint64_t stream_epoch_low = 0;
 };
 
 struct LatestVideoFrame {
@@ -40,6 +42,8 @@ struct LatestVideoFrame {
   std::uint64_t frame_id = 0;
   std::int64_t ts_ms = 0;
   std::vector<std::byte> payload;
+  std::uint64_t stream_epoch_high = 0;
+  std::uint64_t stream_epoch_low = 0;
 };
 
 bool encode_zenoh_video_frame(const VideoFrameView& frame, RuntimeBytes& out, std::string* error_message = nullptr);

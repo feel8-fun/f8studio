@@ -31,7 +31,7 @@ Then follow:
 Build from source only if you are one of these:
 
 - developing new services
-- developing `f8pystudio` plugins
+- extending Web Studio or its explicit runtime/presentation registries
 - working on packaging, native services, or docs tooling
 
 For that path, go here:
@@ -42,4 +42,3 @@ For that path, go here:
 
 - This page intentionally puts the Windows prebuilt path first.
 - Linux/macOS and source-build workflows are treated as advanced/developer routes in this documentation pass.
-

@@ -3,6 +3,8 @@ __pycache__/
 *.py[oc]
 build/
 dist/
+packages/f8studio_server/f8studio_server/web_dist/*
+!packages/f8studio_server/f8studio_server/web_dist/.gitkeep
 wheels/
 *.egg-info
 
@@ -12,6 +14,7 @@ wheels/
 
 # Ignore dependency folder
 node_modules/
+*.tsbuildinfo
 .dev.vars
 .dev.vars.*
 
@@ -87,3 +90,6 @@ services/**/describe.json
 .codex
 .agents/
 package-lock.json
+!packages/f8studio_web/package-lock.json
+packages/f8studio_web/test-results/
+packages/f8studio_web/playwright-report/

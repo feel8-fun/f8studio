@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/pyright/main/packages/pyright/schema/pyrightconfig.schema.json",
+  "pythonVersion": "3.14",
+  "typeCheckingMode": "strict",
+  "include": [
+    "packages/f8studio_core/f8studio_core",
+    "packages/f8media_protocol/f8media_protocol",
+    "packages/f8media_gateway/f8media_gateway",
+    "packages/f8studio_server/f8studio_server",
+    "scripts/web_studio"
+  ],
+  "exclude": [
+    ".pixi",
+    "build",
+    "**/__pycache__"
+  ],
+  "reportMissingTypeStubs": "none"
+}

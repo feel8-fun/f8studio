@@ -6,15 +6,20 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 import tomllib
+import urllib.error
+import urllib.request
+import webbrowser
 from pathlib import Path
 
 
 PIXI_INSTALL_DOCS_URL = "https://pixi.prefix.dev/latest/installation/"
 LAUNCHER_RUNTIME_FEATURE = "launcher-runtime"
 STUDIO_RUNTIME_ENVIRONMENT = "studio-runtime"
+STUDIO_DEFAULT_HOST = "127.0.0.1"
+STUDIO_DEFAULT_PORT = 8210
+STUDIO_STARTUP_TIMEOUT_S = 120.0
 SPLASH_MIN_VISIBLE_S = 2.0
 SPLASH_FADE_DURATION_S = 1.0
 SPLASH_POLL_MS = 50
@@ -28,15 +33,13 @@ SPLASH_PIXI_INSTALL_MESSAGE = "Installing Pixi..."
 SPLASH_LAUNCH_MESSAGE = "Starting F8Studio..."
 SPLASH_READY_MESSAGE = "F8Studio is ready. Enjoy."
 SPLASH_SUBTITLE = "First launch may take a little longer."
-LAUNCH_READY_FILE_ENV = "F8STUDIO_LAUNCH_READY_FILE"
-LAUNCH_DISMISS_FILE_ENV = "F8STUDIO_LAUNCH_DISMISS_FILE"
-LAUNCH_READY_SIGNAL_FILENAME = "pystudio-ready.signal"
-LAUNCH_DISMISS_SIGNAL_FILENAME = "pystudio-dismiss.signal"
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Launcher for f8pystudio via Pixi.")
+    parser = argparse.ArgumentParser(description="Launcher for Feel8 Web Studio via Pixi.")
     parser.add_argument("--dry-run", action="store_true", help="Print command and exit without launching.")
+    parser.add_argument("--port", type=int, default=STUDIO_DEFAULT_PORT, help="Loopback HTTP port.")
+    parser.add_argument("--no-browser", action="store_true", help="Start the server without opening a browser.")
     return parser
 
 
@@ -51,10 +54,8 @@ def _show_error_dialog(title: str, message: str) -> None:
 
 
 def _launcher_dir() -> Path:
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
     if "__compiled__" in globals():
-        return Path(sys.argv[0]).resolve().parent
+        return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent.parent
 
 
@@ -401,60 +402,27 @@ def _start_subprocess(
     return subprocess.Popen(command, **_popen_kwargs(cwd=cwd, env=env))
 
 
-def _launch_ready_signal_received(launch_ready_file: Path | None) -> bool:
-    if launch_ready_file is None:
-        return False
+def _server_is_ready(health_url: str) -> bool:
+    request = urllib.request.Request(health_url, method="GET")
     try:
-        return launch_ready_file.is_file()
-    except OSError:
+        with urllib.request.urlopen(request, timeout=0.5) as response:
+            return response.status == 200
+    except (urllib.error.URLError, TimeoutError, OSError):
         return False
 
 
-def _launch_dismiss_signal_received(launch_dismiss_file: Path | None) -> bool:
-    if launch_dismiss_file is None:
-        return False
+def _open_studio_browser(app_url: str) -> bool:
     try:
-        return launch_dismiss_file.is_file()
-    except OSError:
+        return bool(webbrowser.open(app_url, new=1, autoraise=True))
+    except webbrowser.Error:
         return False
 
 
-def _build_launch_signal_paths(signal_dir: Path) -> tuple[Path, Path]:
-    return (
-        signal_dir / LAUNCH_READY_SIGNAL_FILENAME,
-        signal_dir / LAUNCH_DISMISS_SIGNAL_FILENAME,
-    )
-
-
-def _build_launch_environment(
-    *,
-    launch_ready_file: Path | None = None,
-    launch_dismiss_file: Path | None = None,
-) -> dict[str, str]:
-    env = os.environ.copy()
-    if launch_ready_file is not None:
-        env[LAUNCH_READY_FILE_ENV] = os.fspath(launch_ready_file)
-    else:
-        env.pop(LAUNCH_READY_FILE_ENV, None)
-    if launch_dismiss_file is not None:
-        env[LAUNCH_DISMISS_FILE_ENV] = os.fspath(launch_dismiss_file)
-    else:
-        env.pop(LAUNCH_DISMISS_FILE_ENV, None)
-    return env
-
-
-def _inspect_launch_state(
-    launch_proc: subprocess.Popen[object],
-    *,
-    launch_ready_file: Path | None = None,
-    launch_dismiss_file: Path | None = None,
-) -> tuple[str, int | None]:
+def _inspect_launch_state(launch_proc: subprocess.Popen[object], *, health_url: str) -> tuple[str, int | None]:
     returncode = launch_proc.poll()
     if returncode is not None:
         return "exited", int(returncode)
-    if _launch_dismiss_signal_received(launch_dismiss_file):
-        return "dismiss", None
-    if _launch_ready_signal_received(launch_ready_file):
+    if _server_is_ready(health_url):
         return "ready", None
     return "waiting", None
 
@@ -465,50 +433,47 @@ def _complete_startup_splash(
     launch_proc: subprocess.Popen[object],
     min_visible_s: float,
     fade_duration_s: float,
-    launch_ready_file: Path | None = None,
-    launch_dismiss_file: Path | None = None,
+    health_url: str,
+    app_url: str,
+    open_browser: bool,
+    startup_timeout_s: float = STUDIO_STARTUP_TIMEOUT_S,
 ) -> int | None:
+    started_at = time.monotonic()
     if status_window is None:
-        deadline = time.monotonic() + 0.5
-        while time.monotonic() < deadline:
-            returncode = launch_proc.poll()
-            if returncode is not None:
+        while time.monotonic() - started_at < startup_timeout_s:
+            state, returncode = _inspect_launch_state(launch_proc, health_url=health_url)
+            if state == "exited":
                 return int(returncode)
-            time.sleep(0.05)
-        return None
+            if state == "ready":
+                if open_browser:
+                    _open_studio_browser(app_url)
+                return None
+            time.sleep(SPLASH_POLL_MS / 1000)
+        return 5
 
     while status_window.elapsed_s() < min_visible_s:
         status_window.update()
-        state, returncode = _inspect_launch_state(
-            launch_proc,
-            launch_ready_file=launch_ready_file,
-            launch_dismiss_file=launch_dismiss_file,
-        )
+        state, returncode = _inspect_launch_state(launch_proc, health_url=health_url)
         if state == "exited":
             status_window.close()
             return int(returncode)
-        if state == "dismiss":
-            status_window.close()
-            return None
         status_window.wait(SPLASH_POLL_MS)
 
-    while True:
-        state, returncode = _inspect_launch_state(
-            launch_proc,
-            launch_ready_file=launch_ready_file,
-            launch_dismiss_file=launch_dismiss_file,
-        )
+    while time.monotonic() - started_at < startup_timeout_s:
+        state, returncode = _inspect_launch_state(launch_proc, health_url=health_url)
         if state == "exited":
             status_window.close()
             return int(returncode)
-        if state == "dismiss":
-            status_window.close()
-            return None
         if state == "ready":
             break
         status_window.update()
         status_window.wait(SPLASH_POLL_MS)
+    else:
+        status_window.close()
+        return 5
 
+    if open_browser:
+        _open_studio_browser(app_url)
     status_window.set_message(SPLASH_READY_MESSAGE)
     status_window.fade_out(duration_s=fade_duration_s)
 
@@ -683,7 +648,23 @@ def main(argv: list[str] | None = None) -> int:
     install_command = [pixi_executable, "install"]
     for environment_name in missing_environments:
         install_command.extend(["-e", environment_name])
-    launch_command = [pixi_executable, "run", "-e", STUDIO_RUNTIME_ENVIRONMENT, "f8pystudio"]
+    if not 1 <= args.port <= 65535:
+        _close_status_window(splash_window)
+        _show_error_dialog("f8studio launcher", f"Invalid Studio port: {args.port}")
+        return 4
+    app_url = f"http://{STUDIO_DEFAULT_HOST}:{args.port}"
+    health_url = f"{app_url}/api/health"
+    launch_command = [
+        pixi_executable,
+        "run",
+        "-e",
+        STUDIO_RUNTIME_ENVIRONMENT,
+        "studio_server",
+        "--host",
+        STUDIO_DEFAULT_HOST,
+        "--port",
+        str(args.port),
+    ]
     should_install_environments = len(missing_environments) > 0
     if args.dry_run:
         print("workspace:", workspace_root)
@@ -710,28 +691,19 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 3
 
-    launch_ready_file: Path | None = None
-    launch_dismiss_file: Path | None = None
-    launch_environment = _build_launch_environment()
     if splash_window is not None:
         splash_window.set_message(SPLASH_LAUNCH_MESSAGE)
 
-    with tempfile.TemporaryDirectory(prefix="f8studio-launcher-") as ready_dir:
-        if splash_window is not None:
-            launch_ready_file, launch_dismiss_file = _build_launch_signal_paths(Path(ready_dir))
-            launch_environment = _build_launch_environment(
-                launch_ready_file=launch_ready_file,
-                launch_dismiss_file=launch_dismiss_file,
-            )
-        launch_proc = _start_subprocess(launch_command, cwd=workspace_root, env=launch_environment)
-        launch_returncode = _complete_startup_splash(
-            splash_window,
-            launch_proc=launch_proc,
-            min_visible_s=SPLASH_MIN_VISIBLE_S,
-            fade_duration_s=SPLASH_FADE_DURATION_S,
-            launch_ready_file=launch_ready_file,
-            launch_dismiss_file=launch_dismiss_file,
-        )
+    launch_proc = _start_subprocess(launch_command, cwd=workspace_root, env=os.environ.copy())
+    launch_returncode = _complete_startup_splash(
+        splash_window,
+        launch_proc=launch_proc,
+        min_visible_s=SPLASH_MIN_VISIBLE_S,
+        fade_duration_s=SPLASH_FADE_DURATION_S,
+        health_url=health_url,
+        app_url=app_url,
+        open_browser=not args.no_browser,
+    )
     if launch_returncode is not None and launch_returncode != 0:
         _show_error_dialog(
             "f8studio launcher",

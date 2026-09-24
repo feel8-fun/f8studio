@@ -6,6 +6,7 @@
 #include <cstring>
 #include <limits>
 #include <optional>
+#include <random>
 #include <string>
 #include <utility>
 
@@ -94,7 +95,7 @@ bool validate_zenoh_video_frame(const VideoFrameView& frame, std::size_t& frame_
     return false;
   }
   if (frame_bytes > static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())) {
-    set_error(error_message, "payload is too large for zenoh video frame schema v1");
+    set_error(error_message, "payload is too large for zenoh video frame schema v2");
     return false;
   }
   return true;
@@ -111,6 +112,8 @@ void write_zenoh_video_frame_unchecked(const VideoFrameView& frame, std::size_t 
   write_u32_le(out, 28, static_cast<std::uint32_t>(frame_bytes));
   write_u64_le(out, 32, frame.frame_id);
   write_i64_le(out, 40, frame.ts_ms);
+  write_u64_le(out, 48, frame.stream_epoch_high);
+  write_u64_le(out, 56, frame.stream_epoch_low);
   const auto* payload = reinterpret_cast<const std::uint8_t*>(frame.payload);
   std::memcpy(out + kZenohVideoFrameHeaderBytes, payload, frame_bytes);
 }
@@ -133,11 +136,15 @@ bool decode_zenoh_video_frame_from_buffer(const std::uint8_t* raw, std::size_t r
   std::uint32_t payload_bytes = 0;
   std::uint64_t frame_id = 0;
   std::int64_t ts_ms = 0;
+  std::uint64_t stream_epoch_high = 0;
+  std::uint64_t stream_epoch_low = 0;
   if (!read_u32_le(raw, raw_size, 0, magic) || !read_u32_le(raw, raw_size, 4, version) ||
       !read_u32_le(raw, raw_size, 8, header_bytes) || !read_u32_le(raw, raw_size, 12, width) ||
       !read_u32_le(raw, raw_size, 16, height) || !read_u32_le(raw, raw_size, 20, pitch) ||
       !read_u32_le(raw, raw_size, 24, format) || !read_u32_le(raw, raw_size, 28, payload_bytes) ||
-      !read_u64_le(raw, raw_size, 32, frame_id) || !read_i64_le(raw, raw_size, 40, ts_ms)) {
+      !read_u64_le(raw, raw_size, 32, frame_id) || !read_i64_le(raw, raw_size, 40, ts_ms) ||
+      !read_u64_le(raw, raw_size, 48, stream_epoch_high) ||
+      !read_u64_le(raw, raw_size, 56, stream_epoch_low)) {
     set_error(error_message, "payload header is truncated");
     return false;
   }
@@ -170,6 +177,8 @@ bool decode_zenoh_video_frame_from_buffer(const std::uint8_t* raw, std::size_t r
   out.format = format;
   out.frame_id = frame_id;
   out.ts_ms = ts_ms;
+  out.stream_epoch_high = stream_epoch_high;
+  out.stream_epoch_low = stream_epoch_low;
   out.payload.resize(payload_bytes);
   std::memcpy(out.payload.data(), raw + header_bytes, payload_bytes);
   return true;
@@ -198,6 +207,12 @@ class ZenohLatestVideoFramePublisher::Impl final {
   Impl() : publisher_("video") {}
 
   bool open(const RuntimeBackendConfig& config, const std::string& key_expr) {
+    std::random_device random;
+    stream_epoch_high_ = (static_cast<std::uint64_t>(random()) << 32u) | random();
+    stream_epoch_low_ = (static_cast<std::uint64_t>(random()) << 32u) | random();
+    if (stream_epoch_high_ == 0 && stream_epoch_low_ == 0) {
+      stream_epoch_low_ = 1;
+    }
     return publisher_.open(config, key_expr);
   }
 
@@ -206,20 +221,24 @@ class ZenohLatestVideoFramePublisher::Impl final {
   }
 
   bool publish_frame(const VideoFrameView& frame) {
+    VideoFrameView frame_with_epoch = frame;
+    frame_with_epoch.stream_epoch_high = stream_epoch_high_;
+    frame_with_epoch.stream_epoch_low = stream_epoch_low_;
     std::size_t frame_bytes = 0;
     std::string error;
-    if (!validate_zenoh_video_frame(frame, frame_bytes, &error)) {
+    if (!validate_zenoh_video_frame(frame_with_epoch, frame_bytes, &error)) {
       spdlog::error("zenoh video frame encode failed key={}: {}", publisher_.key_expr(), error);
       return false;
     }
     const std::size_t encoded_bytes = static_cast<std::size_t>(kZenohVideoFrameHeaderBytes) + frame_bytes;
     return publisher_.publish_payload(
-        encoded_bytes, [frame, frame_bytes](std::uint8_t* out, std::size_t size, std::string* error_message) {
+        encoded_bytes,
+        [frame_with_epoch, frame_bytes](std::uint8_t* out, std::size_t size, std::string* error_message) {
           if (out == nullptr || size < static_cast<std::size_t>(kZenohVideoFrameHeaderBytes) + frame_bytes) {
             set_error(error_message, "output buffer is smaller than encoded video frame");
             return false;
           }
-          write_zenoh_video_frame_unchecked(frame, frame_bytes, out);
+          write_zenoh_video_frame_unchecked(frame_with_epoch, frame_bytes, out);
           return true;
         });
   }
@@ -233,6 +252,8 @@ class ZenohLatestVideoFramePublisher::Impl final {
   }
 
  private:
+  std::uint64_t stream_epoch_high_ = 0;
+  std::uint64_t stream_epoch_low_ = 0;
   ZenohLatestBinaryStreamPublisher publisher_;
 };
 

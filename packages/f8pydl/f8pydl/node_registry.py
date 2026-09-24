@@ -83,6 +83,8 @@ def _detections_payload_schema():
             "schemaVersion": string_schema(),
             "frameId": integer_schema(),
             "tsMs": integer_schema(),
+            "streamId": string_schema(),
+            "streamEpoch": string_schema(),
             "width": integer_schema(),
             "height": integer_schema(),
             "model": string_schema(),

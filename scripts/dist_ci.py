@@ -30,6 +30,8 @@ LAUNCHER_ENVIRONMENT_NAME = "launcher"
 LAUNCHER_RUNTIME_FEATURE = "launcher-runtime"
 DEV_RUNTIME_ENVIRONMENT_NAME = "default"
 DIST_RUNTIME_ENVIRONMENT_NAME = "studio-runtime"
+WEB_BUNDLE_SOURCE = REPO_ROOT / "packages" / "f8studio_web" / "dist"
+WEB_BUNDLE_PACKAGE_DIR = REPO_ROOT / "packages" / "f8studio_server" / "f8studio_server" / "web_dist"
 
 
 @dataclass(frozen=True)
@@ -348,6 +350,23 @@ def _bundle_unitymods_assets(dist_dir: Path, *, build_assets: bool = True) -> Pa
         command.append("--skip-build")
     _run(command)
     return output_dir
+
+
+def _stage_web_bundle() -> Path:
+    _run(["pixi", "run", "--frozen", "-e", "web-studio", "studio_web_build"])
+    index_path = WEB_BUNDLE_SOURCE / "index.html"
+    if not index_path.is_file():
+        raise FileNotFoundError(f"Web Studio build did not produce {index_path}")
+    WEB_BUNDLE_PACKAGE_DIR.mkdir(parents=True, exist_ok=True)
+    for child in WEB_BUNDLE_PACKAGE_DIR.iterdir():
+        if child.name == ".gitkeep":
+            continue
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+    shutil.copytree(WEB_BUNDLE_SOURCE, WEB_BUNDLE_PACKAGE_DIR, dirs_exist_ok=True)
+    return WEB_BUNDLE_PACKAGE_DIR
 
 
 def _build_python_wheels(wheels_dir: Path, dependency_to_package_dir: dict[str, str]) -> dict[str, str]:
@@ -690,6 +709,7 @@ def main() -> int:
     args = _build_parser().parse_args()
 
     _build_cpp_runtime()
+    _stage_web_bundle()
 
     platform_tag, platform_dir = _platform_info()
     dist_base_dir = REPO_ROOT / "build" / "dist"
@@ -751,6 +771,7 @@ def main() -> int:
         "- pixi.toml + pixi.lock\n"
         "- services/**\n"
         "- Python wheels for local non-editable install\n\n"
+        "- Web Studio production assets embedded in the f8studio-server wheel\n\n"
         "- Windows Unity modding installer/exporter assets under unitymods/\n\n"
         "- Studio launcher executable at dist root\n\n"
         "Bootstrap:\n"

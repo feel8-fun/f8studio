@@ -285,15 +285,16 @@ def video_frame_metadata_schema() -> F8ComplexObjectTypeSchema:
             "not by this JSON object."
         ),
         properties={
-            "schemaVersion": integer_schema(default=1, minimum=1, maximum=1),
+            "schemaVersion": integer_schema(default=2, minimum=2, maximum=2),
             "format": string_schema(default="bgra32", enum=list(VIDEO_FRAME_FORMATS)),
             "width": integer_schema(minimum=1),
             "height": integer_schema(minimum=1),
             "pitch": integer_schema(minimum=1),
             "frameId": integer_schema(minimum=1),
             "tsMs": integer_schema(minimum=0),
+            "streamEpoch": string_schema(),
         },
-        required=["schemaVersion", "format", "width", "height", "pitch", "frameId", "tsMs"],
+        required=["schemaVersion", "format", "width", "height", "pitch", "frameId", "tsMs", "streamEpoch"],
         additionalProperties=False,
     )
 
@@ -427,6 +428,7 @@ def video_frame_port(
         payload=data_payload_spec(
             kind=F8DataPortPayloadKind.video_frame,
             metadata_schema=metadata_schema,
+            schema_version=2,
             formats=list(formats),
         ),
         stream=data_stream_spec(

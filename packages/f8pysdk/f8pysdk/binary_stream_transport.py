@@ -4,6 +4,7 @@ import json
 import logging
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from types import TracebackType
 from typing import Any
@@ -53,6 +54,7 @@ class ZenohLatestBinaryStreamTransport:
         publisher: Any | None = None,
         log_context: str = "stream",
         min_sample_interval_ms: int = 0,
+        max_pending_samples: int = 1,
     ) -> None:
         key = str(key_expr or "").strip()
         if not key:
@@ -64,9 +66,9 @@ class ZenohLatestBinaryStreamTransport:
         self._log_context = str(log_context or "stream")
         self._closed = False
         self._cv = threading.Condition()
-        self._latest_raw: bytes | None = None
-        self._latest_seq = 0
-        self._delivered_seq = 0
+        if max_pending_samples < 1:
+            raise ValueError("max_pending_samples must be positive")
+        self._pending_raw: deque[bytes] = deque(maxlen=max_pending_samples)
         self._min_sample_interval_s = max(0.0, float(int(min_sample_interval_ms)) / 1000.0)
         self._last_accepted_sample_s = 0.0
 
@@ -109,6 +111,7 @@ class ZenohLatestBinaryStreamTransport:
         shm_pool_bytes: int = 256 * 1024 * 1024,
         log_context: str = "stream",
         min_sample_interval_ms: int = 0,
+        max_pending_samples: int = 1,
     ) -> "ZenohLatestBinaryStreamTransport":
         session = _open_zenoh_stream_session(
             config_path=config_path,
@@ -122,6 +125,7 @@ class ZenohLatestBinaryStreamTransport:
             session=session,
             log_context=log_context,
             min_sample_interval_ms=int(min_sample_interval_ms),
+            max_pending_samples=max_pending_samples,
         )
 
         def _on_sample(sample: Any) -> None:
@@ -170,7 +174,7 @@ class ZenohLatestBinaryStreamTransport:
             if self._closed:
                 return
             self._closed = True
-            self._latest_raw = None
+            self._pending_raw.clear()
             self._cv.notify_all()
         publisher = self._publisher
         self._publisher = None
@@ -223,12 +227,9 @@ class ZenohLatestBinaryStreamTransport:
 
     def poll_latest_raw(self) -> bytes | None:
         with self._cv:
-            if self._latest_seq == self._delivered_seq or self._latest_raw is None:
+            if not self._pending_raw:
                 return None
-            raw = self._latest_raw
-            seq = self._latest_seq
-            self._delivered_seq = seq
-        return raw
+            return self._pending_raw.popleft()
 
     def wait_latest_raw(self, timeout_ms: int) -> bytes | None:
         raw = self.poll_latest_raw()
@@ -238,11 +239,8 @@ class ZenohLatestBinaryStreamTransport:
         deadline = time.monotonic() + timeout_s
         with self._cv:
             while not self._closed:
-                if self._latest_seq != self._delivered_seq and self._latest_raw is not None:
-                    raw = self._latest_raw
-                    seq = self._latest_seq
-                    self._delivered_seq = seq
-                    return raw
+                if self._pending_raw:
+                    return self._pending_raw.popleft()
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     return None
@@ -267,8 +265,7 @@ class ZenohLatestBinaryStreamTransport:
         with self._cv:
             if self._closed:
                 return
-            self._latest_raw = raw
-            self._latest_seq += 1
+            self._pending_raw.append(raw)
             self._cv.notify_all()
 
 

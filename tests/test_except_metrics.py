@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-EXCEPT_METRICS_PATH = REPO_ROOT / "packages" / "f8pystudio" / "tools" / "quality" / "except_metrics.py"
+EXCEPT_METRICS_PATH = REPO_ROOT / "scripts" / "quality" / "except_metrics.py"
 
 
 def _load_except_metrics_module():

@@ -228,11 +228,12 @@ class DataFlowRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(port.stream.priority, F8DataStreamPriority.real_time)
         self.assertEqual(port.payloadKind, F8DataPortPayloadKind.video_frame)
         self.assertEqual(port.delivery, F8DataPortDelivery.latest)
+        self.assertEqual(port.payload.schemaVersion, 2)
         self.assertEqual(list(port.payload.formats), ["bgra32", "bgr24", "flow2_f16", "scalar1_f32"])
         self.assertIs(port.valueSchema, port.payload.metadataSchema)
         self.assertEqual(
             port.valueSchema.required,
-            ["schemaVersion", "format", "width", "height", "pitch", "frameId", "tsMs"],
+            ["schemaVersion", "format", "width", "height", "pitch", "frameId", "tsMs", "streamEpoch"],
         )
         self.assertEqual(port.valueSchema.title, "F8 Video Frame Stream Metadata")
         self.assertIn("video_frame data stream", str(port.valueSchema.description))
@@ -247,6 +248,7 @@ class DataFlowRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(port.stream.priority, F8DataStreamPriority.real_time)
         self.assertEqual(port.payloadKind, F8DataPortPayloadKind.audio_chunk)
         self.assertEqual(port.delivery, F8DataPortDelivery.latest)
+        self.assertEqual(port.payload.schemaVersion, 1)
         self.assertEqual(list(port.payload.formats), ["f32le"])
         self.assertIs(port.valueSchema, port.payload.metadataSchema)
         self.assertIs(port.valueSchema.additionalProperties, False)

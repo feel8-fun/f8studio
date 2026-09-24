@@ -1,6 +1,6 @@
 # Unity Game Modding
 
-PyStudio can install the managed F8 skeleton exporter into a supported local
+Web Studio can install the managed F8 skeleton exporter into a supported local
 Unity game, verify its UDP stream, and create a guarded skeleton-to-OSR graph.
 The workflow never installs from detection alone: you preview exact writes and
 confirm them before the game directory changes.
@@ -14,7 +14,7 @@ confirm them before the game directory changes.
 
 ## Detect And Install
 
-1. Open `Tools -> Game Modding` in PyStudio.
+1. Open the `Local` workspace in Web Studio.
 2. Select the game executable or game root and run detection.
 3. Review the detected Unity backend, game profile, loader, exporter, and every
    proposed destination path.
@@ -23,7 +23,7 @@ confirm them before the game directory changes.
 5. Confirm the preview to apply the managed installation.
 
 Existing custom configuration is preserved unless the preview explicitly marks
-a file as managed and scheduled for update. PyStudio does not guess a loader or
+a file as managed and scheduled for update. Web Studio does not guess a loader or
 write to a game directory before confirmation.
 
 BepInEx is considered installed only when its Mono/IL2CPP loader entry DLL,

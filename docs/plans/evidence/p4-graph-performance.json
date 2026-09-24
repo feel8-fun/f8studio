@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "f8studio-graph-performance/1",
+  "generatedAt": "2026-09-23T05:33:12.089Z",
+  "environment": {
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+    "hardwareConcurrency": 12,
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    }
+  },
+  "budgets": {
+    "standardNodeCount": 300,
+    "standardEdgeCount": 600,
+    "dragAverageFpsMinimum": 50,
+    "interactionP95MsMaximum": 100,
+    "stressNodeCount": 1000,
+    "stressEdgeCount": 2000
+  },
+  "scenarios": [
+    {
+      "nodeCount": 300,
+      "edgeCount": 600,
+      "nodeProfile": "f8.pyengine/f8.handy_out",
+      "visiblePortRows": 18,
+      "patchMs": 755.1247250000001,
+      "renderReadyMs": 1679.594225,
+      "renderedNodeCount": 25,
+      "renderedEdgeCount": 52,
+      "usedJsHeapMiB": 24.64222240447998,
+      "interactionP95Ms": 26.19999998807907,
+      "dragCommitMs": 1103.7291449999993,
+      "dragAverageFps": 60.00268168409761,
+      "dragFrameP95Ms": 16.799999999999272
+    },
+    {
+      "nodeCount": 1000,
+      "edgeCount": 2000,
+      "nodeProfile": "f8.pyengine/f8.handy_out",
+      "visiblePortRows": 18,
+      "patchMs": 3275.9489909999993,
+      "renderReadyMs": 4589.405798,
+      "renderedNodeCount": 25,
+      "renderedEdgeCount": 52,
+      "usedJsHeapMiB": 46.58252811431885,
+      "interactionP95Ms": 26.5,
+      "dragCommitMs": 3370.7516619999988,
+      "dragAverageFps": 59.85438411029883,
+      "dragFrameP95Ms": 16.700000000000728
+    }
+  ],
+  "pageErrors": []
+}

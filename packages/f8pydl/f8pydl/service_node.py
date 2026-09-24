@@ -922,6 +922,8 @@ class OnnxVisionServiceNode(ServiceNode):
                             height=height,
                             frame_id=frame_id_seen,
                             ts_ms=int(frame.ts_ms),
+                            stream_id=video_stream_key,
+                            stream_epoch=str(frame.stream_epoch),
                             detections=detections,
                         )
                         await self.emit("detections", payload_out, ts_ms=int(frame.ts_ms))
@@ -937,6 +939,8 @@ class OnnxVisionServiceNode(ServiceNode):
                             height=height,
                             frame_id=frame_id_seen,
                             ts_ms=int(frame.ts_ms),
+                            stream_id=video_stream_key,
+                            stream_epoch=str(frame.stream_epoch),
                             detections=detections,
                         )
                         await self.emit("detections", payload_out, ts_ms=int(frame.ts_ms))
@@ -972,7 +976,15 @@ class OnnxVisionServiceNode(ServiceNode):
                 await asyncio.sleep(0.1)
 
     def _build_detection_payload(
-        self, *, width: int, height: int, frame_id: int, ts_ms: int, detections: list[Any]
+        self,
+        *,
+        width: int,
+        height: int,
+        frame_id: int,
+        ts_ms: int,
+        detections: list[Any],
+        stream_id: str = "",
+        stream_epoch: str = "",
     ) -> dict[str, Any]:
         detections = self._apply_detection_filters(detections)
         skeleton_protocol = "none"
@@ -1006,6 +1018,8 @@ class OnnxVisionServiceNode(ServiceNode):
             "schemaVersion": DETECTION_SCHEMA_VERSION,
             "frameId": int(frame_id),
             "tsMs": int(ts_ms),
+            "streamId": str(stream_id),
+            "streamEpoch": str(stream_epoch),
             "width": int(width),
             "height": int(height),
             "model": (self._model.model_id if self._model else ""),

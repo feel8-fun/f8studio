@@ -31,7 +31,7 @@ No description.
 ### How to Run
 
 ```bash
-win/f8audiocap_service.exe
+linux/f8audiocap_service
 ```
 
 - Workdir: `./`

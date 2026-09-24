@@ -1,0 +1,29 @@
+{
+  "audio_frames": 11773,
+  "audio_sessions_end": 0,
+  "audio_sources_end": 0,
+  "control_p95_ms": 47.3759019996578,
+  "control_requests": 1352,
+  "cpu_percent": 191.08135023066487,
+  "duration_s": 300.00525281299997,
+  "with_audio": true,
+  "errors": [],
+  "main_fps": 26.85619643140752,
+  "main_height": 1080,
+  "main_width": 1920,
+  "presentation_events": 8105,
+  "presentation_queue_max": 1,
+  "rss_end_mib": 594.7265625,
+  "rss_loaded_mib": 395.09375,
+  "rss_start_mib": 95.52734375,
+  "task_count_end": 3,
+  "task_count_loaded": 53,
+  "thumbnail_fps": [
+    7.68986535525098,
+    7.726531379918409,
+    7.713198280039344,
+    7.709865005069578
+  ],
+  "video_sessions_end": 0,
+  "video_sources_end": 0
+}

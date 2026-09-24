@@ -1,6 +1,6 @@
 # VAM (1): Male-Referenced Motion
 
-This scene is a design guide for the VAM pose pipeline in `PyStudio`. The graph
+This scene is a design guide for the VAM pose pipeline in Web Studio. The graph
 uses explicit stages for pose resolution, relative pose output, axis extraction,
 raw axis bus output, shared normalization, signal shaping, and final TCode
 formatting.
@@ -27,7 +27,7 @@ pose objects that downstream operators can inspect and transform.
 
 ## Design Principle
 
-The PyStudio graph uses these explicit roles:
+The Web Studio graph uses these explicit roles:
 
 - `VAM Pose Resolver` resolves a reference frame and a target frame.
 - `VAM Pose Axes` or small `Data Expr` nodes project pose into semantic axes.

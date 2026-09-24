@@ -12,6 +12,8 @@ def test_specs_public_exports_match_source_modules() -> None:
             *metadata.__all__,
             *schema.__all__,
             *generated.__all__,
+            "operator_state_fields_with_builtins",
+            "service_state_fields_with_builtins",
         }
     )
 

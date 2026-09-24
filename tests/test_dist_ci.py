@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -157,12 +158,12 @@ class DistCiDiscoveryTest(unittest.TestCase):
     def test_find_wheel_for_distribution_normalizes_hyphen_and_underscore(self) -> None:
         wheels_dir = self.root / "wheels"
         wheels_dir.mkdir(parents=True, exist_ok=True)
-        wheel_path = wheels_dir / "f8pystudio_ext_template_match-0.1.0-py3-none-any.whl"
+        wheel_path = wheels_dir / "f8studio_server-0.1.0-py3-none-any.whl"
         wheel_path.write_text("wheel-content", encoding="utf-8")
 
         discovered_wheel = self.module._find_wheel_for_distribution(
             wheels_dir,
-            "f8pystudio-ext-template-match",
+            "f8studio-server",
         )
 
         self.assertEqual(discovered_wheel, wheel_path)
@@ -189,11 +190,22 @@ class DistCiDiscoveryTest(unittest.TestCase):
         )
         self.assertNotIn("f8unitymods-setup =", rendered)
 
+    def test_ci_environment_reuses_the_runtime_python_feature(self) -> None:
+        with Path("pixi.toml").open("rb") as pixi_file:
+            manifest = tomllib.load(pixi_file)
+
+        ci_environment = manifest["environments"]["ci"]
+        ci_dependencies = manifest["feature"]["ci"]["dependencies"]
+
+        self.assertIn("python", ci_environment["features"])
+        self.assertNotIn("python", ci_dependencies)
+        self.assertNotIn("pip", ci_dependencies)
+
     def test_discover_launcher_runtime_environments_from_marker_feature(self) -> None:
         pixi_toml_path = self.root / "pixi.toml"
         pixi_toml_path.write_text(
             "[environments]\n"
-            'studio-runtime = { features = ["python", "studio", "launcher-runtime"] }\n'
+            'studio-runtime = { features = ["python", "web-studio", "launcher-runtime"] }\n'
             'onnx = { features = ["python", "onnx", "launcher-runtime"] }\n'
             'ci = { features = ["ci"] }\n',
             encoding="utf-8",
@@ -208,12 +220,12 @@ class DistCiDiscoveryTest(unittest.TestCase):
         pixi_toml_path.write_text(
             "[feature.python]\n"
             "[feature.sdk]\n"
-            "[feature.studio]\n"
+            "[feature.web-studio]\n"
             "[feature.onnx]\n"
             "[feature.launcher-runtime]\n"
             "\n"
             "[environments]\n"
-            'studio-runtime = { features = ["python", "sdk", "studio", "launcher-runtime"] }\n'
+            'studio-runtime = { features = ["python", "sdk", "web-studio", "launcher-runtime"] }\n'
             'onnx = { features = ["python", "sdk", "onnx", "launcher-runtime"] }\n',
             encoding="utf-8",
         )
@@ -223,7 +235,7 @@ class DistCiDiscoveryTest(unittest.TestCase):
             environment_names=["studio-runtime", "onnx"],
         )
 
-        self.assertEqual(feature_names, ["python", "sdk", "studio", "launcher-runtime", "onnx"])
+        self.assertEqual(feature_names, ["python", "sdk", "web-studio", "launcher-runtime", "onnx"])
 
     def test_discover_launcher_runtime_environments_fails_without_marker(self) -> None:
         pixi_toml_path = self.root / "pixi.toml"
@@ -249,7 +261,7 @@ class DistCiDiscoveryTest(unittest.TestCase):
             ["studio-runtime", "onnx"],
             {
                 "studio-runtime": [
-                    "wheels/f8pystudio-0.4.0-py3-none-any.whl",
+                    "wheels/f8studio_server-0.1.0-py3-none-any.whl",
                     "wheels/f8unitymods_setup-0.2.0-py3-none-any.whl",
                 ],
                 "onnx": ["wheels/f8pydl-0.1.0-py3-none-any.whl"],
@@ -258,7 +270,7 @@ class DistCiDiscoveryTest(unittest.TestCase):
 
         self.assertIn(
             'pixi run -e studio-runtime python -m pip install --no-deps --no-index '
-            '"wheels/f8pystudio-0.4.0-py3-none-any.whl" '
+            '"wheels/f8studio_server-0.1.0-py3-none-any.whl" '
             '"wheels/f8unitymods_setup-0.2.0-py3-none-any.whl"',
             script_text,
         )
@@ -272,14 +284,14 @@ class DistCiDiscoveryTest(unittest.TestCase):
         pixi_toml_path = self.root / "pixi.toml"
         pixi_toml_path.write_text(
             "[environments]\n"
-            'studio-runtime = { features = ["sdk", "studio"] }\n'
+            'studio-runtime = { features = ["sdk", "web-studio"] }\n'
             'onnx = { features = ["sdk", "onnx"] }\n',
             encoding="utf-8",
         )
         packages = {
             "f8pysdk": self.module.LocalEditablePackage("packages/f8pysdk", "sdk"),
-            "f8pystudio": self.module.LocalEditablePackage("packages/f8pystudio", "studio"),
-            "f8unitymods-setup": self.module.LocalEditablePackage("external/f8unitymods", "studio"),
+            "f8studio-server": self.module.LocalEditablePackage("packages/f8studio_server", "web-studio"),
+            "f8unitymods-setup": self.module.LocalEditablePackage("external/f8unitymods", "web-studio"),
             "f8pydl": self.module.LocalEditablePackage("packages/f8pydl", "onnx"),
         }
         dependency_to_wheel = {
@@ -298,7 +310,7 @@ class DistCiDiscoveryTest(unittest.TestCase):
             environment_to_wheels["studio-runtime"],
             [
                 "wheels/f8pysdk.whl",
-                "wheels/f8pystudio.whl",
+                "wheels/f8studio-server.whl",
                 "wheels/f8unitymods-setup.whl",
             ],
         )
@@ -348,8 +360,8 @@ class DistCiDiscoveryTest(unittest.TestCase):
             "[feature.python.dependencies]\n"
             'python = ">=3.13,<3.14"\n'
             "\n"
-            "[feature.studio.pypi-dependencies]\n"
-            'f8pystudio = { path = "packages/f8pystudio", editable = true }\n'
+            "[feature.web-studio.pypi-dependencies]\n"
+            'f8studio-server = { path = "packages/f8studio_server", editable = true }\n'
             "\n"
             "[feature.launcher-runtime]\n"
             "\n"
@@ -362,11 +374,11 @@ class DistCiDiscoveryTest(unittest.TestCase):
 
         filtered = self.module._filter_dist_feature_sections(
             pixi_text,
-            ["python", "studio", "launcher-runtime"],
+            ["python", "web-studio", "launcher-runtime"],
         )
 
         self.assertIn("[feature.python.dependencies]", filtered)
-        self.assertIn("[feature.studio.pypi-dependencies]", filtered)
+        self.assertIn("[feature.web-studio.pypi-dependencies]", filtered)
         self.assertIn("[feature.launcher-runtime]", filtered)
         self.assertNotIn("[feature.test.dependencies]", filtered)
         self.assertNotIn("[feature.ci.tasks]", filtered)

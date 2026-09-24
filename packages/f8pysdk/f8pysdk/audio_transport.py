@@ -235,6 +235,7 @@ class ZenohLatestAudioChunkTransport:
             listen=listen,
             shm_pool_bytes=shm_pool_bytes,
             log_context="audio",
+            max_pending_samples=16,
         )
         return cls(key_expr=key_expr, raw_transport=raw)
 

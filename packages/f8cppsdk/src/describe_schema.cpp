@@ -86,14 +86,15 @@ json schema_array(const json& item_schema) {
 
 json schema_video_frame_metadata() {
   json obj = schema_object(
-      json{{"schemaVersion", schema_integer(1, 1, 1)},
+      json{{"schemaVersion", schema_integer(2, 2, 2)},
            {"format", schema_string_enum({"bgra32", "bgr24", "flow2_f16", "scalar1_f32"})},
            {"width", schema_integer()},
            {"height", schema_integer()},
            {"pitch", schema_integer()},
            {"frameId", schema_integer()},
-           {"tsMs", schema_integer()}},
-      json::array({"schemaVersion", "format", "width", "height", "pitch", "frameId", "tsMs"}));
+           {"tsMs", schema_integer()},
+           {"streamEpoch", schema_string()}},
+      json::array({"schemaVersion", "format", "width", "height", "pitch", "frameId", "tsMs", "streamEpoch"}));
   obj["title"] = "F8 Video Frame Stream Metadata";
   obj["description"] =
       "Decoded metadata for a video_frame data stream. Frame bytes are carried by the runtime stream envelope, not by "
@@ -141,10 +142,10 @@ json data_stream(std::string delivery, std::string reliability, std::string cong
 json data_port(std::string name, const json& value_schema, std::string payload_kind, std::string delivery,
                std::string description, bool required, bool show_on_node, const json& metadata_schema,
                const std::vector<std::string>& formats, std::string reliability, std::string congestion,
-               std::string priority) {
+               std::string priority, std::uint32_t payload_schema_version) {
   json payload;
   payload["kind"] = payload_kind;
-  payload["schemaVersion"] = 1;
+  payload["schemaVersion"] = payload_schema_version;
   payload["formats"] = formats;
   if (payload_kind == "json") {
     payload["valueSchema"] = value_schema;
@@ -170,13 +171,13 @@ json data_port(std::string name, const json& value_schema, std::string payload_k
 json video_frame_port(std::string name, std::string description, bool required) {
   const json metadata = schema_video_frame_metadata();
   return data_port(std::move(name), metadata, "video_frame", "latest", std::move(description), required, true, metadata,
-                   {"bgra32", "bgr24", "flow2_f16", "scalar1_f32"}, "best_effort", "drop", "real_time");
+                   {"bgra32", "bgr24", "flow2_f16", "scalar1_f32"}, "best_effort", "drop", "real_time", 2);
 }
 
 json audio_chunk_port(std::string name, std::string description, bool required) {
   const json metadata = schema_audio_chunk_metadata();
   return data_port(std::move(name), metadata, "audio_chunk", "latest", std::move(description), required, true, metadata,
-                   {"f32le"}, "best_effort", "drop", "real_time");
+                   {"f32le"}, "best_effort", "drop", "real_time", 1);
 }
 
 json state_field(std::string name, const json& value_schema, std::string access, std::string label,

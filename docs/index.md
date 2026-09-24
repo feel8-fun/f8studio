@@ -19,14 +19,14 @@ You want to download the software, open Studio, and try a predefined graph.
 You want to build or modify graphs, understand nodes, and compose your own workflows.
 
 - Start here: [For Graph Authors](graph-authors/index.md)
-- Key references: [PyStudio Guide](pystudio/index.md), [Node Atlas](node-atlas/index.md), [Scenarios](scenarios/index.md)
+- Key references: [Web Studio Guide](getting-started/studio.md), [Node Atlas](node-atlas/index.md), [Scenarios](scenarios/index.md)
 
 ### 3. Developer
 
-You want to build from source, create services, or extend PyStudio with plugins.
+You want to build from source, create services, or extend Web Studio.
 
 - Start here: [For Developers](developers/index.md)
-- Key routes: [Build from Source](developers/build-from-source.md), [Service Development](developers/service-development.md), [PyStudio Plugin Development](developers/pystudio-plugin-development.md)
+- Key routes: [Build from Source](developers/build-from-source.md), [Service Development](developers/service-development.md), [Web Studio Architecture](developers/web-studio-architecture.md)
 
 ## Recommended Starting Point
 
@@ -38,4 +38,3 @@ You want to build from source, create services, or extend PyStudio with plugins.
 
 - This documentation is English-first for now.
 - Source build, C++ toolchains, and packaging are advanced/developer topics, not the default install path for ordinary users.
-

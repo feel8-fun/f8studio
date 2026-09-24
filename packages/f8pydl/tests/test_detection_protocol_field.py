@@ -46,6 +46,22 @@ class _PayloadBuilder:
 
 
 class DetectionProtocolFieldTests(unittest.TestCase):
+    def test_payload_preserves_video_stream_identity(self) -> None:
+        builder = _PayloadBuilder(skeleton_protocol="none")
+
+        payload = builder._build_detection_payload(
+            width=1920,
+            height=1080,
+            frame_id=10,
+            ts_ms=1234,
+            detections=[],
+            stream_id="f8/svc/capture/nodes/capture/data/video",
+            stream_epoch="0123456789abcdef0123456789abcdef",
+        )
+
+        self.assertEqual(payload["streamId"], "f8/svc/capture/nodes/capture/data/video")
+        self.assertEqual(payload["streamEpoch"], "0123456789abcdef0123456789abcdef")
+
     def test_protocol_emits_coco17(self) -> None:
         builder = _PayloadBuilder(skeleton_protocol="coco17")
         detections = [

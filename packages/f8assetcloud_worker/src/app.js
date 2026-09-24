@@ -23,7 +23,7 @@ const DESKTOP_ACCESS_TOKEN_TTL_SECONDS = 3600;
 const DESKTOP_REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 3600;
 const DESKTOP_REQUEST_PURGE_INTERVAL_MS = 60 * 1000;
 const DESKTOP_AUTH_CONFIRM_CSRF_COOKIE = 'f8assetcloud_desktop_csrf';
-const DESKTOP_AUTH_ALLOWED_CLIENT_IDS = new Set(['pystudio']);
+const DESKTOP_AUTH_ALLOWED_CLIENT_IDS = new Set(['f8studio']);
 const MAX_REQUEST_COMPRESSED_BYTES = 12 * 1024 * 1024;
 const MAX_REQUEST_JSON_BYTES = 12 * 1024 * 1024;
 const PUBLIC_CACHE_CONTROL_HEADER = 'public, max-age=120, stale-while-revalidate=300';
@@ -2607,7 +2607,7 @@ function buildDesktopAuthorizeHtml({ request, allowGoogle, allowRegistration, cu
       </form>`
     : '';
   const registrationHint = allowRegistration
-    ? '<p class="muted">Use your Feel8 Asset Cloud account to continue in PyStudio.</p>'
+    ? '<p class="muted">Use your Feel8 Asset Cloud account to continue in Feel8 Studio.</p>'
     : '<p class="muted">Registration is currently disabled. Sign in with an existing account.</p>';
   return `<!doctype html>
 <html lang="en">
@@ -2701,8 +2701,8 @@ function buildDesktopAuthorizeHtml({ request, allowGoogle, allowRegistration, cu
   </head>
   <body>
     <main>
-      <h1>Continue to PyStudio</h1>
-      <p class="muted">Sign in here and we’ll send your browser back to the running desktop app.</p>
+      <h1>Continue to Feel8 Studio</h1>
+      <p class="muted">Sign in here and we’ll send your browser back to the running Studio session.</p>
       ${registrationHint}
       ${escapedError ? `<div class="error">${escapedError}</div>` : ''}
       ${currentUser ? `<section class="section">

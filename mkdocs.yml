@@ -18,14 +18,7 @@ nav:
       - Unity Game Modding: for-users/unity-game-modding.md
   - For Graph Authors:
       - Overview: graph-authors/index.md
-      - Studio (GUI): getting-started/studio.md
-      - PyStudio Guide: pystudio/index.md
-      - Editor Layout: pystudio/editor-layout.md
-      - Node Categories and Wiring: pystudio/node-categories.md
-      - Lifecycle and Monitoring: pystudio/lifecycle-and-monitoring.md
-      - Schema and Code Editors: pystudio/schema-and-code-editors.md
-      - Node Library and Sessions: pystudio/node-library-and-sessions.md
-      - Debugging: pystudio/debugging.md
+      - Web Studio Guide: getting-started/studio.md
       - Node Atlas: node-atlas/index.md
       - Scenario Library: scenarios/index.md
   - For Developers:
@@ -35,8 +28,7 @@ nav:
       - Service Development: developers/service-development.md
       - Output Node Development: developers/output-node-development.md
       - Component Authoring: developers/component-authoring.md
-      - PyStudio Architecture: developers/pystudio-architecture.md
-      - PyStudio Plugin Development: developers/pystudio-plugin-development.md
+      - Web Studio Architecture: developers/web-studio-architecture.md
       - Docs Tooling: developers/docs-tooling.md
   - Scenarios:
       - Overview: scenarios/index.md
@@ -71,9 +63,7 @@ nav:
       - Node Atlas Overview: node-atlas/index.md
       - Service Nodes: node-atlas/service-nodes.md
       - PyEngine Operators: node-atlas/pyengine-operators.md
-      - PyStudio Nodes: node-atlas/pystudio-nodes.md
-      - TCodeViz Plugin Node: node-atlas/f8-viz-tcode.md
-      - Plugin Workflows: node-atlas/plugin-workflows.md
+      - Studio Runtime Nodes: node-atlas/studio-runtime-nodes.md
   - Deep Dives:
       - System Architecture: deepdives/system_architecture.md
       - Comm Bus (Data + State): deepdives/comm_bus.md

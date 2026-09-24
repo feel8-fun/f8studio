@@ -10,7 +10,7 @@ Get the latest Windows package from:
 
 ## Step 2: Open Studio
 
-Launch the packaged `f8pystudio` application from the extracted release folder.
+Launch `f8studio.exe` on Windows or `./f8studio` on Linux from the extracted release folder. The launcher starts the local server and opens Web Studio in your default browser.
 
 ## Step 3: Pick a Graph Guide
 
@@ -37,4 +37,3 @@ Add the nodes listed in the guide, wire them in the documented order, then revie
 
 - [Studio Quickstart](../getting-started/studio.md)
 - [For Graph Authors](../graph-authors/index.md)
-

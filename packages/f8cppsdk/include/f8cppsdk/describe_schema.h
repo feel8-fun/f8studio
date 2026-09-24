@@ -42,7 +42,8 @@ nlohmann::json data_port(
     const std::vector<std::string>& formats = {},
     std::string reliability = "best_effort",
     std::string congestion = "drop",
-    std::string priority = "data");
+    std::string priority = "data",
+    std::uint32_t payload_schema_version = 1);
 nlohmann::json video_frame_port(std::string name, std::string description = {}, bool required = true);
 nlohmann::json audio_chunk_port(std::string name, std::string description = {}, bool required = true);
 nlohmann::json state_field(

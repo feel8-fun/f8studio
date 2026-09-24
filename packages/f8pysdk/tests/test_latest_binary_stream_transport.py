@@ -41,6 +41,22 @@ def test_zenoh_latest_binary_stream_transport_keeps_latest_payload_only() -> Non
         transport.close()
 
 
+def test_zenoh_binary_stream_bounded_queue_preserves_order_and_drops_oldest() -> None:
+    transport = ZenohLatestBinaryStreamTransport(
+        key_expr="f8/test/stream/audio",
+        session=_Session(),
+        max_pending_samples=2,
+    )
+    try:
+        for payload in (b"old", b"middle", b"new"):
+            transport._on_sample(_Sample(payload))
+        assert transport.poll_latest_raw() == b"middle"
+        assert transport.poll_latest_raw() == b"new"
+        assert transport.poll_latest_raw() is None
+    finally:
+        transport.close()
+
+
 def test_zenoh_latest_binary_stream_transport_wait_returns_none_after_close() -> None:
     transport = ZenohLatestBinaryStreamTransport(
         key_expr="f8/test/stream/closed",

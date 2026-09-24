@@ -12,7 +12,10 @@ Runtime workspace for Feel8 Studio. The current runtime is Zenoh-first:
 - `docs/flows` — sequence/state docs for connection, config, playback, degrade/recover.
 - `packages/f8pysdk` — Python runtime SDK, Zenoh/mem transports, ServiceApp helpers.
 - `packages/f8cppsdk` — C++ runtime SDK, Zenoh transport and latest video/audio transports.
-- `packages/f8pystudio` — Studio UI and bridge.
+- `packages/f8studio_core` — typed graph document, patch, catalog, and compiler contracts.
+- `packages/f8studio_server` — local Web Studio application service, API, CLI, and MCP.
+- `packages/f8studio_web` — React graph editor and presentation workspaces.
+- `packages/f8media_gateway` — process-isolated Zenoh to WebRTC media gateway.
 - `services` — service manifests, static `describe.json`, and deployed C++ runtime binaries.
 - `scripts` — codegen, describe regeneration, benchmarks, and migration tooling.
 
@@ -24,16 +27,16 @@ Runtime workspace for Feel8 Studio. The current runtime is Zenoh-first:
 ## SHM tools
 - Legacy audio waveform viewer: `pixi run -e default python scripts/audioshm_viewer.py --service-id audiocap --use-event`
 
-## Studio exe (Windows)
-- Build: `pixi run -e default studio_exe`
-- Requires: `pyinstaller` and `pillow` installed in the active environment.
+## Web Studio
+- Build: `pixi run -e web-studio studio_web_build`
+- Start: `pixi run -e web-studio studio_server`
+- Open: `http://127.0.0.1:8210`
 
 ## Service discovery (startup speed)
 Studio service discovery can avoid spawning `pixi run ... --describe` by using a static `describe.json` in each service directory (e.g. `services/f8/engine/describe.json`).
 
 - Regenerate all: `pixi run -e default update_describes`
 - Regenerate one: `pixi run -e default update_describes -- --service-class f8.pyengine`
-- Force live discovery (ignore `describe.json`): `pixi run -e default studio_live`
 
 ## DL services
 - Detector: `pixi run -e onnx dl_detector`

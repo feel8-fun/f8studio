@@ -8,10 +8,9 @@ platforms = ["win-64", "linux-64"]
 preview = ["pixi-build"]
 
 [system-requirements]
-# Pixi uses `system-requirements` to determine the compatible manylinux tag for PyPI wheels on linux.
-# PySide6 6.10.1 wheels are published as `manylinux_2_34_x86_64`, so we must require glibc >= 2.34
-# for the linux environment solve to succeed.
-libc = { family = "glibc", version = "2.34" }
+# Match the oldest supported Linux deployment baseline. Studio no longer raises
+# this requirement to accommodate Qt wheels.
+libc = { family = "glibc", version = "2.28" }
 
 [feature.python.dependencies]
 python = ">=3.14.3,<3.15"
@@ -19,7 +18,7 @@ pip = ">=26.0.1,<27"
 
 [feature.vision.pypi-dependencies]
 numpy = ">=2.4.2, <3"
-opencv-contrib-python = ">=4.13.0.92, <5"
+opencv-contrib-python-headless = ">=4.13.0.92, <5"
 
 [feature.debug.pypi-dependencies]
 scapy = ">=2.6.1,<3"
@@ -48,7 +47,7 @@ f8pydl_bench = "python scripts/bench_dl_baseline.py"
 
 [feature.sdk.pypi-dependencies]
 f8pysdk = { path = "packages/f8pysdk", editable = true }
-eclipse-zenoh = ">=1.9.0"
+eclipse-zenoh = ">=1.9.0,<1.10"
 
 [feature.sdk.tasks]
 update_describes = "python scripts/update_static_describes.py"
@@ -66,15 +65,12 @@ import-linter = ">=2.11,<3"
 [feature.test.tasks]
 pytest = "python -m pytest"
 pytest_sdk = "python -m pytest -q packages/f8pysdk/tests"
-pytest_studio = "python -m pytest -q packages/f8pystudio/tests"
 # Keep the initial repo-level static guards narrow and green. We can widen the
 # checked surface incrementally as more packages are annotated and cleaned up.
-lint = "ruff check packages/f8proclauncher/f8proclauncher packages/f8pystudio/f8pystudio/global_hotkeys packages/f8pymppose/f8pymppose packages/f8pyscript/f8pyscript packages/f8pyaudiofeat/f8pyaudiofeat packages/f8pydl/f8pydl packages/f8pystudio_ext_viz_tcode/f8pystudio_ext_viz_tcode packages/f8pystudio_ext_template_match/f8pystudio_ext_template_match packages/f8pysdk/f8pysdk packages/f8pyengine/f8pyengine"
+lint = "ruff check packages/f8proclauncher/f8proclauncher packages/f8pymppose/f8pymppose packages/f8pyscript/f8pyscript packages/f8pyaudiofeat/f8pyaudiofeat packages/f8pydl/f8pydl packages/f8pysdk/f8pysdk packages/f8pyengine/f8pyengine packages/f8studio_core/f8studio_core packages/f8media_protocol/f8media_protocol packages/f8media_gateway/f8media_gateway packages/f8studio_server/f8studio_server"
 typecheck = "basedpyright -p pyrightconfig.json"
-quality_exceptions = "python packages/f8pystudio/tools/quality/except_metrics.py packages --exclude-glob '**/tests/**' --max-broad 844 --max-silent 40"
+quality_exceptions = "python scripts/quality/except_metrics.py packages --exclude-glob '**/tests/**' --max-broad 844 --max-silent 40"
 lint_imports = "lint-imports"
-official_components = "python scripts/generate_official_components.py"
-official_components_check = "python scripts/generate_official_components.py --check"
 
 [feature.audio.pypi-dependencies]
 librosa = ">=0.11.0, <0.12"
@@ -96,41 +92,6 @@ f8pyengine = "python -m f8pyengine.main"
 f8pyscript = "python -m f8pyscript.main_script"
 f8pyexpr = "python -m f8pyscript.main_expr"
 f8proclauncher = "python -m f8proclauncher.main"
-
-[feature.studio.pypi-dependencies]
-f8pystudio = { path = "packages/f8pystudio", editable = true }
-f8unitymods-setup = { path = "external/f8unitymods", editable = true }
-f8pystudio-ext-template-match = { path = "packages/f8pystudio_ext_template_match", editable = true }
-f8pystudio-ext-viz-tcode = { path = "packages/f8pystudio_ext_viz_tcode", editable = true }
-pyside6 = ">=6.10.2, <7"
-qtpy = ">=2.4.3, <3"
-pyqtgraph = ">=0.14.0, <0.15"
-websockets = ">=16.0, <17"
-aiortc = ">=1.14.0, <2"
-basedpyright = ">=1.31.0, <2"
-python-xlib = ">=0.33, <1"
-sqlalchemy = ">=2.0.41, <3"
-keyring = ">=25.6.0, <26"
-mcp = { version = ">=1.18.0,<2", extras = ["cli"] }
-agent-framework-core = ">=1.7.0,<2"
-agent-framework-openai = ">=1.7.0,<2"
-agent-framework-foundry = ">=1.7.0,<2"
-agent-framework-anthropic = ">=1.0.0b260521,<2"
-agent-framework-bedrock = ">=1.0.0b260521,<2"
-agent-framework-ollama = ">=1.0.0b260521,<2"
-agent-framework-github-copilot = ">=1.0.0,<2"
-agent-framework-hyperlight = ">=1.0.0b260521,<2"
-github-copilot-sdk = "==1.0.2"
-
-[feature.studio.tasks]
-f8pystudio = "python -m f8pystudio.main"
-f8pystudio_cli = "python -m f8pystudio.automation.cli"
-f8pystudio_mcp = "python -m f8pystudio.mcp.server"
-unitymods_validate = "python scripts/unitymods_ci.py validate"
-unitymods_build = "python scripts/unitymods_ci.py build"
-unitymods_test = "python scripts/unitymods_ci.py test"
-unitymods_package = "python scripts/unitymods_ci.py package"
-unitymods_contract = "python scripts/verify_skeleton_contract.py"
 
 [feature.mediapipe.pypi-dependencies]
 f8pymppose = { path = "packages/f8pymppose", editable = true }
@@ -188,8 +149,6 @@ cpp_test_release = "python scripts/cpp_ci.py test"
 cpp_bench_latest_video = "python scripts/cpp_ci.py configure && python scripts/cpp_ci.py build-target f8cpp_bench_latest_video_transport && build/Release/bin/f8cpp_bench_latest_video_transport"
 
 [feature.ci.dependencies]
-python = ">=3.13,<3.14"
-pip = ">=26.0.1,<27"
 hatchling = ">=1.28.0,<2"
 msgspec = ">=0.18.6,<1"
 datamodel-code-generator = ">=0.50.0,<1"
@@ -210,17 +169,82 @@ build_studio_launcher = "python scripts/build_studio_launcher.py"
 
 [feature.launcher-runtime]
 
+[feature.web-studio.pypi-dependencies]
+f8studio-core = { path = "packages/f8studio_core", editable = true }
+f8media-protocol = { path = "packages/f8media_protocol", editable = true }
+f8media-gateway = { path = "packages/f8media_gateway", editable = true }
+f8studio-server = { path = "packages/f8studio_server", editable = true }
+f8unitymods-setup = { path = "external/f8unitymods", editable = true }
+aiortc = ">=1.14,<2"
+basedpyright = ">=1.31,<2"
+pyserial = ">=3.5,<4"
+python-xlib = ">=0.33,<1"
+httpx = ">=0.28,<1"
+agent-framework-core = ">=1.7,<2"
+agent-framework-openai = ">=1.7,<2"
+agent-framework-anthropic = ">=1.0.0b260521,<2"
+mcp = { version = ">=1.24,<2", extras = ["cli"] }
+
+[feature.web-studio.tasks]
+studio_media_gateway = "python -m f8media_gateway"
+studio_server = "python -m f8studio_server"
+studio_cli = "python -m f8studio_server.cli"
+studio_mcp = "python -m f8studio_server.mcp_server"
+studio_agent_model_smoke = "python scripts/web_studio/probe_agent_model.py"
+unitymods_validate = "python scripts/unitymods_ci.py validate"
+unitymods_build = "python scripts/unitymods_ci.py build"
+unitymods_test = "python scripts/unitymods_ci.py test"
+unitymods_package = "python scripts/unitymods_ci.py package"
+unitymods_contract = "python scripts/verify_skeleton_contract.py"
+
+[feature.web-studio-dev.dependencies]
+nodejs = ">=24,<25"
+
+[feature.web-studio-dev.tasks]
+studio_web_dev = "npm --prefix packages/f8studio_web run dev"
+studio_web_build = "npm --prefix packages/f8studio_web run build"
+
+[feature.web-studio-test.dependencies]
+pytest = ">=8.4.2,<9"
+hatchling = ">=1.28,<2"
+
+[feature.web-studio-test.pypi-dependencies]
+httpx = ">=0.28,<1"
+basedpyright = ">=1.31,<2"
+
+[feature.web-studio-test.tasks]
+studio_core_test = "python -m pytest -q packages/f8studio_core/tests"
+studio_server_test = "python -m pytest -q packages/f8studio_server/tests"
+studio_media_gateway_test = "python -m pytest -q packages/f8media_gateway/tests"
+studio_web_test = "npm --prefix packages/f8studio_web run test"
+studio_web_typecheck = "npm --prefix packages/f8studio_web run typecheck"
+studio_web_e2e = { cmd = "npm --prefix packages/f8studio_web run test:e2e", depends-on = ["studio_web_build"] }
+studio_graph_bench = { cmd = "npm --prefix packages/f8studio_web run test:graph-performance", depends-on = ["studio_web_build"] }
+studio_python_typecheck = "basedpyright -p pyrightconfig.web-studio.json"
+studio_no_qt_check = "python scripts/web_studio/check_no_qt.py"
+studio_dependency_probe = "python scripts/web_studio/probe_environment.py"
+studio_runtime_probe = "python scripts/web_studio/probe_real_runtime.py"
+studio_media_probe = "python scripts/web_studio/probe_webrtc_media.py"
+studio_real_video_probe = "python scripts/web_studio/probe_real_video.py"
+studio_media_bench = "python scripts/web_studio/benchmark_media.py"
+studio_stream_restart_probe = "python scripts/web_studio/probe_stream_restart.py"
+studio_p3_combined_bench = "python scripts/web_studio/benchmark_p3_combined.py"
+studio_release_smoke = "python scripts/web_studio/verify_release_install.py"
+
 [environments]
 # Pixi tasks are feature-scoped, not environment-scoped. If a task's feature is
 # included by multiple environments (for example both `default` and
 # `studio-runtime`), `pixi run <task>` without `-e` can resolve differently
 # depending on the active Pixi environment. Keep `service.yml` launch entries
 # explicit with `-e` for shared runtime tasks.
-default = { features = ["python", "sdk", "engine", "studio", "vision", "audio", "test", "debug"], solve-group = "default" }
-studio-runtime = { features = ["python", "sdk", "engine", "studio", "vision", "audio", "launcher-runtime"], solve-group = "default" }
+default = { features = ["python", "sdk", "engine", "web-studio", "web-studio-dev", "vision", "audio", "test", "debug"], solve-group = "default" }
+studio-runtime = { features = ["python", "sdk", "engine", "web-studio", "vision", "audio", "launcher-runtime"], solve-group = "default" }
 onnx = { features = ["python", "sdk", "onnx", "vision", "launcher-runtime"], solve-group = "onnx" }
 mediapipe = { features = ["python", "sdk", "vision", "mediapipe", "launcher-runtime"], solve-group = "mediapipe" }
 doc = { features = ["python", "doc"] }
 cpp = { features = ["cpp"], solve-group = "cpp" }
-ci = { features = ["ci"], solve-group = "ci" }
+ci = { features = ["python", "ci"], solve-group = "ci" }
 launcher = { features = ["launcher"], solve-group = "launcher" }
+web-studio = { features = ["python", "sdk", "web-studio", "web-studio-dev"], solve-group = "web-studio" }
+web-studio-test = { features = ["python", "sdk", "web-studio", "web-studio-dev", "web-studio-test"], solve-group = "web-studio" }
+web-studio-runtime = { features = ["python", "sdk", "engine"], solve-group = "web-studio" }
