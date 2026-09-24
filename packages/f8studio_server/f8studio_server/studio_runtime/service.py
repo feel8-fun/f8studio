@@ -35,6 +35,10 @@ class StudioRuntimeService:
         self._runtime: ServiceRuntime | None = None
 
     @property
+    def service_id(self) -> str:
+        return self._config.service_id
+
+    @property
     def describe(self) -> F8ServiceDescribe:
         return describe_studio_registry(self._registry)
 

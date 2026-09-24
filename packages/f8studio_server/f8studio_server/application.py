@@ -34,7 +34,7 @@ from .local_integration import HotkeyBinding, LocalIntegrationService
 from .processes import ManagedServiceProcesses
 from .project_repository import ProjectRepository
 from .projects import ProjectService
-from .runtime import RuntimeConfig, RuntimeGateway, ZenohRuntimeGateway
+from .runtime import RuntimeConfig, RuntimeGateway, StudioBoundRuntimeGateway, ZenohRuntimeGateway
 from .studio_runtime import EventPresentationOutlet, StudioRuntimeConfig, StudioRuntimeService
 
 
@@ -62,6 +62,7 @@ class StudioApplication:
         self.studio_runtime = StudioRuntimeService(
             StudioRuntimeConfig(
                 bus_backend=config.bus_backend,
+                service_id=f"studio_{self.server_epoch}",
                 zenoh_config_path=config.zenoh_config_path,
                 zenoh_connect=config.zenoh_connect,
                 zenoh_listen=config.zenoh_listen,
@@ -80,8 +81,10 @@ class StudioApplication:
             hotkey_validator=self._validate_hotkey,
         )
         self._owns_runtime = runtime is None
-        self.runtime = runtime or ZenohRuntimeGateway(config)
-        self.monitors = RuntimeMonitorStore(self.events)
+        self.runtime = runtime or StudioBoundRuntimeGateway(
+            ZenohRuntimeGateway(config), studio_service_id=self.studio_runtime.service_id,
+        )
+        self.monitors = RuntimeMonitorStore(self.events, studio_service_id=self.studio_runtime.service_id)
         if media_gateway is None:
             media_gateway = RemoteMediaGateway()
         self.media_gateway = media_gateway

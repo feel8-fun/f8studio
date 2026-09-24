@@ -135,6 +135,7 @@ def test_recent_logs_endpoint_exposes_bounded_service_output(tmp_path: Path) -> 
 
     assert response.status_code == 200
     assert response.json()[0]["payload"] == {"serviceId": "capture", "line": "capture started"}
+    assert asyncio.run(request(app, f'/api/logs?before_sequence={response.json()[0]["sequence"]}')).json() == []
     assert asyncio.run(request(app, "/api/logs?limit=1001")).status_code == 422
 
 

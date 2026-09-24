@@ -102,8 +102,11 @@ export async function fetchProjects(signal?: AbortSignal): Promise<readonly Proj
   return body as unknown as readonly ProjectSummary[];
 }
 
-export async function fetchLogs(signal?: AbortSignal): Promise<readonly StudioLogEvent[]> {
-  const body = await requestJson('/api/logs', { signal });
+export async function fetchLogs(options: { readonly limit?: number; readonly beforeSequence?: number; readonly signal?: AbortSignal } = {}): Promise<readonly StudioLogEvent[]> {
+  const query = new URLSearchParams();
+  if (options.limit !== undefined) query.set('limit', String(options.limit));
+  if (options.beforeSequence !== undefined) query.set('before_sequence', String(options.beforeSequence));
+  const body = await requestJson(`/api/logs?${query.toString()}`, { signal: options.signal });
   if (!Array.isArray(body) || !body.every(isStudioLogEvent)) {
     throw new Error('Log history does not match f8studio-api/1');
   }

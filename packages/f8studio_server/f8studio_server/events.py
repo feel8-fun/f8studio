@@ -99,11 +99,16 @@ class EventJournal:
                 queue.put_nowait(event)
             return event
 
-    async def recent_logs(self, *, limit: int = 500) -> tuple[EventEnvelope, ...]:
+    async def recent_logs(self, *, limit: int = 500, before_sequence: int | None = None) -> tuple[EventEnvelope, ...]:
         if limit < 1:
             raise ValueError("log limit must be positive")
+        if before_sequence is not None and before_sequence < 1:
+            raise ValueError("before_sequence must be positive")
         async with self._lock:
-            return tuple(self._logs)[-limit:]
+            logs = tuple(self._logs)
+            if before_sequence is not None:
+                logs = tuple(event for event in logs if event.sequence < before_sequence)
+            return logs[-limit:]
 
     async def open_stream(
         self,

@@ -1,5 +1,5 @@
 import { Handle, NodeResizer, Position, type NodeProps, type ResizeParams } from '@xyflow/react';
-import { Box, Boxes, ExternalLink, Play } from 'lucide-react';
+import { Box, Boxes, ExternalLink } from 'lucide-react';
 import { createContext, useContext } from 'react';
 
 import type { CommandSpec, GraphNode, JsonValue } from '../api/contracts';
@@ -53,19 +53,27 @@ export function StudioNodeView({ data, selected }: NodeProps<StudioFlowNode>) {
       const stateRuntimeName = input?.kind === 'state' && output?.kind === 'state' &&
         input.runtimeName === output.runtimeName ? input.runtimeName : null;
       const sharedStateLabel = stateRuntimeName !== null;
+      const commandName = input?.kind === 'command' ? input.name : output?.kind === 'command' ? output.name : null;
+      const command = commandName === null ? undefined : (node.spec.commands ?? []).find((item) => item.name === commandName);
       const inlineField = stateRuntimeName === null ? undefined :
         (node.spec.stateFields ?? []).find((field) => field.name === stateRuntimeName && field.showOnNode === true);
       const connected = inlineField === undefined ? false :
         interaction?.connectedStateInputs.has(`${node.nodeId}:${inlineField.name}`) ?? false;
       return (
-        <div className={`port-row ${sharedStateLabel ? 'port-row-shared-state' : ''}`} key={row.key}>
+        <div className={`port-row ${sharedStateLabel ? 'port-row-shared-state' : ''} ${commandName !== null ? 'port-row-command' : ''}`} key={row.key}>
           <div className={`port-label port-${input?.kind ?? 'empty'}`}>
             {input !== undefined && <>
               <Handle id={input.portId} type="target" position={Position.Left} className={`port-handle port-handle-${input.kind}`} />
-              <span title={`${input.kind} input`}>{input.name}</span>
+              {commandName === null && <span title={`${input.kind} input`}>{input.name}</span>}
             </>}
           </div>
           <div className="port-control">
+            {commandName !== null && (command === undefined
+              ? <span className="port-command-name">{commandName}</span>
+              : <button type="button" className="port-command-button nodrag nowheel"
+                title={command.description ?? `Run ${command.name}`}
+                disabled={!node.enabled || interaction?.busy !== false}
+                onClick={() => interaction?.openCommand(node, command)}>{command.name}</button>)}
             {inlineField !== undefined && interaction !== null && <StateFieldControl
               node={node}
               field={inlineField}
@@ -77,7 +85,7 @@ export function StudioNodeView({ data, selected }: NodeProps<StudioFlowNode>) {
           </div>
           <div className={`port-label port-output port-${output?.kind ?? 'empty'}`}>
             {output !== undefined && <>
-              {!sharedStateLabel && <span title={`${output.kind} output`}>{output.name}</span>}
+              {!sharedStateLabel && commandName === null && <span title={`${output.kind} output`}>{output.name}</span>}
               <Handle id={output.portId} type="source" position={Position.Right} className={`port-handle port-handle-${output.kind}`} />
             </>}
           </div>
@@ -109,11 +117,6 @@ export function StudioNodeView({ data, selected }: NodeProps<StudioFlowNode>) {
       </header>
       {showsVideoPreview && <InlineVideoPreview nodeId={node.nodeId} enabled={node.enabled} />}
       {isThreeD && <SkeletonOutputPreview nodeId={node.nodeId} enabled={node.enabled} className="studio-node-inline-three nodrag nowheel" />}
-      {(node.spec.commands ?? []).some((command) => command.showOnNode) && <div className="node-command-actions nodrag nowheel">
-        {(node.spec.commands ?? []).filter((command) => command.showOnNode).map((command) => <button key={command.name} type="button"
-          title={command.description ?? `Run ${command.name}`} disabled={!node.enabled || interaction?.busy !== false}
-          onClick={() => interaction?.openCommand(node, command)}><Play size={11} />{command.name}</button>)}
-      </div>}
       {portRows}
     </article>
   </>;

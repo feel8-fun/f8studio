@@ -10,6 +10,7 @@ from f8media_protocol.client import RemoteMediaGateway, RemoteMediaGatewayConfig
 
 from .app import DEFAULT_ALLOWED_HOSTS, create_app
 from .models import BrowserIceServer, BrowserRtcConfiguration
+from .server_instance import StudioServerAlreadyRunningError, single_server_instance
 
 
 def _parse_args() -> argparse.Namespace:
@@ -77,22 +78,26 @@ def main() -> None:
         ice_servers=() if ice_server is None else (ice_server,),
         ice_transport_policy="relay" if args.force_turn else "all",
     )
-    gateway = RemoteMediaGateway(
-        RemoteMediaGatewayConfig(
-            base_url=args.media_gateway_url,
-            manage_process=not args.external_media_gateway,
-        )
-    )
-    allowed_hosts = {*DEFAULT_ALLOWED_HOSTS, *configured_allowed_hosts}
-    if host not in {"0.0.0.0", "::"}:
-        allowed_hosts.add(host)
-    app = create_app(
-        web_dist=args.web_dist,
-        media_gateway=gateway,
-        allowed_hosts=tuple(allowed_hosts),
-        rtc_configuration=rtc_configuration,
-    )
-    uvicorn.run(app, host=host, port=args.port, log_level="info")
+    try:
+        with single_server_instance():
+            gateway = RemoteMediaGateway(
+                RemoteMediaGatewayConfig(
+                    base_url=args.media_gateway_url,
+                    manage_process=not args.external_media_gateway,
+                )
+            )
+            allowed_hosts = {*DEFAULT_ALLOWED_HOSTS, *configured_allowed_hosts}
+            if host not in {"0.0.0.0", "::"}:
+                allowed_hosts.add(host)
+            app = create_app(
+                web_dist=args.web_dist,
+                media_gateway=gateway,
+                allowed_hosts=tuple(allowed_hosts),
+                rtc_configuration=rtc_configuration,
+            )
+            uvicorn.run(app, host=host, port=args.port, log_level="info")
+    except StudioServerAlreadyRunningError as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 if __name__ == "__main__":

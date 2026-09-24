@@ -68,6 +68,7 @@ from .models import (
     ValidateDocumentRequest,
 )
 from .runtime import RuntimeConfig, RuntimeGateway
+from .studio_runtime.identifiers import STUDIO_SERVICE_ID
 
 
 logger = logging.getLogger(__name__)
@@ -251,10 +252,12 @@ def create_app(
         return status.to_json_object()
 
     @app.get("/api/logs")
-    async def recent_logs(limit: int = 500) -> F8JsonValue:
+    async def recent_logs(limit: int = 500, before_sequence: int | None = None) -> F8JsonValue:
         if limit < 1 or limit > 1000:
             raise ValueError("log limit must be between 1 and 1000")
-        return _json_value(await studio.events.recent_logs(limit=limit))
+        if before_sequence is not None and before_sequence < 1:
+            raise ValueError("before_sequence must be positive")
+        return _json_value(await studio.events.recent_logs(limit=limit, before_sequence=before_sequence))
 
     @app.get("/api/capabilities")
     async def capabilities() -> F8JsonValue:
@@ -620,6 +623,8 @@ def create_app(
 
     @app.post("/api/runtime/services/{service_id}/stop")
     async def stop_service(service_id: str) -> F8JsonValue:
+        if service_id == STUDIO_SERVICE_ID:
+            return _json_value(await studio.runtime.terminate(service_id))
         try:
             await studio.runtime.terminate(service_id)
         except (TimeoutError, OSError, RuntimeError, ValueError) as exc:

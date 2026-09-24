@@ -2,6 +2,8 @@
 
 The `f8.pystudio` runtime is built into the Web Studio server. These operators provide authoring and presentation behavior without a desktop GUI process.
 
+On the graph canvas, Studio runtime operators can be placed anywhere outside another service's container. Their `serviceId` still binds them to the Studio runtime for validation and deployment. The compact Web Studio Runtime node exposes runtime settings and status; it does not contain or clip its operators. Operators owned by other services remain inside their matching containers.
+
 | Family | Operators and behavior |
 | --- | --- |
 | Presentation | Text, wave, video, audio spectrum, track overlay, 3D scene and TCode views |

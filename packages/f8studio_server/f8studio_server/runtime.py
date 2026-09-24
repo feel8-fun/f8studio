@@ -41,6 +41,7 @@ from f8pysdk.zenoh_transport import ZenohTransport, ZenohTransportConfig
 from f8pysdk.zenoh_naming import zenoh_state_key
 
 from .models import RuntimeActionResult, RuntimeStateField, ServiceDeployResult, ServiceRuntimeStatus
+from .studio_runtime.identifiers import STUDIO_SERVICE_ID
 
 
 RuntimeMonitorCallback = Callable[[str, bytes], Awaitable[None]]
@@ -87,6 +88,91 @@ class RuntimeGateway(Protocol):
     async def terminate(self, service_id: str) -> RuntimeActionResult: ...
 
     async def close(self) -> None: ...
+
+
+class StudioBoundRuntimeGateway:
+    """Route the logical Studio service to this server's private runtime instance."""
+
+    def __init__(self, remote: RuntimeGateway, *, studio_service_id: str) -> None:
+        self._remote = remote
+        self._studio_service_id = ensure_token(studio_service_id, label="studio_service_id")
+
+    def _service_id(self, service_id: str) -> str:
+        return self._studio_service_id if service_id == STUDIO_SERVICE_ID else service_id
+
+    def _node_id(self, node_id: str) -> str:
+        return self._studio_service_id if node_id == STUDIO_SERVICE_ID else node_id
+
+    def _bind_graph(self, graph: F8RuntimeGraph) -> F8RuntimeGraph:
+        services = graph.services if isinstance(graph.services, list) else []
+        nodes = graph.nodes if isinstance(graph.nodes, list) else []
+        edges = graph.edges if isinstance(graph.edges, list) else []
+        return msgspec.structs.replace(
+            graph,
+            services=[
+                msgspec.structs.replace(service, serviceId=self._service_id(str(service.serviceId)))
+                for service in services
+            ],
+            nodes=[
+                msgspec.structs.replace(
+                    node,
+                    serviceId=self._service_id(str(node.serviceId)),
+                    nodeId=self._node_id(str(node.nodeId)),
+                )
+                for node in nodes
+            ],
+            edges=[
+                msgspec.structs.replace(
+                    edge,
+                    fromServiceId=self._service_id(str(edge.fromServiceId)),
+                    toServiceId=self._service_id(str(edge.toServiceId)),
+                    fromOperatorId=self._node_id(edge.fromOperatorId) if isinstance(edge.fromOperatorId, str) else edge.fromOperatorId,
+                    toOperatorId=self._node_id(edge.toOperatorId) if isinstance(edge.toOperatorId, str) else edge.toOperatorId,
+                )
+                for edge in edges
+            ],
+        )
+
+    async def start_monitoring(self, callback: RuntimeMonitorCallback) -> None:
+        await self._remote.start_monitoring(callback)
+
+    async def deploy(self, *, service_id: str, graph: F8RuntimeGraph, force_apply: bool) -> ServiceDeployResult:
+        result = await self._remote.deploy(
+            service_id=self._service_id(service_id), graph=self._bind_graph(graph), force_apply=force_apply,
+        )
+        return msgspec.structs.replace(result, service_id=service_id)
+
+    async def status(self, service_id: str) -> ServiceRuntimeStatus:
+        status = await self._remote.status(self._service_id(service_id))
+        return msgspec.structs.replace(status, service_id=service_id)
+
+    async def set_active(self, service_id: str, *, active: bool) -> RuntimeActionResult:
+        return await self._remote.set_active(self._service_id(service_id), active=active)
+
+    async def set_state(self, service_id: str, *, node_id: str, field: str, value: F8JsonValue) -> RuntimeActionResult:
+        return await self._remote.set_state(
+            self._service_id(service_id), node_id=self._node_id(node_id), field=field, value=value,
+        )
+
+    async def read_state(self, service_id: str, *, node_id: str, field: str) -> RuntimeStateField:
+        return await self._remote.read_state(self._service_id(service_id), node_id=self._node_id(node_id), field=field)
+
+    async def invoke_command(self, service_id: str, *, call: str, params: dict[str, F8JsonValue]) -> RuntimeActionResult:
+        return await self._remote.invoke_command(self._service_id(service_id), call=call, params=params)
+
+    async def terminate(self, service_id: str) -> RuntimeActionResult:
+        if service_id != STUDIO_SERVICE_ID:
+            return await self._remote.terminate(service_id)
+        graph = F8RuntimeGraph(graphId=new_id(), revision=new_id(), services=[], nodes=[], edges=[])
+        result = await self._remote.deploy(service_id=self._studio_service_id, graph=graph, force_apply=True)
+        return RuntimeActionResult(
+            success=result.success,
+            result={"stopped": result.success} if result.success else None,
+            error_message=result.error_message,
+        )
+
+    async def close(self) -> None:
+        await self._remote.close()
 
 
 @dataclass(frozen=True)

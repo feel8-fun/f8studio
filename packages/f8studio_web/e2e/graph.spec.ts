@@ -13,6 +13,52 @@ async function connectHandles(
   await target.click({ force: true });
 }
 
+async function expectEdgeTouchesHandles(page: Page, sourceNodeId: string, sourcePortId: string, targetNodeId: string, targetPortId: string): Promise<void> {
+  const geometry = await page.evaluate(({ sourceNodeId, sourcePortId, targetNodeId, targetPortId }) => {
+    const source = document.querySelector<HTMLElement>(`[data-nodeid="${sourceNodeId}"][data-handleid="${sourcePortId}"]`);
+    const target = document.querySelector<HTMLElement>(`[data-nodeid="${targetNodeId}"][data-handleid="${targetPortId}"]`);
+    const path = document.querySelector<SVGPathElement>('.react-flow__edge.graph-edge-data .react-flow__edge-path');
+    if (source === null || target === null || path === null) throw new Error('Expected a visible data connection');
+    const transform = path.getScreenCTM();
+    if (transform === null) throw new Error('Edge path has no screen transform');
+    const first = path.getPointAtLength(0).matrixTransform(transform);
+    const last = path.getPointAtLength(path.getTotalLength()).matrixTransform(transform);
+    const sourceBounds = source.getBoundingClientRect();
+    const targetBounds = target.getBoundingClientRect();
+    const sourceNode = source.closest<HTMLElement>('.studio-node');
+    const targetNode = target.closest<HTMLElement>('.studio-node');
+    if (sourceNode === null || targetNode === null) throw new Error('Expected node shells around the connection');
+    const sourceNodeBounds = sourceNode.getBoundingClientRect();
+    const targetNodeBounds = targetNode.getBoundingClientRect();
+    const sourceHit = document.elementFromPoint(sourceBounds.left - sourceBounds.width * 0.4, sourceBounds.top + sourceBounds.height / 2);
+    const targetHit = document.elementFromPoint(targetBounds.right + targetBounds.width * 0.4, targetBounds.top + targetBounds.height / 2);
+    const sourceOutsideHit = document.elementFromPoint(sourceNodeBounds.right + sourceBounds.width * 0.2, sourceBounds.top + sourceBounds.height / 2);
+    const targetOutsideHit = document.elementFromPoint(targetNodeBounds.left - targetBounds.width * 0.2, targetBounds.top + targetBounds.height / 2);
+    return {
+      sourceGap: Math.abs(first.x - sourceBounds.right),
+      targetGap: Math.abs(last.x - targetBounds.left),
+      sourceHit: sourceHit?.closest('.port-handle') === source,
+      targetHit: targetHit?.closest('.port-handle') === target,
+      sourceCenterError: Math.abs(sourceBounds.left + sourceBounds.width / 2 - sourceNodeBounds.right) / sourceBounds.width,
+      targetCenterError: Math.abs(targetBounds.left + targetBounds.width / 2 - targetNodeBounds.left) / targetBounds.width,
+      sourceOutside: (sourceBounds.right - sourceNodeBounds.right) / sourceBounds.width,
+      targetOutside: (targetNodeBounds.left - targetBounds.left) / targetBounds.width,
+      sourceOutsideHit: sourceOutsideHit?.closest('.port-handle') === source,
+      targetOutsideHit: targetOutsideHit?.closest('.port-handle') === target,
+    };
+  }, { sourceNodeId, sourcePortId, targetNodeId, targetPortId });
+  expect(geometry.sourceGap).toBeLessThan(2);
+  expect(geometry.targetGap).toBeLessThan(2);
+  expect(geometry.sourceHit).toBe(true);
+  expect(geometry.targetHit).toBe(true);
+  expect(geometry.sourceCenterError).toBeLessThan(0.15);
+  expect(geometry.targetCenterError).toBeLessThan(0.15);
+  expect(geometry.sourceOutside).toBeGreaterThan(0.25);
+  expect(geometry.targetOutside).toBeGreaterThan(0.25);
+  expect(geometry.sourceOutsideHit).toBe(true);
+  expect(geometry.targetOutsideHit).toBe(true);
+}
+
 async function viewportTransform(page: Page): Promise<string> {
   return page.locator('.react-flow__viewport').evaluate(
     (element) => (element as HTMLElement).style.transform,
@@ -582,6 +628,7 @@ test('edits inline state and configures typed exec and data connections', async 
   await expect(dataEdge).toHaveCount(1);
   await expect(page.locator('.save-state')).toHaveText('Saved');
   await expect.poll(() => viewportTransform(page)).toBe(zoomedViewport);
+  await expectEdgeTouchesHandles(page, graph.detrendId, graph.detrendData, graph.printId, graph.printData);
   await expectObservedNodeStable(page);
 
   if ((page.viewportSize()?.width ?? 0) > 560) {
@@ -608,6 +655,43 @@ test('edits inline state and configures typed exec and data connections', async 
   expect(pageErrors).toEqual([]);
 });
 
+test('shows IM Player commands once per port row and opens them from the node', async ({ page }, testInfo) => {
+  await page.goto('/');
+  await expect(page.locator('.connection-online')).toBeVisible();
+  const previousProjectId = await page.locator('#project-select').inputValue();
+  await page.locator('.project-control').getByRole('button', { name: 'New project' }).click();
+  await expect.poll(() => page.locator('#project-select').inputValue()).not.toBe(previousProjectId);
+
+  await page.getByLabel('Search nodes').fill('f8.implayer');
+  await page.locator('.catalog-list button:not(:disabled)').filter({ hasText: 'f8.implayer' }).first().click();
+  const node = page.locator('.react-flow__node.flow-node-service').filter({ hasText: 'IM Player' });
+  await expect(node).toHaveCount(1);
+  const commandRows = node.locator('.port-row-command');
+  const commandNames = ['open', 'play', 'pause', 'stop', 'next', 'previous', 'seek', 'setVolume'];
+  await expect(commandRows).toHaveCount(commandNames.length);
+  for (const [index, name] of commandNames.entries()) {
+    const row = commandRows.nth(index);
+    await expect(row).toHaveText(name);
+    await expect(row.locator('.port-handle-command')).toHaveCount(2);
+    await expect(row.getByRole('button', { name, exact: true })).toHaveCount(1);
+  }
+  await expect(node.locator('.node-command-actions')).toHaveCount(0);
+  const buttonsFit = await node.evaluate((element) => {
+    const bounds = element.querySelector('.studio-node')?.getBoundingClientRect();
+    if (bounds === undefined) throw new Error('Missing IM Player node shell');
+    return [...element.querySelectorAll('.port-command-button')].every((button) => {
+      const buttonBounds = button.getBoundingClientRect();
+      return buttonBounds.left >= bounds.left && buttonBounds.right <= bounds.right;
+    });
+  });
+  expect(buttonsFit).toBe(true);
+
+  await commandRows.first().getByRole('button', { name: 'open' }).click();
+  await expect(page.getByRole('dialog', { name: 'Run open' })).toBeVisible();
+  await page.getByRole('button', { name: 'Close command' }).click();
+  await page.screenshot({ path: testInfo.outputPath('implayer-command-rows.png'), fullPage: true });
+});
+
 test('keeps long inline state editors within fixed node rows', async ({ page }, testInfo) => {
   await page.goto('/');
   await expect(page.locator('.connection-online')).toBeVisible();
@@ -632,10 +716,16 @@ test('keeps long inline state editors within fixed node rows', async ({ page }, 
     const box = await operator.boundingBox();
     return box?.height ?? null;
   }).toBeLessThanOrEqual(140);
-  await expect.poll(async () => operator.evaluate((element) => ({
-    width: Number.parseFloat(getComputedStyle(element).width),
-    overflow: element.scrollWidth - element.clientWidth,
-  }))).toEqual({ width: 240, overflow: 0 });
+  await expect.poll(async () => operator.evaluate((element) => {
+    const input = element.querySelector('.state-text-code input');
+    if (input === null) throw new Error('Missing inline code input');
+    const nodeBounds = element.getBoundingClientRect();
+    const inputBounds = input.getBoundingClientRect();
+    return {
+      width: Number.parseFloat(getComputedStyle(element).width),
+      inputFits: inputBounds.left >= nodeBounds.left && inputBounds.right <= nodeBounds.right,
+    };
+  })).toEqual({ width: 240, inputFits: true });
   await page.screenshot({ path: testInfo.outputPath('compact-inline-state.png'), fullPage: true });
 });
 
@@ -728,6 +818,17 @@ test('builds, deploys, observes, modifies, and restores a built-in Studio graph'
   await stepperButton.click();
   await expect(page.locator('.react-flow__node.flow-node-service')).toHaveCount(1);
   await expect(page.locator('.react-flow__node.flow-node-operator')).toHaveCount(1);
+  const studioOperator = page.locator('.react-flow__node.flow-node-operator');
+  const studioOperatorId = await studioOperator.getAttribute('data-id');
+  if (studioOperatorId === null) throw new Error('Studio operator has no node id');
+  const studioOperatorLayout = () => page.evaluate(async ({ selectedProjectId, nodeId }) => {
+    const response = await fetch(`/api/projects/${selectedProjectId}`);
+    const record = await response.json() as {
+      document: { layout: { nodeId: string; x: number; y: number }[] };
+    };
+    return record.document.layout.find((layout) => layout.nodeId === nodeId);
+  }, { selectedProjectId: projectId, nodeId: studioOperatorId });
+  await expect.poll(() => page.locator('.react-flow__node.flow-node-service').evaluate((node) => node.getBoundingClientRect().width)).toBeLessThan(400);
   await expect(page.locator('.graph-toolbar')).toContainText('Draft r1 · Layout r1');
   await expect.poll(async () => page.evaluate(async (selectedProjectId) => {
     const response = await fetch(`/api/projects/${selectedProjectId}`);
@@ -764,6 +865,23 @@ test('builds, deploys, observes, modifies, and restores a built-in Studio graph'
   await expect(page.locator('#project-select')).toHaveValue(projectId);
   await expect(page.locator('.flow-node-operator .state-control-inline input[type="range"]')).toHaveValue('0.75');
   await expect(page.locator('.deploy-state')).toContainText('succeeded r2');
+
+  const initialPosition = await studioOperatorLayout();
+  if (initialPosition === undefined) throw new Error('Studio operator has no persisted layout');
+  const beforeDrag = await studioOperator.locator('.node-drag-handle').boundingBox();
+  if (beforeDrag === null) throw new Error('Studio operator is not visible for dragging');
+  const dragStart = { x: beforeDrag.x + 24, y: beforeDrag.y + 14 };
+  await page.mouse.move(dragStart.x, dragStart.y);
+  await page.mouse.down();
+  await page.mouse.move(dragStart.x + 250, dragStart.y + 160, { steps: 12 });
+  await page.mouse.up();
+  await expect.poll(async () => (await studioOperatorLayout())?.x ?? null).toBeGreaterThan(initialPosition.x + 100);
+  const movedPosition = await studioOperatorLayout();
+  const movedTransform = await studioOperator.evaluate((node) => (node as HTMLElement).style.transform);
+  await page.reload();
+  await expect(studioOperator).toHaveCount(1);
+  await expect.poll(studioOperatorLayout).toEqual(movedPosition);
+  await expect.poll(() => studioOperator.evaluate((node) => (node as HTMLElement).style.transform)).toBe(movedTransform);
   await page.screenshot({ path: testInfo.outputPath('studio-runtime-workflow.png'), fullPage: true });
   expect(pageErrors).toEqual([]);
 });

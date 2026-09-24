@@ -145,6 +145,54 @@ test('collapses services without operator children to their own visible rows', (
   });
 });
 
+test('projects Studio operators on the root canvas while retaining their runtime binding', () => {
+  const engine = document.nodes[0];
+  const source = document.nodes[1];
+  if (engine?.kind !== 'service' || source?.kind !== 'operator') throw new Error('Invalid projection fixture');
+  const studioService = {
+    ...engine,
+    nodeId: 'studio',
+    name: 'Web Studio Runtime',
+    serviceId: 'studio',
+    serviceClass: 'f8.pystudio',
+    spec: { ...engine.spec, serviceClass: 'f8.pystudio' },
+  };
+  const video = {
+    ...source,
+    nodeId: 'video',
+    name: 'Video Viz',
+    serviceId: 'studio',
+    serviceClass: 'f8.pystudio',
+    operatorClass: 'f8.viz.video',
+    spec: { ...source.spec, serviceClass: 'f8.pystudio', operatorClass: 'f8.viz.video' },
+  };
+  const studioDocument: StudioDocument = {
+    ...document,
+    nodes: [...document.nodes, studioService, video],
+    edges: [],
+    layout: [
+      ...document.layout,
+      { nodeId: 'studio', x: 700, y: 100, width: 850, height: 600, collapsed: false },
+      { nodeId: 'video', x: 30, y: 940, collapsed: false },
+    ],
+  };
+  const projected = projectDocument(studioDocument);
+  const runtime = projected.nodes.find((node) => node.id === 'studio');
+  const viz = projected.nodes.find((node) => node.id === 'video');
+
+  expect(runtime).toMatchObject({
+    data: { childCount: 0 },
+    style: { width: COMPACT_SERVICE_WIDTH, height: 64 },
+  });
+  expect(viz).toMatchObject({ position: { x: 30, y: 940 }, data: { graphNode: { serviceId: 'studio' } } });
+  expect(viz?.parentId).toBeUndefined();
+  expect(projected.nodes.find((node) => node.id === 'source')?.parentId).toBe('engine');
+  expect(absoluteFlowPosition(viz!, projected.nodes)).toEqual({ x: 30, y: 940 });
+
+  const reloaded = projectDocument(structuredClone(studioDocument));
+  expect(reloaded.nodes.find((node) => node.id === 'video')?.position).toEqual({ x: 30, y: 940 });
+});
+
 test('reuses unchanged projected graph objects after a server round trip', () => {
   const current = projectDocument(document);
   const roundTripped = projectDocument(structuredClone(document));

@@ -9,6 +9,7 @@ import {
   useNodesInitialized,
   useNodesState,
   useReactFlow,
+  useUpdateNodeInternals,
   type Connection,
   type Edge,
   type FinalConnectionState,
@@ -73,6 +74,7 @@ import {
   SERVICE_MIN_HEIGHT,
   SERVICE_WIDTH,
   serviceChildInsetY,
+  STUDIO_SERVICE_CLASS,
   type StudioFlowNode,
 } from './projection';
 import { StateFieldControl } from './StateFieldControl';
@@ -82,7 +84,6 @@ import { NodeCatalog } from './NodeCatalog';
 
 const nodeTypes = { studio: StudioNodeView };
 const SELECTED_PROJECT_KEY = 'f8studio.selectedProjectId';
-const STUDIO_SERVICE_CLASS = 'f8.pystudio';
 const STUDIO_SERVICE_ID = 'studio';
 
 function hotkeyEligible(field: StateSpec): boolean {
@@ -389,9 +390,14 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
   const fittedProjectId = useRef<string | null>(null);
   const mutationInFlight = useRef(false);
   const connectedStateInputsCache = useRef<ReadonlySet<string>>(new Set());
+  const projectedEdgeIds = useRef<{ readonly projectId: string | null; readonly ids: ReadonlySet<string> }>({
+    projectId: null,
+    ids: new Set(),
+  });
   const projectRef = useRef<ProjectRecord | null>(null);
   const nodesInitialized = useNodesInitialized();
   const { fitView, screenToFlowPosition } = useReactFlow<StudioFlowNode, Edge>();
+  const updateNodeInternals = useUpdateNodeInternals();
   const projectId = project?.projectId ?? null;
   projectRef.current = project;
 
@@ -530,6 +536,20 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
   }, [project, setEdges, setNodes]);
 
   useEffect(() => {
+    if (projectId === null || projectedProjectId !== projectId) return;
+    const previous = projectedEdgeIds.current;
+    const added = previous.projectId === projectId
+      ? edges.filter((edge) => !previous.ids.has(edge.id))
+      : [];
+    projectedEdgeIds.current = { projectId, ids: new Set(edges.map((edge) => edge.id)) };
+    if (added.length === 0) return;
+    // React Flow can retain pre-connection handle bounds until the connected nodes are measured again.
+    const affectedNodeIds = [...new Set(added.flatMap((edge) => [edge.source, edge.target]))];
+    const frame = requestAnimationFrame(() => updateNodeInternals(affectedNodeIds));
+    return () => cancelAnimationFrame(frame);
+  }, [edges, projectId, projectedProjectId, updateNodeInternals]);
+
+  useEffect(() => {
     if (
       projectId === null ||
       projectedProjectId !== projectId ||
@@ -585,15 +605,20 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
       setError('The selected operator or service is no longer available.');
       return;
     }
+    const isStudioRuntime = operator.data.graphNode.serviceClass === STUDIO_SERVICE_CLASS;
     const width = typeof service.style?.width === 'number' ? service.style.width : SERVICE_WIDTH;
     const height = typeof service.style?.height === 'number' ? service.style.height : SERVICE_MIN_HEIGHT;
-    const relative = constrainOperatorPosition(
+    const relative = isStudioRuntime ? null : constrainOperatorPosition(
       operator.position,
       width,
       height,
       operatorHeight(operator.data.graphNode),
       serviceChildInsetY(service.data.graphNode),
     );
+    const position = relative === null ? operator.position : {
+      x: service.position.x + relative.x,
+      y: service.position.y + relative.y,
+    };
     const currentLayout = project.document.layout.find((layout) => layout.nodeId === nodeId);
     void commit([
       { op: 'bindOperatorService', nodeId, serviceId },
@@ -601,8 +626,8 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
         op: 'setNodeLayout',
         layout: {
           nodeId,
-          x: service.position.x + relative.x,
-          y: service.position.y + relative.y,
+          x: position.x,
+          y: position.y,
           width: currentLayout?.width,
           height: currentLayout?.height,
           collapsed: currentLayout?.collapsed ?? false,
@@ -683,8 +708,23 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
         nodesToCreate.push(selectedNode);
       }
       let nextServiceIndex = project.document.nodes.filter((node) => node.kind === 'service').length;
+      const studioOperatorPosition = selectedNode.kind === 'operator' && selectedNode.serviceClass === STUDIO_SERVICE_CLASS
+        ? projectDocument({ ...project.document, nodes: [...project.document.nodes, ...nodesToCreate] })
+          .nodes.find((node) => node.id === selectedNode.nodeId)?.position
+        : undefined;
       const operations = nodesToCreate.map((node): GraphOperation => {
-        if (node.kind !== 'service') return { op: 'createNode', node };
+        if (node.kind !== 'service') return {
+          op: 'createNode',
+          node,
+          ...(studioOperatorPosition === undefined ? {} : {
+            layout: {
+              nodeId: node.nodeId,
+              x: studioOperatorPosition.x,
+              y: studioOperatorPosition.y,
+              collapsed: false,
+            },
+          }),
+        };
         const serviceIndex = nextServiceIndex;
         nextServiceIndex += 1;
         return {
@@ -791,7 +831,8 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
       if (previous === undefined) return;
       const delta = { x: node.position.x - previous.position.x, y: node.position.y - previous.position.y };
       const movedNodeIds = new Set(project.document.nodes.flatMap((candidate) =>
-        candidate.nodeId === graphNode.nodeId || (candidate.kind === 'operator' && candidate.serviceId === graphNode.serviceId)
+        candidate.nodeId === graphNode.nodeId || (graphNode.serviceClass !== STUDIO_SERVICE_CLASS &&
+          candidate.kind === 'operator' && candidate.serviceId === graphNode.serviceId)
           ? [candidate.nodeId]
           : [],
       ));
@@ -819,6 +860,18 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
           },
         }];
       });
+      if (graphNode.serviceClass === STUDIO_SERVICE_CLASS) {
+        for (const candidate of projected.nodes) {
+          if (candidate.data.graphNode.kind !== 'operator' ||
+            candidate.data.graphNode.serviceId !== graphNode.serviceId ||
+            project.document.layout.some((layout) => layout.nodeId === candidate.id)) continue;
+          const position = absoluteFlowPosition(candidate, projected.nodes);
+          operations.push({
+            op: 'setNodeLayout',
+            layout: { nodeId: candidate.id, x: position.x, y: position.y, collapsed: false },
+          });
+        }
+      }
       void commit(operations);
       return;
     }
@@ -836,15 +889,31 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
         ? center
         : screenToFlowPosition({ x: changedTouch.clientX, y: changedTouch.clientY });
     const target = projected.nodes.find((candidate) => {
-      if (candidate.data.graphNode.kind !== 'service') return false;
+      if (candidate.data.graphNode.kind !== 'service' ||
+        candidate.data.graphNode.serviceClass === STUDIO_SERVICE_CLASS) return false;
       const width = typeof candidate.style?.width === 'number' ? candidate.style.width : SERVICE_WIDTH;
       const height = typeof candidate.style?.height === 'number' ? candidate.style.height : SERVICE_MIN_HEIGHT;
       return dropPosition.x >= candidate.position.x && dropPosition.x <= candidate.position.x + width &&
         dropPosition.y >= candidate.position.y && dropPosition.y <= candidate.position.y + height;
     });
     if (target === undefined) {
-      restoreProjection();
-      setError('Operators must remain inside a compatible service container.');
+      if (graphNode.serviceClass !== STUDIO_SERVICE_CLASS) {
+        restoreProjection();
+        setError('Operators must remain inside a compatible service container.');
+        return;
+      }
+      const currentLayout = project.document.layout.find((layout) => layout.nodeId === node.id);
+      void commit([{
+        op: 'setNodeLayout',
+        layout: {
+          nodeId: node.id,
+          x: absolute.x,
+          y: absolute.y,
+          width: currentLayout?.width,
+          height: currentLayout?.height,
+          collapsed: currentLayout?.collapsed ?? false,
+        },
+      }]);
       return;
     }
     if (target.data.graphNode.serviceClass !== graphNode.serviceClass) {

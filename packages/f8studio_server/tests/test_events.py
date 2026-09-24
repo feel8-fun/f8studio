@@ -68,5 +68,7 @@ def test_log_history_retains_recent_service_output_and_deployment_errors() -> No
 
         assert await journal.recent_logs() == (failure, latest)
         assert await journal.recent_logs(limit=1) == (latest,)
+        assert await journal.recent_logs(limit=1, before_sequence=latest.sequence) == (failure,)
+        assert await journal.recent_logs(before_sequence=failure.sequence) == ()
 
     asyncio.run(scenario())

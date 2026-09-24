@@ -16,7 +16,8 @@ button:disabled { cursor: default; }
 .studio-shell {
   display: grid;
   grid-template: 44px minmax(0, 1fr) / 52px minmax(0, 1fr);
-  min-height: 100%;
+  height: 100dvh;
+  overflow: hidden;
   background: #111317;
 }
 
@@ -93,6 +94,8 @@ button:disabled { cursor: default; }
 .logs-connection.online svg { color: #62ce99; }
 .logs-error { flex: 0 0 auto; margin: 0; padding: 7px 12px; border-bottom: 1px solid #724347; color: #f0a0a0; font-size: 11px; }
 .logs-list { flex: 1; min-height: 0; overflow: auto; font-family: "SFMono-Regular", Consolas, monospace; font-size: 11px; }
+.logs-history-actions { display: flex; justify-content: center; gap: 8px; padding: 8px; border-bottom: 1px solid #30363d; }
+.logs-history-actions button { min-height: 26px; padding: 0 9px; border: 1px solid #414b55; border-radius: 2px; color: #c6d0d9; background: #242b32; font-size: 10px; }
 .logs-row { display: grid; grid-template-columns: 88px 58px minmax(100px, 180px) minmax(0, 1fr); gap: 12px; align-items: start; min-height: 31px; padding: 7px 12px; border-bottom: 1px solid #222830; }
 .logs-row:nth-child(even) { background: #171b20; }
 .logs-row time { color: #87919c; }
@@ -656,9 +659,6 @@ button:disabled { cursor: default; }
 .catalog-list button span { overflow: hidden; color: #78818c; font-family: "SFMono-Regular", Consolas, monospace; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .inspector-commands { display: grid; gap: 5px; margin: 8px 0 14px; }
 .inspector-commands .command-button { display: flex; align-items: center; justify-content: flex-start; gap: 6px; width: 100%; min-height: 28px; font-size: 10px; }
-.node-command-actions { display: flex; gap: 4px; height: 30px; padding: 3px 6px; overflow-x: auto; border-bottom: 1px solid #343a43; }
-.node-command-actions button { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; max-width: 100%; min-height: 22px; padding: 2px 5px; border: 1px solid #52606d; border-radius: 2px; color: #d4d9df; background: #29313a; cursor: pointer; font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.node-command-actions button:disabled { opacity: 0.45; cursor: default; }
 .command-dialog-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 16px; background: rgb(0 0 0 / 65%); }
 .command-dialog { width: min(420px, 100%); max-height: min(680px, calc(100vh - 32px)); overflow: auto; border: 1px solid #49535e; border-radius: 4px; color: #dce1e6; background: #1b2026; box-shadow: 0 20px 60px rgb(0 0 0 / 45%); }
 .command-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid #343b44; }
@@ -718,7 +718,7 @@ button:disabled { cursor: default; }
   pointer-events: auto;
 }
 
-.studio-node { box-sizing: border-box; overflow: hidden; border: 1px solid #46505b; border-radius: 3px; color: #dfe3e7; background: #1b1f25; box-shadow: 0 3px 12px rgb(0 0 0 / 20%); }
+.studio-node { box-sizing: border-box; overflow: visible; border: 1px solid #46505b; border-radius: 3px; color: #dfe3e7; background: #1b1f25; box-shadow: 0 3px 12px rgb(0 0 0 / 20%); }
 .studio-node-operator { width: 100%; height: 100%; contain: inline-size; }
 .studio-node-service { width: 100%; height: 100%; border-color: #3d755f; background: rgb(23 36 31 / 86%); box-shadow: 0 8px 24px rgb(0 0 0 / 18%); }
 .studio-node-service-compact { background: #192a24; }
@@ -731,7 +731,7 @@ button:disabled { cursor: default; }
   border-radius: 1px !important;
   background: #70d2aa !important;
 }
-.studio-node header { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: 4px; min-height: 34px; padding: 3px 6px; border-bottom: 1px solid #343a43; background: #272c33; }
+.studio-node header { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: 4px; min-height: 34px; padding: 3px 6px; border-bottom: 1px solid #343a43; border-radius: 2px 2px 0 0; background: #272c33; }
 .studio-node-service header { grid-template-columns: 16px minmax(0, 1fr) auto auto; border-top: 2px solid #4eaf87; background: #20332b; }
 .studio-node-operator header { border-top: 2px solid #6688ac; }
 .studio-node-inline-video { display: grid; place-items: center; width: 100%; height: 135px; min-height: 135px; overflow: hidden; border-bottom: 1px solid #343a43; background: #050708; }
@@ -748,27 +748,42 @@ button:disabled { cursor: default; }
 .node-ports { display: grid; padding: 2px 0; }
 .port-row { display: grid; grid-template-columns: 56px minmax(0, 1fr) 56px; align-items: center; height: 24px; min-height: 24px; }
 .port-row-shared-state { grid-template-columns: 64px minmax(0, 1fr) 12px; }
+.port-row-command { grid-template-columns: 16px minmax(0, 1fr) 16px; }
 .port-label { position: relative; display: flex; align-items: center; min-width: 0; padding-left: 8px; color: #aab1ba; font-size: 9px; }
 .port-label > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .port-output { justify-content: flex-end; padding-right: 8px; padding-left: 2px; text-align: right; }
 .port-control { display: grid; min-width: 0; height: 24px; padding: 2px 3px; align-items: center; overflow: hidden; }
+.port-command-button { width: 100%; height: 20px; min-width: 0; padding: 0 5px; overflow: hidden; border: 1px solid #52606d; border-radius: 2px; color: #d4d9df; background: #29313a; font-size: 9px; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.port-command-button:hover:not(:disabled) { border-color: #789bc2; background: #344251; }
+.port-command-button:focus-visible { outline: 2px solid #72d6b0; outline-offset: 1px; }
+.port-command-button:disabled { opacity: 0.45; }
+.port-command-name { overflow: hidden; color: #aab1ba; font-size: 9px; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 .port-handle {
-  width: 24px;
-  height: 24px;
+  width: 10px;
+  height: 10px;
   border: 0;
+  border-radius: 0;
   background: transparent;
 }
 .port-handle::before {
   position: absolute;
-  inset: 7px;
-  border: 1px solid #101318;
-  border-radius: 50%;
-  background: var(--port-color);
+  inset: -7px;
+  background: transparent;
   content: "";
 }
+.port-handle::after {
+  position: absolute;
+  inset: -1px;
+  background: var(--port-color);
+  content: "";
+  pointer-events: none;
+}
 .port-handle-data { --port-color: #54bd8c; }
+.port-handle-data::after { border-radius: 50%; }
 .port-handle-state, .port-handle-command { --port-color: #dfaa57; }
+.port-handle-command::after { inset: 1px; transform: rotate(45deg); }
 .port-handle-exec { --port-color: #789bc2; }
+.port-handle-exec::after { clip-path: polygon(0 0, 60% 0, 100% 50%, 60% 100%, 0 100%); }
 .graph-edge-data path { stroke: #54bd8c; }
 .graph-edge-state path { stroke: #dfaa57; stroke-dasharray: 5 3; }
 .graph-edge-exec path { stroke: #789bc2; stroke-width: 2; }

@@ -6,6 +6,8 @@ import { isStudioLogEvent, type JsonValue, type StudioLogEvent } from '../api/co
 
 type LogLevel = 'info' | 'warning' | 'error';
 type LevelFilter = 'all' | LogLevel;
+const LOG_PAGE_SIZE = 100;
+const MAX_LOADED_LOGS = 300;
 
 interface DisplayLog {
   readonly level: LogLevel;
@@ -75,12 +77,13 @@ function displayLog(event: StudioLogEvent): DisplayLog {
   };
 }
 
-function mergeLogs(current: readonly StudioLogEvent[], incoming: readonly StudioLogEvent[]): readonly StudioLogEvent[] {
+function mergeLogs(current: readonly StudioLogEvent[], incoming: readonly StudioLogEvent[], keep: 'latest' | 'oldest' = 'latest'): readonly StudioLogEvent[] {
   if (incoming.length === 0) return current;
   const epoch = incoming[incoming.length - 1]?.serverEpoch;
   const merged = new Map(current.filter((event) => event.serverEpoch === epoch).map((event) => [event.eventId, event]));
   for (const event of incoming) merged.set(event.eventId, event);
-  return [...merged.values()].sort((left, right) => left.sequence - right.sequence).slice(-1000);
+  const ordered = [...merged.values()].sort((left, right) => left.sequence - right.sequence);
+  return keep === 'oldest' ? ordered.slice(0, MAX_LOADED_LOGS) : ordered.slice(-MAX_LOADED_LOGS);
 }
 
 export function LogsWorkspace() {
@@ -90,18 +93,51 @@ export function LogsWorkspace() {
   const [query, setQuery] = useState('');
   const [level, setLevel] = useState<LevelFilter>('all');
   const [follow, setFollow] = useState(true);
+  const [historyMode, setHistoryMode] = useState(false);
+  const [hasOlder, setHasOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const historyModeRef = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const load = useCallback(async (signal?: AbortSignal) => {
+  const loadLatest = useCallback(async (signal?: AbortSignal) => {
     try {
-      const snapshot = await fetchLogs(signal);
+      const snapshot = await fetchLogs({ limit: LOG_PAGE_SIZE, signal });
       setEvents((current) => mergeLogs(current, snapshot));
+      setHasOlder(snapshot.length === LOG_PAGE_SIZE);
       setError(null);
     } catch (reason: unknown) {
       if (signal?.aborted) return;
       setError(reason instanceof Error ? reason.message : 'Unable to load logs');
     }
   }, []);
+
+  const loadOlder = async () => {
+    const beforeSequence = events[0]?.sequence;
+    if (beforeSequence === undefined || loadingOlder) return;
+    historyModeRef.current = true;
+    setHistoryMode(true);
+    setFollow(false);
+    setLoadingOlder(true);
+    try {
+      const older = await fetchLogs({ limit: LOG_PAGE_SIZE, beforeSequence });
+      setEvents((current) => mergeLogs(current, older, 'oldest'));
+      setHasOlder(older.length === LOG_PAGE_SIZE);
+      setError(null);
+      if (listRef.current !== null) listRef.current.scrollTop = 0;
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : 'Unable to load older logs');
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
+
+  const jumpLatest = () => {
+    historyModeRef.current = false;
+    setHistoryMode(false);
+    setFollow(true);
+    setEvents([]);
+    void loadLatest();
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -114,7 +150,7 @@ export function LogsWorkspace() {
       socket.onopen = () => {
         retry = 0;
         setConnected(true);
-        void load(controller.signal);
+        if (!historyModeRef.current) void loadLatest(controller.signal);
       };
       socket.onmessage = (message) => {
         let decoded: unknown;
@@ -125,7 +161,7 @@ export function LogsWorkspace() {
           return;
         }
         if (isStudioLogEvent(decoded) && isLogType(decoded.type)) {
-          setEvents((current) => mergeLogs(current, [decoded]));
+          if (!historyModeRef.current) setEvents((current) => mergeLogs(current, [decoded]));
         }
       };
       socket.onclose = () => {
@@ -140,7 +176,7 @@ export function LogsWorkspace() {
       socket?.close();
       if (retryTimer !== null) window.clearTimeout(retryTimer);
     };
-  }, [load]);
+  }, [loadLatest]);
 
   const visible = useMemo(() => events.flatMap((event) => {
     const row = displayLog(event);
@@ -164,9 +200,13 @@ export function LogsWorkspace() {
       </select>
       <label className="logs-follow"><input type="checkbox" checked={follow} onChange={(event) => setFollow(event.target.checked)} />Follow</label>
       <span className={`logs-connection ${connected ? 'online' : ''}`}><CircleDot size={13} />{connected ? 'Live' : 'Reconnecting'}</span>
-      <button type="button" className="icon-button bordered" aria-label="Refresh logs" title="Refresh logs" onClick={() => void load()}><RefreshCw size={15} /></button>
+      <button type="button" className="icon-button bordered" aria-label="Refresh logs" title="Refresh logs" onClick={jumpLatest}><RefreshCw size={15} /></button>
     </div>
     {error !== null && <p className="logs-error" role="alert">{error}</p>}
+    {(hasOlder || historyMode) && <div className="logs-history-actions">
+      {hasOlder && <button type="button" disabled={loadingOlder} onClick={() => void loadOlder()}>{loadingOlder ? 'Loading...' : 'Load older'}</button>}
+      {historyMode && <button type="button" onClick={jumpLatest}>Latest</button>}
+    </div>}
     <div className="logs-list" ref={listRef} role="log" aria-live="off">
       {visible.map(({ event, row }) => <div className="logs-row" data-level={row.level} key={event.eventId}>
         <time dateTime={event.timestamp}>{new Date(event.timestamp).toLocaleTimeString()}</time>

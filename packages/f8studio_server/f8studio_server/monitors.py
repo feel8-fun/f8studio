@@ -20,8 +20,9 @@ class MonitorEnvelope(msgspec.Struct, frozen=True, kw_only=True):
 
 
 class RuntimeMonitorStore:
-    def __init__(self, events: EventJournal) -> None:
+    def __init__(self, events: EventJournal, *, studio_service_id: str | None = None) -> None:
         self._events = events
+        self._studio_service_id = studio_service_id
         self._latest: dict[tuple[str, str], F8MonitorSnapshot] = {}
         self._lock = asyncio.Lock()
         self._reported_decode_errors: set[str] = set()
@@ -36,6 +37,17 @@ class RuntimeMonitorStore:
                 logger.warning("invalid runtime monitor payload key=%s", key, exc_info=exc)
             return
         snapshot = envelope.value
+        service_id = str(snapshot.serviceId)
+        if service_id == "studio" and self._studio_service_id is not None:
+            return
+        if service_id.startswith("studio_"):
+            if service_id != self._studio_service_id:
+                return
+            snapshot = msgspec.structs.replace(
+                snapshot,
+                serviceId="studio",
+                nodeId="studio" if str(snapshot.nodeId) == service_id else snapshot.nodeId,
+            )
         identity = (str(snapshot.serviceId), str(snapshot.nodeId))
         async with self._lock:
             self._latest[identity] = snapshot

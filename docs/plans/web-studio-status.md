@@ -150,6 +150,8 @@ P1 测试覆盖文档编解码与新格式样例、真实 `services/f8/engine/de
 
 ## 标准命令
 
+`studio_server` 对同一操作系统用户实行单实例锁，与监听端口和 `F8STUDIO_DATA_DIR` 无关。第二个服务端启动会明确失败；媒体网关可作为独立进程运行。旧版本服务端需重启后才参与此锁。
+
 ```bash
 pixi run -e web-studio studio_server
 # 同时支持 SSH loopback 转发与受信任 VPN/LAN 直连：

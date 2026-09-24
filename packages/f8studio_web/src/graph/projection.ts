@@ -10,11 +10,11 @@ export const OPERATOR_WIDTH = 240;
 export const OPERATOR_MIN_HEIGHT = 64;
 export const VIDEO_PREVIEW_HEIGHT = 135;
 export const PORT_ROW_HEIGHT = 24;
-export const COMMAND_ACTION_HEIGHT = 30;
 export const CONTAINER_INSET_X = 16;
 export const CONTAINER_INSET_Y = 76;
 export const OPERATOR_GAP_X = 12;
 export const OPERATOR_GAP_Y = 16;
+export const STUDIO_SERVICE_CLASS = 'f8.pystudio';
 
 const NODE_VERTICAL_CHROME = 40;
 const CONTAINER_CONTENT_GAP = 12;
@@ -109,18 +109,16 @@ export function operatorHeight(node: GraphNode): number {
       node.operatorClass === 'f8.viz.three_d' || node.spec.rendererClass === 'viz_three_d')
     ? VIDEO_PREVIEW_HEIGHT
     : 0;
-  const commandHeight = (node.spec.commands ?? []).some((command) => command.showOnNode) ? COMMAND_ACTION_HEIGHT : 0;
   return Math.max(
     OPERATOR_MIN_HEIGHT,
-    NODE_VERTICAL_CHROME + Math.max(1, nodePortRows(node).length) * PORT_ROW_HEIGHT + previewHeight + commandHeight,
+    NODE_VERTICAL_CHROME + Math.max(1, nodePortRows(node).length) * PORT_ROW_HEIGHT + previewHeight,
   );
 }
 
 export function compactServiceHeight(node: GraphNode): number {
-  const commandHeight = (node.spec.commands ?? []).some((command) => command.showOnNode) ? COMMAND_ACTION_HEIGHT : 0;
   return Math.max(
     OPERATOR_MIN_HEIGHT,
-    NODE_VERTICAL_CHROME + Math.max(1, nodePortRows(node).length) * PORT_ROW_HEIGHT + commandHeight,
+    NODE_VERTICAL_CHROME + Math.max(1, nodePortRows(node).length) * PORT_ROW_HEIGHT,
   );
 }
 
@@ -205,7 +203,10 @@ export function projectDocument(document: StudioDocument): {
     const layout = layouts.get(service.nodeId);
     const position = layout === undefined ? serviceDefaultPosition(serviceIndex) : { x: layout.x, y: layout.y };
     const children = operatorsByServiceId.get(service.serviceId) ?? [];
-    const size = serviceSize(service, layout, children);
+    const isStudioRuntime = service.serviceClass === STUDIO_SERVICE_CLASS;
+    const size = isStudioRuntime
+      ? { width: COMPACT_SERVICE_WIDTH, height: compactServiceHeight(service) }
+      : serviceSize(service, layout, children);
     return {
       id: service.nodeId,
       type: 'studio',
@@ -213,7 +214,7 @@ export function projectDocument(document: StudioDocument): {
       dragHandle: '.node-drag-handle',
       position,
       style: size,
-      data: { graphNode: service, childCount: children.length },
+      data: { graphNode: service, childCount: isStudioRuntime ? 0 : children.length },
       zIndex: 0,
     };
   });
@@ -234,6 +235,18 @@ export function projectDocument(document: StudioDocument): {
           y: parent.position.y + defaultPosition.y,
         }
       : { x: layout.x, y: layout.y };
+    if (operator.serviceClass === STUDIO_SERVICE_CLASS) {
+      return {
+        id: operator.nodeId,
+        type: 'studio',
+        className: 'flow-node-operator',
+        dragHandle: '.node-drag-handle',
+        style: { width: OPERATOR_WIDTH, height: operatorHeight(operator) },
+        position: absolute,
+        data: { graphNode: operator, childCount: 0 },
+        zIndex: 1,
+      };
+    }
     const width = typeof parent.style?.width === 'number' ? parent.style.width : SERVICE_WIDTH;
     const height = typeof parent.style?.height === 'number' ? parent.style.height : SERVICE_MIN_HEIGHT;
     return {

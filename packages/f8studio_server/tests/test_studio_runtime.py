@@ -5,12 +5,15 @@ from f8pysdk.registry import Registry
 from f8pysdk.host import ServiceHost, ServiceHostConfig
 from f8pysdk.specs import (
     F8DataPortSpec,
+    F8Edge,
+    F8EdgeKindEnum,
     F8RuntimeGraph,
     F8RuntimeNode,
     F8StateAccess,
     F8StateSpec,
     any_schema,
     number_schema,
+    video_frame_port,
 )
 from f8pysdk.testing import ServiceBusHarness, buffer_input
 from f8pysdk.time_utils import now_ms
@@ -29,6 +32,7 @@ from f8studio_server.studio_runtime.operators import (
     VizThreeDRuntimeNode,
     VizTCodeRuntimeNode,
     VizTrackRuntimeNode,
+    VizVideoRuntimeNode,
 )
 
 
@@ -91,6 +95,57 @@ def test_studio_registry_is_isolated_and_injects_presentation_outlet() -> None:
 
     assert isinstance(node, VizAudioRuntimeNode)
     assert node.presentation is first_outlet
+
+
+def test_video_viz_publishes_implayer_stream_key_after_rungraph_routes_are_ready() -> None:
+    async def scenario() -> None:
+        outlet = CapturingPresentationOutlet()
+        harness = ServiceBusHarness()
+        bus = harness.create_bus("studio")
+        _ = ServiceHost(
+            bus,
+            config=ServiceHostConfig(service_class=SERVICE_CLASS),
+            registry=create_studio_registry(presentation=outlet),
+        )
+        graph = F8RuntimeGraph(
+            graphId="implayer-video",
+            revision="r1",
+            nodes=[
+                F8RuntimeNode(
+                    nodeId="player",
+                    serviceId="player",
+                    serviceClass="f8.implayer",
+                    operatorClass="f8.implayer",
+                    dataOutPorts=[video_frame_port(name="video")],
+                ),
+                F8RuntimeNode(
+                    nodeId="viewer",
+                    serviceId="studio",
+                    serviceClass=SERVICE_CLASS,
+                    operatorClass=VizVideoRuntimeNode.SPEC.operatorClass,
+                    dataInPorts=[video_frame_port(name="video")],
+                    stateFields=list(VizVideoRuntimeNode.SPEC.stateFields),
+                ),
+            ],
+            edges=[F8Edge(
+                edgeId="player-video",
+                fromServiceId="player",
+                fromOperatorId="player",
+                fromPort="video",
+                toServiceId="studio",
+                toOperatorId="viewer",
+                toPort="video",
+                kind=F8EdgeKindEnum.data,
+            )],
+        )
+
+        await bus.set_rungraph(graph)
+        await asyncio.sleep(0)
+        video_commands = [payload for _, command, payload, _ in outlet.commands if command == "viz.video.set"]
+        assert video_commands
+        assert video_commands[-1]["videoStreamKey"] == "f8/svc/player/nodes/player/data/video"
+
+    asyncio.run(scenario())
 
 
 def test_tcode_operator_is_static_and_emits_local_renderer_commands() -> None:
