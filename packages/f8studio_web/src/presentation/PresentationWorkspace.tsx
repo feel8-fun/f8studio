@@ -10,6 +10,7 @@ import {
   usePresentationOutputs,
 } from './PresentationStore';
 import { PresentationVideo } from './PresentationVideo';
+import { PresentationAudio } from './PresentationAudio';
 
 const PINNED_OUTPUTS_KEY = 'f8studio.pinnedOutputs';
 
@@ -148,6 +149,7 @@ export function PresentationWorkspace({ nodeId = null }: { readonly nodeId?: str
         {output.renderer === 'track' && <TrackCanvas payload={output.payload} />}
         {ExtensionComponent !== undefined && <Suspense fallback={<div className="view-loading" role="status">Loading output</div>}><ExtensionComponent payload={output.payload} /></Suspense>}
         {output.renderer === 'video' && <PresentationVideo payload={output.payload} />}
+        {output.renderer === 'audio' && <PresentationAudio payload={output.payload} />}
         {output.renderer === 'three_d' && <SkeletonOutputPreview nodeId={output.nodeId} className="output-three" />}
       </article>;})}
       {visibleOutputs.length === 0 && <div className="empty-state centered">{nodeId !== null ? `Waiting for ${nodeId}` : tab === 'pinned' ? 'No pinned outputs are live' : 'Deploy visualization nodes to see live outputs'}</div>}

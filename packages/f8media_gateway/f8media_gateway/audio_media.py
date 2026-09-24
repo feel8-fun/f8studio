@@ -5,6 +5,7 @@ import logging
 import math
 import struct
 import time
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from fractions import Fraction
@@ -135,14 +136,7 @@ def create_audio_producer(source: str) -> AsyncAudioProducer:
 
 
 def audio_frame(chunk: RawAudioChunk) -> AudioFrame:
-    if chunk.sample_rate != AUDIO_SAMPLE_RATE:
-        raise ValueError(f"audio sample rate must be 48000 Hz, received {chunk.sample_rate}")
-    if chunk.channels not in {1, 2}:
-        raise ValueError(f"audio channels must be mono or stereo, received {chunk.channels}")
-    expected_bytes = chunk.frames * chunk.channels * 4
-    if chunk.frames <= 0 or len(chunk.payload) != expected_bytes:
-        raise ValueError("audio payload size does not match frames and channels")
-
+    validate_audio_chunk(chunk)
     pcm = bytearray(chunk.frames * chunk.channels * 2)
     for index in range(chunk.frames * chunk.channels):
         sample = struct.unpack_from("<f", chunk.payload, index * 4)[0]
@@ -156,12 +150,22 @@ def audio_frame(chunk: RawAudioChunk) -> AudioFrame:
     return frame
 
 
+def validate_audio_chunk(chunk: RawAudioChunk) -> None:
+    if chunk.sample_rate != AUDIO_SAMPLE_RATE:
+        raise ValueError(f"audio sample rate must be 48000 Hz, received {chunk.sample_rate}")
+    if chunk.channels not in {1, 2}:
+        raise ValueError(f"audio channels must be mono or stereo, received {chunk.channels}")
+    expected_bytes = chunk.frames * chunk.channels * 4
+    if chunk.frames <= 0 or len(chunk.payload) != expected_bytes:
+        raise ValueError("audio payload size does not match frames and channels")
+
+
 @dataclass
 class LatestAudioHub:
     source: str
     producer: AsyncAudioProducer
     _condition: asyncio.Condition = field(default_factory=asyncio.Condition, init=False)
-    _latest: RawAudioChunk | None = field(default=None, init=False)
+    _pending: deque[RawAudioChunk] = field(default_factory=lambda: deque(maxlen=16), init=False)
     _version: int = field(default=0, init=False)
     _task: asyncio.Task[None] | None = field(default=None, init=False)
     _closed: bool = field(default=False, init=False)
@@ -176,9 +180,9 @@ class LatestAudioHub:
                 chunk = await self.producer.read()
                 if chunk is None:
                     continue
-                audio_frame(chunk)
+                validate_audio_chunk(chunk)
                 async with self._condition:
-                    self._latest = chunk
+                    self._pending.append(chunk)
                     self._version += 1
                     self._condition.notify_all()
         except asyncio.CancelledError:
@@ -193,9 +197,11 @@ class LatestAudioHub:
     async def next_chunk(self, after_version: int) -> tuple[int, RawAudioChunk]:
         async with self._condition:
             await self._condition.wait_for(lambda: self._version > after_version or self._closed)
-            if self._latest is None or self._closed:
+            if not self._pending or self._closed:
                 raise MediaStreamError
-            return self._version, self._latest
+            first_version = self._version - len(self._pending) + 1
+            next_version = max(after_version + 1, first_version)
+            return next_version, self._pending[next_version - first_version]
 
     async def close(self) -> None:
         self._closed = True
@@ -320,7 +326,7 @@ class AudioSessionManager:
             type=local.type,
             sample_rate=AUDIO_SAMPLE_RATE,
             channels=1 if source == "synthetic://tone" else 2 if source == "synthetic://tone-stereo" else 0,
-            transport_policy="latest-chunk; sequence gaps are dropped and counted",
+            transport_policy="bounded-queue-16; overflow gaps are dropped and counted",
         )
 
     async def _acquire_hub(self, source: str) -> LatestAudioHub:

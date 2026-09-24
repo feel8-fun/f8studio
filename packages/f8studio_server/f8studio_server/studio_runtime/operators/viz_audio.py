@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any
+from typing import Any, cast
 
+from f8pysdk.capabilities import RungraphHookBus
+from f8pysdk.f8_naming import ensure_token
+from f8pysdk.nodes import OperatorNode
+from f8pysdk.registry import Registry
 from f8pysdk.specs import (
     F8OperatorSchemaVersion,
     F8OperatorSpec,
+    F8RuntimeGraph,
     F8RuntimeNode,
     F8StateAccess,
     F8StateSpec,
@@ -14,9 +19,6 @@ from f8pysdk.specs import (
     boolean_schema,
     integer_schema,
 )
-from f8pysdk.f8_naming import ensure_token
-from f8pysdk.nodes import OperatorNode
-from f8pysdk.registry import Registry
 
 from ..identifiers import SERVICE_CLASS
 from ..presentation import PresentationOutlet
@@ -77,7 +79,7 @@ class VizAudioRuntimeNode(OperatorNode):
                 name="historyMs",
                 label="History (ms)",
                 description="Waveform window length in milliseconds.",
-                valueSchema=integer_schema(default=250, minimum=20, maximum=60000),
+                valueSchema=integer_schema(default=250, minimum=20, maximum=680),
                 access=F8StateAccess.rw,
                 required=True,
                 showOnNode=False,
@@ -107,9 +109,13 @@ class VizAudioRuntimeNode(OperatorNode):
         self._history_ms = 250
         self._channel = 0
         self._pending_task: asyncio.Task[object] | None = None
+        self._rungraph_bus: RungraphHookBus | None = None
 
     def attach(self, bus: Any) -> None:
         super().attach(bus)
+        rungraph_bus = cast(RungraphHookBus, bus)
+        rungraph_bus.register_rungraph_hook(self)
+        self._rungraph_bus = rungraph_bus
         try:
             loop = asyncio.get_running_loop()
             loop.create_task(self._ensure_config_loaded(), name=f"pystudio:audio:init:{self.node_id}")
@@ -117,6 +123,10 @@ class VizAudioRuntimeNode(OperatorNode):
             pass
 
     async def close(self) -> None:
+        rungraph_bus = self._rungraph_bus
+        self._rungraph_bus = None
+        if rungraph_bus is not None:
+            rungraph_bus.unregister_rungraph_hook(self)
         try:
             t = self._pending_task
             self._pending_task = None
@@ -127,6 +137,14 @@ class VizAudioRuntimeNode(OperatorNode):
             pass
         self.presentation.emit(self.node_id, "viz.audio.detach", {}, ts_ms=int(time.time() * 1000))
 
+    async def validate_rungraph(self, graph: F8RuntimeGraph) -> None:
+        del graph
+
+    async def on_rungraph(self, graph: F8RuntimeGraph) -> None:
+        del graph
+        await self._ensure_config_loaded()
+        await self._push_config(now_ms=int(time.time() * 1000))
+
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
         del value
         f = str(field or "").strip()
@@ -136,7 +154,7 @@ class VizAudioRuntimeNode(OperatorNode):
         if f == "throttleMs":
             self._throttle_ms = await self._get_int_state("throttleMs", default=self._throttle_ms, minimum=0, maximum=60000)
         elif f == "historyMs":
-            self._history_ms = await self._get_int_state("historyMs", default=self._history_ms, minimum=20, maximum=60000)
+            self._history_ms = await self._get_int_state("historyMs", default=self._history_ms, minimum=20, maximum=680)
         elif f == "channel":
             self._channel = await self._get_int_state("channel", default=self._channel, minimum=0, maximum=16)
         await self._push_config(now_ms=int(ts_ms) if ts_ms is not None else int(time.time() * 1000))
@@ -145,7 +163,7 @@ class VizAudioRuntimeNode(OperatorNode):
         if self._config_loaded:
             return
         self._throttle_ms = await self._get_int_state("throttleMs", default=20, minimum=0, maximum=60000)
-        self._history_ms = await self._get_int_state("historyMs", default=250, minimum=20, maximum=60000)
+        self._history_ms = await self._get_int_state("historyMs", default=250, minimum=20, maximum=680)
         self._channel = await self._get_int_state("channel", default=0, minimum=0, maximum=16)
         self._config_loaded = True
         await self._push_config(now_ms=int(time.time() * 1000))

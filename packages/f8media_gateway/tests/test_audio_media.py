@@ -12,6 +12,8 @@ from f8media_gateway.audio_media import (
     RawAudioChunk,
     SyntheticToneProducer,
     audio_frame,
+    LatestAudioHub,
+    LatestAudioTrack,
 )
 from f8media_protocol.models import AudioSessionOffer
 
@@ -31,6 +33,38 @@ def test_f32_audio_is_explicitly_converted_to_s16() -> None:
     assert frame.layout.name == "mono"
     assert frame.sample_rate == AUDIO_SAMPLE_RATE
     assert struct.unpack("<hhhh", bytes(frame.planes[0])[:8]) == (-32767, -16384, 0, 32767)
+
+
+def test_audio_hub_preserves_order_across_short_consumer_delay() -> None:
+    class Producer:
+        def __init__(self) -> None:
+            self.next_sequence = 0
+
+        async def read(self) -> RawAudioChunk:
+            self.next_sequence += 1
+            await asyncio.sleep(0.001)
+            return RawAudioChunk(48000, 2, 960, self.next_sequence, self.next_sequence * 960, 0,
+                                 struct.pack("<f", 0.1) * 1920)
+
+        async def close(self) -> None:
+            return
+
+    async def scenario() -> None:
+        hub = LatestAudioHub(source="test", producer=Producer())
+        hub.start()
+        track = LatestAudioTrack(hub)
+        try:
+            first = await track.recv()
+            await asyncio.sleep(0.005)
+            second = await track.recv()
+            third = await track.recv()
+            assert (first.pts, second.pts, third.pts) == (0, 960, 1920)
+            assert track.dropped_chunks == 0
+        finally:
+            track.stop()
+            await hub.close()
+
+    asyncio.run(scenario())
 
 
 def test_synthetic_audio_webrtc_delivers_non_silent_frames_and_releases_source() -> None:
@@ -57,7 +91,7 @@ def test_synthetic_audio_webrtc_delivers_non_silent_frames_and_releases_source()
         assert isinstance(decoded, AudioFrame)
         assert decoded.sample_rate == AUDIO_SAMPLE_RATE
         assert any(bytes(decoded.planes[0]))
-        assert answer.transport_policy.startswith("latest-chunk")
+        assert answer.transport_policy.startswith("bounded-queue-16")
         assert manager.session_count == 1
         assert manager.source_count == 1
 

@@ -152,7 +152,7 @@ def test_synthetic_webrtc_session_delivers_decoded_video() -> None:
         assert isinstance(decoded, VideoFrame)
         assert decoded.width == 640
         assert decoded.height == 360
-        assert answer.max_fps == 10
+        assert answer.max_fps == 30
 
         assert await manager.close_session(answer.session_id) is True
         assert await manager.close_session(answer.session_id) is False

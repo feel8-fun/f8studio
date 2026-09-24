@@ -35,6 +35,22 @@ test('tracks presentation outputs per node and ignores stale commands', () => {
   expect(nodeListener).toHaveBeenCalledTimes(2);
 });
 
+test('exposes Audio Viz configuration and removes it on detach', () => {
+  const store = new PresentationStore();
+  store.applyCommand({
+    nodeId: 'audio-1',
+    command: 'viz.audio.set',
+    payload: { audioStreamKey: 'f8/svc/capture/nodes/capture/data/audio' },
+    tsMs: 1,
+  });
+  expect(store.getOutputSnapshot('audio-1')).toMatchObject({
+    renderer: 'audio',
+    payload: { audioStreamKey: 'f8/svc/capture/nodes/capture/data/audio' },
+  });
+  store.applyCommand({ nodeId: 'audio-1', command: 'viz.audio.detach', payload: {}, tsMs: 2 });
+  expect(store.getOutputSnapshot('audio-1')).toBeNull();
+});
+
 test('merges TCode model metadata and validates event envelopes', () => {
   const store = new PresentationStore();
   store.applyCommand({ nodeId: 'tcode-1', command: 'viz.tcode.set_model', payload: { model: 'SR6' }, tsMs: 1 });

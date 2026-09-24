@@ -4,6 +4,7 @@ import { createContext, useContext } from 'react';
 
 import type { CommandSpec, GraphNode, JsonValue } from '../api/contracts';
 import { usePresentationOutput } from '../presentation/PresentationStore';
+import { PresentationAudio } from '../presentation/PresentationAudio';
 import { PresentationVideo } from '../presentation/PresentationVideo';
 import { hasExtensionNodeRendererClass } from '../extensions/registry';
 import { SkeletonOutputPreview } from '../three/SkeletonOutputPreview';
@@ -22,8 +23,8 @@ export interface GraphNodeInteraction {
 
 export const GraphNodeInteractionContext = createContext<GraphNodeInteraction | null>(null);
 
-const BUILTIN_OUTPUT_CLASSES = new Set(['f8.viz.text', 'f8.viz.wave', 'f8.viz.track', 'f8.viz.video', 'f8.viz.three_d']);
-const BUILTIN_RENDERER_CLASSES = new Set(['viz_text', 'viz_wave', 'viz_track', 'viz_video', 'viz_three_d']);
+const BUILTIN_OUTPUT_CLASSES = new Set(['f8.viz.text', 'f8.viz.wave', 'f8.viz.track', 'f8.viz.video', 'f8.viz.audio', 'f8.viz.three_d']);
+const BUILTIN_RENDERER_CLASSES = new Set(['viz_text', 'viz_wave', 'viz_track', 'viz_video', 'viz_audio', 'viz_three_d']);
 
 function InlineVideoPreview({ nodeId, enabled }: { readonly nodeId: string; readonly enabled: boolean }) {
   const output = usePresentationOutput(nodeId);
@@ -35,10 +36,22 @@ function InlineVideoPreview({ nodeId, enabled }: { readonly nodeId: string; read
   </div>;
 }
 
+function InlineAudioPreview({ nodeId, enabled }: { readonly nodeId: string; readonly enabled: boolean }) {
+  const output = usePresentationOutput(nodeId);
+  const audioOutput = output?.renderer === 'audio' ? output : null;
+  return <div className="studio-node-inline-audio nodrag nowheel" data-testid={`audio-preview-${nodeId}`}>
+    {!enabled && <span className="inline-video-placeholder">Node disabled</span>}
+    {enabled && audioOutput === null && <span className="inline-video-placeholder">Waiting for stream</span>}
+    {enabled && audioOutput !== null && <PresentationAudio payload={audioOutput.payload} compact />}
+  </div>;
+}
+
 export function StudioNodeView({ data, selected }: NodeProps<StudioFlowNode>) {
   const node = data.graphNode;
   const showsVideoPreview = node.kind === 'operator' &&
     (node.operatorClass === 'f8.viz.video' || node.spec.rendererClass === 'viz_video');
+  const showsAudioPreview = node.kind === 'operator' &&
+    (node.operatorClass === 'f8.viz.audio' || node.spec.rendererClass === 'viz_audio');
   const rendererClass = typeof node.spec.rendererClass === 'string' ? node.spec.rendererClass : '';
   const hasOutputView = node.kind === 'operator' &&
     (BUILTIN_OUTPUT_CLASSES.has(node.operatorClass) || BUILTIN_RENDERER_CLASSES.has(rendererClass) || hasExtensionNodeRendererClass(rendererClass));
@@ -116,6 +129,7 @@ export function StudioNodeView({ data, selected }: NodeProps<StudioFlowNode>) {
         {!node.enabled && <span className="node-disabled">Off</span>}
       </header>
       {showsVideoPreview && <InlineVideoPreview nodeId={node.nodeId} enabled={node.enabled} />}
+      {showsAudioPreview && <InlineAudioPreview nodeId={node.nodeId} enabled={node.enabled} />}
       {isThreeD && <SkeletonOutputPreview nodeId={node.nodeId} enabled={node.enabled} className="studio-node-inline-three nodrag nowheel" />}
       {portRows}
     </article>

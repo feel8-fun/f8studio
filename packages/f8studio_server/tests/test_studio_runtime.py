@@ -12,6 +12,7 @@ from f8pysdk.specs import (
     F8StateAccess,
     F8StateSpec,
     any_schema,
+    audio_chunk_port,
     number_schema,
     video_frame_port,
 )
@@ -144,6 +145,57 @@ def test_video_viz_publishes_implayer_stream_key_after_rungraph_routes_are_ready
         video_commands = [payload for _, command, payload, _ in outlet.commands if command == "viz.video.set"]
         assert video_commands
         assert video_commands[-1]["videoStreamKey"] == "f8/svc/player/nodes/player/data/video"
+
+    asyncio.run(scenario())
+
+
+def test_audio_viz_publishes_audiocap_stream_key_after_rungraph_routes_are_ready() -> None:
+    async def scenario() -> None:
+        outlet = CapturingPresentationOutlet()
+        harness = ServiceBusHarness()
+        bus = harness.create_bus("studio")
+        _ = ServiceHost(
+            bus,
+            config=ServiceHostConfig(service_class=SERVICE_CLASS),
+            registry=create_studio_registry(presentation=outlet),
+        )
+        graph = F8RuntimeGraph(
+            graphId="audiocap-audio",
+            revision="r1",
+            nodes=[
+                F8RuntimeNode(
+                    nodeId="capture",
+                    serviceId="capture",
+                    serviceClass="f8.audiocap",
+                    operatorClass="f8.audiocap",
+                    dataOutPorts=[audio_chunk_port(name="audio")],
+                ),
+                F8RuntimeNode(
+                    nodeId="viewer",
+                    serviceId="studio",
+                    serviceClass=SERVICE_CLASS,
+                    operatorClass=VizAudioRuntimeNode.SPEC.operatorClass,
+                    dataInPorts=[audio_chunk_port(name="audio")],
+                    stateFields=list(VizAudioRuntimeNode.SPEC.stateFields),
+                ),
+            ],
+            edges=[F8Edge(
+                edgeId="capture-audio",
+                fromServiceId="capture",
+                fromOperatorId="capture",
+                fromPort="audio",
+                toServiceId="studio",
+                toOperatorId="viewer",
+                toPort="audio",
+                kind=F8EdgeKindEnum.data,
+            )],
+        )
+
+        await bus.set_rungraph(graph)
+        await asyncio.sleep(0)
+        audio_commands = [payload for _, command, payload, _ in outlet.commands if command == "viz.audio.set"]
+        assert audio_commands
+        assert audio_commands[-1]["audioStreamKey"] == "f8/svc/capture/nodes/capture/data/audio"
 
     asyncio.run(scenario())
 

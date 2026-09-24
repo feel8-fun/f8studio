@@ -4,7 +4,7 @@ import { fetchPresentationSnapshot } from '../api/client';
 import type { JsonValue, PresentationCommand } from '../api/contracts';
 import { extensionRendererForCommand, extensionRendererById } from '../extensions/registry';
 
-export type PresentationRenderer = 'text' | 'wave' | 'track' | 'video' | 'three_d' | (string & {});
+export type PresentationRenderer = 'text' | 'wave' | 'track' | 'video' | 'audio' | 'three_d' | (string & {});
 
 export interface PresentationOutput {
   readonly nodeId: string;
@@ -34,6 +34,7 @@ function rendererFor(command: string): PresentationRenderer | null {
   if (command.startsWith('viz.wave.')) return 'wave';
   if (command.startsWith('viz.track.')) return 'track';
   if (command.startsWith('viz.video.')) return 'video';
+  if (command.startsWith('viz.audio.')) return 'audio';
   if (command.startsWith('viz.three_d.')) return 'three_d';
   return extensionRendererForCommand(command)?.id ?? null;
 }

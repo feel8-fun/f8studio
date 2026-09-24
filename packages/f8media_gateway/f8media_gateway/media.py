@@ -50,7 +50,7 @@ class MediaQuality:
 
 
 MEDIA_QUALITIES = {
-    "thumbnail": MediaQuality(name="thumbnail", max_width=640, max_height=360, max_fps=10),
+    "thumbnail": MediaQuality(name="thumbnail", max_width=640, max_height=360, max_fps=30),
     "main": MediaQuality(name="main", max_width=1920, max_height=1080, max_fps=30),
 }
 

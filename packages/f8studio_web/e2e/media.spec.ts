@@ -152,6 +152,74 @@ test('plays WebRTC audio and renders a nonflat waveform', async ({ page }, testI
   expect(pageErrors).toEqual([]);
 });
 
+test('Audio Viz renders a live waveform and keeps browser listening off by default', async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  await page.route('**/api/presentation', async (route) => {
+    await route.fulfill({
+      json: [{
+        nodeId: 'audio-e2e',
+        command: 'viz.audio.set',
+        payload: { audioStreamKey: 'synthetic://tone', historyMs: 250, throttleMs: 20, channel: 0 },
+        tsMs: Date.now(),
+      }],
+    });
+  });
+  await page.goto('/?view=outputs&node=audio-e2e');
+  const panel = page.locator('.presentation-audio');
+  await expect(panel).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Listen in browser' })).toHaveAttribute('aria-pressed', 'false');
+  await expect(panel.getByRole('status')).toContainText(/Live|start preview/);
+  await panel.getByRole('tab', { name: 'Wave' }).click();
+  await expect(panel.getByRole('status')).toHaveText('Live');
+  await expect(panel.getByRole('button', { name: 'Listen in browser' })).toHaveAttribute('aria-pressed', 'false');
+  const canvas = panel.getByTestId('audio-viz-canvas');
+  await expect.poll(() => canvas.evaluate((element) => {
+    const context = element.getContext('2d');
+    if (context === null) return false;
+    const pixels = context.getImageData(0, 0, element.width, element.height).data;
+    let minY = element.height;
+    let maxY = 0;
+    let greenPixels = 0;
+    for (let y = 0; y < element.height; y += 1) {
+      for (let x = 0; x < element.width; x += 1) {
+        const offset = (y * element.width + x) * 4;
+        const red = pixels[offset] ?? 0;
+        const green = pixels[offset + 1] ?? 0;
+        const blue = pixels[offset + 2] ?? 0;
+        if (green > red + 20 && green > blue + 20) {
+          greenPixels += 1;
+          minY = Math.min(minY, y);
+          maxY = Math.max(maxY, y);
+        }
+      }
+    }
+    return greenPixels > 100 && maxY - minY > 8;
+  })).toBe(true);
+  await panel.getByRole('tab', { name: 'Spectrum' }).click();
+  await expect(panel.getByRole('tab', { name: 'Spectrum' })).toHaveAttribute('aria-selected', 'true');
+  await panel.getByRole('button', { name: 'Listen in browser' }).click();
+  await expect(panel.getByRole('button', { name: 'Mute browser audio' })).toHaveAttribute('aria-pressed', 'true');
+  expect(pageErrors).toEqual([]);
+});
+
+test('Audio Viz reports no signal when its source has no audio chunks', async ({ page }) => {
+  await page.route('**/api/presentation', async (route) => {
+    await route.fulfill({
+      json: [{
+        nodeId: 'audio-silent-e2e',
+        command: 'viz.audio.set',
+        payload: { audioStreamKey: 'f8/svc/missing/nodes/missing/data/audio', channel: 0 },
+        tsMs: Date.now(),
+      }],
+    });
+  });
+  await page.goto('/?view=outputs&node=audio-silent-e2e');
+  const panel = page.locator('.presentation-audio');
+  await expect(panel.getByRole('status')).toHaveText('No audio signal');
+  await expect(panel.getByRole('button', { name: 'Listen in browser' })).toHaveAttribute('aria-pressed', 'false');
+});
+
 test('stopping during video negotiation releases the remote session', async ({ page }) => {
   let markRequestStarted: (() => void) | null = null;
   let markRequestFinished: (() => void) | null = null;

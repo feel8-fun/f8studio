@@ -349,6 +349,22 @@ button:disabled { cursor: default; }
 .presentation-video-compact { height: 100%; min-height: 0; aspect-ratio: auto; }
 .presentation-video-compact .presentation-video-status { right: 5px; bottom: 5px; min-height: 20px; padding: 2px 5px; font-size: 8px; }
 .presentation-video-compact .presentation-video-status .icon-button { width: 20px; height: 20px; flex-basis: 20px; }
+.presentation-audio { position: relative; width: 100%; height: 240px; overflow: hidden; background: #080a0c; }
+.presentation-audio audio { display: none; }
+.presentation-audio canvas { display: block; width: 100%; height: 100%; }
+.presentation-audio-toolbar { position: absolute; top: 7px; right: 7px; display: flex; align-items: center; gap: 5px; }
+.presentation-audio-toolbar .segment { display: flex; }
+.presentation-audio-toolbar .segment button { min-height: 24px; padding: 3px 6px; font-size: 10px; }
+.presentation-audio-toolbar .icon-button { width: 25px; height: 25px; border: 1px solid #424b53; background: #131a1d; }
+.presentation-audio-status { position: absolute; right: 7px; bottom: 7px; display: flex; align-items: center; gap: 5px; max-width: calc(100% - 14px); min-height: 23px; padding: 2px 6px; color: #b9c4cc; background: rgb(10 13 16 / 86%); font-size: 10px; }
+.presentation-audio-status.status-playing { color: #78d9ae; }
+.presentation-audio-status span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.presentation-audio-status .icon-button { width: 20px; height: 20px; flex: 0 0 20px; }
+.presentation-audio-compact { height: 135px; }
+.presentation-audio-compact .presentation-audio-toolbar { top: 4px; right: 4px; }
+.presentation-audio-compact .presentation-audio-toolbar .segment button { min-height: 20px; padding: 2px 4px; font-size: 8px; }
+.presentation-audio-compact .presentation-audio-toolbar .icon-button { width: 21px; height: 21px; }
+.presentation-audio-compact .presentation-audio-status { right: 4px; bottom: 4px; min-height: 19px; font-size: 8px; }
 .tcode-view { display: grid; gap: 12px; padding: 12px; }
 .tcode-view > code { min-height: 38px; padding: 9px; color: #72d6b0; background: #080a0c; overflow-wrap: anywhere; }
 .tcode-channels { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 14px; }
@@ -735,6 +751,7 @@ button:disabled { cursor: default; }
 .studio-node-service header { grid-template-columns: 16px minmax(0, 1fr) auto auto; border-top: 2px solid #4eaf87; background: #20332b; }
 .studio-node-operator header { border-top: 2px solid #6688ac; }
 .studio-node-inline-video { display: grid; place-items: center; width: 100%; height: 135px; min-height: 135px; overflow: hidden; border-bottom: 1px solid #343a43; background: #050708; }
+.studio-node-inline-audio { display: grid; place-items: center; width: 100%; height: 135px; min-height: 135px; overflow: hidden; border-bottom: 1px solid #343a43; background: #080a0c; }
 .studio-node-inline-three { display: grid; place-items: center; width: 100%; height: 135px; min-height: 135px; overflow: hidden; border-bottom: 1px solid #343a43; background: #0d1112; }
 .inline-video-placeholder { max-width: calc(100% - 20px); overflow: hidden; color: #727c87; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .studio-node header div { display: grid; min-width: 0; gap: 1px; }

@@ -106,6 +106,7 @@ export function reconcileProjectedEdges(current: Edge[], projected: readonly Edg
 export function operatorHeight(node: GraphNode): number {
   const previewHeight = node.kind === 'operator' &&
     (node.operatorClass === 'f8.viz.video' || node.spec.rendererClass === 'viz_video' ||
+      node.operatorClass === 'f8.viz.audio' || node.spec.rendererClass === 'viz_audio' ||
       node.operatorClass === 'f8.viz.three_d' || node.spec.rendererClass === 'viz_three_d')
     ? VIDEO_PREVIEW_HEIGHT
     : 0;
