@@ -433,21 +433,6 @@ export interface RtcConfigurationResponse {
   readonly iceTransportPolicy: 'all' | 'relay';
 }
 
-export interface MediaSample {
-  readonly source: string;
-  readonly format: string;
-  readonly frameId: number;
-  readonly tsMs: number;
-  readonly width: number;
-  readonly height: number;
-  readonly x: number;
-  readonly y: number;
-  readonly finite: boolean;
-  readonly value: number | null | Readonly<Record<string, number | null>>;
-  readonly streamId: string;
-  readonly streamEpoch: string;
-}
-
 export type AssetKind = 'component' | 'variant' | 'modding_recipe';
 
 export interface AssetSummary {
@@ -652,30 +637,6 @@ export function isRtcConfigurationResponse(value: unknown): value is RtcConfigur
       (server.credential === undefined || typeof server.credential === 'string')
     );
   });
-}
-
-export function isMediaSample(value: unknown): value is MediaSample {
-  if (typeof value !== 'object' || value === null) return false;
-  const item = value as Record<string, unknown>;
-  const validValue = item.value === null || typeof item.value === 'number' || (
-    typeof item.value === 'object' &&
-    item.value !== null &&
-    Object.values(item.value).every((component) => component === null || typeof component === 'number')
-  );
-  return (
-    typeof item.source === 'string' &&
-    typeof item.format === 'string' &&
-    typeof item.frameId === 'number' &&
-    typeof item.tsMs === 'number' &&
-    typeof item.width === 'number' &&
-    typeof item.height === 'number' &&
-    typeof item.x === 'number' &&
-    typeof item.y === 'number' &&
-    typeof item.finite === 'boolean' &&
-    typeof item.streamId === 'string' &&
-    typeof item.streamEpoch === 'string' &&
-    validValue
-  );
 }
 
 function isVec3(value: unknown): value is readonly [number, number, number] {

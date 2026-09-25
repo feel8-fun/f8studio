@@ -20,7 +20,7 @@ export interface GraphNodeInteraction {
   readonly resizeService: (nodeId: string, bounds: ResizeParams) => void;
   readonly setState: (nodeId: string, field: string, value: JsonValue) => void;
   readonly openCommand: (node: GraphNode, command: CommandSpec) => void;
-  readonly showOutput: (nodeId: string, threeD: boolean) => void;
+  readonly showOutput: (nodeId: string) => void;
 }
 
 export const GraphNodeInteractionContext = createContext<GraphNodeInteraction | null>(null);
@@ -133,7 +133,7 @@ export function StudioNodeView({ data, selected }: NodeProps<StudioFlowNode>) {
           <span>{node.kind === 'service' ? node.serviceClass : node.operatorClass}</span>
         </div>
         {hasOutputView && <button type="button" className="node-view-button nodrag" title="Open output view" aria-label={`Open ${node.name} output view`}
-          onClick={() => interaction?.showOutput(node.nodeId, isThreeD)}><ExternalLink size={13} /></button>}
+          onClick={() => interaction?.showOutput(node.nodeId)}><ExternalLink size={13} /></button>}
         {node.kind === 'service' && data.childCount > 0 && <span className="service-child-count">{data.childCount} ops</span>}
         {!node.enabled && <span className="node-disabled">Off</span>}
       </header>

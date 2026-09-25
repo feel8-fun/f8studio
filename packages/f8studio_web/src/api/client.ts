@@ -1,7 +1,6 @@
 import {
   isAudioSessionAnswer,
   isHealthStatus,
-  isMediaSample,
   isMediaSessionAnswer,
   isRtcConfigurationResponse,
   isGraphNode,
@@ -15,7 +14,6 @@ import {
   type GraphOperation,
   type HealthStatus,
   type AudioSessionAnswer,
-  type MediaSample,
   type MediaSessionAnswer,
   type RtcConfigurationResponse,
   type PatchResult,
@@ -401,15 +399,6 @@ export async function closeMediaSession(sessionId: string, keepalive = false): P
   if (!response.ok && response.status !== 404) {
     throw new Error(`Media session close failed with HTTP ${response.status}`);
   }
-}
-
-export async function fetchMediaSample(source: string, x: number, y: number): Promise<MediaSample> {
-  const query = new URLSearchParams({ source, x: String(x), y: String(y) });
-  const response = await fetch(`/api/media/sample?${query.toString()}`);
-  if (!response.ok) throw new Error(`Media sample failed with HTTP ${response.status}`);
-  const body: unknown = await response.json();
-  if (!isMediaSample(body)) throw new Error('Media sample does not match f8studio-api/1');
-  return body;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

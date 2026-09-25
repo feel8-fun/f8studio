@@ -198,6 +198,76 @@ test('creates a graph node and restores the persisted project after reload', asy
   expect(pageErrors).toEqual([]);
 });
 
+test('adds services in the visible viewport and operators to the selected service', async ({ page }, testInfo) => {
+  await page.goto('/');
+  await expect(page.locator('.connection-online')).toBeVisible();
+  await page.locator('.project-control').getByRole('button', { name: 'New project' }).click();
+  await page.getByLabel('Search nodes').fill('f8.pyengine');
+  const pyEngine = page.locator('.catalog-list button:not(:disabled)').filter({ hasText: 'f8.pyengine' });
+  await pyEngine.click();
+  await expect(page.locator('.react-flow__node.flow-node-service')).toHaveCount(1);
+  const firstId = await page.locator('.react-flow__node.flow-node-service').getAttribute('data-id');
+  if (firstId === null) throw new Error('First service has no node id');
+
+  const canvas = page.locator('.graph-canvas .react-flow');
+  const canvasBounds = await canvas.boundingBox();
+  if (canvasBounds === null) throw new Error('Graph canvas has no bounds');
+  await page.mouse.move(canvasBounds.x + canvasBounds.width * 0.8, canvasBounds.y + canvasBounds.height * 0.75);
+  await page.mouse.down();
+  await page.mouse.move(canvasBounds.x + canvasBounds.width * 0.25, canvasBounds.y + canvasBounds.height * 0.3, { steps: 8 });
+  await page.mouse.up();
+  await page.locator('.react-flow__controls-zoomin').click();
+  await pyEngine.click();
+  const projectId = await page.locator('#project-select').inputValue();
+  await expect.poll(async () => page.evaluate(async (id) => {
+    const response = await fetch(`/api/projects/${id}`);
+    const project = await response.json() as { document: { nodes: { nodeId: string; kind: string }[] } };
+    return project.document.nodes.filter((node) => node.kind === 'service').length;
+  }, projectId)).toBe(2);
+  const secondId = await page.evaluate(async (id) => {
+    const response = await fetch(`/api/projects/${id}`);
+    const project = await response.json() as { document: { nodes: { nodeId: string; kind: string }[] } };
+    return project.document.nodes.filter((node) => node.kind === 'service')[1]?.nodeId ?? '';
+  }, projectId);
+  const second = page.locator(`.react-flow__node.flow-node-service[data-id="${secondId}"]`);
+  await expect(second).toBeVisible();
+  const secondBounds = await second.boundingBox();
+  if (secondBounds === null) throw new Error('New service has no bounds');
+  expect(secondBounds.x + secondBounds.width).toBeGreaterThan(canvasBounds.x);
+  expect(secondBounds.y + secondBounds.height).toBeGreaterThan(canvasBounds.y);
+  expect(secondBounds.x).toBeLessThan(canvasBounds.x + canvasBounds.width);
+  expect(secondBounds.y).toBeLessThan(canvasBounds.y + canvasBounds.height);
+  if (testInfo.project.name === 'mobile') return;
+  expect(secondBounds.x).toBeGreaterThanOrEqual(canvasBounds.x);
+  expect(secondBounds.y).toBeGreaterThanOrEqual(canvasBounds.y);
+  expect(secondBounds.x + secondBounds.width).toBeLessThanOrEqual(canvasBounds.x + canvasBounds.width);
+  expect(secondBounds.y + secondBounds.height).toBeLessThanOrEqual(canvasBounds.y + canvasBounds.height);
+
+  await second.locator('.node-drag-handle').click();
+  await page.getByLabel('Search nodes').fill('Bandpass Filter');
+  const bandpass = page.locator('.catalog-list button:not(:disabled)').filter({ hasText: 'Bandpass Filter' });
+  await bandpass.click();
+  await expect(page.locator('.react-flow__node.flow-node-operator')).toHaveCount(1);
+  await bandpass.click();
+  await expect(page.locator('.react-flow__node.flow-node-operator')).toHaveCount(2);
+  await page.locator('.react-flow__controls-fitview').click();
+  await page.locator(`.react-flow__node.flow-node-service[data-id="${firstId}"]`).locator('.node-drag-handle').click();
+  await bandpass.click();
+  await expect(page.locator('.react-flow__node.flow-node-operator')).toHaveCount(3);
+
+  const owners = await page.evaluate(async (id) => {
+    const response = await fetch(`/api/projects/${id}`);
+    const project = await response.json() as { document: { nodes: { kind: string; serviceId: string }[] } };
+    return project.document.nodes.filter((node) => node.kind === 'operator').map((node) => node.serviceId);
+  }, projectId);
+  expect(owners).toEqual([secondId, secondId, firstId]);
+
+  await page.locator('.react-flow__pane').click({ position: { x: 10, y: 10 } });
+  await bandpass.click();
+  await expect(page.getByRole('alert')).toContainText('Select the target f8.pyengine service');
+  await expect(page.locator('.react-flow__node.flow-node-operator')).toHaveCount(3);
+});
+
 test('shows a live 3D node preview and opens its focused view in the same tab', async ({ page }, testInfo) => {
   const pageErrors: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
@@ -242,7 +312,7 @@ test('shows a live 3D node preview and opens its focused view in the same tab', 
   await page.screenshot({ path: testInfo.outputPath('three-node-preview.png'), fullPage: true });
 
   await operator.getByRole('button', { name: 'Open 3D Viz output view' }).click();
-  await expect(page).toHaveURL(new RegExp(`view=three&node=${nodeId}`));
+  await expect(page).toHaveURL(new RegExp(`view=outputs&node=${nodeId}`));
   await expect(page.getByTestId('three-stage').locator('canvas')).toBeVisible();
   await page.goBack();
   await expect(page.getByTestId(`three-preview-${nodeId}`)).toBeVisible();

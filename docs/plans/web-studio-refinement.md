@@ -6,7 +6,7 @@
 
 - Node Library 提供按 Service 或 Category 分组的折叠列表；搜索同时匹配算子、服务、分类和标签，搜索结果自动展开。分组只改变浏览方式，不改变 catalog 身份。
 - Inspector 暴露节点声明的 commands；`showOnNode` 命令也显示节点内按钮。参数表单按照声明的类型、默认值、枚举和必填项输入。Service 命令调用运行时 command endpoint 并显示返回结果；Operator 命令写入其声明的 command input 隐藏状态，界面只声明已提交，不把异步执行当作已完成。
-- Video Viz 继续使用节点内 WebRTC 预览。3D Viz 收到有效骨架场景并进入可见区域后才创建节点内 Three.js 画布，按约 15 FPS 更新；全屏 3D 视图保持交互帧率。节点上的查看按钮在同一浏览器标签中打开对应输出，URL 使用 `?view=outputs&node=...` 或 `?view=three&node=...`，浏览器前进/后退可回到图。
+- Video Viz 继续使用节点内 WebRTC 预览。3D Viz 收到有效骨架场景并进入可见区域后才创建节点内 Three.js 画布，按约 15 FPS 更新；全屏 3D 视图保持交互帧率。节点上的查看按钮在同一浏览器标签中打开对应输出，URL 使用 `?view=outputs&node=...`，浏览器前进/后退可回到图。
 - Live Outputs 聚合 text、wave、track、TCode、video 和 3D 输出，提供固定输出及排序，顺序存在本机浏览器的 localStorage。该看板当前只管理在线输出，项目级共享布局尚未实现。
 - 前端 TCode renderer 与 Template 工具已移入 `src/extensions/`，通过显式、类型化的本地注册表接入。注册时拒绝重复 extension、renderer、tool ID 和重叠命令前缀；扩展可从 `src/extensions/sdk.ts` 使用 presentation hooks、视频组件、command 和 state API。模块按需加载。
 

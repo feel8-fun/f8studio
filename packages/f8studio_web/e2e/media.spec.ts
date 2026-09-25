@@ -1,5 +1,19 @@
 import { expect, test, type Page } from '@playwright/test';
 
+async function openVideoOutput(page: Page, source = 'synthetic://bars'): Promise<void> {
+  await page.route('**/api/presentation', async (route) => route.fulfill({ json: [{
+    nodeId: 'video-e2e', command: 'viz.video.set', tsMs: Date.now(),
+    payload: { videoStreamKey: source, scaleMode: 'fit' },
+  }] }));
+  await page.goto('/?view=outputs&node=video-e2e');
+}
+
+async function leaveOutput(page: Page): Promise<void> {
+  await page.getByRole('complementary', { name: 'Workspace navigation' })
+    .getByRole('button', { name: 'Logs', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Log Center' })).toBeVisible();
+}
+
 async function videoSignature(page: Page): Promise<number[]> {
   return page.locator('video').evaluate((video) => {
     const canvas = document.createElement('canvas');
@@ -38,118 +52,80 @@ async function webGlSignature(page: Page): Promise<{ readonly sum: number; reado
   });
 }
 
-test('plays changing WebRTC video and renders interactive 3D without overflow', async ({ page }, testInfo) => {
+test('plays changing video through the focused Video Viz output', async ({ page }, testInfo) => {
   const pageErrors: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
-  await page.goto('/');
-  await expect(page.locator('.connection-online')).toBeVisible();
-  await page.getByRole('complementary', { name: 'Workspace navigation' }).getByRole('button', { name: 'Video' }).click();
-
-  await page.getByRole('button', { name: 'Connect' }).click();
-  await expect(page.locator('.media-status')).toContainText('fps');
+  await openVideoOutput(page);
   await expect.poll(() => page.locator('video').evaluate((video) => ({
-    ready: video.readyState,
-    width: video.videoWidth,
-    height: video.videoHeight,
+    ready: video.readyState, width: video.videoWidth, height: video.videoHeight,
   }))).toMatchObject({ ready: 4, width: 640, height: 360 });
   const firstVideo = await videoSignature(page);
-  await page.waitForTimeout(350);
-  const secondVideo = await videoSignature(page);
-  expect(secondVideo).not.toEqual(firstVideo);
-  await page.locator('video').click();
-  await expect(page.locator('.media-sample')).toContainText('Latest raw');
+  await expect.poll(() => videoSignature(page)).not.toEqual(firstVideo);
   await page.screenshot({ path: testInfo.outputPath('video.png'), fullPage: true });
-  await page.getByRole('button', { name: 'Stop' }).click();
-  await expect(page.locator('.media-status')).toHaveText('Ready');
+  await leaveOutput(page);
+  expect(pageErrors).toEqual([]);
+});
 
-  await page.getByRole('tab', { name: '3D' }).click();
+test('renders an interactive focused 3D output without overflow', async ({ page }, testInfo) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  await page.route('**/api/presentation', async (route) => route.fulfill({ json: [{
+    nodeId: 'three-e2e', command: 'viz.three_d.scene', tsMs: Date.now(),
+    payload: { tsMs: Date.now(), worldUp: '+y', people: [{
+      name: 'Test', bbox: null, skeletonProtocol: 'test', skeletonEdges: [[0, 1], [1, 2]],
+      nodes: [
+        { index: 0, name: 'Root', pos: [0, 0, 0], rot: null },
+        { index: 1, name: 'Head', pos: [0, 2, 0], rot: null },
+        { index: 2, name: 'Hand', pos: [1, 1, 0.5], rot: null },
+      ],
+    }] },
+  }] }));
+  await page.goto('/?view=outputs&node=three-e2e');
   const canvas = page.getByTestId('three-stage').locator('canvas');
   await expect(canvas).toBeVisible();
+  await expect(page.locator('.scene-hud')).toContainText('3 joints');
   await expect.poll(async () => (await webGlSignature(page)).visiblePixels).toBeGreaterThan(1_000);
   const beforeOrbit = await webGlSignature(page);
   const bounds = await canvas.boundingBox();
   if (bounds === null) throw new Error('3D canvas does not have layout bounds');
+  expect(bounds.height).toBeGreaterThan(500);
   await page.mouse.move(bounds.x + bounds.width * 0.7, bounds.y + bounds.height * 0.45);
   await page.mouse.down();
   await page.mouse.move(bounds.x + bounds.width * 0.3, bounds.y + bounds.height * 0.35, { steps: 8 });
   await page.mouse.up();
-  await page.waitForTimeout(150);
-  const afterOrbit = await webGlSignature(page);
-  expect(afterOrbit.sum).not.toBe(beforeOrbit.sum);
+  await expect.poll(async () => (await webGlSignature(page)).sum).not.toBe(beforeOrbit.sum);
   await page.screenshot({ path: testInfo.outputPath('three.png'), fullPage: true });
-
   const layout = await page.evaluate(() => ({
-    viewportWidth: window.innerWidth,
-    documentWidth: document.documentElement.scrollWidth,
-    viewportHeight: window.innerHeight,
-    documentHeight: document.documentElement.scrollHeight,
+    viewportWidth: window.innerWidth, documentWidth: document.documentElement.scrollWidth,
+    viewportHeight: window.innerHeight, documentHeight: document.documentElement.scrollHeight,
   }));
   expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewportWidth);
   expect(layout.documentHeight).toBeLessThanOrEqual(layout.viewportHeight);
+  await page.getByRole('complementary', { name: 'Workspace navigation' })
+    .getByRole('button', { name: 'Outputs', exact: true }).click();
+  await expect(page.locator('.scene-hud')).toHaveCount(0);
+  await expect.poll(() => canvas.evaluate((element) => {
+    const context = element.getContext('webgl2');
+    if (context === null) throw new Error('WebGL2 context is unavailable');
+    const pixels = new Uint8Array(element.width * element.height * 4);
+    context.readPixels(0, 0, element.width, element.height, context.RGBA, context.UNSIGNED_BYTE, pixels);
+    let joints = 0;
+    for (let index = 0; index < pixels.length; index += 4) {
+      if (pixels[index]! > 150 && pixels[index + 1]! > 100 && pixels[index + 2]! < 130) joints += 1;
+    }
+    return joints;
+  })).toBeGreaterThan(10);
   expect(pageErrors).toEqual([]);
 });
 
-test('plays WebRTC audio and renders a nonflat waveform', async ({ page }, testInfo) => {
-  const pageErrors: string[] = [];
-  page.on('pageerror', (error) => pageErrors.push(error.message));
-  await page.goto('/');
-  await expect(page.locator('.connection-online')).toBeVisible();
-  await page.getByRole('complementary', { name: 'Workspace navigation' }).getByRole('button', { name: 'Audio' }).click();
-  await page.getByRole('button', { name: 'Play' }).click();
-  await expect(page.locator('.media-status')).toContainText('48000 Hz');
-
-  const canvas = page.getByTestId('audio-waveform');
-  await expect(canvas).toBeVisible();
-  await expect.poll(() => canvas.evaluate((element) => {
-    const context = element.getContext('2d');
-    if (context === null) throw new Error('2D context is unavailable');
-    const pixels = context.getImageData(0, 0, element.width, element.height).data;
-    let greenPixels = 0;
-    let minY = element.height;
-    let maxY = 0;
-    for (let y = 0; y < element.height; y += 1) {
-      for (let x = 0; x < element.width; x += 1) {
-        const offset = (y * element.width + x) * 4;
-        const red = pixels[offset] ?? 0;
-        const green = pixels[offset + 1] ?? 0;
-        const blue = pixels[offset + 2] ?? 0;
-        if (green > red + 20 && green > blue + 20) {
-          greenPixels += 1;
-          minY = Math.min(minY, y);
-          maxY = Math.max(maxY, y);
-        }
-      }
-    }
-    return greenPixels > 100 && maxY - minY > 8;
-  })).toBe(true);
-  const signature = await canvas.evaluate((element) => {
-    const context = element.getContext('2d');
-    if (context === null) throw new Error('2D context is unavailable');
-    const pixels = context.getImageData(0, 0, element.width, element.height).data;
-    let greenPixels = 0;
-    let minY = element.height;
-    let maxY = 0;
-    for (let y = 0; y < element.height; y += 1) {
-      for (let x = 0; x < element.width; x += 1) {
-        const offset = (y * element.width + x) * 4;
-        const red = pixels[offset] ?? 0;
-        const green = pixels[offset + 1] ?? 0;
-        const blue = pixels[offset + 2] ?? 0;
-        if (green > red + 20 && green > blue + 20) {
-          greenPixels += 1;
-          minY = Math.min(minY, y);
-          maxY = Math.max(maxY, y);
-        }
-      }
-    }
-    return { greenPixels, amplitude: maxY - minY };
-  });
-  expect(signature.greenPixels).toBeGreaterThan(100);
-  expect(signature.amplitude).toBeGreaterThan(8);
-  await page.screenshot({ path: testInfo.outputPath('audio.png'), fullPage: true });
-  await page.getByRole('button', { name: 'Stop' }).click();
-  await expect(page.locator('.media-status')).toHaveText('Ready');
-  expect(pageErrors).toEqual([]);
+test('3D outputs wait for real skeleton data instead of showing a demo', async ({ page }) => {
+  await page.route('**/api/presentation', async (route) => route.fulfill({ json: [{
+    nodeId: 'three-empty-e2e', command: 'viz.three_d.world_up', tsMs: Date.now(),
+    payload: { worldUp: '+y' },
+  }] }));
+  await page.goto('/?view=outputs&node=three-empty-e2e');
+  await expect(page.getByText('Waiting for skeleton')).toBeVisible();
+  await expect(page.getByTestId('three-stage')).toHaveCount(0);
 });
 
 test('Audio Viz renders a live waveform and keeps browser listening off by default', async ({ page }) => {
@@ -220,50 +196,37 @@ test('Audio Viz reports no signal when its source has no audio chunks', async ({
   await expect(panel.getByRole('button', { name: 'Listen in browser' })).toHaveAttribute('aria-pressed', 'false');
 });
 
-test('stopping during video negotiation releases the remote session', async ({ page }) => {
-  let markRequestStarted: (() => void) | null = null;
-  let markRequestFinished: (() => void) | null = null;
-  const requestReachedServer = new Promise<void>((resolve) => {
-    markRequestStarted = resolve;
-  });
-  const requestFinished = new Promise<void>((resolve) => {
-    markRequestFinished = resolve;
-  });
+test('leaving an output during video negotiation releases the remote session', async ({ page }) => {
+  let markRequestStarted: (() => void) | undefined;
+  const requestStarted = new Promise<void>((resolve) => { markRequestStarted = resolve; });
+  let createdSessionId = '';
   await page.route('**/api/media/sessions', async (route) => {
-    markRequestStarted?.();
-    await new Promise<void>((resolve) => setTimeout(resolve, 300));
     const response = await route.fetch();
+    const body: { sessionId: string } = await response.json();
+    createdSessionId = body.sessionId;
+    markRequestStarted?.();
+    // Keep the answer pending beyond the pool's 1.5 s navigation grace period.
+    await new Promise<void>((resolve) => setTimeout(resolve, 2500));
     await route.fulfill({ response });
-    markRequestFinished?.();
   });
-  await page.goto('/');
-  await page.getByRole('complementary', { name: 'Workspace navigation' }).getByRole('button', { name: 'Video' }).click();
-  await page.getByRole('button', { name: 'Connect' }).click();
-  await requestReachedServer;
-  await page.getByRole('button', { name: 'Stop' }).click();
-  await expect(page.locator('.media-status')).toHaveText('Ready');
-  await requestFinished;
-  await expect.poll(() => page.evaluate(async () => {
-    const response = await fetch('/api/media/metrics');
-    const metrics = await response.json() as { videoSessions: number; videoSources: number };
-    return [metrics.videoSessions, metrics.videoSources];
-  })).toEqual([0, 0]);
+  await openVideoOutput(page);
+  await requestStarted;
+  const released = page.waitForResponse((response) => response.request().method() === 'DELETE' &&
+    new URL(response.url()).pathname === `/api/media/sessions/${createdSessionId}`);
+  await leaveOutput(page);
+  expect((await released).ok()).toBe(true);
 });
 
-test('measures 1080p displayed video latency from the capture marker', async ({ page }, testInfo) => {
+test('measures Video Viz latency from a 1080p source capture marker', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', '1080p latency is measured once on the desktop viewport');
-  await page.goto('/');
-  await page.getByRole('complementary', { name: 'Workspace navigation' }).getByRole('button', { name: 'Video' }).click();
-  await page.getByLabel('Video source').fill('synthetic://bars-1080p');
-  await page.getByRole('button', { name: 'Main' }).click();
-  await page.getByRole('button', { name: 'Connect' }).click();
+  await openVideoOutput(page, 'synthetic://bars-1080p');
   await expect.poll(() => page.locator('video').evaluate((video) => ({
     ready: video.readyState,
     width: video.videoWidth,
     height: video.videoHeight,
-  }))).toMatchObject({ ready: 4, width: 1920, height: 1080 });
+  }))).toMatchObject({ ready: 4, width: 640, height: 360 });
 
-  const samples = await page.locator('.video-stage').evaluate(async (stage) => {
+  const samples = await page.locator('.presentation-video').evaluate(async (stage) => {
     const video = stage.querySelector('video');
     if (video === null) throw new Error('Video element is unavailable');
     const canvas = document.createElement('canvas');
@@ -280,7 +243,7 @@ test('measures 1080p displayed video latency from the capture marker', async ({ 
       context.drawImage(video, 0, 0);
       let timestampModulo = 0;
       for (let bitIndex = 0; bitIndex < 16; bitIndex += 1) {
-        const pixel = context.getImageData(bitIndex * 16 + 8, 8, 1, 1).data;
+        const pixel = context.getImageData(Math.floor((bitIndex * 16 + 8) * video.videoWidth / 1920), Math.floor(8 * video.videoHeight / 1080), 1, 1).data;
         if ((pixel[0] ?? 0) > 128) timestampModulo |= 1 << bitIndex;
       }
       const now = Date.now();
@@ -296,7 +259,7 @@ test('measures 1080p displayed video latency from the capture marker', async ({ 
   expect(samples.length).toBeGreaterThanOrEqual(50);
   const sorted = [...samples].sort((left, right) => left - right);
   const p95 = sorted[Math.ceil(sorted.length * 0.95) - 1] ?? Number.POSITIVE_INFINITY;
-  console.log(`1080p displayed latency: samples=${samples.length} p95=${p95}ms`);
+  console.log(`Video Viz latency (1080p source): samples=${samples.length} p95=${p95}ms`);
   expect(p95).toBeLessThanOrEqual(200);
-  await page.getByRole('button', { name: 'Stop' }).click();
+  await leaveOutput(page);
 });

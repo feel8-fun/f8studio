@@ -23,8 +23,8 @@ pixi run -e web-studio studio_web_dev
 ## Build a Graph
 
 1. Create or select a project from the project selector.
-2. Drag a service from Node Library to the canvas.
-3. Drag operators into their owning service container.
+2. Click a service in Node Library to add it within the visible canvas.
+3. Select the owning service, then click an operator in Node Library. If multiple compatible services exist, select the target first.
 4. Connect compatible `exec`, `data`, `state`, or `command` terminals.
 5. Select a node and edit schema-driven fields in Inspector.
 6. Deploy and inspect service status, monitor events, logs, and presentation output.
@@ -36,7 +36,7 @@ Service nodes represent deployable runtime processes. Operator nodes execute ins
 | Workspace | Purpose |
 | --- | --- |
 | Graph | Canvas, Node Library, Inspector, deploy jobs and inline previews |
-| Presentation | Larger video, audio, curve, track, TCode and 3D views |
+| Outputs | Larger video, audio, curve, track, TCode and 3D views |
 | Assets | Components, variants, immutable versions and project snapshots |
 | Code | Local Monaco editor with completion, hover and diagnostics |
 | Local | Unity setup, serial devices, skeleton verification and hotkeys |
@@ -51,7 +51,7 @@ Capture a selected subgraph as a component when you want to reuse structure. Cap
 
 ## Runtime Media
 
-Video Viz previews play directly inside graph nodes. The dedicated media gateway subscribes to Zenoh and serves video/audio through WebRTC. In strict VPN or SSH environments, configure TURN and forward both the Studio HTTP port and TURN TCP port as described in [the migration status](../plans/web-studio-status.md#严格-vpn--ssh-模式).
+Video Viz, Audio Viz, and 3D Viz preview live data inside graph nodes. Use the node's open-output button for a focused view, or the Outputs workspace for the live/pinned dashboard. All focused views use `?view=outputs&node=<nodeId>`. The temporary Video/Audio/3D Media Lab pages have been removed; unknown workspace URLs open Graph. Audio listening is off by default, and 3D views wait for real scene data instead of showing a demo skeleton. The dedicated media gateway subscribes to Zenoh and serves video/audio through WebRTC. In strict VPN or SSH environments, configure TURN and forward both the Studio HTTP port and TURN TCP port as described in [the migration status](../plans/web-studio-status.md#严格-vpn--ssh-模式).
 
 ## AI, CLI and MCP
 

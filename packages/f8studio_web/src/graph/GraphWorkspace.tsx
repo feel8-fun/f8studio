@@ -49,6 +49,7 @@ import type {
   GraphPort,
   HotkeyBinding,
   JsonValue,
+  NodeLayout,
   OperatorSpec,
   ProjectRecord,
   ProjectSummary,
@@ -86,6 +87,37 @@ import { commandResultDetail, runCommand } from './runCommand';
 const nodeTypes = { studio: StudioNodeView };
 const SELECTED_PROJECT_KEY = 'f8studio.selectedProjectId';
 const STUDIO_SERVICE_ID = 'studio';
+
+function visibleServicePosition(
+  center: { readonly x: number; readonly y: number },
+  bounds: { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number },
+  width: number,
+  height: number,
+  existing: readonly StudioFlowNode[],
+): { readonly x: number; readonly y: number } {
+  const margin = 24;
+  const minX = bounds.left + margin;
+  const minY = bounds.top + margin;
+  const maxX = bounds.right - width - margin;
+  const maxY = bounds.bottom - height - margin;
+  const clampX = (x: number) => maxX < minX ? center.x - width / 2 : Math.max(minX, Math.min(x, maxX));
+  const clampY = (y: number) => maxY < minY ? center.y - height / 2 : Math.max(minY, Math.min(y, maxY));
+  const offsets: readonly (readonly [number, number])[] = [
+    [0, 0], [1, 0], [-1, 0], [0, 1], [0, -1],
+    [1, 1], [-1, 1], [1, -1], [-1, -1],
+  ];
+  const positions = offsets.map(([column, row]) => ({
+    x: clampX(center.x - width / 2 + column * (width + margin)),
+    y: clampY(center.y - height / 2 + row * (height + margin)),
+  }));
+  return positions.find((position) => existing.every((node) => {
+    const nodePosition = absoluteFlowPosition(node, existing);
+    const nodeWidth = typeof node.style?.width === 'number' ? node.style.width : OPERATOR_WIDTH;
+    const nodeHeight = typeof node.style?.height === 'number' ? node.style.height : OPERATOR_MIN_HEIGHT;
+    return position.x + width + margin <= nodePosition.x || nodePosition.x + nodeWidth + margin <= position.x ||
+      position.y + height + margin <= nodePosition.y || nodePosition.y + nodeHeight + margin <= position.y;
+  })) ?? { x: clampX(center.x - width / 2), y: clampY(center.y - height / 2) };
+}
 
 function hotkeyEligible(field: StateSpec): boolean {
   if (field.access !== 'rw') return false;
@@ -342,7 +374,7 @@ function documentIsNewer(next: ProjectRecord['document'], current: ProjectRecord
     (next.graphRevision === current.graphRevision && next.layoutRevision > current.layoutRevision);
 }
 
-function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId: string, threeD: boolean) => void }) {
+function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId: string) => void }) {
   const [projects, setProjects] = useState<readonly ProjectSummary[]>([]);
   const [project, setProject] = useState<ProjectRecord | null>(null);
   const [catalog, setCatalog] = useState<CatalogSnapshot | null>(null);
@@ -369,6 +401,7 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
     ids: new Set(),
   });
   const projectRef = useRef<ProjectRecord | null>(null);
+  const graphCanvasRef = useRef<HTMLElement>(null);
   const nodesInitialized = useNodesInitialized();
   const { fitView, screenToFlowPosition } = useReactFlow<StudioFlowNode, Edge>();
   const updateNodeInternals = useUpdateNodeInternals();
@@ -656,9 +689,16 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
         selectedNode = await createCatalogNode({ kind: 'service', nodeId, serviceClass: spec.serviceClass });
         nodesToCreate.push(selectedNode);
       } else {
-        let service = project.document.nodes.find(
+        const compatibleServices = project.document.nodes.filter(
           (node) => node.kind === 'service' && node.serviceClass === spec.serviceClass,
         );
+        const currentSelection = project.document.nodes.find((node) => node.nodeId === selectedNodeId);
+        let service = compatibleServices.find((node) => node.nodeId === currentSelection?.nodeId ||
+          node.serviceId === (currentSelection?.kind === 'operator' ? currentSelection.serviceId : null));
+        if (service === undefined && compatibleServices.length === 1) service = compatibleServices[0];
+        if (service === undefined && compatibleServices.length > 1) {
+          throw new Error(`Select the target ${spec.serviceClass} service before adding this operator`);
+        }
         if (service === undefined) {
           if (spec.serviceClass !== STUDIO_SERVICE_CLASS) {
             throw new Error(`Add a ${spec.serviceClass} service before this operator`);
@@ -682,9 +722,38 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
         });
         nodesToCreate.push(selectedNode);
       }
-      let nextServiceIndex = project.document.nodes.filter((node) => node.kind === 'service').length;
+      const flowElement = graphCanvasRef.current?.querySelector('.react-flow');
+      const flowBounds = flowElement?.getBoundingClientRect();
+      if (flowBounds === undefined || flowBounds.width <= 0 || flowBounds.height <= 0) {
+        throw new Error('Graph viewport is not ready');
+      }
+      const topLeft = screenToFlowPosition({ x: flowBounds.left, y: flowBounds.top });
+      const bottomRight = screenToFlowPosition({ x: flowBounds.right, y: flowBounds.bottom });
+      const visible = {
+        left: topLeft.x, top: topLeft.y, right: bottomRight.x, bottom: bottomRight.y,
+      };
+      const center = screenToFlowPosition({
+        x: flowBounds.left + flowBounds.width / 2,
+        y: flowBounds.top + flowBounds.height / 2,
+      });
+      const existing = projectDocument(project.document).nodes;
+      const serviceLayouts = new Map<string, NodeLayout>();
+      for (const node of nodesToCreate) {
+        if (node.kind !== 'service') continue;
+        const width = COMPACT_SERVICE_WIDTH;
+        const height = compactServiceHeight(node);
+        const position = visibleServicePosition(center, visible, width, height, existing);
+        serviceLayouts.set(node.nodeId, {
+          nodeId: node.nodeId, x: position.x, y: position.y, width, height, collapsed: false,
+        });
+        existing.push({
+          id: node.nodeId, type: 'studio', position, style: { width, height },
+          data: { graphNode: node, childCount: 0 },
+        });
+      }
       const studioOperatorPosition = selectedNode.kind === 'operator' && selectedNode.serviceClass === STUDIO_SERVICE_CLASS
-        ? projectDocument({ ...project.document, nodes: [...project.document.nodes, ...nodesToCreate] })
+        ? projectDocument({ ...project.document, nodes: [...project.document.nodes, ...nodesToCreate],
+            layout: [...project.document.layout, ...serviceLayouts.values()] })
           .nodes.find((node) => node.id === selectedNode.nodeId)?.position
         : undefined;
       const operations = nodesToCreate.map((node): GraphOperation => {
@@ -700,19 +769,12 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
             },
           }),
         };
-        const serviceIndex = nextServiceIndex;
-        nextServiceIndex += 1;
+        const layout = serviceLayouts.get(node.nodeId);
+        if (layout === undefined) throw new Error(`Missing layout for service ${node.nodeId}`);
         return {
           op: 'createNode',
           node,
-          layout: {
-            nodeId: node.nodeId,
-            x: 80 + (serviceIndex % 2) * (SERVICE_WIDTH + 80),
-            y: 80 + Math.floor(serviceIndex / 2) * (SERVICE_MIN_HEIGHT + 80),
-            width: COMPACT_SERVICE_WIDTH,
-            height: compactServiceHeight(node),
-            collapsed: false,
-          },
+          layout,
         };
       });
       const result = await patchProject(project.projectId, project.document, operations);
@@ -724,7 +786,7 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
     } finally {
       setBusy(false);
     }
-  }, [busy, project, reloadProject]);
+  }, [busy, project, reloadProject, screenToFlowPosition, selectedNodeId]);
 
   const connect = useCallback((connection: Connection) => {
     if (project === null || connection.sourceHandle === null || connection.targetHandle === null) return;
@@ -1142,7 +1204,7 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
           canAdd={!busy && project !== null} onAdd={(spec) => void addSpec(spec)} />
       </aside>
 
-      <section className="graph-canvas" aria-label="Graph canvas">
+      <section className="graph-canvas" aria-label="Graph canvas" ref={graphCanvasRef}>
         <div className="graph-toolbar">
           <button type="button" title="Undo" aria-label="Undo" disabled={busy || project === null} onClick={() => void history('undo')}><RotateCcw size={16} /></button>
           <button type="button" title="Redo" aria-label="Redo" disabled={busy || project === null} onClick={() => void history('redo')}><Redo2 size={16} /></button>
@@ -1213,6 +1275,6 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
   );
 }
 
-export function GraphWorkspace({ onShowOutput }: { readonly onShowOutput: (nodeId: string, threeD: boolean) => void }) {
+export function GraphWorkspace({ onShowOutput }: { readonly onShowOutput: (nodeId: string) => void }) {
   return <ReactFlowProvider><GraphWorkspaceInner onShowOutput={onShowOutput} /></ReactFlowProvider>;
 }

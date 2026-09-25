@@ -1,4 +1,4 @@
-import { Activity, Archive, AudioLines, Bot, Boxes, CircleDot, Code2, Cuboid, Plug, ScrollText, Settings2, Video, type LucideIcon } from 'lucide-react';
+import { Activity, Archive, Bot, Boxes, CircleDot, Code2, Plug, ScrollText, Settings2, type LucideIcon } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 
 import { fetchHealth } from '../api/client';
@@ -7,23 +7,20 @@ import { GraphWorkspace } from '../graph/GraphWorkspace';
 import { LogsWorkspace } from '../logs/LogsWorkspace';
 import { PresentationProvider } from '../presentation/PresentationStore';
 
-const WebRtcVideo = lazy(() => import('../media/WebRtcVideo').then((module) => ({ default: module.WebRtcVideo })));
-const WebRtcAudio = lazy(() => import('../media/WebRtcAudio').then((module) => ({ default: module.WebRtcAudio })));
-const SkeletonViewport = lazy(() => import('../three/SkeletonViewport').then((module) => ({ default: module.SkeletonViewport })));
 const AssetsWorkspace = lazy(() => import('../assets/AssetsWorkspace').then((module) => ({ default: module.AssetsWorkspace })));
 const CodeWorkspace = lazy(() => import('../editor/CodeWorkspace').then((module) => ({ default: module.CodeWorkspace })));
 const PresentationWorkspace = lazy(() => import('../presentation/PresentationWorkspace').then((module) => ({ default: module.PresentationWorkspace })));
 const LocalWorkspace = lazy(() => import('../local/LocalWorkspace').then((module) => ({ default: module.LocalWorkspace })));
 const AgentWorkspace = lazy(() => import('../agents/AgentWorkspace').then((module) => ({ default: module.AgentWorkspace })));
 
-type WorkspaceView = 'graph' | 'agent' | 'assets' | 'code' | 'outputs' | 'video' | 'audio' | 'three' | 'local' | 'logs';
+type WorkspaceView = 'graph' | 'agent' | 'assets' | 'code' | 'outputs' | 'local' | 'logs';
 interface LocationView { readonly view: WorkspaceView; readonly nodeId: string | null }
 
 function readLocationView(): LocationView {
   const params = new URLSearchParams(window.location.search);
   const requested = params.get('view');
   const view = WORKSPACES.some((item) => item.view === requested) ? requested as WorkspaceView : 'graph';
-  return { view, nodeId: view === 'outputs' || view === 'three' ? params.get('node') : null };
+  return { view, nodeId: view === 'outputs' ? params.get('node') : null };
 }
 
 interface WorkspaceDefinition {
@@ -39,9 +36,6 @@ const WORKSPACES: readonly WorkspaceDefinition[] = [
   { view: 'assets', label: 'Assets', title: 'Assets', icon: Archive },
   { view: 'code', label: 'Code', title: 'Code & Schema', icon: Code2 },
   { view: 'outputs', label: 'Outputs', title: 'Live Outputs', icon: Activity },
-  { view: 'video', label: 'Video', title: 'Media Lab', icon: Video },
-  { view: 'three', label: '3D', title: 'Media Lab', icon: Cuboid },
-  { view: 'audio', label: 'Audio', title: 'Media Lab', icon: AudioLines },
   { view: 'local', label: 'Local integrations', title: 'Local Integrations', icon: Plug },
   { view: 'logs', label: 'Logs', title: 'Log Center', icon: ScrollText },
 ];
@@ -63,8 +57,8 @@ export function App() {
     window.history.pushState(null, '', url);
     setLocationView({ view: nextView, nodeId: nextNodeId });
   }, []);
-  const showOutput = useCallback((outputNodeId: string, threeD: boolean) => {
-    navigate(threeD ? 'three' : 'outputs', outputNodeId);
+  const showOutput = useCallback((outputNodeId: string) => {
+    navigate('outputs', outputNodeId);
   }, [navigate]);
 
   useEffect(() => {
@@ -113,11 +107,6 @@ export function App() {
           <div className="brand">Feel8 Studio</div>
           <h1 id="workspace-title">{WORKSPACES.find((workspace) => workspace.view === view)?.title}</h1>
         </div>
-        {(view === 'video' || view === 'audio' || view === 'three') && <div className="view-tabs" role="tablist" aria-label="Media view">
-          <button role="tab" aria-selected={view === 'video'} onClick={() => navigate('video')}>Video</button>
-          <button role="tab" aria-selected={view === 'audio'} onClick={() => navigate('audio')}>Audio</button>
-          <button role="tab" aria-selected={view === 'three'} onClick={() => navigate('three')}>3D</button>
-        </div>}
         <div className={`connection connection-${connection.kind}`} role="status">
           <CircleDot size={14} aria-hidden="true" />
           <span>{statusText}</span>
@@ -142,9 +131,6 @@ export function App() {
         <div className="workspace-content">
           {view === 'graph' && <GraphWorkspace onShowOutput={showOutput} />}
           <Suspense fallback={<div className="view-loading" role="status">Loading view...</div>}>
-            {view === 'video' && <WebRtcVideo />}
-            {view === 'audio' && <WebRtcAudio />}
-            {view === 'three' && <SkeletonViewport nodeId={nodeId} />}
             {view === 'assets' && <AssetsWorkspace />}
             {view === 'code' && <CodeWorkspace />}
             {view === 'outputs' && <PresentationWorkspace nodeId={nodeId} />}

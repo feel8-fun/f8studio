@@ -2,32 +2,8 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 
-import { isSkeletonScene, type SkeletonScene } from '../api/contracts';
-import { usePresentationConnected, usePresentationOutput, usePresentationOutputs } from '../presentation/PresentationStore';
-
-const demoScene: SkeletonScene = {
-  tsMs: 0,
-  worldUp: '+y',
-  people: [
-    {
-      name: 'Preview', bbox: null, skeletonProtocol: 'preview',
-      skeletonEdges: [[0, 1], [1, 2], [1, 3], [1, 4], [2, 5], [3, 6], [4, 7], [4, 8], [7, 9], [8, 10]],
-      nodes: [
-        { index: 0, name: 'Head', pos: [0, 2.5, 0], rot: null },
-        { index: 1, name: 'Chest', pos: [0, 1.8, 0], rot: null },
-        { index: 2, name: 'LeftHand', pos: [-0.9, 1.55, 0.05], rot: null },
-        { index: 3, name: 'RightHand', pos: [0.9, 1.55, 0.05], rot: null },
-        { index: 4, name: 'Hips', pos: [0, 1.05, 0], rot: null },
-        { index: 5, name: 'LeftFinger', pos: [-1.2, 1.35, 0.15], rot: null },
-        { index: 6, name: 'RightFinger', pos: [1.2, 1.35, 0.15], rot: null },
-        { index: 7, name: 'LeftKnee', pos: [-0.35, 0.45, 0], rot: null },
-        { index: 8, name: 'RightKnee', pos: [0.35, 0.45, 0], rot: null },
-        { index: 9, name: 'LeftFoot', pos: [-0.4, 0.02, 0.2], rot: null },
-        { index: 10, name: 'RightFoot', pos: [0.4, 0.02, 0.2], rot: null },
-      ],
-    },
-  ],
-};
+import type { SkeletonScene } from '../api/contracts';
+import { usePresentationConnected } from '../presentation/PresentationStore';
 
 function worldUpVector(token: string): THREE.Vector3 {
   switch (token.toLowerCase()) {
@@ -41,27 +17,12 @@ function worldUpVector(token: string): THREE.Vector3 {
   }
 }
 
-export function SkeletonViewport({ nodeId = null, compact = false }: { readonly nodeId?: string | null; readonly compact?: boolean }) {
+export function SkeletonViewport({ scene, compact = false }: { readonly scene: SkeletonScene; readonly compact?: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const worldRootRef = useRef<THREE.Group | null>(null);
   const skeletonGroupRef = useRef<THREE.Group | null>(null);
-  const isLiveRef = useRef(false);
-  const outputs = usePresentationOutputs();
-  const selectedOutput = usePresentationOutput(nodeId ?? '');
   const connected = usePresentationConnected();
-  const scene = useMemo(() => {
-    const candidates = (nodeId === null ? [...outputs.values()] : selectedOutput === null ? [] : [selectedOutput])
-      .filter((output) => output.renderer === 'three_d' && isSkeletonScene(output.payload))
-      .sort((left, right) => right.updatedAt - left.updatedAt);
-    const candidate = candidates[0]?.payload;
-    return candidate !== undefined && isSkeletonScene(candidate) ? candidate : demoScene;
-  }, [outputs, selectedOutput, nodeId]);
-  const isLive = scene !== demoScene;
   const nodeCount = useMemo(() => scene.people.reduce((total, person) => total + person.nodes.length, 0), [scene]);
-
-  useEffect(() => {
-    isLiveRef.current = isLive;
-  }, [isLive]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -110,7 +71,6 @@ export function SkeletonViewport({ nodeId = null, compact = false }: { readonly 
       if (compact && timestamp - lastFrame < 66) return;
       lastFrame = timestamp;
       controls.update();
-      if (!isLiveRef.current) skeletonGroup.rotation.y += 0.0025;
       renderer.render(threeScene, camera);
     };
     frameHandle = requestAnimationFrame(render);
@@ -120,6 +80,9 @@ export function SkeletonViewport({ nodeId = null, compact = false }: { readonly 
       controls.dispose();
       worldRootRef.current = null;
       skeletonGroupRef.current = null;
+      grid.geometry.dispose();
+      if (Array.isArray(grid.material)) grid.material.forEach((material) => material.dispose());
+      else grid.material.dispose();
       renderer.dispose();
       renderer.domElement.remove();
     };
@@ -129,14 +92,6 @@ export function SkeletonViewport({ nodeId = null, compact = false }: { readonly 
     const root = worldRootRef.current;
     const skeletonGroup = skeletonGroupRef.current;
     if (root === null || skeletonGroup === null) return;
-    while (skeletonGroup.children.length > 0) {
-      const child = skeletonGroup.children.pop();
-      if (child instanceof THREE.Mesh || child instanceof THREE.Line) {
-        child.geometry.dispose();
-        if (Array.isArray(child.material)) child.material.forEach((material) => material.dispose());
-        else child.material.dispose();
-      }
-    }
     const jointMaterial = new THREE.MeshStandardMaterial({ color: '#ffca57', roughness: 0.35, metalness: 0.1 });
     const lineMaterial = new THREE.LineBasicMaterial({ color: '#79d6bd' });
     for (const person of scene.people) {
@@ -161,17 +116,18 @@ export function SkeletonViewport({ nodeId = null, compact = false }: { readonly 
       for (const child of [...skeletonGroup.children]) {
         if (child instanceof THREE.Mesh || child instanceof THREE.Line) child.geometry.dispose();
       }
+      skeletonGroup.clear();
       jointMaterial.dispose();
       lineMaterial.dispose();
     };
-  }, [scene]);
+  }, [scene, compact]);
 
   return (
     <section className={`three-workspace ${compact ? 'three-workspace-compact' : ''}`} aria-label="3D skeleton viewer">
       <div ref={hostRef} className="three-stage" data-testid="three-stage" />
       {!compact && <div className="scene-hud">
         <span className={connected ? 'live-dot online' : 'live-dot'} />
-        <span>{isLive ? 'Live' : 'Preview'}</span>
+        <span>{connected ? 'Live' : 'Reconnecting'}</span>
         <span>{scene.people.length} people</span>
         <span>{nodeCount} joints</span>
       </div>}

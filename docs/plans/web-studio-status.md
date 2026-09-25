@@ -1,8 +1,10 @@
 # Web Studio 迁移状态
 
-最后更新：2026-09-24。目标方案：[web-studio-migration.md](web-studio-migration.md)。
+最后更新：2026-09-25。目标方案：[web-studio-migration.md](web-studio-migration.md)。
 
 ## 当前结论
+
+迁移期间的 Video/Audio/3D Media Lab 页面已移除，包括独立测试播放器、演示骨架、专用样式和未再使用的前端像素采样接口。正式入口统一为节点预览和 Outputs；节点放大查看均使用 `?view=outputs&node=...`，3D 聚焦视图保留完整画布和交互帧率，无数据时等待真实骨架。媒体 E2E 已改走正式渲染组件，合成音视频源仅继续用于测试。
 
 P7 后的图编辑精修新增 Node Library 分组、手动 command 调用、节点内 3D 预览、按节点定位的同页输出视图、可固定排序的 Live Outputs，以及前端本地扩展注册边界。已修复同一保存图再次运行时只命中历史成功记录、未检查现场服务的部署错误；日志中心展示当前服务进程生命周期内有界保留的服务输出、部署结果、运行时/API 错误和媒体网关请求错误。页面标题与产品名已合并到顶栏。第三方扩展包安装和通用 Zenoh 数据桥接仍待实施；跨浏览器标签共享同一个 WebRTC peer 未实现。细节与验收见 [web-studio-refinement.md](web-studio-refinement.md)。
 
