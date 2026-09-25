@@ -655,7 +655,7 @@ test('edits inline state and configures typed exec and data connections', async 
   expect(pageErrors).toEqual([]);
 });
 
-test('shows IM Player commands once per port row and opens them from the node', async ({ page }, testInfo) => {
+test('runs parameterless IM Player commands directly and opens parameter dialogs', async ({ page }, testInfo) => {
   await page.goto('/');
   await expect(page.locator('.connection-online')).toBeVisible();
   const previousProjectId = await page.locator('#project-select').inputValue();
@@ -685,6 +685,11 @@ test('shows IM Player commands once per port row and opens them from the node', 
     });
   });
   expect(buttonsFit).toBe(true);
+
+  await commandRows.nth(1).getByRole('button', { name: 'play' }).click();
+  await expect(page.getByRole('dialog', { name: 'Run play' })).toHaveCount(0);
+  await expect(page.locator('.command-toast')).toContainText('play');
+  await page.getByRole('button', { name: 'Dismiss command result' }).click();
 
   await commandRows.first().getByRole('button', { name: 'open' }).click();
   await expect(page.getByRole('dialog', { name: 'Run open' })).toBeVisible();

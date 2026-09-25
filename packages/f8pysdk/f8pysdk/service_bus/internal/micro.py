@@ -75,7 +75,14 @@ class ServiceBusControlHandlers:
         try:
             enum_code = Code(code_text)
         except ValueError:
-            enum_code = Code.INTERNAL
+            if code_text in ("INVALID_VALUE", "INVALID_RUNGRAPH", "INVALID_SCHEMA"):
+                enum_code = Code.INVALID_ARGS
+            elif code_text in ("UNKNOWN_FIELD", "NOT_SUPPORTED"):
+                enum_code = Code.NOT_FOUND
+            elif code_text == "NOT_READY":
+                enum_code = Code.CONFLICT
+            else:
+                enum_code = Code.INTERNAL
         return F8CommandError(code=enum_code, message=str(message), details=details or {})
 
     @staticmethod
@@ -422,6 +429,12 @@ class ServiceBusControlHandlers:
             )
             return
         except Exception as exc:
+            log.exception(
+                "set_state failed serviceId=%s nodeId=%s field=%s",
+                self._bus.service_id,
+                node_id_s,
+                field_s,
+            )
             await req.respond(
                 encode_obj(
                     F8SetStateReply(

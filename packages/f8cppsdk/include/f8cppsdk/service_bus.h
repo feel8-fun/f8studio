@@ -207,7 +207,7 @@ class ServiceBus final : public ServiceControlHandler {
   std::int64_t rungraph_ts_ms(const f8::cppsdk::generated::F8RuntimeGraph& graph) const;
   bool should_apply_rungraph_state_value(const std::string& node_id, const std::string& field, const json& value,
                                          std::int64_t rungraph_ts);
-  void publish_state_local(const std::string& node_id, const std::string& field, const json& value, std::int64_t ts_ms,
+  bool publish_state_local(const std::string& node_id, const std::string& field, const json& value, std::int64_t ts_ms,
                            const std::string& source, const json& meta, const std::string& origin,
                            bool deliver_local, bool allow_state_fanout);
   void deliver_state_local(const std::string& node_id, const std::string& field, const json& value, std::int64_t ts_ms,

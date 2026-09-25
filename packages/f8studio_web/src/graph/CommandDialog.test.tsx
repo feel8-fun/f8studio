@@ -39,7 +39,9 @@ afterEach(cleanup);
 
 test('validates parameters and invokes a service command with typed values', async () => {
   vi.mocked(invokeRuntimeCommand).mockResolvedValue({ success: true, result: 3 });
-  render(<CommandDialog node={service} command={command} onClose={() => undefined} />);
+  const onClose = vi.fn();
+  const onResult = vi.fn();
+  render(<CommandDialog node={service} command={command} onClose={onClose} onResult={onResult} />);
   fireEvent.click(screen.getByRole('button', { name: 'Run' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('count is required');
   expect(invokeRuntimeCommand).not.toHaveBeenCalled();
@@ -48,14 +50,28 @@ test('validates parameters and invokes a service command with typed values', asy
   fireEvent.change(screen.getByRole('textbox', { name: 'label' }), { target: { value: 'sample' } });
   fireEvent.click(screen.getByRole('button', { name: 'Run' }));
   await waitFor(() => expect(invokeRuntimeCommand).toHaveBeenCalledWith('svc-1', 'Run', { count: 3, label: 'sample' }));
-  expect(await screen.findByRole('status')).toHaveTextContent('Result');
+  await waitFor(() => expect(onResult).toHaveBeenCalledWith('success', 'Service: Run', '3'));
+  expect(onClose).toHaveBeenCalledOnce();
 });
 
 test('submits an operator command through its declared command input', async () => {
   vi.mocked(setRuntimeState).mockResolvedValue({ success: true });
-  render(<CommandDialog node={operator} command={command} onClose={() => undefined} />);
+  const onResult = vi.fn();
+  render(<CommandDialog node={operator} command={command} onClose={() => undefined} onResult={onResult} />);
   fireEvent.change(screen.getByRole('spinbutton', { name: 'count *' }), { target: { value: '2' } });
   fireEvent.click(screen.getByRole('button', { name: 'Run' }));
   await waitFor(() => expect(setRuntimeState).toHaveBeenCalledWith('svc-1', 'op-1', '__cmd__.run.in', { count: 2 }));
-  expect(await screen.findByRole('status')).toHaveTextContent('Submitted to runtime');
+  await waitFor(() => expect(onResult).toHaveBeenCalledWith('success', 'Operator: Run', 'Submitted to runtime'));
+});
+
+test('reports runtime rejection and keeps the parameter dialog open', async () => {
+  vi.mocked(invokeRuntimeCommand).mockResolvedValue({ success: false, errorMessage: 'Player is offline' });
+  const onClose = vi.fn();
+  const onResult = vi.fn();
+  render(<CommandDialog node={service} command={command} onClose={onClose} onResult={onResult} />);
+  fireEvent.change(screen.getByRole('spinbutton', { name: 'count *' }), { target: { value: '2' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Player is offline');
+  expect(onResult).toHaveBeenCalledWith('error', 'Service: Run failed', 'Player is offline');
+  expect(onClose).not.toHaveBeenCalled();
 });

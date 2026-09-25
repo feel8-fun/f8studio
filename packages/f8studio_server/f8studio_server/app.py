@@ -130,6 +130,7 @@ def _patch_payload(result: PatchResult) -> F8JsonValue:
             "requestId": result.request_id,
             "graphChanged": result.graph_changed,
             "layoutChanged": result.layout_changed,
+            "runtimeErrors": result.runtime_errors,
             "document": result.document,
         }
     )

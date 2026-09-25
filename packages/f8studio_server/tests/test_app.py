@@ -15,9 +15,10 @@ from f8media_protocol.client import RemoteMediaGateway, RemoteMediaGatewayConfig
 from f8media_protocol.models import MEDIA_API_VERSION
 from f8media_gateway.service import InProcessMediaGateway
 from f8pysdk.specs import F8JsonValue, F8RuntimeGraph, F8ServiceSpec
-from f8studio_core.graph import CreateNodeOp, HistoryRequest, NodeCatalog, PatchRequest
+from f8studio_core.graph import CreateNodeOp, HistoryRequest, NodeCatalog, PatchRequest, PatchResult, new_document
 
 from f8studio_server import create_app
+from f8studio_server.app import _patch_payload
 from f8studio_server.application import StudioApplication
 from f8studio_server.models import (
     BrowserIceServer,
@@ -28,6 +29,19 @@ from f8studio_server.models import (
     ServiceRuntimeStatus,
 )
 from f8studio_server.runtime import RuntimeMonitorCallback
+
+
+def test_patch_payload_includes_runtime_sync_errors() -> None:
+    result = PatchResult(
+        request_id="state-change",
+        document=new_document(project_id="project1"),
+        graph_changed=True,
+        layout_changed=False,
+        runtime_errors=("player.volume: rejected",),
+    )
+
+    encoded = msgspec.json.encode(_patch_payload(result))
+    assert msgspec.json.decode(encoded)["runtimeErrors"] == ["player.volume: rejected"]
 
 
 class FakeRuntimeGateway:

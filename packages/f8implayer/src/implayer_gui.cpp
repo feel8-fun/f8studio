@@ -167,6 +167,7 @@ bool ImPlayerGui::wantsCaptureMouse() const {
 
 void ImPlayerGui::renderOverlay(const MpvPlayer& player, const Callbacks& cb, const std::string& last_error,
                                 const std::vector<std::string>& playlist, int playlist_index, bool playing, bool loop,
+                                double volume, const std::string& media_url,
                                 double tick_fps_ema, double tick_ms_ema, SdlVideoWindow::ProjectionMode vr_mode,
                                 int vr_sbs_eye, float vr_yaw_deg, float vr_pitch_deg, float vr_fov_deg) {
   if (!started_)
@@ -321,14 +322,20 @@ void ImPlayerGui::renderOverlay(const MpvPlayer& player, const Callbacks& cb, co
       ImGui::TextDisabled("%s", ICON_FA_VOLUME_HIGH);
       ImGui::SameLine();
       ImGui::SetNextItemWidth(150);
+      if (!volume_dragging_)
+        volume01_ = static_cast<float>(std::clamp(volume, 0.0, 1.0));
       if (ImGui::SliderFloat("##volume", &volume01_, 0.0f, 1.0f, "vol=%.2f")) {
         if (cb.set_volume)
           cb.set_volume(static_cast<double>(volume01_));
         dirty_ = true;
       }
+      volume_dragging_ = ImGui::IsItemActive();
 
       ImGui::SameLine();
       if (ImGui::Button(ICON_FA_FILM "##open")) {
+        const std::size_t length = std::min(media_url.size(), url_buf_.size() - 1);
+        url_buf_.fill(0);
+        std::memcpy(url_buf_.data(), media_url.data(), length);
         ImGui::OpenPopup("##open_popup");
         dirty_ = true;
       }

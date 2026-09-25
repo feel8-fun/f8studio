@@ -11,9 +11,11 @@ import { SkeletonOutputPreview } from '../three/SkeletonOutputPreview';
 import { nodePortRows } from './portRows';
 import { PORT_ROW_HEIGHT, SERVICE_MIN_HEIGHT, SERVICE_WIDTH, type StudioFlowNode } from './projection';
 import { StateFieldControl } from './StateFieldControl';
+import { useRuntimeNodeState } from './useRuntimeNodeState';
 
 export interface GraphNodeInteraction {
   readonly busy: boolean;
+  readonly pendingCommands: ReadonlySet<string>;
   readonly connectedStateInputs: ReadonlySet<string>;
   readonly resizeService: (nodeId: string, bounds: ResizeParams) => void;
   readonly setState: (nodeId: string, field: string, value: JsonValue) => void;
@@ -57,6 +59,8 @@ export function StudioNodeView({ data, selected }: NodeProps<StudioFlowNode>) {
     (BUILTIN_OUTPUT_CLASSES.has(node.operatorClass) || BUILTIN_RENDERER_CLASSES.has(rendererClass) || hasExtensionNodeRendererClass(rendererClass));
   const isThreeD = node.kind === 'operator' && (node.operatorClass === 'f8.viz.three_d' || node.spec.rendererClass === 'viz_three_d');
   const interaction = useContext(GraphNodeInteractionContext);
+  const inlineNames = (node.spec.stateFields ?? []).filter((field) => field.showOnNode === true).map((field) => field.name);
+  const runtimeValues = useRuntimeNodeState(node, inlineNames);
   const rows = nodePortRows(node);
   const visibleRows = rows.length === 0 ? [{ key: 'empty' }] : rows;
   const portRows = <div className="node-ports" style={{ gridTemplateRows: `repeat(${visibleRows.length}, ${PORT_ROW_HEIGHT}px)` }}>
@@ -85,7 +89,7 @@ export function StudioNodeView({ data, selected }: NodeProps<StudioFlowNode>) {
               ? <span className="port-command-name">{commandName}</span>
               : <button type="button" className="port-command-button nodrag nowheel"
                 title={command.description ?? `Run ${command.name}`}
-                disabled={!node.enabled || interaction?.busy !== false}
+                disabled={!node.enabled || interaction?.busy !== false || interaction.pendingCommands.has(`${node.nodeId}:${command.name}`)}
                 onClick={() => interaction?.openCommand(node, command)}>{command.name}</button>)}
             {inlineField !== undefined && interaction !== null && <StateFieldControl
               node={node}
@@ -93,6 +97,7 @@ export function StudioNodeView({ data, selected }: NodeProps<StudioFlowNode>) {
               compact
               connected={connected}
               disabled={interaction.busy}
+              runtimeValue={runtimeValues[inlineField.name]}
               onCommit={(value) => interaction.setState(node.nodeId, inlineField.name, value)}
             />}
           </div>

@@ -223,7 +223,8 @@ function isPatchResult(value: unknown): value is PatchResult {
   if (typeof value !== 'object' || value === null) return false;
   const item = value as Record<string, unknown>;
   return typeof item.requestId === 'string' && typeof item.graphChanged === 'boolean' &&
-    typeof item.layoutChanged === 'boolean' && isStudioDocument(item.document);
+    typeof item.layoutChanged === 'boolean' && isStudioDocument(item.document) &&
+    Array.isArray(item.runtimeErrors) && item.runtimeErrors.every((error) => typeof error === 'string');
 }
 
 export async function patchProject(

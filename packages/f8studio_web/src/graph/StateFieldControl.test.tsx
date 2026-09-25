@@ -53,6 +53,25 @@ test('renders live retained values for readonly state without a null placeholder
   expect(screen.queryByText('null')).not.toBeInTheDocument();
 });
 
+test('shows a writable runtime value and preserves an active text edit', () => {
+  const urlField: StateSpec = {
+    name: 'mediaUrl', label: 'Media URL', access: 'rw', valueSchema: { type: 'string', default: '' },
+  };
+  const props = {
+    node: { ...node, spec: { ...node.spec, stateFields: [urlField] }, stateValues: { mediaUrl: 'draft.mp4' } },
+    field: urlField, disabled: false, onCommit: vi.fn(),
+  };
+  const view = render(<StateFieldControl {...props} runtimeValue={{ field: 'mediaUrl', found: true, value: 'player.mp4', tsMs: 1 }} />);
+  const input = screen.getByRole('textbox', { name: 'Media URL' });
+  expect(input).toHaveValue('player.mp4');
+  fireEvent.focus(input);
+  fireEvent.change(input, { target: { value: 'typing.mp4' } });
+  view.rerender(<StateFieldControl {...props} runtimeValue={{ field: 'mediaUrl', found: true, value: 'other.mp4', tsMs: 2 }} />);
+  expect(input).toHaveValue('typing.mp4');
+  fireEvent.blur(input);
+  expect(props.onCommit).toHaveBeenCalledWith('typing.mp4');
+});
+
 test('labels missing readonly runtime state as unavailable', () => {
   const readonlyField: StateSpec = {
     name: 'captureRunning', label: 'Capture Running', access: 'ro', valueSchema: { type: 'boolean' },

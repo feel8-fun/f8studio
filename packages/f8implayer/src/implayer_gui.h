@@ -13,7 +13,7 @@ namespace f8::implayer {
 
 class MpvPlayer;
 
-  class ImPlayerGui {
+class ImPlayerGui {
   public:
     struct Callbacks {
       std::function<void(const std::string& url)> open;
@@ -52,6 +52,7 @@ class MpvPlayer;
     void processEvent(SDL_Event* ev);
     void renderOverlay(const MpvPlayer& player, const Callbacks& cb, const std::string& last_error,
                        const std::vector<std::string>& playlist, int playlist_index, bool playing, bool loop,
+                       double volume, const std::string& media_url,
                        double tick_fps_ema, double tick_ms_ema, SdlVideoWindow::ProjectionMode vr_mode, int vr_sbs_eye,
                        float vr_yaw_deg, float vr_pitch_deg, float vr_fov_deg);
     bool wantsCaptureKeyboard() const;
@@ -66,6 +67,7 @@ class MpvPlayer;
   std::array<char, 16> hwdec_extra_frames_buf_{};
   std::array<char, 32> fbo_format_buf_{};
   float volume01_ = 1.0f;
+  bool volume_dragging_ = false;
   float seek_pos_ = 0.0f;
   bool seeking_ = false;
   bool show_playlist_ = false;

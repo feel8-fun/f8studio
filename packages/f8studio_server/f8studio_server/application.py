@@ -107,6 +107,7 @@ class StudioApplication:
             monitors=self.monitors,
             events=self.events,
             refresh_hotkeys=self.local.refresh_hotkeys,
+            runtime=self.runtime,
         )
         self.agents = AgentService(
             database_path=project_repository.database_path,
@@ -173,22 +174,20 @@ class StudioApplication:
                 continue
         if result is None or node is None:
             raise RevisionConflictError("global hotkey could not commit after a concurrent graph change")
-        try:
-            await self.runtime.set_state(
-                node.service_id,
-                node_id=node.node_id,
-                field=binding.field,
-                value=next_value,
-            )
-        except (TimeoutError, OSError, RuntimeError, ValueError) as exc:
-            logger.info(
-                "global hotkey updated draft but runtime state sync was unavailable "
-                "project_id=%s node_id=%s field=%s",
-                binding.project_id,
-                binding.node_id,
-                binding.field,
-                exc_info=exc,
-            )
+        if result.runtime_errors:
+            logger.warning("global hotkey runtime state sync failed: %s", "; ".join(result.runtime_errors))
+        deployment = await self.jobs.latest(binding.project_id)
+        if deployment is None or not any(
+            item.service_id == node.service_id and item.success for item in deployment.service_results
+        ):
+            try:
+                response = await self.runtime.set_state(
+                    node.service_id, node_id=node.node_id, field=binding.field, value=next_value,
+                )
+                if not response.success:
+                    logger.warning("global hotkey runtime state rejected: %s", response.error_message)
+            except (TimeoutError, OSError, RuntimeError, ValueError):
+                logger.exception("global hotkey runtime state sync unavailable project_id=%s node_id=%s field=%s", binding.project_id, node.node_id, binding.field)
 
     def _hotkey_target(self, binding: HotkeyBinding) -> tuple[StudioDocument, GraphNode, F8StateSpec]:
         document = self.projects.document(binding.project_id)

@@ -56,6 +56,7 @@ class PatchResult(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
     document: StudioDocument
     graph_changed: bool
     layout_changed: bool
+    runtime_errors: tuple[str, ...] = ()
 
 
 class HistoryRequest(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):

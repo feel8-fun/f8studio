@@ -318,6 +318,7 @@ export interface PatchResult {
   readonly graphChanged: boolean;
   readonly layoutChanged: boolean;
   readonly document: StudioDocument;
+  readonly runtimeErrors: readonly string[];
 }
 
 export type DeployJobStatus = 'queued' | 'running' | 'succeeded' | 'partially_failed' | 'failed' | 'cancelled';

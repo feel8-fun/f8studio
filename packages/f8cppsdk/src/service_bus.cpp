@@ -392,7 +392,18 @@ RuntimeBytes encode_control_response(const std::string& req_id, bool ok, const j
   payload["ok"] = ok;
   payload["result"] = ok ? result : json(nullptr);
   if (!ok) {
-    payload["error"] = json{{"code", err_code.empty() ? "INTERNAL" : err_code}, {"message", err_message}};
+    std::string code = err_code;
+    if (!generated::parse_F8CommandError_code_Enum(code).has_value()) {
+      if (code == "INVALID_VALUE" || code == "INVALID_RUNGRAPH" || code == "INVALID_SCHEMA")
+        code = "INVALID_ARGS";
+      else if (code == "UNKNOWN_FIELD" || code == "NOT_SUPPORTED")
+        code = "NOT_FOUND";
+      else if (code == "NOT_READY")
+        code = "CONFLICT";
+      else
+        code = "INTERNAL";
+    }
+    payload["error"] = json{{"code", code}, {"message", err_message}};
   } else {
     payload["error"] = json(nullptr);
   }
@@ -1716,7 +1727,7 @@ void ServiceBus::on_set_active(bool active, const json& meta) {
 
 bool ServiceBus::on_set_state(const std::string& node_id, const std::string& field, const json& value, const json& meta,
                               std::string& error_code, std::string& error_message) {
-  if (field == "active") {
+  if (node_id == cfg_.service_id && field == "active") {
     if (!value.is_boolean()) {
       error_code = "INVALID_ARGS";
       error_message = "active must be boolean";
@@ -1746,13 +1757,30 @@ bool ServiceBus::on_set_state(const std::string& node_id, const std::string& fie
     return false;
   }
 
+  std::string access;
   bool is_hidden_command_input = false;
   {
     std::lock_guard<std::mutex> lock(state_mu_);
+    const auto it = state_access_.find({node_id_s, field_s});
+    if (it != state_access_.end()) access = it->second;
     is_hidden_command_input = command_input_bindings_.find({node_id_s, field_s}) != command_input_bindings_.end();
+    if (has_rungraph_ && it == state_access_.end()) {
+      error_code = "UNKNOWN_FIELD";
+      error_message = "unknown state field";
+      return false;
+    }
+  }
+  if (!access.empty() && !state_origin_allows_access("external", access)) {
+    error_code = "FORBIDDEN";
+    error_message = "state field not writable";
+    return false;
   }
   if (is_hidden_command_input) {
-    publish_state_local(node_id_s, field_s, value, now_ms(), "endpoint", meta, "external", true, true);
+    if (!publish_state_local(node_id_s, field_s, value, now_ms(), "endpoint", meta, "external", true, true)) {
+      error_code = "INTERNAL";
+      error_message = "state persistence failed";
+      return false;
+    }
     error_code.clear();
     error_message.clear();
     return true;
@@ -1764,23 +1792,11 @@ bool ServiceBus::on_set_state(const std::string& node_id, const std::string& fie
     nodes = set_state_nodes_;
   }
   if (nodes.empty()) {
-    std::string access;
-    {
-      std::lock_guard<std::mutex> lock(state_mu_);
-      const auto it = state_access_.find({node_id_s, field_s});
-      if (it != state_access_.end()) access = it->second;
-      if (has_rungraph_ && it == state_access_.end()) {
-        error_code = "UNKNOWN_FIELD";
-        error_message = "unknown state field";
-        return false;
-      }
-    }
-    if (!access.empty() && !state_origin_allows_access("external", access)) {
-      error_code = "FORBIDDEN";
-      error_message = "state field not writable";
+    if (!publish_state_local(node_id_s, field_s, value, now_ms(), "endpoint", meta, "external", true, true)) {
+      error_code = "INTERNAL";
+      error_message = "state persistence failed";
       return false;
     }
-    publish_state_local(node_id_s, field_s, value, now_ms(), "endpoint", meta, "external", true, true);
     return true;
   }
 
@@ -1791,6 +1807,9 @@ bool ServiceBus::on_set_state(const std::string& node_id, const std::string& fie
     try {
       if (n->on_set_state(node_id, field, value, meta, error_code, error_message)) {
         return true;
+      }
+      if (!error_code.empty() || !error_message.empty()) {
+        return false;
       }
     } catch (const std::exception& exc) {
       spdlog::error("on_set_state callback failed serviceId={} nodeId={} field={}: {}", cfg_.service_id, node_id,
@@ -2170,6 +2189,9 @@ bool ServiceBus::dispatch_command_call(const std::string& call, const json& args
       if (n->on_command(call, args, meta, result, error_code, error_message)) {
         return true;
       }
+      if (!error_code.empty() || !error_message.empty()) {
+        return false;
+      }
     } catch (const std::exception& exc) {
       spdlog::error("on_command callback failed serviceId={} call={}: {}", cfg_.service_id, call, exc.what());
       error_code = "INTERNAL_ERROR";
@@ -2461,8 +2483,7 @@ bool ServiceBus::publish_state(const std::string& node_id, const std::string& fi
                                const std::string& source, const json& meta, std::int64_t ts_ms,
                                const std::string& origin) {
   try {
-    publish_state_local(node_id, field, value, ts_ms > 0 ? ts_ms : now_ms(), source, meta, origin, false, false);
-    return true;
+    return publish_state_local(node_id, field, value, ts_ms > 0 ? ts_ms : now_ms(), source, meta, origin, false, false);
   } catch (const std::exception& exc) {
     spdlog::warn("publish_state failed serviceId={} nodeId={} field={}: {}", cfg_.service_id, node_id, field,
                  exc.what());
@@ -2477,9 +2498,8 @@ bool ServiceBus::publish_state(const std::string& node_id, const std::string& fi
 bool ServiceBus::publish_state_from_external(const std::string& node_id, const std::string& field, const json& value,
                                              const json& meta, std::int64_t ts_ms) {
   try {
-    publish_state_local(node_id, field, value, ts_ms > 0 ? ts_ms : now_ms(), "endpoint", meta, "external", true,
-                        true);
-    return true;
+    return publish_state_local(node_id, field, value, ts_ms > 0 ? ts_ms : now_ms(), "endpoint", meta, "external", true,
+                               true);
   } catch (const std::exception& exc) {
     spdlog::warn("publish_state_from_external failed serviceId={} nodeId={} field={}: {}", cfg_.service_id, node_id,
                  field, exc.what());
@@ -2913,26 +2933,12 @@ void ServiceBus::apply_rungraph_local(const json& graph_obj, std::string& error_
   seed_rungraph_identity_state(graph, state_access_snapshot, rungraph_ts);
 }
 
-void ServiceBus::publish_state_local(const std::string& node_id, const std::string& field, const json& value,
+bool ServiceBus::publish_state_local(const std::string& node_id, const std::string& field, const json& value,
                                      std::int64_t ts_ms, const std::string& source, const json& meta,
                                      const std::string& origin, bool deliver_local, bool allow_state_fanout) {
   const std::string nid = ensure_token(node_id, "node_id");
   const std::string f = field;
-  if (f.empty()) return;
-
-  // Value-dedupe.
-  {
-    std::lock_guard<std::mutex> lock(state_mu_);
-    const auto it = state_cache_.find({nid, f});
-    if (it != state_cache_.end()) {
-      try {
-        if (it->second.first == value) {
-          return;
-        }
-      } catch (...) {
-      }
-    }
-  }
+  if (f.empty()) return false;
 
   // Access enforcement when rungraph is known.
   std::string access;
@@ -2941,15 +2947,28 @@ void ServiceBus::publish_state_local(const std::string& node_id, const std::stri
     const auto it = state_access_.find({nid, f});
     if (it != state_access_.end()) access = it->second;
     if (has_rungraph_ && it == state_access_.end()) {
-      return;
+      return false;
     }
   }
   if (!access.empty() && !state_origin_allows_access(origin, access)) {
-    return;
+    return false;
+  }
+
+  // Value-dedupe after access checks, so a rejected write cannot appear successful.
+  {
+    std::lock_guard<std::mutex> lock(state_mu_);
+    const auto it = state_cache_.find({nid, f});
+    const bool is_command_input = command_input_bindings_.find({nid, f}) != command_input_bindings_.end();
+    if (it != state_cache_.end() && !is_command_input && it->second.first == value) {
+      return true;
+    }
   }
 
   const json extra = meta.is_object() ? meta : json::object();
-  (void)runtime_set_node_state(nid, f, value, source, extra, ts_ms, origin);
+  if (!runtime_set_node_state(nid, f, value, source, extra, ts_ms, origin)) {
+    spdlog::error("state persistence failed serviceId={} nodeId={} field={}", cfg_.service_id, nid, f);
+    return false;
+  }
   bool is_command_input = false;
   {
     std::lock_guard<std::mutex> lock(state_mu_);
@@ -2959,12 +2978,13 @@ void ServiceBus::publish_state_local(const std::string& node_id, const std::stri
   if (deliver_local) {
     if (is_command_input) {
       schedule_command_input_dispatch(nid, f, value, ts_ms, extra);
-      return;
+      return true;
     }
     main_thread_.post([this, nid, f, value, ts_ms, extra, allow_state_fanout]() {
       deliver_state_local(nid, f, value, ts_ms, extra, allow_state_fanout);
     });
   }
+  return true;
 }
 
 void ServiceBus::deliver_state_local(const std::string& node_id, const std::string& field, const json& value,

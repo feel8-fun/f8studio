@@ -101,6 +101,7 @@ class ImPlayerService final : public f8::cppsdk::LifecycleNode,
 
   bool open_media_internal(const std::string& url, bool keep_playlist, std::string& err);
   bool apply_auth_options_locked(std::string& err);
+  bool apply_auth_setting_locked(std::string& setting, const std::string& next, std::string& err);
 
   bool cmd_open(const nlohmann::json& args, std::string& err);
   bool cmd_play(std::string& err);
@@ -110,6 +111,7 @@ class ImPlayerService final : public f8::cppsdk::LifecycleNode,
   bool cmd_previous(std::string& err);
   bool cmd_seek(const nlohmann::json& args, std::string& err);
   bool cmd_set_volume(const nlohmann::json& args, std::string& err);
+  void report_gui_result(const char* action, bool success, const std::string& error);
 
   Config cfg_;
 
@@ -148,6 +150,7 @@ class ImPlayerService final : public f8::cppsdk::LifecycleNode,
   std::atomic<bool> eof_reached_{false};
   std::atomic<bool> stopped_{false};
   std::atomic<bool> clear_video_requested_{false};
+  std::atomic<bool> gui_state_dirty_{false};
 
   std::int64_t last_state_pub_ms_ = 0;
   std::int64_t last_playback_data_pub_ms_ = 0;

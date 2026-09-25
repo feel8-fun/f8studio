@@ -20,6 +20,7 @@ from f8pysdk.specs import (  # noqa: E402
     F8RuntimeGraph,
     F8RuntimeNode,
     F8ServiceSpec,
+    F8SetStateReply,
     F8StateAccess,
     F8StateSpec,
 )
@@ -54,6 +55,11 @@ class _DummyNode:
 class _RejectingNode(_DummyNode):
     def validate_state(self, field: str, value: object, *, ts_ms: int, meta: dict[str, object]) -> object:
         raise StateWriteError("CONFLICT", f"reject {field}")
+
+
+class _InvalidValueNode(_DummyNode):
+    def validate_state(self, field: str, value: object, *, ts_ms: int, meta: dict[str, object]) -> object:
+        raise ValueError(f"invalid {field}")
 
 
 class _OnStateFailNode(_DummyNode):
@@ -156,6 +162,28 @@ class _FakeReq:
 
 
 class StateWriteTests(unittest.IsolatedAsyncioTestCase):
+    async def test_set_state_endpoint_reports_validation_and_access_errors(self) -> None:
+        bus = ServiceBus(ServiceBusConfig(service_id="svc"))
+        bus._graph = object()
+        bus.register_node(_InvalidValueNode("svc"))
+        bus.state_store.access_by_node_field[("svc", "volume")] = F8StateAccess.rw
+        bus.state_store.access_by_node_field[("svc", "status")] = F8StateAccess.ro
+        endpoint = ServiceBusControlHandlers(bus)
+
+        for field, expected_code in (
+            ("missing", Code.NOT_FOUND),
+            ("status", Code.FORBIDDEN),
+            ("volume", Code.INVALID_ARGS),
+        ):
+            with self.subTest(field=field):
+                req = _FakeReq({"reqId": "r1", "args": {"nodeId": "svc", "field": field, "value": 0.5}})
+                await endpoint._set_state(req)
+                reply = decode_as(req.response or b"", F8SetStateReply)
+                self.assertFalse(reply.ok)
+                self.assertIsNotNone(reply.error)
+                self.assertEqual(reply.error.code, expected_code)
+                self.assertTrue(reply.error.message)
+
     async def test_external_cannot_write_ro(self) -> None:
         bus = ServiceBus(ServiceBusConfig(service_id="svc"))
         bus._graph = object()

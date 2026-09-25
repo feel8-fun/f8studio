@@ -33,7 +33,6 @@ import {
   fetchProject,
   fetchProjects,
   fetchRuntimeMonitors,
-  fetchRuntimeNodeState,
   patchProject,
   registerHotkey,
   stopRuntimeService,
@@ -78,9 +77,11 @@ import {
   type StudioFlowNode,
 } from './projection';
 import { StateFieldControl } from './StateFieldControl';
+import { useRuntimeNodeState } from './useRuntimeNodeState';
 import { GraphNodeInteractionContext, StudioNodeView } from './StudioNodeView';
 import { CommandDialog } from './CommandDialog';
 import { NodeCatalog } from './NodeCatalog';
+import { commandResultDetail, runCommand } from './runCommand';
 
 const nodeTypes = { studio: StudioNodeView };
 const SELECTED_PROJECT_KEY = 'f8studio.selectedProjectId';
@@ -206,6 +207,7 @@ function NodeInspector({
   services,
   monitor,
   busy,
+  pendingCommands,
   commit,
   bindService,
   connectedStateInputs,
@@ -216,53 +218,21 @@ function NodeInspector({
   readonly services: readonly GraphNode[];
   readonly monitor: RuntimeMonitor | null;
   readonly busy: boolean;
+  readonly pendingCommands: ReadonlySet<string>;
   readonly commit: (operations: readonly GraphOperation[]) => Promise<void>;
   readonly bindService: (nodeId: string, serviceId: string) => void;
   readonly connectedStateInputs: ReadonlySet<string>;
   readonly onCommand: (node: GraphNode, command: CommandSpec) => void;
 }) {
   const fields = node.spec.stateFields ?? [];
-  const [runtimeValues, setRuntimeValues] = useState<Readonly<Record<string, RuntimeStateField>>>({});
-  const reportedStateError = useRef(false);
-  const readonlyFieldNames = useMemo(
-    () => fields.filter((field) => field.access === 'ro' && field.name !== 'svcId' && field.name !== 'operatorId')
+  const runtimeFieldNames = useMemo(
+    () => fields.filter((field) => field.name !== 'svcId' && field.name !== 'operatorId')
       .map((field) => field.name),
     [fields],
   );
-  const readonlyFieldKey = readonlyFieldNames.join('\u0000');
-  useEffect(() => {
-    const controller = new AbortController();
-    const names = readonlyFieldKey === '' ? [] : readonlyFieldKey.split('\u0000');
-    const load = async () => {
-      if (names.length === 0) {
-        setRuntimeValues({});
-        return;
-      }
-      try {
-        const state = await fetchRuntimeNodeState(node.serviceId, node.nodeId, names, controller.signal);
-        if (!controller.signal.aborted) {
-          setRuntimeValues(Object.fromEntries(state.fields.map((field) => [field.field, field])));
-          reportedStateError.current = false;
-        }
-      } catch (reason: unknown) {
-        if (controller.signal.aborted) return;
-        setRuntimeValues({});
-        if (!reportedStateError.current) {
-          reportedStateError.current = true;
-          console.error(`Failed to read runtime state for ${node.nodeId}`, reason);
-        }
-      }
-    };
-    void load();
-    const timer = window.setInterval(() => void load(), 1500);
-    return () => {
-      controller.abort();
-      window.clearInterval(timer);
-    };
-  }, [node.nodeId, node.serviceId, readonlyFieldKey]);
+  const runtimeValues = useRuntimeNodeState(node, runtimeFieldNames);
 
   const runtimeValue = (field: StateSpec): RuntimeStateField | undefined => {
-    if (field.access !== 'ro') return undefined;
     if (field.name === 'svcId') {
       return { field: field.name, found: true, value: node.serviceId, tsMs: null };
     }
@@ -307,7 +277,7 @@ function NodeInspector({
       </div>;
     })}</div>
     {(node.spec.commands ?? []).length > 0 && <><h2>Commands</h2><div className="inspector-commands">
-      {(node.spec.commands ?? []).map((command) => <button key={command.name} type="button" className="command-button" disabled={busy}
+      {(node.spec.commands ?? []).map((command) => <button key={command.name} type="button" className="command-button" disabled={busy || pendingCommands.has(`${node.nodeId}:${command.name}`)}
         title={command.description} onClick={() => onCommand(node, command)}><Play size={13} />{command.name}</button>)}
     </div></>}
     <NodeSchemaEditor node={node} busy={busy} commit={commit} />
@@ -378,6 +348,9 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
   const [nodes, setNodes, onNodesChange] = useNodesState<StudioFlowNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [activeCommand, setActiveCommand] = useState<{ readonly node: GraphNode; readonly command: CommandSpec } | null>(null);
+  const [commandToast, setCommandToast] = useState<{ readonly id: number; readonly kind: 'success' | 'error'; readonly title: string; readonly detail: string } | null>(null);
+  const [pendingCommands, setPendingCommands] = useState<ReadonlySet<string>>(new Set());
+  const pendingCommandsRef = useRef(new Set<string>());
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -575,6 +548,7 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
           base.document.layoutRevision === result.document.layoutRevision) return base;
         return { ...base, document: result.document };
       });
+      if (result.runtimeErrors.length > 0) setError(`Saved to project, but runtime sync failed: ${result.runtimeErrors.join('; ')}`);
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 409) {
         await reloadProject(project.projectId);
@@ -1110,17 +1084,42 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
   const setNodeState = useCallback((nodeId: string, field: string, value: JsonValue) => {
     void commitRef.current([{ op: 'setNodeState', nodeId, field, value }]);
   }, []);
-  const openCommand = useCallback((node: GraphNode, command: CommandSpec) => {
-    setActiveCommand({ node, command });
+  useEffect(() => {
+    if (commandToast === null) return;
+    const timer = window.setTimeout(() => setCommandToast((current) => current?.id === commandToast.id ? null : current),
+      commandToast.kind === 'error' ? 8000 : 5000);
+    return () => window.clearTimeout(timer);
+  }, [commandToast]);
+  const reportCommand = useCallback((kind: 'success' | 'error', title: string, detail: string) => {
+    setCommandToast({ id: Date.now(), kind, title, detail });
   }, []);
+  const openCommand = useCallback((node: GraphNode, command: CommandSpec) => {
+    if ((command.params ?? []).length > 0) {
+      setActiveCommand({ node, command });
+      return;
+    }
+    const key = `${node.nodeId}:${command.name}`;
+    if (pendingCommandsRef.current.has(key)) return;
+    pendingCommandsRef.current.add(key);
+    setPendingCommands(new Set(pendingCommandsRef.current));
+    void runCommand(node, command, {}).then((response) => {
+      reportCommand('success', `${node.name}: ${command.name}`, commandResultDetail(node, response));
+    }, (reason: unknown) => {
+      reportCommand('error', `${node.name}: ${command.name} failed`, errorMessage(reason));
+    }).finally(() => {
+      pendingCommandsRef.current.delete(key);
+      setPendingCommands(new Set(pendingCommandsRef.current));
+    });
+  }, [reportCommand]);
   const nodeInteraction = useMemo(() => ({
     busy,
+    pendingCommands,
     connectedStateInputs,
     resizeService,
     setState: setNodeState,
     openCommand,
     showOutput: onShowOutput,
-  }), [busy, connectedStateInputs, resizeService, setNodeState, openCommand, onShowOutput]);
+  }), [busy, pendingCommands, connectedStateInputs, resizeService, setNodeState, openCommand, onShowOutput]);
   const selectedMonitor = selectedNode === null ? null : monitors.find((monitor) => monitor.nodeId === selectedNode.nodeId) ??
     (selectedNode.kind === 'service' ? monitors.find((monitor) => monitor.serviceId === selectedNode.serviceId) ?? null : null);
   const locked = busy || saving;
@@ -1198,12 +1197,16 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
 
       <aside className="graph-inspector" aria-label="Inspector">
         <h2>Inspector</h2>
-        {selectedNode !== null && project !== null ? <NodeInspector projectId={project.projectId} node={selectedNode} services={project.document.nodes} monitor={selectedMonitor} busy={busy} commit={commit} bindService={bindOperatorService} connectedStateInputs={connectedStateInputs} onCommand={openCommand} /> :
+        {selectedNode !== null && project !== null ? <NodeInspector projectId={project.projectId} node={selectedNode} services={project.document.nodes} monitor={selectedMonitor} busy={busy} pendingCommands={pendingCommands} commit={commit} bindService={bindOperatorService} connectedStateInputs={connectedStateInputs} onCommand={openCommand} /> :
           selectedEdge !== null ? <EdgeInspector edge={selectedEdge} nodes={project?.document.nodes ?? []} busy={busy} replace={replaceEdge} remove={removeEdge} /> :
             <p>Select a node or connection to inspect it.</p>}
         {deployment !== null && deployment.serviceResults.some((result) => !result.success) && <div className="deploy-errors">{deployment.serviceResults.filter((result) => !result.success).map((result) => <p key={result.serviceId}><strong>{result.serviceId}</strong>{result.errorMessage}</p>)}</div>}
       </aside>
-      {activeCommand !== null && <CommandDialog key={`${activeCommand.node.nodeId}:${activeCommand.command.name}`} node={activeCommand.node} command={activeCommand.command} onClose={() => setActiveCommand(null)} />}
+      {activeCommand !== null && <CommandDialog key={`${activeCommand.node.nodeId}:${activeCommand.command.name}`} node={activeCommand.node} command={activeCommand.command} onClose={() => setActiveCommand(null)} onResult={reportCommand} />}
+      {commandToast !== null && <div className={`command-toast command-toast-${commandToast.kind}`} role={commandToast.kind === 'error' ? 'alert' : 'status'}>
+        <div><strong>{commandToast.title}</strong><button type="button" className="icon-button" title="Dismiss" aria-label="Dismiss command result" onClick={() => setCommandToast(null)}><X size={14} /></button></div>
+        <p>{commandToast.detail}</p>
+      </div>}
       <div className={`graph-save-blocker ${saving ? 'graph-save-blocker-active' : ''}`} aria-hidden="true" />
     </div>
   );

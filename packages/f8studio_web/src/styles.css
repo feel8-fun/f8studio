@@ -685,9 +685,14 @@ button:disabled { cursor: default; }
 .command-dialog .command-params { display: grid; gap: 5px; }
 .command-dialog .inspector-field { margin: 4px 0; }
 .command-dialog .inspector-field small { color: #84909b; }
-.command-dialog .command-result { color: #78d9ae; overflow-wrap: anywhere; }
 .command-dialog footer { display: flex; justify-content: flex-end; padding: 10px 12px; border-top: 1px solid #343b44; }
 .command-dialog footer button { display: inline-flex; align-items: center; gap: 5px; }
+.command-toast { position: fixed; z-index: 110; right: 16px; bottom: 16px; width: min(360px, calc(100vw - 32px)); padding: 10px 12px; border: 1px solid #44735c; border-radius: 4px; color: #e6ece8; background: #1b2823; box-shadow: 0 12px 30px rgb(0 0 0 / 35%); }
+.command-toast-error { border-color: #985557; background: #332427; }
+.command-toast > div { display: flex; align-items: start; justify-content: space-between; gap: 8px; }
+.command-toast strong { font-size: 12px; overflow-wrap: anywhere; }
+.command-toast p { margin: 4px 0 0; font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; white-space: pre-wrap; max-height: 160px; overflow-y: auto; }
+.command-toast .icon-button { flex: 0 0 22px; width: 22px; height: 22px; }
 
 .graph-canvas { position: relative; min-width: 0; min-height: 0; background: #101318; }
 .graph-canvas > .empty-state { width: 100%; height: 100%; margin: auto; }

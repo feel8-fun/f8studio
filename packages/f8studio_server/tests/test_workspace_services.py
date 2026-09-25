@@ -4,11 +4,12 @@ import asyncio
 import json
 import socket
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
 from f8pysdk.specs import F8JsonValue, F8RuntimeGraph, F8ServiceSpec
-from f8studio_core.graph import CreateNodeOp, NodeCatalog, PatchRequest
+from f8studio_core.graph import CreateNodeOp, NodeCatalog, PatchRequest, SetNodeStateOp
 from f8studio_server.application import StudioApplication
 from f8studio_server.assets import (
     ASSET_SCHEMA_VERSION,
@@ -29,6 +30,8 @@ from f8studio_server.local_integration import LocalIntegrationService, RegisterH
 from f8studio_server.models import (
     CreateCatalogNodeRequest,
     CreateProjectRequest,
+    DeployJob,
+    JobStatus,
     RuntimeActionResult,
     RuntimeStateField,
     ServiceDeployResult,
@@ -317,4 +320,53 @@ def test_hotkey_activation_commits_graph_state_and_syncs_runtime(tmp_path: Path)
     updated_stepper = next(node for node in updated.nodes if node.node_id == "stepper")
     assert updated_stepper.state_values["increaseTrigger"] == 1
     assert runtime.state_calls == [("studio", "stepper", "increaseTrigger", 1)]
+    studio.editor.close()
+
+
+def test_state_patch_syncs_deployed_runtime_and_reports_rejection(tmp_path: Path) -> None:
+    runtime = HotkeyRuntimeGateway()
+    studio = StudioApplication(data_dir=tmp_path, runtime=runtime, service_roots=())
+    project = studio.projects.create(CreateProjectRequest(project_id="project1", name="State"))
+    node = studio.catalog.create_node(
+        CreateCatalogNodeRequest(kind="service", node_id="studio", service_class="f8.pystudio")
+    )
+    created = studio.projects.patch(project.project_id, PatchRequest(
+        request_id="create", expected_graph_revision=0, expected_layout_revision=0,
+        operations=(CreateNodeOp(node=node),),
+    )).result.document
+
+    async def run() -> None:
+        first = await studio.tools.apply_patch(project.project_id, PatchRequest(
+            request_id="offline", expected_graph_revision=created.graph_revision,
+            expected_layout_revision=created.layout_revision,
+            operations=(SetNodeStateOp(node_id="studio", field="tickMs", value=100),),
+        ))
+        assert first.runtime_errors == ()
+        assert runtime.state_calls == []
+
+        studio.jobs.latest = AsyncMock(return_value=DeployJob(
+            job_id="job", request_id="deploy", project_id=project.project_id,
+            source_graph_revision=first.document.graph_revision, source_semantic_revision="revision",
+            status=JobStatus.succeeded, created_at="now", updated_at="now",
+            service_results=(ServiceDeployResult(service_id="studio", success=True),),
+        ))
+        request = PatchRequest(
+            request_id="online", expected_graph_revision=first.document.graph_revision,
+            expected_layout_revision=first.document.layout_revision,
+            operations=(SetNodeStateOp(node_id="studio", field="tickMs", value=200),),
+        )
+        second = await studio.tools.apply_patch(project.project_id, request)
+        assert second.runtime_errors == ()
+        assert runtime.state_calls == [("studio", "studio", "tickMs", 200)]
+        await studio.tools.apply_patch(project.project_id, request)
+        assert len(runtime.state_calls) == 1
+        runtime.set_state = AsyncMock(return_value=RuntimeActionResult(success=False, error_message="rejected"))
+        third = await studio.tools.apply_patch(project.project_id, PatchRequest(
+            request_id="rejected", expected_graph_revision=second.document.graph_revision,
+            expected_layout_revision=second.document.layout_revision,
+            operations=(SetNodeStateOp(node_id="studio", field="tickMs", value=300),),
+        ))
+        assert third.runtime_errors == ("studio.tickMs: rejected",)
+
+    asyncio.run(run())
     studio.editor.close()

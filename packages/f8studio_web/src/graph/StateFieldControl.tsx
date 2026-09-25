@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { GraphNode, JsonValue, RuntimeStateField, StateSpec } from '../api/contracts';
 
@@ -57,9 +57,10 @@ export function StateFieldControl({
 }) {
   const readOnly = field.access === 'ro';
   const configuredValue = fieldValue(node, field.name);
-  const value = readOnly && runtimeValue?.found === true ? runtimeValue.value : configuredValue;
+  const value = runtimeValue?.found === true ? runtimeValue.value : configuredValue;
   const [draft, setDraft] = useState(displayValue(value));
-  useEffect(() => setDraft(displayValue(value)), [value]);
+  const editing = useRef(false);
+  useEffect(() => { if (!editing.current) setDraft(displayValue(value)); }, [value]);
   const controlDisabled = disabled || connected;
   const control = controlName(field.uiControl);
   const options = useMemo(() => {
@@ -149,7 +150,8 @@ export function StateFieldControl({
       const numericValue = typeof value === 'number' ? value : minimum;
       return <label className={`${shellClass} state-slider`} title={title}>
         {!compact && <span>{label}</span>}
-        <input type="range" min={minimum} max={maximum} step={step} value={draft} disabled={controlDisabled} onChange={(event) => setDraft(event.target.value)} onPointerUp={() => {
+        <input type="range" min={minimum} max={maximum} step={step} value={draft} disabled={controlDisabled} onPointerDown={() => { editing.current = true; }} onChange={(event) => setDraft(event.target.value)} onPointerUp={() => {
+          editing.current = false;
           const parsed = Number(draft);
           if (Number.isFinite(parsed)) commitChanged(parsed);
         }} onKeyUp={() => {
@@ -162,7 +164,8 @@ export function StateFieldControl({
     }
     return <label className={shellClass} title={title}>
       {!compact && <span>{label}</span>}
-      <input type="number" value={draft} min={minimum} max={maximum} step={step} readOnly={controlDisabled} onChange={(event) => setDraft(event.target.value)} onBlur={(event) => {
+      <input type="number" value={draft} min={minimum} max={maximum} step={step} readOnly={controlDisabled} onFocus={() => { editing.current = true; }} onChange={(event) => setDraft(event.target.value)} onBlur={(event) => {
+        editing.current = false;
         const parsed = Number(event.target.value);
         if (!Number.isFinite(parsed)) return;
         if (field.valueSchema.type === 'integer' && !Number.isInteger(parsed)) return;
@@ -178,8 +181,8 @@ export function StateFieldControl({
     return <label className={`${shellClass} ${multiline ? 'state-text-code' : ''}`} title={title}>
       {!compact && <span>{label}</span>}
       {multiline && !compact
-        ? <textarea rows={4} value={draft} readOnly={controlDisabled} onChange={(event) => setDraft(event.target.value)} onBlur={() => commitChanged(draft)} />
-        : <input value={draft} readOnly={controlDisabled} onChange={(event) => setDraft(event.target.value)} onBlur={() => commitChanged(draft)} />}
+        ? <textarea rows={4} value={draft} readOnly={controlDisabled} onFocus={() => { editing.current = true; }} onChange={(event) => setDraft(event.target.value)} onBlur={() => { editing.current = false; commitChanged(draft); }} />
+        : <input value={draft} readOnly={controlDisabled} onFocus={() => { editing.current = true; }} onChange={(event) => setDraft(event.target.value)} onBlur={() => { editing.current = false; commitChanged(draft); }} />}
       {connected && !compact && <small aria-hidden="true">Upstream</small>}
     </label>;
   }

@@ -1,8 +1,8 @@
 import { Play, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-import { invokeRuntimeCommand, setRuntimeState } from '../api/client';
 import type { CommandParamSpec, CommandSpec, GraphNode, JsonValue } from '../api/contracts';
+import { commandResultDetail, runCommand } from './runCommand';
 
 function initialValue(param: CommandParamSpec): string {
   const value = param.valueSchema.default;
@@ -35,23 +35,16 @@ function parseValue(param: CommandParamSpec, text: string): JsonValue | undefine
   }
 }
 
-function rejectedMessage(value: JsonValue): string | null {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
-  const result = value as Readonly<Record<string, JsonValue>>;
-  if (result.success !== false) return null;
-  return typeof result.errorMessage === 'string' ? result.errorMessage : 'Command rejected by runtime';
-}
-
-export function CommandDialog({ node, command, onClose }: {
+export function CommandDialog({ node, command, onClose, onResult }: {
   readonly node: GraphNode;
   readonly command: CommandSpec;
   readonly onClose: () => void;
+  readonly onResult: (kind: 'success' | 'error', title: string, detail: string) => void;
 }) {
   const [values, setValues] = useState<Readonly<Record<string, string>>>(() =>
     Object.fromEntries((command.params ?? []).map((param) => [param.name, initialValue(param)])));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<JsonValue | null>(null);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -64,26 +57,21 @@ export function CommandDialog({ node, command, onClose }: {
   const invoke = async () => {
     setPending(true);
     setError(null);
-    setResult(null);
+    let submitted = false;
     try {
       const params: Record<string, JsonValue> = {};
       for (const param of command.params ?? []) {
         const value = parseValue(param, values[param.name] ?? '');
         if (value !== undefined) params[param.name] = value;
       }
-      let response: JsonValue;
-      if (node.kind === 'service') {
-        response = await invokeRuntimeCommand(node.serviceId, command.name, params);
-      } else {
-        const port = node.ports.find((item) => item.kind === 'command' && item.direction === 'input' && item.name === command.name);
-        if (port === undefined) throw new Error(`Command input ${command.name} is missing from ${node.name}`);
-        response = await setRuntimeState(node.serviceId, node.nodeId, port.runtimeName, params);
-      }
-      const rejection = rejectedMessage(response);
-      if (rejection !== null) throw new Error(rejection);
-      setResult(node.kind === 'operator' ? { accepted: true } : response);
+      submitted = true;
+      const response = await runCommand(node, command, params);
+      onResult('success', `${node.name}: ${command.name}`, commandResultDetail(node, response));
+      onClose();
     } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : 'Command failed');
+      const message = reason instanceof Error ? reason.message : 'Command failed';
+      setError(message);
+      if (submitted) onResult('error', `${node.name}: ${command.name} failed`, message);
     } finally {
       setPending(false);
     }
@@ -111,7 +99,6 @@ export function CommandDialog({ node, command, onClose }: {
         {param.description && <small>{param.description}</small>}
       </label>)}</div>
       {error && <p className="error-text" role="alert">{error}</p>}
-      {result !== null && <p className="command-result" role="status">{node.kind === 'operator' ? 'Submitted to runtime' : `Result: ${JSON.stringify(result)}`}</p>}
       <footer><button type="button" className="command-button primary" disabled={pending} onClick={() => void invoke()}><Play size={14} />{pending ? 'Running' : 'Run'}</button></footer>
     </section>
   </div>;
