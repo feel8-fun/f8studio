@@ -252,8 +252,8 @@ def _compile_kept_nodes(
             serviceId=service_id,
             serviceClass=service_class,
             operatorClass=(msgspec.UNSET if is_service_node else str(spec.operatorClass)),
-            execInPorts=([] if is_service_node else [str(p) for p in list(spec.execInPorts or [])]),
-            execOutPorts=([] if is_service_node else [str(p) for p in list(spec.execOutPorts or [])]),
+            execInPorts=([] if is_service_node else [port.name for port in list(spec.execInPorts or [])]),
+            execOutPorts=([] if is_service_node else [port.name for port in list(spec.execOutPorts or [])]),
             dataInPorts=list(spec.dataInPorts or []),
             dataOutPorts=list(spec.dataOutPorts or []),
             stateFields=(

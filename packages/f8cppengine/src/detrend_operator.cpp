@@ -143,7 +143,7 @@ json detrend_spec() {
                json::array({state_field("mode", "Mode", "Detrend mode.",
                                         string_enum_schema("CONSTANT", {"CONSTANT", "LINEAR"}), "rw", true, true),
                             state_field("alpha", "Alpha", "Trend tracking smoothing factor.", number_schema(0.05, 0.0, 1.0),
-                                        "rw", true, true, "slider"),
+                                        "rw", true, true, json{{"kind", "slider"}}),
                             state_field("reset_on_state_change", "Reset On State Change",
                                         "Reset tracker history when parameters change.", boolean_schema(true), "rw", true, false)})}};
 }

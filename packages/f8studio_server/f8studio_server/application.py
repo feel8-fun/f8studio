@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import re
 from pathlib import Path
 from typing import cast
 from uuid import uuid4
@@ -219,12 +218,7 @@ class StudioApplication:
 
     @staticmethod
     def _state_control(field: F8StateSpec) -> str:
-        if not isinstance(field.control, msgspec.UnsetType):
-            return field.control.kind.value
-        value = field.uiControl
-        if isinstance(value, msgspec.UnsetType):
-            return ""
-        return value.split("[", 1)[0].strip().lower()
+        return "" if isinstance(field.control, msgspec.UnsetType) else field.control.kind.value
 
     @staticmethod
     def _enum_values(field: F8StateSpec) -> list[F8JsonValue]:
@@ -249,16 +243,9 @@ class StudioApplication:
     @staticmethod
     def _pool_values(node: GraphNode, field: F8StateSpec) -> list[F8JsonValue]:
         control = field.control
-        if not isinstance(control, msgspec.UnsetType) and not isinstance(control.optionsFromState, msgspec.UnsetType):
-            pool_name = control.optionsFromState
-        else:
-            value = field.uiControl
-            if isinstance(value, msgspec.UnsetType):
-                return []
-            match = re.fullmatch(r"(?:select|dropdown|dropbox|combo|combobox)\[([A-Za-z_][A-Za-z0-9_]*)\]", value.strip())
-            if match is None:
-                return []
-            pool_name = match.group(1)
+        if isinstance(control, msgspec.UnsetType) or isinstance(control.optionsFromState, msgspec.UnsetType):
+            return []
+        pool_name = control.optionsFromState
         raw_pool = node.state_values.get(pool_name)
         if raw_pool is None:
             state_fields = node.spec.stateFields

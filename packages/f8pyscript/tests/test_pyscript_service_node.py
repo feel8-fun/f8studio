@@ -99,18 +99,18 @@ class PyScriptServiceNodeTests(unittest.IsolatedAsyncioTestCase):
         state_fields_by_name = {str(field.name or ""): field for field in list(spec.stateFields or [])}
         self.assertIn("tickEnabled", state_fields_by_name)
         self.assertIn("tickMs", state_fields_by_name)
-        self.assertTrue(bool(state_fields_by_name["tickEnabled"].required))
-        self.assertTrue(bool(state_fields_by_name["tickMs"].required))
+        self.assertTrue(bool(state_fields_by_name["tickEnabled"].valueRequired))
+        self.assertTrue(bool(state_fields_by_name["tickMs"].valueRequired))
         self.assertIn("code", state_fields_by_name)
-        self.assertTrue(bool(state_fields_by_name["code"].required))
+        self.assertTrue(bool(state_fields_by_name["code"].valueRequired))
         data_in_ports = {str(port.name or ""): port for port in list(spec.dataInPorts or [])}
         data_out_ports = {str(port.name or ""): port for port in list(spec.dataOutPorts or [])}
         self.assertIn("in", data_in_ports)
-        self.assertFalse(bool(data_in_ports["in"].required))
+        self.assertFalse(bool(data_in_ports["in"].definitionProtected))
         self.assertIn("out", data_out_ports)
-        self.assertFalse(bool(data_out_ports["out"].required))
+        self.assertFalse(bool(data_out_ports["out"].definitionProtected))
         self.assertIn("monitor", data_out_ports)
-        self.assertTrue(bool(data_out_ports["monitor"].required))
+        self.assertTrue(bool(data_out_ports["monitor"].definitionProtected))
         code_field = next((f for f in list(spec.stateFields or []) if str(f.name or "").strip() == "code"), None)
         self.assertIsNotNone(code_field)
         assert code_field is not None

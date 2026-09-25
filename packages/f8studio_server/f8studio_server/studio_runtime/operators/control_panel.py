@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import exec_port_specs
+
 from typing import Any
 
 from f8pysdk.specs import (
@@ -42,8 +44,8 @@ class ControlPanelRuntimeNode(OperatorNode):
         tags=["panel", "state", "control", "ui"],
         dataInPorts=[],
         dataOutPorts=[],
-        execInPorts=[],
-        execOutPorts=[],
+        execInPorts=exec_port_specs([]),
+        execOutPorts=exec_port_specs([]),
         rendererClass="default_op",
         editPolicy=F8SpecEditPolicy(
             stateFields=F8CollectionEditPolicy(canAdd=True, canDelete=True, canEditExisting=True)
@@ -54,7 +56,7 @@ class ControlPanelRuntimeNode(OperatorNode):
                 description="The value of this control panel field.",
                 valueSchema=integer_schema(),
                 access=F8StateAccess.rw,
-                required=False,
+                valueRequired=False,
                 showOnNode=True,
             )
         ],

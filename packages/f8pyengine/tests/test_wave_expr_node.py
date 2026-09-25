@@ -82,7 +82,7 @@ class WaveExprNodeTests(unittest.IsolatedAsyncioTestCase):
         template_fields = [field for field in list(WaveExprRuntimeNode.SPEC.stateFields or []) if field.name == "template"]
         self.assertEqual(len(template_fields), 1)
         self.assertEqual(template_fields[0].access, F8StateAccess.rw)
-        self.assertTrue(template_fields[0].required)
+        self.assertTrue(template_fields[0].valueRequired)
 
     async def test_generates_express_with_state_variables_and_max_t(self) -> None:
         bus = self._setup_bus(service_id="svcA")
@@ -102,7 +102,7 @@ class WaveExprNodeTests(unittest.IsolatedAsyncioTestCase):
                             description="",
                             valueSchema=number_schema(default=0.25),
                             access=F8StateAccess.rw,
-                            required=False,
+                            valueRequired=False,
                             showOnNode=True,
                         ),
                         F8StateSpec(
@@ -111,7 +111,7 @@ class WaveExprNodeTests(unittest.IsolatedAsyncioTestCase):
                             description="",
                             valueSchema=number_schema(default=0.75),
                             access=F8StateAccess.rw,
-                            required=False,
+                            valueRequired=False,
                             showOnNode=True,
                         ),
                     ],
@@ -402,7 +402,7 @@ class WaveExprNodeTests(unittest.IsolatedAsyncioTestCase):
                             description="",
                             valueSchema=number_schema(default=0.25),
                             access=F8StateAccess.rw,
-                            required=False,
+                            valueRequired=False,
                             showOnNode=True,
                         )
                     ],
@@ -444,7 +444,7 @@ class WaveExprNodeTests(unittest.IsolatedAsyncioTestCase):
                             description="",
                             valueSchema=number_schema(default=1.0),
                             access=F8StateAccess.rw,
-                            required=False,
+                            valueRequired=False,
                             showOnNode=True,
                         )
                     ],
@@ -497,7 +497,7 @@ class WaveExprNodeTests(unittest.IsolatedAsyncioTestCase):
                             description="",
                             valueSchema=number_schema(default=2.0),
                             access=F8StateAccess.rw,
-                            required=False,
+                            valueRequired=False,
                             showOnNode=True,
                         ),
                         F8StateSpec(
@@ -506,7 +506,7 @@ class WaveExprNodeTests(unittest.IsolatedAsyncioTestCase):
                             description="",
                             valueSchema=string_schema(default="x"),
                             access=F8StateAccess.rw,
-                            required=False,
+                            valueRequired=False,
                             showOnNode=True,
                         ),
                         F8StateSpec(
@@ -515,7 +515,7 @@ class WaveExprNodeTests(unittest.IsolatedAsyncioTestCase):
                             description="",
                             valueSchema=any_schema(),
                             access=F8StateAccess.rw,
-                            required=False,
+                            valueRequired=False,
                             showOnNode=True,
                         ),
                     ],

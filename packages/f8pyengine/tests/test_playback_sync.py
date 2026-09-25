@@ -37,7 +37,7 @@ class PlaybackSyncTests(unittest.IsolatedAsyncioTestCase):
             stateValues=dict(state_values or {}),
             execInPorts=["exec"],
             execOutPorts=["exec"],
-            dataInPorts=[F8DataPortSpec(name="playback", description="", valueSchema=any_schema(), required=False)],
+            dataInPorts=[F8DataPortSpec(name="playback", description="", valueSchema=any_schema(), definitionProtected=False)],
             dataOutPorts=list(PlaybackSyncRuntimeNode.SPEC.dataOutPorts or []),
         )
         await bus.set_rungraph(F8RuntimeGraph(graphId="g1", revision="r1", nodes=[op], edges=[]))

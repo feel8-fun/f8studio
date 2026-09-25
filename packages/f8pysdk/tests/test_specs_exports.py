@@ -14,6 +14,7 @@ def test_specs_public_exports_match_source_modules() -> None:
             *generated.__all__,
             "operator_state_fields_with_builtins",
             "service_state_fields_with_builtins",
+            "exec_port_specs",
         }
     )
 

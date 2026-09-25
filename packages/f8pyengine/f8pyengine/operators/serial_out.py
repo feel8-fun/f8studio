@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import exec_port_specs
+
 import asyncio
 import json
 import logging
@@ -239,7 +241,7 @@ SerialOutRuntimeNode.SPEC = F8OperatorSpec(
     label="Serial Out",
     description="Writes incoming values to a serial port (pyserial).",
     tags=["io", "serial", "uart", "com"],
-    execInPorts=["exec"],
+    execInPorts=exec_port_specs(["exec"]),
     dataInPorts=[F8DataPortSpec(name="value", description="Value to write.", valueSchema=any_schema())],
     dataOutPorts=[
         F8DataPortSpec(name="isOpen", description="Whether serial port is open.", valueSchema=boolean_schema(default=False)),
@@ -253,7 +255,7 @@ SerialOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Enable/disable serial output.",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -262,7 +264,7 @@ SerialOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Serial port name (e.g., COM3).",
             valueSchema=string_schema(default="COM4"),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -271,7 +273,7 @@ SerialOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Serial baud rate.",
             valueSchema=integer_schema(default=115200, minimum=300, maximum=4000000),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
     ],

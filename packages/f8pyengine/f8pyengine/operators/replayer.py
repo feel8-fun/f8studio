@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import exec_port_specs
+
 from f8pysdk.codec import coerce_int, coerce_flag
 import asyncio
 import logging
@@ -362,15 +364,15 @@ ReplayerRuntimeNode.SPEC = F8OperatorSpec(
     label="Replayer",
     description="Playback recorded data and sparse state changes for debugging.",
     tags=["record", "replay", "debug", "playback"],
-    execInPorts=["play", "pause", "stop"],
-    execOutPorts=["sample", "started", "stopped", "looped", "done"],
+    execInPorts=exec_port_specs(["play", "pause", "stop"]),
+    execOutPorts=exec_port_specs(["sample", "started", "stopped", "looped", "done"]),
     dataInPorts=[],
     dataOutPorts=[
         F8DataPortSpec(
             name=_POSITION_PORT,
             description="Current playback position in milliseconds.",
             valueSchema=integer_schema(default=0, minimum=0),
-            required=False,
+            definitionProtected=False,
         ),
     ],
     editPolicy=F8SpecEditPolicy(
@@ -384,7 +386,7 @@ ReplayerRuntimeNode.SPEC = F8OperatorSpec(
             description="Recording file path.",
             valueSchema=string_schema(),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
             redactOnPublish=True,
         ),
@@ -394,7 +396,7 @@ ReplayerRuntimeNode.SPEC = F8OperatorSpec(
             description="Loop when playback reaches the end.",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -405,7 +407,7 @@ ReplayerRuntimeNode.SPEC = F8OperatorSpec(
                 default=TIME_MODE_OFFSET_FROM_PLAY, enum=[TIME_MODE_RECORDED_EPOCH, TIME_MODE_OFFSET_FROM_PLAY]
             ),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -414,7 +416,7 @@ ReplayerRuntimeNode.SPEC = F8OperatorSpec(
             description="Whether playback is currently running.",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -423,7 +425,7 @@ ReplayerRuntimeNode.SPEC = F8OperatorSpec(
             description="Readonly recording duration in milliseconds.",
             valueSchema=integer_schema(default=0, minimum=0),
             access=F8StateAccess.ro,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -432,7 +434,7 @@ ReplayerRuntimeNode.SPEC = F8OperatorSpec(
             description="Readonly flag indicating whether the recording is loaded.",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.ro,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
     ],

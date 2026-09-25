@@ -258,8 +258,8 @@ def test_expression_operators_are_registered_with_editable_specs() -> None:
     assert {"f8.data_expr", "f8.state_expr"} <= specs.keys()
     data_code = next(field for field in specs["f8.data_expr"].stateFields if field.name == "code")
     state_out = next(field for field in specs["f8.state_expr"].stateFields if field.name == "out")
-    assert data_code.required is True
-    assert state_out.required is True
+    assert data_code.valueRequired is True
+    assert state_out.valueRequired is True
     assert state_out.access == F8StateAccess.ro
 
 
@@ -277,12 +277,12 @@ def test_data_expression_dynamic_outputs_and_context_cache() -> None:
             stateFields=list(DataExprRuntimeNode.SPEC.stateFields),
             stateValues={"code": "{'sum': a + b, 'product': a * b}", "unpackDictOutputs": True},
             dataInPorts=[
-                F8DataPortSpec(name="a", valueSchema=any_schema(), required=False),
-                F8DataPortSpec(name="b", valueSchema=any_schema(), required=False),
+                F8DataPortSpec(name="a", valueSchema=any_schema(), definitionProtected=False),
+                F8DataPortSpec(name="b", valueSchema=any_schema(), definitionProtected=False),
             ],
             dataOutPorts=[
-                F8DataPortSpec(name="sum", valueSchema=any_schema(), required=False),
-                F8DataPortSpec(name="product", valueSchema=any_schema(), required=False),
+                F8DataPortSpec(name="sum", valueSchema=any_schema(), definitionProtected=False),
+                F8DataPortSpec(name="product", valueSchema=any_schema(), definitionProtected=False),
             ],
         )
         await bus.set_rungraph(F8RuntimeGraph(graphId="expr", revision="r1", nodes=[node_spec], edges=[]))
@@ -312,8 +312,8 @@ def test_data_expression_reports_unavailable_numpy() -> None:
             operatorClass=DataExprRuntimeNode.SPEC.operatorClass,
             stateFields=list(DataExprRuntimeNode.SPEC.stateFields),
             stateValues={"code": "np.mean(x)", "allowNumpy": True},
-            dataInPorts=[F8DataPortSpec(name="x", valueSchema=any_schema(), required=False)],
-            dataOutPorts=[F8DataPortSpec(name="out", valueSchema=any_schema(), required=False)],
+            dataInPorts=[F8DataPortSpec(name="x", valueSchema=any_schema(), definitionProtected=False)],
+            dataOutPorts=[F8DataPortSpec(name="out", valueSchema=any_schema(), definitionProtected=False)],
         )
         await bus.set_rungraph(F8RuntimeGraph(graphId="expr_numpy", revision="r1", nodes=[node_spec], edges=[]))
         runtime = bus.get_node("expr_numpy")
@@ -343,13 +343,13 @@ def test_state_expression_publishes_changes_and_monitor_errors() -> None:
                     name="a",
                     valueSchema=number_schema(default=1.5),
                     access=F8StateAccess.rw,
-                    required=False,
+                    valueRequired=False,
                 ),
                 F8StateSpec(
                     name="b",
                     valueSchema=number_schema(default=2.5),
                     access=F8StateAccess.rw,
-                    required=False,
+                    valueRequired=False,
                 ),
             ],
             stateValues={"code": "a + b", "a": 1.5, "b": 2.5},

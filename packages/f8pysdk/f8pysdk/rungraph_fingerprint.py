@@ -130,7 +130,6 @@ def _normalize_data_port_spec(spec: Any, cache: dict[int, Any]) -> dict[str, Any
     if not _is_unset(spec.stream):
         payload["stream"] = _normalize_cached_payload(spec.stream, cache)
     _put_optional_payload(payload, "description", spec.description)
-    _put_optional_payload(payload, "required", spec.required)
     _put_optional_payload(payload, "showOnNode", spec.showOnNode)
     _put_optional_payload(payload, "payloadKind", spec.payloadKind)
     _put_optional_payload(payload, "delivery", spec.delivery)
@@ -154,10 +153,9 @@ def _normalize_state_spec(spec: Any, cache: dict[int, Any]) -> dict[str, Any]:
     }
     _put_optional_payload(payload, "label", spec.label)
     _put_optional_payload(payload, "description", spec.description)
-    _put_optional_payload(payload, "required", spec.required)
+    _put_optional_payload(payload, "valueRequired", spec.valueRequired)
     if not _is_unset(spec.editPolicy):
         payload["editPolicy"] = _normalize_cached_payload(spec.editPolicy, cache)
-    _put_optional_payload(payload, "uiControl", spec.uiControl)
     _put_optional_payload(payload, "showOnNode", spec.showOnNode)
     _put_optional_payload(payload, "redactOnPublish", spec.redactOnPublish)
     editor_assist = msgspec.UNSET
@@ -310,8 +308,10 @@ def _normalize_node_payload(payload: Any) -> dict[str, Any]:
             normalized[key] = sorted(str(item) for item in value)
             continue
         if key in {"dataInPorts", "dataOutPorts", "stateFields"} and isinstance(value, list):
+            omitted = {"definitionProtected"} if key != "stateFields" else {"control"}
             normalized[key] = sorted(
-                (_normalize_spec_payload(item) for item in value),
+                (_normalize_spec_payload({name: field for name, field in item.items() if name not in omitted})
+                 if isinstance(item, dict) else _normalize_spec_payload(item) for item in value),
                 key=_normalized_named_spec_sort_key,
             )
             continue

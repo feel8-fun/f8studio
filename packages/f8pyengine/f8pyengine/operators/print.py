@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import exec_port_specs
+
 from typing import Any
 
 from f8pysdk.codec import coerce_flag
@@ -73,7 +75,7 @@ PrintRuntimeNode.SPEC = F8OperatorSpec(
     label="Print",
     description="Exec-driven printer (pulls `value` and prints).",
     tags=["debug", "console", "print"],
-    execInPorts=["exec"],
+    execInPorts=exec_port_specs(["exec"]),
     dataInPorts=[F8DataPortSpec(name="value", description="value to print", valueSchema=any_schema())],
     stateFields=[
         F8StateSpec(
@@ -82,7 +84,7 @@ PrintRuntimeNode.SPEC = F8OperatorSpec(
             description="If true, strip whitespace/newlines from the start/end of string values before printing.",
             valueSchema=boolean_schema(default=True),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
     ],

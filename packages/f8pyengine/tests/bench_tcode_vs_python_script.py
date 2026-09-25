@@ -183,12 +183,12 @@ def _build_ports() -> tuple[list[F8DataPortSpec], list[F8DataPortSpec]]:
     data_in_ports: list[F8DataPortSpec] = []
     for axis in AXES:
         data_in_ports.append(
-            F8DataPortSpec(name=axis, description=f"Axis {axis}", valueSchema=number_schema(), required=False)
+            F8DataPortSpec(name=axis, description=f"Axis {axis}", valueSchema=number_schema(), definitionProtected=False)
         )
     data_in_ports.append(
-        F8DataPortSpec(name="intervalMs", description="Interval", valueSchema=number_schema(), required=False)
+        F8DataPortSpec(name="intervalMs", description="Interval", valueSchema=number_schema(), definitionProtected=False)
     )
-    data_out_ports = [F8DataPortSpec(name="tcode", description="TCode", valueSchema=string_schema(), required=False)]
+    data_out_ports = [F8DataPortSpec(name="tcode", description="TCode", valueSchema=string_schema(), definitionProtected=False)]
     return data_in_ports, data_out_ports
 
 
@@ -225,9 +225,9 @@ def _build_python_script_node(*, node_id: str, code: str, input_mode: str) -> Py
 def _build_data_expr_node() -> DataExprRuntimeNode:
     data_in_ports: list[F8DataPortSpec] = []
     for axis in AXES:
-        data_in_ports.append(F8DataPortSpec(name=axis, description=f"Axis {axis}", valueSchema=any_schema(), required=False))
-    data_in_ports.append(F8DataPortSpec(name="intervalMs", description="Interval", valueSchema=any_schema(), required=False))
-    data_out_ports = [F8DataPortSpec(name="out", description="Expr output", valueSchema=any_schema(), required=False)]
+        data_in_ports.append(F8DataPortSpec(name=axis, description=f"Axis {axis}", valueSchema=any_schema(), definitionProtected=False))
+    data_in_ports.append(F8DataPortSpec(name="intervalMs", description="Interval", valueSchema=any_schema(), definitionProtected=False))
+    data_out_ports = [F8DataPortSpec(name="out", description="Expr output", valueSchema=any_schema(), definitionProtected=False)]
     node_desc = F8RuntimeNode(
         nodeId="expr",
         serviceId="svcA",
@@ -251,8 +251,8 @@ def _build_pyscript_service_node() -> PythonScriptServiceNode:
         serviceId="svcA",
         serviceClass="f8.pyscript",
         operatorClass=None,
-        dataInPorts=[F8DataPortSpec(name="in", description="Input packet", valueSchema=any_schema(), required=False)],
-        dataOutPorts=[F8DataPortSpec(name="tcode", description="TCode output", valueSchema=string_schema(), required=False)],
+        dataInPorts=[F8DataPortSpec(name="in", description="Input packet", valueSchema=any_schema(), definitionProtected=False)],
+        dataOutPorts=[F8DataPortSpec(name="tcode", description="TCode output", valueSchema=string_schema(), definitionProtected=False)],
         stateFields=[],
         stateValues={"code": PYSCRIPT_SERVICE_CODE, "tickEnabled": False, "tickMs": 100},
     )

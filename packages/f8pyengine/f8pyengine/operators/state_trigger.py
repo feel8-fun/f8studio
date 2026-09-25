@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import exec_port_specs
+
 import asyncio
 import logging
 from typing import Any
@@ -175,8 +177,8 @@ StateTriggerRuntimeNode.SPEC = F8OperatorSpec(
     label="State Trigger",
     description="Triggers exec on `changed` when state `value` changes; ideal for wiring button-like state changes into exec graphs.",
     tags=["execution", "state", "trigger", "event", "button"],
-    execInPorts=[],
-    execOutPorts=["changed"],
+    execInPorts=exec_port_specs([]),
+    execOutPorts=exec_port_specs(["changed"]),
     stateFields=[
         F8StateSpec(
             name="value",
@@ -184,7 +186,7 @@ StateTriggerRuntimeNode.SPEC = F8OperatorSpec(
             description="Watched state value. Exec emits when this changes.",
             valueSchema=any_schema(),
             access=F8StateAccess.rw,
-            required=False,
+            valueRequired=False,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -193,7 +195,7 @@ StateTriggerRuntimeNode.SPEC = F8OperatorSpec(
             description="Enable/disable trigger emission on value changes.",
             valueSchema=boolean_schema(default=True),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -202,7 +204,7 @@ StateTriggerRuntimeNode.SPEC = F8OperatorSpec(
             description="If enabled and `value` has an initial value, emit one exec when the node entrypoint starts.",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
     ],

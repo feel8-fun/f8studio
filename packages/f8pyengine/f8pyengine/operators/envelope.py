@@ -564,7 +564,7 @@ EnvelopeRuntimeNode.SPEC = F8OperatorSpec(
     ),
     tags=["signal", "envelope", "normalize", "transform"],
     dataInPorts=[
-        F8DataPortSpec(name="value", description="Input value.", valueSchema=number_schema(), required=False),
+        F8DataPortSpec(name="value", description="Input value.", valueSchema=number_schema(), definitionProtected=False),
     ],
     dataOutPorts=[
         F8DataPortSpec(name="lower", description="Estimated lower envelope.", valueSchema=number_schema()),
@@ -578,7 +578,7 @@ EnvelopeRuntimeNode.SPEC = F8OperatorSpec(
             description="Envelope tracking method: `EMA`, `DEMA`, or `SMA`.",
             valueSchema=string_schema(default="EMA", enum=["EMA", "DEMA", "SMA"]),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -587,7 +587,7 @@ EnvelopeRuntimeNode.SPEC = F8OperatorSpec(
             description="Smoothing factor when the estimator moves toward the current envelope edge.",
             valueSchema=number_schema(default=0.4, minimum=0.0, maximum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -596,7 +596,7 @@ EnvelopeRuntimeNode.SPEC = F8OperatorSpec(
             description="Smoothing factor when the estimator relaxes away from the current envelope edge.",
             valueSchema=number_schema(default=0.05, minimum=0.0, maximum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -605,7 +605,7 @@ EnvelopeRuntimeNode.SPEC = F8OperatorSpec(
             description="Minimum enforced distance between lower and upper envelopes before normalization.",
             valueSchema=number_schema(default=0.25, minimum=0.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -614,7 +614,7 @@ EnvelopeRuntimeNode.SPEC = F8OperatorSpec(
             description="Moving-average window size used when Method is `SMA`.",
             valueSchema=number_schema(default=10, minimum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -623,7 +623,7 @@ EnvelopeRuntimeNode.SPEC = F8OperatorSpec(
             description="Extra padding added outside the envelopes before computing `normalized`.",
             valueSchema=number_schema(default=0.0, minimum=0.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -632,7 +632,7 @@ EnvelopeRuntimeNode.SPEC = F8OperatorSpec(
             description="Enable consecutive-frame jump detection and reseed.",
             valueSchema=boolean_schema(default=True),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -641,7 +641,7 @@ EnvelopeRuntimeNode.SPEC = F8OperatorSpec(
             description="Distance threshold in envelope-span units for jump detection.",
             valueSchema=number_schema(default=4.0, minimum=0.5),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -650,7 +650,7 @@ EnvelopeRuntimeNode.SPEC = F8OperatorSpec(
             description="Consecutive far frames required before jump trigger.",
             valueSchema=number_schema(default=4, minimum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -659,7 +659,7 @@ EnvelopeRuntimeNode.SPEC = F8OperatorSpec(
             description="Blend length (frames) after jump reset.",
             valueSchema=number_schema(default=8, minimum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
     ],

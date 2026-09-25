@@ -920,7 +920,8 @@ end
 
 json lua_script_code_state_field() {
   json field = state_field("code", "Code", "Lua source code and starter hook scaffold.",
-                           string_schema(lua_script_template()), "rw", true, false, "code[lua]");
+                           string_schema(lua_script_template()), "rw", true, false,
+                           json{{"kind", "code"}, {"language", "lua"}});
   field["editorAssist"] = json{{"version", 1}, {"language", "lua"}};
   return field;
 }
@@ -964,7 +965,7 @@ json cpython_script_spec() {
                json::array({state_field("code", "Code", "Python source code.", string_schema(
                                            "def onExec(ctx, exec_in, inputs):\n"
                                            "    return {'exec': ['exec'], 'outputs': {'out': inputs.get('msg')}}\n"),
-                                       "rw", true, false, "code[python]")})}};
+                                       "rw", true, false, json{{"kind", "code"}, {"language", "python"}})})}};
 }
 
 

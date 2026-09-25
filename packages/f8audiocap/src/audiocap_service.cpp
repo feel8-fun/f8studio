@@ -597,7 +597,7 @@ nlohmann::json AudioCapService::describe() {
                        "Available Devices", "Capture devices currently visible to the service.", false),
            state_field("selectedDevice", json{{"type", "string"}, {"default", "Auto"}}, "wo",
                        "Capture Device", "Device selected for audio capture.", true,
-                       "select[availableDevices]"),
+                       json{{"kind", "select"}, {"optionsFromState", "availableDevices"}}),
            state_field("audioDevice", schema_string(), "ro", "Audio Device", "Name of the audio capture device in use", false),
            state_field("audioSampleRate", schema_integer(), "ro", "Audio Sample Rate", "Sample rate of the audio capture device", false),
            state_field("audioChannels", schema_integer(), "ro", "Audio Channels", "Number of audio channels", false),

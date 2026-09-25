@@ -60,7 +60,7 @@ def _core_state_fields() -> list[F8StateSpec]:
             description="Channel selection for analysis.",
             valueSchema=string_schema(default="mono_mix", enum=["mono_mix", "left", "right"]),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -69,7 +69,7 @@ def _core_state_fields() -> list[F8StateSpec]:
             description="Feature analysis window size in milliseconds.",
             valueSchema=integer_schema(default=768, minimum=64, maximum=8000),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -78,7 +78,7 @@ def _core_state_fields() -> list[F8StateSpec]:
             description="Feature analysis hop size in milliseconds.",
             valueSchema=integer_schema(default=64, minimum=8, maximum=2000),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -87,7 +87,7 @@ def _core_state_fields() -> list[F8StateSpec]:
             description="Emit one coreFeatures payload every N analysis hops.",
             valueSchema=integer_schema(default=1, minimum=1, maximum=1000),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
     ]
@@ -101,7 +101,7 @@ def _rhythm_state_fields() -> list[F8StateSpec]:
             description="Window length in seconds for tempo estimation.",
             valueSchema=number_schema(default=8.0, minimum=1.0, maximum=60.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -110,7 +110,7 @@ def _rhythm_state_fields() -> list[F8StateSpec]:
             description="Window length in seconds for pulse clarity.",
             valueSchema=number_schema(default=6.0, minimum=1.0, maximum=60.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -119,7 +119,7 @@ def _rhythm_state_fields() -> list[F8StateSpec]:
             description="Emit one rhythmFeatures payload every N coreFeatures inputs.",
             valueSchema=integer_schema(default=1, minimum=1, maximum=1000),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
     ]
@@ -141,7 +141,7 @@ def _register_core(registry: Registry) -> None:
                 audio_chunk_port(
                     name="audio",
                     description="Input audio chunk stream from f8.audiocap.",
-                    required=True,
+                    definition_protected=True,
                 )
             ],
             dataOutPorts=[

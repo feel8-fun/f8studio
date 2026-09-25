@@ -1,3 +1,4 @@
+from f8pysdk.specs import exec_port_specs
 import os
 import sys
 import unittest
@@ -39,8 +40,8 @@ class SessionCompilerTests(unittest.TestCase):
             operatorClass=operator_class,
             version="0.0.1",
             label=label,
-            execOutPorts=["next"],
-            execInPorts=["in"],
+            execOutPorts=exec_port_specs(["next"]),
+            execInPorts=exec_port_specs(["in"]),
         )
 
     def setUp(self) -> None:
@@ -70,7 +71,7 @@ class SessionCompilerTests(unittest.TestCase):
                             operatorClass="f8.pystudio.viz",
                             version="0.0.1",
                             label="Studio Viz",
-                            execInPorts=["in"],
+                            execInPorts=exec_port_specs(["in"]),
                         ),
                         mode="json",
                     ),
@@ -189,8 +190,8 @@ class SessionCompilerTests(unittest.TestCase):
             operatorClass="f8.pyengine.op",
             version="0.0.1",
             label="Op",
-            execInPorts=["in"],
-            execOutPorts=["next"],
+            execInPorts=exec_port_specs(["in"]),
+            execOutPorts=exec_port_specs(["next"]),
         )
         layout = {
             "nodes": {

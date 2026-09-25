@@ -140,7 +140,7 @@ json data_stream(std::string delivery, std::string reliability, std::string cong
 }
 
 json data_port(std::string name, const json& value_schema, std::string payload_kind, std::string delivery,
-               std::string description, bool required, bool show_on_node, const json& metadata_schema,
+               std::string description, bool definition_protected, bool show_on_node, const json& metadata_schema,
                const std::vector<std::string>& formats, std::string reliability, std::string congestion,
                std::string priority, std::uint32_t payload_schema_version) {
   json payload;
@@ -160,7 +160,7 @@ json data_port(std::string name, const json& value_schema, std::string payload_k
   port["stream"] = data_stream(delivery, std::move(reliability), std::move(congestion), std::move(priority));
   port["payloadKind"] = payload_kind;
   port["delivery"] = std::move(delivery);
-  port["required"] = required;
+  port["definitionProtected"] = definition_protected;
   port["showOnNode"] = show_on_node;
   if (!description.empty()) {
     port["description"] = std::move(description);
@@ -168,25 +168,25 @@ json data_port(std::string name, const json& value_schema, std::string payload_k
   return port;
 }
 
-json video_frame_port(std::string name, std::string description, bool required) {
+json video_frame_port(std::string name, std::string description, bool definition_protected) {
   const json metadata = schema_video_frame_metadata();
-  return data_port(std::move(name), metadata, "video_frame", "latest", std::move(description), required, true, metadata,
+  return data_port(std::move(name), metadata, "video_frame", "latest", std::move(description), definition_protected, true, metadata,
                    {"bgra32", "bgr24", "flow2_f16", "scalar1_f32"}, "best_effort", "drop", "real_time", 2);
 }
 
-json audio_chunk_port(std::string name, std::string description, bool required) {
+json audio_chunk_port(std::string name, std::string description, bool definition_protected) {
   const json metadata = schema_audio_chunk_metadata();
-  return data_port(std::move(name), metadata, "audio_chunk", "latest", std::move(description), required, true, metadata,
+  return data_port(std::move(name), metadata, "audio_chunk", "latest", std::move(description), definition_protected, true, metadata,
                    {"f32le"}, "best_effort", "drop", "real_time", 1);
 }
 
 json state_field(std::string name, const json& value_schema, std::string access, std::string label,
-                 std::string description, bool show_on_node, std::string ui_control, bool redact_on_publish) {
+                 std::string description, bool show_on_node, json control, bool redact_on_publish) {
   json sf;
   sf["name"] = std::move(name);
   sf["valueSchema"] = value_schema;
   sf["access"] = std::move(access);
-  sf["required"] = true;
+  sf["valueRequired"] = true;
   if (!label.empty()) {
     sf["label"] = std::move(label);
   }
@@ -196,8 +196,8 @@ json state_field(std::string name, const json& value_schema, std::string access,
   if (show_on_node) {
     sf["showOnNode"] = true;
   }
-  if (!ui_control.empty()) {
-    sf["uiControl"] = std::move(ui_control);
+  if (!control.is_null()) {
+    sf["control"] = std::move(control);
   }
   if (redact_on_publish) {
     sf["redactOnPublish"] = true;

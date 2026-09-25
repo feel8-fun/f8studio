@@ -235,18 +235,19 @@ json smooth_filter_spec() {
                json::array({state_field("filter_type", "Filter", "Filter type.",
                                         string_enum_schema("EMA", {"NONE", "EMA", "DEMA", "ONEEURO"}), "rw", true, true),
                             state_field("ema_alpha", "EMA Alpha", "EMA smoothing factor (0..1).", number_schema(0.4, 0.0, 1.0),
-                                        "rw", true, true, "slider"),
+                                        "rw", true, true, json{{"kind", "slider"}}),
                             state_field("dema_alpha", "DEMA Alpha", "DEMA smoothing factor (0..1).", number_schema(0.4, 0.0, 1.0),
-                                        "rw", true, false, "slider"),
+                                        "rw", true, false, json{{"kind", "slider"}}),
                             state_field("one_euro_min_cutoff", "One Euro Min Cutoff", "Minimum cutoff frequency.",
-                                        number_schema(1.5, 0.01, 10.0), "rw", true, false, "slider"),
+                                        number_schema(1.5, 0.01, 10.0), "rw", true, false, json{{"kind", "slider"}}),
                             state_field("one_euro_beta", "One Euro Beta", "Speed coefficient for dynamic cutoff.",
-                                        number_schema(0.0, 0.0, 5.0), "rw", true, false, "slider"),
+                                        number_schema(0.0, 0.0, 5.0), "rw", true, false, json{{"kind", "slider"}}),
                             state_field("one_euro_derivative_cutoff", "One Euro Derivative Cutoff",
                                         "Cutoff frequency for the derivative filter.", number_schema(1.0, 0.01, 10.0),
-                                        "rw", true, false, "slider"),
+                                        "rw", true, false, json{{"kind", "slider"}}),
                             state_field("one_euro_default_freq", "One Euro Default Freq", "Default sampling frequency (Hz).",
-                                        number_schema(90.0, 1.0, 240.0), "rw", true, false, "slider")})}};
+                                        number_schema(90.0, 1.0, 240.0), "rw", true, false,
+                                        json{{"kind", "slider"}})})}};
 }
 
 }  // namespace

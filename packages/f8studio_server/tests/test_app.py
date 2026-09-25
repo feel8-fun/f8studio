@@ -72,7 +72,7 @@ def test_graph_exchange_api_restores_as_new_revision(tmp_path: Path) -> None:
         assert patched.status_code == 200
         exported = client.get("/api/projects/project1/graph/export")
         assert exported.status_code == 200
-        assert exported.json()["formatVersion"] == 2
+        assert exported.json()["formatVersion"] == 3
         assert len(exported.json()["definitions"]["services"]) == 1
         assert "graphRevision" not in exported.json()
 
@@ -82,7 +82,7 @@ def test_graph_exchange_api_restores_as_new_revision(tmp_path: Path) -> None:
         assert restored.json()["document"]["layoutRevision"] == 1
 
         invalid = dict(exported.json())
-        invalid["formatVersion"] = 3
+        invalid["formatVersion"] = 4
         rejected = client.post("/api/projects/project1/graph/import", json=invalid)
         assert rejected.status_code == 422
         assert client.get("/api/projects/project1").json()["document"]["graphRevision"] == 2

@@ -16,7 +16,7 @@ import {
 } from './projection';
 
 const document: StudioDocument = {
-  schemaVersion: 'f8studio-document/1',
+  schemaVersion: 'f8studio-document/2',
   projectId: 'project1',
   graphId: 'project1',
   graphRevision: 3,

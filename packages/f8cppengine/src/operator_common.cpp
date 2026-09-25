@@ -27,25 +27,27 @@ json string_enum_schema(const std::string& default_value, std::vector<std::strin
 }
 json array_schema(const json& items) { return json{{"type", "array"}, {"items", items}}; }
 
-json data_port(const std::string& name, const std::string& description, const json& schema, bool required,
+json data_port(const std::string& name, const std::string& description, const json& schema, bool definition_protected,
                bool show_on_node) {
   return json{{"name", name},
               {"description", description},
               {"valueSchema", schema},
-              {"required", required},
+              {"definitionProtected", definition_protected},
               {"showOnNode", show_on_node}};
 }
 
 json state_field(const std::string& name, const std::string& label, const std::string& description, const json& schema,
-                 const std::string& access, bool required, bool show_on_node, const std::string& ui_control) {
+                 const std::string& access, bool value_required, bool show_on_node, const json& control) {
   json out{{"name", name},
            {"label", label},
            {"description", description},
            {"valueSchema", schema},
            {"access", access},
-           {"required", required},
+           {"valueRequired", value_required},
            {"showOnNode", show_on_node}};
-  if (!ui_control.empty()) out["uiControl"] = ui_control;
+  if (!control.is_null()) {
+    out["control"] = control;
+  }
   return out;
 }
 

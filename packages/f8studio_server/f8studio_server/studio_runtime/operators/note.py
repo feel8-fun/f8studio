@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import exec_port_specs
+
 from typing import Any
 
 from f8pysdk.specs import (
@@ -41,8 +43,8 @@ class NoteRuntimeNode(OperatorNode):
         tags=["note", "markdown", "ui", "tips"],
         dataInPorts=[],
         dataOutPorts=[],
-        execInPorts=[],
-        execOutPorts=[],
+        execInPorts=exec_port_specs([]),
+        execOutPorts=exec_port_specs([]),
         rendererClass=RENDERER_CLASS,
         stateFields=[
             F8StateSpec(
@@ -51,7 +53,7 @@ class NoteRuntimeNode(OperatorNode):
                 description="Markdown note content shown in the node.",
                 valueSchema=string_schema(default=_DEFAULT_NOTE_CONTENT),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
         ],

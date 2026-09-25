@@ -11,13 +11,11 @@ export function isJsonValue(value: unknown): value is JsonValue {
 }
 
 function controlName(field: StateSpec): string {
-  return field.control?.kind ?? (field.uiControl ?? '').split('[', 1)[0]?.trim().toLowerCase() ?? '';
+  return field.control?.kind ?? '';
 }
 
 export function stateOptionPoolField(field: StateSpec): string | null {
-  if (field.control?.optionsFromState !== undefined) return field.control.optionsFromState;
-  const match = /^(?:select|multiselect)\[([A-Za-z_][A-Za-z0-9_]*)\]$/.exec(field.uiControl?.trim() ?? '');
-  return match?.[1] ?? null;
+  return field.control?.optionsFromState ?? null;
 }
 
 function fieldValue(node: GraphNode, fieldName: string): JsonValue {

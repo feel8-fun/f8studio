@@ -168,8 +168,8 @@ components:
       properties:
         showOnNode:
           type: boolean
-        uiControl:
-          type: string
+        control:
+          $ref: "#/components/schemas/F8UiControlSpec"
         label:
           type: string
         description:
@@ -357,9 +357,9 @@ components:
         canEditAccess:
           type: boolean
           description: Allow editing this state field's access mode when its collection allows editing existing fields.
-        canEditRequired:
+        canEditValueRequired:
           type: boolean
-          description: Allow editing this state field's required flag when its collection allows editing existing fields.
+          description: Allow editing deploy-time value validation for this state field.
         canEditValueSchema:
           type: boolean
           description: Allow editing this state field's valueSchema when its collection allows editing existing fields.
@@ -405,16 +405,12 @@ components:
             - ro
             - wo
           description: rw=mutable, ro=read-only, wo=write-only (no fanout)
-        required:
+        valueRequired:
           type: boolean
           default: false
-          description: If true, deploy validation treats this state as required. This is not an edit lock; use editPolicy to restrict renaming, required/access edits, or valueSchema edits.
+          description: If true, deploy validation requires a value for this state field.
         editPolicy:
           $ref: "#/components/schemas/F8StateFieldEditPolicy"
-        uiControl:
-          type: string
-          deprecated: true
-          description: Legacy UI hint; use control.
         control:
           $ref: "#/components/schemas/F8UiControlSpec"
         showOnNode:
@@ -560,10 +556,10 @@ components:
           description: Explicit stream transport preferences for this data port.
         description:
           type: string
-        required:
+        definitionProtected:
           type: boolean
           default: true
-          description: If true, this data port is protected and cannot be deleted from editable data port lists.
+          description: If true, this data port cannot be deleted from editable definitions.
         showOnNode:
           type: boolean
           default: true
@@ -588,10 +584,10 @@ components:
           type: string
         description:
           type: string
-        required:
+        definitionProtected:
           type: boolean
           default: false
-          description: If true, this command is protected and cannot be deleted from editable command lists.
+          description: If true, this command cannot be deleted from editable definitions.
         showOnNode:
           type: boolean
           default: false
@@ -614,14 +610,10 @@ components:
           type: string
         valueSchema:
           $ref: "#/components/schemas/F8DataTypeSchema"
-        required:
+        valueRequired:
           type: boolean
           default: false
           description: If true, this parameter is required when invoking the command.
-        uiControl:
-          type: string
-          deprecated: true
-          description: Legacy UI hint; use control.
         control:
           $ref: "#/components/schemas/F8UiControlSpec"
       required:
@@ -1367,13 +1359,29 @@ components:
           items:
             $ref: "#/components/schemas/F8DataPortSpec"
           default: []
-        launch:
-          $ref: "#/components/schemas/F8ServiceLaunchSpec"
       required:
         - specKind
         - serviceClass
         - label
       additionalProperties: true
+
+    F8ExecPortSpec:
+      title: F8ExecPortSpec
+      type: object
+      description: Authoring metadata for an execution endpoint; runtime graphs carry only its name.
+      properties:
+        name:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+        definitionProtected:
+          type: boolean
+          default: false
+      required:
+        - name
+      additionalProperties: false
 
     F8OperatorSpec:
       title: F8OperatorSpec
@@ -1445,7 +1453,7 @@ components:
             Execution inputs (can be empty for entry/pull-only nodes). Each execIn port may
             have only one incoming exec link.
           items:
-            type: string
+            $ref: "#/components/schemas/F8ExecPortSpec"
           default: []
         execOutPorts:
           type: array
@@ -1453,7 +1461,7 @@ components:
             Execution outputs (can be empty for terminal/pull-only nodes). Operator logic decides
             which execOut to trigger.
           items:
-            type: string
+            $ref: "#/components/schemas/F8ExecPortSpec"
           default: []
         dataInPorts:
           type: array

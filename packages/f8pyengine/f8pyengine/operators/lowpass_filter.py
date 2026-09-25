@@ -128,7 +128,7 @@ LowpassFilterRuntimeNode.SPEC = F8OperatorSpec(
             description="Sampling interval in milliseconds.",
             valueSchema=number_schema(default=1000.0 / 120.0, minimum=0.001, maximum=50000.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -137,7 +137,7 @@ LowpassFilterRuntimeNode.SPEC = F8OperatorSpec(
             description="Low-pass cutoff frequency in Hz.",
             valueSchema=number_schema(default=8.0, minimum=0.001, maximum=5000.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -146,7 +146,7 @@ LowpassFilterRuntimeNode.SPEC = F8OperatorSpec(
             description="Butterworth filter order.",
             valueSchema=number_schema(default=2, minimum=1.0, maximum=12.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -155,7 +155,7 @@ LowpassFilterRuntimeNode.SPEC = F8OperatorSpec(
             description="Reset filter history when parameters change.",
             valueSchema=boolean_schema(default=True),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
     ],

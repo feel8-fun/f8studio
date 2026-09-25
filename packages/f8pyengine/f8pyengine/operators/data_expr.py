@@ -267,10 +267,10 @@ DataExprRuntimeNode.SPEC = F8OperatorSpec(
     ),
     tags=["expr", "math", "logic", "transform", "lightweight"],
     dataInPorts=[
-        F8DataPortSpec(name="x", description="Input value for the expression.", valueSchema=any_schema(), required=False),
+        F8DataPortSpec(name="x", description="Input value for the expression.", valueSchema=any_schema(), definitionProtected=False),
     ],
     dataOutPorts=[
-        F8DataPortSpec(name="out", description="Expression result.", valueSchema=any_schema(), required=False),
+        F8DataPortSpec(name="out", description="Expression result.", valueSchema=any_schema(), definitionProtected=False),
     ],
     editPolicy=F8SpecEditPolicy(
         dataInPorts=editable_collection_edit_policy(),
@@ -285,7 +285,7 @@ DataExprRuntimeNode.SPEC = F8OperatorSpec(
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
             showOnNode=False,
-            required=False,
+            valueRequired=False,
         ),
         F8StateSpec(
             name="unpackDictOutputs",
@@ -295,7 +295,7 @@ DataExprRuntimeNode.SPEC = F8OperatorSpec(
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
             showOnNode=False,
-            required=False,
+            valueRequired=False,
         ),
         F8StateSpec(
             name="code",
@@ -308,7 +308,7 @@ DataExprRuntimeNode.SPEC = F8OperatorSpec(
             valueSchema=string_schema(default="x"),
             access=F8StateAccess.rw,
             showOnNode=True,
-            required=True,
+            valueRequired=True,
         ),
     ],
 )

@@ -10,14 +10,14 @@ if ROOT not in sys.path:
 from f8pysdk.specs import F8Command  # noqa: E402
 
 
-class F8CommandRequiredFieldTests(unittest.TestCase):
-    def test_required_defaults_to_false(self) -> None:
+class F8CommandProtectionTests(unittest.TestCase):
+    def test_definition_protected_defaults_to_false(self) -> None:
         cmd = F8Command(name="ping", params=[])
-        self.assertFalse(cmd.required)
+        self.assertFalse(cmd.definitionProtected)
 
-    def test_required_parses_when_provided(self) -> None:
-        cmd = validate_as(F8Command, {"name": "ping", "required": True, "params": []})
-        self.assertTrue(cmd.required)
+    def test_definition_protected_parses_when_provided(self) -> None:
+        cmd = validate_as(F8Command, {"name": "ping", "definitionProtected": True, "params": []})
+        self.assertTrue(cmd.definitionProtected)
 
 
 if __name__ == "__main__":

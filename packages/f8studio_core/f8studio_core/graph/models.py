@@ -8,7 +8,7 @@ import msgspec
 from f8pysdk.specs import F8DataPortSpec, F8JsonValue, F8OperatorSpec, F8ServiceSpec, F8StateSpec
 
 
-DOCUMENT_SCHEMA_VERSION = "f8studio-document/1"
+DOCUMENT_SCHEMA_VERSION = "f8studio-document/2"
 
 
 class NodeKind(str, enum.Enum):

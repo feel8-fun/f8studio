@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import exec_port_specs
+
 import time
 from typing import Any, Final
 
@@ -126,8 +128,8 @@ SilenceDetectorRuntimeNode.SPEC = F8OperatorSpec(
     label="Silence Detector",
     description="Detect whether a signal has stayed nearly unchanged for long enough to be considered silent.",
     tags=["analysis", "silence", "activity", "state", "gate"],
-    execInPorts=["exec"],
-    execOutPorts=["exec"],
+    execInPorts=exec_port_specs(["exec"]),
+    execOutPorts=exec_port_specs(["exec"]),
     dataInPorts=[
         F8DataPortSpec(name="value", description="Signal to analyze", valueSchema=number_schema()),
     ],
@@ -139,7 +141,7 @@ SilenceDetectorRuntimeNode.SPEC = F8OperatorSpec(
             description="If the input changes less than deltaThreshold for this long, mark it silent.",
             valueSchema=integer_schema(default=500, minimum=0, maximum=60_000),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -148,7 +150,7 @@ SilenceDetectorRuntimeNode.SPEC = F8OperatorSpec(
             description="Absolute change threshold to treat the input as active.",
             valueSchema=number_schema(default=0.001, minimum=0.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -157,7 +159,7 @@ SilenceDetectorRuntimeNode.SPEC = F8OperatorSpec(
             description="Readonly sparse state output indicating whether the signal is currently silent.",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.ro,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
     ],

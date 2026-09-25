@@ -247,7 +247,7 @@ SkeletonSelectorRuntimeNode.SPEC = F8OperatorSpec(
             description="Exporter game profile ID. Empty accepts any profile.",
             valueSchema=string_schema(default=""),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -256,7 +256,7 @@ SkeletonSelectorRuntimeNode.SPEC = F8OperatorSpec(
             description="Stable character role.",
             valueSchema=string_schema(default="", enum=["", "male", "female", "other"]),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -265,7 +265,7 @@ SkeletonSelectorRuntimeNode.SPEC = F8OperatorSpec(
             description="Zero-based index within the selected role.",
             valueSchema=integer_schema(default=0, minimum=0, maximum=1024),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -274,7 +274,7 @@ SkeletonSelectorRuntimeNode.SPEC = F8OperatorSpec(
             description="Exact modelName used only for LMEX v1 streams.",
             valueSchema=string_schema(default=""),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -283,7 +283,7 @@ SkeletonSelectorRuntimeNode.SPEC = F8OperatorSpec(
             description="Allow exact modelName fallback for LMEX v1 packets.",
             valueSchema=boolean_schema(default=True),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -292,7 +292,7 @@ SkeletonSelectorRuntimeNode.SPEC = F8OperatorSpec(
             description="Low-frequency list of currently available stable keys.",
             valueSchema=array_schema(items=string_schema()),
             access=F8StateAccess.ro,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
     ],

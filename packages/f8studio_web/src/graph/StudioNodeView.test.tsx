@@ -20,7 +20,7 @@ afterEach(cleanup);
 test('shows a live device selector on a write-only service state port', () => {
   const selectedDevice: StateSpec = {
     name: 'selectedDevice', label: 'Capture Device', access: 'wo', showOnNode: true,
-    uiControl: 'select[availableDevices]', valueSchema: { type: 'string', default: 'Auto' },
+    control: { kind: 'select', optionsFromState: 'availableDevices' }, valueSchema: { type: 'string', default: 'Auto' },
   };
   const node: ServiceNode = {
     kind: 'service', nodeId: 'capture', name: 'Audio Capture', serviceId: 'capture',

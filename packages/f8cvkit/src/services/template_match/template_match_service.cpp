@@ -820,9 +820,9 @@ json TemplateMatchService::describe() {
   service["stateFields"] = json::array({
       state_field("templateImagePngB64", schema_string(), "rw", "Template PNG (Base64)",
                   "PNG bytes encoded as base64. Local-only payload; cleared when exporting publish JSON.",
-                  false, "", true),
+                  false, nullptr, true),
       state_field("matchThreshold", schema_number(0.5, 0.0, 1.0), "rw", "Match Threshold",
-                  "0..1 score threshold used to emit detections.", true, "slider"),
+                  "0..1 score threshold used to emit detections.", true, json{{"kind", "slider"}}),
       state_field("matchingIntervalMs", schema_integer(200, 0, 60000), "rw", "Matching Interval (ms)",
                   "Minimum milliseconds between template matching passes.", false),
       state_field("matchColorMode", schema_string(), "rw", "Match Color Mode", "gray or bgr. gray is faster.", false),

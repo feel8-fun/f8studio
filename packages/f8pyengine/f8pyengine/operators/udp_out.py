@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import exec_port_specs
+
 import asyncio
 import json
 import logging
@@ -279,7 +281,7 @@ UdpOutRuntimeNode.SPEC = F8OperatorSpec(
     label="UDP Out",
     description="Sends incoming values to a UDP host/port.",
     tags=["io", "udp", "network", "socket", "tcode"],
-    execInPorts=["exec"],
+    execInPorts=exec_port_specs(["exec"]),
     dataInPorts=[F8DataPortSpec(name="value", description="Value to send.", valueSchema=any_schema())],
     dataOutPorts=[
         F8DataPortSpec(name="isOpen", description="Whether the UDP socket is open.", valueSchema=boolean_schema(default=False)),
@@ -293,7 +295,7 @@ UdpOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Enable/disable UDP output.",
             valueSchema=boolean_schema(default=True),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -302,7 +304,7 @@ UdpOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Target UDP host name or IP.",
             valueSchema=string_schema(default="127.0.0.1"),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -311,7 +313,7 @@ UdpOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Target UDP port.",
             valueSchema=integer_schema(default=9000, minimum=1, maximum=65535),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -320,7 +322,7 @@ UdpOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Append a trailing newline to stringified values before sending.",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -329,7 +331,7 @@ UdpOutRuntimeNode.SPEC = F8OperatorSpec(
             description="When true, convert incoming values to text before sending. When false, only bytes and str are accepted.",
             valueSchema=boolean_schema(default=True),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
     ],

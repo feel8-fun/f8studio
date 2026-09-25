@@ -198,7 +198,7 @@ QuatToEulerRuntimeNode.SPEC = F8OperatorSpec(
             name="quat",
             description="Input quaternion [w,x,y,z].",
             valueSchema=array_schema(items=number_schema()),
-            required=False,
+            definitionProtected=False,
         )
     ],
     dataOutPorts=[
@@ -215,7 +215,7 @@ QuatToEulerRuntimeNode.SPEC = F8OperatorSpec(
             description="Euler rotation order.",
             valueSchema=string_schema(default="ZYX", enum=list(_ORDERS)),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -224,7 +224,7 @@ QuatToEulerRuntimeNode.SPEC = F8OperatorSpec(
             description="Output in degrees when true, radians when false.",
             valueSchema=boolean_schema(default=True),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
     ],

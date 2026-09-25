@@ -2510,7 +2510,7 @@ json ImPlayerService::describe() {
                   "PCVR output: off|on|auto (auto retries when headset/runtime becomes available).", true),
       state_field("openxrMirrorWindow", schema_boolean(), "rw", "OpenXR Mirror",
                   "When OpenXR is active, also present to the SDL mirror window.", true),
-      state_field("volume", schema_number(1.0, 0.0, 1.0), "rw", "Volume", "", true, "slider"),
+      state_field("volume", schema_number(1.0, 0.0, 1.0), "rw", "Volume", "", true, json{{"kind", "slider"}}),
       state_field("playing", schema_boolean(), "ro", "Playing", "Playback state.", false),
       state_field("duration", schema_number(), "ro", "Duration", "Duration (seconds).", true),
       state_field("videoFormat", schema_string_enum({"bgra32", "bgr24", "flow2_f16", "scalar1_f32"}), "ro",

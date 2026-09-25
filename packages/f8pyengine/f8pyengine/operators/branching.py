@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import exec_port_specs
+
 import time
 from dataclasses import dataclass
 from typing import Any, Final
@@ -166,8 +168,8 @@ ExecBranchRuntimeNode.SPEC = F8OperatorSpec(
     label="Exec Branch",
     description="Mutually-exclusive exec branch selected by low-frequency state.",
     tags=["execution", "branch", "switch", "mode"],
-    execInPorts=["exec"],
-    execOutPorts=list(_DEFAULT_BRANCH_PORTS),
+    execInPorts=exec_port_specs(["exec"]),
+    execOutPorts=exec_port_specs(list(_DEFAULT_BRANCH_PORTS)),
     editPolicy=F8SpecEditPolicy(execOutPorts=editable_collection_edit_policy()),
     stateFields=[
         F8StateSpec(
@@ -176,7 +178,7 @@ ExecBranchRuntimeNode.SPEC = F8OperatorSpec(
             description="Exec output port to emit for each trigger.",
             valueSchema=string_schema(default="branch_a"),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -185,7 +187,7 @@ ExecBranchRuntimeNode.SPEC = F8OperatorSpec(
             description="Readonly branch output actually emitted after fallback.",
             valueSchema=string_schema(default=""),
             access=F8StateAccess.ro,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
     ],
@@ -228,8 +230,8 @@ ExecMergeRuntimeNode.SPEC = F8OperatorSpec(
     label="Exec Merge",
     description="Merge mutually-exclusive exec branches into one continuation.",
     tags=["execution", "merge", "join", "branch"],
-    execInPorts=list(_DEFAULT_MERGE_INPUTS),
-    execOutPorts=["exec"],
+    execInPorts=exec_port_specs(list(_DEFAULT_MERGE_INPUTS)),
+    execOutPorts=exec_port_specs(["exec"]),
     editPolicy=F8SpecEditPolicy(execInPorts=editable_collection_edit_policy()),
 )
 
@@ -366,16 +368,16 @@ DataMuxRuntimeNode.SPEC = F8OperatorSpec(
     label="Data Mux",
     description="Select one data input by low-frequency state and expose it as one output.",
     tags=["data", "mux", "switch", "branch", "mode"],
-    execInPorts=["exec"],
-    execOutPorts=["exec"],
+    execInPorts=exec_port_specs(["exec"]),
+    execOutPorts=exec_port_specs(["exec"]),
     dataInPorts=[
-        F8DataPortSpec(name="branch_a", description="Branch A input.", valueSchema=any_schema(), required=False),
-        F8DataPortSpec(name="branch_b", description="Branch B input.", valueSchema=any_schema(), required=False),
-        F8DataPortSpec(name="branch_c", description="Branch C input.", valueSchema=any_schema(), required=False),
-        F8DataPortSpec(name="default", description="Fallback input.", valueSchema=any_schema(), required=False),
+        F8DataPortSpec(name="branch_a", description="Branch A input.", valueSchema=any_schema(), definitionProtected=False),
+        F8DataPortSpec(name="branch_b", description="Branch B input.", valueSchema=any_schema(), definitionProtected=False),
+        F8DataPortSpec(name="branch_c", description="Branch C input.", valueSchema=any_schema(), definitionProtected=False),
+        F8DataPortSpec(name="default", description="Fallback input.", valueSchema=any_schema(), definitionProtected=False),
     ],
     dataOutPorts=[
-        F8DataPortSpec(name="out", description="Selected data output.", valueSchema=any_schema(), required=False),
+        F8DataPortSpec(name="out", description="Selected data output.", valueSchema=any_schema(), definitionProtected=False),
     ],
     editPolicy=F8SpecEditPolicy(dataInPorts=editable_collection_edit_policy()),
     stateFields=[
@@ -385,7 +387,7 @@ DataMuxRuntimeNode.SPEC = F8OperatorSpec(
             description="Data input port to pull for the selected output.",
             valueSchema=string_schema(default="branch_a"),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -394,7 +396,7 @@ DataMuxRuntimeNode.SPEC = F8OperatorSpec(
             description="Readonly input port actually pulled after fallback.",
             valueSchema=string_schema(default=""),
             access=F8StateAccess.ro,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
     ],

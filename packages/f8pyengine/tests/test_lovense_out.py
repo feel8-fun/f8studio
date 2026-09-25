@@ -226,7 +226,7 @@ class LovenseOutTests(unittest.IsolatedAsyncioTestCase):
         data_out_names = [p.name for p in (spec.dataOutPorts or [])]
         self.assertEqual(data_in_names, ["position"])
         self.assertEqual(data_out_names, [])
-        self.assertEqual(list(spec.execInPorts or []), ["sendPositionCmd", "sendFunctionCmd"])
+        self.assertEqual([port.name for port in (spec.execInPorts or [])], ["sendPositionCmd", "sendFunctionCmd"])
         toy_state = None
         for state_spec in list(spec.stateFields or []):
             if state_spec.name == "toy":
@@ -234,7 +234,8 @@ class LovenseOutTests(unittest.IsolatedAsyncioTestCase):
                 break
         self.assertIsNotNone(toy_state)
         assert toy_state is not None
-        self.assertEqual(str(toy_state.uiControl or ""), "select[availableToys]")
+        self.assertEqual(toy_state.control.kind.value, "select")
+        self.assertEqual(toy_state.control.optionsFromState, "availableToys")
 
     async def test_api_error_updates_last_error(self) -> None:
         _bus, node = await self._build_node(state_values={"enabled": True, "timeSec": 0, "vibrate": 0.2})

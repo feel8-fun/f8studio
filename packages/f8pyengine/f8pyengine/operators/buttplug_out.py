@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import exec_port_specs
+
 import asyncio
 import logging
 import time
@@ -919,13 +921,13 @@ ButtplugOutRuntimeNode.SPEC = F8OperatorSpec(
     label="Buttplug Out",
     description="Connect to Intiface/Buttplug with split channels: sendPositionCmd->position, sendFunctionCmd->state.",
     tags=["io", "buttplug", "intiface", "haptics", "device"],
-    execInPorts=["sendPositionCmd", "sendFunctionCmd"],
+    execInPorts=exec_port_specs(["sendPositionCmd", "sendFunctionCmd"]),
     dataInPorts=[
         F8DataPortSpec(
             name="position",
             description="Position-channel target (0.0001..0.9999) used by sendPositionCmd.",
             valueSchema=number_schema(minimum=_POSITION_CLAMP_MIN, maximum=_POSITION_CLAMP_MAX),
-            required=True,
+            definitionProtected=True,
         ),
     ],
     dataOutPorts=[],
@@ -936,7 +938,7 @@ ButtplugOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Enable connection and output control.",
             valueSchema=boolean_schema(default=True),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -945,7 +947,7 @@ ButtplugOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Buttplug server websocket URL. Reset to default when exporting publish JSON.",
             valueSchema=string_schema(default="ws://127.0.0.1:12345"),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
             redactOnPublish=True,
         ),
@@ -955,7 +957,7 @@ ButtplugOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Automatically connect while enabled.",
             valueSchema=boolean_schema(default=True),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -964,7 +966,7 @@ ButtplugOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Start and stop scan once after connect.",
             valueSchema=boolean_schema(default=True),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -973,7 +975,7 @@ ButtplugOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Scan duration before stop when scan is triggered.",
             valueSchema=integer_schema(default=5000, minimum=100, maximum=120000),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -982,7 +984,7 @@ ButtplugOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Reconnect throttle interval.",
             valueSchema=integer_schema(default=2000, minimum=100, maximum=120000),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -991,7 +993,7 @@ ButtplugOutRuntimeNode.SPEC = F8OperatorSpec(
             description='Target token: "index|name".',
             valueSchema=string_schema(default=""),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             control=F8UiControlSpec(kind=F8UiControlKind.select, optionsFromState="availableDevices"),
             showOnNode=True,
         ),
@@ -1001,7 +1003,7 @@ ButtplugOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Set true to trigger one scan cycle; runtime resets it to false.",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -1010,7 +1012,7 @@ ButtplugOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Feature index for vibrate (-1 = all).",
             valueSchema=integer_schema(default=-1, minimum=-1, maximum=4096),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -1019,7 +1021,7 @@ ButtplugOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Feature index for rotate (-1 = all).",
             valueSchema=integer_schema(default=-1, minimum=-1, maximum=4096),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -1028,7 +1030,7 @@ ButtplugOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Feature index for oscillate (-1 = all).",
             valueSchema=integer_schema(default=-1, minimum=-1, maximum=4096),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -1037,7 +1039,7 @@ ButtplugOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Feature index for position (-1 = all).",
             valueSchema=integer_schema(default=-1, minimum=-1, maximum=4096),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -1046,7 +1048,7 @@ ButtplugOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Default duration for position output.",
             valueSchema=integer_schema(default=500, minimum=0, maximum=120000),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -1055,7 +1057,7 @@ ButtplugOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Function-channel vibrate intensity (0..1).",
             valueSchema=number_schema(minimum=0.0, maximum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -1064,7 +1066,7 @@ ButtplugOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Function-channel rotate speed (-1..1).",
             valueSchema=number_schema(minimum=-1.0, maximum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -1073,7 +1075,7 @@ ButtplugOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Function-channel oscillate intensity (0..1).",
             valueSchema=number_schema(minimum=0.0, maximum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -1082,7 +1084,7 @@ ButtplugOutRuntimeNode.SPEC = F8OperatorSpec(
             description="When true, sendFunctionCmd stops output on selected device.",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -1091,7 +1093,7 @@ ButtplugOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Send stop command when service deactivates.",
             valueSchema=boolean_schema(default=True),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -1100,7 +1102,7 @@ ButtplugOutRuntimeNode.SPEC = F8OperatorSpec(
             description="True when websocket is connected.",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.ro,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -1109,7 +1111,7 @@ ButtplugOutRuntimeNode.SPEC = F8OperatorSpec(
             description="True while scanning is active.",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.ro,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -1118,7 +1120,7 @@ ButtplugOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Device tokens for selection UI.",
             valueSchema=array_schema(items=string_schema()),
             access=F8StateAccess.ro,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -1127,7 +1129,7 @@ ButtplugOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Full discovered device infos.",
             valueSchema=array_schema(items=_device_info_schema()),
             access=F8StateAccess.ro,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -1136,7 +1138,7 @@ ButtplugOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Current selected device info object.",
             valueSchema=_device_info_schema(),
             access=F8StateAccess.ro,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
     ],

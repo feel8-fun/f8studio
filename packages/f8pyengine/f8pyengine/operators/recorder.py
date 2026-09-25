@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import exec_port_specs
+
 from f8pysdk.codec import coerce_flag
 from pathlib import Path
 import logging
@@ -239,8 +241,8 @@ RecorderRuntimeNode.SPEC = F8OperatorSpec(
     label="Recorder",
     description="Tick-driven debug recorder that captures data samples and sparse state changes.",
     tags=["record", "replay", "debug", "capture"],
-    execInPorts=["record"],
-    execOutPorts=[],
+    execInPorts=exec_port_specs(["record"]),
+    execOutPorts=exec_port_specs([]),
     dataInPorts=[],
     dataOutPorts=[],
     editPolicy=F8SpecEditPolicy(
@@ -254,7 +256,7 @@ RecorderRuntimeNode.SPEC = F8OperatorSpec(
             description="Recording output path.",
             valueSchema=string_schema(),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
             redactOnPublish=True,
         ),
@@ -264,7 +266,7 @@ RecorderRuntimeNode.SPEC = F8OperatorSpec(
             description="When enabled, incoming exec ticks are recorded.",
             valueSchema=boolean_schema(default=True),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -273,7 +275,7 @@ RecorderRuntimeNode.SPEC = F8OperatorSpec(
             description="Append to an existing compatible recording file.",
             valueSchema=boolean_schema(default=True),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -282,7 +284,7 @@ RecorderRuntimeNode.SPEC = F8OperatorSpec(
             description="Readonly flag indicating whether the file is open and writable.",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.ro,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -291,7 +293,7 @@ RecorderRuntimeNode.SPEC = F8OperatorSpec(
             description="Readonly session start timestamp in milliseconds.",
             valueSchema=integer_schema(),
             access=F8StateAccess.ro,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
     ],

@@ -125,7 +125,7 @@ def _runtime_node(*, node_id: str, service_id: str, data_in: list[str] | None = 
 def _video_port(name: str) -> F8DataPortSpec:
     return video_frame_port(
         name=name,
-        required=True,
+        definition_protected=True,
     )
 
 
@@ -149,7 +149,7 @@ def _legacy_video_port(name: str) -> F8DataPortSpec:
     return F8DataPortSpec(
         name=name,
         valueSchema=_legacy_video_metadata_schema(),
-        required=True,
+        definitionProtected=True,
     )
 
 
@@ -185,7 +185,7 @@ def _legacy_audio_port(name: str) -> F8DataPortSpec:
     return F8DataPortSpec(
         name=name,
         valueSchema=_legacy_audio_metadata_schema(),
-        required=True,
+        definitionProtected=True,
     )
 
 
@@ -219,7 +219,7 @@ async def _sleep_ticks(ticks: int) -> None:
 
 class DataFlowRoutingTests(unittest.IsolatedAsyncioTestCase):
     async def test_video_frame_port_uses_explicit_payload_and_stream_specs(self) -> None:
-        port = video_frame_port(name="video", required=True)
+        port = video_frame_port(name="video", definition_protected=True)
 
         self.assertEqual(port.payload.kind, F8DataPortPayloadKind.video_frame)
         self.assertEqual(port.stream.delivery, F8DataPortDelivery.latest)
@@ -241,7 +241,7 @@ class DataFlowRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(port.valueSchema.field_comment, UNSET)
 
     async def test_audio_chunk_port_uses_explicit_payload_and_stream_specs(self) -> None:
-        port = audio_chunk_port(name="audio", required=True)
+        port = audio_chunk_port(name="audio", definition_protected=True)
 
         self.assertEqual(port.payload.kind, F8DataPortPayloadKind.audio_chunk)
         self.assertEqual(port.stream.delivery, F8DataPortDelivery.latest)

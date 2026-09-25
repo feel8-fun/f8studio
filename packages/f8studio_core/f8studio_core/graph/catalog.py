@@ -7,6 +7,7 @@ import msgspec
 from f8pysdk.command import command_input_state_field, command_output_state_field, hidden_command_state_specs
 from f8pysdk.specs import (
     F8DataPortSpec,
+    F8ExecPortSpec,
     F8JsonValue,
     F8OperatorSpec,
     F8ServiceSpec,
@@ -33,7 +34,7 @@ def _state_fields(fields: list[F8StateSpec] | msgspec.UnsetType) -> list[F8State
     return [] if isinstance(fields, msgspec.UnsetType) else list(fields)
 
 
-def _text_ports(ports: list[str] | msgspec.UnsetType) -> list[str]:
+def _exec_ports(ports: list[F8ExecPortSpec] | msgspec.UnsetType) -> list[F8ExecPortSpec]:
     return [] if isinstance(ports, msgspec.UnsetType) else list(ports)
 
 
@@ -84,7 +85,8 @@ def _state_ports(spec: F8StateSpec) -> list[GraphPort]:
 def ports_for_spec(spec: F8ServiceSpec | F8OperatorSpec, port_ids: dict[str, str] | None = None) -> tuple[GraphPort, ...]:
     ports: list[GraphPort] = []
     if isinstance(spec, F8OperatorSpec):
-        for name in _text_ports(spec.execInPorts):
+        for exec_spec in _exec_ports(spec.execInPorts):
+            name = exec_spec.name
             ports.append(
                 GraphPort(
                     port_id=_port_id(PortKind.exec, PortDirection.input, name),
@@ -94,7 +96,8 @@ def ports_for_spec(spec: F8ServiceSpec | F8OperatorSpec, port_ids: dict[str, str
                     direction=PortDirection.input,
                 )
             )
-        for name in _text_ports(spec.execOutPorts):
+        for exec_spec in _exec_ports(spec.execOutPorts):
+            name = exec_spec.name
             ports.append(
                 GraphPort(
                     port_id=_port_id(PortKind.exec, PortDirection.output, name),

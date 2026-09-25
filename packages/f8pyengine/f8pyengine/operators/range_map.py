@@ -170,7 +170,7 @@ RangeMapRuntimeNode.SPEC = F8OperatorSpec(
     description="Clip input to [inMin,inMax] then remap to [outMin,outMax] with a curve.",
     tags=["map", "range", "normalize", "curve", "transform"],
     dataInPorts=[
-        F8DataPortSpec(name="value", description="Input value.", valueSchema=number_schema(), required=False),
+        F8DataPortSpec(name="value", description="Input value.", valueSchema=number_schema(), definitionProtected=False),
     ],
     dataOutPorts=[
         F8DataPortSpec(name="value", description="Mapped output.", valueSchema=number_schema()),
@@ -182,7 +182,7 @@ RangeMapRuntimeNode.SPEC = F8OperatorSpec(
             description="Input range minimum.",
             valueSchema=number_schema(default=0.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -191,7 +191,7 @@ RangeMapRuntimeNode.SPEC = F8OperatorSpec(
             description="Input range maximum.",
             valueSchema=number_schema(default=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -200,7 +200,7 @@ RangeMapRuntimeNode.SPEC = F8OperatorSpec(
             description="Output range minimum.",
             valueSchema=number_schema(default=0.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -209,7 +209,7 @@ RangeMapRuntimeNode.SPEC = F8OperatorSpec(
             description="Output range maximum.",
             valueSchema=number_schema(default=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -218,7 +218,7 @@ RangeMapRuntimeNode.SPEC = F8OperatorSpec(
             description="Mapping curve.",
             valueSchema=string_schema(default=CURVE_LINEAR, enum=list(CURVE_CHOICES)),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
     ],

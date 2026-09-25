@@ -78,8 +78,8 @@ class StateExprNodeTests(unittest.IsolatedAsyncioTestCase):
         out_fields = [field for field in list(StateExprRuntimeNode.SPEC.stateFields or []) if field.name == "out"]
         self.assertEqual(len(code_fields), 1)
         self.assertEqual(len(out_fields), 1)
-        self.assertTrue(code_fields[0].required)
-        self.assertTrue(out_fields[0].required)
+        self.assertTrue(code_fields[0].valueRequired)
+        self.assertTrue(out_fields[0].valueRequired)
         self.assertEqual(out_fields[0].access, F8StateAccess.ro)
 
     async def test_maps_rw_state_fields_into_expression_symbols(self) -> None:
@@ -99,7 +99,7 @@ class StateExprNodeTests(unittest.IsolatedAsyncioTestCase):
                             description="",
                             valueSchema=number_schema(default=1.5),
                             access=F8StateAccess.rw,
-                            required=False,
+                            valueRequired=False,
                             showOnNode=True,
                         ),
                         F8StateSpec(
@@ -108,7 +108,7 @@ class StateExprNodeTests(unittest.IsolatedAsyncioTestCase):
                             description="",
                             valueSchema=number_schema(default=2.5),
                             access=F8StateAccess.rw,
-                            required=False,
+                            valueRequired=False,
                             showOnNode=True,
                         ),
                     ],
@@ -144,7 +144,7 @@ class StateExprNodeTests(unittest.IsolatedAsyncioTestCase):
                             description="",
                             valueSchema=number_schema(default=2.0),
                             access=F8StateAccess.rw,
-                            required=False,
+                            valueRequired=False,
                             showOnNode=True,
                         ),
                         F8StateSpec(
@@ -153,7 +153,7 @@ class StateExprNodeTests(unittest.IsolatedAsyncioTestCase):
                             description="",
                             valueSchema=number_schema(default=0.5),
                             access=F8StateAccess.rw,
-                            required=False,
+                            valueRequired=False,
                             showOnNode=True,
                         ),
                     ],
@@ -187,7 +187,7 @@ class StateExprNodeTests(unittest.IsolatedAsyncioTestCase):
                             description="",
                             valueSchema=any_schema(),
                             access=F8StateAccess.rw,
-                            required=False,
+                            valueRequired=False,
                             showOnNode=True,
                         )
                     ],
@@ -221,7 +221,7 @@ class StateExprNodeTests(unittest.IsolatedAsyncioTestCase):
                             description="",
                             valueSchema=number_schema(default=1.0),
                             access=F8StateAccess.rw,
-                            required=False,
+                            valueRequired=False,
                             showOnNode=True,
                         )
                     ],
@@ -261,7 +261,7 @@ class StateExprNodeTests(unittest.IsolatedAsyncioTestCase):
                             description="",
                             valueSchema=number_schema(default=1.5),
                             access=F8StateAccess.rw,
-                            required=False,
+                            valueRequired=False,
                             showOnNode=True,
                         )
                     ],
@@ -295,7 +295,7 @@ class StateExprNodeTests(unittest.IsolatedAsyncioTestCase):
                             description="",
                             valueSchema=number_schema(default=1.0),
                             access=F8StateAccess.rw,
-                            required=False,
+                            valueRequired=False,
                             showOnNode=True,
                         ),
                         F8StateSpec(
@@ -304,7 +304,7 @@ class StateExprNodeTests(unittest.IsolatedAsyncioTestCase):
                             description="",
                             valueSchema=number_schema(default=9.0),
                             access=F8StateAccess.ro,
-                            required=False,
+                            valueRequired=False,
                             showOnNode=True,
                         ),
                     ],

@@ -404,11 +404,12 @@ json data_pick_spec() {
       {"stateFields",
        json::array({state_field("path", "Path",
                                 "Path to pick. Supports dot keys, zero-based array indexes, and quoted bracket keys.",
-                                string_schema(""), "rw", true, true, "wrapline"),
+                                string_schema(""), "rw", true, true, json{{"kind", "textarea"}}),
                     state_field("valueType", "Value Type", "Coerce picked value before output.",
                                 string_enum_schema("any", {"any", "number", "string", "bool"}), "rw", true, true),
                     state_field("fallback", "Fallback", "Value emitted when the path is missing or coercion fails.",
-                                json{{"type", "any"}, {"default", nullptr}}, "rw", false, false, "wrapline[json]")})}};
+                                json{{"type", "any"}, {"default", nullptr}}, "rw", false, false,
+                                json{{"kind", "textarea"}, {"language", "json"}})})}};
 }
 
 }  // namespace

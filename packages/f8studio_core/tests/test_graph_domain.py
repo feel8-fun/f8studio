@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import msgspec
 import pytest
 
 from f8pysdk.command import command_input_state_field
+from f8pysdk._specs.builtin_fields import normalize_describe_payload_dict
 from f8pysdk.rungraph_fingerprint import build_rungraph_deploy_fingerprint
 from f8pysdk.specs import (
     F8Command,
@@ -20,6 +22,7 @@ from f8pysdk.specs import (
     F8StateSpec,
     F8UiControlKind,
     F8UiControlSpec,
+    exec_port_specs,
     json_data_port,
     integer_schema,
     number_schema,
@@ -79,8 +82,8 @@ def build_catalog() -> NodeCatalog:
                     dataOutPorts=editable_collection_edit_policy(),
                     execOutPorts=editable_collection_edit_policy(),
                 ),
-                execOutPorts=["next"],
-                dataOutPorts=[msgspec.structs.replace(json_data_port(name="out", value_schema=number_schema()), required=False)],
+                execOutPorts=exec_port_specs(["next"]),
+                dataOutPorts=[msgspec.structs.replace(json_data_port(name="out", value_schema=number_schema()), definitionProtected=False)],
                 stateFields=[
                     F8StateSpec(
                         name="gain",
@@ -93,7 +96,7 @@ def build_catalog() -> NodeCatalog:
                 serviceClass="f8.pyengine",
                 operatorClass="test.sink",
                 label="Sink",
-                execInPorts=["run"],
+                execInPorts=exec_port_specs(["run"]),
                 dataInPorts=[json_data_port(name="input", value_schema=number_schema())],
                 stateFields=[
                     F8StateSpec(
@@ -163,7 +166,7 @@ def base_nodes() -> tuple[NodeCatalog, ServiceNode, OperatorNode, OperatorNode]:
 def test_document_codec_preserves_tagged_node_types() -> None:
     _, service, source, _ = base_nodes()
     document = StudioDocument(
-        schema_version="f8studio-document/1",
+        schema_version="f8studio-document/2",
         project_id="project1",
         graph_id="graph1",
         graph_revision=1,
@@ -182,7 +185,7 @@ def test_exchange_round_trip_deduplicates_definitions_and_compiles() -> None:
     _, service, source, _ = base_nodes()
     another = msgspec.structs.replace(source, node_id="source2", name="Other source")
     document = StudioDocument(
-        schema_version="f8studio-document/1",
+        schema_version="f8studio-document/2",
         project_id="project1",
         graph_id="graph1",
         graph_revision=5,
@@ -194,7 +197,7 @@ def test_exchange_round_trip_deduplicates_definitions_and_compiles() -> None:
     encoded = export_graph(document)
     raw = msgspec.json.decode(encoded)
     assert raw["format"] == "f8graph"
-    assert raw["formatVersion"] == 2
+    assert raw["formatVersion"] == 3
     assert len(raw["definitions"]["operators"]) == 1
     assert "ports" not in raw["operators"]["source"]
     assert "graphRevision" not in raw
@@ -209,7 +212,7 @@ def test_exchange_round_trip_deduplicates_definitions_and_compiles() -> None:
 def test_exchange_rejects_unsupported_version_and_corrupt_definition() -> None:
     _, service, source, _ = base_nodes()
     document = StudioDocument(
-        schema_version="f8studio-document/1",
+        schema_version="f8studio-document/2",
         project_id="project1",
         graph_id="graph1",
         graph_revision=0,
@@ -217,10 +220,10 @@ def test_exchange_rejects_unsupported_version_and_corrupt_definition() -> None:
         nodes=(service, source),
     )
     raw = msgspec.json.decode(export_graph(document))
-    raw["formatVersion"] = 3
+    raw["formatVersion"] = 4
     with pytest.raises(ValueError, match="unsupported graph format"):
         import_graph(msgspec.json.encode(raw))
-    raw["formatVersion"] = 2
+    raw["formatVersion"] = 3
     definition = next(iter(raw["definitions"]["operators"].values()))
     definition["label"] = "tampered"
     with pytest.raises(ValueError, match="definition hash mismatch"):
@@ -230,7 +233,7 @@ def test_exchange_rejects_unsupported_version_and_corrupt_definition() -> None:
 def test_semantic_revision_ignores_node_presentation() -> None:
     _, service, source, _ = base_nodes()
     document = StudioDocument(
-        schema_version="f8studio-document/1",
+        schema_version="f8studio-document/2",
         project_id="project1",
         graph_id="graph1",
         graph_revision=0,
@@ -239,7 +242,7 @@ def test_semantic_revision_ignores_node_presentation() -> None:
     )
     value_schema = msgspec.structs.replace(source.spec.stateFields[0].valueSchema, title="Gain value")
     field = msgspec.structs.replace(
-        source.spec.stateFields[0], label="Gain", uiControl="slider", control=F8UiControlSpec(kind=F8UiControlKind.slider),
+        source.spec.stateFields[0], label="Gain", control=F8UiControlSpec(kind=F8UiControlKind.slider),
         showOnNode=True, valueSchema=value_schema,
     )
     spec = msgspec.structs.replace(source.spec, stateFields=[field], label="New label")
@@ -267,7 +270,7 @@ def test_exchange_and_runtime_revision_normalize_numeric_schema_bounds() -> None
     )])
     service = catalog.create_service_node(node_id="engine", service_class="test.engine")
     document = StudioDocument(
-        schema_version="f8studio-document/1",
+        schema_version="f8studio-document/2",
         project_id="project1",
         graph_id="graph1",
         graph_revision=0,
@@ -309,7 +312,7 @@ def test_connected_port_rename_preserves_endpoint_identity() -> None:
         kind=GraphEdgeKind.data,
     )
     document = StudioDocument(
-        schema_version="f8studio-document/1",
+        schema_version="f8studio-document/2",
         project_id="project1",
         graph_id="graph1",
         graph_revision=0,
@@ -364,7 +367,7 @@ def test_locked_state_field_cannot_be_removed_through_advanced_spec_edit() -> No
     )
     source = replace_node_spec(source, spec)
     document = StudioDocument(
-        schema_version="f8studio-document/1", project_id="project1", graph_id="graph1",
+        schema_version="f8studio-document/2", project_id="project1", graph_id="graph1",
         graph_revision=0, layout_revision=0, nodes=(service, source),
     )
     store = GraphStore(document)
@@ -389,7 +392,7 @@ def test_structured_control_rejects_missing_option_pool() -> None:
     )])
     service = catalog.create_service_node(node_id="engine", service_class="test.engine")
     document = StudioDocument(
-        schema_version="f8studio-document/1",
+        schema_version="f8studio-document/2",
         project_id="project1",
         graph_id="graph1",
         graph_revision=0,
@@ -471,7 +474,7 @@ def test_graph_store_applies_atomically_and_keeps_revisions_separate() -> None:
 def test_service_container_delete_cascades_to_bound_operators() -> None:
     _, service, source, sink = base_nodes()
     initial = StudioDocument(
-        schema_version="f8studio-document/1",
+        schema_version="f8studio-document/2",
         project_id="project1",
         graph_id="graph1",
         graph_revision=0,
@@ -519,7 +522,7 @@ def test_operator_rebind_drops_exec_edges_that_cross_service_boundaries() -> Non
     )
     store = GraphStore(
         StudioDocument(
-            schema_version="f8studio-document/1",
+            schema_version="f8studio-document/2",
             project_id="project1",
             graph_id="graph1",
             graph_revision=0,
@@ -573,7 +576,7 @@ def test_state_mutations_enforce_value_schema_type_range_and_enum() -> None:
     )
     store = GraphStore(
         StudioDocument(
-            schema_version="f8studio-document/1",
+            schema_version="f8studio-document/2",
             project_id="project1",
             graph_id="graph1",
             graph_revision=0,
@@ -715,7 +718,7 @@ def test_compiler_maps_all_edge_kinds_and_is_deterministic() -> None:
         ),
     )
     document = StudioDocument(
-        schema_version="f8studio-document/1",
+        schema_version="f8studio-document/2",
         project_id="project1",
         graph_id="graph1",
         graph_revision=8,
@@ -761,7 +764,7 @@ def test_semantic_revision_ignores_collection_and_mapping_insertion_order() -> N
     )
     second = msgspec.structs.replace(first, state_values={"second": 2.0, "first": 1.0})
     document = StudioDocument(
-        schema_version="f8studio-document/1",
+        schema_version="f8studio-document/2",
         project_id="project1",
         graph_id="graph1",
         graph_revision=1,
@@ -775,7 +778,7 @@ def test_semantic_revision_ignores_collection_and_mapping_insertion_order() -> N
 
 def test_compiler_uses_repository_service_catalog_fixture() -> None:
     describe_path = Path(__file__).parents[3] / "services" / "f8" / "engine" / "describe.json"
-    describe = msgspec.json.decode(describe_path.read_bytes(), type=F8ServiceDescribe)
+    describe = msgspec.convert(normalize_describe_payload_dict(json.loads(describe_path.read_text())), type=F8ServiceDescribe)
     catalog = NodeCatalog(services=[describe.service], operators=describe.operators)
     service = catalog.create_service_node(node_id="engine", service_class="f8.pyengine")
     phase = catalog.create_operator_node(
@@ -791,7 +794,7 @@ def test_compiler_uses_repository_service_catalog_fixture() -> None:
         operator_class="f8.cosine",
     )
     document = StudioDocument(
-        schema_version="f8studio-document/1",
+        schema_version="f8studio-document/2",
         project_id="catalog_fixture",
         graph_id="phase_to_cosine",
         graph_revision=0,
@@ -836,7 +839,7 @@ def test_compiler_lowers_patch_hub_and_splits_cross_service_edge() -> None:
         operator_class="f8.patch_hub",
     )
     document = StudioDocument(
-        schema_version="f8studio-document/1",
+        schema_version="f8studio-document/2",
         project_id="project1",
         graph_id="graph1",
         graph_revision=1,
@@ -907,7 +910,7 @@ def test_fragment_insertion_and_dynamic_spec_replacement_are_atomic() -> None:
 
     replacement_spec = msgspec.structs.replace(
         source.spec,
-        execOutPorts=["next", "alternate"],
+        execOutPorts=exec_port_specs(["next", "alternate"]),
         dataOutPorts=[
             json_data_port(name="out", value_schema=number_schema()),
             json_data_port(name="debug", value_schema=string_schema()),
@@ -948,7 +951,7 @@ def test_invalid_cross_service_exec_is_rejected() -> None:
         operator_class="test.sink",
     )
     document = StudioDocument(
-        schema_version="f8studio-document/1",
+        schema_version="f8studio-document/2",
         project_id="project1",
         graph_id="graph1",
         graph_revision=0,
@@ -974,7 +977,7 @@ def test_invalid_cross_service_exec_is_rejected() -> None:
 def test_cyclic_state_edges_are_rejected() -> None:
     _, service, source, sink = base_nodes()
     document = StudioDocument(
-        schema_version="f8studio-document/1",
+        schema_version="f8studio-document/2",
         project_id="project1",
         graph_id="graph1",
         graph_revision=0,
@@ -1037,7 +1040,7 @@ def test_data_payload_kind_mismatch_is_rejected() -> None:
         operator_class="json.sink",
     )
     document = StudioDocument(
-        schema_version="f8studio-document/1",
+        schema_version="f8studio-document/2",
         project_id="project1",
         graph_id="graph1",
         graph_revision=0,
@@ -1071,7 +1074,7 @@ def test_invalid_spec_replacement_rolls_back_with_existing_edges() -> None:
         kind=GraphEdgeKind.data,
     )
     initial = StudioDocument(
-        schema_version="f8studio-document/1",
+        schema_version="f8studio-document/2",
         project_id="project1",
         graph_id="graph1",
         graph_revision=4,
@@ -1099,7 +1102,7 @@ def test_disabled_nodes_are_excluded_and_disabled_services_fail_explicitly() -> 
     _, service, source, sink = base_nodes()
     disabled_source = msgspec.structs.replace(source, enabled=False)
     document = StudioDocument(
-        schema_version="f8studio-document/1",
+        schema_version="f8studio-document/2",
         project_id="project1",
         graph_id="graph1",
         graph_revision=0,

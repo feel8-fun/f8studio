@@ -6,6 +6,7 @@ import type {
   CommandParamSpec,
   CommandSpec,
   DataPortSpec,
+  ExecPortSpec,
   GraphNode,
   GraphOperation,
   PortDirection,
@@ -83,8 +84,8 @@ export function SchemaEditor({ node, busy, commit }: {
   const setStates = (fields: readonly StateSpec[]): void => update({ ...draft, stateFields: fields });
   const setCommands = (commands: readonly CommandSpec[]): void => update({ ...draft, commands });
   const setData = (key: 'dataInPorts' | 'dataOutPorts', ports: readonly DataPortSpec[]): void => update({ ...draft, [key]: ports });
-  const setExec = (key: 'execInPorts' | 'execOutPorts', names: readonly string[]): void => {
-    if (draft.specKind === 'operator') update({ ...draft, [key]: names });
+  const setExec = (key: 'execInPorts' | 'execOutPorts', ports: readonly ExecPortSpec[]): void => {
+    if (draft.specKind === 'operator') update({ ...draft, [key]: ports });
   };
 
   const save = async (): Promise<void> => {
@@ -127,8 +128,8 @@ export function SchemaEditor({ node, busy, commit }: {
           </select>
           <label><input type="checkbox" checked={field.showOnNode === true} disabled={!canEdit('stateFields')}
             onChange={(event) => setStates((draft.stateFields ?? []).map((item, i) => i === index ? { ...item, showOnNode: event.target.checked } : item))} />Node</label>
-          <label><input type="checkbox" checked={field.required === true} disabled={!canEdit('stateFields') || field.editPolicy?.canEditRequired === false}
-            onChange={(event) => setStates((draft.stateFields ?? []).map((item, i) => i === index ? { ...item, required: event.target.checked } : item))} />Required</label>
+          <label><input type="checkbox" checked={field.valueRequired === true} disabled={!canEdit('stateFields') || field.editPolicy?.canEditValueRequired === false}
+            onChange={(event) => setStates((draft.stateFields ?? []).map((item, i) => i === index ? { ...item, valueRequired: event.target.checked } : item))} />Value required</label>
         </div>
         <input className="schema-detail-input" aria-label={`${field.name} label`} placeholder="Display label" value={field.label ?? ''} disabled={!canEdit('stateFields')}
           onChange={(event) => setStates((draft.stateFields ?? []).map((item, i) => i === index ? { ...item, label: event.target.value } : item))} />
@@ -158,7 +159,7 @@ export function SchemaEditor({ node, busy, commit }: {
     </SchemaSection>
     {(['dataInPorts', 'dataOutPorts'] as const).map((key) => <SchemaSection key={key} title={key === 'dataInPorts' ? 'Data inputs' : 'Data outputs'} policy={policy(key)} busy={busy} onAdd={() => {
       const ports = draft[key] ?? [];
-      setData(key, [...ports, { name: nextName(ports.map((port) => port.name), 'data'), valueSchema: { type: 'any' }, required: false, showOnNode: true }]);
+      setData(key, [...ports, { name: nextName(ports.map((port) => port.name), 'data'), valueSchema: { type: 'any' }, definitionProtected: false, showOnNode: true }]);
     }}>
       {(draft[key] ?? []).map((port, index) => <div className="schema-item" key={index}>
         <div className="schema-item-main">
@@ -177,7 +178,7 @@ export function SchemaEditor({ node, busy, commit }: {
               {['any', 'string', 'number', 'integer', 'boolean'].map((type) => <option key={type}>{type}</option>)}
             </select>
             : <span className="schema-kind">{port.payload?.kind ?? port.payloadKind}</span>}
-          <button type="button" title={`Delete ${port.name}`} aria-label={`Delete ${port.name}`} disabled={!canDelete(key, port.required !== false)}
+          <button type="button" title={`Delete ${port.name}`} aria-label={`Delete ${port.name}`} disabled={!canDelete(key, port.definitionProtected !== false)}
             onClick={() => setData(key, (draft[key] ?? []).filter((_, i) => i !== index))}><Trash2 size={13} /></button>
         </div>
         <label className="schema-item-options"><input type="checkbox" checked={port.showOnNode !== false} disabled={!canEdit(key)}
@@ -186,22 +187,26 @@ export function SchemaEditor({ node, busy, commit }: {
     </SchemaSection>)}
     {draft.specKind === 'operator' && (['execInPorts', 'execOutPorts'] as const).map((key) => <SchemaSection key={key}
       title={key === 'execInPorts' ? 'Exec inputs' : 'Exec outputs'} policy={policy(key)} busy={busy} onAdd={() => {
-        const names = draft[key] ?? [];
-        setExec(key, [...names, nextName(names, 'exec')]);
+        const ports = draft[key] ?? [];
+        setExec(key, [...ports, { name: nextName(ports.map((port) => port.name), 'exec'), definitionProtected: false }]);
       }}>
-      {(draft[key] ?? []).map((name, index) => <div className="schema-item-main" key={index}>
-        <input aria-label={`${key} name`} value={name} disabled={!canEdit(key)}
+      {(draft[key] ?? []).map((port, index) => <div className="schema-item" key={index}>
+        <div className="schema-item-main"><input aria-label={`${key} name`} value={port.name} disabled={!canEdit(key)}
           onChange={(event) => {
-            trackRename('exec', key === 'execInPorts' ? 'input' : 'output', name, event.target.value);
-            setExec(key, (draft[key] ?? []).map((item, i) => i === index ? event.target.value : item));
+            trackRename('exec', key === 'execInPorts' ? 'input' : 'output', port.name, event.target.value);
+            setExec(key, (draft[key] ?? []).map((item, i) => i === index ? { ...item, name: event.target.value } : item));
           }} />
-        <button type="button" title={`Delete ${name}`} aria-label={`Delete ${name}`} disabled={!canDelete(key)}
-          onClick={() => setExec(key, (draft[key] ?? []).filter((_, i) => i !== index))}><Trash2 size={13} /></button>
+        <button type="button" title={`Delete ${port.name}`} aria-label={`Delete ${port.name}`} disabled={!canDelete(key, port.definitionProtected === true)}
+          onClick={() => setExec(key, (draft[key] ?? []).filter((_, i) => i !== index))}><Trash2 size={13} /></button></div>
+        <input className="schema-detail-input" aria-label={`${port.name} label`} placeholder="Display label" value={port.label ?? ''} disabled={!canEdit(key)}
+          onChange={(event) => setExec(key, (draft[key] ?? []).map((item, i) => i === index ? { ...item, label: event.target.value } : item))} />
+        <input className="schema-detail-input" aria-label={`${port.name} description`} placeholder="Description" value={port.description ?? ''} disabled={!canEdit(key)}
+          onChange={(event) => setExec(key, (draft[key] ?? []).map((item, i) => i === index ? { ...item, description: event.target.value } : item))} />
       </div>)}
     </SchemaSection>)}
     <SchemaSection title="Commands" policy={policy('commands')} busy={busy} onAdd={() => {
       const commands = draft.commands ?? [];
-      setCommands([...commands, { name: nextName(commands.map((command) => command.name), 'command'), required: false, showOnNode: false }]);
+      setCommands([...commands, { name: nextName(commands.map((command) => command.name), 'command'), definitionProtected: false, showOnNode: false }]);
     }}>
       {(draft.commands ?? []).map((command, index) => <div className="schema-item" key={index}>
         <div className="schema-item-main"><input aria-label="Command name" value={command.name} disabled={!canEdit('commands')}
@@ -209,7 +214,7 @@ export function SchemaEditor({ node, busy, commit }: {
             trackRename('command', null, command.name, event.target.value);
             setCommands((draft.commands ?? []).map((item, i) => i === index ? { ...item, name: event.target.value } : item));
           }} />
-          <button type="button" title={`Delete ${command.name}`} aria-label={`Delete ${command.name}`} disabled={!canDelete('commands', command.required === true)}
+          <button type="button" title={`Delete ${command.name}`} aria-label={`Delete ${command.name}`} disabled={!canDelete('commands', command.definitionProtected === true)}
             onClick={() => setCommands((draft.commands ?? []).filter((_, i) => i !== index))}><Trash2 size={13} /></button></div>
         <label className="schema-item-options"><input type="checkbox" checked={command.showOnNode === true} disabled={!canEdit('commands')}
           onChange={(event) => setCommands((draft.commands ?? []).map((item, i) => i === index ? { ...item, showOnNode: event.target.checked } : item))} />Show on node</label>
@@ -217,7 +222,7 @@ export function SchemaEditor({ node, busy, commit }: {
           disabled={!canEdit('commands')} onClick={() => {
             const params = command.params ?? [];
             setCommands((draft.commands ?? []).map((item, i) => i === index ? {
-              ...item, params: [...params, { name: nextName(params.map((param) => param.name), 'arg'), valueSchema: { type: 'string' }, required: false }],
+              ...item, params: [...params, { name: nextName(params.map((param) => param.name), 'arg'), valueSchema: { type: 'string' }, valueRequired: false }],
             } : item));
           }}><Plus size={12} /></button></div>
         {(command.params ?? []).map((param, paramIndex) => <div className="schema-item-main schema-param" key={paramIndex}>

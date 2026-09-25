@@ -50,6 +50,11 @@ function InlineAudioPreview({ nodeId, enabled }: { readonly nodeId: string; read
 
 export function StudioNodeView({ data, selected }: NodeProps<StudioFlowNode>) {
   const node = data.graphNode;
+  const execLabel = (runtimeName: string, direction: 'input' | 'output'): string | undefined => {
+    if (node.kind !== 'operator') return undefined;
+    const ports = direction === 'input' ? node.spec.execInPorts : node.spec.execOutPorts;
+    return ports?.find((port) => port.name === runtimeName)?.label;
+  };
   const showsVideoPreview = node.kind === 'operator' &&
     (node.operatorClass === 'f8.viz.video' || node.spec.rendererClass === 'viz_video');
   const showsAudioPreview = node.kind === 'operator' &&
@@ -84,7 +89,7 @@ export function StudioNodeView({ data, selected }: NodeProps<StudioFlowNode>) {
           <div className={`port-label port-${input?.kind ?? 'empty'}`}>
             {input !== undefined && <>
               <Handle id={input.portId} type="target" position={Position.Left} className={`port-handle port-handle-${input.kind}`} />
-              {commandName === null && <span title={`${input.kind} input`}>{inputOnlyStateControl ? inlineField.label ?? input.name : input.name}</span>}
+              {commandName === null && <span title={`${input.kind} input`}>{inputOnlyStateControl ? inlineField.label ?? input.name : input.kind === 'exec' ? execLabel(input.runtimeName, 'input') || input.name : input.name}</span>}
             </>}
           </div>
           <div className="port-control">
@@ -107,7 +112,7 @@ export function StudioNodeView({ data, selected }: NodeProps<StudioFlowNode>) {
           </div>
           <div className={`port-label port-output port-${output?.kind ?? 'empty'}`}>
             {output !== undefined && <>
-              {!sharedStateLabel && commandName === null && <span title={`${output.kind} output`}>{output.name}</span>}
+              {!sharedStateLabel && commandName === null && <span title={`${output.kind} output`}>{output.kind === 'exec' ? execLabel(output.runtimeName, 'output') || output.name : output.name}</span>}
               <Handle id={output.portId} type="source" position={Position.Right} className={`port-handle port-handle-${output.kind}`} />
             </>}
           </div>

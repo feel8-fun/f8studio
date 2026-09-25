@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import exec_port_specs
+
 import asyncio
 import inspect
 import logging
@@ -868,10 +870,10 @@ PythonScriptRuntimeNode.SPEC = F8OperatorSpec(
     label="Python Script",
     description="Execute Python code with onStart/onState/onMsg/onExec/onStop hooks.",
     tags=["script", "python", "programmable"],
-    execInPorts=["exec"],
-    execOutPorts=["exec"],
-    dataInPorts=[F8DataPortSpec(name="msg", description="Message input", valueSchema=any_schema(), required=False)],
-    dataOutPorts=[F8DataPortSpec(name="out", description="Script output", valueSchema=any_schema(), required=False)],
+    execInPorts=exec_port_specs(["exec"]),
+    execOutPorts=exec_port_specs(["exec"]),
+    dataInPorts=[F8DataPortSpec(name="msg", description="Message input", valueSchema=any_schema(), definitionProtected=False)],
+    dataOutPorts=[F8DataPortSpec(name="out", description="Script output", valueSchema=any_schema(), definitionProtected=False)],
     editPolicy=F8SpecEditPolicy(
         stateFields=editable_collection_edit_policy(),
         commands=editable_collection_edit_policy(),
@@ -888,7 +890,7 @@ PythonScriptRuntimeNode.SPEC = F8OperatorSpec(
             control=F8UiControlSpec(kind=F8UiControlKind.code, language="python"),
             valueSchema=string_schema(default=DEFAULT_CODE),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
             editorAssist=python_script_field_editor_assist_payload(),
         ),
@@ -904,7 +906,7 @@ PythonScriptRuntimeNode.SPEC = F8OperatorSpec(
                 enum=[INPUT_MODE_INPUT_VIEW, INPUT_MODE_RAW_DICT, INPUT_MODE_MSGSPEC_STRUCT],
             ),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
     ],

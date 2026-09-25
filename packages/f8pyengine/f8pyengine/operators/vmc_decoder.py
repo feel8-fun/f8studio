@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import exec_port_specs
+
 import asyncio
 import logging
 import math
@@ -676,8 +678,8 @@ VmcDecoderRuntimeNode.SPEC = F8OperatorSpec(
     label="VMC Decoder",
     description="Decodes udp_in packet payloads carrying VMC OSC messages into skeleton streams.",
     tags=["decode", "vmc", "osc", "skeleton", "mocap"],
-    execInPorts=["packet"],
-    execOutPorts=["packet"],
+    execInPorts=exec_port_specs(["packet"]),
+    execOutPorts=exec_port_specs(["packet"]),
     dataInPorts=[
         F8DataPortSpec(
             name="packet",
@@ -704,7 +706,7 @@ VmcDecoderRuntimeNode.SPEC = F8OperatorSpec(
             description="Remove models that haven't updated for this many ms (<=0 disables cleanup).",
             valueSchema=integer_schema(default=10000, minimum=0, maximum=60_000_000),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -713,7 +715,7 @@ VmcDecoderRuntimeNode.SPEC = F8OperatorSpec(
             description="If set and matches an available key, outputs `selectedSkeleton`; otherwise None.",
             valueSchema=string_schema(default=""),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             control=F8UiControlSpec(kind=F8UiControlKind.select, optionsFromState="availableKeys"),
             showOnNode=True,
         ),
@@ -723,7 +725,7 @@ VmcDecoderRuntimeNode.SPEC = F8OperatorSpec(
             description="Read-only list of current keys (updated only on changes).",
             valueSchema=array_schema(items=string_schema()),
             access=F8StateAccess.ro,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
     ],

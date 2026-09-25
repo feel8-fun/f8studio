@@ -233,7 +233,7 @@ SequencePlayerRuntimeNode.SPEC = F8OperatorSpec(
             valueSchema=_sequence_state_schema(),
             access=F8StateAccess.wo,
             showOnNode=True,
-            required=True,
+            valueRequired=True,
         ),
     ],
 )

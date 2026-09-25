@@ -6,6 +6,8 @@ Prefer importing generated protocol types and schema/spec helper functions from
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from ._specs.builtin_fields import (
     operator_state_fields_with_builtins,
     service_state_fields_with_builtins,
@@ -18,7 +20,7 @@ from ._specs.edit_policy import (
     can_delete_state_field,
     can_edit_existing,
     can_edit_state_field_access,
-    can_edit_state_field_required,
+    can_edit_state_field_value_required,
     can_edit_state_field_structure,
     can_edit_state_field_value_schema,
     can_rename_state_field,
@@ -26,7 +28,7 @@ from ._specs.edit_policy import (
     default_collection_edit_policy,
     default_spec_edit_policy,
     editable_collection_edit_policy,
-    is_required_state_field,
+    is_value_required_state_field,
     spec_edit_policy,
 )
 from ._specs.metadata import (
@@ -103,6 +105,7 @@ from .generated import (
     F8DynamicBindingsOutputsSpec,
     F8DynamicBindingsSpec,
     F8DynamicBindingsStatesSpec,
+    F8ExecPortSpec,
     F8Edge,
     F8EdgeDirection,
     F8EdgeKindEnum,
@@ -230,6 +233,8 @@ __all__ = [
     "F8DynamicBindingsOutputsSpec",
     "F8DynamicBindingsSpec",
     "F8DynamicBindingsStatesSpec",
+    "F8ExecPortSpec",
+    "exec_port_specs",
     "F8Edge",
     "F8EdgeDirection",
     "F8EdgeKindEnum",
@@ -328,7 +333,7 @@ __all__ = [
     "can_delete_state_field",
     "can_edit_existing",
     "can_edit_state_field_access",
-    "can_edit_state_field_required",
+    "can_edit_state_field_value_required",
     "can_edit_state_field_structure",
     "can_edit_state_field_value_schema",
     "can_rename_state_field",
@@ -343,7 +348,7 @@ __all__ = [
     "default_spec_edit_policy",
     "editable_collection_edit_policy",
     "integer_schema",
-    "is_required_state_field",
+    "is_value_required_state_field",
     "json_data_port",
     "number_schema",
     "operator_state_fields_with_builtins",
@@ -359,3 +364,7 @@ __all__ = [
     "video_frame_port",
     "video_frame_schema",
 ]
+
+
+def exec_port_specs(names: Sequence[str]) -> list[F8ExecPortSpec]:
+    return [F8ExecPortSpec(name=name) for name in names]

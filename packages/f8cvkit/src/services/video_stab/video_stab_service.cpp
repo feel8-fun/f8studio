@@ -957,7 +957,7 @@ json VideoStabService::describe() {
       state_field("stabilizationMode", schema_string_enum({"trajectory", "instant"}, "trajectory"), "rw",
                   "Stabilization Mode", "trajectory=smooth accumulated path; instant=smooth per-frame motion.", false),
       state_field("smoothAlpha", schema_number(0.15, 0.01, 0.5), "rw", "Smooth Alpha",
-                  "EMA alpha used for motion smoothing.", false, "slider"),
+                  "EMA alpha used for motion smoothing.", false, json{{"kind", "slider"}}),
       state_field("maxCornerCount", schema_integer(300, 20, 2000), "rw", "Max Corner Count", "LK feature count."),
       state_field("qualityLevel", schema_number(0.01, 0.0001, 0.3), "rw", "Quality Level",
                   "goodFeaturesToTrack quality level."),

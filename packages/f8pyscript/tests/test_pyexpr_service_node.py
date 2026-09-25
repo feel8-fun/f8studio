@@ -48,7 +48,7 @@ def _expr_node(
 
 
 def _any_port(name: str) -> F8DataPortSpec:
-    return F8DataPortSpec(name=name, description="", valueSchema=any_schema(), required=False)
+    return F8DataPortSpec(name=name, description="", valueSchema=any_schema(), definitionProtected=False)
 
 
 def _monitor_error_message(bus: object) -> str:
@@ -72,20 +72,20 @@ class PyExprServiceNodeTests(unittest.IsolatedAsyncioTestCase):
         spec = reg.describe(EXPR_SERVICE_CLASS).service
         state_fields = {str(field.name or ""): field for field in list(spec.stateFields or [])}
         self.assertIn("code", state_fields)
-        self.assertTrue(bool(state_fields["code"].required))
+        self.assertTrue(bool(state_fields["code"].valueRequired))
         self.assertIn("allowNumpy", state_fields)
-        self.assertTrue(bool(state_fields["allowNumpy"].required))
+        self.assertTrue(bool(state_fields["allowNumpy"].valueRequired))
         self.assertIn("unpackDictOutputs", state_fields)
-        self.assertTrue(bool(state_fields["unpackDictOutputs"].required))
+        self.assertTrue(bool(state_fields["unpackDictOutputs"].valueRequired))
         self.assertNotIn("lastError", state_fields)
         data_in_ports = {str(port.name or ""): port for port in list(spec.dataInPorts or [])}
         data_out_ports = {str(port.name or ""): port for port in list(spec.dataOutPorts or [])}
         self.assertIn("msg", data_in_ports)
-        self.assertFalse(bool(data_in_ports["msg"].required))
+        self.assertFalse(bool(data_in_ports["msg"].definitionProtected))
         self.assertIn("out", data_out_ports)
-        self.assertFalse(bool(data_out_ports["out"].required))
+        self.assertFalse(bool(data_out_ports["out"].definitionProtected))
         self.assertIn("monitor", data_out_ports)
-        self.assertTrue(bool(data_out_ports["monitor"].required))
+        self.assertTrue(bool(data_out_ports["monitor"].definitionProtected))
 
     async def test_core_expression_evaluation_on_data(self) -> None:
         harness = ServiceBusHarness()

@@ -203,7 +203,7 @@ class RecorderReplayerTests(unittest.IsolatedAsyncioTestCase):
                 description="Custom sparse state.",
                 valueSchema=integer_schema(),
                 access=F8StateAccess.rw,
-                required=False,
+                valueRequired=False,
                 showOnNode=True,
             )
         )
@@ -216,7 +216,7 @@ class RecorderReplayerTests(unittest.IsolatedAsyncioTestCase):
             stateValues={"path": path, "enabled": True, "append": True},
             execInPorts=["record"],
             execOutPorts=[],
-            dataInPorts=[F8DataPortSpec(name=name, description="", valueSchema=any_schema(), required=False) for name in list(data_ports or ["a", "b"])],
+            dataInPorts=[F8DataPortSpec(name=name, description="", valueSchema=any_schema(), definitionProtected=False) for name in list(data_ports or ["a", "b"])],
             dataOutPorts=[],
         )
 
@@ -229,12 +229,12 @@ class RecorderReplayerTests(unittest.IsolatedAsyncioTestCase):
                 description="Replayed sparse state.",
                 valueSchema=integer_schema(),
                 access=F8StateAccess.rw,
-                required=False,
+                valueRequired=False,
                 showOnNode=True,
             )
         )
         data_out_ports = list(ReplayerRuntimeNode.SPEC.dataOutPorts or [])
-        data_out_ports.append(F8DataPortSpec(name="outA", description="", valueSchema=any_schema(), required=False))
+        data_out_ports.append(F8DataPortSpec(name="outA", description="", valueSchema=any_schema(), definitionProtected=False))
         return F8RuntimeNode(
             nodeId=node_id,
             serviceId="svcA",
@@ -256,8 +256,8 @@ class RecorderReplayerTests(unittest.IsolatedAsyncioTestCase):
             operatorClass=_PASSIVE_SINK_OPERATOR_CLASS,
             stateFields=[],
             dataInPorts=[
-                F8DataPortSpec(name="outA", description="", valueSchema=any_schema(), required=False),
-                F8DataPortSpec(name="positionMs", description="", valueSchema=any_schema(), required=False),
+                F8DataPortSpec(name="outA", description="", valueSchema=any_schema(), definitionProtected=False),
+                F8DataPortSpec(name="positionMs", description="", valueSchema=any_schema(), definitionProtected=False),
             ],
             dataOutPorts=[],
             execInPorts=[],
@@ -271,7 +271,7 @@ class RecorderReplayerTests(unittest.IsolatedAsyncioTestCase):
             serviceClass=SERVICE_CLASS,
             operatorClass=_PULL_PROBE_OPERATOR_CLASS,
             stateFields=[],
-            dataInPorts=[F8DataPortSpec(name="value", description="", valueSchema=any_schema(), required=False)],
+            dataInPorts=[F8DataPortSpec(name="value", description="", valueSchema=any_schema(), definitionProtected=False)],
             dataOutPorts=[],
             execInPorts=["exec"],
             execOutPorts=[],

@@ -178,7 +178,8 @@ json data_expr_spec() {
               {"dataOutPorts", json::array({data_port("out", "Expression result.", any_schema(), false, true)})},
               {"editPolicy", json{{"dataInPorts", editable_collection_policy()}, {"dataOutPorts", editable_collection_policy()}}},
               {"stateFields", json::array({state_field("code", "Expr", "Scalar expression. Reference numeric input port names directly.",
-                                                      string_schema("x"), "rw", true, true, "wrapline[cpp]")})}};
+                                                      string_schema("x"), "rw", true, true,
+                                                      json{{"kind", "textarea"}, {"language", "cpp"}})})}};
 }
 
 }  // namespace

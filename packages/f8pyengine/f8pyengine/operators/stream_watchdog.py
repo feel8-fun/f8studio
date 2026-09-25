@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import exec_port_specs
+
 from typing import Any
 
 from f8pysdk.f8_naming import ensure_token
@@ -135,8 +137,8 @@ StreamWatchdogRuntimeNode.SPEC = F8OperatorSpec(
     label="Stream Watchdog",
     description="Invalidate stale timestamped data and gate exec flow when a stream stops.",
     tags=["stream", "watchdog", "safety", "timeout", "gate"],
-    execInPorts=["check"],
-    execOutPorts=["valid"],
+    execInPorts=exec_port_specs(["check"]),
+    execOutPorts=exec_port_specs(["valid"]),
     dataInPorts=[F8DataPortSpec(name="value", description="Timestamped stream value.", valueSchema=any_schema())],
     dataOutPorts=[
         F8DataPortSpec(name="value", description="Input while fresh, otherwise None.", valueSchema=any_schema()),
@@ -162,7 +164,7 @@ StreamWatchdogRuntimeNode.SPEC = F8OperatorSpec(
             description="Maximum input age before output and exec flow are blocked.",
             valueSchema=integer_schema(default=250, minimum=10, maximum=60_000),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         )
     ],

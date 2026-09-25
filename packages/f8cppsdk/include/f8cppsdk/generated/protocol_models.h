@@ -586,7 +586,7 @@ struct F8DataPortSpec {
   std::optional<F8DataPayloadSpec> payload;
   std::optional<F8DataStreamSpec> stream;
   std::optional<std::string> description;
-  std::optional<bool> required;
+  std::optional<bool> definitionProtected;
   std::optional<bool> showOnNode;
   std::optional<F8DataPortPayloadKind> payloadKind;
   std::optional<F8DataPortDelivery> delivery;
@@ -604,7 +604,7 @@ inline bool parse_F8DataPortSpec(const nlohmann::json& j, F8DataPortSpec& out, P
     F8DataStreamSpec tmp; ParseError e2; if (parse_F8DataStreamSpec(j["stream"], tmp, e2)) out.stream = std::move(tmp);
   }
   out.description = _get_str_opt(j, "description");
-  if (j.contains("required") && j["required"].is_boolean()) out.required = j["required"].get<bool>();
+  if (j.contains("definitionProtected") && j["definitionProtected"].is_boolean()) out.definitionProtected = j["definitionProtected"].get<bool>();
   if (j.contains("showOnNode") && j["showOnNode"].is_boolean()) out.showOnNode = j["showOnNode"].get<bool>();
   if (auto s2 = _get_str_opt(j, "payloadKind")) out.payloadKind = parse_F8DataPortPayloadKind(*s2);
   if (auto s2 = _get_str_opt(j, "delivery")) out.delivery = parse_F8DataPortDelivery(*s2);
@@ -768,6 +768,22 @@ inline bool parse_F8Edge(const nlohmann::json& j, F8Edge& out, ParseError& err) 
   if (j.contains("queueSize") && j["queueSize"].is_number_integer()) out.queueSize = j["queueSize"].get<std::int64_t>();
   if (j.contains("timeoutMs") && j["timeoutMs"].is_number_integer()) out.timeoutMs = j["timeoutMs"].get<std::int64_t>();
   if (auto s2 = _get_str_opt(j, "direction")) out.direction = parse_F8EdgeDirection(*s2);
+  return true;
+}
+
+struct F8ExecPortSpec {
+  std::string name;
+  std::optional<std::string> label;
+  std::optional<std::string> description;
+  std::optional<bool> definitionProtected;
+};
+
+inline bool parse_F8ExecPortSpec(const nlohmann::json& j, F8ExecPortSpec& out, ParseError& err) {
+  if (!j.is_object()) { err.code="INVALID_SCHEMA"; err.message="object expected"; return false; }
+  if (!_get_str_req(j, "name", out.name, err)) return false;
+  out.label = _get_str_opt(j, "label");
+  out.description = _get_str_opt(j, "description");
+  if (j.contains("definitionProtected") && j["definitionProtected"].is_boolean()) out.definitionProtected = j["definitionProtected"].get<bool>();
   return true;
 }
 
@@ -1117,22 +1133,6 @@ inline bool parse_F8MonitorReport(const nlohmann::json& j, F8MonitorReport& out,
   return true;
 }
 
-struct F8NodeUiOverridePatch {
-  std::optional<bool> showOnNode;
-  std::optional<std::string> uiControl;
-  std::optional<std::string> label;
-  std::optional<std::string> description;
-};
-
-inline bool parse_F8NodeUiOverridePatch(const nlohmann::json& j, F8NodeUiOverridePatch& out, ParseError& err) {
-  if (!j.is_object()) { err.code="INVALID_SCHEMA"; err.message="object expected"; return false; }
-  if (j.contains("showOnNode") && j["showOnNode"].is_boolean()) out.showOnNode = j["showOnNode"].get<bool>();
-  out.uiControl = _get_str_opt(j, "uiControl");
-  out.label = _get_str_opt(j, "label");
-  out.description = _get_str_opt(j, "description");
-  return true;
-}
-
 struct F8NodeUiOverrides {
   nlohmann::json stateFields = nlohmann::json::object();
   nlohmann::json commands = nlohmann::json::object();
@@ -1431,7 +1431,7 @@ inline bool parse_F8SpecEditPolicy(const nlohmann::json& j, F8SpecEditPolicy& ou
 struct F8StateFieldEditPolicy {
   std::optional<bool> canRename;
   std::optional<bool> canEditAccess;
-  std::optional<bool> canEditRequired;
+  std::optional<bool> canEditValueRequired;
   std::optional<bool> canEditValueSchema;
 };
 
@@ -1439,7 +1439,7 @@ inline bool parse_F8StateFieldEditPolicy(const nlohmann::json& j, F8StateFieldEd
   if (!j.is_object()) { err.code="INVALID_SCHEMA"; err.message="object expected"; return false; }
   if (j.contains("canRename") && j["canRename"].is_boolean()) out.canRename = j["canRename"].get<bool>();
   if (j.contains("canEditAccess") && j["canEditAccess"].is_boolean()) out.canEditAccess = j["canEditAccess"].get<bool>();
-  if (j.contains("canEditRequired") && j["canEditRequired"].is_boolean()) out.canEditRequired = j["canEditRequired"].get<bool>();
+  if (j.contains("canEditValueRequired") && j["canEditValueRequired"].is_boolean()) out.canEditValueRequired = j["canEditValueRequired"].get<bool>();
   if (j.contains("canEditValueSchema") && j["canEditValueSchema"].is_boolean()) out.canEditValueSchema = j["canEditValueSchema"].get<bool>();
   return true;
 }
@@ -1573,8 +1573,7 @@ struct F8CommandParam {
   std::string name;
   std::optional<std::string> description;
   nlohmann::json valueSchema = nlohmann::json::object();
-  std::optional<bool> required;
-  std::optional<std::string> uiControl;
+  std::optional<bool> valueRequired;
   std::optional<F8UiControlSpec> control;
 };
 
@@ -1584,8 +1583,7 @@ inline bool parse_F8CommandParam(const nlohmann::json& j, F8CommandParam& out, P
   out.description = _get_str_opt(j, "description");
   if (!j.contains("valueSchema")) { err.code="INVALID_SCHEMA"; err.message="missing required"; return false; }
   out.valueSchema = j["valueSchema"];
-  if (j.contains("required") && j["required"].is_boolean()) out.required = j["required"].get<bool>();
-  out.uiControl = _get_str_opt(j, "uiControl");
+  if (j.contains("valueRequired") && j["valueRequired"].is_boolean()) out.valueRequired = j["valueRequired"].get<bool>();
   if (j.contains("control") && j["control"].is_object()) {
     F8UiControlSpec tmp; ParseError e2; if (parse_F8UiControlSpec(j["control"], tmp, e2)) out.control = std::move(tmp);
   }
@@ -1595,7 +1593,7 @@ inline bool parse_F8CommandParam(const nlohmann::json& j, F8CommandParam& out, P
 struct F8Command {
   std::string name;
   std::optional<std::string> description;
-  std::optional<bool> required;
+  std::optional<bool> definitionProtected;
   std::optional<bool> showOnNode;
   std::optional<std::vector<F8CommandParam>> params;
 };
@@ -1604,7 +1602,7 @@ inline bool parse_F8Command(const nlohmann::json& j, F8Command& out, ParseError&
   if (!j.is_object()) { err.code="INVALID_SCHEMA"; err.message="object expected"; return false; }
   if (!_get_str_req(j, "name", out.name, err)) return false;
   out.description = _get_str_opt(j, "description");
-  if (j.contains("required") && j["required"].is_boolean()) out.required = j["required"].get<bool>();
+  if (j.contains("definitionProtected") && j["definitionProtected"].is_boolean()) out.definitionProtected = j["definitionProtected"].get<bool>();
   if (j.contains("showOnNode") && j["showOnNode"].is_boolean()) out.showOnNode = j["showOnNode"].get<bool>();
   if (j.contains("params") && j["params"].is_array()) {
     std::vector<F8CommandParam> vec; vec.reserve(j["params"].size());
@@ -1614,15 +1612,32 @@ inline bool parse_F8Command(const nlohmann::json& j, F8Command& out, ParseError&
   return true;
 }
 
+struct F8NodeUiOverridePatch {
+  std::optional<bool> showOnNode;
+  std::optional<F8UiControlSpec> control;
+  std::optional<std::string> label;
+  std::optional<std::string> description;
+};
+
+inline bool parse_F8NodeUiOverridePatch(const nlohmann::json& j, F8NodeUiOverridePatch& out, ParseError& err) {
+  if (!j.is_object()) { err.code="INVALID_SCHEMA"; err.message="object expected"; return false; }
+  if (j.contains("showOnNode") && j["showOnNode"].is_boolean()) out.showOnNode = j["showOnNode"].get<bool>();
+  if (j.contains("control") && j["control"].is_object()) {
+    F8UiControlSpec tmp; ParseError e2; if (parse_F8UiControlSpec(j["control"], tmp, e2)) out.control = std::move(tmp);
+  }
+  out.label = _get_str_opt(j, "label");
+  out.description = _get_str_opt(j, "description");
+  return true;
+}
+
 struct F8StateSpec {
   std::string name;
   std::optional<std::string> label;
   std::optional<std::string> description;
   nlohmann::json valueSchema = nlohmann::json::object();
   F8StateAccess access;
-  std::optional<bool> required;
+  std::optional<bool> valueRequired;
   std::optional<F8StateFieldEditPolicy> editPolicy;
-  std::optional<std::string> uiControl;
   std::optional<F8UiControlSpec> control;
   std::optional<bool> showOnNode;
   std::optional<bool> redactOnPublish;
@@ -1638,11 +1653,10 @@ inline bool parse_F8StateSpec(const nlohmann::json& j, F8StateSpec& out, ParseEr
   out.valueSchema = j["valueSchema"];
   { std::string s; if (!_get_str_req(j, "access", s, err)) return false;
     auto v = parse_F8StateAccess(s); if (!v) { err.code="INVALID_SCHEMA"; err.message="invalid enum"; return false; } out.access = *v; }
-  if (j.contains("required") && j["required"].is_boolean()) out.required = j["required"].get<bool>();
+  if (j.contains("valueRequired") && j["valueRequired"].is_boolean()) out.valueRequired = j["valueRequired"].get<bool>();
   if (j.contains("editPolicy") && j["editPolicy"].is_object()) {
     F8StateFieldEditPolicy tmp; ParseError e2; if (parse_F8StateFieldEditPolicy(j["editPolicy"], tmp, e2)) out.editPolicy = std::move(tmp);
   }
-  out.uiControl = _get_str_opt(j, "uiControl");
   if (j.contains("control") && j["control"].is_object()) {
     F8UiControlSpec tmp; ParseError e2; if (parse_F8UiControlSpec(j["control"], tmp, e2)) out.control = std::move(tmp);
   }
@@ -1669,8 +1683,8 @@ struct F8OperatorSpec {
   std::optional<std::vector<F8StateSpec>> stateFields;
   std::optional<F8SpecEditPolicy> editPolicy;
   std::optional<std::vector<F8Command>> commands;
-  std::optional<std::vector<std::string>> execInPorts;
-  std::optional<std::vector<std::string>> execOutPorts;
+  std::optional<std::vector<F8ExecPortSpec>> execInPorts;
+  std::optional<std::vector<F8ExecPortSpec>> execOutPorts;
   std::optional<std::vector<F8DataPortSpec>> dataInPorts;
   std::optional<std::vector<F8DataPortSpec>> dataOutPorts;
 };
@@ -1706,13 +1720,13 @@ inline bool parse_F8OperatorSpec(const nlohmann::json& j, F8OperatorSpec& out, P
     out.commands = std::move(vec);
   }
   if (j.contains("execInPorts") && j["execInPorts"].is_array()) {
-    std::vector<std::string> vec; vec.reserve(j["execInPorts"].size());
-    for (const auto& it : j["execInPorts"]) if (it.is_string()) vec.push_back(it.get<std::string>());
+    std::vector<F8ExecPortSpec> vec; vec.reserve(j["execInPorts"].size());
+    for (const auto& it : j["execInPorts"]) { F8ExecPortSpec tmp; ParseError e2; if (parse_F8ExecPortSpec(it, tmp, e2)) vec.push_back(std::move(tmp)); }
     out.execInPorts = std::move(vec);
   }
   if (j.contains("execOutPorts") && j["execOutPorts"].is_array()) {
-    std::vector<std::string> vec; vec.reserve(j["execOutPorts"].size());
-    for (const auto& it : j["execOutPorts"]) if (it.is_string()) vec.push_back(it.get<std::string>());
+    std::vector<F8ExecPortSpec> vec; vec.reserve(j["execOutPorts"].size());
+    for (const auto& it : j["execOutPorts"]) { F8ExecPortSpec tmp; ParseError e2; if (parse_F8ExecPortSpec(it, tmp, e2)) vec.push_back(std::move(tmp)); }
     out.execOutPorts = std::move(vec);
   }
   if (j.contains("dataInPorts") && j["dataInPorts"].is_array()) {
@@ -1826,7 +1840,6 @@ struct F8ServiceSpec {
   std::optional<std::vector<F8Command>> commands;
   std::optional<std::vector<F8DataPortSpec>> dataInPorts;
   std::optional<std::vector<F8DataPortSpec>> dataOutPorts;
-  std::optional<F8ServiceLaunchSpec> launch;
 };
 
 inline bool parse_F8ServiceSpec(const nlohmann::json& j, F8ServiceSpec& out, ParseError& err) {
@@ -1867,9 +1880,6 @@ inline bool parse_F8ServiceSpec(const nlohmann::json& j, F8ServiceSpec& out, Par
     std::vector<F8DataPortSpec> vec; vec.reserve(j["dataOutPorts"].size());
     for (const auto& it : j["dataOutPorts"]) { F8DataPortSpec tmp; ParseError e2; if (parse_F8DataPortSpec(it, tmp, e2)) vec.push_back(std::move(tmp)); }
     out.dataOutPorts = std::move(vec);
-  }
-  if (j.contains("launch") && j["launch"].is_object()) {
-    F8ServiceLaunchSpec tmp; ParseError e2; if (parse_F8ServiceLaunchSpec(j["launch"], tmp, e2)) out.launch = std::move(tmp);
   }
   return true;
 }

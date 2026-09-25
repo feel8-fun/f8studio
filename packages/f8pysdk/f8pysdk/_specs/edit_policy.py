@@ -82,8 +82,8 @@ def can_edit_existing(spec: SpecLike, collection: EditableCollectionName) -> boo
     return bool(collection_edit_policy(spec, collection).canEditExisting)
 
 
-def is_required_state_field(field: F8StateSpec) -> bool:
-    return bool(field.required)
+def is_value_required_state_field(field: F8StateSpec) -> bool:
+    return bool(field.valueRequired)
 
 
 def _state_field_edit_policy_or_none(field: F8StateSpec) -> F8StateFieldEditPolicy | None:
@@ -119,11 +119,11 @@ def can_edit_state_field_access(field: F8StateSpec) -> bool:
     return override
 
 
-def can_edit_state_field_required(field: F8StateSpec) -> bool:
+def can_edit_state_field_value_required(field: F8StateSpec) -> bool:
     policy = _state_field_edit_policy_or_none(field)
     if policy is None:
         return True
-    override = _policy_bool(policy.canEditRequired)
+    override = _policy_bool(policy.canEditValueRequired)
     if override is None:
         return True
     return override
@@ -147,7 +147,7 @@ def can_edit_state_field_structure(field: F8StateSpec) -> bool:
     return bool(
         can_rename_state_field(field)
         and can_edit_state_field_access(field)
-        and can_edit_state_field_required(field)
+        and can_edit_state_field_value_required(field)
     )
 
 
@@ -159,7 +159,7 @@ __all__ = [
     "can_delete",
     "can_edit_existing",
     "can_edit_state_field_access",
-    "can_edit_state_field_required",
+    "can_edit_state_field_value_required",
     "can_edit_state_field_structure",
     "can_edit_state_field_value_schema",
     "can_rename_state_field",
@@ -167,6 +167,6 @@ __all__ = [
     "default_collection_edit_policy",
     "default_spec_edit_policy",
     "editable_collection_edit_policy",
-    "is_required_state_field",
+    "is_value_required_state_field",
     "spec_edit_policy",
 ]

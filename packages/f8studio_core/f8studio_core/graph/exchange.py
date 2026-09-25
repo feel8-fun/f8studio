@@ -20,7 +20,7 @@ from .validation import validate_document
 
 
 EXCHANGE_FORMAT = "f8graph"
-EXCHANGE_VERSION = 2
+EXCHANGE_VERSION = 3
 
 
 class ExchangeMetadata(msgspec.Struct, frozen=True, kw_only=True, rename="camel", forbid_unknown_fields=True):

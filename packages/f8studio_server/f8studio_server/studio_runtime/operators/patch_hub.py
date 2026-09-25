@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import exec_port_specs
+
 from typing import Any
 
 import msgspec
@@ -27,12 +29,12 @@ RENDERER_CLASS = "patch_hub"
 
 
 def _coerce_port_spec(port: F8DataPortSpec | None, *, name: str) -> F8DataPortSpec:
-    base = port or F8DataPortSpec(name=name, valueSchema=any_schema(), required=False)
+    base = port or F8DataPortSpec(name=name, valueSchema=any_schema(), definitionProtected=False)
     return copy_model(
         base,
         update={
             "name": name,
-            "required": False,
+            "definitionProtected": False,
             "showOnNode": True,
             "valueSchema": base.valueSchema or any_schema(),
         },
@@ -46,9 +48,9 @@ def _coerce_state_terminal(field: F8StateSpec | None, *, name: str) -> F8StateSp
         update={
             "name": name,
             "access": F8StateAccess.rw,
-            "required": False,
+            "valueRequired": False,
             "showOnNode": True,
-            "uiControl": msgspec.UNSET,
+            "control": msgspec.UNSET,
             "valueSchema": base.valueSchema or any_schema(),
         },
     )
@@ -134,7 +136,7 @@ PatchHubRuntimeNode.SPEC = normalize_patch_hub_spec(
                 name="data",
                 description="Starter data terminal.",
                 valueSchema=any_schema(),
-                required=False,
+                definitionProtected=False,
                 showOnNode=True,
             )
         ],
@@ -143,12 +145,12 @@ PatchHubRuntimeNode.SPEC = normalize_patch_hub_spec(
                 name="data",
                 description="Starter data terminal.",
                 valueSchema=any_schema(),
-                required=False,
+                definitionProtected=False,
                 showOnNode=True,
             )
         ],
-        execInPorts=[],
-        execOutPorts=[],
+        execInPorts=exec_port_specs([]),
+        execOutPorts=exec_port_specs([]),
         stateFields=[
             F8StateSpec(
                 name="state",
@@ -156,7 +158,7 @@ PatchHubRuntimeNode.SPEC = normalize_patch_hub_spec(
                 description="Starter state terminal.",
                 valueSchema=any_schema(),
                 access=F8StateAccess.rw,
-                required=False,
+                valueRequired=False,
                 showOnNode=True,
             )
         ],

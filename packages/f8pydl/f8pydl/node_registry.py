@@ -101,7 +101,7 @@ def _video_input_port() -> F8DataPortSpec:
     return video_frame_port(
         name="video",
         description="Input video frame stream.",
-        required=True,
+        definition_protected=True,
     )
 
 
@@ -120,7 +120,7 @@ def _detection_sorter_state_fields() -> list[F8StateSpec]:
             ),
             valueSchema=string_schema(default="{}"),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             control=F8UiControlSpec(kind=F8UiControlKind.code, language="json"),
             showOnNode=False,
         ),
@@ -130,7 +130,7 @@ def _detection_sorter_state_fields() -> list[F8StateSpec]:
             description="Prefer larger scores first (desc) or smaller scores first (asc).",
             valueSchema=string_schema(default="desc", enum=["desc", "asc"]),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -139,7 +139,7 @@ def _detection_sorter_state_fields() -> list[F8StateSpec]:
             description="ROI reduction mode used to rank each bbox.",
             valueSchema=string_schema(default="mean", enum=["mean", "max", "sum", "median"]),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -151,7 +151,7 @@ def _detection_sorter_state_fields() -> list[F8StateSpec]:
             ),
             valueSchema=number_schema(default=0.0, minimum=0.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
     ]
@@ -170,7 +170,7 @@ def _common_state_fields(
             description="Directory containing *.yaml + *.onnx model files. Reset to the default relative path when exporting publish JSON.",
             valueSchema=string_schema(default="services/f8/dl/weights"),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
             redactOnPublish=True,
         ),
@@ -180,7 +180,7 @@ def _common_state_fields(
             description="Model id selected from weightsDir (ignored if modelYamlPath is set).",
             valueSchema=string_schema(default=""),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             control=F8UiControlSpec(kind=F8UiControlKind.select, optionsFromState="availableModels"),
             showOnNode=True,
         ),
@@ -190,7 +190,7 @@ def _common_state_fields(
             description="Optional explicit model yaml path (overrides modelId). Cleared when exporting publish JSON.",
             valueSchema=string_schema(default=""),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
             redactOnPublish=True,
         ),
@@ -200,7 +200,7 @@ def _common_state_fields(
             description="auto prefers CUDAExecutionProvider when available.",
             valueSchema=string_schema(default="auto", enum=["auto", "cuda", "cpu"]),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -209,7 +209,7 @@ def _common_state_fields(
             description="When model file is missing, download from onnxUrl in model yaml.",
             valueSchema=boolean_schema(default=True),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -218,7 +218,7 @@ def _common_state_fields(
             description="Run model inference every N frames (>=1).",
             valueSchema=integer_schema(default=1, minimum=1, maximum=10000),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
     ]
@@ -231,7 +231,7 @@ def _common_state_fields(
                     description="Override confidence threshold (negative uses model yaml).",
                     valueSchema=number_schema(default=-1.0),
                     access=F8StateAccess.rw,
-                    required=True,
+                    valueRequired=True,
                     showOnNode=False,
                 ),
                 F8StateSpec(
@@ -240,7 +240,7 @@ def _common_state_fields(
                     description="Override IoU threshold for NMS (negative uses model yaml).",
                     valueSchema=number_schema(default=-1.0),
                     access=F8StateAccess.rw,
-                    required=True,
+                    valueRequired=True,
                     showOnNode=False,
                 ),
             ]
@@ -253,7 +253,7 @@ def _common_state_fields(
                 description="Number of top classes to emit.",
                 valueSchema=integer_schema(default=5, minimum=1, maximum=100),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=True,
             )
         )
@@ -266,7 +266,7 @@ def _common_state_fields(
                     description="Optional class whitelist for output. Empty means all classes.",
                     valueSchema=array_schema(items=string_schema(), default=[]),
                     access=F8StateAccess.rw,
-                    required=True,
+                    valueRequired=True,
                     control=F8UiControlSpec(kind=F8UiControlKind.multiselect, optionsFromState="modelClasses"),
                     showOnNode=False,
                 ),
@@ -276,7 +276,7 @@ def _common_state_fields(
                     description="Per-class top-K by score (<=0 means unlimited).",
                     valueSchema=integer_schema(default=0, minimum=0, maximum=10000),
                     access=F8StateAccess.rw,
-                    required=True,
+                    valueRequired=True,
                     showOnNode=True,
                 ),
                 F8StateSpec(
@@ -285,7 +285,7 @@ def _common_state_fields(
                     description="Current loaded model class labels.",
                     valueSchema=array_schema(items=string_schema(), default=[]),
                     access=F8StateAccess.ro,
-                    required=True,
+                    valueRequired=True,
                     showOnNode=False,
                 )
             ]
@@ -297,7 +297,7 @@ def _common_state_fields(
             description="List of model ids discovered from weightsDir.",
             valueSchema=array_schema(items=string_schema(), default=[]),
             access=F8StateAccess.ro,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         )
     )
@@ -310,7 +310,7 @@ def _common_state_fields(
                 description="Current loaded model id/task.",
                 valueSchema=string_schema(default=""),
                 access=F8StateAccess.ro,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
             F8StateSpec(
@@ -319,7 +319,7 @@ def _common_state_fields(
                 description="JSON list of active ONNX Runtime providers for this session.",
                 valueSchema=string_schema(default=""),
                 access=F8StateAccess.ro,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
         ]
@@ -335,7 +335,7 @@ def _optflow_state_fields() -> list[F8StateSpec]:
             description="Compute optical flow once per N new frames.",
             valueSchema=integer_schema(default=2, minimum=1, maximum=120),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -344,7 +344,7 @@ def _optflow_state_fields() -> list[F8StateSpec]:
             description="Directory containing *.yaml + *.onnx model files. Reset to the default relative path when exporting publish JSON.",
             valueSchema=string_schema(default="services/f8/dl/weights"),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
             redactOnPublish=True,
         ),
@@ -354,7 +354,7 @@ def _optflow_state_fields() -> list[F8StateSpec]:
             description="Model id selected from weightsDir (ignored if modelYamlPath is set).",
             valueSchema=string_schema(default=""),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             control=F8UiControlSpec(kind=F8UiControlKind.select, optionsFromState="availableModels"),
             showOnNode=False,
         ),
@@ -364,7 +364,7 @@ def _optflow_state_fields() -> list[F8StateSpec]:
             description="Optional explicit model yaml path (overrides modelId). Cleared when exporting publish JSON.",
             valueSchema=string_schema(default=""),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
             redactOnPublish=True,
         ),
@@ -374,7 +374,7 @@ def _optflow_state_fields() -> list[F8StateSpec]:
             description="auto prefers CUDAExecutionProvider when available.",
             valueSchema=string_schema(default="auto", enum=["auto", "cuda", "cpu"]),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -383,7 +383,7 @@ def _optflow_state_fields() -> list[F8StateSpec]:
             description="When model file is missing, download from onnxUrl in model yaml.",
             valueSchema=boolean_schema(default=True),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -392,7 +392,7 @@ def _optflow_state_fields() -> list[F8StateSpec]:
             description="List of model ids discovered from weightsDir.",
             valueSchema=array_schema(items=string_schema(), default=[]),
             access=F8StateAccess.ro,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -401,7 +401,7 @@ def _optflow_state_fields() -> list[F8StateSpec]:
             description="Current loaded model id/task.",
             valueSchema=string_schema(default=""),
             access=F8StateAccess.ro,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -410,7 +410,7 @@ def _optflow_state_fields() -> list[F8StateSpec]:
             description="JSON list of active ONNX Runtime providers for this session.",
             valueSchema=string_schema(default=""),
             access=F8StateAccess.ro,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -419,7 +419,7 @@ def _optflow_state_fields() -> list[F8StateSpec]:
             description="Flow payload format. Fixed to flow2_f16.",
             valueSchema=string_schema(default="flow2_f16", enum=["flow2_f16"]),
             access=F8StateAccess.ro,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
     ]
@@ -439,7 +439,7 @@ def _tcn_wave_state_fields() -> list[F8StateSpec]:
                 description="Denormalization scale applied to raw model output values.",
                 valueSchema=number_schema(default=10.0),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
             F8StateSpec(
@@ -448,7 +448,7 @@ def _tcn_wave_state_fields() -> list[F8StateSpec]:
                 description="Denormalization bias applied after outputScale.",
                 valueSchema=number_schema(default=0.0),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
         ]
@@ -463,7 +463,7 @@ def _tcn_wave_state_fields() -> list[F8StateSpec]:
             ),
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         )
     )
@@ -619,7 +619,7 @@ def _register_optflow(registry: Registry) -> None:
                 video_frame_port(
                     name="flow",
                     description="Dense optical-flow frame stream.",
-                    required=True,
+                    definition_protected=True,
                 ),
             ],
         ),
@@ -645,12 +645,12 @@ def _register_detection_sorter(registry: Registry) -> None:
                     name="detections",
                     description="Detection input in schema f8visionDetections/1.",
                     valueSchema=_detections_payload_schema(),
-                    required=True,
+                    definitionProtected=True,
                 ),
                 video_frame_port(
                     name="score",
                     description="Scalar or flow score-map frame stream used to rank detections.",
-                    required=True,
+                    definition_protected=True,
                 ),
             ],
             dataOutPorts=[
@@ -658,7 +658,7 @@ def _register_detection_sorter(registry: Registry) -> None:
                     name="detections",
                     description="Sorted detections in schema f8visionDetections/1.",
                     valueSchema=_detections_payload_schema(),
-                    required=True,
+                    definitionProtected=True,
                 ),
             ],
         ),

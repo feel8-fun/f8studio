@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import exec_port_specs
+
 from typing import Any
 
 from f8pysdk.codec import coerce_flag
@@ -53,8 +55,8 @@ class ValueStepperRuntimeNode(OperatorNode):
         tags=["studio", "state", "stepper", "slider", "hotkey"],
         dataInPorts=[],
         dataOutPorts=[],
-        execInPorts=[],
-        execOutPorts=[],
+        execInPorts=exec_port_specs([]),
+        execOutPorts=exec_port_specs([]),
         rendererClass="default_op",
         editPolicy=F8SpecEditPolicy(
             stateFields=F8CollectionEditPolicy(canAdd=False, canDelete=False, canEditExisting=True)
@@ -66,7 +68,7 @@ class ValueStepperRuntimeNode(OperatorNode):
                 description="Current output value after clamp and trigger processing.",
                 valueSchema=number_schema(default=0.0),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 control=F8UiControlSpec(kind=F8UiControlKind.slider),
                 showOnNode=True,
             ),
@@ -76,7 +78,7 @@ class ValueStepperRuntimeNode(OperatorNode):
                 description="Lower clamp bound.",
                 valueSchema=number_schema(default=0.0),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
             F8StateSpec(
@@ -85,7 +87,7 @@ class ValueStepperRuntimeNode(OperatorNode):
                 description="Upper clamp bound.",
                 valueSchema=number_schema(default=1.0),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
             F8StateSpec(
@@ -94,7 +96,7 @@ class ValueStepperRuntimeNode(OperatorNode):
                 description="Fixed increment/decrement size.",
                 valueSchema=number_schema(default=0.01, minimum=0.0),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
             F8StateSpec(
@@ -103,7 +105,7 @@ class ValueStepperRuntimeNode(OperatorNode):
                 description="When enabled, trigger steps wrap around the min/max range instead of clamping.",
                 valueSchema=boolean_schema(default=False),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 control=F8UiControlSpec(kind=F8UiControlKind.toggle),
                 showOnNode=False,
             ),
@@ -113,7 +115,7 @@ class ValueStepperRuntimeNode(OperatorNode):
                 description="Increment trigger input, typically driven by a button state edge.",
                 valueSchema=integer_schema(default=0),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 control=F8UiControlSpec(kind=F8UiControlKind.button),
                 showOnNode=False,
             ),
@@ -123,7 +125,7 @@ class ValueStepperRuntimeNode(OperatorNode):
                 description="Decrement trigger input, typically driven by a button state edge.",
                 valueSchema=integer_schema(default=0),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 control=F8UiControlSpec(kind=F8UiControlKind.button),
                 showOnNode=False,
             ),
@@ -133,7 +135,7 @@ class ValueStepperRuntimeNode(OperatorNode):
                 description="How trigger presses choose between the fixed and accelerated step sizes.",
                 valueSchema=string_schema(default=_STEP_MODE_FIXED, enum=list(_STEP_MODE_VALUES)),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 control=F8UiControlSpec(kind=F8UiControlKind.select),
                 showOnNode=False,
             ),
@@ -143,7 +145,7 @@ class ValueStepperRuntimeNode(OperatorNode):
                 description="Larger step size used by accelerated mode, or by adaptive mode during rapid repeated triggers.",
                 valueSchema=number_schema(default=0.05, minimum=0.0),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
         ],

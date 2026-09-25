@@ -35,7 +35,7 @@ class VizTCodeRuntimeNode(OperatorNode):
         description="Visualize OSR TCode streams in the locally bundled Web renderer.",
         tags=["viz", "tcode", "osr", "device"],
         rendererClass="viz_tcode",
-        dataInPorts=[F8DataPortSpec(name="tcode", valueSchema=string_schema(), required=True)],
+        dataInPorts=[F8DataPortSpec(name="tcode", valueSchema=string_schema(), definitionProtected=True)],
         dataOutPorts=[],
         stateFields=[
             F8StateSpec(
@@ -43,7 +43,7 @@ class VizTCodeRuntimeNode(OperatorNode):
                 label="Model",
                 valueSchema=string_schema(default="SR6", enum=["OSR2", "SR6", "SSR1"]),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=True,
             ),
             F8StateSpec(
@@ -51,7 +51,7 @@ class VizTCodeRuntimeNode(OperatorNode):
                 label="Max Line Length",
                 valueSchema=integer_schema(default=4096, minimum=32, maximum=65536),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
         ],

@@ -55,8 +55,8 @@ def _runtime_python_script_node(
         serviceId="svcA",
         serviceClass=SERVICE_CLASS,
         operatorClass=spec.operatorClass,
-        execInPorts=list(spec.execInPorts or []),
-        execOutPorts=list(spec.execOutPorts or []),
+        execInPorts=[port.name for port in (spec.execInPorts or [])],
+        execOutPorts=[port.name for port in (spec.execOutPorts or [])],
         dataInPorts=list(data_in_ports if data_in_ports is not None else (spec.dataInPorts or [])),
         dataOutPorts=list(data_out_ports if data_out_ports is not None else (spec.dataOutPorts or [])),
         stateFields=list(state_fields if state_fields is not None else (spec.stateFields or [])),
@@ -471,8 +471,8 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
         _ = ServiceHost(bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=reg)
 
         data_in_ports = [
-            F8DataPortSpec(name="req", description="", valueSchema=string_schema(), required=True),
-            F8DataPortSpec(name="opt", description="", valueSchema=string_schema(), required=False),
+            F8DataPortSpec(name="req", description="", valueSchema=string_schema(), definitionProtected=True),
+            F8DataPortSpec(name="opt", description="", valueSchema=string_schema(), definitionProtected=False),
         ]
         code = (
             "def onMsg(ctx, inputs):\n"
@@ -502,7 +502,7 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
             properties={"bones": F8ArrayTypeSchema(items=any_schema())},
             required=["bones"],
         )
-        data_in_ports = [F8DataPortSpec(name="msg", description="", valueSchema=msg_schema, required=True)]
+        data_in_ports = [F8DataPortSpec(name="msg", description="", valueSchema=msg_schema, definitionProtected=True)]
         code = (
             "def onExec(ctx, exec_in, inputs):\n"
             "    if inputs.msg is None:\n"
@@ -534,7 +534,7 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
             properties={"bones": F8ArrayTypeSchema(items=bone_schema)},
             required=["bones"],
         )
-        data_in_ports = [F8DataPortSpec(name="msg", description="", valueSchema=msg_schema, required=True)]
+        data_in_ports = [F8DataPortSpec(name="msg", description="", valueSchema=msg_schema, definitionProtected=True)]
         code = (
             "def onMsg(ctx, inputs):\n"
             "    return {'outputs': {'out': inputs.msg.bones[1].name}}\n"
@@ -559,7 +559,7 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
         register_operator(Registry.wrap(reg))
         _ = ServiceHost(bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=reg)
 
-        data_in_ports = [F8DataPortSpec(name="hip-pos", description="", valueSchema=string_schema(), required=True)]
+        data_in_ports = [F8DataPortSpec(name="hip-pos", description="", valueSchema=string_schema(), definitionProtected=True)]
         code = (
             "def onMsg(ctx, inputs):\n"
             "    return {'outputs': {'out': inputs.hip_pos}}\n"
@@ -582,8 +582,8 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
         _ = ServiceHost(bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=reg)
 
         data_in_ports = [
-            F8DataPortSpec(name="a-b", description="", valueSchema=string_schema(), required=True),
-            F8DataPortSpec(name="a b", description="", valueSchema=string_schema(), required=True),
+            F8DataPortSpec(name="a-b", description="", valueSchema=string_schema(), definitionProtected=True),
+            F8DataPortSpec(name="a b", description="", valueSchema=string_schema(), definitionProtected=True),
         ]
         code = (
             "def onMsg(ctx, inputs):\n"
@@ -622,7 +622,7 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
             },
             required=["bones"],
         )
-        data_in_ports = [F8DataPortSpec(name="msg", description="", valueSchema=msg_schema, required=True)]
+        data_in_ports = [F8DataPortSpec(name="msg", description="", valueSchema=msg_schema, definitionProtected=True)]
         code = (
             "def onExec(ctx, exec_in, inputs):\n"
             "    msg = inputs.msg\n"
@@ -663,7 +663,7 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
             properties={"bones": F8ArrayTypeSchema(items=F8ComplexObjectTypeSchema(properties={"name": string_schema()}))},
             required=["bones"],
         )
-        data_in_ports = [F8DataPortSpec(name="msg", description="", valueSchema=msg_schema, required=True)]
+        data_in_ports = [F8DataPortSpec(name="msg", description="", valueSchema=msg_schema, definitionProtected=True)]
         code = (
             "def onMsg(ctx, inputs):\n"
             "    _ = inputs.msg\n"
@@ -719,7 +719,7 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
         register_operator(Registry.wrap(reg))
         _ = ServiceHost(bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=reg)
 
-        data_in_ports = [F8DataPortSpec(name="payload", description="", valueSchema=any_schema(), required=True)]
+        data_in_ports = [F8DataPortSpec(name="payload", description="", valueSchema=any_schema(), definitionProtected=True)]
         code = (
             "def onMsg(ctx, inputs):\n"
             "    p = inputs.payload\n"

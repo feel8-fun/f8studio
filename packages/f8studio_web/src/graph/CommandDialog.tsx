@@ -11,7 +11,7 @@ function initialValue(param: CommandParamSpec): string {
 
 function parseValue(param: CommandParamSpec, text: string): JsonValue | undefined {
   if (text.trim() === '') {
-    if (param.required) throw new Error(`${param.name} is required`);
+    if (param.valueRequired) throw new Error(`${param.name} is required`);
     return undefined;
   }
   const type = param.valueSchema.type;
@@ -84,12 +84,12 @@ export function CommandDialog({ node, command, onClose, onResult }: {
       </header>
       {command.description && <p>{command.description}</p>}
       <div className="command-params">{(command.params ?? []).map((param) => <label key={param.name} className="inspector-field">
-        <span>{param.name}{param.required ? ' *' : ''}</span>
+        <span>{param.name}{param.valueRequired ? ' *' : ''}</span>
         {param.valueSchema.enum ? <select value={values[param.name] ?? ''} disabled={pending} onChange={(event) => setValues((current) => ({ ...current, [param.name]: event.target.value }))}>
-          <option value="" disabled={param.required}>{param.required ? 'Select a value' : 'Unset'}</option>
+          <option value="" disabled={param.valueRequired}>{param.valueRequired ? 'Select a value' : 'Unset'}</option>
           {param.valueSchema.enum.map((value) => <option key={JSON.stringify(value)} value={typeof value === 'string' ? value : JSON.stringify(value)}>{String(value)}</option>)}
         </select> : param.valueSchema.type === 'boolean' ? <select value={values[param.name] ?? ''} disabled={pending} onChange={(event) => setValues((current) => ({ ...current, [param.name]: event.target.value }))}>
-          <option value="" disabled={param.required}>{param.required ? 'Select a value' : 'Unset'}</option><option value="true">True</option><option value="false">False</option>
+          <option value="" disabled={param.valueRequired}>{param.valueRequired ? 'Select a value' : 'Unset'}</option><option value="true">True</option><option value="false">False</option>
         </select> : param.valueSchema.type === 'object' || param.valueSchema.type === 'array' ? <textarea
           value={values[param.name] ?? ''} disabled={pending} placeholder={param.valueSchema.type === 'array' ? '[]' : '{}'}
           onChange={(event) => setValues((current) => ({ ...current, [param.name]: event.target.value }))} /> : <input

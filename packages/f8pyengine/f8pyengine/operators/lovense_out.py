@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import exec_port_specs
+
 import asyncio
 import json
 import logging
@@ -716,13 +718,13 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
     label="Lovense Out",
     description="Send Lovense Local API commands with split channels: sendPositionCmd->Position, sendFunctionCmd->Function.",
     tags=["io", "lovense", "http", "output", "device"],
-    execInPorts=["sendPositionCmd", "sendFunctionCmd"],
+    execInPorts=exec_port_specs(["sendPositionCmd", "sendFunctionCmd"]),
     dataInPorts=[
         F8DataPortSpec(
             name="position",
             description="Normalized position input (0..1). Sent on sendPositionCmd as Lovense Position command.",
             valueSchema=number_schema(minimum=0.0, maximum=1.0),
-            required=True,
+            definitionProtected=True,
         ),
     ],
     dataOutPorts=[],
@@ -733,7 +735,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Enable/disable Lovense output.",
             valueSchema=boolean_schema(default=True),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -742,7 +744,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Lovense Local API /command URL. Reset to default when exporting publish JSON.",
             valueSchema=string_schema(default="https://127-0-0-1.lovense.club:30010/command"),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
             redactOnPublish=True,
         ),
@@ -752,7 +754,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Value for X-platform request header.",
             valueSchema=string_schema(default="Feel8 Studio"),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -761,7 +763,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             description="HTTP timeout for Lovense requests.",
             valueSchema=integer_schema(default=5000, minimum=100, maximum=120000),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -770,7 +772,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Verify HTTPS certificate when using https:// commandUrl.",
             valueSchema=boolean_schema(default=True),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -779,7 +781,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Minimum interval between Position commands sent by sendPositionCmd (0 disables throttling).",
             valueSchema=integer_schema(default=100, minimum=0, maximum=120000),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -788,7 +790,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Normalized Function Vibrate level (0..1).",
             valueSchema=number_schema(minimum=0.0, maximum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -797,7 +799,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Normalized Function Rotate level (0..1).",
             valueSchema=number_schema(minimum=0.0, maximum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -806,7 +808,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Normalized Function Pump level (0..1).",
             valueSchema=number_schema(minimum=0.0, maximum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -815,7 +817,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Normalized Function Thrusting level (0..1).",
             valueSchema=number_schema(minimum=0.0, maximum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -824,7 +826,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Normalized Function Fingering level (0..1).",
             valueSchema=number_schema(minimum=0.0, maximum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -833,7 +835,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Normalized Function Suction level (0..1).",
             valueSchema=number_schema(minimum=0.0, maximum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -842,7 +844,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Normalized Function Depth level (0..1).",
             valueSchema=number_schema(minimum=0.0, maximum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -851,7 +853,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Normalized Function Oscillate level (0..1).",
             valueSchema=number_schema(minimum=0.0, maximum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -860,7 +862,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Normalized Function All level (0..1).",
             valueSchema=number_schema(minimum=0.0, maximum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -869,7 +871,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Normalized Function Stroke min (0..1). Requires strokeMax.",
             valueSchema=number_schema(minimum=0.0, maximum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -878,7 +880,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Normalized Function Stroke max (0..1). Requires strokeMin.",
             valueSchema=number_schema(minimum=0.0, maximum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -887,7 +889,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             description="When true, sendFunctionCmd sends Function Stop.",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -896,7 +898,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Function timeSec.",
             valueSchema=number_schema(default=0.0, minimum=0.0, maximum=86400.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -905,7 +907,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Optional Function loopRunningSec (omit when empty or <=0).",
             valueSchema=number_schema(minimum=0.0, maximum=86400.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -914,7 +916,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Optional Function loopPauseSec (omit when empty or <=0).",
             valueSchema=number_schema(minimum=0.0, maximum=86400.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -923,7 +925,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Function stopPrevious (true->1, false->0).",
             valueSchema=boolean_schema(default=True),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -932,7 +934,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Optional target toy id. Empty uses defaultToy.",
             valueSchema=string_schema(default=""),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             control=F8UiControlSpec(kind=F8UiControlKind.select, optionsFromState="availableToys"),
             showOnNode=True,
         ),
@@ -942,7 +944,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Fallback toy id when toy is empty.",
             valueSchema=string_schema(default=""),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -951,7 +953,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             description="Discovered toy IDs from GetToys response.",
             valueSchema=array_schema(items=string_schema()),
             access=F8StateAccess.ro,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
     ],

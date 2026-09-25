@@ -36,7 +36,7 @@ nlohmann::json data_port(
     std::string payload_kind = "json",
     std::string delivery = "fifo",
     std::string description = {},
-    bool required = true,
+    bool definition_protected = true,
     bool show_on_node = true,
     const nlohmann::json& metadata_schema = nlohmann::json(),
     const std::vector<std::string>& formats = {},
@@ -44,8 +44,8 @@ nlohmann::json data_port(
     std::string congestion = "drop",
     std::string priority = "data",
     std::uint32_t payload_schema_version = 1);
-nlohmann::json video_frame_port(std::string name, std::string description = {}, bool required = true);
-nlohmann::json audio_chunk_port(std::string name, std::string description = {}, bool required = true);
+nlohmann::json video_frame_port(std::string name, std::string description = {}, bool definition_protected = true);
+nlohmann::json audio_chunk_port(std::string name, std::string description = {}, bool definition_protected = true);
 nlohmann::json state_field(
     std::string name,
     const nlohmann::json& value_schema,
@@ -53,7 +53,7 @@ nlohmann::json state_field(
     std::string label = {},
     std::string description = {},
     bool show_on_node = false,
-    std::string ui_control = {},
+    nlohmann::json control = nullptr,
     bool redact_on_publish = false);
 
 }  // namespace f8::cppsdk::describe

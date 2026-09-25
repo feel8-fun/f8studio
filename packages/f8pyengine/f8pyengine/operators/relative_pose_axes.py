@@ -282,7 +282,7 @@ RelativePoseAxesRuntimeNode.SPEC = F8OperatorSpec(
             description="Reference-local axis used for L0.",
             valueSchema=string_schema(default="local_y", enum=["local_x", "local_y", "local_z", "distance"]),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -291,7 +291,7 @@ RelativePoseAxesRuntimeNode.SPEC = F8OperatorSpec(
             description="Invert the raw L0 direction before normalization.",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
     ],

@@ -159,25 +159,6 @@ def load_discovery_into_catalog(
                 logger.info("Skipping disabled service %s from %s", described_service_class, service_dir)
                 continue
         try:
-            service_payload = payload.get("service")
-            if isinstance(service_payload, dict):
-                launch = service_payload.get("launch")
-                if isinstance(launch, dict):
-                    workdir_raw = str(launch.get("workdir") or "./")
-                    workdir_path = Path(workdir_raw).expanduser()
-                    if not workdir_path.is_absolute():
-                        workdir_path = (service_dir / workdir_path).resolve()
-                    else:
-                        workdir_path = workdir_path.resolve()
-                    launch = dict(launch)
-                    launch["workdir"] = str(workdir_path)
-                    service_payload = dict(service_payload)
-                    service_payload["launch"] = launch
-                    payload["service"] = service_payload
-        except _DISCOVERY_PATH_REWRITE_ERRORS as exc:
-            logger.debug("Failed to rewrite service launch workdir from %s", service_dir, exc_info=exc)
-
-        try:
             service_spec = target_catalog.register_service(
                 payload["service"],
                 service_entry_path=service_dir,

@@ -22,6 +22,7 @@ from f8pysdk.specs import (
     F8EdgeDirection,
     F8EdgeKindEnum,
     F8EdgeStrategyEnum,
+    F8ExecPortSpec,
     F8RuntimeGraph,
     F8RuntimeNode,
     F8RuntimeService,
@@ -71,8 +72,8 @@ def _spec_state_fields(value: list[F8StateSpec] | msgspec.UnsetType) -> list[F8S
     return [] if isinstance(value, msgspec.UnsetType) else list(value)
 
 
-def _spec_text_ports(value: list[str] | msgspec.UnsetType) -> list[str]:
-    return [] if isinstance(value, msgspec.UnsetType) else list(value)
+def _spec_exec_port_names(value: list[F8ExecPortSpec] | msgspec.UnsetType) -> list[str]:
+    return [] if isinstance(value, msgspec.UnsetType) else [port.name for port in value]
 
 
 def _port(node: GraphNode, port_id: str) -> GraphPort:
@@ -125,11 +126,6 @@ def semantic_graph_revision(document: StudioDocument) -> str:
             for edge in sorted(document.edges, key=lambda item: item.edge_id)
             if edge.from_node_id in enabled_nodes and edge.to_node_id in enabled_nodes
         ],
-        "launch": [
-            (node.service_id, None if isinstance(node.spec.launch, msgspec.UnsetType) else node.spec.launch)
-            for node in sorted(enabled_nodes.values(), key=lambda item: item.node_id)
-            if isinstance(node, ServiceNode)
-        ],
     }
     return hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
 
@@ -142,7 +138,6 @@ def _semantic_runtime_node(node: GraphNode) -> F8RuntimeNode:
             label=msgspec.UNSET,
             description=msgspec.UNSET,
             editPolicy=msgspec.UNSET,
-            uiControl=msgspec.UNSET,
             control=msgspec.UNSET,
             showOnNode=msgspec.UNSET,
             redactOnPublish=msgspec.UNSET,
@@ -195,7 +190,7 @@ def _semantic_data_port(port: F8DataPortSpec) -> F8DataPortSpec:
         valueSchema=_semantic_value_schema(port.valueSchema),
         payload=payload,
         description=msgspec.UNSET,
-        required=msgspec.UNSET,
+        definitionProtected=msgspec.UNSET,
         showOnNode=msgspec.UNSET,
     )
 
@@ -222,8 +217,8 @@ def _runtime_node(node: GraphNode) -> F8RuntimeNode:
             serviceId=node.service_id,
             serviceClass=node.service_class,
             operatorClass=node.operator_class,
-            execInPorts=_spec_text_ports(node.spec.execInPorts),
-            execOutPorts=_spec_text_ports(node.spec.execOutPorts),
+            execInPorts=_spec_exec_port_names(node.spec.execInPorts),
+            execOutPorts=_spec_exec_port_names(node.spec.execOutPorts),
             dataInPorts=_spec_data_ports(node.spec.dataInPorts),
             dataOutPorts=_spec_data_ports(node.spec.dataOutPorts),
             stateFields=_runtime_state_fields(node),

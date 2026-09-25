@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ..generated import (
@@ -27,7 +28,7 @@ def _locked_builtin_state_policy() -> F8StateFieldEditPolicy:
     return F8StateFieldEditPolicy(
         canRename=False,
         canEditAccess=False,
-        canEditRequired=False,
+        canEditValueRequired=False,
         canEditValueSchema=False,
     )
 
@@ -36,7 +37,7 @@ def _locked_builtin_state_policy_dict() -> dict[str, bool]:
     return {
         "canRename": False,
         "canEditAccess": False,
-        "canEditRequired": False,
+        "canEditValueRequired": False,
         "canEditValueSchema": False,
     }
 
@@ -48,7 +49,7 @@ def _service_active_state_spec() -> F8StateSpec:
         description="Service lifecycle state (activate/deactivate).",
         valueSchema=boolean_schema(default=True),
         access=F8StateAccess.rw,
-        required=True,
+        valueRequired=True,
         editPolicy=_locked_builtin_state_policy(),
         showOnNode=False,
     )
@@ -61,7 +62,7 @@ def _svc_id_state_spec() -> F8StateSpec:
         description="Readonly: current service instance id (svcId).",
         valueSchema=string_schema(),
         access=F8StateAccess.ro,
-        required=True,
+        valueRequired=True,
         editPolicy=_locked_builtin_state_policy(),
         showOnNode=False,
     )
@@ -74,7 +75,7 @@ def _operator_id_state_spec() -> F8StateSpec:
         description="Readonly: current operator/node id (operatorId).",
         valueSchema=string_schema(),
         access=F8StateAccess.ro,
-        required=True,
+        valueRequired=True,
         editPolicy=_locked_builtin_state_policy(),
         showOnNode=False,
     )
@@ -149,7 +150,7 @@ def _service_active_field_dict() -> dict[str, Any]:
         "description": "Service lifecycle state (activate/deactivate).",
         "valueSchema": {"type": "boolean", "default": True},
         "access": "rw",
-        "required": True,
+        "valueRequired": True,
         "editPolicy": _locked_builtin_state_policy_dict(),
         "showOnNode": False,
     }
@@ -162,7 +163,7 @@ def _svc_id_field_dict() -> dict[str, Any]:
         "description": "Readonly: current service instance id (svcId).",
         "valueSchema": {"type": "string"},
         "access": "ro",
-        "required": True,
+        "valueRequired": True,
         "editPolicy": _locked_builtin_state_policy_dict(),
         "showOnNode": False,
     }
@@ -175,7 +176,7 @@ def _operator_id_field_dict() -> dict[str, Any]:
         "description": "Readonly: current operator/node id (operatorId).",
         "valueSchema": {"type": "string"},
         "access": "ro",
-        "required": True,
+        "valueRequired": True,
         "editPolicy": _locked_builtin_state_policy_dict(),
         "showOnNode": False,
     }
@@ -185,10 +186,74 @@ def _monitor_port_dict() -> dict[str, Any]:
     return {
         "name": MONITOR_PORT_NAME,
         "description": "Unified runtime monitor snapshots (health/resource/perf/error).",
-        "required": True,
+        "definitionProtected": True,
         "showOnNode": False,
         "valueSchema": monitor_snapshot_schema_dict_cached(),
     }
+
+
+def _control_from_legacy(value: str) -> dict[str, str]:
+    match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)(?:\[([^\]]+)\])?", value.strip())
+    if match is None:
+        raise ValueError(f"invalid legacy UI control: {value!r}")
+    kind, argument = match.groups()
+    aliases = {"wrapline": "textarea", "dropdown": "select", "dropbox": "select", "combo": "select", "combobox": "select"}
+    resolved = aliases.get(kind.lower(), kind.lower())
+    control = {"kind": resolved}
+    if argument is not None:
+        if resolved in {"select", "multiselect"}:
+            control["optionsFromState"] = argument
+        elif resolved in {"code", "textarea"}:
+            control["language"] = argument
+        else:
+            raise ValueError(f"legacy UI control does not accept an argument: {value!r}")
+    return control
+
+
+def _normalize_descriptor_item(item: dict[str, Any], *, legacy_flag: str) -> dict[str, Any]:
+    normalized = dict(item)
+    if "required" in normalized:
+        normalized[legacy_flag] = normalized.pop("required")
+    if "uiControl" in normalized:
+        legacy_control = normalized.pop("uiControl")
+        if "control" not in normalized and isinstance(legacy_control, str) and legacy_control.strip():
+            normalized["control"] = _control_from_legacy(legacy_control)
+    if "editPolicy" in normalized and isinstance(normalized["editPolicy"], dict):
+        policy = dict(normalized["editPolicy"])
+        if "canEditRequired" in policy:
+            policy["canEditValueRequired"] = policy.pop("canEditRequired")
+        normalized["editPolicy"] = policy
+    return normalized
+
+
+def _normalize_authoring_spec(spec: dict[str, Any], *, service: bool) -> dict[str, Any]:
+    normalized = dict(spec)
+    if service:
+        normalized.pop("launch", None)
+    for collection, flag in (("stateFields", "valueRequired"), ("dataInPorts", "definitionProtected"),
+                             ("dataOutPorts", "definitionProtected"), ("commands", "definitionProtected")):
+        items = normalized.get(collection)
+        if not isinstance(items, list):
+            continue
+        converted = []
+        for item in items:
+            if not isinstance(item, dict):
+                converted.append(item)
+                continue
+            field = _normalize_descriptor_item(item, legacy_flag=flag)
+            if collection == "commands" and isinstance(field.get("params"), list):
+                field["params"] = [
+                    _normalize_descriptor_item(param, legacy_flag="valueRequired") if isinstance(param, dict) else param
+                    for param in field["params"]
+                ]
+            converted.append(field)
+        normalized[collection] = converted
+    if not service:
+        for collection in ("execInPorts", "execOutPorts"):
+            items = normalized.get(collection)
+            if isinstance(items, list):
+                normalized[collection] = [{"name": item} if isinstance(item, str) else item for item in items]
+    return normalized
 
 
 def _state_field_dicts_with_builtins(
@@ -236,7 +301,7 @@ def normalize_describe_payload_dict(payload: dict[str, Any]) -> dict[str, Any]:
 
     service_obj = out.get("service")
     if isinstance(service_obj, dict):
-        service_spec = dict(service_obj)
+        service_spec = _normalize_authoring_spec(service_obj, service=True)
         service_spec["stateFields"] = _state_field_dicts_with_builtins(
             service_spec.get("stateFields"),
             names_to_remove={ACTIVE_FIELD_NAME, SVC_ID_FIELD_NAME},
@@ -255,7 +320,7 @@ def normalize_describe_payload_dict(payload: dict[str, Any]) -> dict[str, Any]:
             for operator_item in operators_raw:
                 if not isinstance(operator_item, dict):
                     continue
-                operator_spec = dict(operator_item)
+                operator_spec = _normalize_authoring_spec(operator_item, service=False)
                 operator_spec["stateFields"] = _state_field_dicts_with_builtins(
                     operator_spec.get("stateFields"),
                     names_to_remove={SVC_ID_FIELD_NAME, OPERATOR_ID_FIELD_NAME},
@@ -268,6 +333,7 @@ def normalize_describe_payload_dict(payload: dict[str, Any]) -> dict[str, Any]:
     service_class = str(out.get("serviceClass") or "").strip()
     schema_version = str(out.get("schemaVersion") or "").strip()
     if service_class or schema_version == "f8service/1":
+        out = _normalize_authoring_spec(out, service=True)
         out["stateFields"] = _state_field_dicts_with_builtins(
             out.get("stateFields"),
             names_to_remove={ACTIVE_FIELD_NAME, SVC_ID_FIELD_NAME},
@@ -282,6 +348,7 @@ def normalize_describe_payload_dict(payload: dict[str, Any]) -> dict[str, Any]:
 
     operator_class = str(out.get("operatorClass") or "").strip()
     if operator_class or schema_version == "f8operator/1":
+        out = _normalize_authoring_spec(out, service=False)
         out["stateFields"] = _state_field_dicts_with_builtins(
             out.get("stateFields"),
             names_to_remove={SVC_ID_FIELD_NAME, OPERATOR_ID_FIELD_NAME},

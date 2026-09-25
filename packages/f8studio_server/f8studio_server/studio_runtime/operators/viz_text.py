@@ -162,7 +162,7 @@ def register_operator(registry: Registry) -> Registry:
                     description="Pause/resume embedded preview updates in the editor.",
                     valueSchema=boolean_schema(default=True),
                     access=F8StateAccess.rw,
-                    required=True,
+                    valueRequired=True,
                     showOnNode=False,
                 ),
                 F8StateSpec(
@@ -171,7 +171,7 @@ def register_operator(registry: Registry) -> Registry:
                     description="Whether embedded preview text wraps long lines.",
                     valueSchema=boolean_schema(default=True),
                     access=F8StateAccess.rw,
-                    required=True,
+                    valueRequired=True,
                     showOnNode=False,
                 ),
                 F8StateSpec(
@@ -180,7 +180,7 @@ def register_operator(registry: Registry) -> Registry:
                     description="UI refresh interval in milliseconds (0 = refresh every tick).",
                     valueSchema=integer_schema(default=100, minimum=0, maximum=60000),
                     access=F8StateAccess.rw,
-                    required=True,
+                    valueRequired=True,
                     showOnNode=False,
                 ),
                 *viz_sampling_state_fields(show_on_node=False),

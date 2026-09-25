@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import exec_port_specs
+
 from typing import Any
 
 from f8pysdk.specs import (
@@ -48,8 +50,8 @@ ExecSequenceRuntimeNode.SPEC = F8OperatorSpec(
     label="Sequence",
     description="Exec flow splitter: triggers its exec outputs in order (requires DFS scheduling).",
     tags=["execution", "flow", "sequence", "branch"],
-    execInPorts=["exec"],
-    execOutPorts=["0", "1", "2"],
+    execInPorts=exec_port_specs(["exec"]),
+    execOutPorts=exec_port_specs(["0", "1", "2"]),
     editPolicy=F8SpecEditPolicy(execOutPorts=editable_collection_edit_policy()),
 )
 

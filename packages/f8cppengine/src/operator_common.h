@@ -22,11 +22,12 @@ json string_schema(const std::string& default_value);
 json string_enum_schema(const std::string& default_value, std::vector<std::string> values);
 json array_schema(const json& items = any_schema());
 
-json data_port(const std::string& name, const std::string& description, const json& schema, bool required = false,
+json data_port(const std::string& name, const std::string& description, const json& schema,
+               bool definition_protected = false,
                bool show_on_node = true);
 json state_field(const std::string& name, const std::string& label, const std::string& description, const json& schema,
-                 const std::string& access = "rw", bool required = true, bool show_on_node = false,
-                 const std::string& ui_control = "");
+                 const std::string& access = "rw", bool value_required = true, bool show_on_node = false,
+                 const json& control = nullptr);
 json editable_collection_policy();
 json editable_script_policy();
 json object_value_or_null(const json& object, const std::string& key);

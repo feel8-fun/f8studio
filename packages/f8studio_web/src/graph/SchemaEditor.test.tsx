@@ -55,7 +55,7 @@ test('edits data value type and command parameters through the form', () => {
     ...node,
     spec: {
       ...node.spec,
-      dataOutPorts: [{ name: 'result', valueSchema: { type: 'any' }, required: false }],
+      dataOutPorts: [{ name: 'result', valueSchema: { type: 'any' }, definitionProtected: false }],
       commands: [{ name: 'Run', params: [] }],
       editPolicy: {
         dataOutPorts: { canEditExisting: true },

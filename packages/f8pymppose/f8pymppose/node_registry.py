@@ -106,7 +106,7 @@ def _state_fields() -> list[F8StateSpec]:
             valueSchema=integer_schema(default=DEFAULT_INFER_EVERY_N, minimum=1, maximum=10000),
             access=F8StateAccess.rw,
             showOnNode=False,
-            required=True
+            valueRequired=True
         ),
         F8StateSpec(
             name="modelComplexity",
@@ -114,7 +114,7 @@ def _state_fields() -> list[F8StateSpec]:
             description="MediaPipe pose model variant.",
             valueSchema=string_schema(default=DEFAULT_MODEL_COMPLEXITY, enum=["lite", "full", "heavy"]),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             control=F8UiControlSpec(kind=F8UiControlKind.select),
             showOnNode=False,
         ),
@@ -124,7 +124,7 @@ def _state_fields() -> list[F8StateSpec]:
             description="Minimum confidence threshold for pose detection.",
             valueSchema=number_schema(default=DEFAULT_MIN_DETECTION_CONFIDENCE, minimum=0.0, maximum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -133,7 +133,7 @@ def _state_fields() -> list[F8StateSpec]:
             description="Minimum confidence threshold for pose tracking.",
             valueSchema=number_schema(default=DEFAULT_MIN_TRACKING_CONFIDENCE, minimum=0.0, maximum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -142,7 +142,7 @@ def _state_fields() -> list[F8StateSpec]:
             description="Landmark visibility threshold (below threshold => hidden point).",
             valueSchema=number_schema(default=DEFAULT_VISIBILITY_THRESHOLD, minimum=0.0, maximum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -151,7 +151,7 @@ def _state_fields() -> list[F8StateSpec]:
             description="Skeleton data source (camera-relative vs world-relative).",
             valueSchema=string_schema(default=DEFAULT_SKELETON_SOURCE, enum=["camera", "world"]),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             control=F8UiControlSpec(kind=F8UiControlKind.select),
             showOnNode=False,
         ),
@@ -174,7 +174,7 @@ def register_specs(registry: Registry) -> Registry:
                 video_frame_port(
                     name="video",
                     description="Input video frame stream.",
-                    required=True,
+                    definition_protected=True,
                 ),
             ],
             dataOutPorts=[

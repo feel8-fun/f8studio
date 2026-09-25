@@ -59,17 +59,17 @@ class VizVideoRuntimeNode(OperatorNode):
             video_frame_port(
                 name="video",
                 description="Input video frame stream.",
-                required=True,
+                definition_protected=True,
             ),
             video_frame_port(
                 name="flow",
                 description="Optional dense optical-flow frame stream.",
-                required=False,
+                definition_protected=False,
             ),
             video_frame_port(
                 name="scalar",
                 description="Optional scalar metric frame stream.",
-                required=False,
+                definition_protected=False,
             ),
         ],
         dataOutPorts=[],
@@ -81,7 +81,7 @@ class VizVideoRuntimeNode(OperatorNode):
                 description="Pause/resume embedded viewer updates in the editor.",
                 valueSchema=boolean_schema(default=True),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
             F8StateSpec(
@@ -90,7 +90,7 @@ class VizVideoRuntimeNode(OperatorNode):
                 description="UI refresh interval in milliseconds (0 = as fast as possible).",
                 valueSchema=integer_schema(default=33, minimum=0, maximum=60000),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
             F8StateSpec(
@@ -99,7 +99,7 @@ class VizVideoRuntimeNode(OperatorNode):
                 description="Flow rendering mode: off, hsv, or arrows.",
                 valueSchema=string_schema(default="off", enum=["off", "hsv", "arrows"]),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
             F8StateSpec(
@@ -108,7 +108,7 @@ class VizVideoRuntimeNode(OperatorNode):
                 description="Reference max magnitude for HSV/value and arrow scaling.",
                 valueSchema=number_schema(default=20.0, minimum=0.1, maximum=500.0),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
             F8StateSpec(
@@ -117,7 +117,7 @@ class VizVideoRuntimeNode(OperatorNode):
                 description="Sampling stride for arrow rendering.",
                 valueSchema=integer_schema(default=12, minimum=2, maximum=128),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
             F8StateSpec(
@@ -126,7 +126,7 @@ class VizVideoRuntimeNode(OperatorNode):
                 description="Video scaling mode: native (1:1) or fit.",
                 valueSchema=string_schema(default="fit", enum=["native", "fit"]),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
             F8StateSpec(
@@ -135,7 +135,7 @@ class VizVideoRuntimeNode(OperatorNode):
                 description="Scalar rendering mode: off or colormap.",
                 valueSchema=string_schema(default="off", enum=["off", "colormap"]),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
             F8StateSpec(
@@ -144,7 +144,7 @@ class VizVideoRuntimeNode(OperatorNode):
                 description="Colormap for scalar rendering.",
                 valueSchema=string_schema(default="turbo", enum=["gray", "turbo", "viridis", "magma"]),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
             F8StateSpec(
@@ -153,7 +153,7 @@ class VizVideoRuntimeNode(OperatorNode):
                 description="Scalar normalization mode: auto or manual.",
                 valueSchema=string_schema(default="auto", enum=["auto", "manual"]),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
             F8StateSpec(
@@ -162,7 +162,7 @@ class VizVideoRuntimeNode(OperatorNode):
                 description="Manual min for scalar normalization.",
                 valueSchema=number_schema(default=-1.0, minimum=-1_000_000_000.0, maximum=1_000_000_000.0),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
             F8StateSpec(
@@ -171,7 +171,7 @@ class VizVideoRuntimeNode(OperatorNode):
                 description="Manual max for scalar normalization.",
                 valueSchema=number_schema(default=1.0, minimum=-1_000_000_000.0, maximum=1_000_000_000.0),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
             F8StateSpec(
@@ -180,7 +180,7 @@ class VizVideoRuntimeNode(OperatorNode):
                 description="Lower percentile for auto scalar normalization.",
                 valueSchema=number_schema(default=2.0, minimum=0.0, maximum=100.0),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
             F8StateSpec(
@@ -189,7 +189,7 @@ class VizVideoRuntimeNode(OperatorNode):
                 description="Upper percentile for auto scalar normalization.",
                 valueSchema=number_schema(default=98.0, minimum=0.0, maximum=100.0),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
             F8StateSpec(
@@ -198,7 +198,7 @@ class VizVideoRuntimeNode(OperatorNode):
                 description="Invert normalized scalar values before colormap.",
                 valueSchema=boolean_schema(default=False),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
             F8StateSpec(
@@ -207,7 +207,7 @@ class VizVideoRuntimeNode(OperatorNode):
                 description="NaN/Inf handling for scalar values.",
                 valueSchema=string_schema(default="transparent", enum=["transparent", "zero", "min", "max"]),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
         ],

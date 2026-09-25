@@ -124,7 +124,7 @@ function visibleServicePosition(
 
 function hotkeyEligible(field: StateSpec): boolean {
   if (field.access !== 'rw') return false;
-  const control = field.control?.kind ?? (field.uiControl ?? '').split('[', 1)[0]?.trim().toLowerCase() ?? '';
+  const control = field.control?.kind ?? '';
   if (control === 'button') return field.valueSchema.type === 'integer' || field.valueSchema.type === 'number';
   return ['select', 'dropdown', 'dropbox', 'combo', 'combobox'].includes(control) ||
     (field.valueSchema.enum?.length ?? 0) > 0;

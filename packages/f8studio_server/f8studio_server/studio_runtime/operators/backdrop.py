@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import exec_port_specs
+
 from typing import Any
 
 from f8pysdk.specs import (
@@ -32,8 +34,8 @@ class BackdropRuntimeNode(OperatorNode):
         tags=["backdrop", "group", "ui", "canvas", "label"],
         dataInPorts=[],
         dataOutPorts=[],
-        execInPorts=[],
-        execOutPorts=[],
+        execInPorts=exec_port_specs([]),
+        execOutPorts=exec_port_specs([]),
         rendererClass=RENDERER_CLASS,
         stateFields=[],
     )

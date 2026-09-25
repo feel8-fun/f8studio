@@ -55,7 +55,7 @@ def test_sensitive_output_configuration_is_redacted_on_publish() -> None:
 def test_every_physical_output_has_explicit_enabled_state() -> None:
     for runtime_node in (LovenseOutRuntimeNode, ButtplugOutRuntimeNode, HandyOutRuntimeNode, SerialOutRuntimeNode):
         enabled = _state_spec(runtime_node, "enabled")
-        assert enabled.required is True
+        assert enabled.valueRequired is True
         assert not isinstance(enabled.valueSchema, msgspec.UnsetType)
 
 

@@ -143,11 +143,10 @@ export interface StateSpec {
   readonly label?: string;
   readonly description?: string;
   readonly showOnNode?: boolean;
-  readonly required?: boolean;
-  readonly uiControl?: string;
+  readonly valueRequired?: boolean;
   readonly control?: UiControlSpec;
   readonly redactOnPublish?: boolean;
-  readonly editPolicy?: { readonly canRename?: boolean; readonly canEditAccess?: boolean; readonly canEditRequired?: boolean; readonly canEditValueSchema?: boolean };
+  readonly editPolicy?: { readonly canRename?: boolean; readonly canEditAccess?: boolean; readonly canEditValueRequired?: boolean; readonly canEditValueSchema?: boolean };
 }
 
 export interface UiControlSpec {
@@ -179,7 +178,7 @@ export interface DataPortSpec {
   readonly delivery?: string;
   readonly payload?: { readonly kind: string; readonly valueSchema?: ValueSchema; readonly [key: string]: JsonValue | ValueSchema | undefined };
   readonly showOnNode?: boolean;
-  readonly required?: boolean;
+  readonly definitionProtected?: boolean;
   readonly [key: string]: unknown;
 }
 
@@ -187,8 +186,7 @@ export interface CommandParamSpec {
   readonly name: string;
   readonly valueSchema: ValueSchema;
   readonly description?: string;
-  readonly required?: boolean;
-  readonly uiControl?: string;
+  readonly valueRequired?: boolean;
   readonly control?: UiControlSpec;
 }
 
@@ -196,7 +194,7 @@ export interface CommandSpec {
   readonly name: string;
   readonly description?: string;
   readonly showOnNode?: boolean;
-  readonly required?: boolean;
+  readonly definitionProtected?: boolean;
   readonly params?: readonly CommandParamSpec[];
 }
 
@@ -213,7 +211,7 @@ export interface ServiceSpec {
   readonly commands?: readonly CommandSpec[];
   readonly dataInPorts?: readonly DataPortSpec[];
   readonly dataOutPorts?: readonly DataPortSpec[];
-  readonly [key: string]: JsonValue | SpecEditPolicy | readonly StateSpec[] | readonly CommandSpec[] | readonly DataPortSpec[] | undefined;
+  readonly [key: string]: JsonValue | SpecEditPolicy | readonly StateSpec[] | readonly CommandSpec[] | readonly DataPortSpec[] | readonly ExecPortSpec[] | undefined;
 }
 
 export interface OperatorSpec {
@@ -230,9 +228,16 @@ export interface OperatorSpec {
   readonly commands?: readonly CommandSpec[];
   readonly dataInPorts?: readonly DataPortSpec[];
   readonly dataOutPorts?: readonly DataPortSpec[];
-  readonly execInPorts?: readonly string[];
-  readonly execOutPorts?: readonly string[];
-  readonly [key: string]: JsonValue | SpecEditPolicy | readonly StateSpec[] | readonly CommandSpec[] | readonly DataPortSpec[] | undefined;
+  readonly execInPorts?: readonly ExecPortSpec[];
+  readonly execOutPorts?: readonly ExecPortSpec[];
+  readonly [key: string]: JsonValue | SpecEditPolicy | readonly StateSpec[] | readonly CommandSpec[] | readonly DataPortSpec[] | readonly ExecPortSpec[] | undefined;
+}
+
+export interface ExecPortSpec {
+  readonly name: string;
+  readonly label?: string;
+  readonly description?: string;
+  readonly definitionProtected?: boolean;
 }
 
 export interface CatalogSnapshot {
@@ -301,7 +306,7 @@ export interface NodeLayout {
 }
 
 export interface StudioDocument {
-  readonly schemaVersion: 'f8studio-document/1';
+  readonly schemaVersion: 'f8studio-document/2';
   readonly projectId: string;
   readonly graphId: string;
   readonly graphRevision: number;
@@ -413,7 +418,7 @@ export function isDeployJob(value: unknown): value is DeployJob {
 export function isStudioDocument(value: unknown): value is StudioDocument {
   if (typeof value !== 'object' || value === null) return false;
   const item = value as Record<string, unknown>;
-  return item.schemaVersion === 'f8studio-document/1' && typeof item.projectId === 'string' &&
+  return item.schemaVersion === 'f8studio-document/2' && typeof item.projectId === 'string' &&
     typeof item.graphRevision === 'number' && typeof item.layoutRevision === 'number' &&
     Array.isArray(item.nodes) && Array.isArray(item.edges) && Array.isArray(item.layout);
 }

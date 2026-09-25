@@ -308,14 +308,6 @@ def describe_entry(
             data["operators"] = []
 
     try:
-        service_payload = data.get("service") or {}
-        if isinstance(service_payload, dict) and not service_payload.get("launch"):
-            service_payload["launch"] = msgspec.to_builtins(entry.launch)
-            data["service"] = service_payload
-    except _DESCRIBE_ENTRY_READ_ERRORS as exc:
-        logger.debug("Failed to backfill service launch in describe payload for %s", service_dir, exc_info=exc)
-
-    try:
         entry_service_class = str(entry.serviceClass or "").strip()
         described_service_class = str((data.get("service") or {}).get("serviceClass") or "").strip()
         if entry_service_class and described_service_class and entry_service_class != described_service_class:

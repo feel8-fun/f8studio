@@ -39,7 +39,7 @@ function operator(nodeId: string, serviceId: string, ports: readonly GraphPort[]
 
 function document(nodes: readonly GraphNode[]): StudioDocument {
   return {
-    schemaVersion: 'f8studio-document/1', projectId: 'project', graphId: 'graph',
+    schemaVersion: 'f8studio-document/2', projectId: 'project', graphId: 'graph',
     graphRevision: 0, layoutRevision: 0, nodes, edges: [], layout: [],
   };
 }

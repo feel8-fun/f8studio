@@ -7,7 +7,7 @@ import { StateFieldControl } from './StateFieldControl';
 afterEach(cleanup);
 
 const enabledField: StateSpec = {
-  name: 'enabled', label: 'Enabled', access: 'rw', uiControl: 'toggle', showOnNode: true,
+  name: 'enabled', label: 'Enabled', access: 'rw', control: { kind: 'toggle' }, showOnNode: true,
   valueSchema: { type: 'boolean', default: false },
 };
 const node: OperatorNode = {
@@ -131,7 +131,7 @@ test('commits typed arrays from a dynamic multiselect control', () => {
     name: 'available', access: 'ro', valueSchema: { type: 'array', default: ['left', 'right'] },
   };
   const selectedField: StateSpec = {
-    name: 'selected', label: 'Selected', access: 'rw', uiControl: 'multiselect[available]',
+    name: 'selected', label: 'Selected', access: 'rw', control: { kind: 'multiselect', optionsFromState: 'available' },
     valueSchema: { type: 'array', default: ['left'] },
   };
   const commit = vi.fn();
@@ -179,7 +179,7 @@ test('selects from a live readonly device list and preserves an unavailable sele
 
 test('uses a fixed single-line editor for compact wrapline state', () => {
   const expressionField: StateSpec = {
-    name: 'code', label: 'Expr', access: 'rw', uiControl: 'wrapline[python]',
+    name: 'code', label: 'Expr', access: 'rw', control: { kind: 'textarea', language: 'python' },
     valueSchema: { type: 'string', default: 'value * 2' },
   };
   render(<StateFieldControl

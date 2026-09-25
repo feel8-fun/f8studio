@@ -14,7 +14,8 @@ json state_expr_spec() {
   return pending_operator_spec(
       "f8.state_expr", "State Expr", "state", {}, {},
       {state_field("allowNumpy", "Allow Numpy", "Python-only compatibility flag; ignored by C++.", boolean_schema(false)),
-       state_field("code", "Code", "Expression code.", string_schema("out = 0"), "rw", true, true, "wrapline[cpp]"),
+       state_field("code", "Code", "Expression code.", string_schema("out = 0"), "rw", true, true,
+                   json{{"kind", "textarea"}, {"language", "cpp"}}),
        state_field("out", "Out", "Expression output.", any_schema(), "rw", true, true)},
       {}, {}, json{{"stateFields", editable_collection_policy()}});
 }

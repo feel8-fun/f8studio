@@ -273,7 +273,7 @@ ProgramWaveRuntimeNode.SPEC = F8OperatorSpec(
             valueSchema=_program_state_schema(),
             access=F8StateAccess.wo,
             showOnNode=True,
-            required=True,
+            valueRequired=True,
         ),
     ],
 )

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import exec_port_specs
+
 import math
 import time
 from dataclasses import dataclass
@@ -217,11 +219,11 @@ SwitchMixerRuntimeNode.SPEC = F8OperatorSpec(
     label="Switch Mixer",
     description="Switch between any number of user-defined input channels with an optional smooth crossfade.",
     tags=["mix", "switch", "channel", "track", "crossfade"],
-    execInPorts=["exec"],
-    execOutPorts=["exec"],
+    execInPorts=exec_port_specs(["exec"]),
+    execOutPorts=exec_port_specs(["exec"]),
     dataInPorts=[
-        F8DataPortSpec(name="ch1", description="Input channel 1", valueSchema=number_schema(), required=False),
-        F8DataPortSpec(name="ch2", description="Input channel 2", valueSchema=number_schema(), required=False),
+        F8DataPortSpec(name="ch1", description="Input channel 1", valueSchema=number_schema(), definitionProtected=False),
+        F8DataPortSpec(name="ch2", description="Input channel 2", valueSchema=number_schema(), definitionProtected=False),
     ],
     dataOutPorts=[
         F8DataPortSpec(name="out", description="Mixed output", valueSchema=number_schema()),
@@ -235,7 +237,7 @@ SwitchMixerRuntimeNode.SPEC = F8OperatorSpec(
             description="Name of the selected input channel/track to play.",
             valueSchema=string_schema(default="ch1"),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -244,7 +246,7 @@ SwitchMixerRuntimeNode.SPEC = F8OperatorSpec(
             description="Readonly currently resolved input channel after validation/fallback.",
             valueSchema=string_schema(default=""),
             access=F8StateAccess.ro,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -253,7 +255,7 @@ SwitchMixerRuntimeNode.SPEC = F8OperatorSpec(
             description="Transition duration in milliseconds. Set to 0 for an instant switch.",
             valueSchema=integer_schema(default=200, minimum=0, maximum=60_000),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
     ],

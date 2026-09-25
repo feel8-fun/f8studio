@@ -12,10 +12,10 @@ from f8pysdk._specs.edit_policy import (
     can_delete_state_field,
     can_edit_existing,
 )
-from f8pysdk.specs import F8Command, F8DataPortSpec, F8OperatorSpec, F8ServiceSpec, F8StateSpec
+from f8pysdk.specs import F8Command, F8DataPortSpec, F8ExecPortSpec, F8OperatorSpec, F8ServiceSpec, F8StateSpec
 
 Spec = F8ServiceSpec | F8OperatorSpec
-SpecItem = F8StateSpec | F8Command | F8DataPortSpec | str
+SpecItem = F8StateSpec | F8Command | F8DataPortSpec | F8ExecPortSpec
 
 
 def _items(value: Sequence[SpecItem] | msgspec.UnsetType) -> Sequence[SpecItem]:
@@ -23,8 +23,6 @@ def _items(value: Sequence[SpecItem] | msgspec.UnsetType) -> Sequence[SpecItem]:
 
 
 def _item_name(item: SpecItem) -> str:
-    if isinstance(item, str):
-        return item
     return item.name
 
 
@@ -54,16 +52,16 @@ def _check_collection(
             assert isinstance(field, F8StateSpec)
             if not can_delete_state_field(field):
                 raise ValueError(f"protected state field cannot be deleted or renamed: {name}")
-    if collection in ("dataInPorts", "dataOutPorts", "commands"):
+    if collection in ("dataInPorts", "dataOutPorts", "commands", "execInPorts", "execOutPorts"):
         for name in removed:
             item = old_by_name[name]
-            if isinstance(item, (F8DataPortSpec, F8Command)) and item.required is True:
+            if isinstance(item, (F8DataPortSpec, F8Command, F8ExecPortSpec)) and item.definitionProtected is True:
                 raise ValueError(f"protected {collection} entry cannot be deleted: {name}")
         for name in set(old_by_name) & set(new_by_name):
             old_item = old_by_name[name]
             new_item = new_by_name[name]
-            if isinstance(old_item, (F8DataPortSpec, F8Command)) and isinstance(new_item, (F8DataPortSpec, F8Command)):
-                if old_item.required is True and new_item.required is not True:
+            if isinstance(old_item, (F8DataPortSpec, F8Command, F8ExecPortSpec)) and isinstance(new_item, type(old_item)):
+                if old_item.definitionProtected is True and new_item.definitionProtected is not True:
                     raise ValueError(f"protected {collection} entry cannot be unlocked: {name}")
     changed = [
         name for name in set(old_by_name) & set(new_by_name)
@@ -83,8 +81,8 @@ def _check_collection(
                 continue
             if policy.canEditAccess is False and old_field.access != new_field.access:
                 raise ValueError(f"state field access is locked: {name}")
-            if policy.canEditRequired is False and old_field.required != new_field.required:
-                raise ValueError(f"state field required flag is locked: {name}")
+            if policy.canEditValueRequired is False and old_field.valueRequired != new_field.valueRequired:
+                raise ValueError(f"state field value-required flag is locked: {name}")
             if policy.canEditValueSchema is False and msgspec.to_builtins(old_field.valueSchema) != msgspec.to_builtins(new_field.valueSchema):
                 raise ValueError(f"state field value schema is locked: {name}")
 
@@ -99,7 +97,7 @@ def validate_spec_edit(previous: Spec, proposed: Spec) -> None:
         old.pop(name, None)
         new.pop(name, None)
     if old != new:
-        raise ValueError("spec identity, metadata, launch and edit policy are defined by the installed descriptor")
+        raise ValueError("spec identity, metadata and edit policy are defined by the installed descriptor")
     _check_collection(previous, "stateFields", previous.stateFields, proposed.stateFields)
     _check_collection(previous, "commands", previous.commands, proposed.commands)
     _check_collection(previous, "dataInPorts", previous.dataInPorts, proposed.dataInPorts)

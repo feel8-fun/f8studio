@@ -51,7 +51,7 @@ class VizAudioRuntimeNode(OperatorNode):
             audio_chunk_port(
                 name="audio",
                 description="Input audio chunk stream.",
-                required=True,
+                definition_protected=True,
             ),
         ],
         dataOutPorts=[],
@@ -63,7 +63,7 @@ class VizAudioRuntimeNode(OperatorNode):
                 description="Pause/resume embedded viewer updates in the editor.",
                 valueSchema=boolean_schema(default=True),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
             F8StateSpec(
@@ -72,7 +72,7 @@ class VizAudioRuntimeNode(OperatorNode):
                 description="UI refresh interval in milliseconds (0 = as fast as possible).",
                 valueSchema=integer_schema(default=20, minimum=0, maximum=60000),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
             F8StateSpec(
@@ -81,7 +81,7 @@ class VizAudioRuntimeNode(OperatorNode):
                 description="Waveform window length in milliseconds.",
                 valueSchema=integer_schema(default=250, minimum=20, maximum=680),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
             F8StateSpec(
@@ -90,7 +90,7 @@ class VizAudioRuntimeNode(OperatorNode):
                 description="Channel to display (0..N-1).",
                 valueSchema=integer_schema(default=0, minimum=0, maximum=16),
                 access=F8StateAccess.rw,
-                required=True,
+                valueRequired=True,
                 showOnNode=False,
             ),
         ],

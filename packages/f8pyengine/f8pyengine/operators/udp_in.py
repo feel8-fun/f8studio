@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import exec_port_specs
+
 import asyncio
 import ipaddress
 import json
@@ -542,8 +544,8 @@ UdpInRuntimeNode.SPEC = F8OperatorSpec(
     label="UDP In",
     description="Receives UDP packets and exposes explicit raw/text/json views plus packet metadata.",
     tags=["io", "udp", "network", "input", "json", "bytes", "bytearray"],
-    execInPorts=[],
-    execOutPorts=["packet"],
+    execInPorts=exec_port_specs([]),
+    execOutPorts=exec_port_specs(["packet"]),
     dataOutPorts=[
         F8DataPortSpec(
             name="text",
@@ -573,7 +575,7 @@ UdpInRuntimeNode.SPEC = F8OperatorSpec(
             description="Local address to bind (loopback by default).",
             valueSchema=string_schema(default="127.0.0.1"),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -582,7 +584,7 @@ UdpInRuntimeNode.SPEC = F8OperatorSpec(
             description="When true, allow bindAddress values other than loopback.",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -591,7 +593,7 @@ UdpInRuntimeNode.SPEC = F8OperatorSpec(
             description="UDP listen port.",
             valueSchema=integer_schema(default=39541, minimum=1, maximum=65535),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -600,7 +602,7 @@ UdpInRuntimeNode.SPEC = F8OperatorSpec(
             description="Max queued packets before dropping (1..4096).",
             valueSchema=integer_schema(default=512, minimum=1, maximum=4096),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -609,7 +611,7 @@ UdpInRuntimeNode.SPEC = F8OperatorSpec(
             description="Best-effort: allow multiple listeners on the same bind tuple if the OS supports it.",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -618,7 +620,7 @@ UdpInRuntimeNode.SPEC = F8OperatorSpec(
             description="Readonly flag telling whether the UDP socket is active.",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.ro,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
     ],

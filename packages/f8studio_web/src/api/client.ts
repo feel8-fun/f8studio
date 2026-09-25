@@ -199,8 +199,8 @@ export async function fetchProject(projectId: string, signal?: AbortSignal): Pro
 
 export async function exportProjectGraph(projectId: string): Promise<string> {
   const body = await requestJson(`/api/projects/${encodeURIComponent(projectId)}/graph/export`);
-  if (!isObject(body) || body.format !== 'f8graph' || body.formatVersion !== 2) {
-    throw new Error('Graph export does not match f8graph/2');
+  if (!isObject(body) || body.format !== 'f8graph' || body.formatVersion !== 3) {
+    throw new Error('Graph export does not match f8graph/3');
   }
   return `${JSON.stringify(body, null, 2)}\n`;
 }

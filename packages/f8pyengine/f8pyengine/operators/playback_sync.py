@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import exec_port_specs
+
 import time
 from dataclasses import dataclass
 from typing import Any, Final
@@ -270,14 +272,14 @@ PlaybackSyncRuntimeNode.SPEC = F8OperatorSpec(
     label="Playback Sync",
     description="Extrapolates IMPlayer playback position between sparse playback state updates.",
     tags=["playback", "estimate", "timing", "media", "sync"],
-    execInPorts=[],
-    execOutPorts=[],
+    execInPorts=exec_port_specs([]),
+    execOutPorts=exec_port_specs([]),
     dataInPorts=[
         F8DataPortSpec(
             name="playback",
             description="Playback payload from f8.implayer/playback (position/duration/playing/videoId).",
             valueSchema=_playback_input_schema(),
-            required=False,
+            definitionProtected=False,
         ),
     ],
     dataOutPorts=[
@@ -299,7 +301,7 @@ PlaybackSyncRuntimeNode.SPEC = F8OperatorSpec(
             description="Limit extrapolation horizon to avoid drift when playback state is stale (0 = unlimited).",
             valueSchema=integer_schema(default=1000, minimum=0, maximum=600_000),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -308,7 +310,7 @@ PlaybackSyncRuntimeNode.SPEC = F8OperatorSpec(
             description="Rate multiplier used for extrapolation when playing.",
             valueSchema=number_schema(default=1.0, minimum=0.0, maximum=16.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -317,7 +319,7 @@ PlaybackSyncRuntimeNode.SPEC = F8OperatorSpec(
             description="Clamp estimated position to latest duration when available.",
             valueSchema=boolean_schema(default=True),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
     ],

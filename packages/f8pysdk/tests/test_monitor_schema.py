@@ -38,7 +38,7 @@ class MonitorSchemaTests(unittest.TestCase):
                 {
                     "name": "monitor",
                     "valueSchema": monitor_snapshot_schema_dict(),
-                    "required": True,
+                    "definitionProtected": True,
                     "showOnNode": True,
                     "description": "Unified runtime monitor snapshots (health/resource/perf/error).",
                 }
@@ -52,7 +52,7 @@ class MonitorSchemaTests(unittest.TestCase):
                 {
                     "name": "out",
                     "valueSchema": {"type": "string"},
-                    "required": False,
+                    "definitionProtected": False,
                     "showOnNode": True,
                     "description": "output",
                 }
@@ -67,14 +67,14 @@ class MonitorSchemaTests(unittest.TestCase):
                 {
                     "name": "monitor",
                     "valueSchema": monitor_snapshot_schema_dict(),
-                    "required": True,
+                    "definitionProtected": True,
                     "showOnNode": True,
                     "description": "Unified runtime monitor snapshots (health/resource/perf/error).",
                 },
                 {
                     "name": "telemetry",
                     "valueSchema": {"type": "object"},
-                    "required": False,
+                    "definitionProtected": False,
                     "showOnNode": True,
                     "description": "legacy stream",
                 },
@@ -83,13 +83,13 @@ class MonitorSchemaTests(unittest.TestCase):
         with self.assertRaises(MonitorContractError):
             validate_describe_monitor_contract(payload)
 
-    def test_validate_describe_monitor_contract_rejects_monitor_required_false(self) -> None:
+    def test_validate_describe_monitor_contract_rejects_unprotected_monitor(self) -> None:
         payload = _describe_payload_with_ports(
             [
                 {
                     "name": "monitor",
                     "valueSchema": monitor_snapshot_schema_dict(),
-                    "required": False,
+                    "definitionProtected": False,
                     "showOnNode": True,
                     "description": "Unified runtime monitor snapshots (health/resource/perf/error).",
                 }

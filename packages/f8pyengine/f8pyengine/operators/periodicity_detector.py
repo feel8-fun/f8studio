@@ -392,7 +392,7 @@ PeriodicityDetectorRuntimeNode.SPEC = F8OperatorSpec(
             description="Autocorrelation history window in samples.",
             valueSchema=number_schema(default=150, minimum=8.0, maximum=4096.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -401,7 +401,7 @@ PeriodicityDetectorRuntimeNode.SPEC = F8OperatorSpec(
             description="Minimum lag to scan for periodic peaks.",
             valueSchema=number_schema(default=10, minimum=1.0, maximum=4096.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -410,7 +410,7 @@ PeriodicityDetectorRuntimeNode.SPEC = F8OperatorSpec(
             description="Maximum lag to scan for periodic peaks.",
             valueSchema=number_schema(default=150, minimum=1.0, maximum=4096.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -419,7 +419,7 @@ PeriodicityDetectorRuntimeNode.SPEC = F8OperatorSpec(
             description="Minimum local prominence for a valid autocorrelation peak.",
             valueSchema=number_schema(default=0.1, minimum=0.0, maximum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -428,7 +428,7 @@ PeriodicityDetectorRuntimeNode.SPEC = F8OperatorSpec(
             description="Minimum number of valid peaks before full confidence.",
             valueSchema=number_schema(default=1, minimum=1.0, maximum=16.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -437,7 +437,7 @@ PeriodicityDetectorRuntimeNode.SPEC = F8OperatorSpec(
             description="EMA smoothing factor applied to confidence.",
             valueSchema=number_schema(default=0.25, minimum=0.0, maximum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -446,7 +446,7 @@ PeriodicityDetectorRuntimeNode.SPEC = F8OperatorSpec(
             description="Minimum centered energy before confidence can rise.",
             valueSchema=number_schema(default=1e-4, minimum=0.0, maximum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -455,7 +455,7 @@ PeriodicityDetectorRuntimeNode.SPEC = F8OperatorSpec(
             description="Decision threshold for the boolean periodic output.",
             valueSchema=number_schema(default=0.6, minimum=0.0, maximum=1.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -464,7 +464,7 @@ PeriodicityDetectorRuntimeNode.SPEC = F8OperatorSpec(
             description="RMS window length in samples.",
             valueSchema=number_schema(default=64, minimum=4.0, maximum=4096.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -473,7 +473,7 @@ PeriodicityDetectorRuntimeNode.SPEC = F8OperatorSpec(
             description="Sampling interval in milliseconds used to convert detected period into frequency.",
             valueSchema=number_schema(default=33.3333333333, minimum=0.001, maximum=50000.0),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -482,7 +482,7 @@ PeriodicityDetectorRuntimeNode.SPEC = F8OperatorSpec(
             description="Decay confidence when the input is missing.",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
     ],

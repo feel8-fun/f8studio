@@ -49,7 +49,7 @@ def register_studio_runtime(registry: Registry, *, presentation: PresentationOut
                     description="Default refresh interval for Studio presentation operators.",
                     valueSchema=integer_schema(default=100, minimum=16, maximum=5000),
                     access=F8StateAccess.rw,
-                    required=True,
+                    valueRequired=True,
                     showOnNode=True,
                 )
             ],

@@ -27,7 +27,7 @@ def viz_sampling_state_fields(*, show_on_node: bool = False) -> list[F8StateSpec
             ),
             valueSchema=string_schema(default=UPSTREAM_SAMPLING_MODE_AUTO, enum=list(UPSTREAM_SAMPLING_MODE_VALUES)),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=show_on_node,
         ),
         F8StateSpec(
@@ -40,7 +40,7 @@ def viz_sampling_state_fields(*, show_on_node: bool = False) -> list[F8StateSpec
                 maximum=UPSTREAM_SAMPLE_INTERVAL_MS_MAX,
             ),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=show_on_node,
         ),
     ]

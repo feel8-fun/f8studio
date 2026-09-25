@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import exec_port_specs
+
 import math
 from typing import Any
 
@@ -182,8 +184,8 @@ BoneSelectorRuntimeNode.SPEC = F8OperatorSpec(
     label="Bone Selector",
     description="Selects one bone from a skeleton by `target` and outputs `{name,pos,rot}`.",
     tags=["skeleton", "bone", "select", "mocap"],
-    execInPorts=[],
-    execOutPorts=[],
+    execInPorts=exec_port_specs([]),
+    execOutPorts=exec_port_specs([]),
     dataInPorts=[
         F8DataPortSpec(
             name="skeleton",
@@ -205,7 +207,7 @@ BoneSelectorRuntimeNode.SPEC = F8OperatorSpec(
             description="Bone name to select.",
             valueSchema=string_schema(default=""),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             control=F8UiControlSpec(kind=F8UiControlKind.select, optionsFromState="availableBones"),
             showOnNode=True,
         ),
@@ -215,7 +217,7 @@ BoneSelectorRuntimeNode.SPEC = F8OperatorSpec(
             description="Read-only list of available bone names from current skeleton input.",
             valueSchema=array_schema(items=string_schema()),
             access=F8StateAccess.ro,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
     ],

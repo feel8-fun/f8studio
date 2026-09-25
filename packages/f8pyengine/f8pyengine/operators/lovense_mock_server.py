@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import exec_port_specs
+
 import asyncio
 import base64
 import hashlib
@@ -1489,7 +1491,7 @@ LovenseMockServerRuntimeNode.SPEC = F8OperatorSpec(
     label="Lovense Mock Server",
     description="Event-driven input node that mocks the Lovense Local API and emits received commands.",
     tags=["io", "lovense", "http", "server", "event"],
-    execOutPorts=["event"],
+    execOutPorts=exec_port_specs(["event"]),
     dataOutPorts=[
         F8DataPortSpec(
             name="event",
@@ -1504,7 +1506,7 @@ LovenseMockServerRuntimeNode.SPEC = F8OperatorSpec(
             description="Local address to bind (loopback by default).",
             valueSchema=string_schema(default="127.0.0.1"),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -1513,7 +1515,7 @@ LovenseMockServerRuntimeNode.SPEC = F8OperatorSpec(
             description="When true, allow bindAddress values other than loopback.",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -1522,7 +1524,7 @@ LovenseMockServerRuntimeNode.SPEC = F8OperatorSpec(
             description="HTTP port for the mock Lovense server.",
             valueSchema=integer_schema(default=30010, minimum=1, maximum=65535),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
         F8StateSpec(
@@ -1531,7 +1533,7 @@ LovenseMockServerRuntimeNode.SPEC = F8OperatorSpec(
             description="If enabled, logs raw incoming requests and outgoing responses (debug).",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -1540,7 +1542,7 @@ LovenseMockServerRuntimeNode.SPEC = F8OperatorSpec(
             description="Include the parsed request payload in the `event` data output (debug).",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -1549,7 +1551,7 @@ LovenseMockServerRuntimeNode.SPEC = F8OperatorSpec(
             description="Include request headers/body in the `event` data output (debug).",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
-            required=True,
+            valueRequired=True,
             showOnNode=False,
         ),
         F8StateSpec(
@@ -1558,7 +1560,7 @@ LovenseMockServerRuntimeNode.SPEC = F8OperatorSpec(
             description="True if the HTTP server is currently listening.",
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.ro,
-            required=True,
+            valueRequired=True,
             showOnNode=True,
         ),
     ],

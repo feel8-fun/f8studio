@@ -396,7 +396,7 @@ def json_data_port(
     name: str,
     value_schema: F8DataTypeSchema,
     description: str | None = None,
-    required: bool = True,
+    definition_protected: bool = True,
     show_on_node: bool = True,
     delivery: F8DataPortDelivery = F8DataPortDelivery.fifo,
 ) -> F8DataPortSpec:
@@ -408,7 +408,7 @@ def json_data_port(
         description=UNSET if description is None else description,
         payloadKind=F8DataPortPayloadKind.json,
         delivery=delivery,
-        required=bool(required),
+        definitionProtected=bool(definition_protected),
         showOnNode=bool(show_on_node),
     )
 
@@ -417,7 +417,7 @@ def video_frame_port(
     *,
     name: str,
     description: str | None = None,
-    required: bool = True,
+    definition_protected: bool = True,
     show_on_node: bool = True,
     formats: tuple[str, ...] | list[str] = VIDEO_FRAME_FORMATS,
 ) -> F8DataPortSpec:
@@ -440,7 +440,7 @@ def video_frame_port(
         description=UNSET if description is None else description,
         payloadKind=F8DataPortPayloadKind.video_frame,
         delivery=F8DataPortDelivery.latest,
-        required=bool(required),
+        definitionProtected=bool(definition_protected),
         showOnNode=bool(show_on_node),
     )
 
@@ -449,7 +449,7 @@ def audio_chunk_port(
     *,
     name: str,
     description: str | None = None,
-    required: bool = True,
+    definition_protected: bool = True,
     show_on_node: bool = True,
     formats: tuple[str, ...] | list[str] = AUDIO_CHUNK_FORMATS,
 ) -> F8DataPortSpec:
@@ -471,7 +471,7 @@ def audio_chunk_port(
         description=UNSET if description is None else description,
         payloadKind=F8DataPortPayloadKind.audio_chunk,
         delivery=F8DataPortDelivery.latest,
-        required=bool(required),
+        definitionProtected=bool(definition_protected),
         showOnNode=bool(show_on_node),
     )
 

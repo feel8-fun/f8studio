@@ -27,7 +27,7 @@ json schema_integer(const std::int64_t default_value) {
 json locked_builtin_state_policy() {
   return json{{"canRename", false},
               {"canEditAccess", false},
-              {"canEditRequired", false},
+              {"canEditValueRequired", false},
               {"canEditValueSchema", false}};
 }
 
@@ -39,7 +39,7 @@ json state_field(const std::string& name, const json& value_schema, const std::s
       {"description", description},
       {"valueSchema", value_schema},
       {"access", access},
-      {"required", required},
+      {"valueRequired", required},
       {"editPolicy", locked_builtin_state_policy()},
       {"showOnNode", show_on_node},
   };
@@ -136,7 +136,7 @@ json monitor_port_spec() {
       {"name", "monitor"},
       {"description", "Unified runtime monitor snapshots (health/resource/perf/error)."},
       {"valueSchema", monitor_port_schema()},
-      {"required", true},
+      {"definitionProtected", true},
       {"showOnNode", false},
   };
 }
@@ -185,6 +185,66 @@ void upsert_builtin_data_out_ports(json& spec) {
   spec["dataOutPorts"] = std::move(filtered);
 }
 
+void rename_descriptor_field(json& item, const char* old_name, const char* new_name) {
+  if (!item.is_object() || !item.contains(old_name)) return;
+  if (!item.contains(new_name)) item[new_name] = item[old_name];
+  item.erase(old_name);
+}
+
+void normalize_control(json& field) {
+  if (!field.is_object() || !field.contains("uiControl")) return;
+  if (!field.contains("control") && field["uiControl"].is_string()) {
+    const std::string raw = field["uiControl"].get<std::string>();
+    if (!raw.empty()) {
+      const auto bracket = raw.find('[');
+      std::string kind = raw.substr(0, bracket);
+      if (kind == "wrapline") kind = "textarea";
+      json control{{"kind", kind}};
+      if (bracket != std::string::npos && raw.back() == ']') {
+        const std::string argument = raw.substr(bracket + 1, raw.size() - bracket - 2);
+        if (kind == "select" || kind == "multiselect") control["optionsFromState"] = argument;
+        if (kind == "code" || kind == "textarea") control["language"] = argument;
+      }
+      field["control"] = std::move(control);
+    }
+  }
+  field.erase("uiControl");
+}
+
+void normalize_spec_descriptors(json& spec, const bool is_service) {
+  if (is_service) spec.erase("launch");
+  if (spec.contains("stateFields") && spec["stateFields"].is_array()) {
+    for (auto& field : spec["stateFields"]) {
+      rename_descriptor_field(field, "required", "valueRequired");
+      normalize_control(field);
+      if (field.is_object() && field.contains("editPolicy") && field["editPolicy"].is_object()) {
+        rename_descriptor_field(field["editPolicy"], "canEditRequired", "canEditValueRequired");
+      }
+    }
+  }
+  for (const char* collection : {"dataInPorts", "dataOutPorts"}) {
+    if (!spec.contains(collection) || !spec[collection].is_array()) continue;
+    for (auto& port : spec[collection]) rename_descriptor_field(port, "required", "definitionProtected");
+  }
+  if (spec.contains("commands") && spec["commands"].is_array()) {
+    for (auto& command : spec["commands"]) {
+      rename_descriptor_field(command, "required", "definitionProtected");
+      if (!command.is_object() || !command.contains("params") || !command["params"].is_array()) continue;
+      for (auto& param : command["params"]) {
+        rename_descriptor_field(param, "required", "valueRequired");
+        normalize_control(param);
+      }
+    }
+  }
+  if (is_service) return;
+  for (const char* collection : {"execInPorts", "execOutPorts"}) {
+    if (!spec.contains(collection) || !spec[collection].is_array()) continue;
+    for (auto& port : spec[collection]) {
+      if (port.is_string()) port = json{{"name", port}};
+    }
+  }
+}
+
 }  // namespace
 
 json normalize_describe_with_builtin_state_fields(const json& payload) {
@@ -193,6 +253,7 @@ json normalize_describe_with_builtin_state_fields(const json& payload) {
   json out = payload;
   if (out.contains("service") && out["service"].is_object()) {
     json service = out["service"];
+    normalize_spec_descriptors(service, true);
     upsert_builtin_state_fields(service, true);
     upsert_builtin_data_out_ports(service);
     out["service"] = std::move(service);
@@ -202,6 +263,7 @@ json normalize_describe_with_builtin_state_fields(const json& payload) {
       for (const auto& op : out["operators"]) {
         if (!op.is_object()) continue;
         json op_spec = op;
+        normalize_spec_descriptors(op_spec, false);
         upsert_builtin_state_fields(op_spec, false);
         normalized_ops.push_back(std::move(op_spec));
       }
@@ -213,6 +275,7 @@ json normalize_describe_with_builtin_state_fields(const json& payload) {
     return out;
   }
 
+  normalize_spec_descriptors(out, true);
   upsert_builtin_state_fields(out, true);
   upsert_builtin_data_out_ports(out);
   return out;

@@ -39,7 +39,7 @@ def register_expr_specs(registry: Registry) -> Registry:
                     description="Single-line expression. Available names: inputs + identifier-safe input ports.",
                     valueSchema=string_schema(default=DEFAULT_CODE),
                     access=F8StateAccess.rw,
-                    required=True,
+                    valueRequired=True,
                     control=F8UiControlSpec(kind=F8UiControlKind.textarea, language="python"),
                     showOnNode=True,
                 ),
@@ -49,7 +49,7 @@ def register_expr_specs(registry: Registry) -> Registry:
                     description="Enable numpy calls in expressions (np.*, numpy.*).",
                     valueSchema=boolean_schema(default=False),
                     access=F8StateAccess.wo,
-                    required=True,
+                    valueRequired=True,
                     control=F8UiControlSpec(kind=F8UiControlKind.toggle),
                     showOnNode=False,
                 ),
@@ -59,14 +59,14 @@ def register_expr_specs(registry: Registry) -> Registry:
                     description="When enabled, dict results are emitted per matching output port key.",
                     valueSchema=boolean_schema(default=False),
                     access=F8StateAccess.wo,
-                    required=True,
+                    valueRequired=True,
                     control=F8UiControlSpec(kind=F8UiControlKind.toggle),
                     showOnNode=False,
                 ),
             ],
-            dataInPorts=[F8DataPortSpec(name="msg", description="Default input value.", valueSchema=any_schema(), required=False)],
+            dataInPorts=[F8DataPortSpec(name="msg", description="Default input value.", valueSchema=any_schema(), definitionProtected=False)],
             dataOutPorts=[
-                F8DataPortSpec(name="out", description="Default expression output value.", valueSchema=any_schema(), required=False)
+                F8DataPortSpec(name="out", description="Default expression output value.", valueSchema=any_schema(), definitionProtected=False)
             ],
             editPolicy=F8SpecEditPolicy(
                 dataInPorts=editable_collection_edit_policy(),

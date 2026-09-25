@@ -13,7 +13,7 @@ vi.mock('../api/client', () => ({
 const command: CommandSpec = {
   name: 'Run',
   params: [
-    { name: 'count', valueSchema: { type: 'integer', minimum: 1 }, required: true },
+    { name: 'count', valueSchema: { type: 'integer', minimum: 1 }, valueRequired: true },
     { name: 'label', valueSchema: { type: 'string' } },
   ],
 };
