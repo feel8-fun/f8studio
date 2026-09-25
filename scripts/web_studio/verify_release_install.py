@@ -29,7 +29,9 @@ def _run(command: list[str], *, cwd: Path = REPO_ROOT) -> None:
 
 
 def _stage_web_bundle() -> None:
-    _run(["npm", "--prefix", "packages/f8studio_web", "run", "build"])
+    npm_command = "npm.cmd" if os.name == "nt" else "npm"
+    _run([npm_command, "--prefix", "packages/f8studio_web", "ci"])
+    _run([npm_command, "--prefix", "packages/f8studio_web", "run", "build"])
     if not (WEB_SOURCE_DIR / "index.html").is_file():
         raise FileNotFoundError(f"Web build did not produce {WEB_SOURCE_DIR / 'index.html'}")
     WEB_PACKAGE_DIR.mkdir(parents=True, exist_ok=True)
@@ -116,6 +118,7 @@ import f8pysdk
 import f8studio_core
 import f8studio_server
 import f8unitymods_setup
+from f8media_gateway.service import InProcessMediaGateway
 from f8studio_server.app import create_app, default_web_dist
 
 prefix = Path(sys.prefix).resolve()
@@ -134,7 +137,7 @@ web_dist = default_web_dist()
 if not web_dist.is_relative_to(prefix) or not (web_dist / 'index.html').is_file():
     raise RuntimeError(f'embedded Web bundle is unavailable: {web_dist}')
 with tempfile.TemporaryDirectory(prefix='f8studio-wheel-smoke-') as data_dir:
-    app = create_app(data_dir=Path(data_dir), service_roots=())
+    app = create_app(data_dir=Path(data_dir), service_roots=(), media_gateway=InProcessMediaGateway())
     with TestClient(app) as client:
         health = client.get('/api/health')
         root = client.get('/')

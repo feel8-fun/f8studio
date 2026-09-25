@@ -1,6 +1,6 @@
 # Web Studio 迁移状态
 
-最后更新：2026-09-23。目标方案：[web-studio-migration.md](web-studio-migration.md)。
+最后更新：2026-09-24。目标方案：[web-studio-migration.md](web-studio-migration.md)。
 
 ## 当前结论
 
@@ -8,9 +8,15 @@ P7 后的图编辑精修新增 Node Library 分组、手动 command 调用、节
 
 2026-09-23 对已保存的 `Untitled 10` 图（revision 89）实测：不改动 Screen Capture → Video Viz 连线，重启 Studio 后再次部署从 `queued` 进入 `succeeded`，Screen Capture 的 `captureRunning=true`、输出 1920×1080，浏览器节点预览解码出 640×360 视频帧。日志中心可回看服务启动与部署过程。
 
-P0、P1、P2、P3、P3.5、P4、P5、P6 和 P7 已在当前 Linux 主机完成验证。P7 已删除旧 Qt Studio、两个旧扩展包及 Unity 子模块中的 PySide setup UI，移除 Qt/NodeGraphQt/PyQtGraph 依赖和旧 `studio` feature，并将 OpenCV 切换到 headless 发行包。正式启动器现在启动 Web Studio、等待 HTTP health 后打开浏览器；生产 wheel 内嵌本地 Web bundle，非 editable 离线安装 smoke 已通过。Windows 干净构建与实机运行仍是发布门禁，当前不宣称通过。
+P0、P1、P2、P3、P3.5、P4、P5、P6 和 P7 已在 Linux 主机完成验证。P7 已删除旧 Qt Studio、两个旧扩展包及 Unity 子模块中的 PySide setup UI，移除 Qt/NodeGraphQt/PyQtGraph 依赖和旧 `studio` feature，并将 OpenCV 切换到 headless 发行包。正式启动器现在启动 Web Studio、等待 HTTP health 后打开浏览器；生产 wheel 内嵌本地 Web bundle。Windows 初步迁移与实机验证见下节；全新构建树和完整发布安装仍保留门禁。
 
 P6 新增 SQLite 持久化的 Agent 会话/消息/工具进度/产物/审批，确定性建图与诊断闭环，服务端 provider 注册，Web Agent 工作区，以及复用同一 HTTP/application service 的 CLI 和 MCP。OpenAI、Anthropic、Gemini 与 Ollama 的凭据只从服务端环境读取；当前主机没有模型凭据，因此真实模型 smoke 明确跳过，未宣称供应商在线请求通过。P5 新增本地资产/不可变版本/项目快照、component 捕获与插入、variant 状态应用、节点 schema 写回、从本地 bundle 加载的 Monaco、每会话 `basedpyright-langserver --stdio` completion/hover 和确定性诊断、音频频谱、曲线/track/TCode presentation renderer、节点内 Video Viz 实时预览、Template Match 浏览器截图裁剪、Unity detect/preview/confirm-apply、完整 UDP 骨架帧验证、串口枚举、Web 局部快捷键，以及 SQLite 持久化的无 Qt Win32/X11 全局快捷键后端。P4 使用 React Flow 接入权威项目文档和 catalog，已具备项目创建/选择、可持久化缩放的 service canvas 与 operator 嵌套、动态端口、typed data/state/exec/command 连接规则、data edge policy、约束拖放、级联删除、子图复制、多选、撤销/重做、自动持久化重开、schema 驱动的 Inspector 与 inline state controls、上游 state 只读联动、部署/停止，以及 draft/layout/deployed revision 和逐服务部署错误展示。P3.5 将 Zenoh 订阅、媒体转换、aiortc peer 和编码执行迁入独立 `f8media_gateway` 进程。多 peer 软件编码在组合负载下的 main 为 26.86-27.52 FPS，低于 28 FPS 初始预算；硬件/共享编码仍是发布前优化项。`f8studio_core`、`f8media_protocol`、`f8media_gateway`、`f8studio_server` 和 `f8studio_web` 均为独立包。
+
+## Windows 初步验证（2026-09-24）
+
+Windows 11 10.0.22621 上安装 `web-studio-test` 与 `web-studio-runtime`；Python 3.14.7、FastAPI 0.141.1、Uvicorn 0.53.0、aiortc 1.15.0、PyAV 17.1.0 和 Zenoh 1.9.0 可用，H.264/VP8/VP9 软件编码器可见。`studio_python_typecheck` 为 0 errors，`studio_no_qt_check` 通过；core/server/media gateway 测试分别为 21/70/24 passed，Web 单测为 33 passed，Windows Google Chrome E2E 为 42 passed、4 skipped（desktop/mobile）。Win32 `RegisterHotKey` 实机注册与注销通过；尚未验证键盘在 Studio 失焦时实际触发。
+
+正式服务上的 `studio_runtime_probe` 启动 PyEngine、部署图并确认 `processed=6`；`studio_real_video_probe` 启动新编译的 `f8screencap_service.exe`，经 Zenoh/WebRTC 解码出 1920×540 的真实采集帧并停止受管服务。Windows 完整 `dist_ci --archive` 生成 `build/dist/f8studio-windows-x86_64.zip`；新 Nuitka `f8studio.exe --dry-run` 返回 0。`studio_release_smoke` 在临时 Windows venv 非 editable 安装六个 wheel，确认嵌入 Web 首页与 health。此轮使用已有 Conan/CMake 构建树，尚未从空构建树重新 bootstrap；zip 的 `install_env.bat` 未在全新目录执行。实体 Unity/VaM/Unreal 安装、真实串口、焦点外热键触发和 Windows 媒体性能预算仍待目标环境验证。
 
 ## 基线
 
@@ -25,7 +31,7 @@ P6 新增 SQLite 持久化的 Agent 会话/消息/工具进度/产物/审批，�
 | FastAPI / Uvicorn | 0.141.1 / 0.53.0 |
 | aiortc / PyAV | 1.15.0 / 17.1.0 |
 | eclipse-zenoh | 1.9.0（与当前原生 Zenoh 运行时保持兼容） |
-| 首发浏览器范围 | Windows/Linux Chromium；Linux Google Chrome E2E 已通过，Windows 待验证 |
+| 首发浏览器范围 | Windows/Linux Chromium；Linux 与 Windows Google Chrome E2E 已通过 |
 
 `studio_dependency_probe` 已成功导入 FastAPI、Zenoh、aiortc、PyAV，当前 Linux 构建报告 H.264、VP8、VP9 软件编码器可见。这只证明依赖和 codec 注册可用，不是 WebRTC 性能通过。
 
@@ -92,11 +98,11 @@ pixi run -e web-studio npm --prefix packages/f8studio_web audit --json
                                                         0 vulnerabilities
 ```
 
-尚未验证：Windows 求解/运行、硬件编码、非 Chromium 浏览器和远端跨主机时钟。它们属于发布平台补充，不能据当前 Linux 软件编码结果宣称通过。
+尚未验证：Windows 全新构建树与 zip 解压安装、硬件编码、非 Chromium 浏览器和远端跨主机时钟。它们属于发布平台补充，不能据 Linux 软件编码结果宣称通过。
 
 P7 当前 Linux 证据：旧 `packages/f8pystudio`、`f8pystudio_ext_template_match`、`f8pystudio_ext_viz_tcode` 及其 Qt 测试和脚本已删除；扩展能力已由 P5 的静态后端/前端注册实现。Unity 子模块删除独立 PySide/PyInstaller setup UI，保留 typed setup 包供 Web Studio 和 CLI 使用。Pixi 根清单、各 Python 包清单、子模块清单和 lockfile 均不再声明 Qt，视觉依赖使用 `opencv-contrib-python-headless`。`studio_no_qt_check` 会扫描保留 Python 源码的禁止 import、TOML 依赖、已安装 distribution、已加载 module、环境中的 Qt 动态库、旧包路径和应用构造边界。
 
-`studio-runtime` 不包含 Node 工具链或旧 `studio` feature；启动器执行 `studio_server` 并以 `/api/health` 判断就绪。发布构建先生成本地 Web bundle，再将其装入 `f8studio-server` wheel。`studio_release_smoke` 在临时 venv 中非 editable 安装六个本地 wheel，确认本地包来自 `site-packages`、没有 Qt distribution、内嵌首页和 health 可访问。以上证据仅覆盖当前 Linux 主机；Windows clean solve、launcher、wheel/zip 安装和 Win32 快捷键仍需 Windows 发布机验证。
+`studio-runtime` 不包含 Node 工具链或旧 `studio` feature；启动器执行 `studio_server` 并以 `/api/health` 判断就绪。发布构建先生成本地 Web bundle，再将其装入 `f8studio-server` wheel。`studio_release_smoke` 在临时 venv 中非 editable 安装六个本地 wheel，确认本地包来自 `site-packages`、没有 Qt distribution、内嵌首页和 health 可访问。Windows 上启动器 dry run、wheel smoke 和 Win32 热键注册已通过；全新目录执行 zip 安装脚本及焦点外热键触发仍待验证。
 
 P6 当前 Linux 证据：`StudioAutomationTools` 是浏览器、内置 Agent、HTTP、CLI 和 MCP 的统一业务边界；所有 patch 继续使用相同 revision、幂等和事务规则，并发布同一种 `graph.committed`。Playwright 在两个同时打开的页面中由 Agent 提交 patch，Graph 页面无需刷新即出现 service/operator；外部 API 的 graph-only 和 layout-only 新 revision 也按序同步，不重新应用旧事件。实际无浏览器 CLI 在独立数据目录完成建图、两次审批、校验、真实 `f8.pystudio` 部署和 monitor 读取；MCP 测试覆盖公开工具注册及 patch/approval 参数原样透传。新入口不导入 `f8pystudio`、Qt 或 GUI graph adapter。
 

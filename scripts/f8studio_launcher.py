@@ -55,7 +55,7 @@ def _show_error_dialog(title: str, message: str) -> None:
 
 def _launcher_dir() -> Path:
     if "__compiled__" in globals():
-        return Path(sys.executable).resolve().parent
+        return Path(sys.argv[0]).resolve().parent
     return Path(__file__).resolve().parent.parent
 
 

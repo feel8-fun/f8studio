@@ -1,4 +1,6 @@
 import { defineConfig } from '@playwright/test';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const baseURL = 'http://127.0.0.1:8242';
 
@@ -14,8 +16,8 @@ export default defineConfig({
   use: {
     baseURL,
     browserName: 'chromium',
+    channel: 'chrome',
     viewport: { width: 1440, height: 900 },
-    launchOptions: { executablePath: '/usr/bin/google-chrome' },
     trace: 'retain-on-failure',
   },
   projects: [{ name: 'graph-performance' }],
@@ -25,6 +27,6 @@ export default defineConfig({
     url: `${baseURL}/api/health`,
     timeout: 30_000,
     reuseExistingServer: false,
-    env: { F8STUDIO_DATA_DIR: '/tmp/f8studio-graph-performance' },
+    env: { F8STUDIO_DATA_DIR: join(tmpdir(), 'f8studio-graph-performance') },
   },
 });

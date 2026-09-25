@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test('shows service and deployment logs below the compact title bar', async ({ page }, testInfo) => {
   const timestamp = '2026-09-23T15:00:00.000Z';
-  await page.route('**/api/logs', async (route) => route.fulfill({ json: [
+  await page.route('**/api/logs?*', async (route) => route.fulfill({ json: [
     {
       eventId: 'service-line', serverEpoch: 'epoch-1', sequence: 1, type: 'service.log',
       scope: 'service:capture-1', timestamp,

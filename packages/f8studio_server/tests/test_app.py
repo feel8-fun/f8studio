@@ -416,7 +416,7 @@ def test_application_shutdown_closes_active_audio_sessions(tmp_path: Path) -> No
             json={"source": "synthetic://tone", "sdp": offer_sdp, "type": "offer"},
         )
         assert response.status_code == 201
-        assert response.json()["transportPolicy"].startswith("latest-chunk")
+        assert response.json()["transportPolicy"].startswith("bounded-queue-16")
         assert gateway.audio.session_count == 1
         assert gateway.audio.source_count == 1
 

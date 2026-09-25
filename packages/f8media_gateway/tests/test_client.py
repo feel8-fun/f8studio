@@ -123,11 +123,15 @@ def test_managed_gateway_runs_in_a_separate_process_and_stops() -> None:
             health = await gateway.health()
             process_id = health.process_id
             assert process_id != os.getpid()
-            assert os.path.exists(f"/proc/{process_id}")
+            process = gateway._process
+            assert process is not None
+            assert process.pid == process_id
+            assert process.returncode is None
         finally:
             await gateway.close()
         assert process_id > 0
-        assert not os.path.exists(f"/proc/{process_id}")
+        assert process is not None
+        assert process.returncode is not None
 
     asyncio.run(scenario())
 

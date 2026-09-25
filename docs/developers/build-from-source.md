@@ -6,6 +6,7 @@ Clone the repository with its Unity exporter submodule and use Pixi for every ma
 git clone --recurse-submodules <your-repo-url>
 cd f8studio
 pixi install -e web-studio-test
+pixi run -e web-studio npm --prefix packages/f8studio_web ci
 ```
 
 For an existing checkout:

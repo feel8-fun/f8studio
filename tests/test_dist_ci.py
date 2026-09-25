@@ -255,6 +255,8 @@ class DistCiDiscoveryTest(unittest.TestCase):
 
         self.assertIn("pixi install -e studio-runtime -e onnx", script_text)
         self.assertNotIn("pixi install -a", script_text)
+        if os.name == "nt":
+            self.assertEqual(script_text.count("if errorlevel 1 exit /b %errorlevel%"), 2)
 
     def test_env_install_script_installs_local_wheels_in_owned_environments(self) -> None:
         script_text = self.module._env_install_script_text(

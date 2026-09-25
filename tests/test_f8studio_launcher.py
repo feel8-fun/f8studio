@@ -29,6 +29,14 @@ class LauncherEnvironmentDiscoveryTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
 
+    def test_compiled_launcher_uses_executable_path_for_workspace_lookup(self) -> None:
+        executable = self.root / "f8studio.exe"
+        with (
+            mock.patch.object(self.module, "__compiled__", True, create=True),
+            mock.patch.object(self.module.sys, "argv", [str(executable)]),
+        ):
+            self.assertEqual(self.module._launcher_dir(), self.root)
+
     def test_discover_launcher_install_environments_uses_marker_feature(self) -> None:
         (self.root / "pixi.toml").write_text(
             "[environments]\n"

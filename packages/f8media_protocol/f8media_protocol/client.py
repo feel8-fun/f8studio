@@ -142,7 +142,7 @@ class RemoteMediaGateway:
 
     async def create_video_session(self, offer: MediaSessionOffer) -> MediaSessionAnswer:
         return await self._request(
-            "POST", "/api/media/sessions", body=offer, response_type=MediaSessionAnswer
+            "POST", "/api/media/sessions", body=offer, response_type=MediaSessionAnswer, timeout_s=15.0
         )
 
     async def close_video_session(self, session_id: str) -> bool:
@@ -150,7 +150,7 @@ class RemoteMediaGateway:
 
     async def create_audio_session(self, offer: AudioSessionOffer) -> AudioSessionAnswer:
         return await self._request(
-            "POST", "/api/audio/sessions", body=offer, response_type=AudioSessionAnswer
+            "POST", "/api/audio/sessions", body=offer, response_type=AudioSessionAnswer, timeout_s=15.0
         )
 
     async def close_audio_session(self, session_id: str) -> bool:
@@ -199,6 +199,7 @@ class RemoteMediaGateway:
         *,
         body: object | None = None,
         query: dict[str, str] | None = None,
+        timeout_s: float = 5.0,
         response_type: type[T],
     ) -> T: ...
 
@@ -210,6 +211,7 @@ class RemoteMediaGateway:
         *,
         body: object | None = None,
         query: dict[str, str] | None = None,
+        timeout_s: float = 5.0,
         response_type: None,
     ) -> None: ...
 
@@ -220,6 +222,7 @@ class RemoteMediaGateway:
         *,
         body: object | None = None,
         query: dict[str, str] | None = None,
+        timeout_s: float = 5.0,
         response_type: type[T] | None,
     ) -> T | None:
         client = self._client
@@ -232,6 +235,7 @@ class RemoteMediaGateway:
                 content=None if body is None else msgspec.json.encode(body),
                 params=query,
                 headers=None if body is None else {"content-type": "application/json"},
+                timeout=timeout_s,
             )
         except httpx.HTTPError as exc:
             raise MediaGatewayUnavailable(f"Media Gateway request failed: {type(exc).__name__}: {exc}") from exc

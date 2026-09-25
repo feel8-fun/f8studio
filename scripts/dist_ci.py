@@ -353,6 +353,7 @@ def _bundle_unitymods_assets(dist_dir: Path, *, build_assets: bool = True) -> Pa
 
 
 def _stage_web_bundle() -> Path:
+    _run(["pixi", "run", "--frozen", "-e", "web-studio", "npm", "--prefix", "packages/f8studio_web", "ci"])
     _run(["pixi", "run", "--frozen", "-e", "web-studio", "studio_web_build"])
     index_path = WEB_BUNDLE_SOURCE / "index.html"
     if not index_path.is_file():
@@ -583,14 +584,13 @@ def _env_install_script_text(
         )
 
     if os.name == "nt":
+        commands = [install_command, *wheel_install_commands]
         return (
             "@echo off\r\n"
             "setlocal\r\n"
             "cd /d \"%~dp0\"\r\n"
-            + install_command
-            + "\r\n"
-            + "\r\n".join(wheel_install_commands)
-            + ("\r\n" if wheel_install_commands else "")
+            "if errorlevel 1 exit /b %errorlevel%\r\n"
+            + "".join(command + "\r\nif errorlevel 1 exit /b %errorlevel%\r\n" for command in commands)
         )
     script_text = (
         "#!/usr/bin/env sh\n"

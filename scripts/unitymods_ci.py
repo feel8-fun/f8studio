@@ -44,7 +44,7 @@ def _run_unitymods_task(task: str) -> None:
     if sys.platform != "win32":
         raise RuntimeError(f"f8unitymods task '{task}' requires Windows")
     subprocess.run(
-        ["pixi", "run", "--frozen", "--manifest-path", str(UNITYMODS_MANIFEST), task],
+        ["pixi", "run", "--frozen", "-e", "default", "--manifest-path", str(UNITYMODS_MANIFEST), task],
         cwd=UNITYMODS_ROOT,
         check=True,
     )

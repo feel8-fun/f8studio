@@ -30,17 +30,12 @@ class CustomBuildHook(BuildHookInterface):
         output_path = project_root / "f8pysdk" / "generated" / "__init__.py"
         script_path = repo_root / "scripts" / "protocol_codegen_msgspec.py"
 
+        if output_path.is_file():
+            return
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         missing_modules = _missing_codegen_modules()
         if missing_modules:
-            if output_path.is_file():
-                print(
-                    "[f8pysdk build] Skipping protocol codegen because the build environment is missing "
-                    f"{', '.join(missing_modules)}; using committed generated models at {output_path}.",
-                    file=sys.stderr,
-                )
-                return
             missing_text = ", ".join(missing_modules)
             raise RuntimeError(
                 "f8pysdk protocol model generation requires "
