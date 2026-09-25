@@ -609,6 +609,67 @@ test('nests operators in compatible services and cascades container deletion', a
   expect(pageErrors).toEqual([]);
 });
 
+test('edits fixed operator presentation and remembers Inspector width', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === 'mobile', 'Inspector is hidden in the mobile graph layout');
+  await page.goto('/');
+  await expect(page.locator('.connection-online')).toBeVisible();
+  const previousProjectId = await page.locator('#project-select').inputValue();
+  await page.locator('.project-control').getByRole('button', { name: 'New project' }).click();
+  await expect.poll(() => page.locator('#project-select').inputValue()).not.toBe(previousProjectId);
+  const projectId = await page.locator('#project-select').inputValue();
+  await page.getByLabel('Search nodes').fill('f8.pyengine');
+  await page.locator('.catalog-list button:not(:disabled)').filter({ hasText: 'f8.pyengine' }).first().click();
+  await page.getByLabel('Search nodes').fill('f8.print');
+  await page.locator('.catalog-list button:not(:disabled)').filter({ hasText: 'f8.print' }).click();
+  await expect(page.locator('.react-flow__node.flow-node-operator')).toHaveCount(1);
+
+  const printId = await page.evaluate(async (selectedProjectId) => {
+    const response = await fetch(`/api/projects/${selectedProjectId}`);
+    const record = await response.json() as { document: { nodes: { nodeId: string; operatorClass?: string }[] } };
+    const print = record.document.nodes.find((node) => node.operatorClass === 'f8.print');
+    if (print === undefined) throw new Error('Print operator was not created');
+    return print.nodeId;
+  }, projectId);
+  const printNode = page.locator(`.react-flow__node[data-id="${printId}"]`);
+  await printNode.locator('.node-drag-handle').click();
+  const inspector = page.getByRole('complementary', { name: 'Inspector' });
+  await expect(inspector.getByRole('heading', { name: 'State values' })).toBeVisible();
+  await inspector.getByRole('checkbox', { name: 'Strip' }).click();
+  await expect.poll(async () => page.evaluate(async (selectedProjectId) => {
+    const response = await fetch(`/api/projects/${selectedProjectId}`);
+    const record = await response.json() as { document: { nodes: { operatorClass?: string; stateValues: Record<string, unknown> }[] } };
+    return record.document.nodes.find((node) => node.operatorClass === 'f8.print')?.stateValues.strip;
+  }, projectId)).toBe(false);
+
+  await inspector.getByText('Fields & ports').click();
+  const visibility = inspector.getByRole('checkbox', { name: 'Node' }).first();
+  await expect(visibility).toBeEnabled();
+  await visibility.check();
+  await expect(inspector.getByRole('combobox', { name: 'strip widget' })).toBeEnabled();
+  await inspector.getByRole('button', { name: 'Apply changes' }).click();
+  await expect(printNode.locator('.state-control-inline')).toBeVisible();
+
+  const separator = page.getByRole('separator', { name: 'Resize Inspector' });
+  const before = await inspector.boundingBox();
+  const handle = await separator.boundingBox();
+  if (before === null || handle === null) throw new Error('Inspector resize geometry unavailable');
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + 80);
+  await page.mouse.down();
+  await page.mouse.move(handle.x - 110, handle.y + 80, { steps: 5 });
+  await page.mouse.up();
+  const resized = await inspector.boundingBox();
+  expect(resized).not.toBeNull();
+  expect(resized!.width).toBeGreaterThan(before.width + 80);
+  const rememberedWidth = resized!.width;
+
+  await page.reload();
+  await expect(page.locator('#project-select')).toHaveValue(projectId);
+  const restored = await inspector.boundingBox();
+  expect(restored).not.toBeNull();
+  expect(Math.abs(restored!.width - rememberedWidth)).toBeLessThan(2);
+  await expect(printNode.locator('.state-control-inline')).toBeVisible();
+});
+
 test('edits inline state and configures typed exec and data connections', async ({ page }, testInfo) => {
   const pageErrors: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));

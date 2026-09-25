@@ -18,7 +18,7 @@ import {
   type ResizeParams,
 } from '@xyflow/react';
 import { Check, Copy, Download, Keyboard, Play, Plus, Redo2, RotateCcw, Square, Trash2, Upload, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
 import {
   ApiError,
@@ -89,7 +89,17 @@ import { commandResultDetail, runCommand } from './runCommand';
 
 const nodeTypes = { studio: StudioNodeView };
 const SELECTED_PROJECT_KEY = 'f8studio.selectedProjectId';
+const INSPECTOR_WIDTH_KEY = 'f8studio.graphInspectorWidth';
+const INSPECTOR_MIN_WIDTH = 280;
+const INSPECTOR_MAX_WIDTH = 640;
+const INSPECTOR_DEFAULT_WIDTH = 360;
 const STUDIO_SERVICE_ID = 'studio';
+
+function savedInspectorWidth(): number {
+  const stored = localStorage.getItem(INSPECTOR_WIDTH_KEY);
+  const value = stored === null ? INSPECTOR_DEFAULT_WIDTH : Number(stored);
+  return Number.isFinite(value) ? Math.max(INSPECTOR_MIN_WIDTH, Math.min(INSPECTOR_MAX_WIDTH, value)) : INSPECTOR_DEFAULT_WIDTH;
+}
 
 function visibleServicePosition(
   center: { readonly x: number; readonly y: number },
@@ -262,7 +272,7 @@ function NodeInspector({
       <dt>Queue</dt><dd>{monitor.queue?.depth ?? 0}</dd>
       <dt>Latency p95</dt><dd>{(monitor.timing?.latencyMsP95 ?? 0).toFixed(1)} ms</dd>
     </dl>}
-    {fields.length > 0 && <h2>State</h2>}
+    {fields.length > 0 && <h2>State values</h2>}
     <div className="inspector-fields">{fields.map((field) => {
       const connected = connectedStateInputs.has(`${node.nodeId}:${field.name}`);
       return <div className="inspector-state-field" key={field.name}>
@@ -344,6 +354,10 @@ function documentIsNewer(next: ProjectRecord['document'], current: ProjectRecord
 }
 
 function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId: string) => void }) {
+  const [inspectorWidth, setInspectorWidth] = useState(savedInspectorWidth);
+  const inspectorWidthRef = useRef(inspectorWidth);
+  const inspectorResizingRef = useRef(false);
+  const graphWorkspaceRef = useRef<HTMLDivElement>(null);
   const [projects, setProjects] = useState<readonly ProjectSummary[]>([]);
   const [project, setProject] = useState<ProjectRecord | null>(null);
   const [catalog, setCatalog] = useState<CatalogSnapshot | null>(null);
@@ -1232,8 +1246,22 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
     (selectedNode.kind === 'service' ? monitors.find((monitor) => monitor.serviceId === selectedNode.serviceId) ?? null : null);
   const locked = busy || saving;
 
+  const resizeInspector = (clientX: number): void => {
+    const bounds = graphWorkspaceRef.current?.getBoundingClientRect();
+    if (bounds === undefined) return;
+    const availableMax = Math.max(INSPECTOR_MIN_WIDTH, bounds.width - 238 - 280 - 6);
+    const next = Math.max(INSPECTOR_MIN_WIDTH, Math.min(INSPECTOR_MAX_WIDTH, availableMax, bounds.right - clientX - 3));
+    inspectorWidthRef.current = next;
+    setInspectorWidth(next);
+  };
+  const finishInspectorResize = (): void => {
+    if (!inspectorResizingRef.current) return;
+    inspectorResizingRef.current = false;
+    localStorage.setItem(INSPECTOR_WIDTH_KEY, String(inspectorWidthRef.current));
+  };
+
   return (
-    <div className="graph-workspace">
+    <div className="graph-workspace" ref={graphWorkspaceRef} style={{ '--inspector-width': `${inspectorWidth}px` } as CSSProperties}>
       <aside className="graph-palette" aria-label="Node catalog">
         <div className="project-control">
           <label htmlFor="project-select">Project</label>
@@ -1311,6 +1339,36 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
         {error !== null && <div className="graph-error" role="alert">{error}</div>}
       </section>
 
+      <div className="graph-inspector-resizer" role="separator" aria-label="Resize Inspector" aria-orientation="vertical"
+        aria-valuemin={INSPECTOR_MIN_WIDTH} aria-valuemax={INSPECTOR_MAX_WIDTH} aria-valuenow={inspectorWidth} tabIndex={0}
+        onPointerDown={(event) => {
+          event.preventDefault();
+          inspectorResizingRef.current = true;
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={(event) => { if (inspectorResizingRef.current) resizeInspector(event.clientX); }}
+        onPointerUp={(event) => {
+          finishInspectorResize();
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+        }}
+        onPointerCancel={finishInspectorResize}
+        onLostPointerCapture={finishInspectorResize}
+        onKeyDown={(event) => {
+          const bounds = graphWorkspaceRef.current?.getBoundingClientRect();
+          const maximum = bounds === undefined ? INSPECTOR_MAX_WIDTH : Math.min(INSPECTOR_MAX_WIDTH, Math.max(INSPECTOR_MIN_WIDTH, bounds.width - 238 - 280 - 6));
+          let next = inspectorWidth;
+          if (event.key === 'ArrowLeft') next += 20;
+          else if (event.key === 'ArrowRight') next -= 20;
+          else if (event.key === 'Home') next = INSPECTOR_MIN_WIDTH;
+          else if (event.key === 'End') next = maximum;
+          else return;
+          event.preventDefault();
+          event.stopPropagation();
+          next = Math.max(INSPECTOR_MIN_WIDTH, Math.min(maximum, next));
+          inspectorWidthRef.current = next;
+          setInspectorWidth(next);
+          localStorage.setItem(INSPECTOR_WIDTH_KEY, String(next));
+        }} />
       <aside className="graph-inspector" aria-label="Inspector">
         <h2>Inspector</h2>
         {selectedNode !== null && project !== null ? <NodeInspector projectId={project.projectId} node={selectedNode} services={project.document.nodes} monitor={selectedMonitor} busy={busy} pendingCommands={pendingCommands} commit={commit} bindService={bindOperatorService} connectedStateInputs={connectedStateInputs} onCommand={openCommand} /> :

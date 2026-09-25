@@ -26,6 +26,19 @@ def _item_name(item: SpecItem) -> str:
     return item.name
 
 
+def _semantic_item(item: SpecItem) -> dict[str, object]:
+    value = cast(dict[str, object], msgspec.to_builtins(item))
+    if isinstance(item, F8StateSpec):
+        presentation_fields = ("label", "description", "showOnNode", "control")
+    elif isinstance(item, (F8DataPortSpec, F8Command)):
+        presentation_fields = ("description", "showOnNode")
+    else:
+        presentation_fields = ("label", "description")
+    for field in presentation_fields:
+        value.pop(field, None)
+    return value
+
+
 def _check_collection(
     previous: Spec,
     collection: EditableCollectionName,
@@ -67,8 +80,12 @@ def _check_collection(
         name for name in set(old_by_name) & set(new_by_name)
         if msgspec.to_builtins(old_by_name[name]) != msgspec.to_builtins(new_by_name[name])
     ]
-    if changed and not can_edit_existing(previous, collection):
-        raise ValueError(f"{collection} does not allow editing: {', '.join(sorted(changed))}")
+    semantic_changes = [
+        name for name in changed
+        if _semantic_item(old_by_name[name]) != _semantic_item(new_by_name[name])
+    ]
+    if semantic_changes and not can_edit_existing(previous, collection):
+        raise ValueError(f"{collection} does not allow editing: {', '.join(sorted(semantic_changes))}")
     if collection == "stateFields":
         for name in changed:
             old_field = old_by_name[name]

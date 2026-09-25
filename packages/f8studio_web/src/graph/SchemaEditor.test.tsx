@@ -22,10 +22,10 @@ const node: OperatorNode = {
 test('edits dynamic state fields without sending derived ports', async () => {
   const commit = vi.fn(async () => {});
   render(<SchemaEditor node={node} busy={false} commit={commit} />);
-  fireEvent.click(screen.getByText('Schema'));
+  fireEvent.click(screen.getByText('Fields & ports'));
   fireEvent.click(screen.getByRole('button', { name: 'Add State fields' }));
   fireEvent.change(screen.getAllByRole('textbox', { name: 'State name' })[1]!, { target: { value: 'threshold' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Apply schema' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Apply changes' }));
   expect(commit).toHaveBeenCalledWith([{ op: 'setOperatorSpec', nodeId: 'script', spec: expect.objectContaining({
     stateFields: expect.arrayContaining([expect.objectContaining({ name: 'threshold' })]),
   }), portRenames: {} }]);
@@ -34,9 +34,9 @@ test('edits dynamic state fields without sending derived ports', async () => {
 test('submits stable port IDs when an interface is renamed', () => {
   const commit = vi.fn(async () => {});
   render(<SchemaEditor node={node} busy={false} commit={commit} />);
-  fireEvent.click(screen.getByText('Schema'));
+  fireEvent.click(screen.getByText('Fields & ports'));
   fireEvent.change(screen.getByRole('textbox', { name: 'State name' }), { target: { value: 'scriptCode' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Apply schema' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Apply changes' }));
   expect(commit).toHaveBeenCalledWith([expect.objectContaining({
     op: 'setOperatorSpec',
     portRenames: { 'state:input:code': 'scriptCode', 'state:output:code': 'scriptCode' },
@@ -45,7 +45,7 @@ test('submits stable port IDs when an interface is renamed', () => {
 
 test('does not offer schema additions when the descriptor locks a collection', () => {
   render(<SchemaEditor node={{ ...node, spec: { ...node.spec, editPolicy: undefined } }} busy={false} commit={vi.fn(async () => {})} />);
-  fireEvent.click(screen.getByText('Schema'));
+  fireEvent.click(screen.getByText('Fields & ports'));
   expect(screen.queryByRole('button', { name: 'Add State fields' })).not.toBeInTheDocument();
 });
 
@@ -64,11 +64,11 @@ test('edits data value type and command parameters through the form', () => {
     },
   };
   render(<SchemaEditor node={editable} busy={false} commit={commit} />);
-  fireEvent.click(screen.getByText('Schema'));
+  fireEvent.click(screen.getByText('Fields & ports'));
   fireEvent.change(screen.getByRole('combobox', { name: 'result value type' }), { target: { value: 'number' } });
   fireEvent.click(screen.getByRole('button', { name: 'Add parameter to Run' }));
   fireEvent.change(screen.getByRole('textbox', { name: 'Run parameter name' }), { target: { value: 'speed' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Apply schema' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Apply changes' }));
   expect(commit).toHaveBeenCalledWith([expect.objectContaining({
     spec: expect.objectContaining({
       dataOutPorts: [expect.objectContaining({ valueSchema: { type: 'number' } })],
@@ -87,10 +87,31 @@ test('changing control kind clears incompatible control options', () => {
     },
   };
   render(<SchemaEditor node={editable} busy={false} commit={commit} />);
-  fireEvent.click(screen.getByText('Schema'));
-  fireEvent.change(screen.getByRole('combobox', { name: 'code control' }), { target: { value: 'toggle' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Apply schema' }));
+  fireEvent.click(screen.getByText('Fields & ports'));
+  fireEvent.change(screen.getByRole('combobox', { name: 'code widget' }), { target: { value: 'toggle' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Apply changes' }));
   expect(commit).toHaveBeenCalledWith([expect.objectContaining({
     spec: expect.objectContaining({ stateFields: [expect.objectContaining({ control: { kind: 'toggle' } })] }),
+  })]);
+});
+
+test('allows node presentation settings when the runtime interface is fixed', () => {
+  const commit = vi.fn(async () => {});
+  render(<SchemaEditor node={{ ...node, spec: { ...node.spec, editPolicy: undefined } }} busy={false} commit={commit} />);
+  fireEvent.click(screen.getByText('Fields & ports'));
+
+  expect(screen.queryByRole('textbox', { name: 'State name' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('combobox', { name: 'code type' })).not.toBeInTheDocument();
+  const visibility = screen.getByRole('checkbox', { name: 'Node' });
+  expect(visibility).toBeEnabled();
+  fireEvent.click(visibility);
+  fireEvent.change(screen.getByRole('combobox', { name: 'code widget' }), { target: { value: 'textarea' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Apply changes' }));
+
+  expect(commit).toHaveBeenCalledWith([expect.objectContaining({
+    op: 'setOperatorSpec',
+    spec: expect.objectContaining({ stateFields: [expect.objectContaining({
+      name: 'code', showOnNode: true, control: { kind: 'textarea' },
+    })] }),
   })]);
 });

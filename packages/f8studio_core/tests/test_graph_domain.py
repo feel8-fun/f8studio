@@ -257,6 +257,34 @@ def test_semantic_revision_ignores_node_presentation() -> None:
     )
 
 
+def test_fixed_operator_allows_instance_presentation_but_not_interface_edits() -> None:
+    _, service, source, _ = base_nodes()
+    document = StudioDocument(
+        schema_version="f8studio-document/2", project_id="project1", graph_id="graph1",
+        graph_revision=0, layout_revision=0, nodes=(service, source),
+    )
+    store = GraphStore(document, spec_resolver=lambda node: service.spec if isinstance(node, ServiceNode) else source.spec)
+    field = msgspec.structs.replace(
+        source.spec.stateFields[0], showOnNode=True, label="Gain preview",
+        control=F8UiControlSpec(kind=F8UiControlKind.slider),
+    )
+    presented_spec = msgspec.structs.replace(source.spec, stateFields=[field])
+    presented = store.apply(PatchRequest(
+        request_id="show-gain", expected_graph_revision=0, expected_layout_revision=0,
+        operations=(SetOperatorSpecOp(node_id="source", spec=presented_spec),),
+    )).document
+    assert presented.nodes[1].spec.stateFields[0].showOnNode is True
+    assert semantic_graph_revision(presented) == semantic_graph_revision(document)
+
+    changed_field = msgspec.structs.replace(field, access=F8StateAccess.ro)
+    changed_spec = msgspec.structs.replace(presented_spec, stateFields=[changed_field])
+    with pytest.raises(OperationTargetError, match="stateFields does not allow editing"):
+        store.apply(PatchRequest(
+            request_id="change-access", expected_graph_revision=1, expected_layout_revision=0,
+            operations=(SetOperatorSpecOp(node_id="source", spec=changed_spec),),
+        ))
+
+
 def test_exchange_and_runtime_revision_normalize_numeric_schema_bounds() -> None:
     catalog = NodeCatalog(services=[F8ServiceSpec(
         serviceClass="test.engine",
