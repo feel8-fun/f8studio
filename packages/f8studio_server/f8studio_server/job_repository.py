@@ -161,6 +161,21 @@ class JobRepository:
             ).fetchone()
         return row is not None
 
+    def active_for_project(self, project_id: str) -> tuple[DeployJob, ...]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT job_id, request_id, project_id, source_graph_revision,
+                       source_semantic_revision, status, created_at, updated_at,
+                       service_results, error_message
+                FROM deploy_jobs
+                WHERE project_id = ? AND status IN (?, ?)
+                ORDER BY created_at, job_id
+                """,
+                (project_id, JobStatus.queued.value, JobStatus.running.value),
+            ).fetchall()
+        return tuple(self._job_from_row(row) for row in rows)
+
     def mark_interrupted_jobs_failed(self, *, timestamp: str) -> int:
         with self._connect() as connection:
             cursor = connection.execute(

@@ -147,9 +147,48 @@ def test_delete_project_rejects_active_deployment(tmp_path: Path) -> None:
         assert client.delete("/api/projects/busy").status_code == 204
 
 
+def test_stop_project_cancels_active_deployment_before_stopping_services(tmp_path: Path) -> None:
+    runtime = FakeRuntimeGateway()
+    app = create_app(
+        web_dist=tmp_path, data_dir=tmp_path / "data", runtime=runtime,
+        service_roots=(), media_gateway=InProcessMediaGateway(),
+    )
+    with TestClient(app) as client:
+        assert client.post("/api/projects", json={"projectId": "running", "name": "Running"}).status_code == 201
+        node = client.post("/api/catalog/nodes", json={
+            "kind": "service", "nodeId": "studio", "serviceClass": "f8.pystudio",
+        })
+        assert node.status_code == 200
+        assert client.post("/api/projects/running/patch", json={
+            "requestId": "add-studio", "expectedGraphRevision": 0, "expectedLayoutRevision": 0,
+            "operations": [{"op": "createNode", "node": node.json()}],
+        }).status_code == 200
+        repository = JobRepository(tmp_path / "data" / "studio.sqlite3")
+        job = DeployJob(
+            job_id="active_job", request_id="active_request", project_id="running",
+            source_graph_revision=1, source_semantic_revision="r1", status=JobStatus.running,
+            created_at="2026-01-01T00:00:00Z", updated_at="2026-01-01T00:00:00Z",
+        )
+        repository.create(job, request_fingerprint="test")
+
+        newer = msgspec.structs.replace(
+            job, job_id="finished_job", request_id="finished_request", status=JobStatus.succeeded,
+            created_at="2026-01-01T00:00:01Z", updated_at="2026-01-01T00:00:01Z",
+        )
+        repository.create(newer, request_fingerprint="test")
+
+        assert client.post("/api/projects/running/stop").status_code == 204
+        assert client.get("/api/jobs/active_job").json()["status"] == "cancelled"
+        assert node.json()["serviceId"] in runtime.terminate_calls
+        events = client.get("/api/logs?limit=100").json()
+        assert any(event["type"] == "deploy.cancelled" for event in events)
+        assert not any(event["type"] == "deploy.finished" for event in events)
+
+
 class FakeRuntimeGateway:
     def __init__(self) -> None:
         self.deploy_calls: list[str] = []
+        self.terminate_calls: list[str] = []
         self.closed = False
         self.state_values: dict[tuple[str, str, str], F8JsonValue] = {}
 
@@ -210,7 +249,7 @@ class FakeRuntimeGateway:
         return RuntimeActionResult(success=True)
 
     async def terminate(self, service_id: str) -> RuntimeActionResult:
-        del service_id
+        self.terminate_calls.append(service_id)
         return RuntimeActionResult(success=True)
 
     async def close(self) -> None:

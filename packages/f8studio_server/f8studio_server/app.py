@@ -661,8 +661,7 @@ def create_app(
         payload = await _decode_body(request, ServiceStartRequest)
         return _json_value(await studio.processes.start(service_id, service_class=payload.service_class))
 
-    @app.post("/api/runtime/services/{service_id}/stop")
-    async def stop_service(service_id: str) -> F8JsonValue:
+    async def stop_service_runtime(service_id: str) -> F8JsonValue:
         if service_id == STUDIO_SERVICE_ID:
             return _json_value(await studio.runtime.terminate(service_id))
         try:
@@ -674,6 +673,19 @@ def create_app(
                 exc_info=exc,
             )
         return _json_value(await studio.processes.stop(service_id))
+
+    @app.post("/api/projects/{project_id}/stop", status_code=204)
+    async def stop_project(project_id: str) -> Response:
+        document = await asyncio.to_thread(studio.projects.document, project_id)
+        await studio.jobs.cancel_project(project_id)
+        service_ids = {node.service_id for node in document.nodes if isinstance(node, ServiceNode)}
+        for service_id in sorted(service_ids, key=lambda item: (item == STUDIO_SERVICE_ID, item)):
+            await stop_service_runtime(service_id)
+        return Response(status_code=204)
+
+    @app.post("/api/runtime/services/{service_id}/stop")
+    async def stop_service(service_id: str) -> F8JsonValue:
+        return await stop_service_runtime(service_id)
 
     @app.get("/api/runtime/services/{service_id}/status")
     async def service_status(service_id: str) -> F8JsonValue:

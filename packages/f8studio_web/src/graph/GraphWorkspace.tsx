@@ -38,7 +38,7 @@ import {
   importProjectGraph,
   patchProject,
   registerHotkey,
-  stopRuntimeService,
+  stopProject,
   unregisterHotkey,
 } from '../api/client';
 import { isStudioDocument } from '../api/contracts';
@@ -368,6 +368,8 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
   const [pendingCommands, setPendingCommands] = useState<ReadonlySet<string>>(new Set());
   const pendingCommandsRef = useRef(new Set<string>());
   const [busy, setBusy] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const stoppingRef = useRef(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -1066,34 +1068,40 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
     setError(null);
     try {
       let job = await deployProject(project.projectId, project.document.graphRevision);
-      setDeployment(job);
-      for (let attempt = 0; attempt < 100 && (job.status === 'queued' || job.status === 'running'); attempt += 1) {
+      if (!stoppingRef.current) setDeployment(job);
+      for (let attempt = 0; attempt < 100 && !stoppingRef.current && (job.status === 'queued' || job.status === 'running'); attempt += 1) {
         await new Promise<void>((resolve) => setTimeout(resolve, 200));
+        if (stoppingRef.current) break;
         job = await fetchDeployJob(job.jobId);
-        setDeployment(job);
+        if (!stoppingRef.current) setDeployment(job);
       }
+      if (stoppingRef.current) return;
       if (job.status === 'queued' || job.status === 'running') throw new Error('Deployment did not finish within 20 seconds');
-      if (job.status !== 'succeeded') setError(job.errorMessage || `Deployment ${job.status}`);
+      if (job.status === 'failed' || job.status === 'partially_failed') setError(job.errorMessage || `Deployment ${job.status}`);
     } catch (reason) {
-      setError(errorMessage(reason));
+      if (!stoppingRef.current) setError(errorMessage(reason));
     } finally {
-      setBusy(false);
+      if (!stoppingRef.current) setBusy(false);
     }
   }, [busy, project]);
 
   const stop = useCallback(async () => {
-    if (project === null || busy) return;
-    const serviceIds = [...new Set(project.document.nodes.filter((node) => node.kind === 'service').map((node) => node.serviceId))];
+    if (project === null || stopping) return;
+    stoppingRef.current = true;
+    setStopping(true);
     setBusy(true);
     setError(null);
     try {
-      await Promise.all(serviceIds.map(stopRuntimeService));
+      await stopProject(project.projectId);
+      setDeployment(await fetchLatestDeployment(project.projectId));
     } catch (reason) {
       setError(errorMessage(reason));
     } finally {
       setBusy(false);
+      setStopping(false);
+      stoppingRef.current = false;
     }
-  }, [busy, project]);
+  }, [project, stopping]);
 
   const duplicateSelection = useCallback(() => {
     if (project === null || busy) return;
@@ -1291,7 +1299,7 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
             if (file !== undefined) void uploadGraph(file);
           }} />
           <button type="button" title="Deploy" aria-label="Deploy" disabled={busy || project === null} onClick={() => void deploy()}><Play size={16} /></button>
-          <button type="button" title="Stop services" aria-label="Stop services" disabled={busy || project === null} onClick={() => void stop()}><Square size={14} /></button>
+          <button type="button" title="Stop services" aria-label="Stop services" disabled={stopping || project === null} onClick={() => void stop()}><Square size={14} /></button>
           <span>{project === null ? 'No project selected' : `Draft r${project.document.graphRevision} · Layout r${project.document.layoutRevision}`}</span>
           <span className={`deploy-state deploy-${deployment?.status ?? 'none'}`}>{deployment === null ? 'Not deployed' : `${deployment.status} r${deployment.sourceGraphRevision}`}</span>
           <span className="save-state">{saving ? 'Saving...' : busy ? 'Working...' : 'Saved'}</span>

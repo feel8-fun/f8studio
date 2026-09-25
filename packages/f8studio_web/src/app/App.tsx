@@ -6,6 +6,7 @@ import type { HealthStatus } from '../api/contracts';
 import { GraphWorkspace } from '../graph/GraphWorkspace';
 import { LogsWorkspace } from '../logs/LogsWorkspace';
 import { PresentationProvider } from '../presentation/PresentationStore';
+import { GraphLogDock } from './GraphLogDock';
 
 const AssetsWorkspace = lazy(() => import('../assets/AssetsWorkspace').then((module) => ({ default: module.AssetsWorkspace })));
 const CodeWorkspace = lazy(() => import('../editor/CodeWorkspace').then((module) => ({ default: module.CodeWorkspace })));
@@ -129,7 +130,7 @@ export function App() {
 
       <section className="workspace" aria-labelledby="workspace-title">
         <div className="workspace-content">
-          {view === 'graph' && <GraphWorkspace onShowOutput={showOutput} />}
+          {view === 'graph' && <GraphLogDock onOpenLogs={() => navigate('logs')}><GraphWorkspace onShowOutput={showOutput} /></GraphLogDock>}
           <Suspense fallback={<div className="view-loading" role="status">Loading view...</div>}>
             {view === 'assets' && <AssetsWorkspace />}
             {view === 'code' && <CodeWorkspace />}

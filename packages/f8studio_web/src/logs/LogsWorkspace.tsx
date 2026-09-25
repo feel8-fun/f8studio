@@ -1,5 +1,6 @@
 import { CircleDot, RefreshCw, Search } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 
 import { fetchLogs } from '../api/client';
 import { isStudioLogEvent, type JsonValue, type StudioLogEvent } from '../api/contracts';
@@ -86,7 +87,10 @@ function mergeLogs(current: readonly StudioLogEvent[], incoming: readonly Studio
   return keep === 'oldest' ? ordered.slice(0, MAX_LOADED_LOGS) : ordered.slice(-MAX_LOADED_LOGS);
 }
 
-export function LogsWorkspace() {
+export function LogsWorkspace({ compact = false, toolbarTarget }: {
+  readonly compact?: boolean;
+  readonly toolbarTarget?: RefObject<HTMLDivElement | null>;
+}) {
   const [events, setEvents] = useState<readonly StudioLogEvent[]>([]);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,6 +102,11 @@ export function LogsWorkspace() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const historyModeRef = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
+  const [toolbarMount, setToolbarMount] = useState<HTMLDivElement | null>(null);
+
+  useLayoutEffect(() => {
+    setToolbarMount(compact ? toolbarTarget?.current ?? null : null);
+  }, [compact, toolbarTarget]);
 
   const loadLatest = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -190,10 +199,9 @@ export function LogsWorkspace() {
     if (follow && listRef.current !== null) listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [follow, visible]);
 
-  return <section className="logs-workspace" aria-label="Log center">
-    <div className="logs-toolbar">
-      <label className="logs-search"><Search size={15} /><input aria-label="Search logs" placeholder="Search logs" value={query}
-        onChange={(event) => setQuery(event.target.value)} /></label>
+  const toolbar = <div className={`logs-toolbar${compact ? ' logs-toolbar-inline' : ''}`}>
+      {!compact && <label className="logs-search"><Search size={15} /><input aria-label="Search logs" placeholder="Search logs" value={query}
+        onChange={(event) => setQuery(event.target.value)} /></label>}
       <select aria-label="Log level" value={level} onChange={(event) => setLevel(event.target.value as LevelFilter)}>
         <option value="all">All levels</option><option value="error">Errors</option>
         <option value="warning">Warnings</option><option value="info">Info</option>
@@ -201,9 +209,12 @@ export function LogsWorkspace() {
       <label className="logs-follow"><input type="checkbox" checked={follow} onChange={(event) => setFollow(event.target.checked)} />Follow</label>
       <span className={`logs-connection ${connected ? 'online' : ''}`}><CircleDot size={13} />{connected ? 'Live' : 'Reconnecting'}</span>
       <button type="button" className="icon-button bordered" aria-label="Refresh logs" title="Refresh logs" onClick={jumpLatest}><RefreshCw size={15} /></button>
-    </div>
+    </div>;
+
+  return <section className={`logs-workspace${compact ? ' logs-workspace-compact' : ''}`} aria-label={compact ? 'Quick log stream' : 'Log center'}>
+    {compact ? toolbarMount !== null && createPortal(toolbar, toolbarMount) : toolbar}
     {error !== null && <p className="logs-error" role="alert">{error}</p>}
-    {(hasOlder || historyMode) && <div className="logs-history-actions">
+    {!compact && (hasOlder || historyMode) && <div className="logs-history-actions">
       {hasOlder && <button type="button" disabled={loadingOlder} onClick={() => void loadOlder()}>{loadingOlder ? 'Loading...' : 'Load older'}</button>}
       {historyMode && <button type="button" onClick={jumpLatest}>Latest</button>}
     </div>}

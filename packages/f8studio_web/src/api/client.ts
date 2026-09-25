@@ -304,6 +304,10 @@ export async function fetchDeployJob(jobId: string): Promise<DeployJob> {
   return body;
 }
 
+export async function stopProject(projectId: string): Promise<void> {
+  await requestJson(`/api/projects/${encodeURIComponent(projectId)}/stop`, { method: 'POST' });
+}
+
 export async function stopRuntimeService(serviceId: string): Promise<void> {
   await requestJson(`/api/runtime/services/${encodeURIComponent(serviceId)}/stop`, { method: 'POST' });
 }

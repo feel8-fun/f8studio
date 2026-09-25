@@ -642,11 +642,12 @@ test('edits fixed operator presentation and remembers Inspector width', async ({
   }, projectId)).toBe(false);
 
   await inspector.getByText('Fields & ports').click();
-  const visibility = inspector.getByRole('checkbox', { name: 'Node' }).first();
+  const visibility = inspector.getByRole('button', { name: 'Show on node' }).first();
   await expect(visibility).toBeEnabled();
-  await visibility.check();
-  await expect(inspector.getByRole('combobox', { name: 'strip widget' })).toBeEnabled();
-  await inspector.getByRole('button', { name: 'Apply changes' }).click();
+  await visibility.click();
+  await inspector.getByRole('button', { name: 'Settings for strip' }).click();
+  await expect(page.getByRole('dialog', { name: 'strip settings' }).getByRole('combobox', { name: 'strip widget' })).toBeEnabled();
+  await page.getByRole('dialog', { name: 'strip settings' }).getByRole('button', { name: 'Apply changes' }).click();
   await expect(printNode.locator('.state-control-inline')).toBeVisible();
 
   const separator = page.getByRole('separator', { name: 'Resize Inspector' });
@@ -668,6 +669,7 @@ test('edits fixed operator presentation and remembers Inspector width', async ({
   expect(restored).not.toBeNull();
   expect(Math.abs(restored!.width - rememberedWidth)).toBeLessThan(2);
   await expect(printNode.locator('.state-control-inline')).toBeVisible();
+  await page.request.delete(`/api/projects/${projectId}`);
 });
 
 test('edits inline state and configures typed exec and data connections', async ({ page }, testInfo) => {
