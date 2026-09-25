@@ -7,6 +7,8 @@ from typing import Any, Iterable
 from f8pysdk.codec import parse_number, parse_number_sequence
 
 from f8pysdk.specs import (
+    F8UiControlKind,
+    F8UiControlSpec,
     F8DataPortSpec,
     F8OperatorSchemaVersion,
     F8OperatorSpec,
@@ -296,7 +298,7 @@ SmoothFilterRuntimeNode.SPEC = F8OperatorSpec(
             valueSchema=number_schema(default=0.4, minimum=0.0, maximum=1.0),
             access=F8StateAccess.rw,
             required=True,
-            uiControl="slider",
+            control=F8UiControlSpec(kind=F8UiControlKind.slider),
             showOnNode=True,
         ),
         F8StateSpec(
@@ -306,7 +308,7 @@ SmoothFilterRuntimeNode.SPEC = F8OperatorSpec(
             valueSchema=number_schema(default=0.4, minimum=0.0, maximum=1.0),
             access=F8StateAccess.rw,
             required=True,
-            uiControl="slider",
+            control=F8UiControlSpec(kind=F8UiControlKind.slider),
             showOnNode=False,
         ),
         F8StateSpec(
@@ -316,7 +318,7 @@ SmoothFilterRuntimeNode.SPEC = F8OperatorSpec(
             valueSchema=number_schema(default=1.5, minimum=0.01, maximum=10.0),
             access=F8StateAccess.rw,
             required=True,
-            uiControl="slider",
+            control=F8UiControlSpec(kind=F8UiControlKind.slider),
             showOnNode=False,
         ),
         F8StateSpec(
@@ -326,7 +328,7 @@ SmoothFilterRuntimeNode.SPEC = F8OperatorSpec(
             valueSchema=number_schema(default=0.0, minimum=0.0, maximum=5.0),
             access=F8StateAccess.rw,
             required=True,
-            uiControl="slider",
+            control=F8UiControlSpec(kind=F8UiControlKind.slider),
             showOnNode=False,
         ),
         F8StateSpec(
@@ -336,7 +338,7 @@ SmoothFilterRuntimeNode.SPEC = F8OperatorSpec(
             valueSchema=number_schema(default=1.0, minimum=0.01, maximum=10.0),
             access=F8StateAccess.rw,
             required=True,
-            uiControl="slider",
+            control=F8UiControlSpec(kind=F8UiControlKind.slider),
             showOnNode=False,
         ),
         F8StateSpec(
@@ -346,7 +348,7 @@ SmoothFilterRuntimeNode.SPEC = F8OperatorSpec(
             valueSchema=number_schema(default=90.0, minimum=1.0, maximum=240.0),
             access=F8StateAccess.rw,
             required=True,
-            uiControl="slider",
+            control=F8UiControlSpec(kind=F8UiControlKind.slider),
             showOnNode=False,
         ),
     ],

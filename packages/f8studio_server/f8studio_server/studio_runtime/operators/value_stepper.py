@@ -11,6 +11,8 @@ from f8pysdk.specs import (
     F8SpecEditPolicy,
     F8StateAccess,
     F8StateSpec,
+    F8UiControlKind,
+    F8UiControlSpec,
     boolean_schema,
     integer_schema,
     number_schema,
@@ -65,7 +67,7 @@ class ValueStepperRuntimeNode(OperatorNode):
                 valueSchema=number_schema(default=0.0),
                 access=F8StateAccess.rw,
                 required=True,
-                uiControl="slider",
+                control=F8UiControlSpec(kind=F8UiControlKind.slider),
                 showOnNode=True,
             ),
             F8StateSpec(
@@ -102,7 +104,7 @@ class ValueStepperRuntimeNode(OperatorNode):
                 valueSchema=boolean_schema(default=False),
                 access=F8StateAccess.rw,
                 required=True,
-                uiControl="toggle",
+                control=F8UiControlSpec(kind=F8UiControlKind.toggle),
                 showOnNode=False,
             ),
             F8StateSpec(
@@ -112,7 +114,7 @@ class ValueStepperRuntimeNode(OperatorNode):
                 valueSchema=integer_schema(default=0),
                 access=F8StateAccess.rw,
                 required=True,
-                uiControl="button",
+                control=F8UiControlSpec(kind=F8UiControlKind.button),
                 showOnNode=False,
             ),
             F8StateSpec(
@@ -122,7 +124,7 @@ class ValueStepperRuntimeNode(OperatorNode):
                 valueSchema=integer_schema(default=0),
                 access=F8StateAccess.rw,
                 required=True,
-                uiControl="button",
+                control=F8UiControlSpec(kind=F8UiControlKind.button),
                 showOnNode=False,
             ),
             F8StateSpec(
@@ -132,7 +134,7 @@ class ValueStepperRuntimeNode(OperatorNode):
                 valueSchema=string_schema(default=_STEP_MODE_FIXED, enum=list(_STEP_MODE_VALUES)),
                 access=F8StateAccess.rw,
                 required=True,
-                uiControl="select",
+                control=F8UiControlSpec(kind=F8UiControlKind.select),
                 showOnNode=False,
             ),
             F8StateSpec(

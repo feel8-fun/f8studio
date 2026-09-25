@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from f8pysdk.specs import (
+    F8UiControlKind,
+    F8UiControlSpec,
     F8DataPortSpec,
     F8OperatorSchemaVersion,
     F8OperatorSpec,
@@ -712,7 +714,7 @@ VmcDecoderRuntimeNode.SPEC = F8OperatorSpec(
             valueSchema=string_schema(default=""),
             access=F8StateAccess.rw,
             required=True,
-            uiControl="select[availableKeys]",
+            control=F8UiControlSpec(kind=F8UiControlKind.select, optionsFromState="availableKeys"),
             showOnNode=True,
         ),
         F8StateSpec(

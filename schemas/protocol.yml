@@ -364,6 +364,27 @@ components:
           type: boolean
           description: Allow editing this state field's valueSchema when its collection allows editing existing fields.
       additionalProperties: false
+    F8UiControlSpec:
+      title: F8UiControlSpec
+      type: object
+      description: Declarative control presentation. Runtime graph compilation omits this metadata.
+      properties:
+        kind:
+          title: F8UiControlKind
+          type: string
+          enum: [auto, text, textarea, code, toggle, slider, select, multiselect, dial, button, custom]
+        optionsFromState:
+          type: string
+          description: State field on the same node supplying select options.
+        language:
+          type: string
+          description: Syntax language for code or textarea controls.
+        rendererKey:
+          type: string
+          description: Registered renderer key for custom controls.
+      required:
+        - kind
+      additionalProperties: false
     F8StateSpec:
       title: F8StateSpec
       type: object
@@ -392,7 +413,10 @@ components:
           $ref: "#/components/schemas/F8StateFieldEditPolicy"
         uiControl:
           type: string
-          description: Optional UI hint DSL (e.g., slider, code[python], wrapline[json], select[availableItems], multiselect[modelClasses], dial[noloop]).
+          deprecated: true
+          description: Legacy UI hint; use control.
+        control:
+          $ref: "#/components/schemas/F8UiControlSpec"
         showOnNode:
           type: boolean
           default: false
@@ -596,7 +620,10 @@ components:
           description: If true, this parameter is required when invoking the command.
         uiControl:
           type: string
-          description: Optional UI hint DSL (e.g., slider, select[availableItems], multiselect[modelClasses], dial[noloop]).
+          deprecated: true
+          description: Legacy UI hint; use control.
+        control:
+          $ref: "#/components/schemas/F8UiControlSpec"
       required:
         - name
         - valueSchema

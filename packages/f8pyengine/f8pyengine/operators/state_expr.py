@@ -6,6 +6,8 @@ from typing import Any
 
 from f8pysdk.codec import coerce_bool
 from f8pysdk.specs import (
+    F8UiControlKind,
+    F8UiControlSpec,
     F8OperatorSchemaVersion,
     F8OperatorSpec,
     F8RuntimeNode,
@@ -323,7 +325,7 @@ StateExprRuntimeNode.SPEC = F8OperatorSpec(
             name="allowNumpy",
             label="Allow Numpy",
             description="Enable `np.*` and `numpy.*` inside the expression.",
-            uiControl="toggle",
+            control=F8UiControlSpec(kind=F8UiControlKind.toggle),
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
             showOnNode=False,
@@ -336,7 +338,7 @@ StateExprRuntimeNode.SPEC = F8OperatorSpec(
                 "Single Python expression. Editable RW/WO state fields are available directly by name; "
                 "non-identifier names remain available through `states[...]`."
             ),
-            uiControl="wrapline[python]",
+            control=F8UiControlSpec(kind=F8UiControlKind.textarea, language="python"),
             valueSchema=string_schema(default="0"),
             access=F8StateAccess.rw,
             showOnNode=True,

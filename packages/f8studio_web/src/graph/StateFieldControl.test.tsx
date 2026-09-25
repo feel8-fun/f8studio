@@ -154,7 +154,8 @@ test('selects from a live readonly device list and preserves an unavailable sele
     name: 'availableDevices', access: 'ro', valueSchema: { type: 'array' },
   };
   const selected: StateSpec = {
-    name: 'selectedDevice', label: 'Capture device', access: 'wo', uiControl: 'select[availableDevices]',
+    name: 'selectedDevice', label: 'Capture device', access: 'wo',
+    control: { kind: 'select', optionsFromState: 'availableDevices' },
     valueSchema: { type: 'string', default: 'Auto' },
   };
   const commit = vi.fn();

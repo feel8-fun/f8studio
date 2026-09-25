@@ -30,6 +30,9 @@ from f8studio_core.graph import (
     PatchRequest,
     PatchResult,
     RevisionConflictError,
+    ServiceNode,
+    export_graph,
+    import_graph,
 )
 
 from .application import StudioApplication
@@ -407,6 +410,42 @@ def create_app(
     @app.get("/api/projects/{project_id}")
     async def get_project(project_id: str) -> F8JsonValue:
         return _json_value(await asyncio.to_thread(studio.projects.get, project_id))
+
+    @app.delete("/api/projects/{project_id}", status_code=204)
+    async def delete_project(project_id: str) -> Response:
+        record = await asyncio.to_thread(studio.projects.get, project_id)
+        if await studio.jobs.has_active_project_job(project_id):
+            raise HTTPException(status_code=409, detail="Cancel the active deployment before deleting this project")
+        sessions = await asyncio.to_thread(studio.agents.list, project_id)
+        if any(session.status.value in {"running", "waiting_for_approval"} for session in sessions):
+            raise HTTPException(status_code=409, detail="Cancel active agent runs before deleting this project")
+        service_ids = {node.service_id for node in record.document.nodes if isinstance(node, ServiceNode)}
+        if any(studio.processes.is_running(service_id) for service_id in service_ids):
+            raise HTTPException(status_code=409, detail="Stop the project's services before deleting it")
+        await asyncio.to_thread(studio.projects.delete, project_id)
+        studio.local.forget_project_hotkeys(project_id)
+        await studio.events.publish(
+            event_type="project.deleted", scope=f"project:{project_id}", payload={"projectId": project_id},
+        )
+        return Response(status_code=204)
+
+    @app.get("/api/projects/{project_id}/graph/export")
+    async def export_project_graph(project_id: str) -> Response:
+        document = await asyncio.to_thread(studio.projects.document, project_id)
+        return Response(content=export_graph(document), media_type="application/json")
+
+    @app.post("/api/projects/{project_id}/graph/import")
+    async def import_project_graph(project_id: str, request: Request) -> F8JsonValue:
+        payload = await request.body()
+        document = await asyncio.to_thread(import_graph, payload, project_id=project_id)
+        record = await asyncio.to_thread(studio.projects.restore, project_id, document)
+        await asyncio.to_thread(studio.local.refresh_hotkeys)
+        await studio.events.publish(
+            event_type="graph.committed",
+            scope=f"project:{project_id}",
+            payload={"requestId": "graph-import", "graphChanged": True, "layoutChanged": True, "document": _json_value(record.document)},
+        )
+        return _json_value(record)
 
     @app.put("/api/projects/{project_id}")
     async def update_project(project_id: str, request: Request) -> F8JsonValue:

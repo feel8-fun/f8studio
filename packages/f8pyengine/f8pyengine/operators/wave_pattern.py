@@ -10,6 +10,8 @@ import numpy as np
 from scipy.interpolate import Akima1DInterpolator, CubicSpline, PchipInterpolator, interp1d
 
 from f8pysdk.specs import (
+    F8UiControlKind,
+    F8UiControlSpec,
     F8ArrayTypeSchema,
     F8DataPortSpec,
     F8JsonValue,
@@ -490,7 +492,7 @@ WavePatternRuntimeNode.SPEC = F8OperatorSpec(
             ),
             access=F8StateAccess.rw,
             required=True,
-            uiControl="wave_pattern_editor",
+            control=F8UiControlSpec(kind=F8UiControlKind.custom, rendererKey="wave_pattern_editor"),
             showOnNode=True,
         ),
         F8StateSpec(
@@ -536,7 +538,7 @@ WavePatternRuntimeNode.SPEC = F8OperatorSpec(
             valueSchema=array_schema(items=array_schema(items=helper_number_schema())),
             access=F8StateAccess.ro,
             required=True,
-            uiControl="wave_preview",
+            control=F8UiControlSpec(kind=F8UiControlKind.custom, rendererKey="wave_preview"),
             showOnNode=False,
         ),
     ],

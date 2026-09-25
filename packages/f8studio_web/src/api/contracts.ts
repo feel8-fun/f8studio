@@ -145,7 +145,31 @@ export interface StateSpec {
   readonly showOnNode?: boolean;
   readonly required?: boolean;
   readonly uiControl?: string;
+  readonly control?: UiControlSpec;
   readonly redactOnPublish?: boolean;
+  readonly editPolicy?: { readonly canRename?: boolean; readonly canEditAccess?: boolean; readonly canEditRequired?: boolean; readonly canEditValueSchema?: boolean };
+}
+
+export interface UiControlSpec {
+  readonly kind: 'auto' | 'text' | 'textarea' | 'code' | 'toggle' | 'slider' | 'select' | 'multiselect' | 'dial' | 'button' | 'custom';
+  readonly optionsFromState?: string;
+  readonly language?: string;
+  readonly rendererKey?: string;
+}
+
+export interface CollectionEditPolicy {
+  readonly canAdd?: boolean;
+  readonly canDelete?: boolean;
+  readonly canEditExisting?: boolean;
+}
+
+export interface SpecEditPolicy {
+  readonly stateFields?: CollectionEditPolicy;
+  readonly commands?: CollectionEditPolicy;
+  readonly dataInPorts?: CollectionEditPolicy;
+  readonly dataOutPorts?: CollectionEditPolicy;
+  readonly execInPorts?: CollectionEditPolicy;
+  readonly execOutPorts?: CollectionEditPolicy;
 }
 
 export interface DataPortSpec {
@@ -153,9 +177,10 @@ export interface DataPortSpec {
   readonly valueSchema: ValueSchema;
   readonly payloadKind?: string;
   readonly delivery?: string;
-  readonly payload?: { readonly kind: string; readonly [key: string]: JsonValue };
+  readonly payload?: { readonly kind: string; readonly valueSchema?: ValueSchema; readonly [key: string]: JsonValue | ValueSchema | undefined };
   readonly showOnNode?: boolean;
-  readonly [key: string]: JsonValue | ValueSchema | undefined;
+  readonly required?: boolean;
+  readonly [key: string]: unknown;
 }
 
 export interface CommandParamSpec {
@@ -164,12 +189,14 @@ export interface CommandParamSpec {
   readonly description?: string;
   readonly required?: boolean;
   readonly uiControl?: string;
+  readonly control?: UiControlSpec;
 }
 
 export interface CommandSpec {
   readonly name: string;
   readonly description?: string;
   readonly showOnNode?: boolean;
+  readonly required?: boolean;
   readonly params?: readonly CommandParamSpec[];
 }
 
@@ -181,11 +208,12 @@ export interface ServiceSpec {
   readonly tags?: readonly string[];
   readonly paletteCategory?: string;
   readonly hiddenInPalette?: boolean;
+  readonly editPolicy?: SpecEditPolicy;
   readonly stateFields?: readonly StateSpec[];
   readonly commands?: readonly CommandSpec[];
   readonly dataInPorts?: readonly DataPortSpec[];
   readonly dataOutPorts?: readonly DataPortSpec[];
-  readonly [key: string]: JsonValue | readonly StateSpec[] | readonly CommandSpec[] | readonly DataPortSpec[] | undefined;
+  readonly [key: string]: JsonValue | SpecEditPolicy | readonly StateSpec[] | readonly CommandSpec[] | readonly DataPortSpec[] | undefined;
 }
 
 export interface OperatorSpec {
@@ -197,13 +225,14 @@ export interface OperatorSpec {
   readonly tags?: readonly string[];
   readonly paletteCategory?: string;
   readonly hiddenInPalette?: boolean;
+  readonly editPolicy?: SpecEditPolicy;
   readonly stateFields?: readonly StateSpec[];
   readonly commands?: readonly CommandSpec[];
   readonly dataInPorts?: readonly DataPortSpec[];
   readonly dataOutPorts?: readonly DataPortSpec[];
   readonly execInPorts?: readonly string[];
   readonly execOutPorts?: readonly string[];
-  readonly [key: string]: JsonValue | readonly StateSpec[] | readonly CommandSpec[] | readonly DataPortSpec[] | undefined;
+  readonly [key: string]: JsonValue | SpecEditPolicy | readonly StateSpec[] | readonly CommandSpec[] | readonly DataPortSpec[] | undefined;
 }
 
 export interface CatalogSnapshot {
@@ -232,6 +261,7 @@ interface GraphNodeBase {
   readonly serviceId: string;
   readonly serviceClass: string;
   readonly ports: readonly GraphPort[];
+  readonly portIds?: Readonly<Record<string, string>>;
   readonly stateValues: Readonly<Record<string, JsonValue>>;
   readonly enabled: boolean;
 }
@@ -307,7 +337,8 @@ export type GraphOperation =
   | { readonly op: 'disconnectEdge'; readonly edgeId: string }
   | { readonly op: 'setNodeLayout'; readonly layout: NodeLayout }
   | { readonly op: 'renameNode'; readonly nodeId: string; readonly name: string }
-  | { readonly op: 'replaceNode'; readonly node: GraphNode }
+  | { readonly op: 'setServiceSpec'; readonly nodeId: string; readonly spec: ServiceSpec; readonly portRenames?: Readonly<Record<string, string>> }
+  | { readonly op: 'setOperatorSpec'; readonly nodeId: string; readonly spec: OperatorSpec; readonly portRenames?: Readonly<Record<string, string>> }
   | { readonly op: 'bindOperatorService'; readonly nodeId: string; readonly serviceId: string }
   | { readonly op: 'setNodeEnabled'; readonly nodeId: string; readonly enabled: boolean }
   | { readonly op: 'setNodeState'; readonly nodeId: string; readonly field: string; readonly value: JsonValue }

@@ -9,6 +9,8 @@ from enum import Enum
 from typing import Any, cast
 
 from f8pysdk.specs import (
+    F8UiControlKind,
+    F8UiControlSpec,
     F8DataPortSpec,
     F8OperatorSchemaVersion,
     F8OperatorSpec,
@@ -883,7 +885,7 @@ PythonScriptRuntimeNode.SPEC = F8OperatorSpec(
             name="code",
             label="Code",
             description="Python source code optionally defining hooks: onStart/onState/onMsg/onExec/onStop.",
-            uiControl="code[python]",
+            control=F8UiControlSpec(kind=F8UiControlKind.code, language="python"),
             valueSchema=string_schema(default=DEFAULT_CODE),
             access=F8StateAccess.rw,
             required=True,

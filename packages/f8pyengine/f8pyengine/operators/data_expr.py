@@ -7,6 +7,8 @@ from typing import Any
 
 from f8pysdk.codec import coerce_bool
 from f8pysdk.specs import (
+    F8UiControlKind,
+    F8UiControlSpec,
     F8DataPortSpec,
     F8OperatorSchemaVersion,
     F8OperatorSpec,
@@ -279,7 +281,7 @@ DataExprRuntimeNode.SPEC = F8OperatorSpec(
             name="allowNumpy",
             label="Allow Numpy",
             description="Enable `np.*` and `numpy.*` inside the expression.",
-            uiControl="toggle",
+            control=F8UiControlSpec(kind=F8UiControlKind.toggle),
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
             showOnNode=False,
@@ -289,7 +291,7 @@ DataExprRuntimeNode.SPEC = F8OperatorSpec(
             name="unpackDictOutputs",
             label="Unpack Dict Outputs",
             description="When enabled, dict results are unpacked into output ports with matching names.",
-            uiControl="toggle",
+            control=F8UiControlSpec(kind=F8UiControlKind.toggle),
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
             showOnNode=False,
@@ -302,7 +304,7 @@ DataExprRuntimeNode.SPEC = F8OperatorSpec(
                 "Single Python expression. Reference `x` and any extra input port names directly. Supports literals, "
                 "indexing, comprehensions, conditionals, `math.*`, and optional `np.*` / `numpy.*` when `Allow Numpy` is enabled."
             ),
-            uiControl="wrapline[python]",
+            control=F8UiControlSpec(kind=F8UiControlKind.textarea, language="python"),
             valueSchema=string_schema(default="x"),
             access=F8StateAccess.rw,
             showOnNode=True,

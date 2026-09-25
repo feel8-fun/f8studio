@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from f8pysdk.specs import (
+    F8UiControlKind,
+    F8UiControlSpec,
     F8DataPortSpec,
     F8SpecEditPolicy,
     F8ServiceSchemaVersion,
@@ -38,7 +40,7 @@ def register_expr_specs(registry: Registry) -> Registry:
                     valueSchema=string_schema(default=DEFAULT_CODE),
                     access=F8StateAccess.rw,
                     required=True,
-                    uiControl="wrapline[python]",
+                    control=F8UiControlSpec(kind=F8UiControlKind.textarea, language="python"),
                     showOnNode=True,
                 ),
                 F8StateSpec(
@@ -48,7 +50,7 @@ def register_expr_specs(registry: Registry) -> Registry:
                     valueSchema=boolean_schema(default=False),
                     access=F8StateAccess.wo,
                     required=True,
-                    uiControl="toggle",
+                    control=F8UiControlSpec(kind=F8UiControlKind.toggle),
                     showOnNode=False,
                 ),
                 F8StateSpec(
@@ -58,7 +60,7 @@ def register_expr_specs(registry: Registry) -> Registry:
                     valueSchema=boolean_schema(default=False),
                     access=F8StateAccess.wo,
                     required=True,
-                    uiControl="toggle",
+                    control=F8UiControlSpec(kind=F8UiControlKind.toggle),
                     showOnNode=False,
                 ),
             ],

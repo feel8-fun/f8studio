@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 from f8pysdk.specs import (
+    F8UiControlKind,
+    F8UiControlSpec,
     F8DataPortSpec,
     F8RuntimeNode,
     F8ServiceSchemaVersion,
@@ -119,7 +121,7 @@ def _detection_sorter_state_fields() -> list[F8StateSpec]:
             valueSchema=string_schema(default="{}"),
             access=F8StateAccess.rw,
             required=True,
-            uiControl="code[json]",
+            control=F8UiControlSpec(kind=F8UiControlKind.code, language="json"),
             showOnNode=False,
         ),
         F8StateSpec(
@@ -179,7 +181,7 @@ def _common_state_fields(
             valueSchema=string_schema(default=""),
             access=F8StateAccess.rw,
             required=True,
-            uiControl="select[availableModels]",
+            control=F8UiControlSpec(kind=F8UiControlKind.select, optionsFromState="availableModels"),
             showOnNode=True,
         ),
         F8StateSpec(
@@ -265,7 +267,7 @@ def _common_state_fields(
                     valueSchema=array_schema(items=string_schema(), default=[]),
                     access=F8StateAccess.rw,
                     required=True,
-                    uiControl="multiselect[modelClasses]",
+                    control=F8UiControlSpec(kind=F8UiControlKind.multiselect, optionsFromState="modelClasses"),
                     showOnNode=False,
                 ),
                 F8StateSpec(
@@ -353,7 +355,7 @@ def _optflow_state_fields() -> list[F8StateSpec]:
             valueSchema=string_schema(default=""),
             access=F8StateAccess.rw,
             required=True,
-            uiControl="select[availableModels]",
+            control=F8UiControlSpec(kind=F8UiControlKind.select, optionsFromState="availableModels"),
             showOnNode=False,
         ),
         F8StateSpec(

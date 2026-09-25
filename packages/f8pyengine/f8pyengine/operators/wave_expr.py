@@ -8,6 +8,8 @@ from typing import Any
 import numpy as np
 
 from f8pysdk.specs import (
+    F8UiControlKind,
+    F8UiControlSpec,
     F8DataPortSpec,
     F8OperatorSchemaVersion,
     F8OperatorSpec,
@@ -481,7 +483,7 @@ WaveExprRuntimeNode.SPEC = F8OperatorSpec(
             access=F8StateAccess.rw,
             required=True,
             showOnNode=True,
-            uiControl="wrapline[python]",
+            control=F8UiControlSpec(kind=F8UiControlKind.textarea, language="python"),
         ),
         F8StateSpec(
             name="maxT",
@@ -535,7 +537,7 @@ WaveExprRuntimeNode.SPEC = F8OperatorSpec(
             },
             access=F8StateAccess.ro,
             required=True,
-            uiControl="wave_preview",
+            control=F8UiControlSpec(kind=F8UiControlKind.custom, rendererKey="wave_preview"),
             showOnNode=True,
         ),
     ],

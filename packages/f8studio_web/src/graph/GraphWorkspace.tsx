@@ -17,7 +17,7 @@ import {
   type OnNodeDrag,
   type ResizeParams,
 } from '@xyflow/react';
-import { Braces, Check, Copy, Keyboard, Play, Plus, Redo2, RotateCcw, Square, Trash2, X } from 'lucide-react';
+import { Check, Copy, Download, Keyboard, Play, Plus, Redo2, RotateCcw, Square, Trash2, Upload, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -25,7 +25,9 @@ import {
   changeHistory,
   createCatalogNode,
   createProject,
+  deleteProject,
   deployProject,
+  exportProjectGraph,
   fetchCatalog,
   fetchDeployJob,
   fetchLatestDeployment,
@@ -33,6 +35,7 @@ import {
   fetchProject,
   fetchProjects,
   fetchRuntimeMonitors,
+  importProjectGraph,
   patchProject,
   registerHotkey,
   stopRuntimeService,
@@ -46,7 +49,6 @@ import type {
   GraphEdge,
   GraphNode,
   GraphOperation,
-  GraphPort,
   HotkeyBinding,
   JsonValue,
   NodeLayout,
@@ -81,6 +83,7 @@ import { StateFieldControl } from './StateFieldControl';
 import { useRuntimeNodeState } from './useRuntimeNodeState';
 import { GraphNodeInteractionContext, StudioNodeView } from './StudioNodeView';
 import { CommandDialog } from './CommandDialog';
+import { SchemaEditor } from './SchemaEditor';
 import { NodeCatalog } from './NodeCatalog';
 import { commandResultDetail, runCommand } from './runCommand';
 
@@ -121,7 +124,7 @@ function visibleServicePosition(
 
 function hotkeyEligible(field: StateSpec): boolean {
   if (field.access !== 'rw') return false;
-  const control = (field.uiControl ?? '').split('[', 1)[0]?.trim().toLowerCase() ?? '';
+  const control = field.control?.kind ?? (field.uiControl ?? '').split('[', 1)[0]?.trim().toLowerCase() ?? '';
   if (control === 'button') return field.valueSchema.type === 'integer' || field.valueSchema.type === 'number';
   return ['select', 'dropdown', 'dropbox', 'combo', 'combobox'].includes(control) ||
     (field.valueSchema.enum?.length ?? 0) > 0;
@@ -197,40 +200,6 @@ function HotkeyEditor({ projectId, node, field, disabled }: {
     </div>
     {error !== null && <small role="alert">{error}</small>}
   </div>;
-}
-
-function NodeSchemaEditor({ node, busy, commit }: {
-  readonly node: GraphNode;
-  readonly busy: boolean;
-  readonly commit: (operations: readonly GraphOperation[]) => Promise<void>;
-}) {
-  const [text, setText] = useState(() => JSON.stringify({ spec: node.spec, ports: node.ports }, null, 2));
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => { setText(JSON.stringify({ spec: node.spec, ports: node.ports }, null, 2)); setError(null); }, [node]);
-  const apply = async () => {
-    try {
-      const parsed: unknown = JSON.parse(text);
-      if (typeof parsed !== 'object' || parsed === null) throw new Error('Schema document must be an object');
-      const value = parsed as Record<string, unknown>;
-      if (typeof value.spec !== 'object' || value.spec === null || !Array.isArray(value.ports)) {
-        throw new Error('Schema document requires spec and ports');
-      }
-      const ports = value.ports as readonly GraphPort[];
-      const replacement: GraphNode = node.kind === 'operator'
-        ? { ...node, spec: value.spec as OperatorSpec, ports }
-        : { ...node, spec: value.spec as ServiceSpec, ports };
-      await commit([{ op: 'replaceNode', node: replacement }]);
-      setError(null);
-    } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : 'Schema update failed');
-    }
-  };
-  return <details className="node-schema-editor">
-    <summary><Braces size={14} />Schema</summary>
-    <textarea value={text} onChange={(event) => setText(event.target.value)} disabled={busy} spellCheck={false} aria-label="Node schema JSON" />
-    {error !== null && <p role="alert">{error}</p>}
-    <button className="command-button" type="button" disabled={busy} onClick={() => void apply()}>Apply schema</button>
-  </details>;
 }
 
 function NodeInspector({
@@ -313,7 +282,7 @@ function NodeInspector({
       {(node.spec.commands ?? []).map((command) => <button key={command.name} type="button" className="command-button" disabled={busy || pendingCommands.has(`${node.nodeId}:${command.name}`)}
         title={command.description} onClick={() => onCommand(node, command)}><Play size={13} />{command.name}</button>)}
     </div></>}
-    <NodeSchemaEditor node={node} busy={busy} commit={commit} />
+    <SchemaEditor node={node} busy={busy} commit={commit} />
     <button className="danger-command" type="button" disabled={busy} onClick={() => void commit([{ op: 'deleteNode', nodeId: node.nodeId }])}><Trash2 size={15} /> {node.kind === 'service' ? 'Delete service and operators' : 'Delete node'}</button>
   </>;
 }
@@ -402,6 +371,7 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
   });
   const projectRef = useRef<ProjectRecord | null>(null);
   const graphCanvasRef = useRef<HTMLElement>(null);
+  const graphImportRef = useRef<HTMLInputElement>(null);
   const nodesInitialized = useNodesInitialized();
   const { fitView, screenToFlowPosition } = useReactFlow<StudioFlowNode, Edge>();
   const updateNodeInternals = useUpdateNodeInternals();
@@ -476,6 +446,21 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
         catch (reason) { console.error('Invalid graph event JSON', reason); return; }
         if (typeof decoded !== 'object' || decoded === null) return;
         const envelope = decoded as Record<string, unknown>;
+        if (envelope.type === 'project.deleted' && envelope.scope === `project:${projectId}`) {
+          setProjects((current) => current.filter((item) => item.projectId !== projectId));
+          setProject(null);
+          setDeployment(null);
+          localStorage.removeItem(SELECTED_PROJECT_KEY);
+          setSelectedNodeId(null);
+          setSelectedEdgeId(null);
+          setActiveCommand(null);
+          void fetchProjects().then(async (available) => {
+            setProjects(available);
+            const next = available[0];
+            if (next !== undefined) await reloadProject(next.projectId);
+          }).catch((reason: unknown) => setError(errorMessage(reason)));
+          return;
+        }
         if (envelope.type !== 'graph.committed' || envelope.scope !== `project:${projectId}` ||
           typeof envelope.payload !== 'object' || envelope.payload === null) return;
         const payload = envelope.payload as Record<string, unknown>;
@@ -498,7 +483,7 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
       socket?.close();
       if (retryTimer !== null) window.clearTimeout(retryTimer);
     };
-  }, [projectId]);
+  }, [projectId, reloadProject]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -676,6 +661,33 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
       setBusy(false);
     }
   }, [projects.length]);
+
+  const removeProject = useCallback(async () => {
+    if (project === null || busy || saving || mutationInFlight.current) return;
+    if (!window.confirm(`Delete project "${project.name}" and its saved versions, deployments, and agent sessions? This cannot be undone.`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteProject(project.projectId);
+      setProjects((current) => current.filter((item) => item.projectId !== project.projectId));
+      setProject(null);
+      setDeployment(null);
+      localStorage.removeItem(SELECTED_PROJECT_KEY);
+      const available = await fetchProjects();
+      setProjects(available);
+      const next = available[0];
+      if (next !== undefined) {
+        await reloadProject(next.projectId);
+      }
+      setSelectedNodeId(null);
+      setSelectedEdgeId(null);
+      setActiveCommand(null);
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, project, reloadProject, saving]);
 
   const addSpec = useCallback(async (spec: ServiceSpec | OperatorSpec) => {
     if (project === null || busy) return;
@@ -1001,6 +1013,39 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
     }
   }, [busy, project, reloadProject]);
 
+  const downloadGraph = useCallback(async () => {
+    if (project === null || busy) return;
+    setError(null);
+    try {
+      const content = await exportProjectGraph(project.projectId);
+      const url = URL.createObjectURL(new Blob([content], { type: 'application/json' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${project.projectId}.f8graph.json`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (reason) {
+      setError(errorMessage(reason));
+    }
+  }, [busy, project]);
+
+  const uploadGraph = useCallback(async (file: File) => {
+    if (project === null || busy) return;
+    if (!window.confirm(`Replace the graph in ${project.name} with ${file.name}?`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const record = await importProjectGraph(project.projectId, await file.text());
+      setProject(record);
+      setSelectedNodeId(null);
+      setSelectedEdgeId(null);
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, project]);
+
   const deploy = useCallback(async () => {
     if (project === null || busy) return;
     setBusy(true);
@@ -1193,11 +1238,12 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
         <div className="project-control">
           <label htmlFor="project-select">Project</label>
           <div>
-            <select id="project-select" value={project?.projectId ?? ''} disabled={busy} onChange={(event) => void selectProject(event.target.value)}>
+            <select id="project-select" value={project?.projectId ?? ''} disabled={locked} onChange={(event) => void selectProject(event.target.value)}>
               <option value="" disabled>Select project</option>
               {projects.map((item) => <option key={item.projectId} value={item.projectId}>{item.name}</option>)}
             </select>
-            <button type="button" className="small-icon-button" title="New project" aria-label="New project" disabled={busy} onClick={() => void addProject()}><Plus size={16} /></button>
+            <button type="button" className="small-icon-button" title="New project" aria-label="New project" disabled={locked} onClick={() => void addProject()}><Plus size={16} /></button>
+            <button type="button" className="small-icon-button" title="Delete project" aria-label="Delete project" disabled={locked || project === null} onClick={() => void removeProject()}><Trash2 size={15} /></button>
           </div>
         </div>
         <NodeCatalog catalog={catalog} projectServiceClasses={new Set(project?.document.nodes.filter((node) => node.kind === 'service').map((node) => node.serviceClass))}
@@ -1209,6 +1255,13 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
           <button type="button" title="Undo" aria-label="Undo" disabled={busy || project === null} onClick={() => void history('undo')}><RotateCcw size={16} /></button>
           <button type="button" title="Redo" aria-label="Redo" disabled={busy || project === null} onClick={() => void history('redo')}><Redo2 size={16} /></button>
           <button type="button" title="Duplicate selection" aria-label="Duplicate selection" disabled={busy || project === null || (selectedNodeId === null && !nodes.some((node) => node.selected))} onClick={duplicateSelection}><Copy size={15} /></button>
+          <button type="button" title="Export graph" aria-label="Export graph" disabled={busy || project === null} onClick={() => void downloadGraph()}><Download size={15} /></button>
+          <button type="button" title="Import graph" aria-label="Import graph" disabled={busy || project === null} onClick={() => graphImportRef.current?.click()}><Upload size={15} /></button>
+          <input ref={graphImportRef} type="file" accept=".json,application/json" hidden aria-label="Graph import file" onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (file !== undefined) void uploadGraph(file);
+          }} />
           <button type="button" title="Deploy" aria-label="Deploy" disabled={busy || project === null} onClick={() => void deploy()}><Play size={16} /></button>
           <button type="button" title="Stop services" aria-label="Stop services" disabled={busy || project === null} onClick={() => void stop()}><Square size={14} /></button>
           <span>{project === null ? 'No project selected' : `Draft r${project.document.graphRevision} · Layout r${project.document.layoutRevision}`}</span>

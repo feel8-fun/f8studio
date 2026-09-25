@@ -8,8 +8,10 @@ from threading import RLock
 import msgspec
 
 from f8pysdk.specs import F8JsonValue
+from f8pysdk.specs import F8OperatorSpec, F8ServiceSpec
 
 from .codec import canonical_json_bytes, clone_document
+from .catalog import replace_node_spec
 from .models import (
     BindOperatorServiceOp,
     ConnectEdgeOp,
@@ -25,7 +27,8 @@ from .models import (
     OperatorNode,
     PatchRequest,
     RenameNodeOp,
-    ReplaceNodeOp,
+    SetServiceSpecOp,
+    SetOperatorSpecOp,
     ServiceNode,
     SetNodeEnabledOp,
     SetNodeLayoutOp,
@@ -33,6 +36,7 @@ from .models import (
     StudioDocument,
 )
 from .validation import validate_document
+from .spec_edit import validate_spec_edit
 
 
 class GraphStoreError(RuntimeError):
@@ -49,6 +53,9 @@ class IdempotencyConflictError(GraphStoreError):
 
 class OperationTargetError(GraphStoreError):
     code = "operation_target_error"
+
+
+SpecResolver = Callable[[GraphNode], F8ServiceSpec | F8OperatorSpec]
 
 
 class PatchResult(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
@@ -101,6 +108,7 @@ def _replace_service_node(
         service_class=node.service_class,
         spec=node.spec,
         ports=node.ports,
+        port_ids=node.port_ids,
         state_values=node.state_values if state_values is None else state_values,
         enabled=node.enabled if enabled is None else enabled,
     )
@@ -122,6 +130,7 @@ def _replace_operator_node(
         operator_class=node.operator_class,
         spec=node.spec,
         ports=node.ports,
+        port_ids=node.port_ids,
         state_values=node.state_values if state_values is None else state_values,
         enabled=node.enabled if enabled is None else enabled,
     )
@@ -155,8 +164,18 @@ def _upsert_layout(layouts: tuple[NodeLayout, ...], layout: NodeLayout) -> tuple
     return tuple(result)
 
 
-def _apply_operation(document: StudioDocument, operation: GraphOperation) -> StudioDocument:
+def _check_trusted_spec(node: GraphNode, resolver: SpecResolver | None) -> None:
+    if resolver is None:
+        return
+    try:
+        validate_spec_edit(resolver(node), node.spec)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise OperationTargetError(f"node spec differs from installed definition: {node.node_id}: {exc}") from exc
+
+
+def _apply_operation(document: StudioDocument, operation: GraphOperation, resolver: SpecResolver | None) -> StudioDocument:
     if isinstance(operation, CreateNodeOp):
+        _check_trusted_spec(operation.node, resolver)
         if any(node.node_id == operation.node.node_id for node in document.nodes):
             raise OperationTargetError(f"node already exists: {operation.node.node_id}")
         layout = document.layout
@@ -225,8 +244,19 @@ def _apply_operation(document: StudioDocument, operation: GraphOperation) -> Stu
         )
         return _replace_node(document, replacement)
 
-    if isinstance(operation, ReplaceNodeOp):
-        return _replace_node(document, operation.node)
+    if isinstance(operation, (SetServiceSpecOp, SetOperatorSpecOp)):
+        node = next((item for item in document.nodes if item.node_id == operation.node_id), None)
+        if node is None:
+            raise OperationTargetError(f"node not found: {operation.node_id}")
+        if isinstance(operation, SetServiceSpecOp) != isinstance(node, ServiceNode):
+            raise OperationTargetError(f"spec kind does not match node: {operation.node_id}")
+        _check_trusted_spec(node, resolver)
+        try:
+            validate_spec_edit(node.spec, operation.spec)
+            replacement = replace_node_spec(node, operation.spec, port_renames=operation.port_renames)
+        except (TypeError, ValueError) as exc:
+            raise OperationTargetError(f"invalid spec edit for {operation.node_id}: {exc}") from exc
+        return _replace_node(document, replacement)
 
     if isinstance(operation, BindOperatorServiceOp):
         node = next((item for item in document.nodes if item.node_id == operation.node_id), None)
@@ -265,6 +295,8 @@ def _apply_operation(document: StudioDocument, operation: GraphOperation) -> Stu
         return msgspec.structs.replace(document, layout=_upsert_layout(document.layout, operation.layout))
 
     assert isinstance(operation, InsertFragmentOp)
+    for node in operation.nodes:
+        _check_trusted_spec(node, resolver)
     existing_nodes = {node.node_id for node in document.nodes}
     existing_edges = {edge.edge_id for edge in document.edges}
     inserted_nodes = {node.node_id for node in operation.nodes}
@@ -301,12 +333,13 @@ def _operation_changes_graph(operation: GraphOperation) -> bool:
 
 
 class GraphStore:
-    def __init__(self, document: StudioDocument, *, request_history_limit: int = 2048) -> None:
+    def __init__(self, document: StudioDocument, *, request_history_limit: int = 2048, spec_resolver: SpecResolver | None = None) -> None:
         if request_history_limit < 1:
             raise ValueError("request_history_limit must be positive")
         validate_document(document)
         self._document = clone_document(document)
         self._request_history_limit = request_history_limit
+        self._spec_resolver = spec_resolver
         self._processed: dict[str, _ProcessedRequest] = {}
         self._processed_order: list[str] = []
         self._undo: list[StudioDocument] = []
@@ -350,7 +383,7 @@ class GraphStore:
             before = self._document
             candidate = before
             for operation in request.operations:
-                candidate = _apply_operation(candidate, operation)
+                candidate = _apply_operation(candidate, operation, self._spec_resolver)
             validate_document(candidate)
 
             graph_requested = any(_operation_changes_graph(operation) for operation in request.operations)

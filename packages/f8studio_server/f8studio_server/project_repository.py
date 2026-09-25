@@ -187,6 +187,18 @@ class ProjectRepository:
             raise FileNotFoundError(f"project not found after update: {project_id}")
         return record
 
+    def delete_project(self, project_id: str) -> None:
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            cursor = connection.execute("DELETE FROM projects WHERE project_id = ?", (project_id,))
+            if cursor.rowcount != 1:
+                raise FileNotFoundError(f"project not found: {project_id}")
+            # Older hotkey tables have no foreign key, so remove their bindings explicitly.
+            if connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'global_hotkeys'"
+            ).fetchone() is not None:
+                connection.execute("DELETE FROM global_hotkeys WHERE project_id = ?", (project_id,))
+
     def replace_document(self, project_id: str, document: StudioDocument) -> ProjectRecord:
         timestamp = utc_now_text()
         with self._connect() as connection:

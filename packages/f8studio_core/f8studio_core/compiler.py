@@ -14,7 +14,10 @@ from f8pysdk.rungraph_validation import (
 )
 from f8pysdk.specs import (
     F8AutoSampleRequest,
+    F8ArrayTypeSchema,
+    F8ComplexObjectTypeSchema,
     F8DataPortSpec,
+    F8DataTypeSchema,
     F8Edge,
     F8EdgeDirection,
     F8EdgeKindEnum,
@@ -109,12 +112,92 @@ def _runtime_edges(graph: F8RuntimeGraph) -> list[F8Edge]:
 
 
 def semantic_graph_revision(document: StudioDocument) -> str:
+    validate_document(document)
+    enabled_nodes = {node.node_id: node for node in document.nodes if node.enabled}
     payload = {
         "graphId": document.graph_id,
-        "nodes": sorted(document.nodes, key=lambda node: node.node_id),
-        "edges": sorted(document.edges, key=lambda edge: edge.edge_id),
+        "nodes": [
+            _semantic_runtime_node(node)
+            for node in sorted(enabled_nodes.values(), key=lambda item: item.node_id)
+        ],
+        "edges": [
+            _runtime_edge(edge, enabled_nodes)
+            for edge in sorted(document.edges, key=lambda item: item.edge_id)
+            if edge.from_node_id in enabled_nodes and edge.to_node_id in enabled_nodes
+        ],
+        "launch": [
+            (node.service_id, None if isinstance(node.spec.launch, msgspec.UnsetType) else node.spec.launch)
+            for node in sorted(enabled_nodes.values(), key=lambda item: item.node_id)
+            if isinstance(node, ServiceNode)
+        ],
     }
     return hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
+
+
+def _semantic_runtime_node(node: GraphNode) -> F8RuntimeNode:
+    runtime = msgspec.json.decode(msgspec.json.encode(_runtime_node(node)), type=F8RuntimeNode)
+    states = [
+        msgspec.structs.replace(
+            field,
+            label=msgspec.UNSET,
+            description=msgspec.UNSET,
+            editPolicy=msgspec.UNSET,
+            uiControl=msgspec.UNSET,
+            control=msgspec.UNSET,
+            showOnNode=msgspec.UNSET,
+            redactOnPublish=msgspec.UNSET,
+            editorAssist=msgspec.UNSET,
+            valueSchema=_semantic_value_schema(field.valueSchema),
+        )
+        for field in _spec_state_fields(runtime.stateFields)
+    ]
+    inputs = [
+        _semantic_data_port(port)
+        for port in _spec_data_ports(runtime.dataInPorts)
+    ]
+    outputs = [
+        _semantic_data_port(port)
+        for port in _spec_data_ports(runtime.dataOutPorts)
+    ]
+    return msgspec.structs.replace(runtime, stateFields=states, dataInPorts=inputs, dataOutPorts=outputs)
+
+
+def _semantic_value_schema(schema: F8DataTypeSchema) -> F8DataTypeSchema:
+    stripped = msgspec.structs.replace(
+        schema,
+        title=msgspec.UNSET,
+        description=msgspec.UNSET,
+        examples=msgspec.UNSET,
+        field_comment=msgspec.UNSET,
+    )
+    if isinstance(stripped, F8ArrayTypeSchema):
+        return msgspec.structs.replace(stripped, items=_semantic_value_schema(stripped.items))
+    if isinstance(stripped, F8ComplexObjectTypeSchema):
+        return msgspec.structs.replace(
+            stripped,
+            properties={name: _semantic_value_schema(value) for name, value in stripped.properties.items()},
+        )
+    return stripped
+
+
+def _semantic_data_port(port: F8DataPortSpec) -> F8DataPortSpec:
+    payload = port.payload
+    if not isinstance(payload, msgspec.UnsetType):
+        payload = msgspec.structs.replace(
+            payload,
+            valueSchema=payload.valueSchema if isinstance(payload.valueSchema, msgspec.UnsetType)
+            else _semantic_value_schema(payload.valueSchema),
+            metadataSchema=payload.metadataSchema if isinstance(payload.metadataSchema, msgspec.UnsetType)
+            else _semantic_value_schema(payload.metadataSchema),
+        )
+    return msgspec.structs.replace(
+        port,
+        valueSchema=_semantic_value_schema(port.valueSchema),
+        payload=payload,
+        description=msgspec.UNSET,
+        required=msgspec.UNSET,
+        showOnNode=msgspec.UNSET,
+    )
 
 
 def _runtime_state_fields(node: GraphNode) -> list[F8StateSpec]:
@@ -389,12 +472,10 @@ def compile_document(document: StudioDocument) -> CompiledRuntimeGraphs:
         F8RuntimeService(
             serviceId=node.service_id,
             serviceClass=node.service_class,
-            label=str(node.spec.label),
-            meta={"name": node.name},
         )
         for node in sorted(enabled_services.values(), key=lambda item: item.service_id)
     ]
-    runtime_nodes = [_runtime_node(node) for node in sorted(enabled_nodes.values(), key=lambda item: item.node_id)]
+    runtime_nodes = [_semantic_runtime_node(node) for node in sorted(enabled_nodes.values(), key=lambda item: item.node_id)]
     runtime_edges = [
         _runtime_edge(edge, enabled_nodes)
         for edge in sorted(document.edges, key=lambda item: item.edge_id)

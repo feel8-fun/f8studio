@@ -18,6 +18,7 @@ from f8pysdk.specs import (
     F8NumberTypeSchema,
     F8StateAccess,
     F8StringTypeSchema,
+    F8UiControlKind,
     data_port_payload_kind,
 )
 
@@ -150,7 +151,10 @@ def _validate_node(node: GraphNode, service_nodes: dict[str, ServiceNode]) -> No
         if node.service_class != str(node.spec.serviceClass) or node.operator_class != str(node.spec.operatorClass):
             _fail("spec_mismatch", f"operator spec identity mismatch for {node.node_id}")
 
-    if node.ports != ports_for_spec(node.spec):
+    standard_port_ids = {port.port_id for port in ports_for_spec(node.spec)}
+    if set(node.port_ids) - standard_port_ids:
+        _fail("invalid_port_ids", f"port ID map references missing ports on node {node.node_id}")
+    if node.ports != ports_for_spec(node.spec, node.port_ids):
         _fail("port_spec_mismatch", f"ports do not match spec for node {node.node_id}")
     port_ids = [port.port_id for port in node.ports]
     if len(port_ids) != len(set(port_ids)):
@@ -160,6 +164,22 @@ def _validate_node(node: GraphNode, service_nodes: dict[str, ServiceNode]) -> No
         str(field.name): field
         for field in ([] if isinstance(node.spec.stateFields, msgspec.UnsetType) else node.spec.stateFields)
     }
+    for field in state_fields.values():
+        control = field.control
+        if isinstance(control, msgspec.UnsetType):
+            continue
+        if control.kind == F8UiControlKind.custom and (
+            isinstance(control.rendererKey, msgspec.UnsetType) or not control.rendererKey.strip()
+        ):
+            _fail("invalid_control", f"custom control requires rendererKey: {node.node_id}.{field.name}")
+        pool = control.optionsFromState
+        if isinstance(pool, msgspec.UnsetType):
+            continue
+        if control.kind not in (F8UiControlKind.select, F8UiControlKind.multiselect):
+            _fail("invalid_control", f"optionsFromState requires a selection control: {node.node_id}.{field.name}")
+        source = state_fields.get(pool)
+        if source is None or not isinstance(source.valueSchema, F8ArrayTypeSchema):
+            _fail("invalid_control", f"optionsFromState must reference an array state: {node.node_id}.{field.name}")
     for field_name, value in node.state_values.items():
         field = state_fields.get(field_name)
         if field is None:

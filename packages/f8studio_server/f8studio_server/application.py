@@ -72,7 +72,7 @@ class StudioApplication:
         )
         self.catalog = CatalogService(roots=service_roots, builtins=(self.studio_runtime.describe,))
         project_repository = ProjectRepository(self.data_dir / "studio.sqlite3")
-        self.projects = ProjectService(project_repository)
+        self.projects = ProjectService(project_repository, spec_resolver=self.catalog.spec_for_node)
         self.assets = AssetRepository(project_repository.database_path)
         self.editor = EditorSessionService(root=self.data_dir / "editor-sessions")
         self.local = LocalIntegrationService(
@@ -219,6 +219,8 @@ class StudioApplication:
 
     @staticmethod
     def _state_control(field: F8StateSpec) -> str:
+        if not isinstance(field.control, msgspec.UnsetType):
+            return field.control.kind.value
         value = field.uiControl
         if isinstance(value, msgspec.UnsetType):
             return ""
@@ -246,13 +248,17 @@ class StudioApplication:
 
     @staticmethod
     def _pool_values(node: GraphNode, field: F8StateSpec) -> list[F8JsonValue]:
-        value = field.uiControl
-        if isinstance(value, msgspec.UnsetType):
-            return []
-        match = re.fullmatch(r"(?:select|dropdown|dropbox|combo|combobox)\[([A-Za-z_][A-Za-z0-9_]*)\]", value.strip())
-        if match is None:
-            return []
-        pool_name = match.group(1)
+        control = field.control
+        if not isinstance(control, msgspec.UnsetType) and not isinstance(control.optionsFromState, msgspec.UnsetType):
+            pool_name = control.optionsFromState
+        else:
+            value = field.uiControl
+            if isinstance(value, msgspec.UnsetType):
+                return []
+            match = re.fullmatch(r"(?:select|dropdown|dropbox|combo|combobox)\[([A-Za-z_][A-Za-z0-9_]*)\]", value.strip())
+            if match is None:
+                return []
+            pool_name = match.group(1)
         raw_pool = node.state_values.get(pool_name)
         if raw_pool is None:
             state_fields = node.spec.stateFields

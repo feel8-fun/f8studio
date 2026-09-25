@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from f8pysdk.specs import (
+    F8UiControlKind,
+    F8UiControlSpec,
     F8DataPortSpec,
     F8ServiceSchemaVersion,
     F8ServiceSpec,
@@ -113,7 +115,7 @@ def _state_fields() -> list[F8StateSpec]:
             valueSchema=string_schema(default=DEFAULT_MODEL_COMPLEXITY, enum=["lite", "full", "heavy"]),
             access=F8StateAccess.rw,
             required=True,
-            uiControl="select",
+            control=F8UiControlSpec(kind=F8UiControlKind.select),
             showOnNode=False,
         ),
         F8StateSpec(
@@ -150,7 +152,7 @@ def _state_fields() -> list[F8StateSpec]:
             valueSchema=string_schema(default=DEFAULT_SKELETON_SOURCE, enum=["camera", "world"]),
             access=F8StateAccess.rw,
             required=True,
-            uiControl="select",
+            control=F8UiControlSpec(kind=F8UiControlKind.select),
             showOnNode=False,
         ),
     ]

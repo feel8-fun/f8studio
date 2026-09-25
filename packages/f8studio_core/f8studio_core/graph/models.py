@@ -56,6 +56,7 @@ class ServiceNode(msgspec.Struct, frozen=True, kw_only=True, tag="service", tag_
     service_class: str
     spec: F8ServiceSpec
     ports: tuple[GraphPort, ...] = ()
+    port_ids: dict[str, str] = msgspec.field(default_factory=dict)
     state_values: dict[str, F8JsonValue] = msgspec.field(default_factory=dict)
     enabled: bool = True
 
@@ -68,6 +69,7 @@ class OperatorNode(msgspec.Struct, frozen=True, kw_only=True, tag="operator", ta
     operator_class: str
     spec: F8OperatorSpec
     ports: tuple[GraphPort, ...] = ()
+    port_ids: dict[str, str] = msgspec.field(default_factory=dict)
     state_values: dict[str, F8JsonValue] = msgspec.field(default_factory=dict)
     enabled: bool = True
 
@@ -137,8 +139,16 @@ class RenameNodeOp(msgspec.Struct, frozen=True, kw_only=True, tag="renameNode", 
     name: str
 
 
-class ReplaceNodeOp(msgspec.Struct, frozen=True, kw_only=True, tag="replaceNode", tag_field="op", rename="camel"):
-    node: GraphNode
+class SetServiceSpecOp(msgspec.Struct, frozen=True, kw_only=True, tag="setServiceSpec", tag_field="op", rename="camel"):
+    node_id: str
+    spec: F8ServiceSpec
+    port_renames: dict[str, str] = msgspec.field(default_factory=dict)
+
+
+class SetOperatorSpecOp(msgspec.Struct, frozen=True, kw_only=True, tag="setOperatorSpec", tag_field="op", rename="camel"):
+    node_id: str
+    spec: F8OperatorSpec
+    port_renames: dict[str, str] = msgspec.field(default_factory=dict)
 
 
 class BindOperatorServiceOp(
@@ -176,7 +186,8 @@ GraphOperation = (
     | DisconnectEdgeOp
     | SetNodeStateOp
     | RenameNodeOp
-    | ReplaceNodeOp
+    | SetServiceSpecOp
+    | SetOperatorSpecOp
     | BindOperatorServiceOp
     | SetNodeEnabledOp
     | SetNodeLayoutOp

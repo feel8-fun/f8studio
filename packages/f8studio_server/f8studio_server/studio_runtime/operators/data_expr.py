@@ -11,6 +11,8 @@ from f8pysdk.f8_naming import ensure_token
 from f8pysdk.nodes import OperatorNode
 from f8pysdk.registry import Registry
 from f8pysdk.specs import (
+    F8UiControlKind,
+    F8UiControlSpec,
     F8DataPortSpec,
     F8OperatorSchemaVersion,
     F8OperatorSpec,
@@ -173,7 +175,7 @@ DataExprRuntimeNode.SPEC = F8OperatorSpec(
             name="allowNumpy",
             label="Allow NumPy",
             description="Reserved for a runtime with an explicitly installed NumPy capability.",
-            uiControl="toggle",
+            control=F8UiControlSpec(kind=F8UiControlKind.toggle),
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
             showOnNode=False,
@@ -183,7 +185,7 @@ DataExprRuntimeNode.SPEC = F8OperatorSpec(
             name="unpackDictOutputs",
             label="Unpack Dict Outputs",
             description="Map dictionary keys to output ports with the same names.",
-            uiControl="toggle",
+            control=F8UiControlSpec(kind=F8UiControlKind.toggle),
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
             showOnNode=False,
@@ -193,7 +195,7 @@ DataExprRuntimeNode.SPEC = F8OperatorSpec(
             name="code",
             label="Expr",
             description="Restricted Python expression using input names or the inputs mapping.",
-            uiControl="wrapline[python]",
+            control=F8UiControlSpec(kind=F8UiControlKind.textarea, language="python"),
             valueSchema=string_schema(default="x"),
             access=F8StateAccess.rw,
             showOnNode=True,

@@ -418,6 +418,15 @@ class LocalIntegrationService:
         with self._hotkey_lock:
             self._refresh_hotkey_backend()
 
+    def forget_project_hotkeys(self, project_id: str) -> None:
+        with self._hotkey_lock:
+            self._hotkeys = {
+                binding_id: binding
+                for binding_id, binding in self._hotkeys.items()
+                if binding.project_id != project_id
+            }
+            self._refresh_hotkey_backend()
+
     @staticmethod
     def _verify_skeleton_udp_blocking(request: VerifySkeletonUdpRequest) -> SkeletonUdpVerification:
         packet_count = 0

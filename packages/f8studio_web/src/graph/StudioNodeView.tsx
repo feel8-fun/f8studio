@@ -60,7 +60,7 @@ export function StudioNodeView({ data, selected }: NodeProps<StudioFlowNode>) {
   const isThreeD = node.kind === 'operator' && (node.operatorClass === 'f8.viz.three_d' || node.spec.rendererClass === 'viz_three_d');
   const interaction = useContext(GraphNodeInteractionContext);
   const inlineNames = (node.spec.stateFields ?? []).filter((field) => field.showOnNode === true)
-    .flatMap((field) => [field.name, stateOptionPoolField(field.uiControl)].filter((name): name is string => name !== null));
+    .flatMap((field) => [field.name, stateOptionPoolField(field)].filter((name): name is string => name !== null));
   const runtimeValues = useRuntimeNodeState(node, inlineNames);
   const rows = nodePortRows(node);
   const visibleRows = rows.length === 0 ? [{ key: 'empty' }] : rows;

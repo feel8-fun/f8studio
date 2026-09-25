@@ -81,7 +81,7 @@ def _state_ports(spec: F8StateSpec) -> list[GraphPort]:
     return ports
 
 
-def ports_for_spec(spec: F8ServiceSpec | F8OperatorSpec) -> tuple[GraphPort, ...]:
+def ports_for_spec(spec: F8ServiceSpec | F8OperatorSpec, port_ids: dict[str, str] | None = None) -> tuple[GraphPort, ...]:
     ports: list[GraphPort] = []
     if isinstance(spec, F8OperatorSpec):
         for name in _text_ports(spec.execInPorts):
@@ -138,29 +138,88 @@ def ports_for_spec(spec: F8ServiceSpec | F8OperatorSpec) -> tuple[GraphPort, ...
                 state_spec=output_state,
             )
         )
+    if port_ids:
+        return tuple(msgspec.structs.replace(port, port_id=port_ids.get(port.port_id, port.port_id)) for port in ports)
     return tuple(ports)
 
 
-def replace_node_spec(node: GraphNode, spec: F8ServiceSpec | F8OperatorSpec) -> GraphNode:
+def _preserved_port_ids(
+    node: GraphNode,
+    spec: F8ServiceSpec | F8OperatorSpec,
+    renames: dict[str, str],
+) -> dict[str, str]:
+    old_ids = {port.port_id for port in node.ports}
+    unknown = set(renames) - old_ids
+    if unknown:
+        raise ValueError(f"renamed port not found: {', '.join(sorted(unknown))}")
+    available = {port.port_id for port in ports_for_spec(spec)}
+    preserved: dict[str, str] = {}
+    for port in node.ports:
+        name = renames.get(port.port_id, port.name)
+        key = _port_id(port.kind, port.direction, name)
+        if port.port_id in renames and key not in available:
+            raise ValueError(f"renamed port target not found: {key}")
+        if key not in available or key == port.port_id:
+            continue
+        if key in preserved:
+            raise ValueError(f"multiple ports renamed to {key}")
+        preserved[key] = port.port_id
+    return preserved
+
+
+def _state_values_after_rename(
+    node: GraphNode,
+    spec: F8ServiceSpec | F8OperatorSpec,
+    renames: dict[str, str],
+) -> dict[str, F8JsonValue]:
+    writable = {
+        str(field.name)
+        for field in _state_fields(spec.stateFields)
+        if field.access != F8StateAccess.ro
+    }
+    targets: dict[str, set[str]] = {}
+    for port in node.ports:
+        if port.kind == PortKind.state and port.port_id in renames:
+            targets.setdefault(port.name, set()).add(renames[port.port_id])
+    for old_name, names in targets.items():
+        if len(names) != 1 or any(
+            port.kind == PortKind.state and port.name == old_name and port.port_id not in renames
+            for port in node.ports
+        ):
+            raise ValueError(f"state rename must include every endpoint: {old_name}")
+    renamed = {old_name: next(iter(names)) for old_name, names in targets.items()}
+    values: dict[str, F8JsonValue] = {}
+    for old_name, value in node.state_values.items():
+        name = renamed.get(old_name, old_name)
+        if name in writable:
+            if name in values:
+                raise ValueError(f"state rename produces duplicate value: {name}")
+            values[name] = value
+    return values
+
+
+def replace_node_spec(
+    node: GraphNode,
+    spec: F8ServiceSpec | F8OperatorSpec,
+    *,
+    port_renames: dict[str, str] | None = None,
+) -> GraphNode:
     if isinstance(node, ServiceNode):
         if not isinstance(spec, F8ServiceSpec):
             raise TypeError("service node requires an F8ServiceSpec")
         if str(spec.serviceClass) != node.service_class:
             raise ValueError("serviceClass cannot change during spec replacement")
         copied_spec = _clone_service_spec(spec)
-        writable = {
-            str(field.name)
-            for field in _state_fields(copied_spec.stateFields)
-            if field.access != F8StateAccess.ro
-        }
+        port_ids = _preserved_port_ids(node, copied_spec, port_renames or {})
         return ServiceNode(
             node_id=node.node_id,
             name=node.name,
             service_id=node.service_id,
             service_class=node.service_class,
             spec=copied_spec,
-            ports=ports_for_spec(copied_spec),
-            state_values={name: value for name, value in node.state_values.items() if name in writable},
+            ports=ports_for_spec(copied_spec, port_ids),
+            port_ids=port_ids,
+            state_values=_state_values_after_rename(node, copied_spec, port_renames or {}),
             enabled=node.enabled,
         )
     if not isinstance(spec, F8OperatorSpec):
@@ -168,11 +227,7 @@ def replace_node_spec(node: GraphNode, spec: F8ServiceSpec | F8OperatorSpec) -> 
     if str(spec.serviceClass) != node.service_class or str(spec.operatorClass) != node.operator_class:
         raise ValueError("operator identity cannot change during spec replacement")
     copied_spec = _clone_operator_spec(spec)
-    writable = {
-        str(field.name)
-        for field in _state_fields(copied_spec.stateFields)
-        if field.access != F8StateAccess.ro
-    }
+    port_ids = _preserved_port_ids(node, copied_spec, port_renames or {})
     return OperatorNode(
         node_id=node.node_id,
         name=node.name,
@@ -180,8 +235,9 @@ def replace_node_spec(node: GraphNode, spec: F8ServiceSpec | F8OperatorSpec) -> 
         service_class=node.service_class,
         operator_class=node.operator_class,
         spec=copied_spec,
-        ports=ports_for_spec(copied_spec),
-        state_values={name: value for name, value in node.state_values.items() if name in writable},
+        ports=ports_for_spec(copied_spec, port_ids),
+        port_ids=port_ids,
+        state_values=_state_values_after_rename(node, copied_spec, port_renames or {}),
         enabled=node.enabled,
     )
 

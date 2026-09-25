@@ -12,6 +12,8 @@ import numpy as np
 from scipy.interpolate import Akima1DInterpolator, CubicSpline, PchipInterpolator, interp1d
 
 from f8pysdk.specs import (
+    F8UiControlKind,
+    F8UiControlSpec,
     F8ArrayTypeSchema,
     F8DataPortSpec,
     F8OperatorSchemaVersion,
@@ -601,7 +603,7 @@ WaveFunscriptRuntimeNode.SPEC = F8OperatorSpec(
             valueSchema=string_schema(default=_TOPLEVEL_AXIS),
             access=F8StateAccess.rw,
             required=True,
-            uiControl="select[allAxes]",
+            control=F8UiControlSpec(kind=F8UiControlKind.select, optionsFromState="allAxes"),
             showOnNode=True,
         ),
         F8StateSpec(
@@ -638,7 +640,7 @@ WaveFunscriptRuntimeNode.SPEC = F8OperatorSpec(
             valueSchema=F8ArrayTypeSchema(items=helper_number_schema(), default=_DEFAULT_HEATMAP),
             access=F8StateAccess.ro,
             required=True,
-            uiControl="wave_heatmap",
+            control=F8UiControlSpec(kind=F8UiControlKind.custom, rendererKey="wave_heatmap"),
             showOnNode=True,
         ),
     ],

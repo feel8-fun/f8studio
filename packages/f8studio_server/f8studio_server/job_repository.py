@@ -153,6 +153,14 @@ class JobRepository:
             ).fetchone()
         return None if row is None else self._job_from_row(row)
 
+    def has_active_project_job(self, project_id: str) -> bool:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT 1 FROM deploy_jobs WHERE project_id = ? AND status IN (?, ?) LIMIT 1",
+                (project_id, JobStatus.queued.value, JobStatus.running.value),
+            ).fetchone()
+        return row is not None
+
     def mark_interrupted_jobs_failed(self, *, timestamp: str) -> int:
         with self._connect() as connection:
             cursor = connection.execute(

@@ -328,6 +328,35 @@ inline std::optional<F8StateAccess> parse_F8StateAccess(const std::string& s) {
   return std::nullopt;
 }
 
+enum class F8UiControlKind {
+  auto_,
+  text,
+  textarea,
+  code,
+  toggle,
+  slider,
+  select,
+  multiselect,
+  dial,
+  button,
+  custom,
+};
+
+inline std::optional<F8UiControlKind> parse_F8UiControlKind(const std::string& s) {
+  if (s == "auto") return F8UiControlKind::auto_;
+  if (s == "text") return F8UiControlKind::text;
+  if (s == "textarea") return F8UiControlKind::textarea;
+  if (s == "code") return F8UiControlKind::code;
+  if (s == "toggle") return F8UiControlKind::toggle;
+  if (s == "slider") return F8UiControlKind::slider;
+  if (s == "select") return F8UiControlKind::select;
+  if (s == "multiselect") return F8UiControlKind::multiselect;
+  if (s == "dial") return F8UiControlKind::dial;
+  if (s == "button") return F8UiControlKind::button;
+  if (s == "custom") return F8UiControlKind::custom;
+  return std::nullopt;
+}
+
 enum class F8VariantKind {
   service,
   operator_,
@@ -482,47 +511,6 @@ inline bool parse_F8CommandInvokeRequest(const nlohmann::json& j, F8CommandInvok
   out.args = j["args"];
   if (!j.contains("meta")) { err.code="INVALID_SCHEMA"; err.message="missing required"; return false; }
   out.meta = j["meta"];
-  return true;
-}
-
-struct F8CommandParam {
-  std::string name;
-  std::optional<std::string> description;
-  nlohmann::json valueSchema = nlohmann::json::object();
-  std::optional<bool> required;
-  std::optional<std::string> uiControl;
-};
-
-inline bool parse_F8CommandParam(const nlohmann::json& j, F8CommandParam& out, ParseError& err) {
-  if (!j.is_object()) { err.code="INVALID_SCHEMA"; err.message="object expected"; return false; }
-  if (!_get_str_req(j, "name", out.name, err)) return false;
-  out.description = _get_str_opt(j, "description");
-  if (!j.contains("valueSchema")) { err.code="INVALID_SCHEMA"; err.message="missing required"; return false; }
-  out.valueSchema = j["valueSchema"];
-  if (j.contains("required") && j["required"].is_boolean()) out.required = j["required"].get<bool>();
-  out.uiControl = _get_str_opt(j, "uiControl");
-  return true;
-}
-
-struct F8Command {
-  std::string name;
-  std::optional<std::string> description;
-  std::optional<bool> required;
-  std::optional<bool> showOnNode;
-  std::optional<std::vector<F8CommandParam>> params;
-};
-
-inline bool parse_F8Command(const nlohmann::json& j, F8Command& out, ParseError& err) {
-  if (!j.is_object()) { err.code="INVALID_SCHEMA"; err.message="object expected"; return false; }
-  if (!_get_str_req(j, "name", out.name, err)) return false;
-  out.description = _get_str_opt(j, "description");
-  if (j.contains("required") && j["required"].is_boolean()) out.required = j["required"].get<bool>();
-  if (j.contains("showOnNode") && j["showOnNode"].is_boolean()) out.showOnNode = j["showOnNode"].get<bool>();
-  if (j.contains("params") && j["params"].is_array()) {
-    std::vector<F8CommandParam> vec; vec.reserve(j["params"].size());
-    for (const auto& it : j["params"]) { F8CommandParam tmp; ParseError e2; if (parse_F8CommandParam(it, tmp, e2)) vec.push_back(std::move(tmp)); }
-    out.params = std::move(vec);
-  }
   return true;
 }
 
@@ -1456,6 +1444,176 @@ inline bool parse_F8StateFieldEditPolicy(const nlohmann::json& j, F8StateFieldEd
   return true;
 }
 
+struct F8StatusReply {
+  std::string reqId;
+  bool ok;
+  nlohmann::json result = nlohmann::json::object();
+  nlohmann::json error = nlohmann::json::object();
+};
+
+inline bool parse_F8StatusReply(const nlohmann::json& j, F8StatusReply& out, ParseError& err) {
+  if (!j.is_object()) { err.code="INVALID_SCHEMA"; err.message="object expected"; return false; }
+  if (!_get_str_req(j, "reqId", out.reqId, err)) return false;
+  if (!j.contains("ok") || j["ok"].is_null() || !j["ok"].is_boolean()) {
+    err.code="INVALID_SCHEMA"; err.message="missing/invalid required boolean"; return false; }
+  out.ok = j["ok"].get<bool>();
+  if (!j.contains("result")) { err.code="INVALID_SCHEMA"; err.message="missing required"; return false; }
+  out.result = j["result"];
+  if (!j.contains("error")) { err.code="INVALID_SCHEMA"; err.message="missing required"; return false; }
+  out.error = j["error"];
+  return true;
+}
+
+struct F8StatusReplyResult {
+  std::string serviceId;
+  std::string serviceClass;
+  std::string runtimeInstanceId;
+  bool active;
+  std::optional<std::string> rungraphGraphId;
+  std::optional<std::string> rungraphRevision;
+  std::optional<std::string> rungraphFingerprint;
+};
+
+inline bool parse_F8StatusReplyResult(const nlohmann::json& j, F8StatusReplyResult& out, ParseError& err) {
+  if (!j.is_object()) { err.code="INVALID_SCHEMA"; err.message="object expected"; return false; }
+  if (!_get_str_req(j, "serviceId", out.serviceId, err)) return false;
+  if (!_get_str_req(j, "serviceClass", out.serviceClass, err)) return false;
+  if (!_get_str_req(j, "runtimeInstanceId", out.runtimeInstanceId, err)) return false;
+  if (!j.contains("active") || j["active"].is_null() || !j["active"].is_boolean()) {
+    err.code="INVALID_SCHEMA"; err.message="missing/invalid required boolean"; return false; }
+  out.active = j["active"].get<bool>();
+  out.rungraphGraphId = _get_str_opt(j, "rungraphGraphId");
+  out.rungraphRevision = _get_str_opt(j, "rungraphRevision");
+  out.rungraphFingerprint = _get_str_opt(j, "rungraphFingerprint");
+  return true;
+}
+
+struct F8StatusRequest {
+  std::string reqId;
+  nlohmann::json args = nlohmann::json::object();
+  nlohmann::json meta = nlohmann::json::object();
+};
+
+inline bool parse_F8StatusRequest(const nlohmann::json& j, F8StatusRequest& out, ParseError& err) {
+  if (!j.is_object()) { err.code="INVALID_SCHEMA"; err.message="object expected"; return false; }
+  if (!_get_str_req(j, "reqId", out.reqId, err)) return false;
+  if (!j.contains("args")) { err.code="INVALID_SCHEMA"; err.message="missing required"; return false; }
+  out.args = j["args"];
+  if (!j.contains("meta")) { err.code="INVALID_SCHEMA"; err.message="missing required"; return false; }
+  out.meta = j["meta"];
+  return true;
+}
+
+struct F8TerminateReply {
+  std::string reqId;
+  bool ok;
+  nlohmann::json result = nlohmann::json::object();
+  nlohmann::json error = nlohmann::json::object();
+};
+
+inline bool parse_F8TerminateReply(const nlohmann::json& j, F8TerminateReply& out, ParseError& err) {
+  if (!j.is_object()) { err.code="INVALID_SCHEMA"; err.message="object expected"; return false; }
+  if (!_get_str_req(j, "reqId", out.reqId, err)) return false;
+  if (!j.contains("ok") || j["ok"].is_null() || !j["ok"].is_boolean()) {
+    err.code="INVALID_SCHEMA"; err.message="missing/invalid required boolean"; return false; }
+  out.ok = j["ok"].get<bool>();
+  if (!j.contains("result")) { err.code="INVALID_SCHEMA"; err.message="missing required"; return false; }
+  out.result = j["result"];
+  if (!j.contains("error")) { err.code="INVALID_SCHEMA"; err.message="missing required"; return false; }
+  out.error = j["error"];
+  return true;
+}
+
+struct F8TerminateReplyResult {
+  bool terminating;
+};
+
+inline bool parse_F8TerminateReplyResult(const nlohmann::json& j, F8TerminateReplyResult& out, ParseError& err) {
+  if (!j.is_object()) { err.code="INVALID_SCHEMA"; err.message="object expected"; return false; }
+  if (!j.contains("terminating") || j["terminating"].is_null() || !j["terminating"].is_boolean()) {
+    err.code="INVALID_SCHEMA"; err.message="missing/invalid required boolean"; return false; }
+  out.terminating = j["terminating"].get<bool>();
+  return true;
+}
+
+struct F8TerminateRequest {
+  std::string reqId;
+  nlohmann::json args = nlohmann::json::object();
+  nlohmann::json meta = nlohmann::json::object();
+};
+
+inline bool parse_F8TerminateRequest(const nlohmann::json& j, F8TerminateRequest& out, ParseError& err) {
+  if (!j.is_object()) { err.code="INVALID_SCHEMA"; err.message="object expected"; return false; }
+  if (!_get_str_req(j, "reqId", out.reqId, err)) return false;
+  if (!j.contains("args")) { err.code="INVALID_SCHEMA"; err.message="missing required"; return false; }
+  out.args = j["args"];
+  if (!j.contains("meta")) { err.code="INVALID_SCHEMA"; err.message="missing required"; return false; }
+  out.meta = j["meta"];
+  return true;
+}
+
+struct F8UiControlSpec {
+  F8UiControlKind kind;
+  std::optional<std::string> optionsFromState;
+  std::optional<std::string> language;
+  std::optional<std::string> rendererKey;
+};
+
+inline bool parse_F8UiControlSpec(const nlohmann::json& j, F8UiControlSpec& out, ParseError& err) {
+  if (!j.is_object()) { err.code="INVALID_SCHEMA"; err.message="object expected"; return false; }
+  { std::string s; if (!_get_str_req(j, "kind", s, err)) return false;
+    auto v = parse_F8UiControlKind(s); if (!v) { err.code="INVALID_SCHEMA"; err.message="invalid enum"; return false; } out.kind = *v; }
+  out.optionsFromState = _get_str_opt(j, "optionsFromState");
+  out.language = _get_str_opt(j, "language");
+  out.rendererKey = _get_str_opt(j, "rendererKey");
+  return true;
+}
+
+struct F8CommandParam {
+  std::string name;
+  std::optional<std::string> description;
+  nlohmann::json valueSchema = nlohmann::json::object();
+  std::optional<bool> required;
+  std::optional<std::string> uiControl;
+  std::optional<F8UiControlSpec> control;
+};
+
+inline bool parse_F8CommandParam(const nlohmann::json& j, F8CommandParam& out, ParseError& err) {
+  if (!j.is_object()) { err.code="INVALID_SCHEMA"; err.message="object expected"; return false; }
+  if (!_get_str_req(j, "name", out.name, err)) return false;
+  out.description = _get_str_opt(j, "description");
+  if (!j.contains("valueSchema")) { err.code="INVALID_SCHEMA"; err.message="missing required"; return false; }
+  out.valueSchema = j["valueSchema"];
+  if (j.contains("required") && j["required"].is_boolean()) out.required = j["required"].get<bool>();
+  out.uiControl = _get_str_opt(j, "uiControl");
+  if (j.contains("control") && j["control"].is_object()) {
+    F8UiControlSpec tmp; ParseError e2; if (parse_F8UiControlSpec(j["control"], tmp, e2)) out.control = std::move(tmp);
+  }
+  return true;
+}
+
+struct F8Command {
+  std::string name;
+  std::optional<std::string> description;
+  std::optional<bool> required;
+  std::optional<bool> showOnNode;
+  std::optional<std::vector<F8CommandParam>> params;
+};
+
+inline bool parse_F8Command(const nlohmann::json& j, F8Command& out, ParseError& err) {
+  if (!j.is_object()) { err.code="INVALID_SCHEMA"; err.message="object expected"; return false; }
+  if (!_get_str_req(j, "name", out.name, err)) return false;
+  out.description = _get_str_opt(j, "description");
+  if (j.contains("required") && j["required"].is_boolean()) out.required = j["required"].get<bool>();
+  if (j.contains("showOnNode") && j["showOnNode"].is_boolean()) out.showOnNode = j["showOnNode"].get<bool>();
+  if (j.contains("params") && j["params"].is_array()) {
+    std::vector<F8CommandParam> vec; vec.reserve(j["params"].size());
+    for (const auto& it : j["params"]) { F8CommandParam tmp; ParseError e2; if (parse_F8CommandParam(it, tmp, e2)) vec.push_back(std::move(tmp)); }
+    out.params = std::move(vec);
+  }
+  return true;
+}
+
 struct F8StateSpec {
   std::string name;
   std::optional<std::string> label;
@@ -1465,6 +1623,7 @@ struct F8StateSpec {
   std::optional<bool> required;
   std::optional<F8StateFieldEditPolicy> editPolicy;
   std::optional<std::string> uiControl;
+  std::optional<F8UiControlSpec> control;
   std::optional<bool> showOnNode;
   std::optional<bool> redactOnPublish;
   std::optional<F8EditorAssistSpec> editorAssist;
@@ -1484,6 +1643,9 @@ inline bool parse_F8StateSpec(const nlohmann::json& j, F8StateSpec& out, ParseEr
     F8StateFieldEditPolicy tmp; ParseError e2; if (parse_F8StateFieldEditPolicy(j["editPolicy"], tmp, e2)) out.editPolicy = std::move(tmp);
   }
   out.uiControl = _get_str_opt(j, "uiControl");
+  if (j.contains("control") && j["control"].is_object()) {
+    F8UiControlSpec tmp; ParseError e2; if (parse_F8UiControlSpec(j["control"], tmp, e2)) out.control = std::move(tmp);
+  }
   if (j.contains("showOnNode") && j["showOnNode"].is_boolean()) out.showOnNode = j["showOnNode"].get<bool>();
   if (j.contains("redactOnPublish") && j["redactOnPublish"].is_boolean()) out.redactOnPublish = j["redactOnPublish"].get<bool>();
   if (j.contains("editorAssist") && j["editorAssist"].is_object()) {
@@ -1751,114 +1913,6 @@ inline bool parse_F8SetRungraphRequest(const nlohmann::json& j, F8SetRungraphReq
   if (!_get_str_req(j, "reqId", out.reqId, err)) return false;
   if (!j.contains("args")) { err.code="INVALID_SCHEMA"; err.message="missing required object"; return false; }
   { ParseError e2; if (!parse_F8SetRungraphArgs(j["args"], out.args, e2)) { err = e2; if (!err.message.empty()) err.message = std::string("args: ") + err.message; return false; } }
-  if (!j.contains("meta")) { err.code="INVALID_SCHEMA"; err.message="missing required"; return false; }
-  out.meta = j["meta"];
-  return true;
-}
-
-struct F8StatusReply {
-  std::string reqId;
-  bool ok;
-  nlohmann::json result = nlohmann::json::object();
-  nlohmann::json error = nlohmann::json::object();
-};
-
-inline bool parse_F8StatusReply(const nlohmann::json& j, F8StatusReply& out, ParseError& err) {
-  if (!j.is_object()) { err.code="INVALID_SCHEMA"; err.message="object expected"; return false; }
-  if (!_get_str_req(j, "reqId", out.reqId, err)) return false;
-  if (!j.contains("ok") || j["ok"].is_null() || !j["ok"].is_boolean()) {
-    err.code="INVALID_SCHEMA"; err.message="missing/invalid required boolean"; return false; }
-  out.ok = j["ok"].get<bool>();
-  if (!j.contains("result")) { err.code="INVALID_SCHEMA"; err.message="missing required"; return false; }
-  out.result = j["result"];
-  if (!j.contains("error")) { err.code="INVALID_SCHEMA"; err.message="missing required"; return false; }
-  out.error = j["error"];
-  return true;
-}
-
-struct F8StatusReplyResult {
-  std::string serviceId;
-  std::string serviceClass;
-  std::string runtimeInstanceId;
-  bool active;
-  std::optional<std::string> rungraphGraphId;
-  std::optional<std::string> rungraphRevision;
-  std::optional<std::string> rungraphFingerprint;
-};
-
-inline bool parse_F8StatusReplyResult(const nlohmann::json& j, F8StatusReplyResult& out, ParseError& err) {
-  if (!j.is_object()) { err.code="INVALID_SCHEMA"; err.message="object expected"; return false; }
-  if (!_get_str_req(j, "serviceId", out.serviceId, err)) return false;
-  if (!_get_str_req(j, "serviceClass", out.serviceClass, err)) return false;
-  if (!_get_str_req(j, "runtimeInstanceId", out.runtimeInstanceId, err)) return false;
-  if (!j.contains("active") || j["active"].is_null() || !j["active"].is_boolean()) {
-    err.code="INVALID_SCHEMA"; err.message="missing/invalid required boolean"; return false; }
-  out.active = j["active"].get<bool>();
-  out.rungraphGraphId = _get_str_opt(j, "rungraphGraphId");
-  out.rungraphRevision = _get_str_opt(j, "rungraphRevision");
-  out.rungraphFingerprint = _get_str_opt(j, "rungraphFingerprint");
-  return true;
-}
-
-struct F8StatusRequest {
-  std::string reqId;
-  nlohmann::json args = nlohmann::json::object();
-  nlohmann::json meta = nlohmann::json::object();
-};
-
-inline bool parse_F8StatusRequest(const nlohmann::json& j, F8StatusRequest& out, ParseError& err) {
-  if (!j.is_object()) { err.code="INVALID_SCHEMA"; err.message="object expected"; return false; }
-  if (!_get_str_req(j, "reqId", out.reqId, err)) return false;
-  if (!j.contains("args")) { err.code="INVALID_SCHEMA"; err.message="missing required"; return false; }
-  out.args = j["args"];
-  if (!j.contains("meta")) { err.code="INVALID_SCHEMA"; err.message="missing required"; return false; }
-  out.meta = j["meta"];
-  return true;
-}
-
-struct F8TerminateReply {
-  std::string reqId;
-  bool ok;
-  nlohmann::json result = nlohmann::json::object();
-  nlohmann::json error = nlohmann::json::object();
-};
-
-inline bool parse_F8TerminateReply(const nlohmann::json& j, F8TerminateReply& out, ParseError& err) {
-  if (!j.is_object()) { err.code="INVALID_SCHEMA"; err.message="object expected"; return false; }
-  if (!_get_str_req(j, "reqId", out.reqId, err)) return false;
-  if (!j.contains("ok") || j["ok"].is_null() || !j["ok"].is_boolean()) {
-    err.code="INVALID_SCHEMA"; err.message="missing/invalid required boolean"; return false; }
-  out.ok = j["ok"].get<bool>();
-  if (!j.contains("result")) { err.code="INVALID_SCHEMA"; err.message="missing required"; return false; }
-  out.result = j["result"];
-  if (!j.contains("error")) { err.code="INVALID_SCHEMA"; err.message="missing required"; return false; }
-  out.error = j["error"];
-  return true;
-}
-
-struct F8TerminateReplyResult {
-  bool terminating;
-};
-
-inline bool parse_F8TerminateReplyResult(const nlohmann::json& j, F8TerminateReplyResult& out, ParseError& err) {
-  if (!j.is_object()) { err.code="INVALID_SCHEMA"; err.message="object expected"; return false; }
-  if (!j.contains("terminating") || j["terminating"].is_null() || !j["terminating"].is_boolean()) {
-    err.code="INVALID_SCHEMA"; err.message="missing/invalid required boolean"; return false; }
-  out.terminating = j["terminating"].get<bool>();
-  return true;
-}
-
-struct F8TerminateRequest {
-  std::string reqId;
-  nlohmann::json args = nlohmann::json::object();
-  nlohmann::json meta = nlohmann::json::object();
-};
-
-inline bool parse_F8TerminateRequest(const nlohmann::json& j, F8TerminateRequest& out, ParseError& err) {
-  if (!j.is_object()) { err.code="INVALID_SCHEMA"; err.message="object expected"; return false; }
-  if (!_get_str_req(j, "reqId", out.reqId, err)) return false;
-  if (!j.contains("args")) { err.code="INVALID_SCHEMA"; err.message="missing required"; return false; }
-  out.args = j["args"];
   if (!j.contains("meta")) { err.code="INVALID_SCHEMA"; err.message="missing required"; return false; }
   out.meta = j["meta"];
   return true;

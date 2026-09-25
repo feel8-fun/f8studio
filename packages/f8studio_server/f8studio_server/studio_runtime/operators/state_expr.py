@@ -10,6 +10,8 @@ from f8pysdk.f8_naming import ensure_token
 from f8pysdk.nodes import OperatorNode
 from f8pysdk.registry import Registry
 from f8pysdk.specs import (
+    F8UiControlKind,
+    F8UiControlSpec,
     F8DataTypeSchema,
     F8OperatorSchemaVersion,
     F8OperatorSpec,
@@ -184,7 +186,7 @@ StateExprRuntimeNode.SPEC = F8OperatorSpec(
             name="allowNumpy",
             label="Allow NumPy",
             description="Reserved for a runtime with an explicitly installed NumPy capability.",
-            uiControl="toggle",
+            control=F8UiControlSpec(kind=F8UiControlKind.toggle),
             valueSchema=boolean_schema(default=False),
             access=F8StateAccess.rw,
             showOnNode=False,
@@ -202,7 +204,7 @@ StateExprRuntimeNode.SPEC = F8OperatorSpec(
             name="code",
             label="Expr",
             description="Restricted Python expression using writable state names or the states mapping.",
-            uiControl="wrapline[python]",
+            control=F8UiControlSpec(kind=F8UiControlKind.textarea, language="python"),
             valueSchema=string_schema(default="x"),
             access=F8StateAccess.rw,
             showOnNode=True,

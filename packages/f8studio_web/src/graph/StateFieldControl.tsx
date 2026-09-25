@@ -10,12 +10,13 @@ export function isJsonValue(value: unknown): value is JsonValue {
   return Object.values(value).every(isJsonValue);
 }
 
-function controlName(uiControl: string | undefined): string {
-  return (uiControl ?? '').split('[', 1)[0]?.trim().toLowerCase() ?? '';
+function controlName(field: StateSpec): string {
+  return field.control?.kind ?? (field.uiControl ?? '').split('[', 1)[0]?.trim().toLowerCase() ?? '';
 }
 
-export function stateOptionPoolField(uiControl: string | undefined): string | null {
-  const match = /^(?:select|multiselect)\[([A-Za-z_][A-Za-z0-9_]*)\]$/.exec(uiControl?.trim() ?? '');
+export function stateOptionPoolField(field: StateSpec): string | null {
+  if (field.control?.optionsFromState !== undefined) return field.control.optionsFromState;
+  const match = /^(?:select|multiselect)\[([A-Za-z_][A-Za-z0-9_]*)\]$/.exec(field.uiControl?.trim() ?? '');
   return match?.[1] ?? null;
 }
 
@@ -64,15 +65,15 @@ export function StateFieldControl({
   const editing = useRef(false);
   useEffect(() => { if (!editing.current) setDraft(displayValue(value)); }, [value]);
   const controlDisabled = disabled || connected;
-  const control = controlName(field.uiControl);
+  const control = controlName(field);
   const options = useMemo(() => {
     if (field.valueSchema.enum !== undefined) return field.valueSchema.enum;
-    const pool = stateOptionPoolField(field.uiControl);
+    const pool = stateOptionPoolField(field);
     const livePool = pool === null ? undefined : runtimeValues?.[pool];
     const poolValue = livePool?.found === true ? livePool.value : pool === null ? null : fieldValue(node, pool);
     return Array.isArray(poolValue) ? poolValue.filter((item) =>
       typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean') : [];
-  }, [field.uiControl, field.valueSchema.enum, node, runtimeValues]);
+  }, [field, node, runtimeValues]);
   const label = field.label ?? field.name;
   const title = `${label}${connected ? ' (driven by upstream state)' : ''}`;
   const shellClass = `${compact ? 'state-control state-control-inline nodrag nowheel' : 'state-control state-control-inspector'}${connected ? ' state-control-connected' : ''}`;
@@ -181,7 +182,7 @@ export function StateFieldControl({
     </label>;
   }
   if (field.valueSchema.type === 'string') {
-    const multiline = control === 'code' || control === 'wrapline';
+    const multiline = control === 'code' || control === 'textarea' || control === 'wrapline';
     return <label className={`${shellClass} ${multiline ? 'state-text-code' : ''}`} title={title}>
       {!compact && <span>{label}</span>}
       {multiline && !compact

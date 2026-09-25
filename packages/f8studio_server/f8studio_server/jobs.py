@@ -104,6 +104,9 @@ class DeployCoordinator:
     async def latest(self, project_id: str) -> DeployJob | None:
         return await asyncio.to_thread(self._repository.latest_for_project, project_id)
 
+    async def has_active_project_job(self, project_id: str) -> bool:
+        return await asyncio.to_thread(self._repository.has_active_project_job, project_id)
+
     async def cancel(self, job_id: str) -> DeployJob:
         async with self._lock:
             job = await self.get(job_id)

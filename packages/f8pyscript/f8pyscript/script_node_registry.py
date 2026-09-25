@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from f8pysdk.specs import (
+    F8UiControlKind,
+    F8UiControlSpec,
     F8Command,
     F8CommandParam,
     F8DataPortSpec,
@@ -41,7 +43,7 @@ def register_specs(registry: Registry) -> Registry:
                     description="Python source code.",
                     valueSchema=string_schema(default=DEFAULT_CODE),
                     access=F8StateAccess.rw,
-                    uiControl="code[python]",
+                    control=F8UiControlSpec(kind=F8UiControlKind.code, language="python"),
                     required=True,
                     showOnNode=False,
                     editorAssist=pyscript_code_field_editor_assist_payload(),

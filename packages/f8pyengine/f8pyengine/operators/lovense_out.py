@@ -12,6 +12,8 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from f8pysdk.specs import (
+    F8UiControlKind,
+    F8UiControlSpec,
     F8DataPortSpec,
     F8OperatorSchemaVersion,
     F8OperatorSpec,
@@ -931,7 +933,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
             valueSchema=string_schema(default=""),
             access=F8StateAccess.rw,
             required=True,
-            uiControl="select[availableToys]",
+            control=F8UiControlSpec(kind=F8UiControlKind.select, optionsFromState="availableToys"),
             showOnNode=True,
         ),
         F8StateSpec(

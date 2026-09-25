@@ -4,6 +4,8 @@ from typing import Any
 
 from f8pysdk.codec import parse_bool, parse_number_sequence
 from f8pysdk.specs import (
+    F8UiControlKind,
+    F8UiControlSpec,
     F8DataPortSpec,
     F8OperatorSchemaVersion,
     F8OperatorSpec,
@@ -142,7 +144,7 @@ DetrendRuntimeNode.SPEC = F8OperatorSpec(
             valueSchema=number_schema(default=0.05, minimum=0.0, maximum=1.0),
             access=F8StateAccess.rw,
             required=True,
-            uiControl="slider",
+            control=F8UiControlSpec(kind=F8UiControlKind.slider),
             showOnNode=True,
         ),
         F8StateSpec(

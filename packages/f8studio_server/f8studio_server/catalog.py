@@ -8,7 +8,7 @@ import msgspec
 from f8pysdk.service_runtime_tools.inventory import ServiceCatalog, load_discovery_into_catalog
 from f8pysdk.specs import F8OperatorSpec, F8ServiceDescribe, F8ServiceSpec
 from f8studio_core.graph import NodeCatalog
-from f8studio_core.graph.models import GraphNode
+from f8studio_core.graph.models import GraphNode, ServiceNode
 
 from .models import CreateCatalogNodeRequest
 
@@ -80,6 +80,11 @@ class CatalogService:
             raise ValueError(
                 f"unknown operator: {request.service_class}/{request.operator_class}"
             ) from exc
+
+    def spec_for_node(self, node: GraphNode) -> F8ServiceSpec | F8OperatorSpec:
+        if isinstance(node, ServiceNode):
+            return self._catalog.services.get(node.service_class)
+        return self._catalog.operators.get(node.service_class, node.operator_class)
 
 
 __all__ = ["CatalogService", "CatalogSnapshot"]

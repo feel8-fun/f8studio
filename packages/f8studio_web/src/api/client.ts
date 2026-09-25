@@ -187,9 +187,31 @@ export async function createProject(name: string, signal?: AbortSignal): Promise
   return body;
 }
 
+export async function deleteProject(projectId: string): Promise<void> {
+  await requestJson(`/api/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' });
+}
+
 export async function fetchProject(projectId: string, signal?: AbortSignal): Promise<ProjectRecord> {
   const body = await requestJson(`/api/projects/${encodeURIComponent(projectId)}`, { signal });
   if (!isProjectRecord(body)) throw new Error('Project does not match f8studio-api/1');
+  return body;
+}
+
+export async function exportProjectGraph(projectId: string): Promise<string> {
+  const body = await requestJson(`/api/projects/${encodeURIComponent(projectId)}/graph/export`);
+  if (!isObject(body) || body.format !== 'f8graph' || body.formatVersion !== 2) {
+    throw new Error('Graph export does not match f8graph/2');
+  }
+  return `${JSON.stringify(body, null, 2)}\n`;
+}
+
+export async function importProjectGraph(projectId: string, content: string): Promise<ProjectRecord> {
+  const body = await requestJson(`/api/projects/${encodeURIComponent(projectId)}/graph/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: content,
+  });
+  if (!isProjectRecord(body)) throw new Error('Imported project does not match f8studio-api/1');
   return body;
 }
 

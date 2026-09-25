@@ -6,6 +6,7 @@ import msgspec
 import pytest
 
 from f8pysdk.command import command_input_state_field
+from f8pysdk.rungraph_fingerprint import build_rungraph_deploy_fingerprint
 from f8pysdk.specs import (
     F8Command,
     F8EdgeDirection,
@@ -13,12 +14,18 @@ from f8pysdk.specs import (
     F8OperatorSpec,
     F8ServiceDescribe,
     F8ServiceSpec,
+    F8SpecEditPolicy,
     F8StateAccess,
+    F8StateFieldEditPolicy,
     F8StateSpec,
+    F8UiControlKind,
+    F8UiControlSpec,
     json_data_port,
+    integer_schema,
     number_schema,
     string_schema,
     video_frame_port,
+    editable_collection_edit_policy,
 )
 from f8studio_core import compile_document, semantic_graph_revision
 from f8studio_core.graph import (
@@ -35,13 +42,14 @@ from f8studio_core.graph import (
     IdempotencyConflictError,
     InsertFragmentOp,
     NodeCatalog,
+    OperationTargetError,
     NodeLayout,
     OperatorNode,
     PatchRequest,
     PortDirection,
     PortKind,
     RenameNodeOp,
-    ReplaceNodeOp,
+    SetOperatorSpecOp,
     RevisionConflictError,
     ServiceNode,
     SetNodeLayoutOp,
@@ -49,6 +57,8 @@ from f8studio_core.graph import (
     StudioDocument,
     decode_document,
     encode_document,
+    export_graph,
+    import_graph,
     new_document,
     replace_node_spec,
 )
@@ -65,8 +75,12 @@ def build_catalog() -> NodeCatalog:
                 serviceClass="f8.pyengine",
                 operatorClass="test.source",
                 label="Source",
+                editPolicy=F8SpecEditPolicy(
+                    dataOutPorts=editable_collection_edit_policy(),
+                    execOutPorts=editable_collection_edit_policy(),
+                ),
                 execOutPorts=["next"],
-                dataOutPorts=[json_data_port(name="out", value_schema=number_schema())],
+                dataOutPorts=[msgspec.structs.replace(json_data_port(name="out", value_schema=number_schema()), required=False)],
                 stateFields=[
                     F8StateSpec(
                         name="gain",
@@ -162,6 +176,229 @@ def test_document_codec_preserves_tagged_node_types() -> None:
     assert decoded == document
     assert isinstance(decoded.nodes[0], ServiceNode)
     assert isinstance(decoded.nodes[1], OperatorNode)
+
+
+def test_exchange_round_trip_deduplicates_definitions_and_compiles() -> None:
+    _, service, source, _ = base_nodes()
+    another = msgspec.structs.replace(source, node_id="source2", name="Other source")
+    document = StudioDocument(
+        schema_version="f8studio-document/1",
+        project_id="project1",
+        graph_id="graph1",
+        graph_revision=5,
+        layout_revision=3,
+        nodes=(service, source, another),
+        layout=(NodeLayout(node_id="source", x=20, y=30),),
+    )
+
+    encoded = export_graph(document)
+    raw = msgspec.json.decode(encoded)
+    assert raw["format"] == "f8graph"
+    assert raw["formatVersion"] == 2
+    assert len(raw["definitions"]["operators"]) == 1
+    assert "ports" not in raw["operators"]["source"]
+    assert "graphRevision" not in raw
+
+    restored = import_graph(encoded)
+    assert restored.nodes == document.nodes
+    assert restored.layout == document.layout
+    assert (restored.graph_revision, restored.layout_revision) == (0, 0)
+    assert compile_document(restored)
+
+
+def test_exchange_rejects_unsupported_version_and_corrupt_definition() -> None:
+    _, service, source, _ = base_nodes()
+    document = StudioDocument(
+        schema_version="f8studio-document/1",
+        project_id="project1",
+        graph_id="graph1",
+        graph_revision=0,
+        layout_revision=0,
+        nodes=(service, source),
+    )
+    raw = msgspec.json.decode(export_graph(document))
+    raw["formatVersion"] = 3
+    with pytest.raises(ValueError, match="unsupported graph format"):
+        import_graph(msgspec.json.encode(raw))
+    raw["formatVersion"] = 2
+    definition = next(iter(raw["definitions"]["operators"].values()))
+    definition["label"] = "tampered"
+    with pytest.raises(ValueError, match="definition hash mismatch"):
+        import_graph(msgspec.json.encode(raw))
+
+
+def test_semantic_revision_ignores_node_presentation() -> None:
+    _, service, source, _ = base_nodes()
+    document = StudioDocument(
+        schema_version="f8studio-document/1",
+        project_id="project1",
+        graph_id="graph1",
+        graph_revision=0,
+        layout_revision=0,
+        nodes=(service, source),
+    )
+    value_schema = msgspec.structs.replace(source.spec.stateFields[0].valueSchema, title="Gain value")
+    field = msgspec.structs.replace(
+        source.spec.stateFields[0], label="Gain", uiControl="slider", control=F8UiControlSpec(kind=F8UiControlKind.slider),
+        showOnNode=True, valueSchema=value_schema,
+    )
+    spec = msgspec.structs.replace(source.spec, stateFields=[field], label="New label")
+    visual = msgspec.structs.replace(
+        document,
+        nodes=(service, msgspec.structs.replace(source, name="Renamed", spec=spec, ports=replace_node_spec(source, spec).ports)),
+        layout=(NodeLayout(node_id="source", x=50, y=100),),
+    )
+    assert semantic_graph_revision(visual) == semantic_graph_revision(document)
+    assert build_rungraph_deploy_fingerprint(compile_document(visual).global_graph) == build_rungraph_deploy_fingerprint(
+        compile_document(document).global_graph
+    )
+
+
+def test_exchange_and_runtime_revision_normalize_numeric_schema_bounds() -> None:
+    catalog = NodeCatalog(services=[F8ServiceSpec(
+        serviceClass="test.engine",
+        label="Engine",
+        stateFields=[F8StateSpec(
+            name="interval",
+            access=F8StateAccess.rw,
+            valueSchema=integer_schema(default=100, minimum=16, maximum=5000),
+            control=F8UiControlSpec(kind=F8UiControlKind.slider),
+        )],
+    )])
+    service = catalog.create_service_node(node_id="engine", service_class="test.engine")
+    document = StudioDocument(
+        schema_version="f8studio-document/1",
+        project_id="project1",
+        graph_id="graph1",
+        graph_revision=0,
+        layout_revision=0,
+        nodes=(service,),
+    )
+    restored = import_graph(export_graph(document))
+    assert restored.nodes[0].spec.stateFields[0].control.kind == F8UiControlKind.slider
+    assert semantic_graph_revision(restored) == semantic_graph_revision(document)
+
+
+def test_trusted_definition_rejects_forged_edit_policy() -> None:
+    installed = F8ServiceSpec(serviceClass="test.engine", label="Engine")
+    catalog = NodeCatalog(services=[installed])
+    node = catalog.create_service_node(node_id="engine", service_class="test.engine")
+    forged_spec = msgspec.structs.replace(
+        node.spec,
+        editPolicy=F8SpecEditPolicy(stateFields=editable_collection_edit_policy()),
+    )
+    forged = replace_node_spec(node, forged_spec)
+    store = GraphStore(new_document(project_id="project1"), spec_resolver=lambda _node: installed)
+    with pytest.raises(OperationTargetError, match="installed definition"):
+        store.apply(PatchRequest(
+            request_id="forged", expected_graph_revision=0, expected_layout_revision=0,
+            operations=(CreateNodeOp(node=forged),),
+        ))
+    assert store.snapshot().nodes == ()
+
+
+def test_connected_port_rename_preserves_endpoint_identity() -> None:
+    _, service, source, sink = base_nodes()
+    output_id = find_port_id(source, name="out", kind=PortKind.data, direction=PortDirection.output)
+    edge = GraphEdge(
+        edge_id="source_to_sink",
+        from_node_id="source",
+        from_port_id=output_id,
+        to_node_id="sink",
+        to_port_id=find_port_id(sink, name="input", kind=PortKind.data, direction=PortDirection.input),
+        kind=GraphEdgeKind.data,
+    )
+    document = StudioDocument(
+        schema_version="f8studio-document/1",
+        project_id="project1",
+        graph_id="graph1",
+        graph_revision=0,
+        layout_revision=0,
+        nodes=(service, source, sink),
+        edges=(edge,),
+    )
+    renamed_port = msgspec.structs.replace(source.spec.dataOutPorts[0], name="output")
+    renamed_spec = msgspec.structs.replace(source.spec, dataOutPorts=[renamed_port])
+    updated = GraphStore(document).apply(PatchRequest(
+        request_id="rename-output",
+        expected_graph_revision=0,
+        expected_layout_revision=0,
+        operations=(SetOperatorSpecOp(
+            node_id="source", spec=renamed_spec, port_renames={output_id: "output"},
+        ),),
+    )).document
+    renamed_node = next(node for node in updated.nodes if node.node_id == "source")
+    assert find_port_id(renamed_node, name="output", kind=PortKind.data, direction=PortDirection.output) == output_id
+    assert updated.edges == document.edges
+    assert renamed_node.port_ids == {"data:output:output": output_id}
+    restored = import_graph(export_graph(updated))
+    assert restored.nodes == updated.nodes
+    assert restored.edges == updated.edges
+    assert compile_document(restored)
+
+
+def test_state_rename_keeps_configured_value_and_requires_both_endpoints() -> None:
+    _, _, source, _ = base_nodes()
+    source = msgspec.structs.replace(source, state_values={"gain": 2.5})
+    renamed_field = msgspec.structs.replace(source.spec.stateFields[0], name="amplitude")
+    renamed_spec = msgspec.structs.replace(source.spec, stateFields=[renamed_field])
+    input_id = find_port_id(source, name="gain", kind=PortKind.state, direction=PortDirection.input)
+    output_id = find_port_id(source, name="gain", kind=PortKind.state, direction=PortDirection.output)
+
+    with pytest.raises(ValueError, match="every endpoint"):
+        replace_node_spec(source, renamed_spec, port_renames={input_id: "amplitude"})
+
+    updated = replace_node_spec(source, renamed_spec, port_renames={
+        input_id: "amplitude", output_id: "amplitude",
+    })
+    assert updated.state_values == {"amplitude": 2.5}
+    assert find_port_id(updated, name="amplitude", kind=PortKind.state, direction=PortDirection.input) == input_id
+    assert find_port_id(updated, name="amplitude", kind=PortKind.state, direction=PortDirection.output) == output_id
+
+
+def test_locked_state_field_cannot_be_removed_through_advanced_spec_edit() -> None:
+    _, service, source, _ = base_nodes()
+    locked = msgspec.structs.replace(source.spec.stateFields[0], editPolicy=F8StateFieldEditPolicy(canRename=False))
+    spec = msgspec.structs.replace(
+        source.spec, stateFields=[locked], editPolicy=F8SpecEditPolicy(stateFields=editable_collection_edit_policy()),
+    )
+    source = replace_node_spec(source, spec)
+    document = StudioDocument(
+        schema_version="f8studio-document/1", project_id="project1", graph_id="graph1",
+        graph_revision=0, layout_revision=0, nodes=(service, source),
+    )
+    store = GraphStore(document)
+    removed = msgspec.structs.replace(spec, stateFields=[])
+    with pytest.raises(OperationTargetError, match="protected state field"):
+        store.apply(PatchRequest(
+            request_id="remove-locked", expected_graph_revision=0, expected_layout_revision=0,
+            operations=(SetOperatorSpecOp(node_id="source", spec=removed),),
+        ))
+
+
+def test_structured_control_rejects_missing_option_pool() -> None:
+    catalog = NodeCatalog(services=[F8ServiceSpec(
+        serviceClass="test.engine",
+        label="Engine",
+        stateFields=[F8StateSpec(
+            name="device",
+            access=F8StateAccess.wo,
+            valueSchema=string_schema(),
+            control=F8UiControlSpec(kind=F8UiControlKind.select, optionsFromState="devices"),
+        )],
+    )])
+    service = catalog.create_service_node(node_id="engine", service_class="test.engine")
+    document = StudioDocument(
+        schema_version="f8studio-document/1",
+        project_id="project1",
+        graph_id="graph1",
+        graph_revision=0,
+        layout_revision=0,
+        nodes=(service,),
+    )
+    with pytest.raises(GraphValidationError) as error:
+        GraphStore(document)
+    assert error.value.code == "invalid_control"
 
 
 def test_document_decoder_rejects_semantically_invalid_documents() -> None:
@@ -668,24 +905,20 @@ def test_fragment_insertion_and_dynamic_spec_replacement_are_atomic() -> None:
     )
     assert (inserted.document.graph_revision, inserted.document.layout_revision) == (1, 1)
 
-    replacement_spec = F8OperatorSpec(
-        serviceClass="f8.pyengine",
-        operatorClass="test.source",
-        label="Source",
+    replacement_spec = msgspec.structs.replace(
+        source.spec,
         execOutPorts=["next", "alternate"],
         dataOutPorts=[
             json_data_port(name="out", value_schema=number_schema()),
             json_data_port(name="debug", value_schema=string_schema()),
         ],
-        stateFields=list(source.spec.stateFields),
     )
-    replacement = replace_node_spec(source, replacement_spec)
     updated = store.apply(
         PatchRequest(
             request_id="replace",
             expected_graph_revision=1,
             expected_layout_revision=1,
-            operations=(ReplaceNodeOp(node=replacement),),
+            operations=(SetOperatorSpecOp(node_id="source", spec=replacement_spec),),
         )
     )
     updated_source = next(node for node in updated.document.nodes if node.node_id == "source")
@@ -848,15 +1081,13 @@ def test_invalid_spec_replacement_rolls_back_with_existing_edges() -> None:
     )
     store = GraphStore(initial)
     spec_without_output = msgspec.structs.replace(source.spec, dataOutPorts=[])
-    replacement = replace_node_spec(source, spec_without_output)
-
     with pytest.raises(GraphValidationError) as error:
         store.apply(
             PatchRequest(
                 request_id="remove-connected-port",
                 expected_graph_revision=4,
                 expected_layout_revision=2,
-                operations=(ReplaceNodeOp(node=replacement),),
+                operations=(SetOperatorSpecOp(node_id="source", spec=spec_without_output),),
             )
         )
 

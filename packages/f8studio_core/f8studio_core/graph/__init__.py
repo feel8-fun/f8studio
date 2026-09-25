@@ -1,5 +1,6 @@
 from .catalog import NodeCatalog, replace_node_spec
 from .codec import decode_document, encode_document
+from .exchange import export_graph, import_graph
 from .models import (
     BindOperatorServiceOp,
     ConnectEdgeOp,
@@ -20,7 +21,8 @@ from .models import (
     PortDirection,
     PortKind,
     RenameNodeOp,
-    ReplaceNodeOp,
+    SetServiceSpecOp,
+    SetOperatorSpecOp,
     ServiceNode,
     SetNodeEnabledOp,
     SetNodeLayoutOp,
@@ -68,7 +70,8 @@ __all__ = [
     "PortKind",
     "RenameNodeOp",
     "RevisionConflictError",
-    "ReplaceNodeOp",
+    "SetServiceSpecOp",
+    "SetOperatorSpecOp",
     "ServiceNode",
     "SetNodeEnabledOp",
     "SetNodeLayoutOp",
@@ -76,6 +79,8 @@ __all__ = [
     "StudioDocument",
     "decode_document",
     "encode_document",
+    "export_graph",
+    "import_graph",
     "new_document",
     "replace_node_spec",
     "validate_document",

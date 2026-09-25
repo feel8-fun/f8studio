@@ -1,5 +1,6 @@
 import asyncio
 from pathlib import Path
+import sqlite3
 import time
 
 from aiortc import RTCPeerConnection
@@ -14,15 +15,18 @@ from f8media_gateway.app import create_app as create_media_gateway_app
 from f8media_protocol.client import RemoteMediaGateway, RemoteMediaGatewayConfig
 from f8media_protocol.models import MEDIA_API_VERSION
 from f8media_gateway.service import InProcessMediaGateway
-from f8pysdk.specs import F8JsonValue, F8RuntimeGraph, F8ServiceSpec
-from f8studio_core.graph import CreateNodeOp, HistoryRequest, NodeCatalog, PatchRequest, PatchResult, new_document
+from f8pysdk.specs import F8JsonValue, F8RuntimeGraph
+from f8studio_core.graph import HistoryRequest, PatchRequest, PatchResult, new_document
 
 from f8studio_server import create_app
 from f8studio_server.app import _patch_payload
 from f8studio_server.application import StudioApplication
+from f8studio_server.job_repository import JobRepository
 from f8studio_server.models import (
     BrowserIceServer,
     BrowserRtcConfiguration,
+    DeployJob,
+    JobStatus,
     RuntimeActionResult,
     RuntimeStateField,
     ServiceDeployResult,
@@ -42,6 +46,105 @@ def test_patch_payload_includes_runtime_sync_errors() -> None:
 
     encoded = msgspec.json.encode(_patch_payload(result))
     assert msgspec.json.decode(encoded)["runtimeErrors"] == ["player.volume: rejected"]
+
+
+def test_graph_exchange_api_restores_as_new_revision(tmp_path: Path) -> None:
+    app = create_app(
+        web_dist=tmp_path,
+        data_dir=tmp_path / "data",
+        runtime=FakeRuntimeGateway(),
+        service_roots=(),
+        media_gateway=InProcessMediaGateway(),
+    )
+    with TestClient(app) as client:
+        created = client.post("/api/projects", json={"projectId": "project1", "name": "Exchange"})
+        assert created.status_code == 201
+        node = client.post("/api/catalog/nodes", json={
+            "kind": "service", "nodeId": "studio", "serviceClass": "f8.pystudio",
+        })
+        assert node.status_code == 200
+        patched = client.post("/api/projects/project1/patch", json={
+            "requestId": "create-service",
+            "expectedGraphRevision": 0,
+            "expectedLayoutRevision": 0,
+            "operations": [{"op": "createNode", "node": node.json()}],
+        })
+        assert patched.status_code == 200
+        exported = client.get("/api/projects/project1/graph/export")
+        assert exported.status_code == 200
+        assert exported.json()["formatVersion"] == 2
+        assert len(exported.json()["definitions"]["services"]) == 1
+        assert "graphRevision" not in exported.json()
+
+        restored = client.post("/api/projects/project1/graph/import", content=exported.content)
+        assert restored.status_code == 200
+        assert restored.json()["document"]["graphRevision"] == 2
+        assert restored.json()["document"]["layoutRevision"] == 1
+
+        invalid = dict(exported.json())
+        invalid["formatVersion"] = 3
+        rejected = client.post("/api/projects/project1/graph/import", json=invalid)
+        assert rejected.status_code == 422
+        assert client.get("/api/projects/project1").json()["document"]["graphRevision"] == 2
+
+
+def test_delete_project_removes_dependents_and_preserves_other_projects(tmp_path: Path) -> None:
+    app = create_app(
+        web_dist=tmp_path,
+        data_dir=tmp_path / "data",
+        runtime=FakeRuntimeGateway(),
+        service_roots=(),
+        media_gateway=InProcessMediaGateway(),
+    )
+    database_path = tmp_path / "data" / "studio.sqlite3"
+    with TestClient(app) as client:
+        for project_id in ("remove_me", "keep_me"):
+            assert client.post("/api/projects", json={"projectId": project_id, "name": project_id}).status_code == 201
+        node = client.post("/api/catalog/nodes", json={
+            "kind": "service", "nodeId": "studio", "serviceClass": "f8.pystudio",
+        })
+        assert node.status_code == 200
+        assert client.post("/api/projects/remove_me/patch", json={
+            "requestId": "add-studio", "expectedGraphRevision": 0, "expectedLayoutRevision": 0,
+            "operations": [{"op": "createNode", "node": node.json()}],
+        }).status_code == 200
+        assert client.post("/api/projects/remove_me/versions", json={"name": "Before delete"}).status_code == 201
+        with sqlite3.connect(database_path) as connection:
+            connection.execute(
+                "INSERT INTO global_hotkeys(binding_id, accelerator, project_id, node_id, field_name) "
+                "VALUES (?, ?, ?, ?, ?)",
+                ("test_binding", "Ctrl+Alt+K", "remove_me", "node", "state"),
+            )
+
+        assert client.delete("/api/projects/remove_me").status_code == 204
+        assert client.delete("/api/projects/remove_me").status_code == 404
+        assert client.get("/api/projects/remove_me").status_code == 404
+        assert [project["projectId"] for project in client.get("/api/projects").json()] == ["keep_me"]
+        with sqlite3.connect(database_path) as connection:
+            for table in ("project_versions", "global_hotkeys", "processed_requests"):
+                assert connection.execute(
+                    f"SELECT count(*) FROM {table} WHERE project_id = ?", ("remove_me",)
+                ).fetchone() == (0,)
+
+
+def test_delete_project_rejects_active_deployment(tmp_path: Path) -> None:
+    app = create_app(
+        web_dist=tmp_path, data_dir=tmp_path / "data", runtime=FakeRuntimeGateway(),
+        service_roots=(), media_gateway=InProcessMediaGateway(),
+    )
+    with TestClient(app) as client:
+        assert client.post("/api/projects", json={"projectId": "busy", "name": "Busy"}).status_code == 201
+        repository = JobRepository(tmp_path / "data" / "studio.sqlite3")
+        job = DeployJob(
+            job_id="active_job", request_id="active_request", project_id="busy",
+            source_graph_revision=0, source_semantic_revision="r0", status=JobStatus.running,
+            created_at="2026-01-01T00:00:00Z", updated_at="2026-01-01T00:00:00Z",
+        )
+        repository.create(job, request_fingerprint="test")
+        assert client.delete("/api/projects/busy").status_code == 409
+        assert client.get("/api/projects/busy").status_code == 200
+        repository.update(msgspec.structs.replace(job, status=JobStatus.cancelled))
+        assert client.delete("/api/projects/busy").status_code == 204
 
 
 class FakeRuntimeGateway:
@@ -523,18 +626,18 @@ def test_project_patch_api_persists_and_reports_revision_conflicts(tmp_path: Pat
             latest_deployment = await client.get("/api/projects/project1/deployments/latest")
             assert latest_deployment.status_code == 200
             assert latest_deployment.json() is None
-            catalog = NodeCatalog(services=[F8ServiceSpec(serviceClass="f8.pyengine", label="Engine")])
-            engine = catalog.create_service_node(node_id="engine", service_class="f8.pyengine")
-            patch = PatchRequest(
-                request_id="create-engine",
-                expected_graph_revision=0,
-                expected_layout_revision=0,
-                operations=(CreateNodeOp(node=engine),),
-            )
+            node = await client.post("/api/catalog/nodes", json={
+                "kind": "service", "nodeId": "studio", "serviceClass": "f8.pystudio",
+            })
+            assert node.status_code == 200
             committed = await client.post(
                 "/api/projects/project1/patch",
-                content=msgspec.json.encode(patch),
-                headers={"content-type": "application/json"},
+                json={
+                    "requestId": "create-studio",
+                    "expectedGraphRevision": 0,
+                    "expectedLayoutRevision": 0,
+                    "operations": [{"op": "createNode", "node": node.json()}],
+                },
             )
             assert committed.status_code == 200
             assert committed.json()["document"]["graphRevision"] == 1
@@ -668,15 +771,6 @@ def test_event_websocket_snapshot_commit_replay_and_origin(tmp_path: Path) -> No
         runtime=FakeRuntimeGateway(),
         service_roots=(),
     )
-    catalog = NodeCatalog(services=[F8ServiceSpec(serviceClass="f8.pyengine", label="Engine")])
-    engine = catalog.create_service_node(node_id="engine", service_class="f8.pyengine")
-    patch = PatchRequest(
-        request_id="create-engine",
-        expected_graph_revision=0,
-        expected_layout_revision=0,
-        operations=(CreateNodeOp(node=engine),),
-    )
-
     with TestClient(app) as client:
         with client.websocket_connect("/api/events") as websocket:
             snapshot = websocket.receive_json()
@@ -689,10 +783,19 @@ def test_event_websocket_snapshot_commit_replay_and_origin(tmp_path: Path) -> No
             created_event = websocket.receive_json()
             assert created_event["type"] == "project.created"
 
+            node = client.post("/api/catalog/nodes", json={
+                "kind": "service", "nodeId": "studio", "serviceClass": "f8.pystudio",
+            })
+            assert node.status_code == 200
+            patch = {
+                "requestId": "create-studio",
+                "expectedGraphRevision": 0,
+                "expectedLayoutRevision": 0,
+                "operations": [{"op": "createNode", "node": node.json()}],
+            }
             committed = client.post(
                 "/api/projects/project1/patch",
-                content=msgspec.json.encode(patch),
-                headers={"content-type": "application/json"},
+                json=patch,
             )
             assert committed.status_code == 200
             graph_event = websocket.receive_json()
@@ -701,8 +804,7 @@ def test_event_websocket_snapshot_commit_replay_and_origin(tmp_path: Path) -> No
 
             replayed = client.post(
                 "/api/projects/project1/patch",
-                content=msgspec.json.encode(patch),
-                headers={"content-type": "application/json"},
+                json=patch,
             )
             assert replayed.status_code == 200
             updated = client.put(
@@ -740,24 +842,23 @@ def test_deploy_api_runs_job_through_injected_runtime(tmp_path: Path) -> None:
         runtime=runtime,
         service_roots=(),
     )
-    catalog = NodeCatalog(services=[F8ServiceSpec(serviceClass="f8.pyengine", label="Engine")])
-    engine = catalog.create_service_node(node_id="engine", service_class="f8.pyengine")
-
     with TestClient(app) as client:
         assert client.post(
             "/api/projects",
             json={"projectId": "project1", "name": "Example"},
         ).status_code == 201
-        patch = PatchRequest(
-            request_id="create-engine",
-            expected_graph_revision=0,
-            expected_layout_revision=0,
-            operations=(CreateNodeOp(node=engine),),
-        )
+        node = client.post("/api/catalog/nodes", json={
+            "kind": "service", "nodeId": "studio", "serviceClass": "f8.pystudio",
+        })
+        assert node.status_code == 200
         assert client.post(
             "/api/projects/project1/patch",
-            content=msgspec.json.encode(patch),
-            headers={"content-type": "application/json"},
+            json={
+                "requestId": "create-studio",
+                "expectedGraphRevision": 0,
+                "expectedLayoutRevision": 0,
+                "operations": [{"op": "createNode", "node": node.json()}],
+            },
         ).status_code == 200
 
         submitted = client.post(
@@ -773,7 +874,7 @@ def test_deploy_api_runs_job_through_injected_runtime(tmp_path: Path) -> None:
                 break
             time.sleep(0.01)
         assert job.json()["status"] == "succeeded"
-        assert runtime.deploy_calls == ["engine"]
+        assert runtime.deploy_calls == ["studio"]
 
     assert runtime.closed is True
 
