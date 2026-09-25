@@ -22,6 +22,8 @@ No description.
 
 ## Pitfalls / Gotchas
 
+- Choose a device from `Capture Device` on the node or in its inspector. `Available Devices` updates as devices appear or disappear, and `Audio Device` shows the device currently in use.
+- On Windows, `Loopback` entries capture system output while `Recording` entries capture microphone/input devices. `Auto` keeps the platform default behavior.
 - If nothing moves, first verify the selected capture device and whether another app has locked it.
 - Sample rate and buffer size directly affect latency and stability; smaller buffers are more responsive but easier to destabilize.
 - When downstream audio logic looks wrong, confirm the capture source is healthy before tuning the analysis layers.
@@ -47,6 +49,8 @@ linux/f8audiocap_service
 
 | Name | Access | Required | On Node | Schema | Description |
 | --- | --- | --- | --- | --- | --- |
+| `availableDevices` | `ro` | `true` | `false` | `array[string]` | Capture devices currently visible to the service. |
+| `selectedDevice` | `wo` | `true` | `true` | `string / default=Auto` | Device selected for audio capture. |
 | `audioDevice` | `ro` | `true` | `false` | `string` | Name of the audio capture device in use |
 | `audioSampleRate` | `ro` | `true` | `false` | `integer` | Sample rate of the audio capture device |
 | `audioChannels` | `ro` | `true` | `false` | `integer` | Number of audio channels |
@@ -62,14 +66,14 @@ linux/f8audiocap_service
 
 ### Key Fields That Matter
 
+- `availableDevices` (Available Devices, `ro`): Capture devices currently visible to the service. Schema: `array[string]`.
+- `selectedDevice` (Capture Device, `wo`): Device selected for audio capture. Schema: `string / default=Auto`.
 - `audioDevice` (Audio Device, `ro`): Name of the audio capture device in use Schema: `string`.
 - `audioSampleRate` (Audio Sample Rate, `ro`): Sample rate of the audio capture device Schema: `integer`.
 - `audioChannels` (Audio Channels, `ro`): Number of audio channels Schema: `integer`.
 - `audioFormat` (Audio Format, `ro`): Format of the audio data Schema: `string`.
 - `audioFramesPerChunk` (Audio Frames Per Chunk, `ro`): Number of audio frames per chunk Schema: `integer`.
 - `audioChunkCount` (Audio Chunk Count, `ro`): Number of audio chunks Schema: `integer`.
-- `audioChunkSchemaVersion` (Audio Chunk Schema Version, `ro`): Zenoh audio chunk schema version. Schema: `integer`.
-- `mode` (Mode, `rw`): Current mode of the audio capture service Schema: `string`.
 
 ### Service Commands
 

@@ -68,6 +68,10 @@ class AudioCapService final : public f8::cppsdk::LifecycleNode,
   void set_active_local(bool active, const nlohmann::json& meta);
   void publish_static_state();
   void publish_dynamic_state();
+  void publish_state_if_changed(const char* field, const nlohmann::json& value);
+  std::vector<std::string> available_capture_devices() const;
+  bool open_capture_device(const std::string& selector, std::string& error);
+  void close_capture_device();
   bool write_audio_chunk_interleaved_f32(const float* samples, std::uint32_t frames, std::int64_t ts_ms);
 
   Config cfg_;
@@ -90,10 +94,12 @@ class AudioCapService final : public f8::cppsdk::LifecycleNode,
   double phase_ = 0.0;
   std::int64_t last_write_ms_ = 0;
   std::int64_t last_state_pub_ms_ = 0;
+  std::int64_t last_device_refresh_ms_ = 0;
 
   SDL_AudioStream* stream_ = nullptr;
   SDL_AudioDeviceID opened_device_ = 0;
   std::string opened_device_name_;
+  std::string selected_device_ = "Auto";
   std::vector<float> capture_tmp_;
   std::vector<float> capture_chunk_accum_;
   std::uint32_t capture_accum_frames_ = 0;

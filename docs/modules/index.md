@@ -8,7 +8,7 @@ Manual usage guidance is merged from `docs/modules/manual/*.md` and `docs/module
 
 | Service | Label | Operators | State Fields | Link |
 | --- | --- | --- | --- | --- |
-| `f8.audiocap` | Audio Capture | `0` | `12` | [Audio Capture](services/f8-audiocap.md) |
+| `f8.audiocap` | Audio Capture | `0` | `14` | [Audio Capture](services/f8-audiocap.md) |
 | `f8.audiofeat.core` | Audio Feature Core | `0` | `6` | [Audio Feature Core](services/f8-audiofeat-core.md) |
 | `f8.audiofeat.rhythm` | Audio Feature Rhythm | `0` | `5` | [Audio Feature Rhythm](services/f8-audiofeat-rhythm.md) |
 | `f8.cppengine` | CppEngine | `44` | `3` | [CppEngine](services/f8-cppengine.md) |

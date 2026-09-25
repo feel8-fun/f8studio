@@ -149,6 +149,33 @@ test('commits typed arrays from a dynamic multiselect control', () => {
   expect(commit).toHaveBeenCalledWith(['left', 'right']);
 });
 
+test('selects from a live readonly device list and preserves an unavailable selection', () => {
+  const devices: StateSpec = {
+    name: 'availableDevices', access: 'ro', valueSchema: { type: 'array' },
+  };
+  const selected: StateSpec = {
+    name: 'selectedDevice', label: 'Capture device', access: 'wo', uiControl: 'select[availableDevices]',
+    valueSchema: { type: 'string', default: 'Auto' },
+  };
+  const commit = vi.fn();
+  render(<StateFieldControl
+    node={{ ...node, spec: { ...node.spec, stateFields: [devices, selected] } }}
+    field={selected}
+    disabled={false}
+    runtimeValue={{ field: 'selectedDevice', found: true, value: 'Recording: Built-in Mic', tsMs: 1 }}
+    runtimeValues={{ availableDevices: {
+      field: 'availableDevices', found: true, value: ['Recording: USB Mic', 'Recording: Built-in Mic'], tsMs: 1,
+    } }}
+    onCommit={commit}
+  />);
+
+  const select = screen.getByRole('combobox', { name: 'Capture device' });
+  expect(select).toHaveValue('"Auto"');
+  expect(screen.getByRole('option', { name: 'Auto (unavailable)' })).toBeInTheDocument();
+  fireEvent.change(select, { target: { value: '"Recording: USB Mic"' } });
+  expect(commit).toHaveBeenCalledWith('Recording: USB Mic');
+});
+
 test('uses a fixed single-line editor for compact wrapline state', () => {
   const expressionField: StateSpec = {
     name: 'code', label: 'Expr', access: 'rw', uiControl: 'wrapline[python]',

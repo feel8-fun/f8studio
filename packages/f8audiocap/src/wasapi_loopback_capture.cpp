@@ -99,8 +99,9 @@ std::string get_device_friendly_name(IMMDevice* device) {
   if (SUCCEEDED(props->GetValue(PKEY_Device_FriendlyName, &v)) && v.vt == VT_LPWSTR && v.pwszVal) {
     const int n = WideCharToMultiByte(CP_UTF8, 0, v.pwszVal, -1, nullptr, 0, nullptr, nullptr);
     if (n > 1) {
-      out.resize(static_cast<std::size_t>(n - 1));
+      out.resize(static_cast<std::size_t>(n));
       (void)WideCharToMultiByte(CP_UTF8, 0, v.pwszVal, -1, out.data(), n, nullptr, nullptr);
+      out.pop_back();
     }
   }
   PropVariantClear(&v);
@@ -112,6 +113,35 @@ std::string get_device_friendly_name(IMMDevice* device) {
 WasapiLoopbackCapture::WasapiLoopbackCapture(Config cfg) : cfg_(cfg) {}
 
 WasapiLoopbackCapture::~WasapiLoopbackCapture() { stop(); }
+
+std::vector<std::string> WasapiLoopbackCapture::available_render_devices() {
+  std::vector<std::string> names;
+  const HRESULT init_hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+  if (FAILED(init_hr) && init_hr != RPC_E_CHANGED_MODE) return names;
+  const bool uninitialize = SUCCEEDED(init_hr);
+
+  ComPtr<IMMDeviceEnumerator> enumerator;
+  HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, __uuidof(IMMDeviceEnumerator),
+                                reinterpret_cast<void**>(enumerator.GetAddressOf()));
+  if (SUCCEEDED(hr) && enumerator) {
+    ComPtr<IMMDeviceCollection> devices;
+    hr = enumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &devices);
+    if (SUCCEEDED(hr) && devices) {
+      UINT count = 0;
+      if (SUCCEEDED(devices->GetCount(&count))) {
+        for (UINT index = 0; index < count; ++index) {
+          ComPtr<IMMDevice> device;
+          if (SUCCEEDED(devices->Item(index, &device)) && device) {
+            const std::string name = get_device_friendly_name(device.Get());
+            if (!name.empty()) names.push_back(name);
+          }
+        }
+      }
+    }
+  }
+  if (uninitialize) CoUninitialize();
+  return names;
+}
 
 bool WasapiLoopbackCapture::start(Callback cb, std::string& out_device_name, std::string& out_error) {
   if (running_.load(std::memory_order_acquire)) {
@@ -201,9 +231,28 @@ void WasapiLoopbackCapture::thread_main() {
   }
 
   ComPtr<IMMDevice> device;
-  hr = enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device);
+  if (cfg_.render_device_name.empty()) {
+    hr = enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device);
+  } else {
+    hr = HRESULT_FROM_WIN32(ERROR_NOT_FOUND);
+    ComPtr<IMMDeviceCollection> devices;
+    if (SUCCEEDED(enumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &devices)) && devices) {
+      UINT count = 0;
+      if (SUCCEEDED(devices->GetCount(&count))) {
+        for (UINT index = 0; index < count; ++index) {
+          ComPtr<IMMDevice> candidate;
+          if (SUCCEEDED(devices->Item(index, &candidate)) && candidate &&
+              get_device_friendly_name(candidate.Get()) == cfg_.render_device_name) {
+            device = candidate;
+            hr = S_OK;
+            break;
+          }
+        }
+      }
+    }
+  }
   if (FAILED(hr) || !device) {
-    const std::string msg = "GetDefaultAudioEndpoint(eRender) failed: " + hr_to_string(hr);
+    const std::string msg = "WASAPI render device unavailable: " + cfg_.render_device_name + ": " + hr_to_string(hr);
     spdlog::error("WASAPI loopback: {}", msg);
     set_init_error(msg);
     CoUninitialize();
@@ -427,6 +476,7 @@ bool WasapiLoopbackCapture::start(Callback, std::string& out_device_name, std::s
   return false;
 }
 void WasapiLoopbackCapture::stop() {}
+std::vector<std::string> WasapiLoopbackCapture::available_render_devices() { return {}; }
 
 }  // namespace f8::audiocap
 

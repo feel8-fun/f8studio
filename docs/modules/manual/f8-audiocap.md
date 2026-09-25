@@ -12,6 +12,8 @@
 
 ## Pitfalls / Gotchas
 
+- Choose a device from `Capture Device` on the node or in its inspector. `Available Devices` updates as devices appear or disappear, and `Audio Device` shows the device currently in use.
+- On Windows, `Loopback` entries capture system output while `Recording` entries capture microphone/input devices. `Auto` keeps the platform default behavior.
 - If nothing moves, first verify the selected capture device and whether another app has locked it.
 - Sample rate and buffer size directly affect latency and stability; smaller buffers are more responsive but easier to destabilize.
 - When downstream audio logic looks wrong, confirm the capture source is healthy before tuning the analysis layers.

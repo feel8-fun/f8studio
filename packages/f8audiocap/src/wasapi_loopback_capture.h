@@ -7,6 +7,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <SDL3/SDL.h>
 
@@ -17,6 +18,7 @@ class WasapiLoopbackCapture final {
   struct Config {
     std::uint32_t dst_sample_rate = 48000;
     std::uint16_t dst_channels = 2;
+    std::string render_device_name;
   };
 
   using Callback = std::function<void(const float* interleaved_f32, std::uint32_t frames, std::int64_t ts_ms)>;
@@ -31,6 +33,8 @@ class WasapiLoopbackCapture final {
   void stop();
 
   void set_paused(bool paused) { paused_.store(paused, std::memory_order_release); }
+
+  static std::vector<std::string> available_render_devices();
 
  private:
   void thread_main();

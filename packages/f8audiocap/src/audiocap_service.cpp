@@ -1,8 +1,11 @@
 #include "audiocap_service.h"
 
 #include <algorithm>
+#include <charconv>
+#include <cctype>
 #include <cmath>
 #include <cstring>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -58,13 +61,18 @@ bool contains_icase(std::string_view haystack, std::string_view needle) {
   return hs.find(nd) != std::string::npos;
 }
 
-SDL_AudioDeviceID pick_recording_device(const std::string& selector, std::string& out_name) {
+SDL_AudioDeviceID pick_recording_device(const std::string& selector, std::string& out_name, std::string& error) {
   out_name.clear();
+  error.clear();
+  const bool named_recording = selector.rfind("Recording: ", 0) == 0;
+  const std::string name = named_recording ? selector.substr(11) : selector;
+  if (name.empty() || name == "Default input") return SDL_AUDIO_DEVICE_DEFAULT_RECORDING;
   int count = 0;
   SDL_AudioDeviceID* devices = SDL_GetAudioRecordingDevices(&count);
   if (!devices || count <= 0) {
     if (devices) SDL_free(devices);
-    return SDL_AUDIO_DEVICE_DEFAULT_RECORDING;
+    error = "no recording devices are available";
+    return 0;
   }
 
   auto finish = [&](SDL_AudioDeviceID id) {
@@ -72,12 +80,13 @@ SDL_AudioDeviceID pick_recording_device(const std::string& selector, std::string
     return id;
   };
 
-  if (selector.empty()) {
-    return finish(SDL_AUDIO_DEVICE_DEFAULT_RECORDING);
-  }
-
-  if (is_digits(selector)) {
-    const int idx = std::stoi(selector);
+  if (!named_recording && is_digits(selector)) {
+    int idx = -1;
+    const auto parsed = std::from_chars(selector.data(), selector.data() + selector.size(), idx);
+    if (parsed.ec != std::errc{} || parsed.ptr != selector.data() + selector.size()) {
+      error = "invalid recording device index: " + selector;
+      return finish(0);
+    }
     if (idx >= 0 && idx < count) {
       const SDL_AudioDeviceID id = devices[idx];
       const char* nm = SDL_GetAudioDeviceName(id);
@@ -90,16 +99,127 @@ SDL_AudioDeviceID pick_recording_device(const std::string& selector, std::string
     const SDL_AudioDeviceID id = devices[i];
     const char* nm = SDL_GetAudioDeviceName(id);
     if (!nm) continue;
-    if (contains_icase(nm, selector)) {
+    if ((named_recording && name == nm) || (!named_recording && contains_icase(nm, name))) {
       out_name = nm;
       return finish(id);
     }
   }
 
-  return finish(SDL_AUDIO_DEVICE_DEFAULT_RECORDING);
+  error = "recording device not found: " + name;
+  return finish(0);
 }
 
 }  // namespace
+
+std::vector<std::string> AudioCapService::available_capture_devices() const {
+  std::vector<std::string> devices{"Auto"};
+#if defined(_WIN32)
+  const auto render_devices = WasapiLoopbackCapture::available_render_devices();
+  if (!render_devices.empty()) devices.push_back("Loopback: Default output");
+  for (const std::string& name : render_devices) {
+    const std::string option = "Loopback: " + name;
+    if (std::find(devices.begin(), devices.end(), option) == devices.end()) devices.push_back(option);
+  }
+#endif
+  int count = 0;
+  SDL_AudioDeviceID* recording = SDL_GetAudioRecordingDevices(&count);
+  if (recording && count > 0) {
+    devices.push_back("Recording: Default input");
+    for (int index = 0; index < count; ++index) {
+      const char* name = SDL_GetAudioDeviceName(recording[index]);
+      if (!name || !*name) continue;
+      const std::string option = std::string("Recording: ") + name;
+      if (std::find(devices.begin(), devices.end(), option) == devices.end()) devices.push_back(option);
+    }
+  }
+  if (recording) SDL_free(recording);
+  return devices;
+}
+
+void AudioCapService::close_capture_device() {
+  if (stream_) {
+    SDL_DestroyAudioStream(stream_);
+    stream_ = nullptr;
+  }
+  if (wasapi_) {
+    wasapi_->stop();
+    wasapi_.reset();
+  }
+  opened_device_ = 0;
+  opened_device_name_.clear();
+  capture_accum_frames_ = 0;
+}
+
+bool AudioCapService::open_capture_device(const std::string& selector, std::string& error) {
+  error.clear();
+  if (cfg_.mode != "capture") {
+    selected_device_ = selector;
+    return true;
+  }
+
+  const bool automatic = selector == "Auto";
+  const bool loopback = selector.rfind("Loopback: ", 0) == 0;
+  const bool recording = selector.rfind("Recording: ", 0) == 0;
+  if (!automatic && !loopback && !recording && selector != cfg_.device) {
+    error = "unknown capture device selection: " + selector;
+    return false;
+  }
+
+#if defined(_WIN32)
+  const bool use_wasapi = loopback || (automatic && cfg_.backend != "sdl");
+  if (use_wasapi) {
+    const std::string render_name = loopback && selector != "Loopback: Default output" ? selector.substr(10) : "";
+    auto candidate = std::make_unique<WasapiLoopbackCapture>(
+        WasapiLoopbackCapture::Config{cfg_.sample_rate, cfg_.channels, render_name});
+    std::string device_name;
+    if (candidate->start(
+            [this](const float* interleaved, std::uint32_t frames, std::int64_t ts_ms) {
+              handle_captured_interleaved_f32(interleaved, frames, ts_ms);
+            },
+            device_name, error)) {
+      opened_device_name_ = "WASAPI(loopback): " + device_name;
+      wasapi_ = std::move(candidate);
+      selected_device_ = selector;
+      wasapi_->set_paused(!active_.load(std::memory_order_acquire));
+      return true;
+    }
+    if (!automatic || cfg_.backend == "wasapi") return false;
+    spdlog::warn("WASAPI loopback unavailable, trying default recording device: {}", error);
+  }
+#else
+  if (loopback) {
+    error = "loopback capture is only available on Windows";
+    return false;
+  }
+#endif
+
+  const std::string recording_selector = automatic ? "" : selector;
+  std::string matched;
+  const SDL_AudioDeviceID device = pick_recording_device(recording_selector, matched, error);
+  if (device == 0) return false;
+  SDL_AudioSpec spec{};
+  spec.format = SDL_AUDIO_F32;
+  spec.channels = static_cast<int>(cfg_.channels);
+  spec.freq = static_cast<int>(cfg_.sample_rate);
+  SDL_AudioStream* opened = SDL_OpenAudioDeviceStream(device, &spec, nullptr, nullptr);
+  if (!opened) {
+    error = std::string("SDL_OpenAudioDeviceStream failed: ") + SDL_GetError();
+    return false;
+  }
+  SDL_SetAudioStreamPutCallback(opened, &AudioCapService::on_audio_stream_put, this);
+  if (!SDL_ResumeAudioStreamDevice(opened)) {
+    error = std::string("SDL_ResumeAudioStreamDevice failed: ") + SDL_GetError();
+    SDL_DestroyAudioStream(opened);
+    return false;
+  }
+  stream_ = opened;
+  opened_device_ = SDL_GetAudioStreamDevice(opened);
+  const char* actual_name = SDL_GetAudioDeviceName(opened_device_);
+  opened_device_name_ = actual_name ? actual_name : matched;
+  selected_device_ = selector;
+  if (!active_.load(std::memory_order_acquire)) (void)SDL_PauseAudioStreamDevice(stream_);
+  return true;
+}
 
 bool AudioCapService::start() {
   if (running_.load(std::memory_order_acquire)) return true;
@@ -147,6 +267,7 @@ bool AudioCapService::start() {
     spdlog::error("audiocap zenoh audio publisher unavailable serviceId={} key={}", cfg_.service_id, key);
     bus_->stop();
     bus_.reset();
+    SDL_QuitSubSystem(SDL_INIT_AUDIO);
     return false;
   }
   zenoh_audio_key_ = key;
@@ -159,67 +280,12 @@ bool AudioCapService::start() {
   phase_ = 0.0;
   last_write_ms_ = 0;
   last_state_pub_ms_ = 0;
-
-  opened_device_name_.clear();
-  opened_device_ = 0;
-  stream_ = nullptr;
-  wasapi_.reset();
-
-  if (cfg_.mode == "capture") {
-#if defined(_WIN32)
-    const bool want_wasapi = (cfg_.backend.empty() || cfg_.backend == "auto" || cfg_.backend == "wasapi");
-    if (want_wasapi) {
-      wasapi_ = std::make_unique<WasapiLoopbackCapture>(
-          WasapiLoopbackCapture::Config{static_cast<std::uint32_t>(cfg_.sample_rate), cfg_.channels});
-      std::string err;
-      std::string dev;
-      const bool ok = wasapi_->start(
-          [this](const float* interleaved, std::uint32_t frames, std::int64_t ts_ms) {
-            this->handle_captured_interleaved_f32(interleaved, frames, ts_ms);
-          },
-          dev, err);
-      if (!ok) {
-        spdlog::warn("WASAPI loopback start failed: {} (falling back to SDL recording)", err);
-        wasapi_.reset();
-      } else {
-        opened_device_name_ = "WASAPI(loopback): " + dev;
-      }
-    }
-#endif
-
-    if (wasapi_) {
-      publish_static_state();
-      publish_dynamic_state();
-      running_.store(true, std::memory_order_release);
-      stop_requested_.store(false, std::memory_order_release);
-      spdlog::info("audiocap started serviceId={} backend={} audioBackend={}", cfg_.service_id,
-                   f8::cppsdk::bus_backend_to_string(runtime_backend.bus_backend), "zenoh");
-      return true;
-    }
-
-    std::string matched;
-    const SDL_AudioDeviceID devid = pick_recording_device(cfg_.device, matched);
-
-    SDL_AudioSpec spec;
-    spec.format = SDL_AUDIO_F32;
-    spec.channels = static_cast<int>(cfg_.channels);
-    spec.freq = static_cast<int>(cfg_.sample_rate);
-
-    stream_ = SDL_OpenAudioDeviceStream(devid, &spec, nullptr, nullptr);
-    if (!stream_) {
-      spdlog::error("SDL_OpenAudioDeviceStream failed: {}", SDL_GetError());
-      return false;
-    }
-
-    opened_device_ = SDL_GetAudioStreamDevice(stream_);
-    const char* nm = SDL_GetAudioDeviceName(opened_device_);
-    opened_device_name_ = nm ? nm : matched;
-
-    SDL_SetAudioStreamPutCallback(stream_, &AudioCapService::on_audio_stream_put, this);
-    if (!SDL_ResumeAudioStreamDevice(stream_)) {
-      spdlog::error("SDL_ResumeAudioStreamDevice failed: {}", SDL_GetError());
-      return false;
-    }
+  last_device_refresh_ms_ = 0;
+  selected_device_ = cfg_.device.empty() ? "Auto" : cfg_.device;
+  std::string capture_error;
+  if (!open_capture_device(selected_device_, capture_error)) {
+    spdlog::error("audio capture device open failed: {}", capture_error);
+    return false;
   }
 
   publish_static_state();
@@ -233,19 +299,10 @@ bool AudioCapService::start() {
 }
 
 void AudioCapService::stop() {
-  if (!running_.exchange(false, std::memory_order_acq_rel)) return;
+  if (!running_.exchange(false, std::memory_order_acq_rel) && !bus_ && !stream_ && !wasapi_) return;
   stop_requested_.store(true, std::memory_order_release);
 
-  if (stream_) {
-    SDL_DestroyAudioStream(stream_);
-    stream_ = nullptr;
-  }
-  if (wasapi_) {
-    wasapi_->stop();
-    wasapi_.reset();
-  }
-  opened_device_ = 0;
-  opened_device_name_.clear();
+  close_capture_device();
 
   if (zenoh_audio_publisher_) {
     zenoh_audio_publisher_->close();
@@ -271,6 +328,10 @@ void AudioCapService::tick() {
   if (now - last_state_pub_ms_ >= 200) {
     publish_dynamic_state();
     last_state_pub_ms_ = now;
+  }
+  if (now - last_device_refresh_ms_ >= 3000) {
+    publish_state_if_changed("availableDevices", available_capture_devices());
+    last_device_refresh_ms_ = now;
   }
 
   if (!active_.load(std::memory_order_acquire)) return;
@@ -428,21 +489,52 @@ void AudioCapService::on_state(const std::string& node_id, const std::string& fi
                                std::int64_t ts_ms, const nlohmann::json& meta) {
   (void)ts_ms;
   if (node_id != cfg_.service_id) return;
+  if (field != "selectedDevice") return;
   std::string ec;
   std::string em;
-  json result;
-  (void)on_set_state(node_id, field, value, meta, ec, em);
+  if (!on_set_state(node_id, field, value, meta, ec, em)) {
+    spdlog::warn("capture device state update rejected code={} reason={}", ec, em);
+  }
 }
 
 bool AudioCapService::on_set_state(const std::string& node_id, const std::string& field, const nlohmann::json& value,
                                    const nlohmann::json& meta, std::string& error_code, std::string& error_message) {
-  (void)node_id;
-  (void)field;
-  (void)value;
   (void)meta;
-  error_code = "not_supported";
-  error_message = "field not supported";
-  return false;
+  if (node_id != cfg_.service_id || field != "selectedDevice" || !value.is_string()) {
+    error_code = "INVALID_ARGS";
+    error_message = "expected selectedDevice string on the Audio Capture service node";
+    return false;
+  }
+  const std::string selector = value.get<std::string>();
+  if (selector == selected_device_) {
+    error_code.clear();
+    error_message.clear();
+    return true;
+  }
+  const auto available = available_capture_devices();
+  if (std::find(available.begin(), available.end(), selector) == available.end()) {
+    error_code = "DEVICE_UNAVAILABLE";
+    error_message = "capture device is not available: " + selector;
+    return false;
+  }
+
+  const std::string previous = selected_device_;
+  close_capture_device();
+  if (!open_capture_device(selector, error_message)) {
+    spdlog::error("capture device switch failed selector={} error={}", selector, error_message);
+    std::string restore_error;
+    if (!open_capture_device(previous, restore_error)) {
+      spdlog::error("capture device restore failed selector={} error={}", previous, restore_error);
+    }
+    publish_static_state();
+    error_code = "DEVICE_OPEN_FAILED";
+    return false;
+  }
+  publish_static_state();
+  error_code.clear();
+  error_message.clear();
+  spdlog::info("capture device switched selector={} activeDevice={}", selector, opened_device_name_);
+  return true;
 }
 
 bool AudioCapService::on_set_rungraph(const nlohmann::json&, const nlohmann::json&, std::string& error_code,
@@ -463,28 +555,26 @@ bool AudioCapService::on_command(const std::string& call, const nlohmann::json& 
 }
 
 void AudioCapService::publish_static_state() {
+  publish_state_if_changed("serviceClass", cfg_.service_class);
+  publish_state_if_changed("availableDevices", available_capture_devices());
+  publish_state_if_changed("audioDevice", opened_device_name_);
+  publish_state_if_changed("audioSampleRate", cfg_.sample_rate);
+  publish_state_if_changed("audioChannels", cfg_.channels);
+  publish_state_if_changed("audioFormat", "f32le");
+  publish_state_if_changed("audioFramesPerChunk", cfg_.frames_per_chunk);
+  publish_state_if_changed("audioChunkCount", cfg_.chunk_count);
+  publish_state_if_changed("audioChunkSchemaVersion", 1);
+  publish_state_if_changed("mode", cfg_.mode);
+  publish_state_if_changed("toneHz", cfg_.tone_hz);
+  publish_state_if_changed("gain", cfg_.gain);
+}
+
+void AudioCapService::publish_state_if_changed(const char* field, const nlohmann::json& value) {
   std::lock_guard<std::mutex> lock(state_mu_);
-
-  auto set_if_changed = [&](const char* field, const nlohmann::json& v) {
-    auto it = published_state_.find(field);
-    if (it != published_state_.end() && it->second == v) return;
-    published_state_[field] = v;
-    if (bus_) {
-      (void)bus_->publish_state(cfg_.service_id, field, v, "init", json::object());
-    }
-  };
-
-  set_if_changed("serviceClass", cfg_.service_class);
-  set_if_changed("audioDevice", opened_device_name_);
-  set_if_changed("audioSampleRate", cfg_.sample_rate);
-  set_if_changed("audioChannels", cfg_.channels);
-  set_if_changed("audioFormat", "f32le");
-  set_if_changed("audioFramesPerChunk", cfg_.frames_per_chunk);
-  set_if_changed("audioChunkCount", cfg_.chunk_count);
-  set_if_changed("audioChunkSchemaVersion", 1);
-  set_if_changed("mode", cfg_.mode);
-  set_if_changed("toneHz", cfg_.tone_hz);
-  set_if_changed("gain", cfg_.gain);
+  const auto it = published_state_.find(field);
+  if (it != published_state_.end() && it->second == value) return;
+  published_state_[field] = value;
+  if (bus_) (void)bus_->publish_state(cfg_.service_id, field, value, "audiocap", json::object());
 }
 
 void AudioCapService::publish_dynamic_state() {
@@ -503,6 +593,11 @@ nlohmann::json AudioCapService::describe() {
       {"tags", json::array({"audio", "capture", "zenoh"})},
       {"stateFields",
        json::array({
+           state_field("availableDevices", json{{"type", "array"}, {"items", schema_string()}}, "ro",
+                       "Available Devices", "Capture devices currently visible to the service.", false),
+           state_field("selectedDevice", json{{"type", "string"}, {"default", "Auto"}}, "wo",
+                       "Capture Device", "Device selected for audio capture.", true,
+                       "select[availableDevices]"),
            state_field("audioDevice", schema_string(), "ro", "Audio Device", "Name of the audio capture device in use", false),
            state_field("audioSampleRate", schema_integer(), "ro", "Audio Sample Rate", "Sample rate of the audio capture device", false),
            state_field("audioChannels", schema_integer(), "ro", "Audio Channels", "Number of audio channels", false),

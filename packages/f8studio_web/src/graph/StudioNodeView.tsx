@@ -10,7 +10,7 @@ import { hasExtensionNodeRendererClass } from '../extensions/registry';
 import { SkeletonOutputPreview } from '../three/SkeletonOutputPreview';
 import { nodePortRows } from './portRows';
 import { PORT_ROW_HEIGHT, SERVICE_MIN_HEIGHT, SERVICE_WIDTH, type StudioFlowNode } from './projection';
-import { StateFieldControl } from './StateFieldControl';
+import { StateFieldControl, stateOptionPoolField } from './StateFieldControl';
 import { useRuntimeNodeState } from './useRuntimeNodeState';
 
 export interface GraphNodeInteraction {
@@ -59,7 +59,8 @@ export function StudioNodeView({ data, selected }: NodeProps<StudioFlowNode>) {
     (BUILTIN_OUTPUT_CLASSES.has(node.operatorClass) || BUILTIN_RENDERER_CLASSES.has(rendererClass) || hasExtensionNodeRendererClass(rendererClass));
   const isThreeD = node.kind === 'operator' && (node.operatorClass === 'f8.viz.three_d' || node.spec.rendererClass === 'viz_three_d');
   const interaction = useContext(GraphNodeInteractionContext);
-  const inlineNames = (node.spec.stateFields ?? []).filter((field) => field.showOnNode === true).map((field) => field.name);
+  const inlineNames = (node.spec.stateFields ?? []).filter((field) => field.showOnNode === true)
+    .flatMap((field) => [field.name, stateOptionPoolField(field.uiControl)].filter((name): name is string => name !== null));
   const runtimeValues = useRuntimeNodeState(node, inlineNames);
   const rows = nodePortRows(node);
   const visibleRows = rows.length === 0 ? [{ key: 'empty' }] : rows;
@@ -67,21 +68,23 @@ export function StudioNodeView({ data, selected }: NodeProps<StudioFlowNode>) {
     {visibleRows.map((row) => {
       const input = row.input;
       const output = row.output;
-      const stateRuntimeName = input?.kind === 'state' && output?.kind === 'state' &&
-        input.runtimeName === output.runtimeName ? input.runtimeName : null;
-      const sharedStateLabel = stateRuntimeName !== null;
+      const sharedStateLabel = input?.kind === 'state' && output?.kind === 'state' &&
+        input.runtimeName === output.runtimeName;
+      const stateRuntimeName = input?.kind === 'state' && (output === undefined || sharedStateLabel)
+        ? input.runtimeName : null;
       const commandName = input?.kind === 'command' ? input.name : output?.kind === 'command' ? output.name : null;
       const command = commandName === null ? undefined : (node.spec.commands ?? []).find((item) => item.name === commandName);
       const inlineField = stateRuntimeName === null ? undefined :
         (node.spec.stateFields ?? []).find((field) => field.name === stateRuntimeName && field.showOnNode === true);
+      const inputOnlyStateControl = inlineField?.access === 'wo' && output === undefined;
       const connected = inlineField === undefined ? false :
         interaction?.connectedStateInputs.has(`${node.nodeId}:${inlineField.name}`) ?? false;
       return (
-        <div className={`port-row ${sharedStateLabel ? 'port-row-shared-state' : ''} ${commandName !== null ? 'port-row-command' : ''}`} key={row.key}>
+        <div className={`port-row ${sharedStateLabel || inputOnlyStateControl ? 'port-row-shared-state' : ''} ${inputOnlyStateControl ? 'port-row-input-state-control' : ''} ${commandName !== null ? 'port-row-command' : ''}`} key={row.key}>
           <div className={`port-label port-${input?.kind ?? 'empty'}`}>
             {input !== undefined && <>
               <Handle id={input.portId} type="target" position={Position.Left} className={`port-handle port-handle-${input.kind}`} />
-              {commandName === null && <span title={`${input.kind} input`}>{input.name}</span>}
+              {commandName === null && <span title={`${input.kind} input`}>{inputOnlyStateControl ? inlineField.label ?? input.name : input.name}</span>}
             </>}
           </div>
           <div className="port-control">
@@ -98,6 +101,7 @@ export function StudioNodeView({ data, selected }: NodeProps<StudioFlowNode>) {
               connected={connected}
               disabled={interaction.busy}
               runtimeValue={runtimeValues[inlineField.name]}
+              runtimeValues={runtimeValues}
               onCommit={(value) => interaction.setState(node.nodeId, inlineField.name, value)}
             />}
           </div>

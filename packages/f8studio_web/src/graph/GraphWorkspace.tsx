@@ -226,7 +226,7 @@ function NodeInspector({
 }) {
   const fields = node.spec.stateFields ?? [];
   const runtimeFieldNames = useMemo(
-    () => fields.filter((field) => field.name !== 'svcId' && field.name !== 'operatorId')
+    () => fields.filter((field) => field.name !== 'svcId' && field.name !== 'operatorId' && field.access !== 'wo')
       .map((field) => field.name),
     [fields],
   );
@@ -271,6 +271,7 @@ function NodeInspector({
           disabled={busy}
           connected={connected}
           runtimeValue={runtimeValue(field)}
+          runtimeValues={runtimeValues}
           onCommit={(value) => void commit([{ op: 'setNodeState', nodeId: node.nodeId, field: field.name, value }])}
         />
         {hotkeyEligible(field) && <HotkeyEditor projectId={projectId} node={node} field={field} disabled={busy || connected} />}

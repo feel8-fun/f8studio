@@ -14,7 +14,7 @@ function controlName(uiControl: string | undefined): string {
   return (uiControl ?? '').split('[', 1)[0]?.trim().toLowerCase() ?? '';
 }
 
-function poolField(uiControl: string | undefined): string | null {
+export function stateOptionPoolField(uiControl: string | undefined): string | null {
   const match = /^(?:select|multiselect)\[([A-Za-z_][A-Za-z0-9_]*)\]$/.exec(uiControl?.trim() ?? '');
   return match?.[1] ?? null;
 }
@@ -45,6 +45,7 @@ export function StateFieldControl({
   connected = false,
   compact = false,
   runtimeValue,
+  runtimeValues,
   onCommit,
 }: {
   readonly node: GraphNode;
@@ -53,11 +54,12 @@ export function StateFieldControl({
   readonly connected?: boolean;
   readonly compact?: boolean;
   readonly runtimeValue?: RuntimeStateField;
+  readonly runtimeValues?: Readonly<Record<string, RuntimeStateField>>;
   readonly onCommit: (value: JsonValue) => void;
 }) {
   const readOnly = field.access === 'ro';
   const configuredValue = fieldValue(node, field.name);
-  const value = runtimeValue?.found === true ? runtimeValue.value : configuredValue;
+  const value = field.access !== 'wo' && runtimeValue?.found === true ? runtimeValue.value : configuredValue;
   const [draft, setDraft] = useState(displayValue(value));
   const editing = useRef(false);
   useEffect(() => { if (!editing.current) setDraft(displayValue(value)); }, [value]);
@@ -65,11 +67,12 @@ export function StateFieldControl({
   const control = controlName(field.uiControl);
   const options = useMemo(() => {
     if (field.valueSchema.enum !== undefined) return field.valueSchema.enum;
-    const pool = poolField(field.uiControl);
-    const poolValue = pool === null ? null : fieldValue(node, pool);
+    const pool = stateOptionPoolField(field.uiControl);
+    const livePool = pool === null ? undefined : runtimeValues?.[pool];
+    const poolValue = livePool?.found === true ? livePool.value : pool === null ? null : fieldValue(node, pool);
     return Array.isArray(poolValue) ? poolValue.filter((item) =>
       typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean') : [];
-  }, [field.uiControl, field.valueSchema.enum, node]);
+  }, [field.uiControl, field.valueSchema.enum, node, runtimeValues]);
   const label = field.label ?? field.name;
   const title = `${label}${connected ? ' (driven by upstream state)' : ''}`;
   const shellClass = `${compact ? 'state-control state-control-inline nodrag nowheel' : 'state-control state-control-inspector'}${connected ? ' state-control-connected' : ''}`;
@@ -123,13 +126,14 @@ export function StateFieldControl({
     </label>;
   }
   if (options.length > 0 || control === 'select') {
+    const currentIsAvailable = options.some((option) => JSON.stringify(option) === JSON.stringify(value));
     return <label className={shellClass} title={title}>
       {!compact && <span>{label}</span>}
-      <select disabled={controlDisabled} value={JSON.stringify(value)} onChange={(event) => {
+      <select aria-label={compact ? label : undefined} disabled={controlDisabled} value={JSON.stringify(value)} onChange={(event) => {
         const parsed: unknown = JSON.parse(event.target.value);
         if (isJsonValue(parsed)) commitChanged(parsed);
       }}>
-        {options.length === 0 && <option value={JSON.stringify(value)}>{displayValue(value)}</option>}
+        {!currentIsAvailable && <option value={JSON.stringify(value)}>{options.length === 0 ? displayValue(value) : `${displayValue(value)} (unavailable)`}</option>}
         {options.map((option) => <option key={JSON.stringify(option)} value={JSON.stringify(option)}>{String(option)}</option>)}
       </select>
       {connected && !compact && <small aria-hidden="true">Upstream</small>}

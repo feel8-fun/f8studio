@@ -770,6 +770,7 @@ button:disabled { cursor: default; }
 .node-ports { display: grid; padding: 2px 0; }
 .port-row { display: grid; grid-template-columns: 56px minmax(0, 1fr) 56px; align-items: center; height: 24px; min-height: 24px; }
 .port-row-shared-state { grid-template-columns: 64px minmax(0, 1fr) 12px; }
+.port-row-input-state-control { grid-template-columns: 88px minmax(0, 1fr) 12px; }
 .port-row-command { grid-template-columns: 16px minmax(0, 1fr) 16px; }
 .port-label { position: relative; display: flex; align-items: center; min-width: 0; padding-left: 8px; color: #aab1ba; font-size: 9px; }
 .port-label > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
