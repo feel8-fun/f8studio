@@ -20,6 +20,9 @@ button:disabled { cursor: default; }
   overflow: hidden;
   background: #111317;
 }
+.studio-shell-code-state { grid-template-columns: minmax(0, 1fr); }
+.state-code-launcher .command-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 27px; }
+.code-state-target { max-width: 40%; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 
 .topbar {
   grid-column: 1 / -1;
@@ -230,16 +233,8 @@ button:disabled { cursor: default; }
 
 .code-workspace, .presentation-workspace, .assets-workspace, .local-workspace { width: 100%; height: 100%; min-width: 0; min-height: 0; }
 .code-workspace, .presentation-workspace { display: grid; grid-template-rows: auto minmax(0, 1fr); background: #0d1013; }
-.code-layout { display: grid; grid-template-columns: minmax(0, 1fr) 310px; min-width: 0; min-height: 0; }
+.code-layout { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; min-height: 0; }
 .monaco-host { min-width: 0; min-height: 0; }
-.diagnostics-pane { min-width: 0; overflow: auto; border-left: 1px solid #292e34; background: #14171b; }
-.diagnostics-pane .pane-heading { padding: 0 11px; border-bottom: 1px solid #292e34; }
-.diagnostic { display: grid; gap: 4px; width: 100%; padding: 10px 11px; border: 0; border-bottom: 1px solid #262a30; color: #d9dde3; background: transparent; text-align: left; }
-.diagnostic:hover { background: #1d2127; }
-.diagnostic span, .diagnostic code { color: #818b97; font-size: 10px; }
-.diagnostic strong { font-size: 11px; line-height: 1.45; font-weight: 500; }
-.diagnostic-error { box-shadow: inset 2px 0 #d76363; }
-.diagnostic-warning { box-shadow: inset 2px 0 #d2a94f; }
 
 .node-schema-editor { margin-top: 12px; padding-top: 8px; border-top: 1px solid #30353c; }
 .node-schema-editor summary { display: flex; align-items: center; gap: 6px; height: 30px; color: #aeb7c1; cursor: pointer; font-size: 11px; font-weight: 600; }
@@ -401,8 +396,6 @@ button:disabled { cursor: default; }
 .local-status { display: flex; align-items: center; padding: 0 10px; border-top: 1px solid #292e34; color: #9099a5; font-size: 11px; }
 
 @media (max-width: 900px) {
-  .code-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(300px, 1fr) 180px; }
-  .diagnostics-pane { border-top: 1px solid #292e34; border-left: 0; }
   .assets-workspace { grid-template-columns: 220px minmax(0, 1fr); }
   .local-columns { grid-template-columns: minmax(280px, 1fr); }
   .local-panel { border-right: 0; border-bottom: 1px solid #292e34; }

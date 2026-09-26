@@ -10,17 +10,18 @@ import { GraphLogDock } from './GraphLogDock';
 
 const AssetsWorkspace = lazy(() => import('../assets/AssetsWorkspace').then((module) => ({ default: module.AssetsWorkspace })));
 const CodeWorkspace = lazy(() => import('../editor/CodeWorkspace').then((module) => ({ default: module.CodeWorkspace })));
+const CodeStateWorkspace = lazy(() => import('../editor/CodeStateWorkspace').then((module) => ({ default: module.CodeStateWorkspace })));
 const PresentationWorkspace = lazy(() => import('../presentation/PresentationWorkspace').then((module) => ({ default: module.PresentationWorkspace })));
 const LocalWorkspace = lazy(() => import('../local/LocalWorkspace').then((module) => ({ default: module.LocalWorkspace })));
 const AgentWorkspace = lazy(() => import('../agents/AgentWorkspace').then((module) => ({ default: module.AgentWorkspace })));
 
-type WorkspaceView = 'graph' | 'agent' | 'assets' | 'code' | 'outputs' | 'local' | 'logs';
+type WorkspaceView = 'graph' | 'agent' | 'assets' | 'code' | 'code-state' | 'outputs' | 'local' | 'logs';
 interface LocationView { readonly view: WorkspaceView; readonly nodeId: string | null }
 
 function readLocationView(): LocationView {
   const params = new URLSearchParams(window.location.search);
   const requested = params.get('view');
-  const view = WORKSPACES.some((item) => item.view === requested) ? requested as WorkspaceView : 'graph';
+  const view = requested === 'code-state' || WORKSPACES.some((item) => item.view === requested) ? requested as WorkspaceView : 'graph';
   return { view, nodeId: view === 'outputs' ? params.get('node') : null };
 }
 
@@ -82,6 +83,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (view === 'code-state') return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (!event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
       const index = Number(event.key) - 1;
@@ -92,7 +94,7 @@ export function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [navigate]);
+  }, [navigate, view]);
 
   const statusText =
     connection.kind === 'connecting'
@@ -102,11 +104,11 @@ export function App() {
         : 'Server unavailable';
 
   return (
-    <PresentationProvider><main className="studio-shell">
+    <PresentationProvider><main className={`studio-shell${view === 'code-state' ? ' studio-shell-code-state' : ''}`}>
       <header className="topbar">
         <div className="topbar-identity">
           <div className="brand">Feel8 Studio</div>
-          <h1 id="workspace-title">{WORKSPACES.find((workspace) => workspace.view === view)?.title}</h1>
+          <h1 id="workspace-title">{view === 'code-state' ? 'Code Editor' : WORKSPACES.find((workspace) => workspace.view === view)?.title}</h1>
         </div>
         <div className={`connection connection-${connection.kind}`} role="status">
           <CircleDot size={14} aria-hidden="true" />
@@ -117,7 +119,7 @@ export function App() {
         </button>
       </header>
 
-      <aside className="rail" aria-label="Workspace navigation">
+      {view !== 'code-state' && <aside className="rail" aria-label="Workspace navigation">
         {WORKSPACES.map(({ view: target, label, icon: Icon }) => <button
           className={`rail-button ${view === target ? 'rail-button-active' : ''}`}
           type="button"
@@ -126,7 +128,7 @@ export function App() {
           key={target}
           onClick={() => navigate(target)}
         ><Icon size={20} /></button>)}
-      </aside>
+      </aside>}
 
       <section className="workspace" aria-labelledby="workspace-title">
         <div className="workspace-content">
@@ -134,6 +136,7 @@ export function App() {
           <Suspense fallback={<div className="view-loading" role="status">Loading view...</div>}>
             {view === 'assets' && <AssetsWorkspace />}
             {view === 'code' && <CodeWorkspace />}
+            {view === 'code-state' && <CodeStateWorkspace />}
             {view === 'outputs' && <PresentationWorkspace nodeId={nodeId} />}
             {view === 'local' && <LocalWorkspace />}
             {view === 'logs' && <LogsWorkspace />}

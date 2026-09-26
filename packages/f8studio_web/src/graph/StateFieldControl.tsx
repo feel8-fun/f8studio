@@ -1,3 +1,4 @@
+import { Code2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { GraphNode, JsonValue, RuntimeStateField, StateSpec } from '../api/contracts';
@@ -45,6 +46,7 @@ export function StateFieldControl({
   compact = false,
   runtimeValue,
   runtimeValues,
+  projectId,
   onCommit,
 }: {
   readonly node: GraphNode;
@@ -54,6 +56,7 @@ export function StateFieldControl({
   readonly compact?: boolean;
   readonly runtimeValue?: RuntimeStateField;
   readonly runtimeValues?: Readonly<Record<string, RuntimeStateField>>;
+  readonly projectId?: string;
   readonly onCommit: (value: JsonValue) => void;
 }) {
   const readOnly = field.access === 'ro';
@@ -92,6 +95,28 @@ export function StateFieldControl({
       target.reportValidity();
     }
   };
+
+  if (control === 'code' && projectId !== undefined) {
+    return <div className={`${shellClass} state-code-launcher`}>
+      <span>{label}</span>
+      <button type="button" className="command-button" aria-label={`Open code editor for ${label}`} onClick={() => {
+        const url = new URL(window.location.href);
+        url.search = new URLSearchParams({ view: 'code-state', project: projectId, node: node.nodeId, field: field.name }).toString();
+        const target = `f8_code_${encodeURIComponent(projectId)}_${encodeURIComponent(node.nodeId)}_${encodeURIComponent(field.name)}`;
+        const popup = window.open('', target, 'popup,width=1100,height=760');
+        if (popup === null) window.alert('Allow pop-ups for Studio to open the code editor.');
+        else {
+          try {
+            if (popup.location.href !== url.toString()) popup.location.assign(url.toString());
+          } catch (reason) {
+            console.error('Cannot inspect the existing code editor window', reason);
+            popup.location.assign(url.toString());
+          }
+          popup.focus();
+        }
+      }}><Code2 size={14} />{readOnly || connected ? 'View code' : 'Edit code'}</button>
+    </div>;
+  }
 
   if (readOnly) {
     return <label className={`${shellClass} state-control-readonly`} title={title}>

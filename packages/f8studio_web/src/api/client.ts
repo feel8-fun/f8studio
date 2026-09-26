@@ -503,8 +503,9 @@ export async function createEditorSession(
   language: 'python' | 'json',
   text: string,
   filename: string,
+  target?: { readonly projectId: string; readonly nodeId: string; readonly fieldName: string },
 ): Promise<EditorSession> {
-  const body = await requestJson('/api/editor/sessions', jsonRequest('POST', { language, text, filename }));
+  const body = await requestJson('/api/editor/sessions', jsonRequest('POST', { language, text, filename, ...target }));
   if (!isObject(body) || typeof body.sessionId !== 'string') throw new Error('Editor session does not match f8studio-api/1');
   return body as unknown as EditorSession;
 }
@@ -526,7 +527,7 @@ export async function analyzeEditorSession(sessionId: string): Promise<EditorAna
 
 async function requestEditorLanguage(
   sessionId: string,
-  operation: 'completion' | 'hover',
+  operation: 'completion' | 'hover' | 'signature-help',
   line: number,
   column: number,
 ): Promise<EditorLanguageResult> {
@@ -546,6 +547,10 @@ export async function requestEditorCompletion(sessionId: string, line: number, c
 
 export async function requestEditorHover(sessionId: string, line: number, column: number): Promise<EditorLanguageResult> {
   return requestEditorLanguage(sessionId, 'hover', line, column);
+}
+
+export async function requestEditorSignatureHelp(sessionId: string, line: number, column: number): Promise<EditorLanguageResult> {
+  return requestEditorLanguage(sessionId, 'signature-help', line, column);
 }
 
 export async function closeEditorSession(sessionId: string): Promise<void> {

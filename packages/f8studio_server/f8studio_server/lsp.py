@@ -70,6 +70,7 @@ class PythonLanguageServer:
                     "textDocument": {
                         "completion": {"completionItem": {"snippetSupport": True}},
                         "hover": {"contentFormat": ["markdown", "plaintext"]},
+                        "signatureHelp": {"signatureInformation": {"documentationFormat": ["markdown", "plaintext"]}},
                     }
                 },
                 "initializationOptions": {"basedpyright": {"analysis": {"diagnosticMode": "openFilesOnly"}}},
@@ -110,6 +111,15 @@ class PythonLanguageServer:
     def hover(self, *, document_path: Path, line: int, column: int) -> object:
         return self._request(
             "textDocument/hover",
+            {
+                "textDocument": {"uri": document_path.resolve().as_uri()},
+                "position": {"line": max(0, line), "character": max(0, column)},
+            },
+        )
+
+    def signature_help(self, *, document_path: Path, line: int, column: int) -> object:
+        return self._request(
+            "textDocument/signatureHelp",
             {
                 "textDocument": {"uri": document_path.resolve().as_uri()},
                 "position": {"line": max(0, line), "character": max(0, column)},

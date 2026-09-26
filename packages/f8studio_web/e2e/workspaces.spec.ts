@@ -101,8 +101,15 @@ test('local workspaces operate without Qt', async ({ page }, testInfo) => {
   await page.keyboard.press('Control+4');
   await expect(page.getByRole('heading', { name: 'Code & Schema' })).toBeVisible();
   await expect(page.locator('.monaco-editor')).toBeVisible();
-  await page.getByRole('button', { name: 'Analyze' }).click();
-  await expect(page.getByText(/Valid.*basedpyright/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Analyze' })).toHaveCount(0);
+  await expect(page.getByRole('complementary', { name: 'Diagnostics' })).toHaveCount(0);
+  await page.locator('.monaco-editor .view-lines').click();
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.type('value: int = "wrong"');
+  await expect(page.locator('.monaco-editor .squiggly-error').first()).toBeVisible({ timeout: 20000 });
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.type('value: int = 1');
+  await expect(page.locator('.monaco-editor .squiggly-error')).toHaveCount(0, { timeout: 20000 });
   await page.screenshot({ path: testInfo.outputPath('code-workspace.png'), fullPage: true });
 
   await page.getByRole('button', { name: 'Outputs' }).click();

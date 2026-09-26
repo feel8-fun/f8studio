@@ -25,6 +25,9 @@ class CreateEditorSessionRequest(msgspec.Struct, frozen=True, kw_only=True, rena
     text: str
     filename: str = "main.py"
     support_files: tuple[EditorSupportFile, ...] = ()
+    project_id: str = ""
+    node_id: str = ""
+    field_name: str = ""
 
 
 class UpdateEditorDocumentRequest(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
@@ -197,6 +200,22 @@ class EditorSessionService:
             if session.language_server is None:
                 raise ValueError("hover is only available for Python editor sessions")
             result = session.language_server.hover(
+                document_path=session.root / session.record.filename,
+                line=request.line,
+                column=request.column,
+            )
+            return EditorLanguageResult(
+                session_id=session_id,
+                version=session.record.version,
+                result=cast(F8JsonValue, msgspec.to_builtins(result, str_keys=True)),
+            )
+
+    def signature_help(self, session_id: str, request: EditorPositionRequest) -> EditorLanguageResult:
+        with self._lock:
+            session = self._session(session_id)
+            if session.language_server is None:
+                raise ValueError("signature help is only available for Python editor sessions")
+            result = session.language_server.signature_help(
                 document_path=session.root / session.record.filename,
                 line=request.line,
                 column=request.column,

@@ -49,6 +49,7 @@ from .assets import (
     UpdateAssetRequest,
 )
 from .editor import CreateEditorSessionRequest, EditorPositionRequest, UpdateEditorDocumentRequest
+from .editor_context import editor_support_files
 from .local_integration import (
     ApplyUnityInstallRequest,
     DetectModdingTargetRequest,
@@ -490,6 +491,16 @@ def create_app(
     @app.post("/api/editor/sessions", status_code=201)
     async def create_editor_session(request: Request) -> F8JsonValue:
         payload = await _decode_body(request, CreateEditorSessionRequest)
+        target = (payload.project_id, payload.node_id, payload.field_name)
+        if any(target):
+            if not all(target):
+                raise ValueError("projectId, nodeId, and fieldName are all required for a code field")
+            document = await asyncio.to_thread(studio.projects.document, payload.project_id)
+            node = next((item for item in document.nodes if item.node_id == payload.node_id), None)
+            if node is None:
+                raise FileNotFoundError(f"code editor node not found: {payload.node_id}")
+            support_files = editor_support_files(node, payload.field_name)
+            payload = msgspec.structs.replace(payload, support_files=support_files)
         return _json_value(await asyncio.to_thread(studio.editor.create, payload))
 
     @app.get("/api/editor/sessions/{session_id}")
@@ -514,6 +525,11 @@ def create_app(
     async def editor_hover(session_id: str, request: Request) -> F8JsonValue:
         payload = await _decode_body(request, EditorPositionRequest)
         return _json_value(await asyncio.to_thread(studio.editor.hover, session_id, payload))
+
+    @app.post("/api/editor/sessions/{session_id}/signature-help")
+    async def editor_signature_help(session_id: str, request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, EditorPositionRequest)
+        return _json_value(await asyncio.to_thread(studio.editor.signature_help, session_id, payload))
 
     @app.delete("/api/editor/sessions/{session_id}", status_code=204)
     async def close_editor_session(session_id: str) -> Response:

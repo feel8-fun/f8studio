@@ -283,6 +283,7 @@ function NodeInspector({
           connected={connected}
           runtimeValue={runtimeValue(field)}
           runtimeValues={runtimeValues}
+          projectId={projectId}
           onCommit={(value) => void commit([{ op: 'setNodeState', nodeId: node.nodeId, field: field.name, value }])}
         />
         {hotkeyEligible(field) && <HotkeyEditor projectId={projectId} node={node} field={field} disabled={busy || connected} />}

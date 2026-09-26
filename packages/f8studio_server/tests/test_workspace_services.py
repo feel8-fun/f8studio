@@ -38,8 +38,55 @@ from f8studio_server.models import (
     ServiceRuntimeStatus,
 )
 from f8studio_server.project_repository import ProjectRepository
+from f8studio_server.editor_context import editor_support_files
 from f8studio_server.projects import ProjectService
 from f8studio_server.runtime import RuntimeMonitorCallback
+
+
+def test_python_script_editor_uses_injected_api_and_dynamic_bindings(tmp_path: Path) -> None:
+    from f8pyengine.operators.python_script import PythonScriptRuntimeNode
+    from f8studio_core.graph import OperatorNode
+
+    node = OperatorNode(
+        node_id="script", name="Script", service_id="engine", service_class="f8.pyengine",
+        operator_class="f8.python_script", spec=PythonScriptRuntimeNode.SPEC,
+    )
+    support = editor_support_files(node, "code")
+    files = {item.path: item.content for item in support}
+    assert "class F8PyEngineContext:" in files["f8_script_api.pyi"]
+    assert "msg: Any" in files["f8_dynamic_inputs.pyi"]
+    assert "inputMode: Literal[" in files["f8_dynamic_states.pyi"]
+    assert "def __getitem__(self, key: str) -> Any" in files["f8_dynamic_states.pyi"]
+
+    editor = EditorSessionService(root=tmp_path / "editor")
+    source = (
+        "from f8_script_api import F8Inputs, F8PyEngineContext, F8States\n"
+        "def onStart(ctx: F8PyEngineContext) -> None:\n"
+        "    ctx.log(ctx.states['inputMode'])\n"
+        "def onMsg(ctx: F8PyEngineContext, inputs: F8Inputs) -> None:\n"
+        "    states: F8States = ctx.states\n"
+        "    ctx.emit('out', inputs.msg if states.inputMode else None)\n"
+    )
+    session = editor.create(CreateEditorSessionRequest(
+        language="python", filename="state.py", text=source, support_files=support,
+    ))
+    try:
+        diagnostics = editor.analyze(session.session_id).diagnostics
+        assert not any(item.severity == "error" for item in diagnostics), diagnostics
+        completion = editor.completion(session.session_id, EditorPositionRequest(line=2, column=8))
+        result = completion.result
+        items = result if isinstance(result, list) else result.get("items") if isinstance(result, dict) else []
+        assert any(isinstance(item, dict) and item.get("label") == "log" for item in items)
+        signature = editor.signature_help(session.session_id, EditorPositionRequest(line=5, column=13)).result
+        assert isinstance(signature, dict)
+        signatures = signature.get("signatures")
+        assert isinstance(signatures, list)
+        assert any(isinstance(item, dict) and "port: str" in str(item.get("label")) for item in signatures), signature
+        second_argument = editor.signature_help(session.session_id, EditorPositionRequest(line=5, column=20)).result
+        assert isinstance(second_argument, dict)
+        assert second_argument.get("activeParameter") == 1
+    finally:
+        editor.close_session(session.session_id)
 
 
 class HotkeyRuntimeGateway:
@@ -212,6 +259,8 @@ def test_editor_sessions_enforce_versions_and_return_structured_diagnostics(tmp_
     assert editor.analyze(python_session.session_id).diagnostics == ()
     hover = editor.hover(python_session.session_id, EditorPositionRequest(line=0, column=2))
     assert hover.result is not None
+    with pytest.raises(ValueError, match="signature help is only available for Python"):
+        editor.signature_help(json_session.session_id, EditorPositionRequest(line=0, column=1))
     editor.close_session(python_session.session_id)
     editor.close_session(completion_session.session_id)
 
