@@ -56,9 +56,11 @@ test('merges TCode model metadata and validates event envelopes', () => {
   store.applyCommand({ nodeId: 'tcode-1', command: 'viz.tcode.set_model', payload: { model: 'SR6' }, tsMs: 1 });
   store.applyCommand({ nodeId: 'tcode-1', command: 'viz.tcode.write', payload: { line: 'L05000' }, tsMs: 1 });
 
-  expect(store.getOutputSnapshot('tcode-1')?.payload).toEqual({ line: 'L05000', model: 'SR6' });
-  store.applyCommand({ nodeId: 'tcode-1', command: 'viz.tcode.reset', payload: {}, tsMs: 2 });
-  expect(store.getOutputSnapshot('tcode-1')?.payload).toEqual({ line: '', model: 'SR6' });
+  expect(store.getOutputSnapshot('tcode-1')?.payload).toEqual({ line: 'L05000', model: 'SR6', channels: { L0: 5000 } });
+  store.applyCommand({ nodeId: 'tcode-1', command: 'viz.tcode.write', payload: { line: 'R09999I500' }, tsMs: 2 });
+  expect(store.getOutputSnapshot('tcode-1')?.payload.channels).toEqual({ L0: 5000, R0: 9999 });
+  store.applyCommand({ nodeId: 'tcode-1', command: 'viz.tcode.reset', payload: {}, tsMs: 4 });
+  expect(store.getOutputSnapshot('tcode-1')?.payload).toEqual({ line: '', model: 'SR6', channels: {}, resetVersion: 1 });
   expect(parsePresentationCommand({
     type: 'presentation.command',
     payload: { nodeId: 'video-1', command: 'viz.video.set', payload: { videoStreamKey: 'f8/video' }, tsMs: 4 },

@@ -915,6 +915,32 @@ def test_compiler_lowers_patch_hub_and_splits_cross_service_edge() -> None:
     assert outgoing.kind == F8EdgeKindEnum.data
 
 
+def test_compiler_requests_default_sampling_for_unconfigured_viz() -> None:
+    catalog, service, source, _ = base_nodes()
+    studio = catalog.create_service_node(node_id="studio", service_class="f8.pystudio")
+    viz = catalog.create_operator_node(
+        node_id="viz", service_id="studio", service_class="f8.pystudio", operator_class="f8.viz.text",
+    )
+    document = StudioDocument(
+        schema_version="f8studio-document/2", project_id="project1", graph_id="graph1",
+        graph_revision=1, layout_revision=0, nodes=(service, source, studio, viz),
+        edges=(GraphEdge(
+            edge_id="to_viz", from_node_id="source",
+            from_port_id=find_port_id(source, name="out", kind=PortKind.data, direction=PortDirection.output),
+            to_node_id="viz",
+            to_port_id=find_port_id(viz, name="input", kind=PortKind.data, direction=PortDirection.input),
+            kind=GraphEdgeKind.data,
+        ),),
+    )
+
+    compiled = compile_document(document)
+    requests = list(compiled.per_service["engine"].services[0].autoSampleRequests)
+    assert len(requests) == 1
+    assert requests[0].sourceNodeId == "source"
+    assert requests[0].sourcePort == "out"
+    assert requests[0].intervalMs == 100
+
+
 def test_fragment_insertion_and_dynamic_spec_replacement_are_atomic() -> None:
     _, service, source, _ = base_nodes()
     store = GraphStore(new_document(project_id="project1", graph_id="graph1"))

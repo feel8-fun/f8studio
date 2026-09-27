@@ -180,7 +180,7 @@ class VizThreeDRuntimeNode(StudioVizRuntimeNodeBase):
                 bone = msgspec.convert(value, type=BoneInput, strict=False)
             except (msgspec.ValidationError, TypeError):
                 return None
-            if len(bone.pos) < 3 or bone.rot is None or len(bone.rot) < 4:
+            if len(bone.pos) < 3:
                 return None
             skeleton = SkeletonInput(model_name=port, skeleton_protocol="none", bones=[bone])
 

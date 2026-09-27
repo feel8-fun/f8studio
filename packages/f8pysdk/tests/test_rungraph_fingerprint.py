@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from f8pysdk.codec import dump_json
+from f8pysdk.codec import decode_as, dump_json, encode_obj
 from f8pysdk.rungraph_fingerprint import build_rungraph_deploy_fingerprint, build_rungraph_deploy_snapshot
 from f8pysdk.specs import (
     F8DataPayloadSpec,
@@ -16,6 +16,7 @@ from f8pysdk.specs import (
     F8StateAccess,
     F8StateFieldEditPolicy,
     F8StateSpec,
+    number_schema,
     string_schema,
 )
 
@@ -64,7 +65,6 @@ def test_deploy_fingerprint_matches_payload_after_json_roundtrip() -> None:
     graph_payload = dump_json(graph, mode="json", by_alias=True)
 
     assert build_rungraph_deploy_fingerprint(graph) == build_rungraph_deploy_fingerprint(graph_payload)
-
     snapshot = build_rungraph_deploy_snapshot(graph)
     node = snapshot["nodes"][0]
     port = node["dataOutPorts"][0]
@@ -74,3 +74,18 @@ def test_deploy_fingerprint_matches_payload_after_json_roundtrip() -> None:
     assert port["payloadKind"] == "video_frame"
     assert port["delivery"] == "latest"
     assert state["editPolicy"]["canRename"] is False
+
+
+def test_deploy_fingerprint_survives_runtime_wire_defaults() -> None:
+    graph = F8RuntimeGraph(
+        graphId="g-defaults", revision="r1", services=[], edges=[],
+        nodes=[F8RuntimeNode(
+            nodeId="source", serviceId="svc", serviceClass="svc.test",
+            dataInPorts=[F8DataPortSpec(name="input", valueSchema=number_schema())],
+            stateFields=[F8StateSpec(name="label", valueSchema=string_schema(), access=F8StateAccess.rw)],
+        )],
+    )
+
+    assert build_rungraph_deploy_fingerprint(graph) == build_rungraph_deploy_fingerprint(
+        decode_as(encode_obj(graph), F8RuntimeGraph)
+    )

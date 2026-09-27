@@ -394,9 +394,9 @@ def _attach_auto_sample_requests(graph: F8RuntimeGraph) -> F8RuntimeGraph:
         target_id = _optional_text(edge.toOperatorId)
         source_id = _optional_text(edge.fromOperatorId)
         target = nodes.get(target_id)
-        if target is None or not source_id or isinstance(target.stateValues, msgspec.UnsetType):
+        if target is None or not source_id:
             continue
-        values = target.stateValues
+        values = {} if isinstance(target.stateValues, msgspec.UnsetType) else target.stateValues
         mode = str(values.get("upstreamSamplingMode", "auto")).strip().lower()
         if mode != "auto":
             continue

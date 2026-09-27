@@ -107,7 +107,11 @@ export function operatorHeight(node: GraphNode): number {
   const previewHeight = node.kind === 'operator' &&
     (node.operatorClass === 'f8.viz.video' || node.spec.rendererClass === 'viz_video' ||
       node.operatorClass === 'f8.viz.audio' || node.spec.rendererClass === 'viz_audio' ||
-      node.operatorClass === 'f8.viz.three_d' || node.spec.rendererClass === 'viz_three_d')
+      node.operatorClass === 'f8.viz.three_d' || node.spec.rendererClass === 'viz_three_d' ||
+      node.operatorClass === 'f8.viz.wave' || node.spec.rendererClass === 'viz_wave' ||
+      node.operatorClass === 'f8.viz.text' || node.spec.rendererClass === 'viz_text' ||
+      node.operatorClass === 'f8.viz.track' || node.spec.rendererClass === 'viz_track' ||
+      node.operatorClass === 'f8.viz.tcode' || node.spec.rendererClass === 'viz_tcode')
     ? VIDEO_PREVIEW_HEIGHT
     : 0;
   return Math.max(

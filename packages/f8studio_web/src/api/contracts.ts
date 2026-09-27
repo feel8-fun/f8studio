@@ -612,6 +612,24 @@ export interface SkeletonScene {
   readonly tsMs: number;
   readonly worldUp: string;
   readonly people: readonly SkeletonPerson[];
+  readonly uiFpsCap?: number;
+  readonly renderFlags?: {
+    readonly showPersonBoxes?: boolean;
+    readonly showPersonNames?: boolean;
+    readonly showBonePoints?: boolean;
+    readonly showSkeletonLines?: boolean;
+    readonly showBoneAxes?: boolean;
+    readonly showBoneNames?: boolean;
+    readonly autoZoomOnNewPeople?: boolean;
+    readonly markerScale?: number;
+  };
+  readonly performanceHints?: {
+    readonly suppressPersonBoxes?: boolean;
+    readonly suppressBoneNames?: boolean;
+    readonly suppressBoneAxes?: boolean;
+    readonly maxVisibleBoneLabels?: number | null;
+    readonly recommendedFpsCap?: number;
+  };
 }
 
 export function isHealthStatus(value: unknown): value is HealthStatus {

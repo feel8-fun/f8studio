@@ -16,6 +16,7 @@
     "@xyflow/react": "^12.11.6",
     "lucide-react": "^1.47.0",
     "monaco-editor": "^0.52.2",
+    "osr-emu": "^0.7.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "three": "^0.180.0"

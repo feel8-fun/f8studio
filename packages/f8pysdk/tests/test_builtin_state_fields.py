@@ -290,6 +290,23 @@ class BuiltinStateFieldTests(unittest.TestCase):
         self.assertEqual(normalized["operators"][0]["execInPorts"], [{"name": "run"}])
         self.assertEqual(normalized["operators"][0]["execOutPorts"], [{"name": "done"}])
 
+    def test_normalize_legacy_wave_controls(self) -> None:
+        payload = {
+            "service": {"serviceClass": "f8.tests.svc", "label": "Service"},
+            "operators": [{"operatorClass": "f8.tests.wave", "label": "Wave",
+                           "stateFields": [{"name": name, "valueSchema": {"type": "array"}, "uiControl": name}
+                                           for name in ("wave_preview", "wave_pattern_editor", "wave_heatmap")]}],
+        }
+
+        normalized = normalize_describe_payload_dict(payload)
+        controls = [field["control"] for field in normalized["operators"][0]["stateFields"]
+                    if field["name"] in {"wave_preview", "wave_pattern_editor", "wave_heatmap"}]
+        self.assertEqual(controls, [
+            {"kind": "custom", "rendererKey": "wave_preview"},
+            {"kind": "custom", "rendererKey": "wave_pattern_editor"},
+            {"kind": "custom", "rendererKey": "wave_heatmap"},
+        ])
+
 
 class LifecycleBootstrapTests(unittest.IsolatedAsyncioTestCase):
     async def test_start_seeds_active_state(self) -> None:

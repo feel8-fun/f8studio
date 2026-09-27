@@ -1,7 +1,6 @@
 import { Activity, ArrowDown, ArrowUp, CircleDot, Pin, Trash2 } from 'lucide-react';
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 
-import type { JsonValue } from '../api/contracts';
 import { extensionRendererById, extensionToolById, studioExtensions } from '../extensions/registry';
 import { SkeletonOutputPreview } from '../three/SkeletonOutputPreview';
 import {
@@ -11,6 +10,8 @@ import {
 } from './PresentationStore';
 import { PresentationVideo } from './PresentationVideo';
 import { PresentationAudio } from './PresentationAudio';
+import { PresentationWave } from './PresentationWave';
+import { PresentationTrack } from './PresentationTrack';
 
 const PINNED_OUTPUTS_KEY = 'f8studio.pinnedOutputs';
 
@@ -24,67 +25,6 @@ function readPinnedOutputs(): readonly string[] {
     console.error('Failed to read pinned outputs', error);
     return [];
   }
-}
-
-function WaveCanvas({ payload }: { readonly payload: Readonly<Record<string, JsonValue>> }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const canvas = ref.current;
-    const context = canvas?.getContext('2d');
-    if (canvas === null || canvas === undefined || context === null || context === undefined) return;
-    const seriesValue = payload.series;
-    const series = typeof seriesValue === 'object' && seriesValue !== null && !Array.isArray(seriesValue) ? seriesValue : {};
-    const allPoints = Object.values(series).flatMap((value) => Array.isArray(value) ? value : []).filter((value): value is readonly JsonValue[] => Array.isArray(value) && typeof value[0] === 'number' && typeof value[1] === 'number');
-    const values = allPoints.map((point) => Number(point[1]));
-    const times = allPoints.map((point) => Number(point[0]));
-    const minY = typeof payload.minVal === 'number' ? payload.minVal : Math.min(...values, 0);
-    const maxY = typeof payload.maxVal === 'number' ? payload.maxVal : Math.max(...values, 1);
-    const minX = Math.min(...times, Date.now() - 10_000);
-    const maxX = Math.max(...times, Date.now());
-    context.fillStyle = '#0a0d10'; context.fillRect(0, 0, canvas.width, canvas.height);
-    context.strokeStyle = '#262c33'; context.lineWidth = 1;
-    for (let i = 1; i < 4; i += 1) { const y = i * canvas.height / 4; context.beginPath(); context.moveTo(0, y); context.lineTo(canvas.width, y); context.stroke(); }
-    const colors = ['#65c99e', '#62a9e8', '#e5b95c', '#dc7084'];
-    Object.entries(series).forEach(([key, raw], seriesIndex) => {
-      if (!Array.isArray(raw)) return;
-      context.strokeStyle = colors[seriesIndex % colors.length] ?? '#65c99e'; context.lineWidth = 2; context.beginPath();
-      let started = false;
-      raw.forEach((point) => {
-        if (!Array.isArray(point) || typeof point[0] !== 'number' || typeof point[1] !== 'number') return;
-        const x = (point[0] - minX) / Math.max(1, maxX - minX) * canvas.width;
-        const y = canvas.height - (point[1] - minY) / Math.max(1e-9, maxY - minY) * canvas.height;
-        if (!started) { context.moveTo(x, y); started = true; } else context.lineTo(x, y);
-      });
-      context.stroke();
-      if (payload.showLegend === true) { context.fillStyle = context.strokeStyle; context.fillText(key, 10, 18 + seriesIndex * 16); }
-    });
-  }, [payload]);
-  return <canvas className="output-canvas" ref={ref} width={720} height={240} aria-label="Curve renderer" />;
-}
-
-function TrackCanvas({ payload }: { readonly payload: Readonly<Record<string, JsonValue>> }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const canvas = ref.current;
-    const context = canvas?.getContext('2d');
-    if (canvas === null || canvas === undefined || context === null || context === undefined) return;
-    const width = typeof payload.width === 'number' && payload.width > 0 ? payload.width : 1;
-    const height = typeof payload.height === 'number' && payload.height > 0 ? payload.height : 1;
-    context.fillStyle = '#0a0d10'; context.fillRect(0, 0, canvas.width, canvas.height);
-    const tracks = Array.isArray(payload.tracks) ? payload.tracks : [];
-    tracks.forEach((track, index) => {
-      if (typeof track !== 'object' || track === null || Array.isArray(track)) return;
-      const history = Array.isArray(track.history) ? track.history : [];
-      const sample = history[history.length - 1];
-      if (typeof sample !== 'object' || sample === null || Array.isArray(sample) || !Array.isArray(sample.bbox) || sample.bbox.length < 4) return;
-      const [x, y, w, h] = sample.bbox.map(Number);
-      if ([x, y, w, h].some((value) => !Number.isFinite(value))) return;
-      context.strokeStyle = ['#65c99e', '#62a9e8', '#e5b95c'][index % 3] ?? '#65c99e'; context.lineWidth = 2;
-      context.strokeRect((x ?? 0) / width * canvas.width, (y ?? 0) / height * canvas.height, (w ?? 0) / width * canvas.width, (h ?? 0) / height * canvas.height);
-      context.fillStyle = context.strokeStyle; context.fillText(String(track.id ?? index), (x ?? 0) / width * canvas.width + 4, (y ?? 0) / height * canvas.height + 14);
-    });
-  }, [payload]);
-  return <canvas className="output-canvas" ref={ref} width={720} height={360} aria-label="Track renderer" />;
 }
 
 export function PresentationWorkspace({ nodeId = null }: { readonly nodeId?: string | null }) {
@@ -134,7 +74,7 @@ export function PresentationWorkspace({ nodeId = null }: { readonly nodeId?: str
     {ActiveToolComponent !== undefined ? <Suspense fallback={<div className="view-loading" role="status">Loading tool</div>}><ActiveToolComponent /></Suspense> : <div className="output-grid">
       {visibleOutputs.map((output) => {
         const ExtensionComponent = extensionRendererById(output.renderer)?.component;
-        return <article className={`output-panel ${output.renderer === 'three_d' ? 'output-panel-three' : ''}`} key={output.nodeId}>
+        return <article className={`output-panel ${output.renderer === 'three_d' ? 'output-panel-three' : ''} ${output.renderer === 'tcode' ? 'output-panel-tcode' : ''}`} key={output.nodeId}>
         <header><span>{output.nodeId}</span><div className="output-panel-actions"><small>{output.renderer}</small>
           {tab === 'pinned' && <>
             <button className="icon-button" type="button" aria-label={`Move ${output.nodeId} up`} title="Move up" disabled={pinned.indexOf(output.nodeId) <= 0} onClick={() => movePin(output.nodeId, -1)}><ArrowUp size={14} /></button>
@@ -145,9 +85,9 @@ export function PresentationWorkspace({ nodeId = null }: { readonly nodeId?: str
             onClick={() => togglePin(output.nodeId)}><Pin size={14} /></button>
         </div></header>
         {output.renderer === 'text' && <pre>{JSON.stringify(output.payload.value, null, 2)}</pre>}
-        {output.renderer === 'wave' && <WaveCanvas payload={output.payload} />}
-        {output.renderer === 'track' && <TrackCanvas payload={output.payload} />}
-        {ExtensionComponent !== undefined && <Suspense fallback={<div className="view-loading" role="status">Loading output</div>}><ExtensionComponent payload={output.payload} /></Suspense>}
+        {output.renderer === 'wave' && <PresentationWave payload={output.payload} />}
+        {output.renderer === 'track' && <PresentationTrack payload={output.payload} />}
+        {ExtensionComponent !== undefined && <Suspense fallback={<div className="view-loading" role="status">Loading output</div>}><ExtensionComponent nodeId={output.nodeId} payload={output.payload} /></Suspense>}
         {output.renderer === 'video' && <PresentationVideo payload={output.payload} />}
         {output.renderer === 'audio' && <PresentationAudio payload={output.payload} />}
         {output.renderer === 'three_d' && <SkeletonOutputPreview nodeId={output.nodeId} compact={nodeId === null} className="output-three" />}

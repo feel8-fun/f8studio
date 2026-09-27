@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Protocol, cast
@@ -45,6 +46,7 @@ from .studio_runtime.identifiers import STUDIO_SERVICE_ID
 
 
 RuntimeMonitorCallback = Callable[[str, bytes], Awaitable[None]]
+logger = logging.getLogger(__name__)
 
 
 class RuntimeSubscription(Protocol):
@@ -388,6 +390,23 @@ class ZenohRuntimeGateway:
                 timeout_s=self.config.deploy_timeout_s,
             )
         except RungraphDeployStatusTimeout as exc:
+            if not force_apply:
+                try:
+                    confirmed = await self.status(service_id)
+                except (TimeoutError, OSError, RuntimeError, ValueError) as status_exc:
+                    logger.warning("rungraph status verification failed service_id=%s", service_id, exc_info=status_exc)
+                else:
+                    if (
+                        confirmed.rungraph_graph_id == str(graph.graphId)
+                        and confirmed.rungraph_revision == str(graph.revision)
+                        and confirmed.rungraph_fingerprint == target_fingerprint
+                    ):
+                        logger.warning(
+                            "rungraph applied but retained confirmation was missed service_id=%s req_id=%s",
+                            service_id,
+                            request_id,
+                        )
+                        return ServiceDeployResult(service_id=service_id, success=True)
             return ServiceDeployResult(service_id=service_id, success=False, error_message=str(exc))
         return ServiceDeployResult(
             service_id=service_id,

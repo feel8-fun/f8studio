@@ -197,6 +197,10 @@ def _control_from_legacy(value: str) -> dict[str, str]:
     if match is None:
         raise ValueError(f"invalid legacy UI control: {value!r}")
     kind, argument = match.groups()
+    if kind in {"wave_preview", "wave_pattern_editor", "wave_heatmap"}:
+        if argument is not None:
+            raise ValueError(f"legacy UI control does not accept an argument: {value!r}")
+        return {"kind": "custom", "rendererKey": kind}
     aliases = {"wrapline": "textarea", "dropdown": "select", "dropbox": "select", "combo": "select", "combobox": "select"}
     resolved = aliases.get(kind.lower(), kind.lower())
     control = {"kind": resolved}

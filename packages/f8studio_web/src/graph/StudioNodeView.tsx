@@ -1,11 +1,13 @@
 import { Handle, NodeResizer, Position, type NodeProps, type ResizeParams } from '@xyflow/react';
 import { Box, Boxes, ExternalLink } from 'lucide-react';
-import { createContext, useContext } from 'react';
+import { createContext, lazy, Suspense, useContext, useEffect, useState } from 'react';
 
 import type { CommandSpec, GraphNode, JsonValue } from '../api/contracts';
-import { usePresentationOutput } from '../presentation/PresentationStore';
+import { type PresentationOutput, usePresentationOutput } from '../presentation/PresentationStore';
 import { PresentationAudio } from '../presentation/PresentationAudio';
 import { PresentationVideo } from '../presentation/PresentationVideo';
+import { PresentationWave } from '../presentation/PresentationWave';
+import { PresentationTrack } from '../presentation/PresentationTrack';
 import { hasExtensionNodeRendererClass } from '../extensions/registry';
 import { SkeletonOutputPreview } from '../three/SkeletonOutputPreview';
 import { nodePortRows } from './portRows';
@@ -27,6 +29,17 @@ export const GraphNodeInteractionContext = createContext<GraphNodeInteraction | 
 
 const BUILTIN_OUTPUT_CLASSES = new Set(['f8.viz.text', 'f8.viz.wave', 'f8.viz.track', 'f8.viz.video', 'f8.viz.audio', 'f8.viz.three_d']);
 const BUILTIN_RENDERER_CLASSES = new Set(['viz_text', 'viz_wave', 'viz_track', 'viz_video', 'viz_audio', 'viz_three_d']);
+const TCodeView = lazy(() => import('../extensions/tcode/TCodeView').then((module) => ({ default: module.TCodeView })));
+
+function InlineTCodePreview({ nodeId, enabled, model }: { readonly nodeId: string; readonly enabled: boolean; readonly model: JsonValue | undefined }) {
+  const output = usePresentationOutput(nodeId);
+  return <div className="studio-node-inline-data studio-node-inline-tcode nodrag nowheel" data-testid={`tcode-preview-${nodeId}`}>
+    {!enabled ? <span className="inline-video-placeholder">Node disabled</span> :
+      <Suspense fallback={<span className="inline-video-placeholder">Loading TCode</span>}>
+        <TCodeView nodeId={nodeId} payload={output?.renderer === 'tcode' ? output.payload : { model: typeof model === 'string' ? model : 'SR6' }} compact />
+      </Suspense>}
+  </div>;
+}
 
 function InlineVideoPreview({ nodeId, enabled }: { readonly nodeId: string; readonly enabled: boolean }) {
   const output = usePresentationOutput(nodeId);
@@ -48,6 +61,26 @@ function InlineAudioPreview({ nodeId, enabled }: { readonly nodeId: string; read
   </div>;
 }
 
+function InlineDataPreview({ nodeId, enabled, updating, renderer }: {
+  readonly nodeId: string;
+  readonly enabled: boolean;
+  readonly updating: boolean;
+  readonly renderer: 'wave' | 'text' | 'track';
+}) {
+  const output = usePresentationOutput(nodeId);
+  const [displayed, setDisplayed] = useState<PresentationOutput | null>(null);
+  useEffect(() => {
+    if (enabled && updating && output?.renderer === renderer) setDisplayed(output);
+  }, [enabled, updating, output, renderer]);
+  return <div className={`studio-node-inline-data studio-node-inline-${renderer} nodrag nowheel`} data-testid={`${renderer}-preview-${nodeId}`}>
+    {!enabled && <span className="inline-video-placeholder">Node disabled</span>}
+    {enabled && displayed === null && <span className="inline-video-placeholder">{updating ? 'Waiting for data' : 'Updates paused'}</span>}
+    {enabled && displayed !== null && renderer === 'wave' && <PresentationWave payload={displayed.payload} compact />}
+    {enabled && displayed !== null && renderer === 'text' && <pre>{JSON.stringify(displayed.payload.value, null, 2)}</pre>}
+    {enabled && displayed !== null && renderer === 'track' && <PresentationTrack payload={displayed.payload} compact />}
+  </div>;
+}
+
 export function StudioNodeView({ data, selected }: NodeProps<StudioFlowNode>) {
   const node = data.graphNode;
   const execLabel = (runtimeName: string, direction: 'input' | 'output'): string | undefined => {
@@ -59,14 +92,25 @@ export function StudioNodeView({ data, selected }: NodeProps<StudioFlowNode>) {
     (node.operatorClass === 'f8.viz.video' || node.spec.rendererClass === 'viz_video');
   const showsAudioPreview = node.kind === 'operator' &&
     (node.operatorClass === 'f8.viz.audio' || node.spec.rendererClass === 'viz_audio');
+  const showsWavePreview = node.kind === 'operator' &&
+    (node.operatorClass === 'f8.viz.wave' || node.spec.rendererClass === 'viz_wave');
+  const showsTextPreview = node.kind === 'operator' &&
+    (node.operatorClass === 'f8.viz.text' || node.spec.rendererClass === 'viz_text');
+  const showsTrackPreview = node.kind === 'operator' &&
+    (node.operatorClass === 'f8.viz.track' || node.spec.rendererClass === 'viz_track');
+  const showsTCodePreview = node.kind === 'operator' &&
+    (node.operatorClass === 'f8.viz.tcode' || node.spec.rendererClass === 'viz_tcode');
   const rendererClass = typeof node.spec.rendererClass === 'string' ? node.spec.rendererClass : '';
   const hasOutputView = node.kind === 'operator' &&
     (BUILTIN_OUTPUT_CLASSES.has(node.operatorClass) || BUILTIN_RENDERER_CLASSES.has(rendererClass) || hasExtensionNodeRendererClass(rendererClass));
   const isThreeD = node.kind === 'operator' && (node.operatorClass === 'f8.viz.three_d' || node.spec.rendererClass === 'viz_three_d');
   const interaction = useContext(GraphNodeInteractionContext);
-  const inlineNames = (node.spec.stateFields ?? []).filter((field) => field.showOnNode === true)
+  const inlineNames = (node.spec.stateFields ?? []).filter((field) => field.showOnNode === true ||
+    ((showsWavePreview || showsTextPreview) && field.name === 'uiUpdate'))
     .flatMap((field) => [field.name, stateOptionPoolField(field)].filter((name): name is string => name !== null));
   const runtimeValues = useRuntimeNodeState(node, inlineNames);
+  const updatesEnabled = runtimeValues.uiUpdate?.found === true
+    ? runtimeValues.uiUpdate.value !== false : node.stateValues.uiUpdate !== false;
   const rows = nodePortRows(node);
   const visibleRows = rows.length === 0 ? [{ key: 'empty' }] : rows;
   const portRows = <div className="node-ports" style={{ gridTemplateRows: `repeat(${visibleRows.length}, ${PORT_ROW_HEIGHT}px)` }}>
@@ -144,6 +188,10 @@ export function StudioNodeView({ data, selected }: NodeProps<StudioFlowNode>) {
       </header>
       {showsVideoPreview && <InlineVideoPreview nodeId={node.nodeId} enabled={node.enabled} />}
       {showsAudioPreview && <InlineAudioPreview nodeId={node.nodeId} enabled={node.enabled} />}
+      {showsWavePreview && <InlineDataPreview nodeId={node.nodeId} enabled={node.enabled} updating={updatesEnabled} renderer="wave" />}
+      {showsTextPreview && <InlineDataPreview nodeId={node.nodeId} enabled={node.enabled} updating={updatesEnabled} renderer="text" />}
+      {showsTrackPreview && <InlineDataPreview nodeId={node.nodeId} enabled={node.enabled} updating renderer="track" />}
+      {showsTCodePreview && <InlineTCodePreview nodeId={node.nodeId} enabled={node.enabled} model={node.stateValues.model} />}
       {isThreeD && <SkeletonOutputPreview nodeId={node.nodeId} enabled={node.enabled} className="studio-node-inline-three nodrag nowheel" />}
       {portRows}
     </article>

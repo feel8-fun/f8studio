@@ -130,7 +130,8 @@ def _normalize_data_port_spec(spec: Any, cache: dict[int, Any]) -> dict[str, Any
     if not _is_unset(spec.stream):
         payload["stream"] = _normalize_cached_payload(spec.stream, cache)
     _put_optional_payload(payload, "description", spec.description)
-    _put_optional_payload(payload, "showOnNode", spec.showOnNode)
+    if not _is_unset(spec.showOnNode) and spec.showOnNode is not True:
+        payload["showOnNode"] = spec.showOnNode
     _put_optional_payload(payload, "payloadKind", spec.payloadKind)
     _put_optional_payload(payload, "delivery", spec.delivery)
     cache[cache_key] = payload
@@ -156,8 +157,10 @@ def _normalize_state_spec(spec: Any, cache: dict[int, Any]) -> dict[str, Any]:
     _put_optional_payload(payload, "valueRequired", spec.valueRequired)
     if not _is_unset(spec.editPolicy):
         payload["editPolicy"] = _normalize_cached_payload(spec.editPolicy, cache)
-    _put_optional_payload(payload, "showOnNode", spec.showOnNode)
-    _put_optional_payload(payload, "redactOnPublish", spec.redactOnPublish)
+    if not _is_unset(spec.showOnNode) and spec.showOnNode is not False:
+        payload["showOnNode"] = spec.showOnNode
+    if not _is_unset(spec.redactOnPublish) and spec.redactOnPublish is not False:
+        payload["redactOnPublish"] = spec.redactOnPublish
     editor_assist = msgspec.UNSET
     if not _is_unset(spec.editorAssist):
         editor_assist = _normalize_cached_payload(spec.editorAssist, cache)
@@ -309,8 +312,10 @@ def _normalize_node_payload(payload: Any) -> dict[str, Any]:
             continue
         if key in {"dataInPorts", "dataOutPorts", "stateFields"} and isinstance(value, list):
             omitted = {"definitionProtected"} if key != "stateFields" else {"control"}
+            defaults = {"showOnNode": False, "redactOnPublish": False} if key == "stateFields" else {"showOnNode": True}
             normalized[key] = sorted(
-                (_normalize_spec_payload({name: field for name, field in item.items() if name not in omitted})
+                (_normalize_spec_payload({name: field for name, field in item.items()
+                                          if name not in omitted and not (name in defaults and field == defaults[name])})
                  if isinstance(item, dict) else _normalize_spec_payload(item) for item in value),
                 key=_normalized_named_spec_sort_key,
             )

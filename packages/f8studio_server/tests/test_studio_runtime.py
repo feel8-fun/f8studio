@@ -456,7 +456,7 @@ def test_three_d_visualization_aggregates_ports_and_single_bones() -> None:
         )
         await runtime.on_data(
             "camA",
-            {"name": "Head", "pos": [1, 2, 3], "rot": [1, 0, 0, 0]},
+            {"name": "Head", "pos": [1, 2, 3]},
             ts_ms=101,
         )
 
@@ -466,6 +466,7 @@ def test_three_d_visualization_aggregates_ports_and_single_bones() -> None:
         assert isinstance(people, list)
         assert [person["name"] for person in people] == ["camA:camA", "camB:Avatar"]
         assert people[0]["nodes"][0]["pos"] == [1.0, 2.0, 3.0]
+        assert people[0]["nodes"][0]["rot"] is None
         assert payload["worldUp"] == "+y"
 
         await runtime.on_state("worldUp", "-z", ts_ms=102)

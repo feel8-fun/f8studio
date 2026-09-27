@@ -2,6 +2,7 @@ import { lazy, type ComponentType } from 'react';
 import { Gauge, type LucideIcon } from 'lucide-react';
 
 import type { JsonValue } from '../api/contracts';
+import { mergeTCodeChannels } from './tcode/tcodeChannels';
 
 const TCodeView = lazy(() => import('./tcode/TCodeView').then((module) => ({ default: module.TCodeView })));
 const TemplateCapture = lazy(() => import('./template/TemplateCapture').then((module) => ({ default: module.TemplateCapture })));
@@ -10,7 +11,7 @@ export interface ExtensionRenderer {
   readonly id: string;
   readonly commandPrefix: string;
   readonly nodeRendererClass?: string;
-  readonly component: ComponentType<{ readonly payload: Readonly<Record<string, JsonValue>> }>;
+  readonly component: ComponentType<{ readonly nodeId: string; readonly payload: Readonly<Record<string, JsonValue>> }>;
   readonly reduce?: (command: string, previous: Readonly<Record<string, JsonValue>>, payload: Readonly<Record<string, JsonValue>>) => Readonly<Record<string, JsonValue>>;
 }
 
@@ -32,7 +33,10 @@ const LOCAL_EXTENSIONS: readonly StudioWebExtension[] = [
   { id: 'tcode', renderers: [{
     id: 'tcode', commandPrefix: 'viz.tcode.', nodeRendererClass: 'viz_tcode', component: TCodeView,
     reduce: (command, previous, payload) => command.endsWith('.reset')
-      ? { ...previous, line: '' } : { ...previous, ...payload },
+      ? { ...previous, line: '', channels: {}, resetVersion: (typeof previous.resetVersion === 'number' ? previous.resetVersion : 0) + 1 }
+      : command.endsWith('.write') && typeof payload.line === 'string'
+        ? { ...previous, ...payload, channels: mergeTCodeChannels(previous.channels, payload.line) }
+        : { ...previous, ...payload },
   }] },
   { id: 'template-match', tools: [{ id: 'template', label: 'Template', icon: Gauge, component: TemplateCapture }] },
 ];

@@ -252,6 +252,13 @@ test('sizes compact operators from their fixed port-row geometry', () => {
       rendererClass: 'viz_video',
     },
   })).toBe(64 + VIDEO_PREVIEW_HEIGHT);
+  for (const renderer of ['wave', 'text', 'track'] as const) {
+    expect(operatorHeight({
+      ...operator!,
+      operatorClass: `f8.viz.${renderer}`,
+      spec: { ...operator!.spec, rendererClass: `viz_${renderer}` },
+    })).toBe(64 + VIDEO_PREVIEW_HEIGHT);
+  }
 });
 
 test('duplicates a service with its operators, internal edges, and absolute layout', () => {

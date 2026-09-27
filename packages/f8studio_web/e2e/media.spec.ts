@@ -1,4 +1,28 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
+
+async function canvasScreenshotSignature(page: Page, canvas: Locator): Promise<{ readonly visiblePixels: number; readonly sum: number }> {
+  const encoded = (await canvas.screenshot()).toString('base64');
+  return page.evaluate(async (base64) => {
+    const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+    const bitmap = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+    const sample = document.createElement('canvas');
+    sample.width = bitmap.width;
+    sample.height = bitmap.height;
+    const context = sample.getContext('2d');
+    if (context === null) throw new Error('2D canvas context is unavailable');
+    context.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const pixels = context.getImageData(0, 0, sample.width, sample.height).data;
+    let visiblePixels = 0;
+    let sum = 0;
+    for (let index = 0; index < pixels.length; index += 4) {
+      const intensity = (pixels[index] ?? 0) + (pixels[index + 1] ?? 0) + (pixels[index + 2] ?? 0);
+      sum += intensity;
+      if (intensity > 75) visiblePixels += 1;
+    }
+    return { visiblePixels, sum };
+  }, encoded);
+}
 
 async function openVideoOutput(page: Page, source = 'synthetic://bars'): Promise<void> {
   await page.route('**/api/presentation', async (route) => route.fulfill({ json: [{
@@ -7,6 +31,52 @@ async function openVideoOutput(page: Page, source = 'synthetic://bars'): Promise
   }] }));
   await page.goto('/?view=outputs&node=video-e2e');
 }
+
+test('renders and orbits the Ayva OSR model for a TCode output', async ({ page }, testInfo) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  const tsMs = Date.now();
+  await page.route('**/api/presentation', async (route) => route.fulfill({ json: [
+    { nodeId: 'tcode-e2e', command: 'viz.tcode.set_model', tsMs, payload: { model: 'SR6' } },
+    { nodeId: 'tcode-e2e', command: 'viz.tcode.write', tsMs, payload: { line: 'L07500I100 R05000I100\n' } },
+  ] }));
+  await page.goto('/?view=outputs&node=tcode-e2e');
+  const canvas = page.getByLabel('SR6 3D TCode visualizer').locator('canvas');
+  await expect(canvas).toBeVisible();
+  await expect(page.getByText('L07500I100 R05000I100')).toBeVisible();
+  await expect(page.getByText('I1', { exact: true })).toHaveCount(0);
+  await expect.poll(async () => (await canvasScreenshotSignature(page, canvas)).visiblePixels).toBeGreaterThan(500);
+
+  const before = await canvasScreenshotSignature(page, canvas);
+  const bounds = await canvas.boundingBox();
+  if (bounds === null) throw new Error('TCode canvas does not have layout bounds');
+  await page.mouse.move(bounds.x + bounds.width * 0.65, bounds.y + bounds.height * 0.5);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width * 0.35, bounds.y + bounds.height * 0.4, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () => (await canvasScreenshotSignature(page, canvas)).sum).not.toBe(before.sum);
+  await page.screenshot({ path: testInfo.outputPath('tcode.png'), fullPage: true });
+  expect(pageErrors).toEqual([]);
+});
+
+test('shows retained TCode channels in Bars mode without creating a 3D canvas', async ({ page }) => {
+  const tsMs = Date.now();
+  await page.route('**/api/presentation', async (route) => route.fulfill({ json: [
+    { nodeId: 'tcode-bars-e2e', command: 'viz.tcode.set_model', tsMs, payload: { model: 'SR6' } },
+    { nodeId: 'tcode-bars-e2e', command: 'viz.tcode.write', tsMs: tsMs + 1, payload: { line: 'L05000\n' } },
+    { nodeId: 'tcode-bars-e2e', command: 'viz.tcode.write', tsMs: tsMs + 2, payload: { line: 'R09999I500\n' } },
+  ] }));
+  await page.goto('/?view=outputs&node=tcode-bars-e2e');
+  await page.getByRole('button', { name: 'Show channel bars' }).click();
+  await expect(page.locator('.tcode-channels-primary')).toBeVisible();
+  await expect(page.locator('.tcode-channels-primary')).toContainText('L0');
+  await expect(page.locator('.tcode-channels-primary')).toContainText('5000');
+  await expect(page.locator('.tcode-channels-primary')).toContainText('R0');
+  await expect(page.locator('.tcode-channels-primary')).toContainText('9999');
+  await expect(page.locator('.tcode-stage canvas')).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator('.tcode-channels-primary')).toBeVisible();
+});
 
 async function leaveOutput(page: Page): Promise<void> {
   await page.getByRole('complementary', { name: 'Workspace navigation' })
