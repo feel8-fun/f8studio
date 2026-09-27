@@ -225,6 +225,16 @@ export async function fetchCatalog(signal?: AbortSignal): Promise<CatalogSnapsho
   return body as unknown as CatalogSnapshot;
 }
 
+export async function refreshCatalog(): Promise<CatalogSnapshot> {
+  const body = await requestJson('/api/catalog/refresh', { method: 'POST' });
+  if (typeof body !== 'object' || body === null) throw new Error('Catalog does not match f8studio-api/1');
+  const item = body as Record<string, unknown>;
+  if (!Array.isArray(item.services) || !Array.isArray(item.operators)) {
+    throw new Error('Catalog does not match f8studio-api/1');
+  }
+  return body as unknown as CatalogSnapshot;
+}
+
 export interface CreateCatalogNodeInput {
   readonly kind: 'service' | 'operator';
   readonly nodeId: string;
@@ -295,6 +305,15 @@ export async function deployProject(projectId: string, graphRevision: number): P
     jsonRequest('POST', { requestId: crypto.randomUUID(), expectedGraphRevision: graphRevision }),
   );
   if (!isDeployJob(body)) throw new Error('Deployment does not match f8studio-api/1');
+  return body;
+}
+
+export async function restartProjectService(projectId: string, serviceId: string): Promise<DeployJob> {
+  const body = await requestJson(
+    `/api/projects/${encodeURIComponent(projectId)}/services/${encodeURIComponent(serviceId)}/restart`,
+    { method: 'POST' },
+  );
+  if (!isDeployJob(body)) throw new Error('Restart deployment does not match f8studio-api/1');
   return body;
 }
 

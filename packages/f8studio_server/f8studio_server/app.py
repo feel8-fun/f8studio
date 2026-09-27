@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TypeVar, cast
 from urllib.parse import urlparse
+from uuid import uuid4
 
 import msgspec
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -284,6 +285,10 @@ def create_app(
     @app.get("/api/catalog")
     async def catalog() -> F8JsonValue:
         return _json_value(studio.catalog.snapshot())
+
+    @app.post("/api/catalog/refresh")
+    async def refresh_catalog() -> F8JsonValue:
+        return _json_value(await asyncio.to_thread(studio.catalog.refresh, force_dynamic_service_classes=("f8.pyengine",)))
 
     @app.post("/api/catalog/nodes")
     async def create_catalog_node(request: Request) -> F8JsonValue:
@@ -702,6 +707,29 @@ def create_app(
     @app.post("/api/runtime/services/{service_id}/stop")
     async def stop_service(service_id: str) -> F8JsonValue:
         return await stop_service_runtime(service_id)
+
+    @app.post("/api/projects/{project_id}/services/{service_id}/restart", status_code=202)
+    async def restart_project_service(project_id: str, service_id: str) -> F8JsonValue:
+        document = await asyncio.to_thread(studio.projects.document, project_id)
+        service = next((node for node in document.nodes if isinstance(node, ServiceNode) and node.service_id == service_id), None)
+        if service is None:
+            raise HTTPException(status_code=404, detail=f"Service {service_id} is not in project {project_id}")
+        if service_id == STUDIO_SERVICE_ID or not studio.processes.can_start(service.service_class):
+            raise HTTPException(status_code=409, detail=f"Service {service_id} cannot be restarted by Studio")
+        if not studio.processes.is_running(service_id):
+            raise HTTPException(status_code=409, detail=f"Service {service_id} is not a running Studio-managed process")
+        await asyncio.to_thread(studio.catalog.refresh, force_dynamic_service_classes=(service.service_class,))
+        if not studio.processes.can_start(service.service_class):
+            raise HTTPException(status_code=409, detail=f"Service {service.service_class} is unavailable after catalog refresh")
+        await studio.jobs.cancel_project(project_id)
+        await stop_service_runtime(service_id)
+        started = await studio.processes.start(service_id, service_class=service.service_class)
+        if not started.running:
+            raise HTTPException(status_code=503, detail=f"Service {service_id} exited during startup")
+        return _json_value(await studio.tools.deploy(
+            project_id,
+            DeployProjectRequest(request_id=uuid4().hex, expected_graph_revision=document.graph_revision),
+        ))
 
     @app.get("/api/runtime/services/{service_id}/status")
     async def service_status(service_id: str) -> F8JsonValue:

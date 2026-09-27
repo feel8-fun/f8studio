@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -115,6 +117,39 @@ def _write_discoverable_service(service_dir: Path, *, service_class: str) -> Non
         "}\n",
         encoding="utf-8",
     )
+
+
+def test_force_dynamic_discovery_bypasses_static_describe(tmp_path: Path, monkeypatch: Any) -> None:
+    service_class = "f8.tests.dynamic"
+    service_dir = tmp_path / "services" / "dynamic"
+    _write_discoverable_service(service_dir, service_class=service_class)
+    catalog = ServiceCatalog()
+    calls: list[object] = []
+    dynamic_payload = {
+        "service": {
+            "schemaVersion": "f8service/1", "serviceClass": service_class,
+            "label": "Entry", "version": "0.0.1",
+        },
+        "operators": [{
+            "schemaVersion": "f8operator/1", "serviceClass": service_class,
+            "operatorClass": "f8.tests.new_node", "label": "New Node", "version": "0.0.1",
+        }],
+    }
+
+    def run_describe(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append((args, kwargs))
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout=json.dumps(dynamic_payload), stderr="")
+
+    monkeypatch.setattr("f8pysdk.service_runtime_tools.inventory.describe.subprocess.run", run_describe)
+    load_discovery_into_catalog(roots=[service_dir], catalog=catalog)
+    assert not calls
+    assert not catalog.operators.has(service_class, "f8.tests.new_node")
+
+    load_discovery_into_catalog(
+        roots=[service_dir], catalog=catalog, force_dynamic_service_classes=(service_class,),
+    )
+    assert len(calls) == 1
+    assert catalog.operators.has(service_class, "f8.tests.new_node")
 
 
 def test_load_service_entry_matches_for_relative_and_absolute_service_dir(tmp_path: Path, monkeypatch: Any) -> None:

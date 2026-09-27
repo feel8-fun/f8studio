@@ -586,6 +586,8 @@ button:disabled { cursor: default; }
   background: #22262c;
 }
 
+.catalog-search-row { display: grid; grid-template-columns: minmax(0, 1fr) 28px; align-items: center; gap: 4px; padding-right: 10px; }
+.catalog-search-row .small-icon-button { width: 28px; height: 28px; }
 .catalog-search {
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr);

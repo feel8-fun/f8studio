@@ -14,6 +14,7 @@ from .operators.serial_out import register_operator as register_serial_out_opera
 from .operators.udp_in import register_operator as register_udp_in_operator
 from .operators.udp_out import register_operator as register_udp_out_operator
 from .operators.skeleton_decoder import register_operator as register_skeleton_decoder_operator
+from .operators.fbx_skeleton_player import register_operator as register_fbx_skeleton_player_operator
 from .operators.skeleton_selector import register_operator as register_skeleton_selector_operator
 from .operators.relative_pose_axes import register_operator as register_relative_pose_axes_operator
 from .operators.stream_watchdog import register_operator as register_stream_watchdog_operator
@@ -102,6 +103,7 @@ def register_pyengine_specs(registry: Registry) -> Registry:
     register_serial_out_operator(registry)
     register_udp_in_operator(registry)
     register_skeleton_decoder_operator(registry)
+    register_fbx_skeleton_player_operator(registry)
     register_skeleton_selector_operator(registry)
     register_relative_pose_axes_operator(registry)
     register_stream_watchdog_operator(registry)

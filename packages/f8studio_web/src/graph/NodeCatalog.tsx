@@ -1,4 +1,4 @@
-import { ChevronDown, Search } from 'lucide-react';
+import { ChevronDown, RefreshCw, Search } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 
 import type { CatalogSnapshot, OperatorSpec, ServiceSpec } from '../api/contracts';
@@ -54,11 +54,13 @@ function CatalogFold({ label, count, initiallyOpen, children }: {
   </details>;
 }
 
-export function NodeCatalog({ catalog, projectServiceClasses, canAdd, onAdd }: {
+export function NodeCatalog({ catalog, projectServiceClasses, canAdd, refreshing, onAdd, onRefresh }: {
   readonly catalog: CatalogSnapshot | null;
   readonly projectServiceClasses: ReadonlySet<string>;
   readonly canAdd: boolean;
+  readonly refreshing: boolean;
   readonly onAdd: (spec: CatalogSpec) => void;
+  readonly onRefresh: () => void;
 }) {
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState<GroupMode>('service');
@@ -79,9 +81,10 @@ export function NodeCatalog({ catalog, projectServiceClasses, canAdd, onAdd }: {
   };
 
   return <>
-    <label className="catalog-search"><Search size={15} />
+    <div className="catalog-search-row"><label className="catalog-search"><Search size={15} />
       <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search nodes" aria-label="Search nodes" />
-    </label>
+    </label><button type="button" className="small-icon-button" title="Refresh node catalog" aria-label="Refresh node catalog"
+      disabled={refreshing} onClick={onRefresh}><RefreshCw size={15} /></button></div>
     <div className="catalog-mode segment" role="tablist" aria-label="Group operators by">
       <button type="button" role="tab" aria-selected={mode === 'service'} className={mode === 'service' ? 'selected' : ''} onClick={() => setMode('service')}>Service</button>
       <button type="button" role="tab" aria-selected={mode === 'category'} className={mode === 'category' ? 'selected' : ''} onClick={() => setMode('category')}>Category</button>

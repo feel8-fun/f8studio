@@ -17,7 +17,7 @@ import {
   type OnNodeDrag,
   type ResizeParams,
 } from '@xyflow/react';
-import { Check, Copy, Download, Keyboard, Play, Plus, Redo2, RotateCcw, Square, Trash2, Upload, X } from 'lucide-react';
+import { Check, Copy, Download, Keyboard, Play, Plus, Redo2, RotateCcw, RotateCw, Square, Trash2, Upload, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
 import {
@@ -37,7 +37,9 @@ import {
   fetchRuntimeMonitors,
   importProjectGraph,
   patchProject,
+  refreshCatalog,
   registerHotkey,
+  restartProjectService,
   stopProject,
   unregisterHotkey,
 } from '../api/client';
@@ -223,6 +225,7 @@ function NodeInspector({
   bindService,
   connectedStateInputs,
   onCommand,
+  onRestartService,
 }: {
   readonly projectId: string;
   readonly node: GraphNode;
@@ -234,6 +237,7 @@ function NodeInspector({
   readonly bindService: (nodeId: string, serviceId: string) => void;
   readonly connectedStateInputs: ReadonlySet<string>;
   readonly onCommand: (node: GraphNode, command: CommandSpec) => void;
+  readonly onRestartService: (serviceId: string) => void;
 }) {
   const fields = node.spec.stateFields ?? [];
   const runtimeFieldNames = useMemo(
@@ -265,6 +269,10 @@ function NodeInspector({
     </dl>
     {node.kind === 'operator' && <label className="inspector-field"><span>Service binding</span><select disabled={busy} value={node.serviceId} onChange={(event) => bindService(node.nodeId, event.target.value)}>{services.filter((service) => service.kind === 'service' && service.serviceClass === node.serviceClass).map((service) => <option key={service.serviceId} value={service.serviceId}>{service.name}</option>)}</select></label>}
     <h2>Runtime</h2>
+    {node.kind === 'service' && node.serviceId !== STUDIO_SERVICE_ID && <button type="button" className="command-button" disabled={busy}
+      onClick={() => onRestartService(node.serviceId)} title="Restart service, refresh node catalog, and redeploy project">
+      <RotateCw size={14} /> Restart service
+    </button>}
     {monitor === null ? <p className="monitor-empty">No monitor sample</p> : <dl className="monitor-values">
       <dt>Status</dt><dd>{monitor.alive ? (monitor.ready ? 'Ready' : 'Starting') : 'Offline'}</dd>
       <dt>CPU</dt><dd>{(monitor.cpu?.processPercent ?? 0).toFixed(1)}%</dd>
@@ -369,6 +377,7 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
   const [pendingCommands, setPendingCommands] = useState<ReadonlySet<string>>(new Set());
   const pendingCommandsRef = useRef(new Set<string>());
   const [busy, setBusy] = useState(false);
+  const [refreshingCatalog, setRefreshingCatalog] = useState(false);
   const [stopping, setStopping] = useState(false);
   const stoppingRef = useRef(false);
   const [saving, setSaving] = useState(false);
@@ -1063,28 +1072,64 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
     }
   }, [busy, project]);
 
+  const followDeployment = useCallback(async (initialJob: DeployJob): Promise<DeployJob> => {
+    let job = initialJob;
+    if (!stoppingRef.current) setDeployment(job);
+    for (let attempt = 0; attempt < 100 && !stoppingRef.current && (job.status === 'queued' || job.status === 'running'); attempt += 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 200));
+      if (stoppingRef.current) break;
+      job = await fetchDeployJob(job.jobId);
+      if (!stoppingRef.current) setDeployment(job);
+    }
+    if (job.status === 'queued' || job.status === 'running') throw new Error('Deployment did not finish within 20 seconds');
+    if (job.status === 'failed' || job.status === 'partially_failed') throw new Error(job.errorMessage || `Deployment ${job.status}`);
+    return job;
+  }, []);
+
+  const refreshNodeCatalog = useCallback(async () => {
+    if (busy || refreshingCatalog) return;
+    setRefreshingCatalog(true);
+    setError(null);
+    try {
+      const updated = await refreshCatalog();
+      setCatalog(updated);
+      setCommandToast({ id: Date.now(), kind: 'success', title: 'Node catalog refreshed', detail: `${updated.operators.length} operators available` });
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setRefreshingCatalog(false);
+    }
+  }, [busy, refreshingCatalog]);
+
+  const restartService = useCallback(async (serviceId: string) => {
+    if (project === null || busy || refreshingCatalog) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const initialJob = await restartProjectService(project.projectId, serviceId);
+      setCatalog(await fetchCatalog());
+      await followDeployment(initialJob);
+      setCommandToast({ id: Date.now(), kind: 'success', title: 'Service restarted', detail: `${serviceId} restarted, node catalog refreshed, and project deployed` });
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, followDeployment, project, refreshingCatalog]);
+
   const deploy = useCallback(async () => {
     if (project === null || busy) return;
     setBusy(true);
     setError(null);
     try {
-      let job = await deployProject(project.projectId, project.document.graphRevision);
-      if (!stoppingRef.current) setDeployment(job);
-      for (let attempt = 0; attempt < 100 && !stoppingRef.current && (job.status === 'queued' || job.status === 'running'); attempt += 1) {
-        await new Promise<void>((resolve) => setTimeout(resolve, 200));
-        if (stoppingRef.current) break;
-        job = await fetchDeployJob(job.jobId);
-        if (!stoppingRef.current) setDeployment(job);
-      }
+      await followDeployment(await deployProject(project.projectId, project.document.graphRevision));
       if (stoppingRef.current) return;
-      if (job.status === 'queued' || job.status === 'running') throw new Error('Deployment did not finish within 20 seconds');
-      if (job.status === 'failed' || job.status === 'partially_failed') setError(job.errorMessage || `Deployment ${job.status}`);
     } catch (reason) {
       if (!stoppingRef.current) setError(errorMessage(reason));
     } finally {
       if (!stoppingRef.current) setBusy(false);
     }
-  }, [busy, project]);
+  }, [busy, followDeployment, project]);
 
   const stop = useCallback(async () => {
     if (project === null || stopping) return;
@@ -1284,7 +1329,8 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
           </div>
         </div>
         <NodeCatalog catalog={catalog} projectServiceClasses={new Set(project?.document.nodes.filter((node) => node.kind === 'service').map((node) => node.serviceClass))}
-          canAdd={!busy && project !== null} onAdd={(spec) => void addSpec(spec)} />
+          canAdd={!busy && !refreshingCatalog && project !== null} refreshing={busy || refreshingCatalog}
+          onAdd={(spec) => void addSpec(spec)} onRefresh={() => void refreshNodeCatalog()} />
       </aside>
 
       <section className="graph-canvas" aria-label="Graph canvas" ref={graphCanvasRef}>
@@ -1380,7 +1426,7 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
         }} />
       <aside className="graph-inspector" aria-label="Inspector">
         <h2>Inspector</h2>
-        {selectedNode !== null && project !== null ? <NodeInspector projectId={project.projectId} node={selectedNode} services={project.document.nodes} monitor={selectedMonitor} busy={busy} pendingCommands={pendingCommands} commit={commit} bindService={bindOperatorService} connectedStateInputs={connectedStateInputs} onCommand={openCommand} /> :
+        {selectedNode !== null && project !== null ? <NodeInspector projectId={project.projectId} node={selectedNode} services={project.document.nodes} monitor={selectedMonitor} busy={busy} pendingCommands={pendingCommands} commit={commit} bindService={bindOperatorService} connectedStateInputs={connectedStateInputs} onCommand={openCommand} onRestartService={(serviceId) => void restartService(serviceId)} /> :
           selectedEdge !== null ? <EdgeInspector edge={selectedEdge} nodes={project?.document.nodes ?? []} busy={busy} replace={replaceEdge} remove={removeEdge} /> :
             <p>Select a node or connection to inspect it.</p>}
         {deployment !== null && deployment.serviceResults.some((result) => !result.success) && <div className="deploy-errors">{deployment.serviceResults.filter((result) => !result.success).map((result) => <p key={result.serviceId}><strong>{result.serviceId}</strong>{result.errorMessage}</p>)}</div>}

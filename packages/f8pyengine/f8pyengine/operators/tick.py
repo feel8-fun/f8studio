@@ -17,6 +17,7 @@ from f8pysdk.specs import (
     F8DataPortSpec,
     boolean_schema,
     integer_schema,
+    number_schema,
 )
 from f8pysdk.f8_naming import ensure_token
 from f8pysdk.capabilities import EntrypointNode
@@ -49,6 +50,7 @@ class TickRuntimeNode(OperatorNode, EntrypointNode):
         self._exec_out_ports = list(node.execOutPorts or []) or ["exec"]
         self._stop = asyncio.Event()
         self._hires_enabled = False
+        self._elapsed_sec: float | None = None
         try:
             self._tick_ms = self._coerce_tick_ms(self._initial_state.get("tickMs"), default=100)
         except ValueError:
@@ -98,9 +100,11 @@ class TickRuntimeNode(OperatorNode, EntrypointNode):
 
     async def start_entrypoint(self, ctx: EntrypointContext) -> None:
         self._stop.clear()
+        self._elapsed_sec = None
 
         async def _loop() -> None:
             loop = asyncio.get_running_loop()
+            started_at = loop.time()
             last_tick_ms: int | None = None
             next_deadline_s = loop.time()
             last_tick_start_s: float | None = None
@@ -128,6 +132,8 @@ class TickRuntimeNode(OperatorNode, EntrypointNode):
 
                     tick_start_s = loop.time()
                     exec_id = int(tick_start_s * 1000)
+                    self._elapsed_sec = tick_start_s - started_at
+                    await self.emit("elapsedSec", self._elapsed_sec)
 
                     interval_ms = 0
                     if last_tick_start_s is not None:
@@ -158,6 +164,10 @@ class TickRuntimeNode(OperatorNode, EntrypointNode):
 
     async def stop_entrypoint(self) -> None:
         self._stop.set()
+
+    async def compute_output(self, port: str, ctx_id: str | int | None = None) -> Any:
+        del ctx_id
+        return self._elapsed_sec if port == "elapsedSec" else None
 
     @staticmethod
     def _coerce_tick_ms(value: Any, *, default: int) -> int:
@@ -203,6 +213,11 @@ TickRuntimeNode.SPEC = F8OperatorSpec(
     ],
     execOutPorts=exec_port_specs(["exec"]),
     dataOutPorts=[
+        F8DataPortSpec(
+            name="elapsedSec",
+            description="Seconds since this Tick entrypoint started, sampled on each tick.",
+            valueSchema=number_schema(minimum=0),
+        ),
         F8DataPortSpec(
             name="processingMs",
             description="Per-tick processing time in milliseconds (excluding sleep).",

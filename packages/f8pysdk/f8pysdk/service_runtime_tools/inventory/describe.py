@@ -175,10 +175,13 @@ def describe_entry(
     entry: F8ServiceEntry,
     *,
     initial_payload: dict[str, Any] | None = None,
+    force_dynamic: bool = False,
 ) -> dict[str, Any] | None:
     service_dir = Path(service_dir).resolve()
 
-    if initial_payload is not None:
+    if force_dynamic:
+        initial_data = {}
+    elif initial_payload is not None:
         initial_data: dict[str, Any] = dict(initial_payload)
     else:
         inline_payload = _read_inline_describe(entry)
@@ -330,8 +333,13 @@ def describe_entry_timed(
     *,
     initial_payload: dict[str, Any] | None = None,
     source: str | None = None,
+    force_dynamic: bool = False,
 ) -> tuple[dict[str, Any] | None, float, str]:
     started_at = time.perf_counter()
+
+    if force_dynamic:
+        payload = describe_entry(service_dir, entry, force_dynamic=True)
+        return payload, (time.perf_counter() - started_at) * 1000.0, "command"
 
     if initial_payload is not None and source is not None:
         payload = describe_entry(service_dir, entry, initial_payload=initial_payload)

@@ -8,6 +8,7 @@ from .serial_out import SerialOutRuntimeNode
 from .udp_in import UdpInRuntimeNode
 from .udp_out import UdpOutRuntimeNode
 from .skeleton_decoder import SkeletonDecoderRuntimeNode
+from .fbx_skeleton_player import FbxSkeletonPlayerRuntimeNode
 from .skeleton_selector import SkeletonSelectorRuntimeNode
 from .relative_pose_axes import RelativePoseAxesRuntimeNode
 from .stream_watchdog import StreamWatchdogRuntimeNode
@@ -54,6 +55,7 @@ __all__ = [
     "UdpInRuntimeNode",
     "UdpOutRuntimeNode",
     "SkeletonDecoderRuntimeNode",
+    "FbxSkeletonPlayerRuntimeNode",
     "SkeletonSelectorRuntimeNode",
     "RelativePoseAxesRuntimeNode",
     "StreamWatchdogRuntimeNode",

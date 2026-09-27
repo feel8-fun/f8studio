@@ -18,7 +18,9 @@ const catalog: CatalogSnapshot = {
 
 test('groups operators by service or category and expands search matches', () => {
   const onAdd = vi.fn();
-  render(<NodeCatalog catalog={catalog} projectServiceClasses={new Set(['test.engine'])} canAdd onAdd={onAdd} />);
+  const onRefresh = vi.fn();
+  render(<NodeCatalog catalog={catalog} projectServiceClasses={new Set(['test.engine'])} canAdd refreshing={false}
+    onAdd={onAdd} onRefresh={onRefresh} />);
   expect(screen.getByText('Engine', { selector: 'summary span' })).toBeInTheDocument();
   expect(screen.getByText('Studio', { selector: 'summary span' })).toBeInTheDocument();
 
@@ -29,4 +31,6 @@ test('groups operators by service or category and expands search matches', () =>
   fireEvent.change(screen.getByLabelText('Search nodes'), { target: { value: 'Filter' } });
   fireEvent.click(screen.getByRole('button', { name: /Filter/ }));
   expect(onAdd).toHaveBeenCalledWith(catalog.operators[0]);
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh node catalog' }));
+  expect(onRefresh).toHaveBeenCalledOnce();
 });

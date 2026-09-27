@@ -475,6 +475,34 @@ def test_three_d_visualization_aggregates_ports_and_single_bones() -> None:
     asyncio.run(scenario())
 
 
+def test_three_d_visualization_uses_parent_links_from_file_skeletons() -> None:
+    async def scenario() -> None:
+        outlet = CapturingPresentationOutlet()
+        registry = Registry.wrap(create_studio_registry(presentation=outlet))
+        runtime = registry.create_operator_node(
+            node_id="three1",
+            node=F8RuntimeNode(
+                nodeId="three1", serviceId="studio", serviceClass=SERVICE_CLASS,
+                operatorClass=VizThreeDRuntimeNode.SPEC.operatorClass,
+                dataInPorts=[F8DataPortSpec(name="skeletons", valueSchema=any_schema())],
+            ),
+            initial_state={"throttleMs": 0},
+        )
+        assert isinstance(runtime, VizThreeDRuntimeNode)
+        await runtime.on_data("skeletons", {
+            "modelName": "Excited", "skeletonProtocol": "fbx", "bones": [
+                {"name": "Hips", "pos": [0, 1, 0], "rot": [1, 0, 0, 0]},
+                {"name": "Spine", "parent": "Hips", "pos": [0, 1.2, 0], "rot": [1, 0, 0, 0]},
+                {"name": "Head", "parent": "Spine", "pos": [0, 1.7, 0], "rot": [1, 0, 0, 0]},
+            ],
+        })
+        people = outlet.commands[-1][2]["people"]
+        assert isinstance(people, list)
+        assert people[0]["skeletonEdges"] == [[0, 1], [1, 2]]
+
+    asyncio.run(scenario())
+
+
 def test_studio_runtime_starts_and_stops_without_qt() -> None:
     async def scenario() -> None:
         outlet = CapturingPresentationOutlet()

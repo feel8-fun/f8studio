@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 
 class BoneInput(msgspec.Struct):
     name: str = ""
+    parent: str = ""
     pos: list[float] = msgspec.field(default_factory=list)
     rot: list[float] | None = None
 
@@ -185,6 +186,7 @@ class VizThreeDRuntimeNode(StudioVizRuntimeNodeBase):
             skeleton = SkeletonInput(model_name=port, skeleton_protocol="none", bones=[bone])
 
         nodes: list[SceneNode] = []
+        parent_names: list[str] = []
         for bone_index, raw_bone in enumerate(skeleton.bones):
             try:
                 bone = raw_bone if isinstance(raw_bone, BoneInput) else msgspec.convert(raw_bone, type=BoneInput, strict=False)
@@ -203,17 +205,20 @@ class VizThreeDRuntimeNode(StudioVizRuntimeNodeBase):
                     rot=rotation,
                 )
             )
+            parent_names.append(bone.parent)
             if len(nodes) >= self._max_bones:
                 break
         if not nodes:
             return None
         base_name = skeleton.model_name or skeleton.name or skeleton.character or skeleton.actor or f"Person_{index + 1}"
         protocol = (skeleton.skeleton_protocol or "none").strip().lower()
+        indexes = {node.name: node_index for node_index, node in enumerate(nodes)}
+        parent_edges = [(indexes[parent], node_index) for node_index, parent in enumerate(parent_names) if parent in indexes]
         return ScenePerson(
             name=f"{port}:{base_name}",
             bbox=self._bbox(nodes),
             skeleton_protocol=protocol,
-            skeleton_edges=skeleton_edges_for_nodes(protocol, [node.name for node in nodes]),
+            skeleton_edges=parent_edges or skeleton_edges_for_nodes(protocol, [node.name for node in nodes]),
             nodes=nodes,
         )
 

@@ -180,7 +180,7 @@ export function SkeletonViewport({ scene, compact = false }: { readonly scene: S
         if (flags?.showBoneAxes === true && hints?.suppressBoneAxes !== true && node.rot !== null) {
           const axes = new THREE.AxesHelper(0.18 * markerScale);
           axes.position.set(...node.pos);
-          axes.quaternion.fromArray(node.rot);
+          axes.quaternion.set(node.rot[1], node.rot[2], node.rot[3], node.rot[0]);
           skeletonGroup.add(axes);
         }
         if (flags?.showBoneNames === true && hints?.suppressBoneNames !== true &&

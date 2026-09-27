@@ -43,6 +43,7 @@ def load_discovery_into_catalog(
     catalog: ServiceCatalog | None = None,
     builtin_injectors: Sequence[Callable[[ServiceCatalog], str | None]] = (),
     disabled_service_classes: Sequence[str] | None = None,
+    force_dynamic_service_classes: Sequence[str] = (),
 ) -> list[str]:
     _ = overwrite
     clear_discovery_errors()
@@ -70,7 +71,11 @@ def load_discovery_into_catalog(
     payload_by_dir: dict[Path, dict[str, Any] | None] = {}
     timing_by_dir: dict[Path, tuple[float, str]] = {}
     subprocess_entries: list[tuple[Path, F8ServiceEntry]] = []
+    dynamic_classes = set(force_dynamic_service_classes)
     for service_dir, entry in entries:
+        if str(entry.serviceClass) in dynamic_classes:
+            subprocess_entries.append((service_dir, entry))
+            continue
         static_payload, static_source = read_static_describe_payload(service_dir, entry)
         if static_payload is None or static_source is None:
             subprocess_entries.append((service_dir, entry))
@@ -101,7 +106,9 @@ def load_discovery_into_catalog(
 
     if jobs <= 1 or len(subprocess_entries) <= 1:
         for service_dir, entry in subprocess_entries:
-            payload, dt_ms, source = describe_entry_timed(service_dir, entry)
+            payload, dt_ms, source = describe_entry_timed(
+                service_dir, entry, force_dynamic=str(entry.serviceClass) in dynamic_classes,
+            )
             payload_by_dir[service_dir] = payload
             timing_by_dir[service_dir] = (dt_ms, source)
     else:
@@ -111,7 +118,10 @@ def load_discovery_into_catalog(
                 tuple[Path, F8ServiceEntry],
             ] = {}
             for service_dir, entry in subprocess_entries:
-                futures[executor.submit(describe_entry_timed, service_dir, entry)] = (service_dir, entry)
+                futures[executor.submit(
+                    describe_entry_timed, service_dir, entry,
+                    force_dynamic=str(entry.serviceClass) in dynamic_classes,
+                )] = (service_dir, entry)
             for future in concurrent.futures.as_completed(futures):
                 service_dir, _entry = futures[future]
                 try:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
+from threading import RLock
 
 import msgspec
 
@@ -26,15 +27,35 @@ class CatalogService:
         builtins: Sequence[F8ServiceDescribe] = (),
     ) -> None:
         self._catalog = ServiceCatalog()
+        self._roots = None if roots is None else tuple(roots)
+        self._builtins = tuple(builtins)
+        self._lock = RLock()
+        self._discovered_service_classes: tuple[str, ...] = ()
+        self.refresh()
+
+    def refresh(self, *, force_dynamic_service_classes: Sequence[str] = ()) -> CatalogSnapshot:
+        updated = ServiceCatalog()
         discovered = load_discovery_into_catalog(
-            roots=None if roots is None else list(roots),
-            catalog=self._catalog,
+            roots=None if self._roots is None else list(self._roots),
+            catalog=updated,
+            force_dynamic_service_classes=force_dynamic_service_classes,
         )
-        for describe in builtins:
-            self._catalog.register_service(describe.service)
+        for describe in self._builtins:
+            updated.register_service(describe.service)
             operators = () if isinstance(describe.operators, msgspec.UnsetType) else describe.operators
-            self._catalog.register_operators(operators)
-        self._discovered_service_classes = tuple(sorted(discovered))
+            updated.register_operators(operators)
+        entry_paths = updated.service_entry_paths()
+        with self._lock:
+            missing = [service_class for service_class in force_dynamic_service_classes
+                       if self._catalog.services.has(service_class) and not updated.services.has(service_class)]
+            if missing:
+                raise RuntimeError(f"Live service description failed for: {', '.join(missing)}")
+            self._catalog.clear()
+            for service in updated.services.all():
+                self._catalog.register_service(service, service_entry_path=entry_paths.get(str(service.serviceClass)))
+            self._catalog.register_operators(updated.operators.all())
+            self._discovered_service_classes = tuple(sorted(discovered))
+            return self.snapshot()
 
     @property
     def sdk_catalog(self) -> ServiceCatalog:
@@ -45,13 +66,14 @@ class CatalogService:
         return self._discovered_service_classes
 
     def snapshot(self) -> CatalogSnapshot:
-        services = tuple(sorted(self._catalog.services.all(), key=lambda spec: str(spec.serviceClass)))
-        operators = tuple(
-            sorted(
-                self._catalog.operators.all(),
-                key=lambda spec: (str(spec.serviceClass), str(spec.operatorClass)),
+        with self._lock:
+            services = tuple(sorted(self._catalog.services.all(), key=lambda spec: str(spec.serviceClass)))
+            operators = tuple(
+                sorted(
+                    self._catalog.operators.all(),
+                    key=lambda spec: (str(spec.serviceClass), str(spec.operatorClass)),
+                )
             )
-        )
         return CatalogSnapshot(services=services, operators=operators)
 
     def create_node(self, request: CreateCatalogNodeRequest) -> GraphNode:
@@ -82,9 +104,10 @@ class CatalogService:
             ) from exc
 
     def spec_for_node(self, node: GraphNode) -> F8ServiceSpec | F8OperatorSpec:
-        if isinstance(node, ServiceNode):
-            return self._catalog.services.get(node.service_class)
-        return self._catalog.operators.get(node.service_class, node.operator_class)
+        with self._lock:
+            if isinstance(node, ServiceNode):
+                return self._catalog.services.get(node.service_class)
+            return self._catalog.operators.get(node.service_class, node.operator_class)
 
 
 __all__ = ["CatalogService", "CatalogSnapshot"]
