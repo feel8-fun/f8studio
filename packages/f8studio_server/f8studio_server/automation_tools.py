@@ -12,7 +12,7 @@ from f8studio_core.graph import GraphStore, HistoryRequest, PatchRequest, PatchR
 from .catalog import CatalogService, CatalogSnapshot
 from .events import EventJournal
 from .jobs import DeployCoordinator
-from .models import DeployJob, DeployProjectRequest, JobStatus, ProjectRecord
+from .models import DeployJob, DeployProjectRequest, JobStatus, ProjectRecord, ProjectSummary
 from .monitors import RuntimeMonitorStore
 from .projects import ProjectMutationResult, ProjectService
 from .runtime import RuntimeGateway
@@ -51,6 +51,9 @@ class StudioAutomationTools:
 
     def project(self, project_id: str) -> ProjectRecord:
         return self._projects.get(project_id)
+
+    def project_summary(self, project_id: str) -> ProjectSummary:
+        return self._projects.summary(project_id)
 
     def document(self, project_id: str) -> StudioDocument:
         return self._projects.document(project_id)

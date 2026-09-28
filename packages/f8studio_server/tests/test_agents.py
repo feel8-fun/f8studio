@@ -1,14 +1,27 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import time
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+from agent_framework import Agent
+from agent_framework.openai import OpenAIChatClient
 from fastapi.testclient import TestClient
 
+from f8media_gateway.service import InProcessMediaGateway
 from f8pysdk.specs import F8JsonValue, F8RuntimeGraph
+from f8studio_core.graph import CreateNodeOp, PatchRequest, RevisionConflictError
 from f8studio_server import create_app
+from f8studio_server.agents.models import AgentProviderSummary
+from f8studio_server.agents.providers import AgentProviderRegistry
+from f8studio_server.agents.skills import AgentSkillLibrary
 from f8studio_server.application import StudioApplication
+from f8studio_server.local_integration import DetectModdingTargetRequest, LocalIntegrationService
+from f8studio_server.models import CreateCatalogNodeRequest, CreateProjectRequest
 from f8studio_server.models import (
     RuntimeActionResult,
     RuntimeStateField,
@@ -86,6 +99,40 @@ class AgentRuntimeGateway:
         return None
 
 
+class ScriptEditingProvider(AgentProviderRegistry):
+    def summaries(self) -> tuple[AgentProviderSummary, ...]:
+        return (AgentProviderSummary(
+            provider_id="script_test", display_name="Script test", models=("test",), configured=True,
+        ),)
+
+    async def run_with_tools(
+        self, *, provider_id: str, model_id: str, prompt: str,
+        tools: Sequence[Callable[..., Awaitable[str]]],
+    ) -> str:
+        self.validate_selection(provider_id, model_id)
+        del prompt
+        functions = {tool.__name__: tool for tool in tools}
+        assert "graph_python" in json.loads(await functions["skills_list"]())
+        assert "code_read" in await functions["skill_read"]("graph_python")
+        graph = json.loads(await functions["graph_read"]())
+        patch = {
+            "requestId": "model-rename", "expectedGraphRevision": graph["graphRevision"],
+            "expectedLayoutRevision": graph["layoutRevision"],
+            "operations": [{"op": "renameNode", "nodeId": "script", "name": "Edited script"}],
+        }
+        await functions["graph_preview_patch"](json.dumps(patch))
+        await functions["graph_apply_patch"](json.dumps(patch))
+        source = json.loads(await functions["code_read"]("script"))
+        code = "def onStart(ctx):\n    ctx.log('edited')\n"
+        analysis = json.loads(await functions["code_analyze"]("script", code))
+        assert analysis["engine"] == "basedpyright"
+        await functions["code_write"](
+            "script", source["graphRevision"], source["codeSha256"], code,
+        )
+        await functions["graph_validate"]()
+        return "Renamed the node and updated its Python code."
+
+
 def _session(client: TestClient, session_id: str) -> dict[str, object]:
     response = client.get(f"/api/agents/sessions/{session_id}")
     assert response.status_code == 200
@@ -154,6 +201,7 @@ def test_deterministic_agent_builds_validates_deploys_and_publishes_graph_event(
         data_dir=tmp_path / "data",
         runtime=runtime,
         service_roots=(),
+        media_gateway=InProcessMediaGateway(),
     )
     app = create_app(web_dist=tmp_path, application=studio)
 
@@ -201,6 +249,7 @@ def test_agent_approval_is_invalidated_when_another_client_changes_revision(tmp_
         data_dir=tmp_path / "data",
         runtime=AgentRuntimeGateway(),
         service_roots=(),
+        media_gateway=InProcessMediaGateway(),
     )
     app = create_app(web_dist=tmp_path, application=studio)
 
@@ -272,6 +321,7 @@ def test_agent_provider_api_never_exposes_server_credentials(tmp_path: Path, mon
         data_dir=tmp_path / "data",
         runtime=AgentRuntimeGateway(),
         service_roots=(),
+        media_gateway=InProcessMediaGateway(),
     )
 
     with TestClient(app) as client:
@@ -297,6 +347,7 @@ def test_agent_run_fails_with_tool_context_when_deployment_fails(tmp_path: Path)
         data_dir=tmp_path / "data",
         runtime=AgentRuntimeGateway(deploy_success=False),
         service_roots=(),
+        media_gateway=InProcessMediaGateway(),
     )
     app = create_app(web_dist=tmp_path, application=studio)
 
@@ -326,6 +377,7 @@ def test_cancelling_pending_agent_run_cancels_approval_and_tool(tmp_path: Path) 
         data_dir=tmp_path / "data",
         runtime=AgentRuntimeGateway(),
         service_roots=(),
+        media_gateway=InProcessMediaGateway(),
     )
     app = create_app(web_dist=tmp_path, application=studio)
 
@@ -350,3 +402,82 @@ def test_cancelling_pending_agent_run_cancels_approval_and_tool(tmp_path: Path) 
         assert "not rolled back" in cancelled["errorMessage"]
         project = client.get("/api/projects/cancel_agent").json()
         assert project["document"]["graphRevision"] == 0
+
+
+def test_model_tool_loop_edits_graph_and_python_node_code(tmp_path: Path) -> None:
+    studio = StudioApplication(
+        data_dir=tmp_path / "data", runtime=AgentRuntimeGateway(),
+        media_gateway=InProcessMediaGateway(),
+    )
+    studio.agents._providers = ScriptEditingProvider()
+    studio.projects.create(CreateProjectRequest(project_id="script_project", name="Script project"))
+    service = studio.catalog.create_node(CreateCatalogNodeRequest(
+        kind="service", node_id="engine", service_class="f8.pyengine",
+    ))
+    script = studio.catalog.create_node(CreateCatalogNodeRequest(
+        kind="operator", node_id="script", service_id="engine", service_class="f8.pyengine",
+        operator_class="f8.python_script",
+    ))
+    studio.projects.patch("script_project", PatchRequest(
+        request_id="seed-script", expected_graph_revision=0, expected_layout_revision=0,
+        operations=(CreateNodeOp(node=service), CreateNodeOp(node=script)),
+    ))
+    app = create_app(web_dist=tmp_path, application=studio)
+    with TestClient(app) as client:
+        response = client.post("/api/agents/sessions", json={
+            "projectId": "script_project", "providerId": "script_test", "modelId": "test",
+        })
+        assert response.status_code == 201
+        session_id = str(response.json()["sessionId"])
+        Agent(OpenAIChatClient(model="test", api_key="test"), tools=studio.agents._model_tools(studio.agents.get(session_id)))
+        started = client.post(f"/api/agents/sessions/{session_id}/runs", json={"prompt": "Edit the script"})
+        assert started.status_code == 202
+        first = _approve_pending(client, session_id)
+        second = _approve_pending(client, session_id, previous_id=first)
+        assert second != first
+        finished = _wait_for_status(client, session_id, {"succeeded", "failed"}, timeout_s=15)
+        project = client.get("/api/projects/script_project").json()
+
+    assert finished["status"] == "succeeded", finished
+    edited = next(node for node in project["document"]["nodes"] if node["nodeId"] == "script")
+    assert edited["name"] == "Edited script"
+    assert edited["stateValues"]["code"] == "def onStart(ctx):\n    ctx.log('edited')\n"
+    assert {call["toolName"] for call in finished["toolCalls"]} >= {
+        "graph.preview_patch", "graph.apply_patch", "code.read", "code.analyze", "code.write", "graph.validate",
+    }
+    functions = {tool.__name__: tool for tool in studio.agents._model_tools(studio.agents.get(session_id))}
+    with pytest.raises(RevisionConflictError, match="code changed since read"):
+        asyncio.run(functions["code_write"]("script", 1, "0" * 64, "def onStart(ctx): pass\n"))
+    bypass = {
+        "requestId": "bypass-code-check", "expectedGraphRevision": project["document"]["graphRevision"],
+        "expectedLayoutRevision": project["document"]["layoutRevision"],
+        "operations": [{"op": "setNodeState", "nodeId": "script", "field": "code", "value": "pass"}],
+    }
+    with pytest.raises(ValueError, match="use code_read"):
+        asyncio.run(functions["graph_apply_patch"](json.dumps(bypass)))
+    with pytest.raises(ValueError, match="previewed in this run"):
+        asyncio.run(functions["modding_apply_unity_install"]("unseen-plan"))
+
+
+def test_agent_skill_library_loads_local_skills_without_path_traversal(tmp_path: Path) -> None:
+    library = AgentSkillLibrary(user_root=tmp_path / "skills")
+    assert {"graph_python", "unity_modding"} <= set(library.list())
+    custom = tmp_path / "skills" / "specific_game"
+    custom.mkdir()
+    (custom / "SKILL.md").write_text("# Specific Game\n", encoding="utf-8")
+    assert "specific_game" in library.list()
+    assert library.read("specific_game") == "# Specific Game\n"
+    with pytest.raises(ValueError, match="invalid agent skill id"):
+        library.read("../specific_game")
+
+
+def test_unreal_executable_detection_precedes_generic_exe_detection(tmp_path: Path) -> None:
+    executable = tmp_path / "MyGame" / "Binaries" / "Win64" / "MyGame.exe"
+    executable.parent.mkdir(parents=True)
+    executable.touch()
+    result = LocalIntegrationService().detect_modding_target(
+        DetectModdingTargetRequest(target_path=str(executable))
+    )
+    assert isinstance(result, dict)
+    assert result["engine"] == "unreal"
+    assert result["supported"] is False

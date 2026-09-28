@@ -21,6 +21,7 @@ from f8pysdk.specs import F8JsonValue
 from f8studio_core.graph import GraphNode, PatchRequest, RevisionConflictError, SetNodeStateOp, StudioDocument
 
 from .agents import AgentService
+from .agents.skills import AgentSkillLibrary
 from .automation_tools import StudioAutomationTools
 from .catalog import CatalogService
 from .assets import AssetRepository
@@ -111,6 +112,9 @@ class StudioApplication:
         self.agents = AgentService(
             database_path=project_repository.database_path,
             tools=self.tools,
+            editor=self.editor,
+            local=self.local,
+            skills=AgentSkillLibrary(user_root=self.data_dir / "agent-skills"),
             events=self.events,
         )
 

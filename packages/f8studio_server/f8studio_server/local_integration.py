@@ -252,12 +252,15 @@ class LocalIntegrationService:
         if not target.exists():
             raise FileNotFoundError(f"modding target not found: {target}")
         suffix = target.suffix.lower()
-        if suffix == ".exe" or any(target.glob("*_Data")):
-            engine = "unity"
-        elif suffix == ".uproject" or any(target.glob("Engine/Binaries/*")):
+        directory = target.parent if target.is_file() else target
+        unreal_binary = directory.name.lower() in {"win64", "win32"} and directory.parent.name.lower() == "binaries"
+        unreal_project = suffix == ".uproject" or (directory / "Engine" / "Binaries").is_dir()
+        if unreal_project or unreal_binary:
             engine = "unreal"
         elif target.name.lower() in {"vam.exe", "virt-a-mate"} or (target / "AddonPackages").is_dir():
             engine = "vam"
+        elif suffix == ".exe" or any(directory.glob("*_Data")):
+            engine = "unity"
         else:
             engine = "unknown"
         return {

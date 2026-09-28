@@ -419,13 +419,13 @@ def create_app(
 
     @app.delete("/api/projects/{project_id}", status_code=204)
     async def delete_project(project_id: str) -> Response:
-        record = await asyncio.to_thread(studio.projects.get, project_id)
+        await asyncio.to_thread(studio.projects.summary, project_id)
         if await studio.jobs.has_active_project_job(project_id):
             raise HTTPException(status_code=409, detail="Cancel the active deployment before deleting this project")
         sessions = await asyncio.to_thread(studio.agents.list, project_id)
         if any(session.status.value in {"running", "waiting_for_approval"} for session in sessions):
             raise HTTPException(status_code=409, detail="Cancel active agent runs before deleting this project")
-        service_ids = {node.service_id for node in record.document.nodes if isinstance(node, ServiceNode)}
+        service_ids = await asyncio.to_thread(studio.projects.service_ids, project_id)
         if any(studio.processes.is_running(service_id) for service_id in service_ids):
             raise HTTPException(status_code=409, detail="Stop the project's services before deleting it")
         await asyncio.to_thread(studio.projects.delete, project_id)
@@ -666,7 +666,7 @@ def create_app(
 
     @app.get("/api/projects/{project_id}/deployments/latest")
     async def latest_deployment(project_id: str) -> F8JsonValue:
-        await asyncio.to_thread(studio.projects.get, project_id)
+        await asyncio.to_thread(studio.projects.summary, project_id)
         return _json_value(await studio.jobs.latest(project_id))
 
     @app.get("/api/jobs/{job_id}")

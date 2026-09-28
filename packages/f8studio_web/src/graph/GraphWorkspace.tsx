@@ -17,7 +17,7 @@ import {
   type OnNodeDrag,
   type ResizeParams,
 } from '@xyflow/react';
-import { Check, Copy, Download, Keyboard, Play, Plus, Redo2, RotateCcw, RotateCw, Square, Trash2, Upload, X } from 'lucide-react';
+import { Bot, Check, Copy, Download, Keyboard, Play, Plus, Redo2, RotateCcw, RotateCw, Square, Trash2, Upload, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
 import {
@@ -368,6 +368,7 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
   const inspectorResizingRef = useRef(false);
   const graphWorkspaceRef = useRef<HTMLDivElement>(null);
   const [projects, setProjects] = useState<readonly ProjectSummary[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [project, setProject] = useState<ProjectRecord | null>(null);
   const [catalog, setCatalog] = useState<CatalogSnapshot | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<StudioFlowNode>([]);
@@ -409,6 +410,7 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
       fetchProject(projectId),
       fetchLatestDeployment(projectId),
     ]);
+    setSelectedProjectId(projectId);
     setProject(loaded);
     setDeployment(latestDeployment);
     return loaded;
@@ -427,6 +429,7 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
         const rememberedId = localStorage.getItem(SELECTED_PROJECT_KEY);
         const initial = availableProjects.find((item) => item.projectId === rememberedId) ?? availableProjects.at(-1);
         if (initial !== undefined) {
+          setSelectedProjectId(initial.projectId);
           const [record, latestDeployment] = await Promise.all([
             fetchProject(initial.projectId, controller.signal),
             fetchLatestDeployment(initial.projectId, controller.signal),
@@ -443,8 +446,8 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
   }, []);
 
   useEffect(() => {
-    if (project !== null) localStorage.setItem(SELECTED_PROJECT_KEY, project.projectId);
-  }, [project]);
+    if (selectedProjectId !== null) localStorage.setItem(SELECTED_PROJECT_KEY, selectedProjectId);
+  }, [selectedProjectId]);
 
   useEffect(() => {
     if (projectId === null) return;
@@ -475,6 +478,7 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
         if (envelope.type === 'project.deleted' && envelope.scope === `project:${projectId}`) {
           setProjects((current) => current.filter((item) => item.projectId !== projectId));
           setProject(null);
+          setSelectedProjectId(null);
           setDeployment(null);
           localStorage.removeItem(SELECTED_PROJECT_KEY);
           setSelectedNodeId(null);
@@ -483,7 +487,10 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
           void fetchProjects().then(async (available) => {
             setProjects(available);
             const next = available[0];
-            if (next !== undefined) await reloadProject(next.projectId);
+            if (next !== undefined) {
+              setSelectedProjectId(next.projectId);
+              await reloadProject(next.projectId);
+            }
           }).catch((reason: unknown) => setError(errorMessage(reason)));
           return;
         }
@@ -658,11 +665,14 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
   const selectProject = useCallback(async (projectId: string) => {
     setBusy(true);
     setError(null);
+    setSelectedProjectId(projectId);
+    setProject(null);
+    setDeployment(null);
+    setSelectedNodeId(null);
+    setSelectedEdgeId(null);
+    setActiveCommand(null);
     try {
       await reloadProject(projectId);
-      setSelectedNodeId(null);
-      setSelectedEdgeId(null);
-      setActiveCommand(null);
     } catch (reason) {
       setError(errorMessage(reason));
     } finally {
@@ -676,6 +686,7 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
     try {
       const created = await createProject(`Untitled ${projects.length + 1}`);
       setProjects(await fetchProjects());
+      setSelectedProjectId(created.projectId);
       setProject(created);
       setDeployment(null);
       setSelectedNodeId(null);
@@ -689,21 +700,23 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
   }, [projects.length]);
 
   const removeProject = useCallback(async () => {
-    if (project === null || busy || saving || mutationInFlight.current) return;
-    if (!window.confirm(`Delete project "${project.name}" and its saved versions, deployments, and agent sessions? This cannot be undone.`)) return;
+    const selected = projects.find((item) => item.projectId === selectedProjectId);
+    if (selected === undefined || busy || saving || mutationInFlight.current) return;
+    if (!window.confirm(`Delete project "${selected.name}" and its saved versions, deployments, and agent sessions? This cannot be undone.`)) return;
     setBusy(true);
     setError(null);
     try {
-      await deleteProject(project.projectId);
-      setProjects((current) => current.filter((item) => item.projectId !== project.projectId));
+      await deleteProject(selected.projectId);
+      setProjects((current) => current.filter((item) => item.projectId !== selected.projectId));
       setProject(null);
+      setSelectedProjectId(null);
       setDeployment(null);
       localStorage.removeItem(SELECTED_PROJECT_KEY);
       const available = await fetchProjects();
       setProjects(available);
       const next = available[0];
       if (next !== undefined) {
-        await reloadProject(next.projectId);
+        await selectProject(next.projectId);
       }
       setSelectedNodeId(null);
       setSelectedEdgeId(null);
@@ -713,7 +726,28 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
     } finally {
       setBusy(false);
     }
-  }, [busy, project, reloadProject, saving]);
+  }, [busy, projects, saving, selectProject, selectedProjectId]);
+
+  const openAgent = useCallback(() => {
+    if (project === null) return;
+    const url = new URL(window.location.href);
+    url.search = new URLSearchParams({ view: 'agent', project: project.projectId }).toString();
+    const popup = window.open('', `f8_agent_${encodeURIComponent(project.projectId)}`, 'popup,width=1000,height=760');
+    if (popup === null) {
+      window.alert('Allow pop-ups for Studio to open the Agent window.');
+      return;
+    }
+    try {
+      const current = new URL(popup.location.href);
+      if (current.searchParams.get('view') !== 'agent' || current.searchParams.get('project') !== project.projectId) {
+        popup.location.assign(url.toString());
+      }
+    } catch (reason) {
+      console.error('Cannot inspect the existing Agent window', reason);
+      popup.location.assign(url.toString());
+    }
+    popup.focus();
+  }, [project]);
 
   const addSpec = useCallback(async (spec: ServiceSpec | OperatorSpec) => {
     if (project === null || busy) return;
@@ -1320,12 +1354,12 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
         <div className="project-control">
           <label htmlFor="project-select">Project</label>
           <div>
-            <select id="project-select" value={project?.projectId ?? ''} disabled={locked} onChange={(event) => void selectProject(event.target.value)}>
+            <select id="project-select" value={selectedProjectId ?? ''} disabled={locked} onChange={(event) => void selectProject(event.target.value)}>
               <option value="" disabled>Select project</option>
               {projects.map((item) => <option key={item.projectId} value={item.projectId}>{item.name}</option>)}
             </select>
             <button type="button" className="small-icon-button" title="New project" aria-label="New project" disabled={locked} onClick={() => void addProject()}><Plus size={16} /></button>
-            <button type="button" className="small-icon-button" title="Delete project" aria-label="Delete project" disabled={locked || project === null} onClick={() => void removeProject()}><Trash2 size={15} /></button>
+            <button type="button" className="small-icon-button" title="Delete project" aria-label="Delete project" disabled={locked || selectedProjectId === null} onClick={() => void removeProject()}><Trash2 size={15} /></button>
           </div>
         </div>
         <NodeCatalog catalog={catalog} projectServiceClasses={new Set(project?.document.nodes.filter((node) => node.kind === 'service').map((node) => node.serviceClass))}
@@ -1335,6 +1369,7 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
 
       <section className="graph-canvas" aria-label="Graph canvas" ref={graphCanvasRef}>
         <div className="graph-toolbar">
+          <button type="button" title="Open Agent window" aria-label="Open Agent window" disabled={project === null} onClick={openAgent}><Bot size={16} /></button>
           <button type="button" title="Undo" aria-label="Undo" disabled={busy || project === null} onClick={() => void history('undo')}><RotateCcw size={16} /></button>
           <button type="button" title="Redo" aria-label="Redo" disabled={busy || project === null} onClick={() => void history('redo')}><Redo2 size={16} /></button>
           <button type="button" title="Duplicate selection" aria-label="Duplicate selection" disabled={busy || project === null || (selectedNodeId === null && !nodes.some((node) => node.selected))} onClick={duplicateSelection}><Copy size={15} /></button>
@@ -1351,7 +1386,7 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
           <span className={`deploy-state deploy-${deployment?.status ?? 'none'}`}>{deployment === null ? 'Not deployed' : `${deployment.status} r${deployment.sourceGraphRevision}`}</span>
           <span className="save-state">{saving ? 'Saving...' : busy ? 'Working...' : 'Saved'}</span>
         </div>
-        {project === null ? <div className="empty-state"><p>Create a project to start building a graph.</p><button className="command-button primary" type="button" onClick={() => void addProject()}>New project</button></div> :
+        {project === null ? <div className="empty-state"><p>{selectedProjectId === null ? 'Create a project to start building a graph.' : 'This project could not be loaded.'}</p>{selectedProjectId === null && <button className="command-button primary" type="button" onClick={() => void addProject()}>New project</button>}</div> :
           <GraphNodeInteractionContext.Provider value={nodeInteraction}><ReactFlow<StudioFlowNode, Edge>
             nodes={nodes}
             edges={edges}

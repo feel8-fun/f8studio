@@ -8,6 +8,7 @@ This path is for people who want to install F8Studio quickly, open it, and try a
 2. [First Launch and Sample Graphs](first-launch-and-sample-graphs.md)
 3. [Studio Quickstart](../getting-started/studio.md)
 4. [Unity Game Modding](unity-game-modding.md)
+5. [Studio Agents](studio-agents.md)
 
 ## Fastest Path
 

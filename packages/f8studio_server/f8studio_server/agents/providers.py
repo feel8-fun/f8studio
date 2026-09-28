@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Awaitable, Callable, Sequence
 from typing import cast
 
 from .models import AgentProviderSummary
@@ -100,6 +101,67 @@ class AgentProviderRegistry:
                 base_url=self._ollama_endpoint,
             )
         raise ValueError(f"unsupported agent provider: {provider_id}")
+
+    async def run_with_tools(
+        self,
+        *,
+        provider_id: str,
+        model_id: str,
+        prompt: str,
+        tools: Sequence[Callable[..., Awaitable[str]]],
+    ) -> str:
+        self.validate_selection(provider_id, model_id)
+        if provider_id == "deterministic":
+            raise ValueError("the deterministic provider does not support model tool calls")
+        try:
+            from agent_framework import Agent, AgentResponse
+        except ModuleNotFoundError as exc:
+            raise RuntimeError("Agent Framework dependencies are not installed") from exc
+
+        if provider_id == "openai":
+            from agent_framework.openai import OpenAIChatClient
+
+            agent = Agent(
+                OpenAIChatClient(model=model_id, api_key=self._openai_api_key, base_url=self._openai_endpoint or None),
+                name="f8studio-agent", instructions=self._tool_instructions(), tools=tools,
+            )
+            response = cast(AgentResponse[None], await agent.run(prompt, options={"max_tokens": 4096, "store": False}))
+            return response.text
+        elif provider_id == "anthropic":
+            from agent_framework.anthropic import AnthropicClient
+
+            agent = Agent(
+                AnthropicClient(model=model_id, api_key=self._anthropic_api_key, base_url=self._anthropic_endpoint or None),
+                name="f8studio-agent", instructions=self._tool_instructions(), tools=tools,
+            )
+        else:
+            from agent_framework.openai import OpenAIChatCompletionClient
+
+            if provider_id == "google_gemini":
+                api_key, base_url = self._gemini_api_key, self._gemini_endpoint
+            elif provider_id == "ollama":
+                api_key, base_url = "ollama", self._ollama_endpoint
+            else:
+                raise ValueError(f"unsupported agent provider: {provider_id}")
+            agent = Agent(
+                OpenAIChatCompletionClient(model=model_id, api_key=api_key, base_url=base_url),
+                name="f8studio-agent", instructions=self._tool_instructions(), tools=tools,
+            )
+        response = cast(AgentResponse[None], await agent.run(prompt, options={"max_tokens": 4096}))
+        return response.text
+
+    @staticmethod
+    def _tool_instructions() -> str:
+        return (
+            "You operate on the selected Feel8 Studio project through the supplied tools. "
+            "List available skills and read the relevant graph, code, or game skill before acting. "
+            "Read the catalog and current graph before editing. Use graph previews before applying patches. "
+            "For Python code, read the exact node, analyze the proposed code, then write using its revision "
+            "and content hash. Inspect deployment, logs, and monitor evidence before claiming success. "
+            "Never claim a game installation or runtime behavior was verified without tool evidence. "
+            "Unity installation requires the human approval exposed by the tool. "
+            "Unreal installation is unavailable until Studio provides a verified installer."
+        )
 
     @staticmethod
     def _instructions() -> str:

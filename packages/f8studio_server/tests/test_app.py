@@ -1,4 +1,5 @@
 import asyncio
+import json
 from pathlib import Path
 import sqlite3
 import time
@@ -125,6 +126,46 @@ def test_delete_project_removes_dependents_and_preserves_other_projects(tmp_path
                 assert connection.execute(
                     f"SELECT count(*) FROM {table} WHERE project_id = ?", ("remove_me",)
                 ).fetchone() == (0,)
+
+
+def test_delete_legacy_project_without_decoding_its_document(tmp_path: Path) -> None:
+    app = create_app(
+        web_dist=tmp_path, data_dir=tmp_path / "data", runtime=FakeRuntimeGateway(),
+        service_roots=(), media_gateway=InProcessMediaGateway(),
+    )
+    database_path = tmp_path / "data" / "studio.sqlite3"
+    with TestClient(app) as client:
+        assert client.post("/api/projects", json={"projectId": "legacy", "name": "Legacy"}).status_code == 201
+        node = client.post("/api/catalog/nodes", json={
+            "kind": "service", "nodeId": "studio", "serviceClass": "f8.pystudio",
+        }).json()
+        operator = client.post("/api/catalog/nodes", json={
+            "kind": "operator", "nodeId": "script", "serviceId": "studio",
+            "serviceClass": "f8.pystudio", "operatorClass": "f8.viz.video",
+        }).json()
+        assert client.post("/api/projects/legacy/patch", json={
+            "requestId": "add-studio", "expectedGraphRevision": 0, "expectedLayoutRevision": 0,
+            "operations": [{"op": "createNode", "node": node}, {"op": "createNode", "node": operator}],
+        }).status_code == 200
+        with sqlite3.connect(database_path) as connection:
+            document = json.loads(connection.execute(
+                "SELECT document FROM projects WHERE project_id = ?", ("legacy",),
+            ).fetchone()[0])
+            document["nodes"][1]["spec"]["execOutPorts"] = ["legacy-port"]
+            connection.execute(
+                "UPDATE projects SET document = ? WHERE project_id = ?",
+                (json.dumps(document).encode("utf-8"), "legacy"),
+            )
+
+        assert client.get("/api/projects/legacy").status_code == 422
+        assert client.get("/api/projects/legacy/deployments/latest").status_code == 200
+        assert [project["projectId"] for project in client.get("/api/projects").json()] == ["legacy"]
+        assert client.post("/api/agents/sessions", json={
+            "projectId": "legacy", "providerId": "deterministic", "modelId": "graph-builder-v1",
+        }).status_code == 201
+        assert client.get("/api/agents/sessions", params={"project_id": "legacy"}).status_code == 200
+        assert client.delete("/api/projects/legacy").status_code == 204
+        assert client.get("/api/projects").json() == []
 
 
 def test_delete_project_rejects_active_deployment(tmp_path: Path) -> None:

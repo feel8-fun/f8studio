@@ -74,7 +74,7 @@ test('shows exact tool approval and submits its argument hash', async () => {
   api.startAgentRun.mockResolvedValue(waiting);
   api.resolveAgentApproval.mockResolvedValue({ ...waiting, status: 'running', approval: { ...waiting.approval!, status: 'approved' } });
 
-  render(<AgentWorkspace />);
+  render(<AgentWorkspace projectId="project1" initialSessionId={null} />);
   await waitFor(() => expect(api.fetchAgentSessions).toHaveBeenCalledWith('project1', expect.any(AbortSignal)));
   fireEvent.click(await screen.findByRole('button', { name: 'New agent session' }));
   fireEvent.change(await screen.findByRole('textbox', { name: 'Agent prompt' }), { target: { value: 'Build graph' } });
@@ -94,12 +94,44 @@ test('cancels an active run from the workspace', async () => {
   api.startAgentRun.mockResolvedValue(running);
   api.cancelAgentRun.mockResolvedValue({ ...running, status: 'cancelled' });
 
-  render(<AgentWorkspace />);
+  render(<AgentWorkspace projectId="project1" initialSessionId={null} />);
   await waitFor(() => expect(api.fetchAgentSessions).toHaveBeenCalledWith('project1', expect.any(AbortSignal)));
   fireEvent.click(await screen.findByRole('button', { name: 'New agent session' }));
+  fireEvent.change(await screen.findByRole('textbox', { name: 'Agent prompt' }), { target: { value: 'Inspect graph' } });
   fireEvent.click(await screen.findByRole('button', { name: 'Run' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Cancel agent run' }));
 
   await waitFor(() => expect(api.cancelAgentRun).toHaveBeenCalledWith('session1'));
   expect(await screen.findByText('cancelled')).toBeInTheDocument();
+});
+
+test('prefers a configured model provider for new sessions', async () => {
+  api.fetchAgentProviders.mockResolvedValue([
+    { providerId: 'deterministic', displayName: 'Deterministic', models: ['graph-builder-v1'], configured: true, deterministic: true },
+    { providerId: 'openai', displayName: 'OpenAI', models: ['configured-model'], configured: true, deterministic: false },
+  ]);
+  render(<AgentWorkspace projectId="project1" initialSessionId={null} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'New agent session' }));
+  await waitFor(() => expect(api.createAgentSession).toHaveBeenCalledWith({
+    projectId: 'project1', title: 'Studio agent', providerId: 'openai', modelId: 'configured-model',
+  }));
+});
+
+test('keeps the window bound to its project and restores the requested session', async () => {
+  const restored: AgentSession = { ...baseSession, sessionId: 'restored', projectId: 'project2' };
+  api.fetchProjects.mockResolvedValue([
+    { projectId: 'project1', name: 'First', description: '', createdAt: '', updatedAt: '', graphRevision: 0, layoutRevision: 0 },
+    { projectId: 'project2', name: 'Second', description: '', createdAt: '', updatedAt: '', graphRevision: 0, layoutRevision: 0 },
+  ]);
+  api.fetchAgentSessions.mockResolvedValue([
+    { sessionId: 'other', projectId: 'project2', title: 'Other', providerId: 'deterministic', modelId: 'graph-builder-v1', status: 'idle', updatedAt: '', messageCount: 0 },
+    { sessionId: 'restored', projectId: 'project2', title: 'Restored', providerId: 'deterministic', modelId: 'graph-builder-v1', status: 'idle', updatedAt: '', messageCount: 0 },
+  ]);
+  api.fetchAgentSession.mockResolvedValue(restored);
+
+  render(<AgentWorkspace projectId="project2" initialSessionId="restored" />);
+  await waitFor(() => expect(api.fetchAgentSessions).toHaveBeenCalledWith('project2', expect.any(AbortSignal)));
+  expect(await screen.findByTitle('Second')).toBeInTheDocument();
+  expect(screen.queryByRole('combobox', { name: 'Agent project' })).not.toBeInTheDocument();
+  await waitFor(() => expect(api.fetchAgentSession).toHaveBeenCalledWith('restored'));
 });

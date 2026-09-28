@@ -13,21 +13,33 @@ from uuid import uuid4
 
 import msgspec
 
+from f8pysdk.generated import F8StateAccess
 from f8pysdk.specs import F8JsonValue
 from f8studio_core.graph import (
     CreateNodeOp,
+    GraphNode,
     NodeCatalog,
     NodeLayout,
     OperatorNode,
     PatchRequest,
     PatchResult,
     RevisionConflictError,
+    SetNodeStateOp,
     StudioDocument,
 )
 
 from ..automation_tools import StudioAutomationTools
 from ..catalog import CatalogSnapshot
+from ..editor import CreateEditorSessionRequest, EditorSessionService
+from ..editor_context import editor_support_files
 from ..events import EventJournal
+from ..local_integration import (
+    ApplyUnityInstallRequest,
+    DetectModdingTargetRequest,
+    LocalIntegrationService,
+    PreviewUnityInstallRequest,
+    VerifySkeletonUdpRequest,
+)
 from ..models import DeployJob, DeployProjectRequest, JobStatus
 from ..project_repository import utc_now_text
 from .models import (
@@ -47,12 +59,14 @@ from .models import (
 )
 from .providers import AgentProviderRegistry
 from .repository import AgentRepository
+from .skills import AgentSkillLibrary
 
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
 _TERMINAL_JOBS = {JobStatus.succeeded, JobStatus.partially_failed, JobStatus.failed, JobStatus.cancelled}
 _APPROVAL_TTL = timedelta(minutes=5)
+_MAX_MODEL_TOOL_CALLS = 48
 
 
 class ApprovalDeniedError(RuntimeError):
@@ -67,6 +81,10 @@ class _PendingApproval:
 
 def _json_value(value: object) -> F8JsonValue:
     return cast(F8JsonValue, msgspec.to_builtins(value, str_keys=True))
+
+
+def _tool_text(value: object) -> str:
+    return json.dumps(_json_value(value), ensure_ascii=False)
 
 
 def _arguments_hash(arguments: dict[str, F8JsonValue]) -> str:
@@ -121,11 +139,17 @@ class AgentService:
         *,
         database_path: Path,
         tools: StudioAutomationTools,
+        editor: EditorSessionService,
+        local: LocalIntegrationService,
+        skills: AgentSkillLibrary,
         events: EventJournal,
         providers: AgentProviderRegistry | None = None,
     ) -> None:
         self._repository = AgentRepository(database_path)
         self._tools = tools
+        self._editor = editor
+        self._local = local
+        self._skills = skills
         self._events = events
         self._providers = providers or AgentProviderRegistry()
         self._tasks: dict[str, asyncio.Task[None]] = {}
@@ -138,7 +162,7 @@ class AgentService:
 
     def create(self, request: CreateAgentSessionRequest) -> AgentSessionRecord:
         self._providers.validate_selection(request.provider_id, request.model_id)
-        self._tools.project(request.project_id)
+        self._tools.project_summary(request.project_id)
         timestamp = utc_now_text()
         record = AgentSessionRecord(
             session_id=uuid4().hex,
@@ -154,7 +178,7 @@ class AgentService:
 
     def list(self, project_id: str | None = None) -> tuple[AgentSessionSummary, ...]:
         if project_id is not None:
-            self._tools.project(project_id)
+            self._tools.project_summary(project_id)
         return self._repository.list(project_id)
 
     def get(self, session_id: str) -> AgentSessionRecord:
@@ -296,34 +320,45 @@ class AgentService:
     async def _run(self, session_id: str, prompt: str) -> None:
         try:
             record = await asyncio.to_thread(self.get, session_id)
-            catalog = await self._tool(
-                record,
-                tool_name="catalog.read",
-                arguments={},
-                target_graph_revision=None,
-                operation=lambda: asyncio.to_thread(self._tools.catalog),
-                result_encoder=_catalog_evidence,
-            )
-            record = await asyncio.to_thread(self.get, session_id)
-            document = await self._tool(
-                record,
-                tool_name="graph.read",
-                arguments={"projectId": record.project_id},
-                target_graph_revision=None,
-                operation=lambda: asyncio.to_thread(self._tools.document, record.project_id),
-                result_encoder=_document_evidence,
-            )
-            if "diagnos" in prompt.lower() or "诊断" in prompt:
-                await self._run_diagnostics(record, document)
+            if record.provider_id != "deterministic":
+                response = await asyncio.wait_for(
+                    self._providers.run_with_tools(
+                        provider_id=record.provider_id,
+                        model_id=record.model_id,
+                        prompt=self._conversation_prompt(record, prompt),
+                        tools=self._model_tools(record),
+                    ),
+                    timeout=300,
+                )
             else:
-                await self._run_graph_build(record, catalog, document)
+                catalog = await self._tool(
+                    record,
+                    tool_name="catalog.read",
+                    arguments={},
+                    target_graph_revision=None,
+                    operation=lambda: asyncio.to_thread(self._tools.catalog),
+                    result_encoder=_catalog_evidence,
+                )
+                record = await asyncio.to_thread(self.get, session_id)
+                document = await self._tool(
+                    record,
+                    tool_name="graph.read",
+                    arguments={"projectId": record.project_id},
+                    target_graph_revision=None,
+                    operation=lambda: asyncio.to_thread(self._tools.document, record.project_id),
+                    result_encoder=_document_evidence,
+                )
+                if "diagnos" in prompt.lower() or "诊断" in prompt:
+                    await self._run_diagnostics(record, document)
+                else:
+                    await self._run_graph_build(record, catalog, document)
+                finished = await asyncio.to_thread(self.get, session_id)
+                response = await self._providers.complete(
+                    provider_id=finished.provider_id,
+                    model_id=finished.model_id,
+                    prompt=self._evidence_prompt(finished),
+                )
             finished = await asyncio.to_thread(self.get, session_id)
-            evidence = self._evidence_prompt(finished)
-            response = await self._providers.complete(
-                provider_id=finished.provider_id,
-                model_id=finished.model_id,
-                prompt=evidence,
-            )
             completed = self._append_message(finished, role="assistant", content=response)
             completed = msgspec.structs.replace(
                 completed,
@@ -347,6 +382,286 @@ class AgentService:
                 f"{type(exc).__name__}: {exc}",
                 traceback_id=traceback_id,
             )
+
+    def _code_target(self, project_id: str, node_id: str) -> tuple[StudioDocument, GraphNode, str]:
+        document = self._tools.document(project_id)
+        node = next((item for item in document.nodes if item.node_id == node_id), None)
+        if node is None:
+            raise FileNotFoundError(f"code node not found: {node_id}")
+        editor_support_files(node, "code")
+        state_fields = node.spec.stateFields
+        fields = () if isinstance(state_fields, msgspec.UnsetType) else state_fields
+        field = next(item for item in fields if item.name == "code")
+        control = field.control
+        if isinstance(control, msgspec.UnsetType) or control.language != "python":
+            raise ValueError(f"code field is not Python: {node_id}")
+        if field.access is not F8StateAccess.rw:
+            raise ValueError(f"code field is not writable: {node_id}")
+        incoming = {port.port_id for port in node.ports if port.kind.value == "state" and port.name == "code"}
+        if any(edge.to_node_id == node_id and edge.to_port_id in incoming for edge in document.edges):
+            raise ValueError(f"code field is driven by an incoming state connection: {node_id}")
+        value = node.state_values.get("code", "")
+        if not isinstance(value, str):
+            raise TypeError(f"code field is not text: {node_id}")
+        return document, node, value
+
+    @staticmethod
+    def _conversation_prompt(record: AgentSessionRecord, prompt: str) -> str:
+        earlier = record.messages[:-1][-8:]
+        if not earlier:
+            return prompt
+        history = [{"role": message.role, "content": message.content[:4000]} for message in earlier]
+        return f"Previous conversation:\n{json.dumps(history, ensure_ascii=False)}\nCurrent request:\n{prompt}"
+
+    async def _check_model_tool_budget(self, record: AgentSessionRecord) -> None:
+        if record.provider_id == "deterministic":
+            return
+        latest = await asyncio.to_thread(self.get, record.session_id)
+        if len(latest.tool_calls) - len(record.tool_calls) >= _MAX_MODEL_TOOL_CALLS:
+            raise RuntimeError(f"agent run exceeded {_MAX_MODEL_TOOL_CALLS} tool calls")
+
+    def _analyze_code(self, project_id: str, node_id: str, code: str) -> object:
+        _, node, _ = self._code_target(project_id, node_id)
+        session = self._editor.create(
+            CreateEditorSessionRequest(
+                language="python",
+                text=code,
+                filename="state.py",
+                support_files=editor_support_files(node, "code"),
+                project_id=project_id,
+                node_id=node_id,
+                field_name="code",
+            )
+        )
+        try:
+            return self._editor.analyze(session.session_id)
+        finally:
+            self._editor.close_session(session.session_id)
+
+    def _model_tools(self, record: AgentSessionRecord) -> tuple[Callable[..., Awaitable[str]], ...]:
+        project_id = record.project_id
+        previewed_patches: set[str] = set()
+        previewed_unity_plans: set[str] = set()
+
+        async def catalog_read() -> str:
+            """Read the installed service and operator catalog before constructing graph nodes."""
+            result = await self._tool(
+                record, tool_name="catalog.read", arguments={}, target_graph_revision=None,
+                operation=lambda: asyncio.to_thread(self._tools.catalog), result_encoder=_catalog_evidence,
+            )
+            return _tool_text(result)
+
+        async def skills_list() -> str:
+            """List available Studio workflow skills, including locally installed game skills."""
+            result = await self._tool(
+                record, tool_name="skills.list", arguments={}, target_graph_revision=None,
+                operation=lambda: asyncio.to_thread(self._skills.list),
+            )
+            return _tool_text(result)
+
+        async def skill_read(skill_id: str) -> str:
+            """Read an available Studio skill by ID before using its workflow guidance."""
+            result = await self._tool(
+                record, tool_name="skills.read", arguments={"skillId": skill_id}, target_graph_revision=None,
+                operation=lambda: asyncio.to_thread(self._skills.read, skill_id),
+            )
+            return result
+
+        async def graph_read() -> str:
+            """Read the current project graph, including node IDs, code fields, and revisions."""
+            result = await self._tool(
+                record, tool_name="graph.read", arguments={"projectId": project_id}, target_graph_revision=None,
+                operation=lambda: asyncio.to_thread(self._tools.document, project_id), result_encoder=_document_evidence,
+            )
+            return _tool_text(result)
+
+        async def graph_preview_patch(patch_json: str) -> str:
+            """Validate a JSON PatchRequest against the current project without changing it."""
+            patch = msgspec.json.decode(patch_json, type=PatchRequest)
+            result = await self._tool(
+                record, tool_name="graph.preview_patch", arguments={"projectId": project_id, "patch": _json_value(patch)},
+                target_graph_revision=patch.expected_graph_revision,
+                operation=lambda: asyncio.to_thread(self._tools.preview_patch, project_id, patch),
+                result_encoder=_patch_evidence,
+            )
+            previewed_patches.add(_arguments_hash({"patch": _json_value(patch)}))
+            await self._append_artifact(record.session_id, AgentArtifact(
+                artifact_id=uuid4().hex, kind="graph_patch", title="Proposed graph patch",
+                payload={"patch": _json_value(patch), "afterGraphRevision": result.document.graph_revision},
+                created_at=utc_now_text(),
+            ))
+            return _tool_text(result)
+
+        async def graph_apply_patch(patch_json: str) -> str:
+            """Apply a previously previewed JSON PatchRequest after human approval."""
+            patch = msgspec.json.decode(patch_json, type=PatchRequest)
+            if any(isinstance(operation, SetNodeStateOp) and operation.field == "code" for operation in patch.operations):
+                raise ValueError("use code_read, code_analyze, and code_write to edit Python node code")
+            fingerprint = _arguments_hash({"patch": _json_value(patch)})
+            if fingerprint not in previewed_patches:
+                raise ValueError("graph patch must be previewed in this run before applying")
+            result = await self._approved_tool(
+                record, tool_name="graph.apply_patch", arguments={"projectId": project_id, "patch": _json_value(patch)},
+                target_graph_revision=patch.expected_graph_revision,
+                operation=lambda: self._tools.apply_patch(project_id, patch), result_encoder=_patch_evidence,
+            )
+            previewed_patches.discard(fingerprint)
+            return _tool_text(result)
+
+        async def code_read(node_id: str) -> str:
+            """Read the Python code in one node, its graph revision, and its SHA-256 content hash."""
+            document, node, code = await self._tool(
+                record, tool_name="code.read", arguments={"nodeId": node_id}, target_graph_revision=None,
+                operation=lambda: asyncio.to_thread(self._code_target, project_id, node_id),
+                result_encoder=lambda result: {"nodeId": result[1].node_id, "graphRevision": result[0].graph_revision},
+            )
+            return _tool_text({
+                "nodeId": node.node_id, "nodeName": node.name, "graphRevision": document.graph_revision,
+                "codeSha256": hashlib.sha256(code.encode("utf-8")).hexdigest(), "code": code,
+            })
+
+        async def code_analyze(node_id: str, code: str) -> str:
+            """Analyze proposed Python node code with its generated Studio API support files."""
+            result = await self._tool(
+                record, tool_name="code.analyze", arguments={"nodeId": node_id, "code": code},
+                target_graph_revision=None,
+                operation=lambda: asyncio.to_thread(self._analyze_code, project_id, node_id, code),
+            )
+            return _tool_text(result)
+
+        async def code_write(node_id: str, expected_graph_revision: int, expected_code_sha256: str, code: str) -> str:
+            """Write Python code to one node after human approval; requires the read revision and content hash."""
+            compile(code, f"{node_id}.py", "exec")
+            document, _, current = await asyncio.to_thread(self._code_target, project_id, node_id)
+            digest = hashlib.sha256(current.encode("utf-8")).hexdigest()
+            if document.graph_revision != expected_graph_revision or digest != expected_code_sha256:
+                raise RevisionConflictError(f"code changed since read: {node_id}; read the node again")
+            await self._append_artifact(record.session_id, AgentArtifact(
+                artifact_id=uuid4().hex, kind="text", title=f"Proposed code change: {node_id}",
+                payload={"nodeId": node_id, "beforeSha256": digest, "before": current, "after": code},
+                created_at=utc_now_text(),
+            ))
+            patch = PatchRequest(
+                request_id=f"agent-code:{record.session_id}:{uuid4().hex}",
+                expected_graph_revision=expected_graph_revision,
+                expected_layout_revision=document.layout_revision,
+                operations=(SetNodeStateOp(node_id=node_id, field="code", value=code),),
+            )
+            async def apply_code() -> PatchResult:
+                _, _, latest = await asyncio.to_thread(self._code_target, project_id, node_id)
+                if hashlib.sha256(latest.encode("utf-8")).hexdigest() != expected_code_sha256:
+                    raise RevisionConflictError(f"code changed during approval: {node_id}")
+                return await self._tools.apply_patch(project_id, patch)
+
+            result = await self._approved_tool(
+                record, tool_name="code.write",
+                arguments={"nodeId": node_id, "expectedGraphRevision": expected_graph_revision,
+                           "expectedCodeSha256": expected_code_sha256, "code": code},
+                target_graph_revision=expected_graph_revision, operation=apply_code, result_encoder=_patch_evidence,
+            )
+            return _tool_text({
+                "graphRevision": result.document.graph_revision,
+                "layoutRevision": result.document.layout_revision,
+                "runtimeErrors": list(result.runtime_errors),
+            })
+
+        async def graph_validate() -> str:
+            """Validate the current graph after edits."""
+            document = await asyncio.to_thread(self._tools.document, project_id)
+            await self._tool(
+                record, tool_name="graph.validate", arguments={"graphRevision": document.graph_revision},
+                target_graph_revision=document.graph_revision,
+                operation=lambda: asyncio.to_thread(self._tools.validate_document, document),
+            )
+            return _tool_text({"valid": True, "graphRevision": document.graph_revision})
+
+        async def project_deploy() -> str:
+            """Deploy the current graph after human approval and wait for the deployment result."""
+            document = await asyncio.to_thread(self._tools.document, project_id)
+            request = DeployProjectRequest(
+                request_id=f"agent-deploy:{record.session_id}:{uuid4().hex}",
+                expected_graph_revision=document.graph_revision,
+            )
+            result = await self._approved_tool(
+                record, tool_name="project.deploy", arguments={"projectId": project_id, "request": _json_value(request)},
+                target_graph_revision=document.graph_revision,
+                operation=lambda: self._deploy_and_wait(project_id, request), result_encoder=_deploy_evidence,
+            )
+            return _tool_text(result)
+
+        async def runtime_observe() -> str:
+            """Read the project's current runtime monitor samples after deployment."""
+            result = await self._tool(
+                record, tool_name="runtime.observe", arguments={"projectId": project_id}, target_graph_revision=None,
+                operation=lambda: self._tools.monitor_snapshot(project_id), result_encoder=_monitor_evidence,
+            )
+            return _tool_text(result)
+
+        async def logs_read(limit: int = 50) -> str:
+            """Read recent Studio logs for debugging; limit must be between 1 and 100."""
+            if not 1 <= limit <= 100:
+                raise ValueError("log limit must be between 1 and 100")
+            result = await self._tool(
+                record, tool_name="logs.read", arguments={"limit": limit}, target_graph_revision=None,
+                operation=lambda: self._events.recent_logs(limit=limit),
+            )
+            return _tool_text(result)
+
+        async def modding_detect_target(target_path: str) -> str:
+            """Detect the game engine and whether Studio has a supported installer for this local target."""
+            result = await self._tool(
+                record, tool_name="modding.detect_target", arguments={"targetPath": target_path}, target_graph_revision=None,
+                operation=lambda: asyncio.to_thread(
+                    self._local.detect_modding_target, DetectModdingTargetRequest(target_path=target_path)
+                ),
+            )
+            return _tool_text(result)
+
+        async def modding_preview_unity_install(target_path: str) -> str:
+            """Preview exact Unity exporter installation actions and files; does not write to the game."""
+            result = await self._tool(
+                record, tool_name="modding.preview_unity_install", arguments={"targetPath": target_path},
+                target_graph_revision=None,
+                operation=lambda: asyncio.to_thread(
+                    self._local.preview_unity_install, PreviewUnityInstallRequest(target_path=target_path)
+                ),
+            )
+            previewed_unity_plans.add(result.plan_id)
+            await self._append_artifact(record.session_id, AgentArtifact(
+                artifact_id=uuid4().hex, kind="text", title="Unity installation preview",
+                payload=_json_value(result), created_at=utc_now_text(),
+            ))
+            return _tool_text(result)
+
+        async def modding_apply_unity_install(plan_id: str) -> str:
+            """Install the exact previewed Unity plan after human approval; never use for Unreal."""
+            if plan_id not in previewed_unity_plans:
+                raise ValueError("Unity installation plan must be previewed in this run before applying")
+            document = await asyncio.to_thread(self._tools.document, project_id)
+            result = await self._approved_tool(
+                record, tool_name="modding.apply_unity_install", arguments={"planId": plan_id},
+                target_graph_revision=document.graph_revision,
+                operation=lambda: asyncio.to_thread(
+                    self._local.apply_unity_install, ApplyUnityInstallRequest(plan_id=plan_id, confirm=True)
+                ),
+            )
+            previewed_unity_plans.discard(plan_id)
+            return _tool_text(result)
+
+        async def modding_verify_udp(port: int = 39540) -> str:
+            """Verify a complete decoded skeleton frame from the game exporter on a UDP port."""
+            result = await self._tool(
+                record, tool_name="modding.verify_udp", arguments={"port": port}, target_graph_revision=None,
+                operation=lambda: self._local.verify_skeleton_udp(VerifySkeletonUdpRequest(port=port)),
+            )
+            return _tool_text(result)
+
+        return (
+            skills_list, skill_read, catalog_read, graph_read, graph_preview_patch, graph_apply_patch,
+            code_read, code_analyze, code_write, graph_validate, project_deploy,
+            runtime_observe, logs_read, modding_detect_target, modding_preview_unity_install,
+            modding_apply_unity_install, modding_verify_udp,
+        )
 
     async def _run_diagnostics(self, record: AgentSessionRecord, document: object) -> None:
         if not isinstance(document, StudioDocument):
@@ -548,6 +863,7 @@ class AgentService:
         operation: Callable[[], Awaitable[T]],
         result_encoder: Callable[[T], F8JsonValue] | None = None,
     ) -> T:
+        await self._check_model_tool_budget(record)
         call = AgentToolCall(
             tool_call_id=uuid4().hex,
             tool_name=tool_name,
@@ -596,6 +912,7 @@ class AgentService:
         operation: Callable[[], Awaitable[T]],
         result_encoder: Callable[[T], F8JsonValue] | None = None,
     ) -> T:
+        await self._check_model_tool_budget(record)
         arguments_hash = _arguments_hash(arguments)
         timestamp = utc_now_text()
         call = AgentToolCall(

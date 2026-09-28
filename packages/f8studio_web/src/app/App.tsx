@@ -1,4 +1,4 @@
-import { Activity, Archive, Bot, Boxes, CircleDot, Code2, Plug, ScrollText, Settings2, type LucideIcon } from 'lucide-react';
+import { Activity, Archive, Boxes, CircleDot, Plug, ScrollText, Settings2, type LucideIcon } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 
 import { fetchHealth } from '../api/client';
@@ -9,20 +9,22 @@ import { PresentationProvider } from '../presentation/PresentationStore';
 import { GraphLogDock } from './GraphLogDock';
 
 const AssetsWorkspace = lazy(() => import('../assets/AssetsWorkspace').then((module) => ({ default: module.AssetsWorkspace })));
-const CodeWorkspace = lazy(() => import('../editor/CodeWorkspace').then((module) => ({ default: module.CodeWorkspace })));
 const CodeStateWorkspace = lazy(() => import('../editor/CodeStateWorkspace').then((module) => ({ default: module.CodeStateWorkspace })));
 const PresentationWorkspace = lazy(() => import('../presentation/PresentationWorkspace').then((module) => ({ default: module.PresentationWorkspace })));
 const LocalWorkspace = lazy(() => import('../local/LocalWorkspace').then((module) => ({ default: module.LocalWorkspace })));
 const AgentWorkspace = lazy(() => import('../agents/AgentWorkspace').then((module) => ({ default: module.AgentWorkspace })));
 
-type WorkspaceView = 'graph' | 'agent' | 'assets' | 'code' | 'code-state' | 'outputs' | 'local' | 'logs';
-interface LocationView { readonly view: WorkspaceView; readonly nodeId: string | null }
+type WorkspaceView = 'graph' | 'agent' | 'assets' | 'code-state' | 'outputs' | 'local' | 'logs';
+interface LocationView { readonly view: WorkspaceView; readonly nodeId: string | null; readonly projectId: string | null; readonly sessionId: string | null }
 
 function readLocationView(): LocationView {
   const params = new URLSearchParams(window.location.search);
   const requested = params.get('view');
-  const view = requested === 'code-state' || WORKSPACES.some((item) => item.view === requested) ? requested as WorkspaceView : 'graph';
-  return { view, nodeId: view === 'outputs' ? params.get('node') : null };
+  const projectId = params.get('project');
+  const view = requested === 'code-state' || (requested === 'agent' && projectId) ||
+    WORKSPACES.some((item) => item.view === requested) ? requested as WorkspaceView : 'graph';
+  return { view, nodeId: view === 'outputs' ? params.get('node') : null,
+    projectId: view === 'agent' ? projectId : null, sessionId: view === 'agent' ? params.get('session') : null };
 }
 
 interface WorkspaceDefinition {
@@ -34,9 +36,7 @@ interface WorkspaceDefinition {
 
 const WORKSPACES: readonly WorkspaceDefinition[] = [
   { view: 'graph', label: 'Graph', title: 'Graph Editor', icon: Boxes },
-  { view: 'agent', label: 'Agent', title: 'Agent', icon: Bot },
   { view: 'assets', label: 'Assets', title: 'Assets', icon: Archive },
-  { view: 'code', label: 'Code', title: 'Code & Schema', icon: Code2 },
   { view: 'outputs', label: 'Outputs', title: 'Live Outputs', icon: Activity },
   { view: 'local', label: 'Local integrations', title: 'Local Integrations', icon: Plug },
   { view: 'logs', label: 'Logs', title: 'Log Center', icon: ScrollText },
@@ -50,14 +50,14 @@ type ConnectionState =
 export function App() {
   const [connection, setConnection] = useState<ConnectionState>({ kind: 'connecting' });
   const [locationView, setLocationView] = useState<LocationView>(readLocationView);
-  const { view, nodeId } = locationView;
+  const { view, nodeId, projectId, sessionId } = locationView;
   const navigate = useCallback((nextView: WorkspaceView, nextNodeId: string | null = null) => {
     const url = new URL(window.location.href);
     url.searchParams.set('view', nextView);
     if (nextNodeId === null) url.searchParams.delete('node');
     else url.searchParams.set('node', nextNodeId);
     window.history.pushState(null, '', url);
-    setLocationView({ view: nextView, nodeId: nextNodeId });
+    setLocationView({ view: nextView, nodeId: nextNodeId, projectId: null, sessionId: null });
   }, []);
   const showOutput = useCallback((outputNodeId: string) => {
     navigate('outputs', outputNodeId);
@@ -83,7 +83,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (view === 'code-state') return;
+    if (view === 'code-state' || view === 'agent') return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (!event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
       const index = Number(event.key) - 1;
@@ -104,11 +104,11 @@ export function App() {
         : 'Server unavailable';
 
   return (
-    <PresentationProvider><main className={`studio-shell${view === 'code-state' ? ' studio-shell-code-state' : ''}`}>
+    <PresentationProvider><main className={`studio-shell${view === 'code-state' || view === 'agent' ? ' studio-shell-code-state' : ''}`}>
       <header className="topbar">
         <div className="topbar-identity">
           <div className="brand">Feel8 Studio</div>
-          <h1 id="workspace-title">{view === 'code-state' ? 'Code Editor' : WORKSPACES.find((workspace) => workspace.view === view)?.title}</h1>
+          <h1 id="workspace-title">{view === 'code-state' ? 'Code Editor' : view === 'agent' ? 'Agent' : WORKSPACES.find((workspace) => workspace.view === view)?.title}</h1>
         </div>
         <div className={`connection connection-${connection.kind}`} role="status">
           <CircleDot size={14} aria-hidden="true" />
@@ -119,7 +119,7 @@ export function App() {
         </button>
       </header>
 
-      {view !== 'code-state' && <aside className="rail" aria-label="Workspace navigation">
+      {view !== 'code-state' && view !== 'agent' && <aside className="rail" aria-label="Workspace navigation">
         {WORKSPACES.map(({ view: target, label, icon: Icon }) => <button
           className={`rail-button ${view === target ? 'rail-button-active' : ''}`}
           type="button"
@@ -135,12 +135,11 @@ export function App() {
           {view === 'graph' && <GraphLogDock onOpenLogs={() => navigate('logs')}><GraphWorkspace onShowOutput={showOutput} /></GraphLogDock>}
           <Suspense fallback={<div className="view-loading" role="status">Loading view...</div>}>
             {view === 'assets' && <AssetsWorkspace />}
-            {view === 'code' && <CodeWorkspace />}
             {view === 'code-state' && <CodeStateWorkspace />}
             {view === 'outputs' && <PresentationWorkspace nodeId={nodeId} />}
             {view === 'local' && <LocalWorkspace />}
             {view === 'logs' && <LogsWorkspace />}
-            {view === 'agent' && <AgentWorkspace />}
+            {view === 'agent' && projectId !== null && <AgentWorkspace projectId={projectId} initialSessionId={sessionId} />}
           </Suspense>
           {connection.kind === 'offline' && <div className="connection-error">{connection.message}</div>}
         </div>

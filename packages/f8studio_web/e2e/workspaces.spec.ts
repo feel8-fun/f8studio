@@ -99,20 +99,6 @@ test('local workspaces operate without Qt', async ({ page }, testInfo) => {
   await page.screenshot({ path: testInfo.outputPath('assets-workspace.png'), fullPage: true });
 
   await page.keyboard.press('Control+4');
-  await expect(page.getByRole('heading', { name: 'Code & Schema' })).toBeVisible();
-  await expect(page.locator('.monaco-editor')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Analyze' })).toHaveCount(0);
-  await expect(page.getByRole('complementary', { name: 'Diagnostics' })).toHaveCount(0);
-  await page.locator('.monaco-editor .view-lines').click();
-  await page.keyboard.press('ControlOrMeta+A');
-  await page.keyboard.type('value: int = "wrong"');
-  await expect(page.locator('.monaco-editor .squiggly-error').first()).toBeVisible({ timeout: 20000 });
-  await page.keyboard.press('ControlOrMeta+A');
-  await page.keyboard.type('value: int = 1');
-  await expect(page.locator('.monaco-editor .squiggly-error')).toHaveCount(0, { timeout: 20000 });
-  await page.screenshot({ path: testInfo.outputPath('code-workspace.png'), fullPage: true });
-
-  await page.getByRole('button', { name: 'Outputs' }).click();
   await expect(page.getByRole('heading', { name: 'Live Outputs' })).toBeVisible();
   await expect(page.getByText('Event stream online')).toBeVisible();
   await page.getByRole('tab', { name: 'Template' }).click();
@@ -132,6 +118,12 @@ test('local workspaces operate without Qt', async ({ page }, testInfo) => {
   }, assetName);
 
   expect(consoleErrors).toEqual([]);
+});
+
+test('retired code workspace URL opens the graph editor', async ({ page }) => {
+  await page.goto('/?view=code');
+  await expect(page.getByRole('heading', { name: 'Graph Editor' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Code', exact: true })).toHaveCount(0);
 });
 
 test('configures and restores a native global hotkey binding', async ({ page }, testInfo) => {

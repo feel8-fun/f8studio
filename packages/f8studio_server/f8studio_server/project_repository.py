@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 from f8studio_core.graph import PatchResult, StudioDocument, decode_document, encode_document
 
@@ -152,6 +154,54 @@ class ProjectRepository:
             )
             for row in rows
         )
+
+    def get_project_summary(self, project_id: str) -> ProjectSummary | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """SELECT project_id, name, description, created_at, updated_at,
+                          graph_revision, layout_revision
+                   FROM projects WHERE project_id = ?""",
+                (project_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return ProjectSummary(
+            project_id=_text(row[0]),
+            name=_text(row[1]),
+            description=_text(row[2]),
+            created_at=_text(row[3]),
+            updated_at=_text(row[4]),
+            graph_revision=_integer(row[5]),
+            layout_revision=_integer(row[6]),
+        )
+
+    def project_service_ids(self, project_id: str) -> frozenset[str]:
+        with self._connect() as connection:
+            row = connection.execute("SELECT document FROM projects WHERE project_id = ?", (project_id,)).fetchone()
+        if row is None:
+            raise FileNotFoundError(f"project not found: {project_id}")
+        try:
+            document: object = json.loads(_bytes(row[0]))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError(f"cannot inspect service IDs in project {project_id}: {exc}") from exc
+        if not isinstance(document, dict):
+            raise ValueError(f"project {project_id} document is not an object")
+        document_fields = cast(dict[str, object], document)
+        nodes = document_fields.get("nodes")
+        if not isinstance(nodes, list):
+            raise ValueError(f"project {project_id} document has no nodes array")
+        service_ids: set[str] = set()
+        for node in cast(list[object], nodes):
+            if not isinstance(node, dict):
+                raise ValueError(f"project {project_id} document contains an invalid node")
+            node_fields = cast(dict[str, object], node)
+            if node_fields.get("kind") != "service":
+                continue
+            service_id = node_fields.get("serviceId")
+            if not isinstance(service_id, str):
+                raise ValueError(f"project {project_id} service node has no serviceId")
+            service_ids.add(service_id)
+        return frozenset(service_ids)
 
     def get_project(self, project_id: str) -> ProjectRecord | None:
         with self._connect() as connection:

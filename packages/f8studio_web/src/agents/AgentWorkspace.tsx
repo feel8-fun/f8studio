@@ -11,7 +11,7 @@ import {
   resolveAgentApproval,
   startAgentRun,
 } from '../api/client';
-import type { AgentProviderSummary, AgentSession, AgentSessionSummary, ProjectSummary } from '../api/contracts';
+import type { AgentProviderSummary, AgentSession, AgentSessionSummary } from '../api/contracts';
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -30,15 +30,14 @@ function sessionSummary(session: AgentSession): AgentSessionSummary {
   };
 }
 
-export function AgentWorkspace() {
-  const [projects, setProjects] = useState<readonly ProjectSummary[]>([]);
+export function AgentWorkspace({ projectId, initialSessionId }: { readonly projectId: string; readonly initialSessionId: string | null }) {
+  const [projectName, setProjectName] = useState(projectId);
   const [providers, setProviders] = useState<readonly AgentProviderSummary[]>([]);
-  const [projectId, setProjectId] = useState('');
   const [sessions, setSessions] = useState<readonly AgentSessionSummary[]>([]);
   const [session, setSession] = useState<AgentSession | null>(null);
   const [providerId, setProviderId] = useState('deterministic');
   const [modelId, setModelId] = useState('graph-builder-v1');
-  const [prompt, setPrompt] = useState('Build a controllable value graph, validate it, deploy it, and report runtime evidence.');
+  const [prompt, setPrompt] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -57,11 +56,12 @@ export function AgentWorkspace() {
     const controller = new AbortController();
     Promise.all([fetchProjects(controller.signal), fetchAgentProviders(controller.signal)]).then(
       ([projectList, providerList]) => {
-        setProjects(projectList);
+        const selected = projectList.find((item) => item.projectId === projectId);
+        if (selected === undefined) { setError('This project no longer exists.'); return; }
+        setProjectName(selected.name);
         setProviders(providerList);
-        const firstProject = projectList[0]?.projectId ?? '';
-        setProjectId((current) => current || firstProject);
-        const firstProvider = providerList.find((item) => item.configured) ?? providerList[0];
+        const firstProvider = providerList.find((item) => item.configured && !item.deterministic)
+          ?? providerList.find((item) => item.configured) ?? providerList[0];
         if (firstProvider !== undefined) {
           setProviderId(firstProvider.providerId);
           setModelId(firstProvider.models[0] ?? '');
@@ -70,22 +70,29 @@ export function AgentWorkspace() {
       (reason: unknown) => { if (!controller.signal.aborted) setError(errorText(reason)); },
     );
     return () => controller.abort();
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
-    if (!projectId) { setSessions([]); setSession(null); return; }
     const controller = new AbortController();
     fetchAgentSessions(projectId, controller.signal).then(
       (items) => {
         setSessions(items);
-        const target = items.find((item) => item.sessionId === session?.sessionId) ?? items[0];
+        const target = items.find((item) => item.sessionId === initialSessionId) ?? items[0];
         if (target === undefined) setSession(null);
         else void refreshSession(target.sessionId).catch((reason: unknown) => setError(errorText(reason)));
       },
       (reason: unknown) => { if (!controller.signal.aborted) setError(errorText(reason)); },
     );
     return () => controller.abort();
-  }, [projectId, refreshSession]);
+  }, [initialSessionId, projectId, refreshSession]);
+
+  useEffect(() => {
+    if (session === null) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('session') === session.sessionId) return;
+    url.searchParams.set('session', session.sessionId);
+    window.history.replaceState(null, '', url);
+  }, [session?.sessionId]);
 
   useEffect(() => {
     if (session === null) return;
@@ -107,12 +114,12 @@ export function AgentWorkspace() {
   }, [refreshSession, session?.sessionId]);
 
   const create = async () => {
-    if (!projectId || provider === undefined || !modelId) return;
+    if (provider === undefined || !modelId) return;
     setBusy(true); setError('');
     try {
       const created = await createAgentSession({
         projectId,
-        title: 'Graph agent',
+        title: 'Studio agent',
         providerId: provider.providerId,
         modelId,
       });
@@ -156,10 +163,8 @@ export function AgentWorkspace() {
   return <div className="agent-workspace">
     <aside className="agent-sessions">
       <div className="agent-project-select">
-        <select aria-label="Agent project" value={projectId} onChange={(event) => setProjectId(event.target.value)}>
-          {projects.map((project) => <option key={project.projectId} value={project.projectId}>{project.name}</option>)}
-        </select>
-        <button className="icon-button" type="button" title="New session" aria-label="New agent session" disabled={busy || !projectId} onClick={() => void create()}><Plus size={17} /></button>
+        <strong title={projectName}>{projectName}</strong>
+        <button className="icon-button" type="button" title="New session" aria-label="New agent session" disabled={busy || providers.length === 0} onClick={() => void create()}><Plus size={17} /></button>
       </div>
       <div className="agent-provider-row">
         <select aria-label="Agent provider" value={provider?.providerId ?? ''} onChange={(event) => {

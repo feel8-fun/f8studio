@@ -78,6 +78,17 @@ class ProjectService:
             raise FileNotFoundError(f"project not found: {project_id}")
         return record
 
+    def summary(self, project_id: str) -> ProjectSummary:
+        project_id = ensure_token(project_id, label="project_id")
+        summary = self._repository.get_project_summary(project_id)
+        if summary is None:
+            raise FileNotFoundError(f"project not found: {project_id}")
+        return summary
+
+    def service_ids(self, project_id: str) -> frozenset[str]:
+        project_id = ensure_token(project_id, label="project_id")
+        return self._repository.project_service_ids(project_id)
+
     def update(self, project_id: str, request: UpdateProjectRequest) -> ProjectRecord:
         project_id = ensure_token(project_id, label="project_id")
         name = request.name.strip()
