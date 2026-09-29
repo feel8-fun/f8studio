@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 import msgspec
+import httpx
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -19,6 +20,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.types import ASGIApp
 
 from f8pysdk.specs import F8JsonValue
+from f8pysdk.decision import DecisionRequest, validate_questions
 from f8media_protocol.client import MediaGatewayRequestError, MediaGatewayUnavailable
 from f8media_protocol.contracts import MediaGateway
 from f8media_protocol.models import AudioSessionOffer, MediaSessionOffer, OverlayResult
@@ -40,8 +42,13 @@ from .application import StudioApplication
 from .agents import (
     CreateAgentSessionRequest,
     ResolveAgentApprovalRequest,
+    RenameAgentSessionRequest,
+    SelectAgentModelRequest,
     StartAgentRunRequest,
 )
+from .agents.provider_settings import CreateProviderConnection, UpdateProviderSettings
+from .agents.provider_probe import ProbeProviderRequest
+from .agents.decisions import DecisionCapacityError, DecisionResponseError
 from .assets import (
     AssetExport,
     AssetKind,
@@ -637,6 +644,53 @@ def create_app(
     async def agent_providers() -> F8JsonValue:
         return _json_value(studio.agents.providers())
 
+    @app.get("/api/agents/providers/settings")
+    async def agent_provider_settings() -> F8JsonValue:
+        return _json_value(studio.agents.provider_settings())
+
+    @app.post("/api/decisions/evaluate")
+    async def evaluate_decisions(request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, DecisionRequest)
+        validate_questions(payload.questions)
+        try:
+            return _json_value(await studio.agents.decisions.evaluate(payload))
+        except DecisionCapacityError as exc:
+            raise HTTPException(status_code=429, detail=str(exc), headers={"Retry-After": "1"}) from exc
+        except DecisionResponseError as exc:
+            studio.agents.decisions.report_failure("Invalid TypeSafe decision response", exc)
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except httpx.HTTPStatusError as exc:
+            studio.agents.decisions.report_failure(f"TypeSafe decision request failed: HTTP {exc.response.status_code}", exc)
+            if exc.response.status_code in {429, 529}:
+                raise HTTPException(status_code=429, detail="TypeSafe is rate limited or overloaded; reduce query frequency", headers={"Retry-After": "2"}) from exc
+            raise HTTPException(status_code=502, detail=f"TypeSafe returned HTTP {exc.response.status_code}; check provider settings") from exc
+        except httpx.TimeoutException as exc:
+            studio.agents.decisions.report_failure("TypeSafe decision request timed out", exc)
+            raise HTTPException(status_code=504, detail="TypeSafe decision request timed out") from exc
+        except httpx.RequestError as exc:
+            studio.agents.decisions.report_failure("TypeSafe decision connection failed", exc)
+            raise HTTPException(status_code=502, detail="Could not connect to TypeSafe") from exc
+
+    @app.put("/api/agents/providers/{provider_id}/settings")
+    async def update_agent_provider_settings(provider_id: str, request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, UpdateProviderSettings)
+        return _json_value(await studio.agents.update_provider_settings(provider_id, payload))
+
+    @app.post("/api/agents/connections", status_code=201)
+    async def create_agent_connection(request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, CreateProviderConnection)
+        return _json_value(await studio.agents.create_provider_connection(payload))
+
+    @app.delete("/api/agents/connections/{provider_id}", status_code=204)
+    async def delete_agent_connection(provider_id: str) -> Response:
+        await studio.agents.delete_provider_connection(provider_id)
+        return Response(status_code=204)
+
+    @app.post("/api/agents/connections/probe")
+    async def probe_agent_connection(request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, ProbeProviderRequest)
+        return _json_value(await studio.agents.probe_provider(payload))
+
     @app.get("/api/agents/sessions")
     async def agent_sessions(project_id: str | None = None) -> F8JsonValue:
         return _json_value(await asyncio.to_thread(studio.agents.list, project_id))
@@ -649,6 +703,21 @@ def create_app(
     @app.get("/api/agents/sessions/{session_id}")
     async def get_agent_session(session_id: str) -> F8JsonValue:
         return _json_value(await asyncio.to_thread(studio.agents.get, session_id))
+
+    @app.put("/api/agents/sessions/{session_id}")
+    async def rename_agent_session(session_id: str, request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, RenameAgentSessionRequest)
+        return _json_value(await studio.agents.rename(session_id, payload))
+
+    @app.delete("/api/agents/sessions/{session_id}", status_code=204)
+    async def delete_agent_session(session_id: str) -> Response:
+        await studio.agents.delete(session_id)
+        return Response(status_code=204)
+
+    @app.put("/api/agents/sessions/{session_id}/model")
+    async def select_agent_model(session_id: str, request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, SelectAgentModelRequest)
+        return _json_value(await studio.agents.select_model(session_id, payload))
 
     @app.post("/api/agents/sessions/{session_id}/runs", status_code=202)
     async def start_agent_run(session_id: str, request: Request) -> F8JsonValue:

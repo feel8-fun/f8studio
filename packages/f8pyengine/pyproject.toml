@@ -5,6 +5,8 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "httpx>=0.28,<1",
+    "pillow>=11,<13",
     "buttplug>=1.0.0",
     "numpy>=1.26.0",
     "scipy>=1.14.0",

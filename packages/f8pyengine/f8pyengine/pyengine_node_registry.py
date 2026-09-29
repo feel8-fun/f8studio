@@ -31,6 +31,7 @@ from .operators.rate_limiter import register_operator as register_rate_limiter_o
 from .operators.tcode import register_operator as register_tcode_operator
 from .operators.python_script import register_operator as register_python_script_operator
 from .operators.data_expr import register_operator as register_data_expr_operator
+from .operators.decision import register_operator as register_decision_operator
 from .operators.lovense_mock_server import register_operator as register_lovense_mock_server_operator
 from .operators.lovense_out import register_operator as register_lovense_out_operator
 from .operators.buttplug_out import register_operator as register_buttplug_out_operator
@@ -111,6 +112,7 @@ def register_pyengine_specs(registry: Registry) -> Registry:
     register_tcode_operator(registry)
     register_python_script_operator(registry)
     register_data_expr_operator(registry)
+    register_decision_operator(registry)
     register_lovense_out_operator(registry)
     register_buttplug_out_operator(registry)
     register_lovense_mock_server_operator(registry)

@@ -202,6 +202,9 @@ def test_audio_viz_publishes_audiocap_stream_key_after_rungraph_routes_are_ready
 
 def test_tcode_operator_is_static_and_emits_local_renderer_commands() -> None:
     async def scenario() -> None:
+        sampling_fields = {field.name: field for field in VizTCodeRuntimeNode.SPEC.stateFields}
+        assert sampling_fields["upstreamSamplingMode"].valueSchema.default == "auto"
+        assert sampling_fields["upstreamSampleIntervalMs"].valueSchema.default == 100
         outlet = CapturingPresentationOutlet()
         registry = Registry.wrap(create_studio_registry(presentation=outlet))
         node = registry.create_operator_node(

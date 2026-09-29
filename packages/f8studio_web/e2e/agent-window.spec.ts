@@ -19,6 +19,9 @@ test('agent window stays bound to the graph project and reopens on the same sess
 
     await popup.getByRole('button', { name: 'New agent session' }).click();
     await expect(popup.getByRole('textbox', { name: 'Agent prompt' })).toBeVisible();
+    await expect(popup.getByRole('combobox', { name: 'Session provider' })).toBeVisible();
+    await expect(popup.getByRole('button', { name: 'Attach images' })).toBeVisible();
+    expect(await popup.locator('.agent-run-header').evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     await expect(popup).toHaveURL(/session=/);
     const sessionUrl = popup.url();
     await popup.reload();

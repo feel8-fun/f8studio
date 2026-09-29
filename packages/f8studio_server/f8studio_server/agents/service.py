@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import hashlib
 import json
 import logging
@@ -45,6 +47,7 @@ from ..project_repository import utc_now_text
 from .models import (
     AgentApproval,
     AgentArtifact,
+    AgentImage,
     AgentMessage,
     AgentProviderSummary,
     AgentRunStatus,
@@ -54,12 +57,18 @@ from .models import (
     ApprovalStatus,
     CreateAgentSessionRequest,
     ResolveAgentApprovalRequest,
+    RenameAgentSessionRequest,
+    SelectAgentModelRequest,
     StartAgentRunRequest,
     ToolCallStatus,
 )
 from .providers import AgentProviderRegistry
+from .decisions import SystemOneDecisionClient
+from .provider_settings import CreateProviderConnection, ProviderSettingsView, UpdateProviderSettings
+from .provider_probe import ProbeProviderRequest, ProviderProbeResult
 from .repository import AgentRepository
 from .skills import AgentSkillLibrary
+from .graph_edits import GraphChanges, build_patch
 
 
 logger = logging.getLogger(__name__)
@@ -67,6 +76,42 @@ T = TypeVar("T")
 _TERMINAL_JOBS = {JobStatus.succeeded, JobStatus.partially_failed, JobStatus.failed, JobStatus.cancelled}
 _APPROVAL_TTL = timedelta(minutes=5)
 _MAX_MODEL_TOOL_CALLS = 48
+_MAX_IMAGE_BYTES = 4 * 1024 * 1024
+_MAX_IMAGES = 3
+
+
+def _validate_images(images: tuple[AgentImage, ...]) -> None:
+    if len(images) > _MAX_IMAGES:
+        raise ValueError(f"at most {_MAX_IMAGES} images are allowed per message")
+    signatures = {
+        "image/png": b"\x89PNG\r\n\x1a\n",
+        "image/jpeg": b"\xff\xd8\xff",
+        "image/webp": b"RIFF",
+        "image/gif": b"GIF8",
+    }
+    for image in images:
+        if not image.name.strip() or len(image.name) > 200:
+            raise ValueError("image name must be between 1 and 200 characters")
+        header, separator, encoded = image.data_url.partition(",")
+        media_type = header.removeprefix("data:").removesuffix(";base64")
+        if not separator or header != f"data:{media_type};base64" or media_type not in signatures:
+            raise ValueError("image must be a base64 PNG, JPEG, WebP, or GIF data URL")
+        if len(encoded) > (_MAX_IMAGE_BYTES + 2) * 4 // 3 + 4:
+            raise ValueError("image exceeds the 4 MB limit")
+        try:
+            data = base64.b64decode(encoded, validate=True)
+        except binascii.Error as exc:
+            raise ValueError("image has invalid base64 data") from exc
+        if not data or len(data) > _MAX_IMAGE_BYTES or not data.startswith(signatures[media_type]):
+            raise ValueError("image format does not match its content or exceeds 4 MB")
+        if media_type == "image/webp" and data[8:12] != b"WEBP":
+            raise ValueError("image format does not match its content")
+
+
+def _title_from_prompt(prompt: str) -> str:
+    first_line = prompt.strip().splitlines()[0]
+    title = " ".join(first_line.split())
+    return title[:56].rstrip() + ("..." if len(title) > 56 else "")
 
 
 class ApprovalDeniedError(RuntimeError):
@@ -100,6 +145,56 @@ def _catalog_evidence(catalog: CatalogSnapshot) -> F8JsonValue:
     return {"serviceCount": len(catalog.services), "operatorCount": len(catalog.operators)}
 
 
+def _catalog_index(catalog: CatalogSnapshot) -> F8JsonValue:
+    return {
+        "services": [{"serviceClass": str(spec.serviceClass), "label": str(spec.label)} for spec in catalog.services],
+        "operators": [{"serviceClass": str(spec.serviceClass), "operatorClass": str(spec.operatorClass),
+                       "label": str(spec.label)} for spec in catalog.operators],
+    }
+
+
+def _catalog_search(catalog: CatalogSnapshot, query: str) -> F8JsonValue:
+    needle = query.strip().casefold()
+    if len(needle) < 2:
+        raise ValueError("Catalog search needs at least two characters")
+    terms = needle.split()
+    matches = [spec for spec in catalog.operators if any(term in " ".join((
+        str(spec.serviceClass), str(spec.operatorClass), str(spec.label), str(spec.description),
+    )).casefold() for term in terms)]
+    return {
+        "query": query,
+        "matches": [{"serviceClass": str(spec.serviceClass), "operatorClass": str(spec.operatorClass),
+                     "label": str(spec.label), "description": str(spec.description)[:240]}
+                    for spec in matches[:25]],
+        "total": len(matches),
+    }
+
+
+def _catalog_operator(catalog: CatalogSnapshot, service_class: str, operator_class: str) -> F8JsonValue:
+    spec = next((item for item in catalog.operators
+                 if str(item.serviceClass) == service_class and str(item.operatorClass) == operator_class), None)
+    if spec is None:
+        raise ValueError(f"Unknown operator: {service_class}/{operator_class}")
+    return _json_value(spec)
+
+
+def _graph_outline(document: StudioDocument) -> F8JsonValue:
+    return {
+        "projectId": document.project_id,
+        "graphRevision": document.graph_revision,
+        "layoutRevision": document.layout_revision,
+        "nodes": [{"nodeId": node.node_id, "name": node.name, "kind": "operator" if isinstance(node, OperatorNode) else "service",
+                   "serviceId": node.service_id, "serviceClass": node.service_class,
+                   "operatorClass": node.operator_class if isinstance(node, OperatorNode) else None,
+                   "stateValues": node.state_values,
+                   "ports": [{"portId": port.port_id, "name": port.name, "kind": port.kind.value,
+                              "direction": port.direction.value} for port in node.ports]}
+                  for node in document.nodes],
+        "edges": _json_value(document.edges),
+        "layout": _json_value(document.layout),
+    }
+
+
 def _document_evidence(document: StudioDocument) -> F8JsonValue:
     return {
         "projectId": document.project_id,
@@ -117,6 +212,7 @@ def _patch_evidence(result: PatchResult) -> F8JsonValue:
         "layoutChanged": result.layout_changed,
         "graphRevision": result.document.graph_revision,
         "layoutRevision": result.document.layout_revision,
+        "runtimeErrors": list(result.runtime_errors),
     }
 
 
@@ -151,7 +247,8 @@ class AgentService:
         self._local = local
         self._skills = skills
         self._events = events
-        self._providers = providers or AgentProviderRegistry()
+        self._providers = providers or AgentProviderRegistry(database_path.with_name("agent-providers.json"))
+        self.decisions = SystemOneDecisionClient(self._providers)
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._approvals: dict[str, _PendingApproval] = {}
         self._lock = asyncio.Lock()
@@ -160,19 +257,45 @@ class AgentService:
     def providers(self) -> tuple[AgentProviderSummary, ...]:
         return self._providers.summaries()
 
+    def provider_settings(self) -> tuple[ProviderSettingsView, ...]:
+        return self._providers.settings()
+
+    async def update_provider_settings(self, provider_id: str, request: UpdateProviderSettings) -> ProviderSettingsView:
+        async with self._lock:
+            if any(not task.done() for task in self._tasks.values()):
+                raise ValueError("Wait for active agent runs to finish or cancel them before changing provider settings")
+            return await asyncio.to_thread(self._providers.update_settings, provider_id, request)
+
+    async def create_provider_connection(self, request: CreateProviderConnection) -> ProviderSettingsView:
+        async with self._lock:
+            if any(not task.done() for task in self._tasks.values()):
+                raise ValueError("Wait for active agent runs before changing provider connections")
+            return await asyncio.to_thread(self._providers.create_connection, request)
+
+    async def delete_provider_connection(self, provider_id: str) -> None:
+        async with self._lock:
+            if any(not task.done() for task in self._tasks.values()):
+                raise ValueError("Wait for active agent runs before changing provider connections")
+            await asyncio.to_thread(self._providers.delete_connection, provider_id)
+
+    async def probe_provider(self, request: ProbeProviderRequest) -> ProviderProbeResult:
+        return await self._providers.probe(request)
+
     def create(self, request: CreateAgentSessionRequest) -> AgentSessionRecord:
         self._providers.validate_selection(request.provider_id, request.model_id)
         self._tools.project_summary(request.project_id)
         timestamp = utc_now_text()
+        title = request.title.strip() or "New agent session"
         record = AgentSessionRecord(
             session_id=uuid4().hex,
             project_id=request.project_id,
-            title=request.title.strip() or "New agent session",
+            title=title,
             provider_id=request.provider_id,
             model_id=request.model_id,
             status=AgentRunStatus.idle,
             created_at=timestamp,
             updated_at=timestamp,
+            auto_title_pending=title in {"Studio agent", "New agent session"},
         )
         return self._repository.save(record)
 
@@ -187,18 +310,62 @@ class AgentService:
             raise FileNotFoundError(f"agent session not found: {session_id}")
         return record
 
+    async def rename(self, session_id: str, request: RenameAgentSessionRequest) -> AgentSessionRecord:
+        title = " ".join(request.title.split())
+        if not title or len(title) > 120:
+            raise ValueError("agent session title must be between 1 and 120 characters")
+        async with self._lock:
+            record = await asyncio.to_thread(self.get, session_id)
+            if record.status in {AgentRunStatus.running, AgentRunStatus.waiting_for_approval}:
+                raise ValueError("stop the active agent run before renaming its session")
+            updated = msgspec.structs.replace(record, title=title, auto_title_pending=False, updated_at=utc_now_text())
+            await asyncio.to_thread(self._repository.save, updated)
+        await self._publish(updated)
+        return updated
+
+    async def select_model(self, session_id: str, request: SelectAgentModelRequest) -> AgentSessionRecord:
+        async with self._lock:
+            record = await asyncio.to_thread(self.get, session_id)
+            if record.status in {AgentRunStatus.running, AgentRunStatus.waiting_for_approval}:
+                raise ValueError("stop the active agent run before changing its model")
+            self._providers.validate_selection(request.provider_id, request.model_id)
+            updated = msgspec.structs.replace(
+                record, provider_id=request.provider_id, model_id=request.model_id,
+                updated_at=utc_now_text(),
+            )
+            await asyncio.to_thread(self._repository.save, updated)
+        await self._publish(updated)
+        return updated
+
+    async def delete(self, session_id: str) -> None:
+        async with self._lock:
+            record = await asyncio.to_thread(self.get, session_id)
+            if record.status in {AgentRunStatus.running, AgentRunStatus.waiting_for_approval}:
+                raise ValueError("stop the active agent run before deleting its session")
+            await asyncio.to_thread(self._repository.delete, session_id)
+        await self._events.publish(
+            event_type="agent.session.deleted",
+            scope=f"project:{record.project_id}",
+            payload={"sessionId": session_id},
+        )
+
     async def start_run(self, session_id: str, request: StartAgentRunRequest) -> AgentSessionRecord:
         prompt = request.prompt.strip()
-        if not prompt:
-            raise ValueError("agent prompt must be non-empty")
+        if not prompt and not request.images:
+            raise ValueError("agent prompt or image must be provided")
+        _validate_images(request.images)
         async with self._lock:
             record = await asyncio.to_thread(self.get, session_id)
             if record.status in {AgentRunStatus.running, AgentRunStatus.waiting_for_approval}:
                 raise ValueError("agent session already has an active run")
             self._providers.validate_selection(record.provider_id, record.model_id)
+            if request.images and not self._providers.supports_image(record.provider_id, record.model_id):
+                raise ValueError(f"selected agent model does not support image input: {record.model_id}")
             timestamp = utc_now_text()
             started = msgspec.structs.replace(
                 record,
+                title=_title_from_prompt(prompt or "Image") if record.auto_title_pending and not record.messages else record.title,
+                auto_title_pending=False,
                 status=AgentRunStatus.running,
                 updated_at=timestamp,
                 messages=record.messages
@@ -208,6 +375,9 @@ class AgentService:
                         role="user",
                         content=prompt,
                         created_at=timestamp,
+                        images=request.images,
+                        provider_id=record.provider_id,
+                        model_id=record.model_id,
                     ),
                 ),
                 approval=None,
@@ -215,7 +385,7 @@ class AgentService:
                 traceback_id="",
             )
             await asyncio.to_thread(self._repository.save, started)
-            task = asyncio.create_task(self._run(started.session_id, prompt), name=f"agent:{started.session_id}")
+            task = asyncio.create_task(self._run(started.session_id, prompt, request.reasoning_effort), name=f"agent:{started.session_id}")
             self._tasks[started.session_id] = task
             task.add_done_callback(lambda _task, key=started.session_id: self._tasks.pop(key, None))
         await self._publish(started)
@@ -316,20 +486,23 @@ class AgentService:
             await self.cancel(session_id)
         self._tasks.clear()
         self._approvals.clear()
+        await self.decisions.close()
 
-    async def _run(self, session_id: str, prompt: str) -> None:
+    async def _run(self, session_id: str, prompt: str, reasoning_effort: Literal["low", "medium", "high"] | None = None) -> None:
         try:
             record = await asyncio.to_thread(self.get, session_id)
             if record.provider_id != "deterministic":
-                response = await asyncio.wait_for(
-                    self._providers.run_with_tools(
-                        provider_id=record.provider_id,
-                        model_id=record.model_id,
-                        prompt=self._conversation_prompt(record, prompt),
-                        tools=self._model_tools(record),
-                    ),
-                    timeout=300,
+                supports_images = self._providers.supports_image(record.provider_id, record.model_id)
+                images = tuple(image for message in record.messages[-9:] for image in message.images)[-_MAX_IMAGES:] if supports_images else ()
+                provider_input = self._conversation_prompt(record, prompt)
+                if images:
+                    provider_input += "\nAttached images are ordered by their appearance in the conversation."
+                provider_run = self._providers.run_with_tools(
+                    provider_id=record.provider_id, model_id=record.model_id,
+                    prompt=provider_input, tools=self._model_tools(record),
+                    images=images, reasoning_effort=reasoning_effort,
                 )
+                response = await asyncio.wait_for(provider_run, timeout=300)
             else:
                 catalog = await self._tool(
                     record,
@@ -410,7 +583,8 @@ class AgentService:
         earlier = record.messages[:-1][-8:]
         if not earlier:
             return prompt
-        history = [{"role": message.role, "content": message.content[:4000]} for message in earlier]
+        history = [{"role": message.role, "content": message.content[:4000],
+                    "images": [image.name for image in message.images]} for message in earlier]
         return f"Previous conversation:\n{json.dumps(history, ensure_ascii=False)}\nCurrent request:\n{prompt}"
 
     async def _check_model_tool_budget(self, record: AgentSessionRecord) -> None:
@@ -441,13 +615,56 @@ class AgentService:
     def _model_tools(self, record: AgentSessionRecord) -> tuple[Callable[..., Awaitable[str]], ...]:
         project_id = record.project_id
         previewed_patches: set[str] = set()
+        proposals: dict[str, PatchRequest] = {}
         previewed_unity_plans: set[str] = set()
 
         async def catalog_read() -> str:
-            """Read the installed service and operator catalog before constructing graph nodes."""
+            """List installed service and operator IDs/labels. Use catalog_search and catalog_operator to inspect relevant nodes."""
             result = await self._tool(
                 record, tool_name="catalog.read", arguments={}, target_graph_revision=None,
                 operation=lambda: asyncio.to_thread(self._tools.catalog), result_encoder=_catalog_evidence,
+            )
+            return _tool_text(_catalog_index(result))
+
+        async def catalog_search(query: str) -> str:
+            """Find operators by name, class, or description; returns matching IDs for catalog_operator."""
+            result = await self._tool(
+                record, tool_name="catalog.search", arguments={"query": query}, target_graph_revision=None,
+                operation=lambda: asyncio.to_thread(_catalog_search, self._tools.catalog(), query),
+            )
+            return _tool_text(result)
+
+        async def catalog_operator(service_class: str, operator_class: str) -> str:
+            """Read exact operator specification: behavior, ports, state fields, defaults, and constraints."""
+            result = await self._tool(
+                record, tool_name="catalog.operator",
+                arguments={"serviceClass": service_class, "operatorClass": operator_class}, target_graph_revision=None,
+                operation=lambda: asyncio.to_thread(_catalog_operator, self._tools.catalog(), service_class, operator_class),
+            )
+            return _tool_text(result)
+
+        async def catalog_create_node(node_id: str, service_class: str, operator_class: str,
+                                      service_id: str, name: str) -> str:
+            """Create the exact operator-node JSON for a createNode patch; does not edit the graph."""
+            def create() -> GraphNode:
+                snapshot = self._tools.catalog()
+                catalog = NodeCatalog(services=snapshot.services, operators=snapshot.operators)
+                document = self._tools.document(project_id)
+                if any(node.node_id == node_id for node in document.nodes):
+                    raise ValueError(f"Node ID already exists: {node_id}")
+                if not any(node.service_id == service_id and node.service_class == service_class
+                           and not isinstance(node, OperatorNode) for node in document.nodes):
+                    raise ValueError(f"Service instance not found: {service_id} ({service_class})")
+                return catalog.create_operator_node(
+                    node_id=node_id, service_id=service_id, service_class=service_class,
+                    operator_class=operator_class, name=name,
+                )
+            result = await self._tool(
+                record, tool_name="catalog.create_node",
+                arguments={"nodeId": node_id, "serviceClass": service_class,
+                           "operatorClass": operator_class, "serviceId": service_id, "name": name},
+                target_graph_revision=None, operation=lambda: asyncio.to_thread(create),
+                result_encoder=lambda node: {"nodeId": node.node_id, "operatorClass": operator_class},
             )
             return _tool_text(result)
 
@@ -468,10 +685,25 @@ class AgentService:
             return result
 
         async def graph_read() -> str:
-            """Read the current project graph, including node IDs, code fields, and revisions."""
+            """Read current graph revisions, node IDs, state values, ports, edges, and layout; use graph_node for full node JSON."""
             result = await self._tool(
                 record, tool_name="graph.read", arguments={"projectId": project_id}, target_graph_revision=None,
                 operation=lambda: asyncio.to_thread(self._tools.document, project_id), result_encoder=_document_evidence,
+            )
+            return _tool_text(_graph_outline(result))
+
+        async def graph_node(node_id: str) -> str:
+            """Read one existing graph node with its full spec and port IDs for patch construction."""
+            def read() -> GraphNode:
+                document = self._tools.document(project_id)
+                node = next((item for item in document.nodes if item.node_id == node_id), None)
+                if node is None:
+                    raise ValueError(f"Node not found: {node_id}")
+                return node
+            result = await self._tool(
+                record, tool_name="graph.node", arguments={"nodeId": node_id}, target_graph_revision=None,
+                operation=lambda: asyncio.to_thread(read),
+                result_encoder=lambda node: {"nodeId": node.node_id},
             )
             return _tool_text(result)
 
@@ -490,7 +722,7 @@ class AgentService:
                 payload={"patch": _json_value(patch), "afterGraphRevision": result.document.graph_revision},
                 created_at=utc_now_text(),
             ))
-            return _tool_text(result)
+            return _tool_text(_patch_evidence(result))
 
         async def graph_apply_patch(patch_json: str) -> str:
             """Apply a previously previewed JSON PatchRequest after human approval."""
@@ -506,7 +738,63 @@ class AgentService:
                 operation=lambda: self._tools.apply_patch(project_id, patch), result_encoder=_patch_evidence,
             )
             previewed_patches.discard(fingerprint)
-            return _tool_text(result)
+            return _tool_text(_patch_evidence(result))
+
+        async def graph_propose_changes(changes_json: str) -> str:
+            """Build and preview a graph patch from compact JSON; does not change the graph.
+
+            Prefer this over copying full specs into graph_preview_patch. JSON shape:
+            {"expectedGraphRevision": 0, "expectedLayoutRevision": 0,
+             "nodes": [{"nodeId": "phase", "serviceClass": "f8.pyengine", "serviceId": "engine",
+                        "operatorClass": "f8.phase", "name": "Phase", "stateValues": {"hz": 1}, "x": 100, "y": 100}],
+             "connections": [{"fromNodeId": "phase", "fromPort": "phase", "toNodeId": "cosine", "toPort": "phase", "kind": "data"}],
+             "stateUpdates": [{"nodeId": "wave", "field": "upstreamSampleIntervalMs", "value": 20}]}
+            Nodes, connections, and stateUpdates are optional arrays. Connections use port names, not IDs.
+            To create a service omit operatorClass/serviceId. Reuse existing services and nodes.
+            Returns proposalId; immediately call graph_apply_proposal to show the approval UI.
+            """
+            changes = msgspec.json.decode(changes_json, type=GraphChanges)
+            proposal_id = uuid4().hex
+
+            def prepare() -> tuple[PatchRequest, PatchResult]:
+                document = self._tools.document(project_id)
+                patch = build_patch(document, self._tools.catalog(), changes, request_id=f"agent:{proposal_id}")
+                preview = self._tools.preview_patch(project_id, patch)
+                self._tools.validate_document(preview.document)
+                return patch, preview
+
+            patch, preview = await self._tool(
+                record, tool_name="graph.propose_changes", arguments={"changes": _json_value(changes)},
+                target_graph_revision=changes.expected_graph_revision,
+                operation=lambda: asyncio.to_thread(prepare),
+                result_encoder=lambda result: {"proposalId": proposal_id, "operationCount": len(result[0].operations),
+                                               "preview": _patch_evidence(result[1])},
+            )
+            proposals[proposal_id] = patch
+            await self._append_artifact(record.session_id, AgentArtifact(
+                artifact_id=proposal_id, kind="graph_patch", title="Proposed graph changes",
+                payload={"patch": _json_value(patch), "changes": _json_value(changes),
+                         "afterGraphRevision": preview.document.graph_revision}, created_at=utc_now_text(),
+            ))
+            return _tool_text({"proposalId": proposal_id, "operationCount": len(patch.operations),
+                               "nextAction": "Call graph_apply_proposal with this proposalId to request approval."})
+
+        async def graph_apply_proposal(proposal_id: str) -> str:
+            """Request user approval and apply the exact patch prepared by graph_propose_changes.
+
+            Calling this tool opens the approval UI and waits for the user's decision. Do not ask
+            for approval in chat instead. No graph mutation happens before approval.
+            """
+            patch = proposals.get(proposal_id)
+            if patch is None:
+                raise ValueError("Unknown proposalId; call graph_propose_changes in this run first")
+            result = await self._approved_tool(
+                record, tool_name="graph.apply_patch", arguments={"projectId": project_id, "patch": _json_value(patch)},
+                target_graph_revision=patch.expected_graph_revision,
+                operation=lambda: self._tools.apply_patch(project_id, patch), result_encoder=_patch_evidence,
+            )
+            proposals.pop(proposal_id)
+            return _tool_text(_patch_evidence(result))
 
         async def code_read(node_id: str) -> str:
             """Read the Python code in one node, its graph revision, and its SHA-256 content hash."""
@@ -657,7 +945,9 @@ class AgentService:
             return _tool_text(result)
 
         return (
-            skills_list, skill_read, catalog_read, graph_read, graph_preview_patch, graph_apply_patch,
+            skills_list, skill_read, catalog_read, catalog_search, catalog_operator, catalog_create_node,
+            graph_read, graph_node, graph_preview_patch, graph_apply_patch,
+            graph_propose_changes, graph_apply_proposal,
             code_read, code_analyze, code_write, graph_validate, project_deploy,
             runtime_observe, logs_read, modding_detect_target, modding_preview_unity_install,
             modding_apply_unity_install, modding_verify_udp,
@@ -937,6 +1227,8 @@ class AgentService:
         future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
         async with self._lock:
             latest = await asyncio.to_thread(self.get, record.session_id)
+            if latest.approval is not None and latest.approval.status is ApprovalStatus.pending:
+                raise ValueError("Another tool is awaiting approval in this session; wait for it to finish")
             waiting = msgspec.structs.replace(
                 latest,
                 status=AgentRunStatus.waiting_for_approval,
@@ -986,14 +1278,15 @@ class AgentService:
         return result
 
     async def _append_tool_call(self, session_id: str, call: AgentToolCall) -> None:
-        record = await asyncio.to_thread(self.get, session_id)
-        updated = msgspec.structs.replace(
-            record,
-            tool_calls=record.tool_calls + (call,),
-            updated_at=utc_now_text(),
-        )
-        await asyncio.to_thread(self._repository.save, updated)
-        await self._publish(updated)
+        async with self._lock:
+            record = await asyncio.to_thread(self.get, session_id)
+            updated = msgspec.structs.replace(
+                record,
+                tool_calls=record.tool_calls + (call,),
+                updated_at=utc_now_text(),
+            )
+            await asyncio.to_thread(self._repository.save, updated)
+            await self._publish(updated)
 
     async def _update_tool_call(
         self,
@@ -1005,44 +1298,46 @@ class AgentService:
         error_message: str = "",
         traceback_id: str = "",
     ) -> None:
-        record = await asyncio.to_thread(self.get, session_id)
-        calls: list[AgentToolCall] = []
-        found = False
-        for call in record.tool_calls:
-            if call.tool_call_id != tool_call_id:
-                calls.append(call)
-                continue
-            found = True
-            calls.append(
-                msgspec.structs.replace(
-                    call,
-                    status=status,
-                    updated_at=utc_now_text(),
-                    result=result,
-                    error_message=error_message,
-                    traceback_id=traceback_id,
+        async with self._lock:
+            record = await asyncio.to_thread(self.get, session_id)
+            calls: list[AgentToolCall] = []
+            found = False
+            for call in record.tool_calls:
+                if call.tool_call_id != tool_call_id:
+                    calls.append(call)
+                    continue
+                found = True
+                calls.append(
+                    msgspec.structs.replace(
+                        call,
+                        status=status,
+                        updated_at=utc_now_text(),
+                        result=result,
+                        error_message=error_message,
+                        traceback_id=traceback_id,
+                    )
                 )
+            if not found:
+                raise FileNotFoundError(f"agent tool call not found: {tool_call_id}")
+            updated = msgspec.structs.replace(
+                record,
+                status=AgentRunStatus.running if status is ToolCallStatus.running else record.status,
+                tool_calls=tuple(calls),
+                updated_at=utc_now_text(),
             )
-        if not found:
-            raise FileNotFoundError(f"agent tool call not found: {tool_call_id}")
-        updated = msgspec.structs.replace(
-            record,
-            status=AgentRunStatus.running if status is ToolCallStatus.running else record.status,
-            tool_calls=tuple(calls),
-            updated_at=utc_now_text(),
-        )
-        await asyncio.to_thread(self._repository.save, updated)
-        await self._publish(updated)
+            await asyncio.to_thread(self._repository.save, updated)
+            await self._publish(updated)
 
     async def _append_artifact(self, session_id: str, artifact: AgentArtifact) -> None:
-        record = await asyncio.to_thread(self.get, session_id)
-        updated = msgspec.structs.replace(
-            record,
-            artifacts=record.artifacts + (artifact,),
-            updated_at=utc_now_text(),
-        )
-        await asyncio.to_thread(self._repository.save, updated)
-        await self._publish(updated)
+        async with self._lock:
+            record = await asyncio.to_thread(self.get, session_id)
+            updated = msgspec.structs.replace(
+                record,
+                artifacts=record.artifacts + (artifact,),
+                updated_at=utc_now_text(),
+            )
+            await asyncio.to_thread(self._repository.save, updated)
+            await self._publish(updated)
 
     async def _expire_approval(self, session_id: str, approval_id: str, tool_call_id: str) -> None:
         record = await asyncio.to_thread(self.get, session_id)
@@ -1116,6 +1411,8 @@ class AgentService:
                     role=role,
                     content=content,
                     created_at=utc_now_text(),
+                    provider_id=record.provider_id,
+                    model_id=record.model_id,
                 ),
             ),
         )

@@ -7,7 +7,7 @@ from typing import cast
 
 import msgspec
 from f8pysdk.specs import F8JsonValue
-from f8studio_core.graph import GraphStore, HistoryRequest, PatchRequest, PatchResult, SetNodeStateOp, StudioDocument
+from f8studio_core.graph import HistoryRequest, PatchRequest, PatchResult, SetNodeStateOp, StudioDocument
 
 from .catalog import CatalogService, CatalogSnapshot
 from .events import EventJournal
@@ -59,8 +59,7 @@ class StudioAutomationTools:
         return self._projects.document(project_id)
 
     def preview_patch(self, project_id: str, request: PatchRequest) -> PatchResult:
-        document = self._projects.document(project_id)
-        return GraphStore(document).apply(request)
+        return self._projects.preview_patch(project_id, request)
 
     async def apply_patch(self, project_id: str, request: PatchRequest) -> PatchResult:
         mutation = await asyncio.to_thread(self._projects.patch, project_id, request)

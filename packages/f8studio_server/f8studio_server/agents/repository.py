@@ -69,6 +69,12 @@ class AgentRepository:
             return None
         return msgspec.json.decode(_bytes(row[0]), type=AgentSessionRecord)
 
+    def delete(self, session_id: str) -> None:
+        with self._connect() as connection:
+            deleted = connection.execute("DELETE FROM agent_sessions WHERE session_id = ?", (session_id,))
+            if deleted.rowcount == 0:
+                raise FileNotFoundError(f"agent session not found: {session_id}")
+
     def list(self, project_id: str | None = None) -> tuple[AgentSessionSummary, ...]:
         query = "SELECT record FROM agent_sessions"
         parameters: tuple[str, ...] = ()

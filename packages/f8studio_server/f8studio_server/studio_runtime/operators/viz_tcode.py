@@ -20,6 +20,7 @@ from f8pysdk.specs import (
 from ..identifiers import SERVICE_CLASS
 from ..presentation import PresentationOutlet
 from .categories import PALETTE_CATEGORY_VIZ
+from ._viz_base import viz_sampling_state_fields
 
 
 class VizTCodeRuntimeNode(OperatorNode):
@@ -54,6 +55,7 @@ class VizTCodeRuntimeNode(OperatorNode):
                 valueRequired=True,
                 showOnNode=False,
             ),
+            *viz_sampling_state_fields(),
         ],
     )
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from ipaddress import ip_address
 from pathlib import Path
 
@@ -95,6 +96,9 @@ def main() -> None:
                 allowed_hosts=tuple(allowed_hosts),
                 rtc_configuration=rtc_configuration,
             )
+            local_host = "127.0.0.1" if host == "0.0.0.0" else "::1" if host == "::" else host
+            url_host = f"[{local_host}]" if ":" in local_host else local_host
+            os.environ["F8STUDIO_SERVER_URL"] = f"http://{url_host}:{args.port}"
             uvicorn.run(app, host=host, port=args.port, log_level="info")
     except StudioServerAlreadyRunningError as exc:
         raise SystemExit(str(exc)) from exc

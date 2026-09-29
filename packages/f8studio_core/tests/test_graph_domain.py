@@ -52,6 +52,7 @@ from f8studio_core.graph import (
     PortDirection,
     PortKind,
     RenameNodeOp,
+    RefreshInstalledSpecOp,
     SetOperatorSpecOp,
     RevisionConflictError,
     ServiceNode,
@@ -65,6 +66,45 @@ from f8studio_core.graph import (
     new_document,
     replace_node_spec,
 )
+
+
+def test_refresh_installed_spec_adds_new_port_and_preserves_existing_node_state() -> None:
+    installed = F8OperatorSpec(
+        serviceClass="f8.pyengine", operatorClass="test.refresh", label="Current",
+        dataOutPorts=[json_data_port(name="value", value_schema=number_schema()),
+                      json_data_port(name="elapsedSec", value_schema=number_schema())],
+        stateFields=[F8StateSpec(name="hz", valueSchema=number_schema(default=1), access=F8StateAccess.rw)],
+    )
+    catalog = NodeCatalog(services=[F8ServiceSpec(serviceClass="f8.pyengine", label="Engine")], operators=[installed])
+    service = catalog.create_service_node(node_id="engine", service_class="f8.pyengine")
+    source = catalog.create_operator_node(node_id="source", service_id="engine", service_class="f8.pyengine",
+                                          operator_class="test.refresh", state_values={"hz": 2})
+    previous = msgspec.structs.replace(installed, label="Old", dataOutPorts=installed.dataOutPorts[:1])
+    stale = replace_node_spec(source, previous)
+    document = msgspec.structs.replace(new_document(project_id="refresh"), nodes=(service, stale))
+    store = GraphStore(document, spec_resolver=lambda node: installed if isinstance(node, OperatorNode) else service.spec)
+    result = store.apply(PatchRequest(request_id="refresh", expected_graph_revision=0, expected_layout_revision=0,
+                                      operations=(RefreshInstalledSpecOp(node_id="source"),)))
+    refreshed = next(node for node in result.document.nodes if node.node_id == "source")
+    assert refreshed.state_values == {"hz": 2}
+    assert {port.name for port in refreshed.ports if port.direction is PortDirection.output and port.kind is PortKind.data} == {"value", "elapsedSec"}
+    assert next(port.port_id for port in stale.ports if port.name == "value") == next(port.port_id for port in refreshed.ports if port.name == "value")
+
+
+def test_refresh_installed_spec_rejects_changed_existing_port() -> None:
+    installed = F8OperatorSpec(serviceClass="f8.pyengine", operatorClass="test.refresh", label="Current",
+                               dataOutPorts=[json_data_port(name="value", value_schema=number_schema())])
+    catalog = NodeCatalog(services=[F8ServiceSpec(serviceClass="f8.pyengine", label="Engine")], operators=[installed])
+    service = catalog.create_service_node(node_id="engine", service_class="f8.pyengine")
+    source = catalog.create_operator_node(node_id="source", service_id="engine", service_class="f8.pyengine",
+                                          operator_class="test.refresh")
+    changed = msgspec.structs.replace(installed, dataOutPorts=[json_data_port(name="value", value_schema=string_schema())])
+    document = msgspec.structs.replace(new_document(project_id="refresh"),
+                                       nodes=(service, replace_node_spec(source, changed)))
+    store = GraphStore(document, spec_resolver=lambda node: installed if isinstance(node, OperatorNode) else service.spec)
+    with pytest.raises(OperationTargetError, match="incompatible"):
+        store.apply(PatchRequest(request_id="refresh", expected_graph_revision=0, expected_layout_revision=0,
+                                 operations=(RefreshInstalledSpecOp(node_id="source"),)))
 
 
 def build_catalog() -> NodeCatalog:

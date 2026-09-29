@@ -11,7 +11,7 @@ from f8pysdk.specs import F8JsonValue
 from f8pysdk.specs import F8OperatorSpec, F8ServiceSpec
 
 from .codec import canonical_json_bytes, clone_document
-from .catalog import replace_node_spec
+from .catalog import can_refresh_installed_spec, replace_node_spec
 from .models import (
     BindOperatorServiceOp,
     ConnectEdgeOp,
@@ -27,6 +27,7 @@ from .models import (
     OperatorNode,
     PatchRequest,
     RenameNodeOp,
+    RefreshInstalledSpecOp,
     SetServiceSpecOp,
     SetOperatorSpecOp,
     ServiceNode,
@@ -243,6 +244,20 @@ def _apply_operation(document: StudioDocument, operation: GraphOperation, resolv
             else _replace_operator_node(node, name=operation.name)
         )
         return _replace_node(document, replacement)
+
+    if isinstance(operation, RefreshInstalledSpecOp):
+        node = next((item for item in document.nodes if item.node_id == operation.node_id), None)
+        if node is None:
+            raise OperationTargetError(f"node not found: {operation.node_id}")
+        if resolver is None:
+            raise OperationTargetError("installed spec refresh requires a catalog resolver")
+        try:
+            installed = resolver(node)
+            if not can_refresh_installed_spec(node, installed):
+                raise ValueError("installed spec is unchanged or contains incompatible edits")
+            return _replace_node(document, replace_node_spec(node, installed))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise OperationTargetError(f"cannot refresh installed spec for {node.node_id}: {exc}") from exc
 
     if isinstance(operation, (SetServiceSpecOp, SetOperatorSpecOp)):
         node = next((item for item in document.nodes if item.node_id == operation.node_id), None)

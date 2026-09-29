@@ -6,6 +6,7 @@ from typing import Literal
 import msgspec
 
 from f8pysdk.specs import F8JsonValue
+from .provider_settings import ModelCapabilities
 
 
 class AgentRunStatus(str, enum.Enum):
@@ -42,6 +43,13 @@ class AgentProviderSummary(msgspec.Struct, frozen=True, kw_only=True, rename="ca
     models: tuple[str, ...]
     configured: bool
     deterministic: bool = False
+    supports_images: bool = False
+    model_capabilities: tuple[ModelCapabilities, ...] = ()
+
+
+class AgentImage(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
+    name: str
+    data_url: str
 
 
 class AgentMessage(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
@@ -49,6 +57,9 @@ class AgentMessage(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
     role: Literal["user", "assistant", "system"]
     content: str
     created_at: str
+    images: tuple[AgentImage, ...] = ()
+    provider_id: str = ""
+    model_id: str = ""
 
 
 class AgentArtifact(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
@@ -99,6 +110,7 @@ class AgentSessionRecord(msgspec.Struct, frozen=True, kw_only=True, rename="came
     approval: AgentApproval | None = None
     error_message: str = ""
     traceback_id: str = ""
+    auto_title_pending: bool = False
 
 
 class AgentSessionSummary(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
@@ -121,6 +133,17 @@ class CreateAgentSessionRequest(msgspec.Struct, frozen=True, kw_only=True, renam
 
 class StartAgentRunRequest(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
     prompt: str
+    images: tuple[AgentImage, ...] = ()
+    reasoning_effort: Literal["low", "medium", "high"] | None = None
+
+
+class RenameAgentSessionRequest(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
+    title: str
+
+
+class SelectAgentModelRequest(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
+    provider_id: str
+    model_id: str
 
 
 class ResolveAgentApprovalRequest(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
@@ -131,6 +154,7 @@ class ResolveAgentApprovalRequest(msgspec.Struct, frozen=True, kw_only=True, ren
 __all__ = [
     "AgentApproval",
     "AgentArtifact",
+    "AgentImage",
     "AgentMessage",
     "AgentProviderSummary",
     "AgentRunStatus",
@@ -139,6 +163,8 @@ __all__ = [
     "AgentToolCall",
     "ApprovalStatus",
     "CreateAgentSessionRequest",
+    "RenameAgentSessionRequest",
+    "SelectAgentModelRequest",
     "ResolveAgentApprovalRequest",
     "StartAgentRunRequest",
     "ToolCallStatus",

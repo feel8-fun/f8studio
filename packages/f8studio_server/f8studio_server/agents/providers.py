@@ -1,106 +1,100 @@
 from __future__ import annotations
 
-import os
+from pathlib import Path
 from collections.abc import Awaitable, Callable, Sequence
-from typing import cast
+from typing import Literal, cast
 
-from .models import AgentProviderSummary
+from .models import AgentImage, AgentProviderSummary
+from .provider_settings import (AgentProtocol, CreateProviderConnection, ProviderConfig,
+                                ProviderSettingsStore, ProviderSettingsView, UpdateProviderSettings)
+from .provider_probe import ProbeProviderRequest, ProviderProbeResult, probe_provider
 
 
 class AgentProviderRegistry:
-    def __init__(self) -> None:
-        self._openai_api_key = os.environ.get("OPENAI_API_KEY", "").strip()
-        self._openai_model = os.environ.get("F8STUDIO_OPENAI_MODEL", "gpt-5.4-mini").strip()
-        self._openai_endpoint = os.environ.get("F8STUDIO_OPENAI_ENDPOINT", "").strip().rstrip("/")
-        self._anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-        self._anthropic_model = os.environ.get(
-            "F8STUDIO_ANTHROPIC_MODEL", "claude-sonnet-4-5"
-        ).strip()
-        self._anthropic_endpoint = os.environ.get(
-            "F8STUDIO_ANTHROPIC_ENDPOINT", ""
-        ).strip().rstrip("/")
-        self._gemini_api_key = (
-            os.environ.get("GEMINI_API_KEY", "").strip()
-            or os.environ.get("GOOGLE_API_KEY", "").strip()
-        )
-        self._gemini_model = os.environ.get(
-            "F8STUDIO_GEMINI_MODEL", "gemini-2.5-pro-preview-03-25"
-        ).strip()
-        self._gemini_endpoint = os.environ.get(
-            "F8STUDIO_GEMINI_ENDPOINT", "https://generativelanguage.googleapis.com/v1beta/openai"
-        ).strip().rstrip("/")
-        self._ollama_model = os.environ.get("F8STUDIO_OLLAMA_MODEL", "").strip()
-        self._ollama_endpoint = os.environ.get(
-            "F8STUDIO_OLLAMA_ENDPOINT", "http://127.0.0.1:11434/v1"
-        ).strip().rstrip("/")
+    def __init__(self, settings_path: Path | None = None) -> None:
+        self._settings = ProviderSettingsStore(settings_path)
+
+    def settings(self) -> tuple[ProviderSettingsView, ...]:
+        return self._settings.views()
+
+    def update_settings(self, provider_id: str, request: UpdateProviderSettings) -> ProviderSettingsView:
+        return self._settings.update(provider_id, request)
+
+    def create_connection(self, request: CreateProviderConnection) -> ProviderSettingsView:
+        return self._settings.create(request)
+
+    def delete_connection(self, provider_id: str) -> None:
+        self._settings.delete(provider_id)
+
+    async def probe(self, request: ProbeProviderRequest) -> ProviderProbeResult:
+        saved_key = ""
+        if request.provider_id:
+            config, protocol = self._connection(request.provider_id)
+            endpoint = self._settings.view(request.provider_id).endpoint
+            if protocol == request.protocol and endpoint == request.endpoint.strip().rstrip("/"):
+                saved_key = config.api_key
+        return await probe_provider(request, saved_api_key=saved_key)
+
+    def _connection(self, provider_id: str) -> tuple[ProviderConfig, AgentProtocol]:
+        config = self._settings.get(provider_id)
+        setting = self._settings.view(provider_id)
+        if setting.protocol is None:
+            raise ValueError(f"provider is not a conversational agent: {provider_id}")
+        return config, setting.protocol
+
+    def decision_config(self, provider_id: str) -> ProviderConfig:
+        setting = next((item for item in self.settings() if item.provider_id == provider_id), None)
+        if setting is None or setting.kind != "decision":
+            raise ValueError("Provider does not support typed decisions")
+        config = self._settings.get(provider_id)
+        if not config.model or not config.endpoint or (provider_id == "typesafe" and not config.api_key):
+            raise ValueError("Configure the decision provider in Studio Settings before evaluating decisions")
+        return config
 
     def summaries(self) -> tuple[AgentProviderSummary, ...]:
         return (
             AgentProviderSummary(
-                provider_id="deterministic",
-                display_name="Deterministic graph agent",
-                models=("graph-builder-v1",),
-                configured=True,
-                deterministic=True,
+                provider_id="deterministic", display_name="Deterministic graph agent",
+                models=("graph-builder-v1",), configured=True, deterministic=True,
             ),
-            AgentProviderSummary(
-                provider_id="openai",
-                display_name="OpenAI",
-                models=(self._openai_model,) if self._openai_model else (),
-                configured=bool(self._openai_api_key and self._openai_model),
-            ),
-            AgentProviderSummary(
-                provider_id="anthropic",
-                display_name="Anthropic",
-                models=(self._anthropic_model,) if self._anthropic_model else (),
-                configured=bool(self._anthropic_api_key and self._anthropic_model),
-            ),
-            AgentProviderSummary(
-                provider_id="google_gemini",
-                display_name="Google Gemini",
-                models=(self._gemini_model,) if self._gemini_model else (),
-                configured=bool(self._gemini_api_key and self._gemini_model and self._gemini_endpoint),
-            ),
-            AgentProviderSummary(
-                provider_id="ollama",
-                display_name="Ollama (local)",
-                models=(self._ollama_model,) if self._ollama_model else (),
-                configured=bool(self._ollama_model and self._ollama_endpoint),
-            ),
+            *(AgentProviderSummary(
+                provider_id=setting.provider_id, display_name=setting.display_name,
+                models=setting.models, configured=setting.configured,
+                supports_images=any(item.image_input is True for item in setting.model_capabilities),
+                model_capabilities=setting.model_capabilities,
+            ) for setting in self.settings() if setting.kind == "agent"),
         )
+
+    def supports_image(self, provider_id: str, model_id: str) -> bool:
+        setting = next((item for item in self.settings() if item.provider_id == provider_id), None)
+        if setting is None:
+            return False
+        capability = next((item for item in setting.model_capabilities if item.model_id == model_id), None)
+        if capability is not None and capability.image_input is not None:
+            return capability.image_input
+        return False
 
     def validate_selection(self, provider_id: str, model_id: str) -> None:
         summary = next((provider for provider in self.summaries() if provider.provider_id == provider_id), None)
         if summary is None:
+            if provider_id in {"openai", "anthropic", "google_gemini", "ollama"}:
+                raise ValueError(f"agent provider is not configured: {provider_id}")
             raise ValueError(f"unknown agent provider: {provider_id}")
         if not summary.configured:
             raise ValueError(f"agent provider is not configured: {provider_id}")
-        if model_id not in summary.models:
+        if not model_id or len(model_id) > 256 or any(character.isspace() for character in model_id):
+            raise ValueError("model ID must be non-empty, at most 256 characters, and contain no whitespace")
+        if summary.deterministic and model_id not in summary.models:
             raise ValueError(f"unknown model for provider {provider_id}: {model_id}")
 
     async def complete(self, *, provider_id: str, model_id: str, prompt: str) -> str:
         self.validate_selection(provider_id, model_id)
         if provider_id == "deterministic":
             return prompt
-        if provider_id == "openai":
-            return await self._complete_openai(model_id=model_id, prompt=prompt)
-        if provider_id == "anthropic":
-            return await self._complete_anthropic(model_id=model_id, prompt=prompt)
-        if provider_id == "google_gemini":
-            return await self._complete_openai_compatible(
-                model_id=model_id,
-                prompt=prompt,
-                api_key=self._gemini_api_key,
-                base_url=self._gemini_endpoint,
-            )
-        if provider_id == "ollama":
-            return await self._complete_openai_compatible(
-                model_id=model_id,
-                prompt=prompt,
-                api_key="ollama",
-                base_url=self._ollama_endpoint,
-            )
-        raise ValueError(f"unsupported agent provider: {provider_id}")
+        return await self._run_model(
+            provider_id=provider_id, model_id=model_id, prompt=prompt,
+            instructions=self._instructions(), max_tokens=1024,
+        )
 
     async def run_with_tools(
         self,
@@ -109,53 +103,94 @@ class AgentProviderRegistry:
         model_id: str,
         prompt: str,
         tools: Sequence[Callable[..., Awaitable[str]]],
+        images: Sequence[AgentImage] = (),
+        reasoning_effort: Literal["low", "medium", "high"] | None = None,
     ) -> str:
         self.validate_selection(provider_id, model_id)
         if provider_id == "deterministic":
             raise ValueError("the deterministic provider does not support model tool calls")
+        if images and not self.supports_image(provider_id, model_id):
+            raise ValueError(f"agent provider does not support image input: {provider_id}")
+        return await self._run_model(
+            provider_id=provider_id, model_id=model_id, prompt=prompt, tools=tools,
+            images=images, reasoning_effort=reasoning_effort,
+            instructions=self._tool_instructions(), max_tokens=4096,
+        )
+
+    async def _run_model(
+        self, *, provider_id: str, model_id: str, prompt: str,
+        instructions: str, max_tokens: int,
+        tools: Sequence[Callable[..., Awaitable[str]]] = (),
+        images: Sequence[AgentImage] = (),
+        reasoning_effort: Literal["low", "medium", "high"] | None = None,
+    ) -> str:
+        config, protocol = self._connection(provider_id)
         try:
-            from agent_framework import Agent, AgentResponse
+            from agent_framework import Agent, AgentResponse, Content, Message
         except ModuleNotFoundError as exc:
             raise RuntimeError("Agent Framework dependencies are not installed") from exc
 
-        if provider_id == "openai":
-            from agent_framework.openai import OpenAIChatClient
+        input_message = Message(role="user", contents=[
+            Content.from_text(prompt),
+            *(Content.from_uri(image.data_url) for image in images),
+        ]) if images else prompt
+
+        if protocol == "openai_responses":
+            from agent_framework.openai import OpenAIChatClient, OpenAIChatOptions
 
             agent = Agent(
-                OpenAIChatClient(model=model_id, api_key=self._openai_api_key, base_url=self._openai_endpoint or None),
-                name="f8studio-agent", instructions=self._tool_instructions(), tools=tools,
+                OpenAIChatClient(model=model_id, api_key=config.api_key, base_url=config.endpoint or None),
+                name="f8studio-agent", instructions=instructions, tools=tools,
             )
-            response = cast(AgentResponse[None], await agent.run(prompt, options={"max_tokens": 4096, "store": False}))
+            options: OpenAIChatOptions[None] = {"max_tokens": max_tokens, "store": False}
+            if reasoning_effort is not None:
+                options["reasoning"] = {"effort": reasoning_effort}
+            response = cast(AgentResponse[None], await agent.run(input_message, options=options))
             return response.text
-        elif provider_id == "anthropic":
-            from agent_framework.anthropic import AnthropicClient
+        elif protocol == "anthropic":
+            from agent_framework.anthropic import AnthropicChatOptions, AnthropicClient
 
             agent = Agent(
-                AnthropicClient(model=model_id, api_key=self._anthropic_api_key, base_url=self._anthropic_endpoint or None),
-                name="f8studio-agent", instructions=self._tool_instructions(), tools=tools,
+                AnthropicClient(model=model_id, api_key=config.api_key, base_url=config.endpoint or None),
+                name="f8studio-agent", instructions=instructions, tools=tools,
             )
-        else:
-            from agent_framework.openai import OpenAIChatCompletionClient
+            anthropic_options: AnthropicChatOptions[None] = {"max_tokens": max_tokens}
+            if reasoning_effort is not None:
+                anthropic_options = cast(AnthropicChatOptions[None], {
+                    "max_tokens": max_tokens, "output_config": {"effort": reasoning_effort},
+                })
+            response = cast(AgentResponse[None], await agent.run(input_message, options=anthropic_options))
+            return response.text
+        elif protocol == "openai_chat":
+            from agent_framework.openai import OpenAIChatCompletionClient, OpenAIChatCompletionOptions
 
-            if provider_id == "google_gemini":
-                api_key, base_url = self._gemini_api_key, self._gemini_endpoint
-            elif provider_id == "ollama":
-                api_key, base_url = "ollama", self._ollama_endpoint
-            else:
-                raise ValueError(f"unsupported agent provider: {provider_id}")
             agent = Agent(
-                OpenAIChatCompletionClient(model=model_id, api_key=api_key, base_url=base_url),
-                name="f8studio-agent", instructions=self._tool_instructions(), tools=tools,
+                OpenAIChatCompletionClient(model=model_id, api_key=config.api_key or "local", base_url=config.endpoint),
+                name="f8studio-agent", instructions=instructions, tools=tools,
             )
-        response = cast(AgentResponse[None], await agent.run(prompt, options={"max_tokens": 4096}))
-        return response.text
+            chat_options: OpenAIChatCompletionOptions[None] = {"max_tokens": max_tokens}
+            if reasoning_effort is not None:
+                chat_options = cast(OpenAIChatCompletionOptions[None], {
+                    "max_tokens": max_tokens, "reasoning_effort": reasoning_effort,
+                })
+            response = cast(AgentResponse[None], await agent.run(input_message, options=chat_options))
+            return response.text
+
+        raise ValueError(f"Protocol does not support conversational agents: {protocol}")
 
     @staticmethod
     def _tool_instructions() -> str:
         return (
             "You operate on the selected Feel8 Studio project through the supplied tools. "
             "List available skills and read the relevant graph, code, or game skill before acting. "
-            "Read the catalog and current graph before editing. Use graph previews before applying patches. "
+            "Read the current graph and search the catalog for relevant operators. Inspect exact operator specs and "
+            "ports before editing. For graph construction use graph_propose_changes with compact node definitions, "
+            "port-name connections, and state updates; the server builds the full patch. "
+            "Then call graph_apply_proposal: that tool displays the approval UI and waits for the user. "
+            "Do not end a graph-editing task after inspection or ask for approval in prose; prepare the proposal "
+            "and invoke the approval tool within the same run. catalog_create_node only returns a template and "
+            "does not add a node to the graph. "
+            "Choose reasonable defaults for unspecified sampling rates and explain them; do not stop for routine choices. "
             "For Python code, read the exact node, analyze the proposed code, then write using its revision "
             "and content hash. Inspect deployment, logs, and monitor evidence before claiming success. "
             "Never claim a game installation or runtime behavior was verified without tool evidence. "
@@ -169,82 +204,6 @@ class AgentProviderRegistry:
             "Summarize the supplied Feel8 Studio tool evidence. State exactly what changed, "
             "whether validation and deployment succeeded, and cite graph revisions."
         )
-
-    async def _complete_openai(self, *, model_id: str, prompt: str) -> str:
-        try:
-            from agent_framework import Agent, AgentResponse
-            from agent_framework.openai import OpenAIChatClient
-        except ModuleNotFoundError as exc:
-            raise RuntimeError("OpenAI Agent Framework dependencies are not installed") from exc
-
-        client = OpenAIChatClient(
-            model=model_id,
-            api_key=self._openai_api_key,
-            base_url=self._openai_endpoint or None,
-        )
-        agent = Agent(
-            client,
-            name="f8studio-agent",
-            instructions=self._instructions(),
-        )
-        response = cast(
-            AgentResponse[None],
-            await agent.run(prompt, options={"store": False, "max_tokens": 1024}),
-        )
-        return response.text
-
-    async def _complete_openai_compatible(
-        self,
-        *,
-        model_id: str,
-        prompt: str,
-        api_key: str,
-        base_url: str,
-    ) -> str:
-        try:
-            from agent_framework import Agent, AgentResponse
-            from agent_framework.openai import OpenAIChatCompletionClient
-        except ModuleNotFoundError as exc:
-            raise RuntimeError("OpenAI-compatible Agent Framework dependencies are not installed") from exc
-
-        client = OpenAIChatCompletionClient(
-            model=model_id,
-            api_key=api_key,
-            base_url=base_url,
-        )
-        agent = Agent(
-            client,
-            name="f8studio-agent",
-            instructions=self._instructions(),
-        )
-        response = cast(
-            AgentResponse[None],
-            await agent.run(prompt, options={"max_tokens": 1024}),
-        )
-        return response.text
-
-    async def _complete_anthropic(self, *, model_id: str, prompt: str) -> str:
-        try:
-            from agent_framework import Agent, AgentResponse
-            from agent_framework.anthropic import AnthropicClient
-        except ModuleNotFoundError as exc:
-            raise RuntimeError("Anthropic Agent Framework dependencies are not installed") from exc
-
-        client = AnthropicClient(
-            model=model_id,
-            api_key=self._anthropic_api_key,
-            base_url=self._anthropic_endpoint or None,
-        )
-        agent = Agent(
-            client,
-            name="f8studio-agent",
-            instructions=self._instructions(),
-        )
-        response = cast(
-            AgentResponse[None],
-            await agent.run(prompt, options={"max_tokens": 1024}),
-        )
-        return response.text
 
 
 __all__ = ["AgentProviderRegistry"]

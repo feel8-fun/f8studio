@@ -28,6 +28,11 @@ import {
   type AssetSummary,
   type AssetVersion,
   type AgentProviderSummary,
+  type AgentProviderSettings,
+  type AgentConnectionProbe,
+  type CreateAgentConnection,
+  type AgentImage,
+  type UpdateAgentProviderSettings,
   type AgentSession,
   type AgentSessionSummary,
   type EditorAnalysis,
@@ -121,6 +126,55 @@ export async function fetchAgentProviders(signal?: AbortSignal): Promise<readonl
   return body as unknown as readonly AgentProviderSummary[];
 }
 
+function isProviderSettings(value: unknown): value is AgentProviderSettings {
+  return isObject(value) && typeof value.providerId === 'string' && typeof value.displayName === 'string'
+    && typeof value.model === 'string' && typeof value.endpoint === 'string'
+    && typeof value.apiKeySet === 'boolean' && typeof value.requiresApiKey === 'boolean'
+    && typeof value.configured === 'boolean' && (value.source === 'saved' || value.source === 'environment')
+    && (value.kind === 'agent' || value.kind === 'decision')
+    && typeof value.supportsImage === 'boolean'
+    && Array.isArray(value.inputModalities) && value.inputModalities.every((item) => item === 'text' || item === 'image');
+}
+
+export async function fetchAgentProviderSettings(signal?: AbortSignal): Promise<readonly AgentProviderSettings[]> {
+  const body = await requestJson('/api/agents/providers/settings', { signal });
+  if (!Array.isArray(body) || !body.every(isProviderSettings)) throw new Error('Invalid agent provider settings');
+  return body;
+}
+
+export async function saveAgentProviderSettings(providerId: string, input: UpdateAgentProviderSettings): Promise<AgentProviderSettings> {
+  const body = await requestJson(`/api/agents/providers/${encodeURIComponent(providerId)}/settings`, jsonRequest('PUT', input));
+  if (!isProviderSettings(body)) throw new Error('Invalid saved agent provider settings');
+  return body;
+}
+
+export async function createAgentConnection(input: CreateAgentConnection): Promise<AgentProviderSettings> {
+  const body = await requestJson('/api/agents/connections', jsonRequest('POST', input));
+  if (!isProviderSettings(body)) throw new Error('Invalid created agent connection');
+  return body;
+}
+
+export async function deleteAgentConnection(providerId: string): Promise<void> {
+  const response = await fetch(`/api/agents/connections/${encodeURIComponent(providerId)}`, { method: 'DELETE' });
+  if (!response.ok) throw new ApiError(`Connection delete failed with HTTP ${response.status}`, response.status);
+}
+
+export async function probeAgentConnection(input: {
+  readonly providerId?: string;
+  readonly protocol: 'openai_responses' | 'openai_chat' | 'anthropic' | 'systemone';
+  readonly endpoint: string;
+  readonly apiKey: string;
+  readonly model: string;
+  readonly verifyModel: boolean;
+}): Promise<AgentConnectionProbe> {
+  const body = await requestJson('/api/agents/connections/probe', jsonRequest('POST', input));
+  if (!isObject(body) || typeof body.connected !== 'boolean' || !Array.isArray(body.models)
+      || typeof body.detail !== 'string' || !['catalog', 'model', 'none'].includes(String(body.verified))) {
+    throw new Error('Invalid connection probe result');
+  }
+  return body as unknown as AgentConnectionProbe;
+}
+
 export async function fetchAgentSessions(projectId: string, signal?: AbortSignal): Promise<readonly AgentSessionSummary[]> {
   const query = new URLSearchParams({ project_id: projectId });
   const body = await requestJson(`/api/agents/sessions?${query.toString()}`, { signal });
@@ -149,10 +203,28 @@ export async function createAgentSession(input: {
   return body;
 }
 
-export async function startAgentRun(sessionId: string, prompt: string): Promise<AgentSession> {
+export async function renameAgentSession(sessionId: string, title: string): Promise<AgentSession> {
+  const body = await requestJson(`/api/agents/sessions/${encodeURIComponent(sessionId)}`, jsonRequest('PUT', { title }));
+  if (!isAgentSession(body)) throw new Error('Renamed agent session does not match f8studio-api/1');
+  return body;
+}
+
+export async function selectAgentModel(sessionId: string, providerId: string, modelId: string): Promise<AgentSession> {
+  const body = await requestJson(`/api/agents/sessions/${encodeURIComponent(sessionId)}/model`,
+    jsonRequest('PUT', { providerId, modelId }));
+  if (!isAgentSession(body)) throw new Error('Updated agent session does not match f8studio-api/1');
+  return body;
+}
+
+export async function deleteAgentSession(sessionId: string): Promise<void> {
+  const response = await fetch(`/api/agents/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
+  if (!response.ok) throw new ApiError(`Agent session delete failed with HTTP ${response.status}`, response.status);
+}
+
+export async function startAgentRun(sessionId: string, prompt: string, images: readonly AgentImage[] = [], reasoningEffort?: 'low' | 'medium' | 'high'): Promise<AgentSession> {
   const body = await requestJson(
     `/api/agents/sessions/${encodeURIComponent(sessionId)}/runs`,
-    jsonRequest('POST', { prompt }),
+    jsonRequest('POST', { prompt, images, ...(reasoningEffort ? { reasoningEffort } : {}) }),
   );
   if (!isAgentSession(body)) throw new Error('Started agent session does not match f8studio-api/1');
   return body;

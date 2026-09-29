@@ -151,6 +151,10 @@ class SetOperatorSpecOp(msgspec.Struct, frozen=True, kw_only=True, tag="setOpera
     port_renames: dict[str, str] = msgspec.field(default_factory=dict)
 
 
+class RefreshInstalledSpecOp(msgspec.Struct, frozen=True, kw_only=True, tag="refreshInstalledSpec", tag_field="op", rename="camel"):
+    node_id: str
+
+
 class BindOperatorServiceOp(
     msgspec.Struct, frozen=True, kw_only=True, tag="bindOperatorService", tag_field="op", rename="camel"
 ):
@@ -188,6 +192,7 @@ GraphOperation = (
     | RenameNodeOp
     | SetServiceSpecOp
     | SetOperatorSpecOp
+    | RefreshInstalledSpecOp
     | BindOperatorServiceOp
     | SetNodeEnabledOp
     | SetNodeLayoutOp

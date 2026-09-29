@@ -1,7 +1,8 @@
-import { Activity, Archive, Boxes, CircleDot, Plug, ScrollText, Settings2, type LucideIcon } from 'lucide-react';
+import { Activity, Archive, Boxes, CircleDot, Plug, ScrollText, type LucideIcon } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 
 import { fetchHealth } from '../api/client';
+import { AgentSettingsButton } from '../agents/AgentSettings';
 import type { HealthStatus } from '../api/contracts';
 import { GraphWorkspace } from '../graph/GraphWorkspace';
 import { LogsWorkspace } from '../logs/LogsWorkspace';
@@ -114,9 +115,7 @@ export function App() {
           <CircleDot size={14} aria-hidden="true" />
           <span>{statusText}</span>
         </div>
-        <button className="icon-button" type="button" aria-label="Settings" title="Settings" disabled>
-          <Settings2 size={18} />
-        </button>
+        <AgentSettingsButton compact />
       </header>
 
       {view !== 'code-state' && view !== 'agent' && <aside className="rail" aria-label="Workspace navigation">

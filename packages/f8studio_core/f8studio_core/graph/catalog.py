@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import cast
 
 import msgspec
 
@@ -16,6 +17,44 @@ from f8pysdk.specs import (
 )
 
 from .models import GraphNode, GraphPort, OperatorNode, PortDirection, PortKind, ServiceNode
+
+
+_SPEC_COLLECTIONS = ("stateFields", "commands", "dataInPorts", "dataOutPorts", "execInPorts", "execOutPorts")
+
+
+def can_refresh_installed_spec(node: GraphNode, installed: F8ServiceSpec | F8OperatorSpec) -> bool:
+    """Accept only catalog additions and presentation metadata changes to an old node snapshot."""
+    if type(node.spec) is not type(installed):
+        return False
+    previous = cast(dict[str, object], msgspec.to_builtins(node.spec))
+    current = cast(dict[str, object], msgspec.to_builtins(installed))
+    if previous == current:
+        return False
+    for key in (*_SPEC_COLLECTIONS, "label", "description", "tags"):
+        previous.pop(key, None)
+        current.pop(key, None)
+    if previous != current:
+        return False
+    old_spec = cast(dict[str, object], msgspec.to_builtins(node.spec))
+    new_spec = cast(dict[str, object], msgspec.to_builtins(installed))
+    for key in _SPEC_COLLECTIONS:
+        old_items = old_spec.get(key, [])
+        new_items = new_spec.get(key, [])
+        if not isinstance(old_items, list) or not isinstance(new_items, list):
+            return False
+        entries = cast(list[object], old_items) + cast(list[object], new_items)
+        if any(not isinstance(item, dict) or not isinstance(cast(dict[str, object], item).get("name"), str)
+               for item in entries):
+            return False
+        old_entries = cast(list[dict[str, object]], old_items)
+        new_entries = cast(list[dict[str, object]], new_items)
+        indexed = {cast(str, item["name"]): item for item in new_entries}
+        if len(indexed) != len(new_entries):
+            return False
+        for item in old_entries:
+            if indexed.get(cast(str, item["name"])) != item:
+                return False
+    return True
 
 
 def _clone_service_spec(spec: F8ServiceSpec) -> F8ServiceSpec:

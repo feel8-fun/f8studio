@@ -143,6 +143,11 @@ class ProjectService:
     def patch(self, project_id: str, request: PatchRequest) -> ProjectMutationResult:
         return self._mutate(project_id, action="patch", request=request)
 
+    def preview_patch(self, project_id: str, request: PatchRequest) -> PatchResult:
+        with self._lock:
+            document = self._store(project_id).snapshot()
+            return GraphStore(document, spec_resolver=self._spec_resolver).apply(request)
+
     def undo(self, project_id: str, request: HistoryRequest) -> ProjectMutationResult:
         return self._mutate(project_id, action="undo", request=request)
 

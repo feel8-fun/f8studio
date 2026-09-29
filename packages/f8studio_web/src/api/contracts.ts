@@ -52,6 +52,70 @@ export interface AgentProviderSummary {
   readonly models: readonly string[];
   readonly configured: boolean;
   readonly deterministic: boolean;
+  readonly supportsImages?: boolean;
+  readonly modelCapabilities?: readonly AgentModelCapabilities[];
+}
+
+export interface AgentModelCapabilities {
+  readonly modelId: string;
+  readonly imageInput: boolean | null;
+  readonly thinking: boolean | null;
+  readonly source?: 'catalog' | 'legacy';
+  readonly imageSource?: 'catalog' | 'legacy' | 'manual' | null;
+  readonly thinkingSource?: 'catalog' | 'legacy' | 'manual' | null;
+}
+
+export interface AgentImage {
+  readonly name: string;
+  readonly dataUrl: string;
+}
+
+export interface AgentProviderSettings {
+  readonly providerId: string;
+  readonly displayName: string;
+  readonly model: string;
+  readonly endpoint: string;
+  readonly apiKeySet: boolean;
+  readonly requiresApiKey: boolean;
+  readonly configured: boolean;
+  readonly source: 'saved' | 'environment';
+  readonly kind: 'agent' | 'decision';
+  readonly inputModalities: readonly ('text' | 'image')[];
+  readonly supportsImage: boolean;
+  readonly protocol?: 'openai_responses' | 'openai_chat' | 'anthropic' | 'systemone' | null;
+  readonly models?: readonly string[];
+  readonly custom?: boolean;
+  readonly modelCapabilities?: readonly AgentModelCapabilities[];
+}
+
+export interface UpdateAgentProviderSettings {
+  readonly model: string;
+  readonly endpoint: string;
+  readonly apiKey?: string;
+  readonly clearApiKey: boolean;
+  readonly supportsImage?: boolean;
+  readonly displayName?: string;
+  readonly models?: readonly string[];
+  readonly modelCapabilities?: readonly AgentModelCapabilities[];
+}
+
+export interface CreateAgentConnection {
+  readonly displayName: string;
+  readonly protocol: 'openai_responses' | 'openai_chat' | 'anthropic' | 'systemone';
+  readonly endpoint: string;
+  readonly apiKey: string;
+  readonly model: string;
+  readonly models: readonly string[];
+  readonly supportsImage: boolean;
+  readonly modelCapabilities?: readonly AgentModelCapabilities[];
+}
+
+export interface AgentConnectionProbe {
+  readonly connected: boolean;
+  readonly models: readonly string[];
+  readonly detail: string;
+  readonly verified: 'catalog' | 'model' | 'none';
+  readonly modelCapabilities?: readonly AgentModelCapabilities[];
 }
 
 export interface AgentMessage {
@@ -59,6 +123,9 @@ export interface AgentMessage {
   readonly role: 'user' | 'assistant' | 'system';
   readonly content: string;
   readonly createdAt: string;
+  readonly images?: readonly AgentImage[];
+  readonly providerId?: string;
+  readonly modelId?: string;
 }
 
 export interface AgentToolCall {
@@ -109,6 +176,7 @@ export interface AgentSession {
   readonly sessionId: string;
   readonly projectId: string;
   readonly title: string;
+  readonly autoTitlePending?: boolean;
   readonly providerId: string;
   readonly modelId: string;
   readonly status: AgentRunStatus;
@@ -344,6 +412,7 @@ export type GraphOperation =
   | { readonly op: 'renameNode'; readonly nodeId: string; readonly name: string }
   | { readonly op: 'setServiceSpec'; readonly nodeId: string; readonly spec: ServiceSpec; readonly portRenames?: Readonly<Record<string, string>> }
   | { readonly op: 'setOperatorSpec'; readonly nodeId: string; readonly spec: OperatorSpec; readonly portRenames?: Readonly<Record<string, string>> }
+  | { readonly op: 'refreshInstalledSpec'; readonly nodeId: string }
   | { readonly op: 'bindOperatorService'; readonly nodeId: string; readonly serviceId: string }
   | { readonly op: 'setNodeEnabled'; readonly nodeId: string; readonly enabled: boolean }
   | { readonly op: 'setNodeState'; readonly nodeId: string; readonly field: string; readonly value: JsonValue }
