@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 import logging
 import time
@@ -267,10 +268,10 @@ DataExprRuntimeNode.SPEC = F8OperatorSpec(
     ),
     tags=["expr", "math", "logic", "transform", "lightweight"],
     dataInPorts=[
-        F8DataPortSpec(name="x", description="Input value for the expression.", valueSchema=any_schema(), definitionProtected=False),
+        F8DataPortSpec(name="x", description="Input value for the expression.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
     ],
     dataOutPorts=[
-        F8DataPortSpec(name="out", description="Expression result.", valueSchema=any_schema(), definitionProtected=False),
+        F8DataPortSpec(name="out", description="Expression result.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
     ],
     editPolicy=F8SpecEditPolicy(
         dataInPorts=editable_collection_edit_policy(),

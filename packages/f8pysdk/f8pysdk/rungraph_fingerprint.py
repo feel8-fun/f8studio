@@ -7,11 +7,11 @@ from .generated.runtime_fingerprint import fingerprint, normalize_snapshot
 
 
 def build_rungraph_deploy_snapshot(graph: Any) -> dict[str, Any]:
-    return normalize_snapshot(dump_json(graph, mode="json", by_alias=True))
+    return normalize_snapshot(dump_json(graph))
 
 
 def build_rungraph_deploy_fingerprint(graph: Any) -> str:
-    return fingerprint(dump_json(graph, mode="json", by_alias=True))
+    return fingerprint(dump_json(graph))
 
 
 __all__ = ["build_rungraph_deploy_fingerprint", "build_rungraph_deploy_snapshot"]

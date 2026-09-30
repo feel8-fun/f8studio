@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+import pytest
 from typing import Any
 
 from f8pysdk.bus import ServiceBus, ServiceBusConfig
@@ -202,38 +203,23 @@ def test_zenoh_transport_puts_use_latest_drop_qos() -> None:
     asyncio.run(_run())
 
 
-def test_zenoh_shared_memory_config_writes_current_and_legacy_pool_keys() -> None:
+def test_zenoh_shared_memory_config_writes_supported_pool_keys() -> None:
     config = _FakeZenohConfig()
 
-    apply_zenoh_shared_memory_config(
-        config,
-        zenoh_module=_FakeZenohModule,
-        shm_pool_bytes=123,
-        log_context="test",
-    )
+    apply_zenoh_shared_memory_config(config, shm_pool_bytes=123)
 
     assert config.values == {
         "transport/shared_memory/enabled": "true",
         "transport/shared_memory/mode": '"init"',
         "transport/shared_memory/transport_optimization/enabled": "true",
         "transport/shared_memory/transport_optimization/pool_size": "123",
-        "transport/shared_memory/pool_size": "123",
     }
 
 
-def test_zenoh_shared_memory_config_tolerates_missing_optional_pool_key() -> None:
-    legacy_key = "transport/shared_memory/pool_size"
-    config = _FakeZenohConfig(rejected_keys={legacy_key})
-
-    apply_zenoh_shared_memory_config(
-        config,
-        zenoh_module=_FakeZenohModule,
-        shm_pool_bytes=456,
-        log_context="test",
-    )
-
-    assert config.values["transport/shared_memory/transport_optimization/pool_size"] == "456"
-    assert legacy_key not in config.values
+def test_zenoh_shared_memory_config_rejects_invalid_required_pool_key() -> None:
+    config = _FakeZenohConfig(rejected_keys={"transport/shared_memory/transport_optimization/pool_size"})
+    with pytest.raises(_FakeZenohModule.ZError):
+        apply_zenoh_shared_memory_config(config, shm_pool_bytes=456)
 
 
 def test_zenoh_transport_state_watch_get_and_request_roundtrip() -> None:

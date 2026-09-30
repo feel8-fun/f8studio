@@ -36,12 +36,9 @@ class MonitorRuntimeOverrides:
 @dataclass(frozen=True)
 class ServiceAppDefaults:
     bus: ServiceBusConfig = field(default_factory=ServiceBusConfig)
-    registry_modules: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        modules = tuple(str(module).strip() for module in self.registry_modules if str(module).strip())
         object.__setattr__(self, "bus", self.bus.normalized())
-        object.__setattr__(self, "registry_modules", modules)
 
     def build_bus_config(
         self,
@@ -322,7 +319,7 @@ class ServiceApp:
             zenoh_listen=zenoh_listen,
             zenoh_shm_pool_bytes=zenoh_shm_pool_bytes,
         )
-        return ServiceRuntimeConfig(bus=bus, registry_modules=defaults.registry_modules)
+        return ServiceRuntimeConfig(bus=bus)
 
     def build_runtime(
         self,
@@ -347,7 +344,7 @@ class ServiceApp:
         return ServiceRuntime(runtime_cfg, registry=self.runtime_registry)
 
     def describe_json(self) -> dict[str, Any]:
-        payload = dump_json(self.runtime_registry.describe(self.service_class), mode="json")
+        payload = dump_json(self.runtime_registry.describe(self.service_class))
         validate_describe_monitor_contract(payload)
         return payload
 

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.codec import parse_number
 from typing import Any, Callable
@@ -170,10 +171,10 @@ RangeMapRuntimeNode.SPEC = F8OperatorSpec(
     description="Clip input to [inMin,inMax] then remap to [outMin,outMax] with a curve.",
     tags=["map", "range", "normalize", "curve", "transform"],
     dataInPorts=[
-        F8DataPortSpec(name="value", description="Input value.", valueSchema=number_schema(), definitionProtected=False),
+        F8DataPortSpec(name="value", description="Input value.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()), definitionProtected=False),
     ],
     dataOutPorts=[
-        F8DataPortSpec(name="value", description="Mapped output.", valueSchema=number_schema()),
+        F8DataPortSpec(name="value", description="Mapped output.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema())),
     ],
     stateFields=[
         F8StateSpec(

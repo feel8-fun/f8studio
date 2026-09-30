@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.specs import (
     F8UiControlKind,
@@ -90,8 +91,8 @@ def register_specs(registry: Registry) -> Registry:
                     params=[],
                 ),
             ],
-            dataInPorts=[F8DataPortSpec(name="in", description="Default data input", valueSchema=any_schema(), definitionProtected=False)],
-            dataOutPorts=[F8DataPortSpec(name="out", description="Default data output", valueSchema=any_schema(), definitionProtected=False)],
+            dataInPorts=[F8DataPortSpec(name="in", description="Default data input", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False)],
+            dataOutPorts=[F8DataPortSpec(name="out", description="Default data output", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False)],
             editPolicy=F8SpecEditPolicy(
                 stateFields=editable_collection_edit_policy(),
                 commands=editable_collection_edit_policy(),

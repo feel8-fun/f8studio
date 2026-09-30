@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import math
 import numbers
@@ -13,128 +14,70 @@ _TRUE_STRINGS = frozenset({"1", "true", "yes", "on"})
 _FALSE_STRINGS = frozenset({"0", "false", "no", "off"})
 
 
-def _strip_unset(value: Any, *, _seen: set[int] | None = None) -> Any:
+def _json_value(value: Any, seen: set[int]) -> Any:
     if isinstance(value, msgspec.UnsetType):
         return _UNSET_SENTINEL
-    if isinstance(value, dict):
-        if _seen is None:
-            _seen = set()
-        value_id = id(value)
-        if value_id in _seen:
-            return None
-        _seen.add(value_id)
-        out: dict[Any, Any] = {}
-        for key, item in value.items():
-            cleaned = _strip_unset(item, _seen=_seen)
-            if cleaned is _UNSET_SENTINEL:
-                continue
-            out[key] = cleaned
-        _seen.discard(value_id)
-        return out
-    if isinstance(value, list):
-        if _seen is None:
-            _seen = set()
-        value_id = id(value)
-        if value_id in _seen:
-            return None
-        _seen.add(value_id)
-        out_list: list[Any] = []
-        for item in value:
-            cleaned = _strip_unset(item, _seen=_seen)
-            if cleaned is _UNSET_SENTINEL:
-                continue
-            out_list.append(cleaned)
-        _seen.discard(value_id)
-        return out_list
-    if isinstance(value, tuple):
-        out_tuple: list[Any] = []
-        for item in value:
-            cleaned = _strip_unset(item, _seen=_seen)
-            if cleaned is _UNSET_SENTINEL:
-                continue
-            out_tuple.append(cleaned)
-        return tuple(out_tuple)
-    if isinstance(value, (str, int, float, bool, bytes, bytearray, memoryview, type(None))):
+    if value is None or type(value) in (str, int, float, bool):
         return value
-    try:
-        converted = msgspec.to_builtins(value)
-    except (TypeError, ValueError):
-        return value
-    if converted is value:
-        return value
-    return _strip_unset(converted, _seen=_seen)
-
-
-def _coerce_json_compatible(value: Any, *, _seen: set[int] | None = None) -> Any:
-    if value is None:
-        return value
-    if type(value) in (str, int, float, bool):
-        return value
-    if isinstance(value, msgspec.UnsetType):
-        return None
-    if isinstance(value, dict):
-        if _seen is None:
-            _seen = set()
-        value_id = id(value)
-        if value_id in _seen:
-            return None
-        _seen.add(value_id)
-        out: dict[str, Any] = {}
-        for key, item in value.items():
-            out[str(key)] = _coerce_json_compatible(item, _seen=_seen)
-        _seen.discard(value_id)
-        return out
-    if isinstance(value, (list, tuple, set)):
-        if _seen is None:
-            _seen = set()
-        value_id = id(value)
-        if value_id in _seen:
-            return None
-        _seen.add(value_id)
-        out_list = [_coerce_json_compatible(item, _seen=_seen) for item in value]
-        _seen.discard(value_id)
-        return out_list
     if isinstance(value, numbers.Integral):
         return int(value)
     if isinstance(value, numbers.Real):
         return float(value)
-
-    item_fn = getattr(value, "item", None)
-    if callable(item_fn):
-        try:
-            return _coerce_json_compatible(item_fn(), _seen=_seen)
-        except (TypeError, ValueError):
-            pass
-
+    identity = id(value)
+    if identity in seen:
+        raise ValueError("cyclic value cannot be serialized")
+    seen.add(identity)
     try:
-        converted = msgspec.to_builtins(value)
-    except (TypeError, ValueError):
-        converted = value
-    if converted is not value:
-        return _coerce_json_compatible(converted, _seen=_seen)
+        if isinstance(value, msgspec.Struct):
+            # Generic serialization is the intentional dynamic-schema boundary.
+            result = {
+                field.encode_name: converted
+                for field in msgspec.structs.fields(value)
+                if (converted := _json_value(getattr(value, field.name), seen)) is not _UNSET_SENTINEL
+            }
+            config = value.__struct_config__
+            if config.tag_field is not None and config.tag is not None:
+                result[config.tag_field] = config.tag
+            return result
+        if isinstance(value, dict):
+            result: dict[str, Any] = {}
+            for key, item in value.items():
+                if not isinstance(key, (str, int, float, bool, type(None))):
+                    raise TypeError(f"unsupported JSON key type: {type(key).__name__}")
+                converted = _json_value(item, seen)
+                if converted is not _UNSET_SENTINEL:
+                    result[str(key)] = converted
+            return result
+        if isinstance(value, (list, tuple, set)):
+            return [converted for item in value if (converted := _json_value(item, seen)) is not _UNSET_SENTINEL]
+        # NumPy scalar types expose item(); this is not application attribute dispatch.
+        item_fn = getattr(value, "item", None)
+        if callable(item_fn):
+            return _json_value(item_fn(), seen)
+        try:
+            converted = msgspec.to_builtins(value)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(f"unsupported JSON value type: {type(value).__name__}") from exc
+        if converted is value:
+            raise TypeError(f"unsupported JSON value type: {type(value).__name__}")
+        return _json_value(converted, seen)
+    finally:
+        seen.remove(identity)
 
-    return str(value)
 
-
-def validate_as(model_type: type[T], value: Any, *_args: Any, **_kwargs: Any) -> T:
+def validate_as(model_type: type[T], value: Any) -> T:
     return msgspec.convert(value, type=model_type)
 
 
-def dump_json(value: Any, *_args: Any, **_kwargs: Any) -> Any:
-    if value is None or type(value) in (str, int, float, bool):
-        return value
-    try:
-        raw = msgspec.to_builtins(value)
-    except (TypeError, ValueError):
-        raw = value
-    cleaned = _strip_unset(raw)
-    if cleaned is _UNSET_SENTINEL:
-        return None
-    return _coerce_json_compatible(cleaned)
+def dump_json(value: Any) -> Any:
+    converted = _json_value(value, set())
+    return None if converted is _UNSET_SENTINEL else converted
 
 
-def copy_model(value: T, *_args: Any, **kwargs: Any) -> T:
-    update_obj = kwargs.get("update")
+def copy_model(value: T, *, update: dict[str, Any] | None = None, deep: bool = False) -> T:
+    if deep:
+        value = deepcopy(value)
+    update_obj = update
     if isinstance(value, msgspec.Struct):
         if isinstance(update_obj, dict):
             return msgspec.structs.replace(value, **update_obj)
@@ -146,7 +89,7 @@ def copy_model(value: T, *_args: Any, **kwargs: Any) -> T:
         return cast(T, copied)
     if isinstance(update_obj, dict) and (value is None or isinstance(value, msgspec.UnsetType)):
         return cast(T, dict(update_obj))
-    return value
+    raise TypeError(f"unsupported model copy type: {type(value).__name__}")
 
 
 def unwrap_json_value(value: Any) -> Any:
@@ -156,7 +99,7 @@ def unwrap_json_value(value: Any) -> Any:
     if value is None or isinstance(value, (str, int, float, bool, list, dict, tuple)):
         return value
     try:
-        return dump_json(value, mode="json")
+        return dump_json(value)
     except (AttributeError, TypeError, ValueError):
         return value
 
@@ -355,7 +298,7 @@ def parse_str_list(
 def _msgpack_enc_hook(obj: Any) -> Any:
     if isinstance(obj, msgspec.UnsetType):
         return None
-    normalized = dump_json(obj, mode="json")
+    normalized = dump_json(obj)
     if normalized is obj:
         raise TypeError(f"unsupported msgpack object: {type(obj).__name__}")
     return normalized

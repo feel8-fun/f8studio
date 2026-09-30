@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from ._throttled_flusher import ThrottledFlusher
 
@@ -92,7 +93,7 @@ class VizThreeDRuntimeNode(StudioVizRuntimeNodeBase):
         node_id: str,
         node: F8RuntimeNode,
         initial_state: dict[str, Any] | None = None,
-        presentation: PresentationOutlet | None = None,
+        presentation: PresentationOutlet,
     ) -> None:
         super().__init__(
             node_id=ensure_token(node_id, label="node_id"),
@@ -346,7 +347,7 @@ VizThreeDRuntimeNode.SPEC = F8OperatorSpec(
     tags=["viz", "3d", "skeleton", "web"],
     dataInPorts=[
         F8DataPortSpec(
-            name="skeletons", description="Skeleton, skeleton list, or single bone.", valueSchema=any_schema()
+            name="skeletons", description="Skeleton, skeleton list, or single bone.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema())
         )
     ],
     dataOutPorts=[],
@@ -432,9 +433,9 @@ VizThreeDRuntimeNode.SPEC = F8OperatorSpec(
 )
 
 
-def register_operator(registry: Registry) -> Registry:
-    registry.register_operator(VizThreeDRuntimeNode.SPEC, VizThreeDRuntimeNode, overwrite=True)
+def register_spec(registry: Registry) -> Registry:
+    registry.register_operator_spec(VizThreeDRuntimeNode.SPEC, overwrite=True)
     return registry
 
 
-__all__ = ["VizThreeDRuntimeNode", "register_operator"]
+__all__ = ["VizThreeDRuntimeNode", "register_spec"]

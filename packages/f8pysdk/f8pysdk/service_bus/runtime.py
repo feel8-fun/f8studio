@@ -23,7 +23,7 @@ from ..generated import F8RuntimeGraph
 from ..f8_naming import ensure_token
 from ..rungraph_fingerprint import build_rungraph_deploy_fingerprint
 from ..service_runtime_tools.deploy.readiness import rungraph_deploy_request_status_key
-from ..runtime_transport import RuntimeTransport
+from ..runtime_transport import RuntimeTransport, SubscriptionHandle
 from ..zenoh_transport import ZenohTransport, ZenohTransportConfig
 from ..state import StateRead, StateWriteOrigin, StateWriteSource
 from ..time_utils import now_ms
@@ -595,12 +595,11 @@ class ServiceBus:
         self,
         key_expr: str,
         *,
-        queue: str | None = None,
         cb: Callable[[str, bytes], Awaitable[None]] | None = None,
-    ) -> Any:
-        return await self._data_router.subscribe_key(key_expr, queue=queue, cb=cb)
+    ) -> SubscriptionHandle:
+        return await self._data_router.subscribe_key(key_expr, cb=cb)
 
-    async def unsubscribe_key(self, handle: Any) -> None:
+    async def unsubscribe_key(self, handle: SubscriptionHandle | None) -> None:
         await self._data_router.unsubscribe_key(handle)
 
     async def publish_state_external(
@@ -961,11 +960,10 @@ class ServiceBus:
         self,
         key_expr: str,
         *,
-        queue: str | None = None,
         cb: Callable[[str, bytes], Awaitable[None]] | None = None,
-    ) -> Any:
+    ) -> SubscriptionHandle:
         """Subscribe to a Zenoh key expression."""
-        return await self._transport.subscribe(str(key_expr), queue=queue, cb=cb)
+        return await self._transport.subscribe(str(key_expr), cb=cb)
 
     async def emit_data(
         self,

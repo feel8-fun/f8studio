@@ -15,7 +15,7 @@ function port(
     runtimeName: portId,
     kind,
     direction,
-    dataSpec: kind === 'data' ? { name: portId, valueSchema: { type: 'number' }, payloadKind: 'json' } : null,
+    dataSpec: kind === 'data' ? { name: portId, payload: { kind: 'json', valueSchema: { type: 'number' } } } : null,
     stateSpec: kind === 'state' ? { name: portId, valueSchema: { type: 'number' }, access } : null,
   };
 }

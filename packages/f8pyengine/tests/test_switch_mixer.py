@@ -1,3 +1,4 @@
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 import asyncio
 import os
 import sys
@@ -35,9 +36,9 @@ class SwitchMixerTests(unittest.IsolatedAsyncioTestCase):
             operatorClass=SwitchMixerRuntimeNode.SPEC.operatorClass,
             stateFields=list(SwitchMixerRuntimeNode.SPEC.stateFields or []),
             dataInPorts=[
-                F8DataPortSpec(name="main", valueSchema=number_schema()),
-                F8DataPortSpec(name="fallback", valueSchema=number_schema()),
-                F8DataPortSpec(name="manual", valueSchema=number_schema()),
+                F8DataPortSpec(name="main", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema())),
+                F8DataPortSpec(name="fallback", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema())),
+                F8DataPortSpec(name="manual", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema())),
             ],
             stateValues={"currentChannel": "main", "fadeMs": 0},
         )
@@ -75,8 +76,8 @@ class SwitchMixerTests(unittest.IsolatedAsyncioTestCase):
             operatorClass=SwitchMixerRuntimeNode.SPEC.operatorClass,
             stateFields=list(SwitchMixerRuntimeNode.SPEC.stateFields or []),
             dataInPorts=[
-                F8DataPortSpec(name="track_a", valueSchema=number_schema()),
-                F8DataPortSpec(name="track_b", valueSchema=number_schema()),
+                F8DataPortSpec(name="track_a", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema())),
+                F8DataPortSpec(name="track_b", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema())),
             ],
             stateValues={"currentChannel": "track_a", "fadeMs": 90},
         )

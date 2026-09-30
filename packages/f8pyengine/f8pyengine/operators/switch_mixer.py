@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.specs import exec_port_specs
 
@@ -222,12 +223,12 @@ SwitchMixerRuntimeNode.SPEC = F8OperatorSpec(
     execInPorts=exec_port_specs(["exec"]),
     execOutPorts=exec_port_specs(["exec"]),
     dataInPorts=[
-        F8DataPortSpec(name="ch1", description="Input channel 1", valueSchema=number_schema(), definitionProtected=False),
-        F8DataPortSpec(name="ch2", description="Input channel 2", valueSchema=number_schema(), definitionProtected=False),
+        F8DataPortSpec(name="ch1", description="Input channel 1", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()), definitionProtected=False),
+        F8DataPortSpec(name="ch2", description="Input channel 2", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()), definitionProtected=False),
     ],
     dataOutPorts=[
-        F8DataPortSpec(name="out", description="Mixed output", valueSchema=number_schema()),
-        F8DataPortSpec(name="alpha", description="Transition progress (0..1)", valueSchema=number_schema()),
+        F8DataPortSpec(name="out", description="Mixed output", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema())),
+        F8DataPortSpec(name="alpha", description="Transition progress (0..1)", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema())),
     ],
     editPolicy=F8SpecEditPolicy(dataInPorts=editable_collection_edit_policy()),
     stateFields=[

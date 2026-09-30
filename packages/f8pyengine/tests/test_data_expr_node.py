@@ -1,3 +1,4 @@
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 import os
 import sys
 import unittest
@@ -50,10 +51,10 @@ class DataExprNodeTests(unittest.IsolatedAsyncioTestCase):
             stateFields=list(DataExprRuntimeNode.SPEC.stateFields or []),
             stateValues={"code": "input.center.x"},
             dataInPorts=[
-                F8DataPortSpec(name="input", description="", valueSchema=any_schema(), definitionProtected=False),
+                F8DataPortSpec(name="input", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
             ],
             dataOutPorts=[
-                F8DataPortSpec(name="out", description="", valueSchema=any_schema(), definitionProtected=False),
+                F8DataPortSpec(name="out", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
             ],
         )
         graph = F8RuntimeGraph(graphId="g1", revision="r1", nodes=[op], edges=[])
@@ -82,12 +83,12 @@ class DataExprNodeTests(unittest.IsolatedAsyncioTestCase):
             stateFields=list(DataExprRuntimeNode.SPEC.stateFields or []),
             stateValues={"code": "a + b - c**2"},
             dataInPorts=[
-                F8DataPortSpec(name="a", description="", valueSchema=any_schema(), definitionProtected=False),
-                F8DataPortSpec(name="b", description="", valueSchema=any_schema(), definitionProtected=False),
-                F8DataPortSpec(name="c", description="", valueSchema=any_schema(), definitionProtected=False),
+                F8DataPortSpec(name="a", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
+                F8DataPortSpec(name="b", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
+                F8DataPortSpec(name="c", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
             ],
             dataOutPorts=[
-                F8DataPortSpec(name="out", description="", valueSchema=any_schema(), definitionProtected=False),
+                F8DataPortSpec(name="out", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
             ],
         )
         graph = F8RuntimeGraph(graphId="g2", revision="r1", nodes=[op], edges=[])
@@ -118,10 +119,10 @@ class DataExprNodeTests(unittest.IsolatedAsyncioTestCase):
             stateFields=list(DataExprRuntimeNode.SPEC.stateFields or []),
             stateValues={"code": "[x * 2 for x in input if x % 2 == 0]"},
             dataInPorts=[
-                F8DataPortSpec(name="input", description="", valueSchema=any_schema(), definitionProtected=False),
+                F8DataPortSpec(name="input", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
             ],
             dataOutPorts=[
-                F8DataPortSpec(name="out", description="", valueSchema=any_schema(), definitionProtected=False),
+                F8DataPortSpec(name="out", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
             ],
         )
         graph = F8RuntimeGraph(graphId="g3", revision="r1", nodes=[op], edges=[])
@@ -149,10 +150,10 @@ class DataExprNodeTests(unittest.IsolatedAsyncioTestCase):
             stateFields=list(DataExprRuntimeNode.SPEC.stateFields or []),
             stateValues={"code": "[p.x for p in input.points if p.x >= 0]"},
             dataInPorts=[
-                F8DataPortSpec(name="input", description="", valueSchema=any_schema(), definitionProtected=False),
+                F8DataPortSpec(name="input", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
             ],
             dataOutPorts=[
-                F8DataPortSpec(name="out", description="", valueSchema=any_schema(), definitionProtected=False),
+                F8DataPortSpec(name="out", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
             ],
         )
         graph = F8RuntimeGraph(graphId="g4", revision="r1", nodes=[op], edges=[])
@@ -181,10 +182,10 @@ class DataExprNodeTests(unittest.IsolatedAsyncioTestCase):
             stateFields=list(DataExprRuntimeNode.SPEC.stateFields or []),
             stateValues={"code": "np.clip(input, 0, 1)"},
             dataInPorts=[
-                F8DataPortSpec(name="input", description="", valueSchema=any_schema(), definitionProtected=False),
+                F8DataPortSpec(name="input", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
             ],
             dataOutPorts=[
-                F8DataPortSpec(name="out", description="", valueSchema=any_schema(), definitionProtected=False),
+                F8DataPortSpec(name="out", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
             ],
         )
         graph = F8RuntimeGraph(graphId="g5", revision="r1", nodes=[op], edges=[])
@@ -212,10 +213,10 @@ class DataExprNodeTests(unittest.IsolatedAsyncioTestCase):
             stateFields=list(DataExprRuntimeNode.SPEC.stateFields or []),
             stateValues={"allowNumpy": True, "code": "np.clip(input, 0, 1)"},
             dataInPorts=[
-                F8DataPortSpec(name="input", description="", valueSchema=any_schema(), definitionProtected=False),
+                F8DataPortSpec(name="input", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
             ],
             dataOutPorts=[
-                F8DataPortSpec(name="out", description="", valueSchema=any_schema(), definitionProtected=False),
+                F8DataPortSpec(name="out", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
             ],
         )
         graph = F8RuntimeGraph(graphId="g6", revision="r1", nodes=[op], edges=[])
@@ -242,11 +243,11 @@ class DataExprNodeTests(unittest.IsolatedAsyncioTestCase):
             stateFields=list(DataExprRuntimeNode.SPEC.stateFields or []),
             stateValues={"code": "{'a': input + 1, 'b': input + 2}", "unpackDictOutputs": False},
             dataInPorts=[
-                F8DataPortSpec(name="input", description="", valueSchema=any_schema(), definitionProtected=False),
+                F8DataPortSpec(name="input", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
             ],
             dataOutPorts=[
-                F8DataPortSpec(name="out", description="", valueSchema=any_schema(), definitionProtected=False),
-                F8DataPortSpec(name="a", description="", valueSchema=any_schema(), definitionProtected=False),
+                F8DataPortSpec(name="out", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
+                F8DataPortSpec(name="a", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
             ],
         )
         graph = F8RuntimeGraph(graphId="g7", revision="r1", nodes=[op], edges=[])
@@ -276,12 +277,12 @@ class DataExprNodeTests(unittest.IsolatedAsyncioTestCase):
             stateFields=list(DataExprRuntimeNode.SPEC.stateFields or []),
             stateValues={"code": "{'a': input + 1, 'b': input + 2, 'z': 999}", "unpackDictOutputs": True},
             dataInPorts=[
-                F8DataPortSpec(name="input", description="", valueSchema=any_schema(), definitionProtected=False),
+                F8DataPortSpec(name="input", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
             ],
             dataOutPorts=[
-                F8DataPortSpec(name="out", description="", valueSchema=any_schema(), definitionProtected=False),
-                F8DataPortSpec(name="a", description="", valueSchema=any_schema(), definitionProtected=False),
-                F8DataPortSpec(name="b", description="", valueSchema=any_schema(), definitionProtected=False),
+                F8DataPortSpec(name="out", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
+                F8DataPortSpec(name="a", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
+                F8DataPortSpec(name="b", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
             ],
         )
         graph = F8RuntimeGraph(graphId="g8", revision="r1", nodes=[op], edges=[])

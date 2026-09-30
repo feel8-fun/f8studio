@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.specs import exec_port_specs
 
@@ -872,8 +873,8 @@ PythonScriptRuntimeNode.SPEC = F8OperatorSpec(
     tags=["script", "python", "programmable"],
     execInPorts=exec_port_specs(["exec"]),
     execOutPorts=exec_port_specs(["exec"]),
-    dataInPorts=[F8DataPortSpec(name="msg", description="Message input", valueSchema=any_schema(), definitionProtected=False)],
-    dataOutPorts=[F8DataPortSpec(name="out", description="Script output", valueSchema=any_schema(), definitionProtected=False)],
+    dataInPorts=[F8DataPortSpec(name="msg", description="Message input", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False)],
+    dataOutPorts=[F8DataPortSpec(name="out", description="Script output", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False)],
     editPolicy=F8SpecEditPolicy(
         stateFields=editable_collection_edit_policy(),
         commands=editable_collection_edit_policy(),

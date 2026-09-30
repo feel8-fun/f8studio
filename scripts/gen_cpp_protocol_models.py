@@ -461,8 +461,8 @@ template<class T> nlohmann::json wire_json(const std::map<std::string,T>& value)
             lines += ["  }"]
             if required:
                 lines += [f'  else return invalid(e,"missing required field: {field}");']
-        # Preserve API/1 unknown-field tolerance, matching msgspec models.
-        if name == "F8ComponentRecord":
+        # Match the closed authoring contracts in the Python generator.
+        if name in ('F8ComponentRecord', 'F8DataPortSpec', 'F8DataPayloadSpec', 'F8DataStreamSpec', 'F8ServiceSpec', 'F8OperatorSpec', 'F8StateSpec', 'F8ExecPortSpec', 'F8Command', 'F8CommandParam', 'F8StateFieldEditPolicy', 'F8SpecEditPolicy'):
             allowed = " && ".join(f"item.key() != {json.dumps(field)}" for field in obj.get("properties", {})) or "true"
             lines += [
                 f'  for (const auto& item : j.items()) if ({allowed}) return invalid(e,"unknown field: "+item.key());'

@@ -31,7 +31,7 @@ json data_port(const std::string& name, const std::string& description, const js
                bool show_on_node) {
   return json{{"name", name},
               {"description", description},
-              {"valueSchema", schema},
+              {"payload", {{"kind", "json"}, {"valueSchema", schema}}},
               {"definitionProtected", definition_protected},
               {"showOnNode", show_on_node}};
 }

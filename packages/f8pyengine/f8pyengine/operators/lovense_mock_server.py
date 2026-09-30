@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.specs import exec_port_specs
 
@@ -1496,7 +1497,7 @@ LovenseMockServerRuntimeNode.SPEC = F8OperatorSpec(
         F8DataPortSpec(
             name="event",
             description="Latest received Lovense command event.",
-            valueSchema=_event_schema(),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=_event_schema()),
         ),
     ],
     stateFields=[

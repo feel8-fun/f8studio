@@ -106,3 +106,29 @@ test('evicts the least recently updated output when the store reaches its limit'
   expect(store.getOutputSnapshot('node-1')).toBeNull();
   expect(store.getOutputsSnapshot().size).toBe(32);
 });
+
+test('requires both live and event connections to report connected', () => {
+  class Socket {
+    static instances: Socket[] = [];
+    onopen: (() => void) | null = null;
+    onclose: (() => void) | null = null;
+    constructor(readonly url: string) { Socket.instances.push(this); }
+    close() { this.onclose?.(); }
+  }
+  vi.stubGlobal('WebSocket', Socket);
+  const store = new PresentationStore();
+  try {
+    store.start();
+    const live = Socket.instances.find((socket) => socket.url.endsWith('/api/live'))!;
+    const events = Socket.instances.find((socket) => socket.url.includes('/api/events'))!;
+    events.onopen?.();
+    expect(store.getConnectionSnapshot()).toBe(false);
+    live.onopen?.();
+    expect(store.getConnectionSnapshot()).toBe(true);
+    live.close();
+    expect(store.getConnectionSnapshot()).toBe(false);
+  } finally {
+    store.stop();
+    vi.unstubAllGlobals();
+  }
+});

@@ -30,7 +30,12 @@
         "dataOutPorts": [
           {
             "name": "out",
-            "valueSchema": {"type": "number"}
+            "payload": {
+              "kind": "json",
+              "valueSchema": {
+                "type": "number"
+              }
+            }
           }
         ]
       },
@@ -43,7 +48,12 @@
           "direction": "output",
           "dataSpec": {
             "name": "out",
-            "valueSchema": {"type": "number"}
+            "payload": {
+              "kind": "json",
+              "valueSchema": {
+                "type": "number"
+              }
+            }
           }
         }
       ]
@@ -62,7 +72,12 @@
         "dataInPorts": [
           {
             "name": "input",
-            "valueSchema": {"type": "number"}
+            "payload": {
+              "kind": "json",
+              "valueSchema": {
+                "type": "number"
+              }
+            }
           }
         ]
       },
@@ -75,7 +90,12 @@
           "direction": "input",
           "dataSpec": {
             "name": "input",
-            "valueSchema": {"type": "number"}
+            "payload": {
+              "kind": "json",
+              "valueSchema": {
+                "type": "number"
+              }
+            }
           }
         }
       ]
@@ -92,8 +112,22 @@
     }
   ],
   "layout": [
-    {"nodeId": "engine", "x": 0, "y": 0, "width": 760, "height": 360},
-    {"nodeId": "source", "x": 120, "y": 100},
-    {"nodeId": "sink", "x": 460, "y": 100}
+    {
+      "nodeId": "engine",
+      "x": 0,
+      "y": 0,
+      "width": 760,
+      "height": 360
+    },
+    {
+      "nodeId": "source",
+      "x": 120,
+      "y": 100
+    },
+    {
+      "nodeId": "sink",
+      "x": 460,
+      "y": 100
+    }
   ]
 }

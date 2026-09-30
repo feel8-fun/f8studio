@@ -46,11 +46,11 @@ from ._specs.schema import (
     array_schema,
     audio_chunk_metadata_schema,
     audio_chunk_port,
-    audio_chunk_schema,
     boolean_schema,
     complex_object_schema,
     data_payload_spec,
     data_port_payload_kind,
+    data_port_value_schema,
     data_port_stream_delivery,
     data_stream_spec,
     integer_schema,
@@ -61,7 +61,6 @@ from ._specs.schema import (
     string_schema,
     video_frame_metadata_schema,
     video_frame_port,
-    video_frame_schema,
 )
 from .generated import (
     UNSET,
@@ -326,7 +325,6 @@ __all__ = [
     "array_schema",
     "audio_chunk_metadata_schema",
     "audio_chunk_port",
-    "audio_chunk_schema",
     "boolean_schema",
     "can_add",
     "can_delete",
@@ -342,6 +340,7 @@ __all__ = [
     "complex_object_schema",
     "data_payload_spec",
     "data_port_payload_kind",
+    "data_port_value_schema",
     "data_port_stream_delivery",
     "data_stream_spec",
     "default_collection_edit_policy",
@@ -362,7 +361,6 @@ __all__ = [
     "string_schema",
     "video_frame_metadata_schema",
     "video_frame_port",
-    "video_frame_schema",
 ]
 
 

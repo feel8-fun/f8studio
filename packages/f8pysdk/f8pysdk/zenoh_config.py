@@ -1,71 +1,25 @@
 from __future__ import annotations
 
 import json
-import logging
-from typing import Any
-
-log = logging.getLogger(__name__)
+from typing import Protocol
 
 
-def apply_zenoh_shared_memory_config(
-    config: Any,
-    *,
-    zenoh_module: Any,
-    shm_pool_bytes: int,
-    log_context: str,
-) -> None:
-    """
-    Enable Zenoh SHM plus transport-optimization pools for large payloads.
+class ZenohConfigWriter(Protocol):
+    def insert_json5(self, key: str, value: str) -> None: ...
 
-    Zenoh 1.9 exposes the pool under
-    `transport/shared_memory/transport_optimization/pool_size`. The legacy
-    `transport/shared_memory/pool_size` write is kept as a best-effort fallback
-    for older configs.
-    """
+
+def apply_zenoh_shared_memory_config(config: ZenohConfigWriter, *, shm_pool_bytes: int) -> None:
+    """Configure the supported Zenoh 1.9 transport; invalid settings fail at startup."""
     config.insert_json5("transport/shared_memory/enabled", "true")
-    _insert_optional_json5(config, zenoh_module, "transport/shared_memory/mode", json.dumps("init"), log_context)
-    _insert_optional_json5(
-        config,
-        zenoh_module,
-        "transport/shared_memory/transport_optimization/enabled",
-        "true",
-        log_context,
-    )
-    pool_bytes = max(0, int(shm_pool_bytes))
-    if pool_bytes <= 0:
-        return
-    pool_json = json.dumps(pool_bytes)
-    _insert_optional_json5(
-        config,
-        zenoh_module,
-        "transport/shared_memory/transport_optimization/pool_size",
-        pool_json,
-        log_context,
-    )
-    _insert_optional_json5(
-        config,
-        zenoh_module,
-        "transport/shared_memory/pool_size",
-        pool_json,
-        log_context,
-    )
+    config.insert_json5("transport/shared_memory/mode", json.dumps("init"))
+    config.insert_json5("transport/shared_memory/transport_optimization/enabled", "true")
+    if shm_pool_bytes > 0:
+        config.insert_json5("transport/shared_memory/transport_optimization/pool_size", json.dumps(shm_pool_bytes))
 
 
-def apply_zenoh_timestamping_config(config: Any, *, zenoh_module: Any, log_context: str) -> None:
-    """
-    Enable Zenoh timestamps required by advanced publisher cache/history.
-
-    Advanced retained-state publishers use Zenoh's sequencing metadata. Current
-    Zenoh versions reject advanced publishers unless timestamping is enabled.
-    """
-    _insert_optional_json5(config, zenoh_module, "timestamping/enabled", "true", log_context)
-
-
-def _insert_optional_json5(config: Any, zenoh_module: Any, key: str, value: str, log_context: str) -> None:
-    try:
-        config.insert_json5(str(key), str(value))
-    except zenoh_module.ZError as exc:
-        log.debug("zenoh config key unavailable context=%s key=%s", log_context, key, exc_info=exc)
+def apply_zenoh_timestamping_config(config: ZenohConfigWriter) -> None:
+    """Retained-state publishers require timestamps for sequencing metadata."""
+    config.insert_json5("timestamping/enabled", "true")
 
 
 __all__ = ["apply_zenoh_shared_memory_config", "apply_zenoh_timestamping_config"]

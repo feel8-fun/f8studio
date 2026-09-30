@@ -12,14 +12,6 @@ inline std::string command(const std::string& service, const std::string& comman
   return std::string("f8/cmd/svc/") + service + "/" + command;
 }
 
-inline std::string legacy_endpoint(const std::string& service, const std::string& endpoint) {
-  return std::string("f8/svc/") + service + "/endpoint/" + endpoint;
-}
-
-inline std::string legacy_command(const std::string& service) {
-  return std::string("f8/svc/") + service + "/cmd";
-}
-
 inline std::string service_liveliness(const std::string& service, const std::string& instance) {
   return std::string("f8/live/svc/") + service + "/instances/" + instance;
 }

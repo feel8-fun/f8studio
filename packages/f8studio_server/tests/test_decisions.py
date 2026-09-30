@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8studio_server.agents.provider_settings import ModelCapabilities
+
 import asyncio
 import json
 from pathlib import Path
@@ -67,7 +69,8 @@ def test_local_system_one_accepts_text_without_key_and_jpeg_when_enabled(tmp_pat
     async def scenario() -> None:
         providers = registry(tmp_path)
         providers.update_settings("systemone_local", UpdateProviderSettings(
-            model="vjev-vision", endpoint="http://127.0.0.1:8001/v1", supports_image=True,
+            model="vjev-vision", endpoint="http://127.0.0.1:8001/v1",
+            model_capabilities=(ModelCapabilities(model_id="vjev-vision", image_input=True),),
         ))
         bodies: list[dict[str, object]] = []
 

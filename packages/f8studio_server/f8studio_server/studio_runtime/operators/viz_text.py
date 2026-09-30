@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from ..presentation import PresentationOutlet
 
@@ -48,7 +49,7 @@ class VizTextRuntimeNode(StudioVizRuntimeNodeBase):
         node_id: str,
         node: F8RuntimeNode,
         initial_state: dict[str, Any] | None = None,
-        presentation: PresentationOutlet | None = None,
+        presentation: PresentationOutlet,
     ) -> None:
         super().__init__(
             node_id=ensure_token(node_id, label="node_id"),
@@ -141,14 +142,14 @@ class VizTextRuntimeNode(StudioVizRuntimeNodeBase):
             await asyncio.sleep(max(0.02, float(throttle_ms) / 1000.0))
 
 
-def register_operator(registry: Registry) -> Registry:
+def register_spec(registry: Registry) -> Registry:
     """
     Register:
     - runtime factory (studio in-process)
     - operator spec (for discovery/UI)
     """
 
-    registry.register_operator(
+    registry.register_operator_spec(
         F8OperatorSpec(
             schemaVersion=F8OperatorSchemaVersion.f8operator_1,
             serviceClass=SERVICE_CLASS,
@@ -162,7 +163,7 @@ def register_operator(registry: Registry) -> Registry:
                 F8DataPortSpec(
                     name="inputData",
                     description="Data input to display (preview).",
-                    valueSchema=any_schema(),
+                    payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()),
                 ),
             ],
             dataOutPorts=[],
@@ -198,7 +199,6 @@ def register_operator(registry: Registry) -> Registry:
                 *viz_sampling_state_fields(show_on_node=False),
             ],
         ),
-        VizTextRuntimeNode,
         overwrite=True,
     )
 

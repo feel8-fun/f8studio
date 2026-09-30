@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.specs import exec_port_specs
 
@@ -190,14 +191,14 @@ BoneSelectorRuntimeNode.SPEC = F8OperatorSpec(
         F8DataPortSpec(
             name="skeleton",
             description="Single skeleton payload (e.g. skeleton_decoder.selectedSkeleton or vmc_decoder.selectedSkeleton).",
-            valueSchema=_skeleton_schema(),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=_skeleton_schema()),
         )
     ],
     dataOutPorts=[
         F8DataPortSpec(
             name="bone",
             description="Selected bone payload `{name,pos,rot}` or None.",
-            valueSchema=_bone_schema(),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=_bone_schema()),
         )
     ],
     stateFields=[

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.specs import exec_port_specs
 
@@ -278,21 +279,21 @@ PlaybackSyncRuntimeNode.SPEC = F8OperatorSpec(
         F8DataPortSpec(
             name="playback",
             description="Playback payload from f8.implayer/playback (position/duration/playing/videoId).",
-            valueSchema=_playback_input_schema(),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=_playback_input_schema()),
             definitionProtected=False,
         ),
     ],
     dataOutPorts=[
-        F8DataPortSpec(name="position", description="Estimated playback position (seconds).", valueSchema=number_schema()),
+        F8DataPortSpec(name="position", description="Estimated playback position (seconds).", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema())),
         F8DataPortSpec(
-            name="rawPosition", description="Latest raw position from playback payload (seconds).", valueSchema=number_schema(),
+            name="rawPosition", description="Latest raw position from playback payload (seconds).", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()),
             showOnNode=False,
         ),
-        F8DataPortSpec(name="duration", description="Latest duration (seconds).", valueSchema=number_schema(), showOnNode=False),
-        F8DataPortSpec(name="playing", description="Latest playing flag.", valueSchema=boolean_schema(), showOnNode=False),
-        F8DataPortSpec(name="videoId", description="Latest video id.", valueSchema=string_schema(), showOnNode=False),
-        F8DataPortSpec(name="ageMs", description="Age of latest playback sample in milliseconds.", valueSchema=integer_schema(), showOnNode=False),
-        F8DataPortSpec(name="stale", description="True if sample age exceeds max extrapolation window.", valueSchema=boolean_schema(), showOnNode=False),
+        F8DataPortSpec(name="duration", description="Latest duration (seconds).", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()), showOnNode=False),
+        F8DataPortSpec(name="playing", description="Latest playing flag.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=boolean_schema()), showOnNode=False),
+        F8DataPortSpec(name="videoId", description="Latest video id.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=string_schema()), showOnNode=False),
+        F8DataPortSpec(name="ageMs", description="Age of latest playback sample in milliseconds.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=integer_schema()), showOnNode=False),
+        F8DataPortSpec(name="stale", description="True if sample age exceeds max extrapolation window.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=boolean_schema()), showOnNode=False),
     ],
     stateFields=[
         F8StateSpec(

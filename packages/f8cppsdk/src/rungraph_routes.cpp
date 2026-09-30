@@ -1,6 +1,6 @@
 #include "f8cppsdk/rungraph_routes.h"
 
-#include <initializer_list>
+#include <stdexcept>
 #include <utility>
 
 #include <nlohmann/json.hpp>
@@ -16,133 +16,6 @@ namespace {
 
 bool is_stream_payload_kind(const std::string& kind) {
   return kind == "bytes" || kind == "video_frame" || kind == "audio_chunk";
-}
-
-bool string_enum_intersects(const json& schema, std::initializer_list<const char*> allowed_values) {
-  const auto enum_it = schema.find("enum");
-  if (enum_it == schema.end() || !enum_it->is_array()) {
-    return true;
-  }
-  for (const auto& item : *enum_it) {
-    if (!item.is_string()) {
-      continue;
-    }
-    const std::string value = item.get<std::string>();
-    for (const char* allowed : allowed_values) {
-      if (value == allowed) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-bool schema_property_is_type(const json& properties, const char* name, const char* type_name) {
-  const auto prop_it = properties.find(name);
-  if (prop_it == properties.end() || !prop_it->is_object()) {
-    return false;
-  }
-  const auto type_it = prop_it->find("type");
-  return type_it != prop_it->end() && type_it->is_string() && type_it->get<std::string>() == type_name;
-}
-
-bool schema_has_required_fields(const json& schema, std::initializer_list<const char*> fields) {
-  const auto props_it = schema.find("properties");
-  if (props_it == schema.end() || !props_it->is_object()) {
-    return false;
-  }
-  for (const char* field : fields) {
-    if (props_it->find(field) == props_it->end()) {
-      return false;
-    }
-  }
-
-  const auto required_it = schema.find("required");
-  if (required_it == schema.end() || !required_it->is_array()) {
-    return true;
-  }
-  for (const char* field : fields) {
-    bool found = false;
-    for (const auto& item : *required_it) {
-      if (item.is_string() && item.get<std::string>() == field) {
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
-      return false;
-    }
-  }
-  return true;
-}
-
-bool schema_comment_matches_payload_kind(const json& schema, const std::string& kind) {
-  const auto comment_it = schema.find("$comment");
-  return comment_it != schema.end() && comment_it->is_string() &&
-         comment_it->get<std::string>() == ("f8.payloadKind=" + kind);
-}
-
-bool legacy_video_frame_metadata_schema(const json& schema) {
-  if (!schema.is_object()) {
-    return false;
-  }
-  if (schema_comment_matches_payload_kind(schema, "video_frame")) {
-    return true;
-  }
-  if (!schema_has_required_fields(schema, {"schemaVersion", "format", "width", "height", "pitch", "frameId", "tsMs"})) {
-    return false;
-  }
-  const auto& properties = schema.at("properties");
-  const auto format_it = properties.find("format");
-  return schema_property_is_type(properties, "schemaVersion", "integer") &&
-         format_it != properties.end() && format_it->is_object() &&
-         schema_property_is_type(properties, "format", "string") &&
-         string_enum_intersects(*format_it, {"bgra32", "bgr24", "flow2_f16", "scalar1_f32"}) &&
-         schema_property_is_type(properties, "width", "integer") &&
-         schema_property_is_type(properties, "height", "integer") &&
-         schema_property_is_type(properties, "pitch", "integer") &&
-         schema_property_is_type(properties, "frameId", "integer") &&
-         schema_property_is_type(properties, "tsMs", "integer");
-}
-
-bool legacy_audio_chunk_metadata_schema(const json& schema) {
-  if (!schema.is_object()) {
-    return false;
-  }
-  if (schema_comment_matches_payload_kind(schema, "audio_chunk")) {
-    return true;
-  }
-  if (!schema_has_required_fields(schema, {"schemaVersion", "format", "sampleRate", "channels", "frames",
-                                          "bytesPerFrame", "seq", "frameIndex", "tsMs"})) {
-    return false;
-  }
-  const auto& properties = schema.at("properties");
-  const auto format_it = properties.find("format");
-  return schema_property_is_type(properties, "schemaVersion", "integer") &&
-         format_it != properties.end() && format_it->is_object() &&
-         schema_property_is_type(properties, "format", "string") &&
-         string_enum_intersects(*format_it, {"f32le"}) &&
-         schema_property_is_type(properties, "sampleRate", "integer") &&
-         schema_property_is_type(properties, "channels", "integer") &&
-         schema_property_is_type(properties, "frames", "integer") &&
-         schema_property_is_type(properties, "bytesPerFrame", "integer") &&
-         schema_property_is_type(properties, "seq", "integer") &&
-         schema_property_is_type(properties, "frameIndex", "integer") &&
-         schema_property_is_type(properties, "tsMs", "integer");
-}
-
-std::string legacy_payload_kind_from_value_schema(const json& port) {
-  const auto schema_it = port.find("valueSchema");
-  if (schema_it == port.end() || !schema_it->is_object()) {
-    return "json";
-  }
-  if (legacy_video_frame_metadata_schema(*schema_it)) {
-    return "video_frame";
-  }
-  if (legacy_audio_chunk_metadata_schema(*schema_it)) {
-    return "audio_chunk";
-  }
-  return "json";
 }
 
 const json* find_runtime_node(const json& graph_obj, const std::string& node_id) {
@@ -189,14 +62,7 @@ std::string port_payload_kind(const json* node, const std::string& port_name, bo
         return kind_it->get<std::string>();
       }
     }
-    const auto kind_it = port.find("payloadKind");
-    if (kind_it != port.end() && kind_it->is_string()) {
-      const std::string kind = kind_it->get<std::string>();
-      if (!kind.empty() && kind != "json") {
-        return kind;
-      }
-    }
-    return legacy_payload_kind_from_value_schema(port);
+    throw std::invalid_argument("data port requires an explicit payload.kind");
   }
   return "json";
 }

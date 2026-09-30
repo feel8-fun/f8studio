@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from ..generated import (
@@ -188,176 +187,52 @@ def _monitor_port_dict() -> dict[str, Any]:
         "description": "Unified runtime monitor snapshots (health/resource/perf/error).",
         "definitionProtected": True,
         "showOnNode": False,
-        "valueSchema": monitor_snapshot_schema_dict_cached(),
+        "payload": {"kind": "json", "valueSchema": monitor_snapshot_schema_dict_cached()},
     }
 
 
-def _control_from_legacy(value: str) -> dict[str, str]:
-    match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)(?:\[([^\]]+)\])?", value.strip())
-    if match is None:
-        raise ValueError(f"invalid legacy UI control: {value!r}")
-    kind, argument = match.groups()
-    if kind in {"wave_preview", "wave_pattern_editor", "wave_heatmap"}:
-        if argument is not None:
-            raise ValueError(f"legacy UI control does not accept an argument: {value!r}")
-        return {"kind": "custom", "rendererKey": kind}
-    aliases = {"wrapline": "textarea", "dropdown": "select", "dropbox": "select", "combo": "select", "combobox": "select"}
-    resolved = aliases.get(kind.lower(), kind.lower())
-    control = {"kind": resolved}
-    if argument is not None:
-        if resolved in {"select", "multiselect"}:
-            control["optionsFromState"] = argument
-        elif resolved in {"code", "textarea"}:
-            control["language"] = argument
-        else:
-            raise ValueError(f"legacy UI control does not accept an argument: {value!r}")
-    return control
+def _descriptor_dicts(value: Any, *, path: str) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        raise ValueError(f"{path} must be a list of objects")
+    result: list[dict[str, Any]] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise ValueError(f"{path}[{index}] must be an object")
+        result.append(dict(item))
+    return result
 
 
-def _normalize_descriptor_item(item: dict[str, Any], *, legacy_flag: str) -> dict[str, Any]:
-    normalized = dict(item)
-    if "required" in normalized:
-        normalized[legacy_flag] = normalized.pop("required")
-    if "uiControl" in normalized:
-        legacy_control = normalized.pop("uiControl")
-        if "control" not in normalized and isinstance(legacy_control, str) and legacy_control.strip():
-            normalized["control"] = _control_from_legacy(legacy_control)
-    if "editPolicy" in normalized and isinstance(normalized["editPolicy"], dict):
-        policy = dict(normalized["editPolicy"])
-        if "canEditRequired" in policy:
-            policy["canEditValueRequired"] = policy.pop("canEditRequired")
-        normalized["editPolicy"] = policy
-    return normalized
-
-
-def _normalize_authoring_spec(spec: dict[str, Any], *, service: bool) -> dict[str, Any]:
-    normalized = dict(spec)
-    if service:
-        normalized.pop("launch", None)
-    for collection, flag in (("stateFields", "valueRequired"), ("dataInPorts", "definitionProtected"),
-                             ("dataOutPorts", "definitionProtected"), ("commands", "definitionProtected")):
-        items = normalized.get(collection)
-        if not isinstance(items, list):
-            continue
-        converted = []
-        for item in items:
-            if not isinstance(item, dict):
-                converted.append(item)
-                continue
-            field = _normalize_descriptor_item(item, legacy_flag=flag)
-            if collection == "commands" and isinstance(field.get("params"), list):
-                field["params"] = [
-                    _normalize_descriptor_item(param, legacy_flag="valueRequired") if isinstance(param, dict) else param
-                    for param in field["params"]
-                ]
-            converted.append(field)
-        normalized[collection] = converted
-    if not service:
-        for collection in ("execInPorts", "execOutPorts"):
-            items = normalized.get(collection)
-            if isinstance(items, list):
-                normalized[collection] = [{"name": item} if isinstance(item, str) else item for item in items]
-    return normalized
-
-
-def _state_field_dicts_with_builtins(
-    state_fields: Any,
-    *,
-    names_to_remove: set[str],
-    builtin_fields: list[dict[str, Any]],
+def _with_builtin_descriptors(
+    value: Any, *, path: str, builtins: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    normalized: list[dict[str, Any]] = []
-    if isinstance(state_fields, list):
-        for item in state_fields:
-            if not isinstance(item, dict):
-                continue
-            name = str(item.get("name") or "").strip()
-            if name in names_to_remove:
-                continue
-            normalized.append(dict(item))
-    for field in builtin_fields:
-        normalized.append(dict(field))
-    return normalized
-
-
-def _data_port_dicts_with_builtins(
-    data_ports: Any,
-    *,
-    names_to_remove: set[str],
-    builtin_ports: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    normalized: list[dict[str, Any]] = []
-    if isinstance(data_ports, list):
-        for item in data_ports:
-            if not isinstance(item, dict):
-                continue
-            name = str(item.get("name") or "").strip()
-            if name in names_to_remove:
-                continue
-            normalized.append(dict(item))
-    for port in builtin_ports:
-        normalized.append(dict(port))
-    return normalized
+    names = {item["name"] for item in builtins}
+    descriptors = _descriptor_dicts(value, path=path)
+    return [item for item in descriptors if item.get("name") not in names] + builtins
 
 
 def normalize_describe_payload_dict(payload: dict[str, Any]) -> dict[str, Any]:
+    """Inject runtime-owned descriptors into a current describe envelope."""
     out = dict(payload)
-
     service_obj = out.get("service")
-    if isinstance(service_obj, dict):
-        service_spec = _normalize_authoring_spec(service_obj, service=True)
-        service_spec["stateFields"] = _state_field_dicts_with_builtins(
-            service_spec.get("stateFields"),
-            names_to_remove={ACTIVE_FIELD_NAME, SVC_ID_FIELD_NAME},
-            builtin_fields=[_service_active_field_dict(), _svc_id_field_dict()],
+    if not isinstance(service_obj, dict):
+        raise ValueError("describe.service must be an object")
+    service_spec = dict(service_obj)
+    service_spec["stateFields"] = _with_builtin_descriptors(
+        service_spec.get("stateFields", []), path="service.stateFields",
+        builtins=[_service_active_field_dict(), _svc_id_field_dict()],
+    )
+    service_spec["dataOutPorts"] = _with_builtin_descriptors(
+        service_spec.get("dataOutPorts", []), path="service.dataOutPorts",
+        builtins=[_monitor_port_dict()],
+    )
+    out["service"] = service_spec
+    operators = _descriptor_dicts(out.get("operators", []), path="operators")
+    for index, operator in enumerate(operators):
+        operator["stateFields"] = _with_builtin_descriptors(
+            operator.get("stateFields", []), path=f"operators[{index}].stateFields",
+            builtins=[_svc_id_field_dict(), _operator_id_field_dict()],
         )
-        service_spec["dataOutPorts"] = _data_port_dicts_with_builtins(
-            service_spec.get("dataOutPorts"),
-            names_to_remove={MONITOR_PORT_NAME},
-            builtin_ports=[_monitor_port_dict()],
-        )
-        out["service"] = service_spec
-
-        operators_raw = out.get("operators")
-        operators_out: list[dict[str, Any]] = []
-        if isinstance(operators_raw, list):
-            for operator_item in operators_raw:
-                if not isinstance(operator_item, dict):
-                    continue
-                operator_spec = _normalize_authoring_spec(operator_item, service=False)
-                operator_spec["stateFields"] = _state_field_dicts_with_builtins(
-                    operator_spec.get("stateFields"),
-                    names_to_remove={SVC_ID_FIELD_NAME, OPERATOR_ID_FIELD_NAME},
-                    builtin_fields=[_svc_id_field_dict(), _operator_id_field_dict()],
-                )
-                operators_out.append(operator_spec)
-        out["operators"] = operators_out
-        return out
-
-    service_class = str(out.get("serviceClass") or "").strip()
-    schema_version = str(out.get("schemaVersion") or "").strip()
-    if service_class or schema_version == "f8service/1":
-        out = _normalize_authoring_spec(out, service=True)
-        out["stateFields"] = _state_field_dicts_with_builtins(
-            out.get("stateFields"),
-            names_to_remove={ACTIVE_FIELD_NAME, SVC_ID_FIELD_NAME},
-            builtin_fields=[_service_active_field_dict(), _svc_id_field_dict()],
-        )
-        out["dataOutPorts"] = _data_port_dicts_with_builtins(
-            out.get("dataOutPorts"),
-            names_to_remove={MONITOR_PORT_NAME},
-            builtin_ports=[_monitor_port_dict()],
-        )
-        return out
-
-    operator_class = str(out.get("operatorClass") or "").strip()
-    if operator_class or schema_version == "f8operator/1":
-        out = _normalize_authoring_spec(out, service=False)
-        out["stateFields"] = _state_field_dicts_with_builtins(
-            out.get("stateFields"),
-            names_to_remove={SVC_ID_FIELD_NAME, OPERATOR_ID_FIELD_NAME},
-            builtin_fields=[_svc_id_field_dict(), _operator_id_field_dict()],
-        )
+    out["operators"] = operators
     return out
 
 

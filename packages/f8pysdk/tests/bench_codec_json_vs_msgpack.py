@@ -126,7 +126,7 @@ def _build_rungraph_payload(node_count: int) -> dict[str, Any]:
                 )
             )
     graph = F8RuntimeGraph(graphId="g-bench", revision="r1", nodes=nodes, edges=edges)
-    return dump_json(graph, mode="json", by_alias=True)
+    return dump_json(graph)
 
 
 def _bench_codec(

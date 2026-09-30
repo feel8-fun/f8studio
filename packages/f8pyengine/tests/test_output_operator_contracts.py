@@ -26,7 +26,7 @@ def _state_spec(runtime_node: type, field_name: str):
 
 def _assert_normalized_number_port(runtime_node: type, port_name: str) -> None:
     port = _data_input_spec(runtime_node, port_name)
-    schema = port.valueSchema
+    schema = port.payload.valueSchema
     assert isinstance(schema, F8NumberTypeSchema)
     assert float(schema.minimum) >= 0.0
     assert float(schema.maximum) <= 1.0

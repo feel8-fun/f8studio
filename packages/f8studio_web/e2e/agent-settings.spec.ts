@@ -65,7 +65,9 @@ test('discovers models for a named connection on desktop and mobile', async ({ p
   await page.screenshot({ path: testInfo.outputPath('named-connection.png') });
 });
 
-test('passes session reasoning effort to a run without calling the provider', async ({ page, request }, testInfo) => {
+test('passes session reasoning effort to a run without calling the provider', async ({ page }, testInfo) => {
+  await page.goto('/');
+  const request = page.request;
   const projectId = `effort-ui-${testInfo.project.name}-${Date.now()}`;
   const project = await request.post('/api/projects', { data: { projectId, name: 'Reasoning UI check' } });
   expect(project.status()).toBe(201);

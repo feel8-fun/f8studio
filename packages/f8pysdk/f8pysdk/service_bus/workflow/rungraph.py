@@ -158,7 +158,7 @@ def _rungraph_ts_ms(graph: F8RuntimeGraph) -> int:
 
 
 def _encode_rungraph_bytes(graph: F8RuntimeGraph) -> bytes:
-    payload = dump_json(graph, mode="json", by_alias=True)
+    payload = dump_json(graph)
     return encode_obj(payload)
 
 

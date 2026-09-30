@@ -85,8 +85,11 @@ def test_delayed_failure_logs_traceback_and_recovers(caplog) -> None:
 
 def test_shared_config_parses_false_clamps_and_rejects_nonfinite() -> None:
     async def scenario() -> None:
+        from f8studio_server.events import EventJournal
+        from f8studio_server.studio_runtime.presentation import EventPresentationOutlet
         node = StudioVizRuntimeNodeBase(
             node_id="test",
+            presentation=EventPresentationOutlet(EventJournal(server_epoch="test")),
             data_in_ports=[],
             data_out_ports=[],
             state_fields=[],

@@ -54,7 +54,7 @@ class PullingSinkNode final : public f8::cppsdk::OperatorNode {
 };
 
 json port_spec(const std::string& name) {
-  return json{{"name", name}, {"valueSchema", json{{"type", "any"}}}};
+  return json{{"name", name}, {"payload", {{"kind", "json"}, {"valueSchema", json{{"type", "any"}}}}}};
 }
 
 json data_pick_state_fields() {
@@ -439,8 +439,10 @@ void run_all_data_output_operators_are_computable_smoke() {
     const std::string operator_class = spec.value("operatorClass", "");
     expect(!operator_class.empty(), "operator with dataOutPorts is missing operatorClass");
     json data_in = spec.value("dataInPorts", json::array());
-    json exec_in = spec.value("execInPorts", json::array());
-    json exec_out = spec.value("execOutPorts", json::array());
+    json exec_in = json::array();
+    json exec_out = json::array();
+    for (const auto& port : spec.value("execInPorts", json::array())) exec_in.push_back(port.at("name"));
+    for (const auto& port : spec.value("execOutPorts", json::array())) exec_out.push_back(port.at("name"));
     json states = spec.value("stateFields", json::array());
     json state_values = json::object();
     for (const auto& field : states) {

@@ -32,7 +32,7 @@ Additional stable utility modules:
 - `f8pysdk.time_utils`: small runtime timestamp helpers
 - `f8pysdk.service_runtime_tools`: advanced tooling namespace
   import from explicit owner subpackages:
-  `service_runtime_tools.inventory.*`, `service_runtime_tools.session.*`, and `service_runtime_tools.deploy.*`
+  `service_runtime_tools.inventory.*` and `service_runtime_tools.deploy.*`
   the old flat helper paths under `service_runtime_tools.*` have been removed
   within `inventory`, use `entry` for `service.yml` loading/roots, `describe` for describe diagnostics, and `discovery` for catalog-loading orchestration
 

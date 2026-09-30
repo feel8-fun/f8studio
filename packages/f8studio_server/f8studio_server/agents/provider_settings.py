@@ -13,7 +13,7 @@ from uuid import uuid4
 import msgspec
 
 AgentProtocol = Literal["openai_responses", "openai_chat", "anthropic", "systemone"]
-_LEGACY_PROTOCOLS: dict[str, AgentProtocol] = {
+_BUILTIN_PROTOCOLS: dict[str, AgentProtocol] = {
     "openai": "openai_responses", "anthropic": "anthropic",
     "google_gemini": "openai_chat", "ollama": "openai_chat",
     "typesafe": "systemone", "systemone_local": "systemone",
@@ -29,11 +29,10 @@ class ModelCapabilities(msgspec.Struct, frozen=True, kw_only=True, rename="camel
     thinking_source: Literal["catalog", "legacy", "manual"] | None = None
 
 
-class ProviderConfig(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
+class ProviderConfig(msgspec.Struct, frozen=True, kw_only=True, rename="camel", forbid_unknown_fields=True):
     model: str
     endpoint: str = ""
     api_key: str = ""
-    supports_image: bool = False
     display_name: str = ""
     protocol: AgentProtocol | None = None
     models: tuple[str, ...] = ()
@@ -46,10 +45,9 @@ class UpdateProviderSettings(msgspec.Struct, frozen=True, kw_only=True, rename="
     endpoint: str = ""
     api_key: str | None = None
     clear_api_key: bool = False
-    supports_image: bool | None = None
     display_name: str = ""
     models: tuple[str, ...] = ()
-    model_capabilities: tuple[ModelCapabilities, ...] = ()
+    model_capabilities: tuple[ModelCapabilities, ...] | None = None
 
 
 class CreateProviderConnection(msgspec.Struct, frozen=True, kw_only=True, rename="camel", forbid_unknown_fields=True):
@@ -59,7 +57,6 @@ class CreateProviderConnection(msgspec.Struct, frozen=True, kw_only=True, rename
     model: str = ""
     models: tuple[str, ...] = ()
     api_key: str = ""
-    supports_image: bool = False
     model_capabilities: tuple[ModelCapabilities, ...] = ()
 
 
@@ -124,7 +121,11 @@ class ProviderSettingsStore:
                 model=os.environ.get("F8STUDIO_SYSTEMONE_MODEL", "local-decision-model").strip(),
                 endpoint=os.environ.get("F8STUDIO_SYSTEMONE_ENDPOINT", "http://127.0.0.1:8001/v1").strip().rstrip("/"),
                 api_key=os.environ.get("F8STUDIO_SYSTEMONE_API_KEY", "").strip(),
-                supports_image=os.environ.get("F8STUDIO_SYSTEMONE_SUPPORTS_IMAGE", "").strip().lower() in {"1", "true", "yes"},
+                models=(os.environ.get("F8STUDIO_SYSTEMONE_MODEL", "local-decision-model").strip(),),
+                model_capabilities=(ModelCapabilities(
+                    model_id=os.environ.get("F8STUDIO_SYSTEMONE_MODEL", "local-decision-model").strip(),
+                    image_input=True, image_source="manual",
+                ),) if os.environ.get("F8STUDIO_SYSTEMONE_SUPPORTS_IMAGE", "").strip().lower() in {"1", "true", "yes"} else (),
             ),
         }
         self._saved: dict[str, ProviderConfig] = {}
@@ -146,12 +147,12 @@ class ProviderSettingsStore:
 
     def views(self) -> tuple[ProviderSettingsView, ...]:
         with self._lock:
-            legacy = (provider_id for provider_id in _PROVIDER_NAMES
+            builtin = (provider_id for provider_id in _PROVIDER_NAMES
                       if (provider_id in self._saved or self._environment_configured(provider_id))
                       and not (provider_id in self._saved and self._saved[provider_id].disabled)
                       and self.view(provider_id).configured)
             custom = (key for key in self._saved if key.startswith("connection_"))
-            return tuple(self.view(provider_id) for provider_id in (*legacy, *custom))
+            return tuple(self.view(provider_id) for provider_id in (*builtin, *custom))
 
     def _environment_configured(self, provider_id: str) -> bool:
         config = self._defaults[provider_id]
@@ -166,16 +167,6 @@ class ProviderSettingsStore:
         models = tuple(dict.fromkeys((config.model, *config.models))) if config.model else config.models
         capabilities = list(config.model_capabilities)
         default_capability = next((item for item in capabilities if item.model_id == config.model), None)
-        if config.supports_image and (custom or provider_id == "systemone_local") and config.model and (default_capability is None or default_capability.image_input is None):
-            legacy_capability = ModelCapabilities(
-                model_id=config.model, image_input=True,
-                thinking=default_capability.thinking if default_capability else None,
-                source="legacy", image_source="legacy",
-                thinking_source=(default_capability.thinking_source or default_capability.source)
-                if default_capability else None,
-            )
-            capabilities = [item for item in capabilities if item.model_id != config.model] + [legacy_capability]
-            default_capability = legacy_capability
         image_supported = (default_capability.image_input is True if default_capability is not None
                            else False)
         return ProviderSettingsView(
@@ -193,7 +184,7 @@ class ProviderSettingsStore:
             kind="decision" if provider_id in {"typesafe", "systemone_local"} or config.protocol == "systemone" else "agent",
             input_modalities=("text", "image") if image_supported else ("text",),
             supports_image=image_supported,
-            protocol=config.protocol if custom else _LEGACY_PROTOCOLS.get(provider_id),
+            protocol=config.protocol if custom else _BUILTIN_PROTOCOLS.get(provider_id),
             models=models,
             custom=custom,
             model_capabilities=tuple(capabilities),
@@ -212,8 +203,6 @@ class ProviderSettingsStore:
             raise InvalidRequestError("Model ID must be non-empty, at most 256 characters, and contain no whitespace")
         if (custom or provider_id in {"google_gemini", "ollama", "typesafe", "systemone_local"}) and not config.endpoint:
             raise InvalidRequestError("This provider requires an endpoint URL")
-        if config.supports_image and provider_id != "systemone_local" and not custom:
-            raise InvalidRequestError("Image input is only available for a compatible local decision host")
         if custom and (config.protocol not in {"openai_responses", "openai_chat", "anthropic", "systemone"}
                        or not config.display_name.strip() or len(config.display_name) > 80):
             raise InvalidRequestError("Custom connections require a protocol and a name of at most 80 characters")
@@ -246,14 +235,12 @@ class ProviderSettingsStore:
                 model=request.model.strip(),
                 endpoint=request.endpoint.strip().rstrip("/"),
                 api_key="" if request.clear_api_key else (request.api_key.strip() if request.api_key else current.api_key),
-                supports_image=(current.supports_image if request.supports_image is None and
-                                (provider_id == "systemone_local" or request.model.strip() == current.model)
-                                else bool(request.supports_image))
-                if provider_id == "systemone_local" or provider_id.startswith("connection_") else False,
                 display_name=request.display_name.strip() if provider_id.startswith("connection_") else "",
                 protocol=current.protocol,
                 models=self._models(request.model, request.models),
-                model_capabilities=request.model_capabilities,
+                model_capabilities=(tuple(item for item in current.model_capabilities
+                                          if item.model_id in self._models(request.model, request.models))
+                                    if request.model_capabilities is None else request.model_capabilities),
             )
             self._validate(provider_id, config)
             saved = {**self._saved, provider_id: config}
@@ -268,7 +255,6 @@ class ProviderSettingsStore:
                 display_name=request.display_name.strip(), protocol=request.protocol,
                 endpoint=request.endpoint.strip().rstrip("/"), api_key=request.api_key.strip(),
                 model=request.model.strip(), models=self._models(request.model, request.models),
-                supports_image=request.supports_image,
                 model_capabilities=request.model_capabilities,
             )
             self._validate(provider_id, config)

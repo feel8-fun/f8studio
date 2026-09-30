@@ -118,7 +118,7 @@ class PyScriptServiceNodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(editor_assist)
         python_payload = None
         if editor_assist is not None and not isinstance(editor_assist.python, msgspec.UnsetType):
-            python_payload = dump_json(editor_assist.python, mode="json")
+            python_payload = dump_json(editor_assist.python)
         self.assertIsInstance(python_payload, dict)
         support_files = (python_payload or {}).get("support_files") if isinstance(python_payload, dict) else None
         self.assertIsInstance(support_files, dict)

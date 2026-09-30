@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.specs import exec_port_specs
 
@@ -76,7 +77,7 @@ PrintRuntimeNode.SPEC = F8OperatorSpec(
     description="Exec-driven printer (pulls `value` and prints).",
     tags=["debug", "console", "print"],
     execInPorts=exec_port_specs(["exec"]),
-    dataInPorts=[F8DataPortSpec(name="value", description="value to print", valueSchema=any_schema())],
+    dataInPorts=[F8DataPortSpec(name="value", description="value to print", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()))],
     stateFields=[
         F8StateSpec(
             name="strip",

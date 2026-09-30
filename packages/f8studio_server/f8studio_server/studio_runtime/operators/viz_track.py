@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from ._throttled_flusher import ThrottledFlusher
 
@@ -121,7 +122,7 @@ class VizTrackRuntimeNode(StudioVizRuntimeNodeBase):
         node_id: str,
         node: F8RuntimeNode,
         initial_state: dict[str, Any] | None = None,
-        presentation: PresentationOutlet | None = None,
+        presentation: PresentationOutlet,
     ) -> None:
         super().__init__(
             node_id=ensure_token(node_id, label="node_id"),
@@ -349,7 +350,7 @@ VizTrackRuntimeNode.SPEC = F8OperatorSpec(
     description="Visualize tracking, pose, and optical-flow data in Web Studio.",
     tags=["viz", "tracking", "pose", "web"],
     dataInPorts=[
-        F8DataPortSpec(name="detections", description="Tracking or detection payload.", valueSchema=_track_schema()),
+        F8DataPortSpec(name="detections", description="Tracking or detection payload.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=_track_schema())),
         video_frame_port(name="video", description="Optional background video stream.", definition_protected=False),
         video_frame_port(name="flow", description="Optional dense optical-flow stream.", definition_protected=False),
     ],
@@ -409,9 +410,9 @@ VizTrackRuntimeNode.SPEC = F8OperatorSpec(
 )
 
 
-def register_operator(registry: Registry) -> Registry:
-    registry.register_operator(VizTrackRuntimeNode.SPEC, VizTrackRuntimeNode, overwrite=True)
+def register_spec(registry: Registry) -> Registry:
+    registry.register_operator_spec(VizTrackRuntimeNode.SPEC, overwrite=True)
     return registry
 
 
-__all__ = ["VizTrackRuntimeNode", "register_operator"]
+__all__ = ["VizTrackRuntimeNode", "register_spec"]

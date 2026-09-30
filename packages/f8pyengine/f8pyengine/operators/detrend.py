@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from typing import Any
 
@@ -125,8 +126,8 @@ DetrendRuntimeNode.SPEC = F8OperatorSpec(
     label="Detrend",
     description="Removes slow baseline or linear trend from scalar or vector inputs.",
     tags=["signal", "detrend", "filter"],
-    dataInPorts=[F8DataPortSpec(name="value", description="Value to detrend.", valueSchema=any_schema())],
-    dataOutPorts=[F8DataPortSpec(name="value", description="Detrended output.", valueSchema=any_schema())],
+    dataInPorts=[F8DataPortSpec(name="value", description="Value to detrend.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()))],
+    dataOutPorts=[F8DataPortSpec(name="value", description="Detrended output.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()))],
     stateFields=[
         F8StateSpec(
             name="mode",

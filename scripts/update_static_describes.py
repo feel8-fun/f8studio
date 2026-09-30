@@ -84,7 +84,7 @@ def _run_describe_subprocess(service_dir: Path, *, timeout_s: float) -> dict[str
 
     normalized = normalize_describe_payload_dict(obj)
     validate_describe_monitor_contract(normalized)
-    payload = dump_json(validate_as(F8ServiceDescribe, normalized), mode="json")
+    payload = dump_json(validate_as(F8ServiceDescribe, normalized))
     return payload
 
 

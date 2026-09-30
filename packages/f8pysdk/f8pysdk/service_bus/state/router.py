@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from ...generated import F8Edge, F8EdgeKindEnum, F8RuntimeGraph, F8StateAccess
 from ...f8_naming import ensure_token, parse_state_path_node_field
 from ...zenoh_naming import zenoh_key_to_state_path, zenoh_state_key
 from ...time_utils import now_ms
+from ...runtime_transport import SubscriptionHandle
 from ...codec import decode_obj
 from ...state import StateWriteContext, StateWriteError, StateWriteOrigin, StateWriteSource
 from ..internal.logging import log_error_once
@@ -36,7 +37,7 @@ class StateRouter:
         self._store = store
         self._intra_state_out: StateRouteTable = {}
         self._cross_state_in_by_key: CrossStateBindingTable = {}
-        self._remote_state_watches: dict[CrossStateBindingKey, Any] = {}
+        self._remote_state_watches: dict[CrossStateBindingKey, SubscriptionHandle] = {}
         self._remote_latest: dict[CrossStateBindingKey, bytes] = {}
         self._cross_state_targets: set[tuple[str, str]] = set()
         self._cross_state_last_ts: dict[tuple[str, str], int] = {}
@@ -347,16 +348,9 @@ class StateRouter:
             await self._stop_watch_handle(watch, key=key)
         self._remote_state_watches.clear()
 
-    async def _stop_watch_handle(self, watch: Any, *, key: CrossStateBindingKey) -> None:
-        stop = getattr(watch, "stop", None)
-        unsubscribe = getattr(watch, "unsubscribe", None)
-        closer = stop if callable(stop) else unsubscribe if callable(unsubscribe) else None
-        if closer is None:
-            return
+    async def _stop_watch_handle(self, watch: SubscriptionHandle, *, key: CrossStateBindingKey) -> None:
         try:
-            result = closer()
-            if asyncio.iscoroutine(result):
-                await result
+            await watch.unsubscribe()
         except STATE_WATCH_LIFECYCLE_ERRORS as exc:
             log_error_once(
                 self._bus,

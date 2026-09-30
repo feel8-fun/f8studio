@@ -111,7 +111,7 @@ def read_static_describe_payload(service_dir: Path, entry: F8ServiceEntry) -> tu
 def _read_inline_describe(entry: F8ServiceEntry) -> dict[str, Any] | None:
     if (os.environ.get("F8_DISCOVERY_DISABLE_STATIC_DESCRIBE") or "").strip():
         return None
-    entry_payload = dump_json(entry, mode="json")
+    entry_payload = dump_json(entry)
     if not isinstance(entry_payload, dict):
         return None
     describe_obj = entry_payload.get("describe")
@@ -292,27 +292,28 @@ def describe_entry(
     data = payload_obj
     if not isinstance(data, dict):
         return None
-    data = normalize_describe_payload_dict(data)
     try:
+        data = normalize_describe_payload_dict(data)
         validate_describe_monitor_contract(data)
     except MonitorContractError as exc:
         message = f"describe monitor contract invalid for {service_dir}: {exc}"
         _add_discovery_error(message)
-        logger.error(message)
+        logger.exception(message)
+        return None
+    except _DESCRIBE_VALIDATION_ERRORS as exc:
+        message = f"Describe payload validation failed for {service_dir}: {exc}"
+        _add_discovery_error(message)
+        logger.exception(message)
         return None
 
     try:
         payload = validate_as(F8ServiceDescribe, data)
         data = msgspec.to_builtins(payload)
     except _DESCRIBE_VALIDATION_ERRORS as exc:
-        logger.debug("Describe payload validation failed for %s; using compatibility fallback", service_dir, exc_info=exc)
-        if "service" not in data:
-            message = f"describe JSON missing required key 'service' for {service_dir}: {_describe_command_text()}"
-            _add_discovery_error(message)
-            logger.error(message)
-            return None
-        if "operators" not in data:
-            data["operators"] = []
+        message = f"Describe payload validation failed for {service_dir}: {exc}"
+        _add_discovery_error(message)
+        logger.exception(message)
+        return None
 
     try:
         entry_service_class = str(entry.serviceClass or "").strip()

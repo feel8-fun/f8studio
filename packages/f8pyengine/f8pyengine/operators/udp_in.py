@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.specs import exec_port_specs
 
@@ -550,22 +551,22 @@ UdpInRuntimeNode.SPEC = F8OperatorSpec(
         F8DataPortSpec(
             name="text",
             description="Latest packet decoded as UTF-8 text with replacement for invalid bytes.",
-            valueSchema=string_schema(default=""),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=string_schema(default="")),
         ),
         F8DataPortSpec(
             name="raw",
             description="Latest packet as bytearray, preserving non-ASCII bytes.",
-            valueSchema=any_schema(),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()),
         ),
         F8DataPortSpec(
             name="json",
             description="Latest packet parsed as JSON when valid; otherwise None.",
-            valueSchema=any_schema(),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()),
         ),
         F8DataPortSpec(
             name="packet",
             description="Latest packet metadata plus raw/text/json views.",
-            valueSchema=_packet_payload_schema(),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=_packet_payload_schema()),
         ),
     ],
     stateFields=[

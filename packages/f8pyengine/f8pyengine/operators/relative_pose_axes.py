@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 import math
 from dataclasses import dataclass
@@ -267,15 +268,15 @@ RelativePoseAxesRuntimeNode.SPEC = F8OperatorSpec(
     description="Convert a target bone pose into reference-local L0/L1/L2 and R0/R1/R2 signals.",
     tags=["skeleton", "relative", "pose", "axis", "osr", "tcode"],
     dataInPorts=[
-        F8DataPortSpec(name="referenceBone", description="Reference bone with pos and rot.", valueSchema=_bone_schema()),
-        F8DataPortSpec(name="targetBone", description="Target bone with pos and rot.", valueSchema=_bone_schema()),
+        F8DataPortSpec(name="referenceBone", description="Reference bone with pos and rot.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=_bone_schema())),
+        F8DataPortSpec(name="targetBone", description="Target bone with pos and rot.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=_bone_schema())),
     ],
     dataOutPorts=[
         *[
-            F8DataPortSpec(name=axis, description=f"Raw relative {axis} signal.", valueSchema=number_schema())
+            F8DataPortSpec(name=axis, description=f"Raw relative {axis} signal.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()))
             for axis in _AXES
         ],
-        F8DataPortSpec(name="status", description="Per-sample pose calculation status.", valueSchema=_status_schema()),
+        F8DataPortSpec(name="status", description="Per-sample pose calculation status.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=_status_schema())),
     ],
     stateFields=[
         F8StateSpec(

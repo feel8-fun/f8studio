@@ -103,10 +103,6 @@ json schema_video_frame_metadata() {
   return obj;
 }
 
-json schema_video_frame() {
-  return schema_video_frame_metadata();
-}
-
 json schema_audio_chunk_metadata() {
   json obj = schema_object(
       json{{"schemaVersion", schema_integer(1, 1, 1)},
@@ -125,10 +121,6 @@ json schema_audio_chunk_metadata() {
       "Decoded metadata for an audio_chunk data stream. PCM bytes are carried by the runtime stream envelope, not by "
       "this JSON object.";
   return obj;
-}
-
-json schema_audio_chunk() {
-  return schema_audio_chunk_metadata();
 }
 
 json data_stream(std::string delivery, std::string reliability, std::string congestion, std::string priority) {
@@ -156,11 +148,8 @@ json data_port(std::string name, const json& value_schema, std::string payload_k
 
   json port;
   port["name"] = std::move(name);
-  port["valueSchema"] = value_schema;
   port["payload"] = std::move(payload);
   port["stream"] = data_stream(delivery, std::move(reliability), std::move(congestion), std::move(priority));
-  port["payloadKind"] = payload_kind;
-  port["delivery"] = std::move(delivery);
   port["definitionProtected"] = definition_protected;
   port["showOnNode"] = show_on_node;
   if (!description.empty()) {

@@ -337,12 +337,7 @@ def _open_zenoh_stream_session(
         config.insert_json5("connect/endpoints", json.dumps(list(connect_items)))
     if listen_items:
         config.insert_json5("listen/endpoints", json.dumps(list(listen_items)))
-    apply_zenoh_shared_memory_config(
-        config,
-        zenoh_module=zenoh,
-        shm_pool_bytes=int(shm_pool_bytes),
-        log_context=str(log_context or "stream"),
-    )
+    apply_zenoh_shared_memory_config(config, shm_pool_bytes=int(shm_pool_bytes))
     return zenoh.open(config)
 
 

@@ -1,3 +1,4 @@
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 import asyncio
 import os
 import sys
@@ -131,9 +132,9 @@ def _runtime_node(
         operatorClass=operator_class,
         execInPorts=list(exec_in or []),
         execOutPorts=list(exec_out or []),
-        dataInPorts=[F8DataPortSpec(name=name, valueSchema=any_schema(), definitionProtected=False) for name in list(data_in or [])],
+        dataInPorts=[F8DataPortSpec(name=name, payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False) for name in list(data_in or [])],
         dataOutPorts=[
-            F8DataPortSpec(name=name, valueSchema=any_schema(), definitionProtected=False) for name in list(data_out or [])
+            F8DataPortSpec(name=name, payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False) for name in list(data_out or [])
         ],
         stateFields=list(state_fields or []),
         stateValues=dict(state_values or {}),

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.specs import exec_port_specs
 
@@ -926,7 +927,7 @@ ButtplugOutRuntimeNode.SPEC = F8OperatorSpec(
         F8DataPortSpec(
             name="position",
             description="Position-channel target (0.0001..0.9999) used by sendPositionCmd.",
-            valueSchema=number_schema(minimum=_POSITION_CLAMP_MIN, maximum=_POSITION_CLAMP_MAX),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema(minimum=_POSITION_CLAMP_MIN, maximum=_POSITION_CLAMP_MAX)),
             definitionProtected=True,
         ),
     ],

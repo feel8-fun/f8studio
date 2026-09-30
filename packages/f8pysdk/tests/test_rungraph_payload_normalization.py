@@ -27,7 +27,7 @@ def test_dump_json_strips_msgspec_unset_values() -> None:
         nodes=[F8RuntimeNode(nodeId="svc1", serviceId="svc1", serviceClass="svc.a")],
         edges=[],
     )
-    payload = dump_json(graph, mode="json", by_alias=True)
+    payload = dump_json(graph)
     assert isinstance(payload, dict)
     assert _contains_unset(payload) is False
 

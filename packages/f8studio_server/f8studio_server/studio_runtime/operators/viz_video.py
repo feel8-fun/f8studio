@@ -220,7 +220,7 @@ class VizVideoRuntimeNode(StudioVizRuntimeNodeBase):
         node_id: str,
         node: F8RuntimeNode,
         initial_state: dict[str, Any] | None = None,
-        presentation: PresentationOutlet | None = None,
+        presentation: PresentationOutlet,
     ) -> None:
         super().__init__(
             node_id=ensure_token(node_id, label="node_id"),
@@ -484,6 +484,6 @@ class VizVideoRuntimeNode(StudioVizRuntimeNodeBase):
         return "transparent"
 
 
-def register_operator(registry: Registry) -> Registry:
-    registry.register_operator(VizVideoRuntimeNode.SPEC, VizVideoRuntimeNode, overwrite=True)
+def register_spec(registry: Registry) -> Registry:
+    registry.register_operator_spec(VizVideoRuntimeNode.SPEC, overwrite=True)
     return registry

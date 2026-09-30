@@ -513,7 +513,4 @@ class ServiceBusControlHandlers:
             )
         )
 
-ServiceBusMicroEndpoints = ServiceBusControlHandlers
-
-
-__all__ = ["ServiceBusControlHandlers", "ServiceBusMicroEndpoints"]
+__all__ = ["ServiceBusControlHandlers"]

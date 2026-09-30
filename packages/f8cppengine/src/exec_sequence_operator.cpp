@@ -63,8 +63,8 @@ json exec_sequence_spec() {
               {"label", "Sequence"},
               {"description", "Exec flow splitter: triggers its exec outputs in order."},
               {"tags", json::array({"execution", "flow", "sequence", "branch"})},
-              {"execInPorts", json::array({"exec"})},
-              {"execOutPorts", json::array({"0", "1", "2"})},
+              {"execInPorts", json::array({json{{"name", "exec"}}})},
+              {"execOutPorts", json::array({json{{"name", "0"}}, json{{"name", "1"}}, json{{"name", "2"}}})},
               {"editPolicy", json{{"execOutPorts", editable_collection_policy()}}}};
 }
 

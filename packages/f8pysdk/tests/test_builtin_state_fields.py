@@ -1,3 +1,4 @@
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 import os
 import sys
 import unittest
@@ -181,9 +182,9 @@ class BuiltinStateFieldTests(unittest.TestCase):
 
     def test_service_data_out_ports_force_monitor(self) -> None:
         ports = [
-            F8DataPortSpec(name="telemetry", valueSchema=string_schema()),
-            F8DataPortSpec(name="out", valueSchema=string_schema()),
-            F8DataPortSpec(name="monitor", valueSchema=string_schema()),
+            F8DataPortSpec(name="telemetry", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=string_schema())),
+            F8DataPortSpec(name="out", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=string_schema())),
+            F8DataPortSpec(name="monitor", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=string_schema())),
         ]
         out = service_data_out_ports_with_builtins(ports)
         names = [str(port.name) for port in out]
@@ -204,7 +205,7 @@ class BuiltinStateFieldTests(unittest.TestCase):
                 "version": "0.0.1",
                 "label": "svc",
                 "dataOutPorts": [
-                    {"name": "telemetry", "valueSchema": {"type": "string"}},
+                    {'name': 'telemetry', 'payload': {'kind': 'json', 'valueSchema': {'type': 'string'}}},
                 ],
                 "stateFields": [
                     {"name": "active", "valueSchema": {"type": "boolean"}, "access": "ro", "showOnNode": False},
@@ -257,24 +258,26 @@ class BuiltinStateFieldTests(unittest.TestCase):
         self.assertTrue(bool(monitor_ports[0].get("definitionProtected")))
         self.assertFalse(bool(monitor_ports[0].get("showOnNode")))
 
-    def test_normalize_local_describe_snapshot_to_authoring_schema(self) -> None:
+    def test_offline_migration_updates_authoring_schema(self) -> None:
         payload = {
             "service": {
-                "serviceClass": "f8.tests.svc",
+                "schemaVersion": "f8service/1", "serviceClass": "f8.tests.svc",
                 "label": "Service",
                 "launch": {"command": "legacy"},
                 "stateFields": [{"name": "device", "valueSchema": {"type": "string"},
                                  "required": True, "uiControl": "select[devices]",
                                  "editPolicy": {"canEditRequired": False}}],
-                "dataInPorts": [{"name": "input", "valueSchema": {"type": "string"}, "required": False}],
+                "dataInPorts": [{'name': 'input', 'payload': {'kind': 'json', 'valueSchema': {'type': 'string'}}, 'required': False}],
                 "commands": [{"name": "open", "required": True,
                               "params": [{"name": "path", "valueSchema": {"type": "string"},
                                           "required": True, "uiControl": "wrapline"}]}],
             },
-            "operators": [{"operatorClass": "f8.tests.op", "label": "Operator",
+            "operators": [{"schemaVersion": "f8operator/1", "operatorClass": "f8.tests.op", "label": "Operator",
                            "execInPorts": ["run"], "execOutPorts": ["done"]}],
         }
 
+        from scripts.migrate_authoring_contracts import migrate
+        migrate(payload)
         normalized = normalize_describe_payload_dict(payload)
         service = normalized["service"]
         self.assertNotIn("launch", service)
@@ -290,14 +293,16 @@ class BuiltinStateFieldTests(unittest.TestCase):
         self.assertEqual(normalized["operators"][0]["execInPorts"], [{"name": "run"}])
         self.assertEqual(normalized["operators"][0]["execOutPorts"], [{"name": "done"}])
 
-    def test_normalize_legacy_wave_controls(self) -> None:
+    def test_offline_migration_updates_wave_controls(self) -> None:
         payload = {
-            "service": {"serviceClass": "f8.tests.svc", "label": "Service"},
+            "service": {"schemaVersion": "f8service/1", "serviceClass": "f8.tests.svc", "label": "Service"},
             "operators": [{"operatorClass": "f8.tests.wave", "label": "Wave",
                            "stateFields": [{"name": name, "valueSchema": {"type": "array"}, "uiControl": name}
                                            for name in ("wave_preview", "wave_pattern_editor", "wave_heatmap")]}],
         }
 
+        from scripts.migrate_authoring_contracts import migrate
+        migrate(payload)
         normalized = normalize_describe_payload_dict(payload)
         controls = [field["control"] for field in normalized["operators"][0]["stateFields"]
                     if field["name"] in {"wave_preview", "wave_pattern_editor", "wave_heatmap"}]

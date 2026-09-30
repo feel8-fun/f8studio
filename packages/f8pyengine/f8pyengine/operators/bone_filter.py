@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.codec import coerce_bool
 from f8pysdk.codec import parse_number
@@ -408,12 +409,12 @@ BoneFilterRuntimeNode.SPEC = F8OperatorSpec(
         F8DataPortSpec(
             name="bone",
             description="Input bone pose with pos[3] and rot[4] quaternion.",
-            valueSchema=_bone_schema(),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=_bone_schema()),
         )
     ],
     dataOutPorts=[
-        F8DataPortSpec(name="filtered", description="Filtered bone pose.", valueSchema=_bone_schema()),
-        F8DataPortSpec(name="relative", description="Relative pose in filtered local space.", valueSchema=_bone_schema()),
+        F8DataPortSpec(name="filtered", description="Filtered bone pose.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=_bone_schema())),
+        F8DataPortSpec(name="relative", description="Relative pose in filtered local space.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=_bone_schema())),
     ],
     stateFields=[
         F8StateSpec(

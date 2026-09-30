@@ -77,6 +77,9 @@ class LiveValueHub:
             if key.startswith(prefix):
                 self.delete(key)
 
+    def values_with_prefix(self, prefix: str) -> tuple[F8JsonValue, ...]:
+        return tuple(value for key, value in self._values.items() if key.startswith(prefix))
+
     def subscribe(self) -> tuple[LiveSubscription, dict[str, F8JsonValue]]:
         subscription = LiveSubscription()
         self._subscribers.add(subscription)

@@ -109,7 +109,7 @@ class VizAudioRuntimeNode(StudioVizRuntimeNodeBase):
         node_id: str,
         node: F8RuntimeNode,
         initial_state: dict[str, Any] | None = None,
-        presentation: PresentationOutlet | None = None,
+        presentation: PresentationOutlet,
     ) -> None:
         super().__init__(
             node_id=ensure_token(node_id, label="node_id"),
@@ -216,6 +216,6 @@ class VizAudioRuntimeNode(StudioVizRuntimeNodeBase):
         )
 
 
-def register_operator(registry: Registry) -> Registry:
-    registry.register_operator(VizAudioRuntimeNode.SPEC, VizAudioRuntimeNode, overwrite=True)
+def register_spec(registry: Registry) -> Registry:
+    registry.register_operator_spec(VizAudioRuntimeNode.SPEC, overwrite=True)
     return registry

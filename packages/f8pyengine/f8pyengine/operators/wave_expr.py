@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 import logging
 import math
@@ -459,7 +460,7 @@ WaveExprRuntimeNode.SPEC = F8OperatorSpec(
         F8DataPortSpec(
             name="t",
             description="Scalar cycle-domain input. 1.0 means one period; output evaluation uses `t % maxT`.",
-            valueSchema=number_schema(),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()),
             definitionProtected=True,
             showOnNode=True,
         ),
@@ -468,7 +469,7 @@ WaveExprRuntimeNode.SPEC = F8OperatorSpec(
         F8DataPortSpec(
             name="value",
             description="Expression output value for the current wrapped `t` sample.",
-            valueSchema=number_schema(),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()),
             definitionProtected=True,
             showOnNode=True,
         ),

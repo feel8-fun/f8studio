@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.specs import (
     F8DataPortSpec,
@@ -148,7 +149,7 @@ def _register_core(registry: Registry) -> None:
                 F8DataPortSpec(
                     name="coreFeatures",
                     description="Core feature payload with onset envelope history.",
-                    valueSchema=_core_features_schema(),
+                    payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=_core_features_schema()),
                 )
             ],
         ),
@@ -173,14 +174,14 @@ def _register_rhythm(registry: Registry) -> None:
                 F8DataPortSpec(
                     name="coreFeatures",
                     description="Input core feature payload from f8.audiofeat.core.",
-                    valueSchema=_core_features_schema(),
+                    payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=_core_features_schema()),
                 )
             ],
             dataOutPorts=[
                 F8DataPortSpec(
                     name="rhythmFeatures",
                     description="Rhythm feature payload.",
-                    valueSchema=_rhythm_features_schema(),
+                    payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=_rhythm_features_schema()),
                 )
             ],
         ),

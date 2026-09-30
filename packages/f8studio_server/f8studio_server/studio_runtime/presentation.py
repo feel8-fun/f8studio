@@ -30,7 +30,7 @@ class EventPresentationOutlet:
     def __init__(self, events: EventJournal) -> None:
         self._events = events
         self._tasks: set[asyncio.Task[object]] = set()
-        self._latest: dict[tuple[str, str], PresentationCommand] = {}
+        self._extension_latest: dict[tuple[str, str], PresentationCommand] = {}
         self._closed = False
 
     def emit(
@@ -47,16 +47,9 @@ class EventPresentationOutlet:
         if not isinstance(normalized_payload, dict):
             raise TypeError("presentation payload must encode to an object")
         if command.endswith(".detach"):
-            for key in tuple(self._latest):
+            for key in tuple(self._extension_latest):
                 if key[0] == node_id:
-                    del self._latest[key]
-        else:
-            self._latest[(node_id, command)] = PresentationCommand(
-                node_id=node_id,
-                command=command,
-                payload=normalized_payload,
-                ts_ms=ts_ms,
-            )
+                    del self._extension_latest[key]
         prefix = f"presentation/{node_id}/"
         if command.endswith(".detach"):
             self._events.live.delete_prefix(prefix)
@@ -67,6 +60,10 @@ class EventPresentationOutlet:
                 "tsMs": ts_ms, "seq": self._events.live.sequence + 1,
             })
             return
+        if not command.endswith(".detach"):
+            self._extension_latest[(node_id, command)] = PresentationCommand(
+                node_id=node_id, command=command, payload=normalized_payload, ts_ms=ts_ms,
+            )
         # Unknown/extension commands may be incremental and must not coalesce.
         task = asyncio.create_task(
             self._events.publish(
@@ -85,9 +82,17 @@ class EventPresentationOutlet:
         task.add_done_callback(self._task_done)
 
     def snapshot(self) -> tuple[PresentationCommand, ...]:
+        commands = list(self._extension_latest.values())
+        for value in self._events.live.values_with_prefix("presentation/"):
+            if not isinstance(value, dict):
+                raise TypeError("presentation live value must be an object")
+            commands.append(msgspec.convert({
+                "nodeId": value["nodeId"], "command": value["command"],
+                "payload": value["payload"], "tsMs": value["tsMs"],
+            }, type=PresentationCommand))
         return tuple(
             sorted(
-                self._latest.values(),
+                commands,
                 key=lambda item: (
                     item.ts_ms if item.ts_ms is not None else -1,
                     item.node_id,
@@ -110,7 +115,8 @@ class EventPresentationOutlet:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
         self._tasks.clear()
-        self._latest.clear()
+        self._extension_latest.clear()
+        self._events.live.delete_prefix("presentation/")
 
 
 __all__ = ["EventPresentationOutlet", "PresentationOutlet"]

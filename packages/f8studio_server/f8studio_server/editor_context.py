@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import data_port_value_schema
+
 from f8studio_server.errors import InvalidRequestError, NotFoundError
 
 import keyword
@@ -86,7 +88,7 @@ def editor_support_files(node: GraphNode, field_name: str) -> tuple[EditorSuppor
             data_ports = node.spec.dataInPorts
             ports = () if isinstance(data_ports, msgspec.UnsetType) else data_ports
             files[f"{module}.pyi"] = _dynamic_module(
-                type_name, [(port.name, port.valueSchema) for port in ports], mapping=True,
+                type_name, [(port.name, data_port_value_schema(port)) for port in ports], mapping=True,
             )
         states = bindings.states
         if not isinstance(states, msgspec.UnsetType) and states.enabled:

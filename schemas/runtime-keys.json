@@ -1,8 +1,6 @@
 {
   "data": "f8/svc/{service}/nodes/{node}/data/{port}",
   "command": "f8/cmd/svc/{service}/{command}",
-  "legacy_endpoint": "f8/svc/{service}/endpoint/{endpoint}",
-  "legacy_command": "f8/svc/{service}/cmd",
   "service_liveliness": "f8/live/svc/{service}/instances/{instance}",
   "studio_liveliness": "f8/live/studio/{service}",
   "state": "f8/svc/{service}/state/{path}",

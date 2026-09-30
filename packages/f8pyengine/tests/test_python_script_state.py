@@ -1,3 +1,4 @@
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 from f8pysdk.codec import dump_json
 import asyncio
 import os
@@ -159,7 +160,7 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(input_mode_field.access, F8StateAccess.rw)
         editor_assist = code_field.editorAssist
         self.assertIsNotNone(editor_assist)
-        python_payload = dump_json(editor_assist.python, mode="json") if editor_assist is not None else None
+        python_payload = dump_json(editor_assist.python) if editor_assist is not None else None
         self.assertIsInstance(python_payload, dict)
         support_files = (python_payload or {}).get("support_files") if isinstance(python_payload, dict) else None
         self.assertIsInstance(support_files, dict)
@@ -471,8 +472,8 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
         _ = ServiceHost(bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=reg)
 
         data_in_ports = [
-            F8DataPortSpec(name="req", description="", valueSchema=string_schema(), definitionProtected=True),
-            F8DataPortSpec(name="opt", description="", valueSchema=string_schema(), definitionProtected=False),
+            F8DataPortSpec(name="req", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=string_schema()), definitionProtected=True),
+            F8DataPortSpec(name="opt", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=string_schema()), definitionProtected=False),
         ]
         code = (
             "def onMsg(ctx, inputs):\n"
@@ -502,7 +503,7 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
             properties={"bones": F8ArrayTypeSchema(items=any_schema())},
             required=["bones"],
         )
-        data_in_ports = [F8DataPortSpec(name="msg", description="", valueSchema=msg_schema, definitionProtected=True)]
+        data_in_ports = [F8DataPortSpec(name="msg", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=msg_schema), definitionProtected=True)]
         code = (
             "def onExec(ctx, exec_in, inputs):\n"
             "    if inputs.msg is None:\n"
@@ -534,7 +535,7 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
             properties={"bones": F8ArrayTypeSchema(items=bone_schema)},
             required=["bones"],
         )
-        data_in_ports = [F8DataPortSpec(name="msg", description="", valueSchema=msg_schema, definitionProtected=True)]
+        data_in_ports = [F8DataPortSpec(name="msg", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=msg_schema), definitionProtected=True)]
         code = (
             "def onMsg(ctx, inputs):\n"
             "    return {'outputs': {'out': inputs.msg.bones[1].name}}\n"
@@ -559,7 +560,7 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
         register_operator(Registry.wrap(reg))
         _ = ServiceHost(bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=reg)
 
-        data_in_ports = [F8DataPortSpec(name="hip-pos", description="", valueSchema=string_schema(), definitionProtected=True)]
+        data_in_ports = [F8DataPortSpec(name="hip-pos", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=string_schema()), definitionProtected=True)]
         code = (
             "def onMsg(ctx, inputs):\n"
             "    return {'outputs': {'out': inputs.hip_pos}}\n"
@@ -582,8 +583,8 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
         _ = ServiceHost(bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=reg)
 
         data_in_ports = [
-            F8DataPortSpec(name="a-b", description="", valueSchema=string_schema(), definitionProtected=True),
-            F8DataPortSpec(name="a b", description="", valueSchema=string_schema(), definitionProtected=True),
+            F8DataPortSpec(name="a-b", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=string_schema()), definitionProtected=True),
+            F8DataPortSpec(name="a b", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=string_schema()), definitionProtected=True),
         ]
         code = (
             "def onMsg(ctx, inputs):\n"
@@ -622,7 +623,7 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
             },
             required=["bones"],
         )
-        data_in_ports = [F8DataPortSpec(name="msg", description="", valueSchema=msg_schema, definitionProtected=True)]
+        data_in_ports = [F8DataPortSpec(name="msg", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=msg_schema), definitionProtected=True)]
         code = (
             "def onExec(ctx, exec_in, inputs):\n"
             "    msg = inputs.msg\n"
@@ -663,7 +664,7 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
             properties={"bones": F8ArrayTypeSchema(items=F8ComplexObjectTypeSchema(properties={"name": string_schema()}))},
             required=["bones"],
         )
-        data_in_ports = [F8DataPortSpec(name="msg", description="", valueSchema=msg_schema, definitionProtected=True)]
+        data_in_ports = [F8DataPortSpec(name="msg", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=msg_schema), definitionProtected=True)]
         code = (
             "def onMsg(ctx, inputs):\n"
             "    _ = inputs.msg\n"
@@ -719,7 +720,7 @@ class PythonScriptStateTests(unittest.IsolatedAsyncioTestCase):
         register_operator(Registry.wrap(reg))
         _ = ServiceHost(bus, config=ServiceHostConfig(service_class=SERVICE_CLASS), registry=reg)
 
-        data_in_ports = [F8DataPortSpec(name="payload", description="", valueSchema=any_schema(), definitionProtected=True)]
+        data_in_ports = [F8DataPortSpec(name="payload", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=True)]
         code = (
             "def onMsg(ctx, inputs):\n"
             "    p = inputs.payload\n"

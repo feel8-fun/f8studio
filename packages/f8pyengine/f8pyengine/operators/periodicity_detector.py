@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 import math
 from typing import Any
@@ -376,14 +377,14 @@ PeriodicityDetectorRuntimeNode.SPEC = F8OperatorSpec(
     label="Periodicity Detector",
     description="Detects whether a scalar signal is periodic using short-time autocorrelation peaks.",
     tags=["signal", "periodicity", "autocorrelation", "confidence", "rms"],
-    dataInPorts=[F8DataPortSpec(name="value", description="Scalar signal input.", valueSchema=number_schema())],
+    dataInPorts=[F8DataPortSpec(name="value", description="Scalar signal input.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()))],
     dataOutPorts=[
-        F8DataPortSpec(name="confidence", description="Autocorrelation periodicity confidence (0..1).", valueSchema=number_schema()),
-        F8DataPortSpec(name="rms", description="Short-term RMS envelope.", valueSchema=number_schema()),
-        F8DataPortSpec(name="periodicEnergy", description="RMS multiplied by periodicity confidence.", valueSchema=number_schema()),
-        F8DataPortSpec(name="periodMs", description="Detected dominant period in milliseconds.", valueSchema=number_schema()),
-        F8DataPortSpec(name="period_hz", description="Detected dominant frequency in Hz.", valueSchema=number_schema()),
-        F8DataPortSpec(name="is_periodic", description="True when confidence exceeds threshold.", valueSchema=boolean_schema()),
+        F8DataPortSpec(name="confidence", description="Autocorrelation periodicity confidence (0..1).", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema())),
+        F8DataPortSpec(name="rms", description="Short-term RMS envelope.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema())),
+        F8DataPortSpec(name="periodicEnergy", description="RMS multiplied by periodicity confidence.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema())),
+        F8DataPortSpec(name="periodMs", description="Detected dominant period in milliseconds.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema())),
+        F8DataPortSpec(name="period_hz", description="Detected dominant frequency in Hz.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema())),
+        F8DataPortSpec(name="is_periodic", description="True when confidence exceeds threshold.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=boolean_schema())),
     ],
     stateFields=[
         F8StateSpec(

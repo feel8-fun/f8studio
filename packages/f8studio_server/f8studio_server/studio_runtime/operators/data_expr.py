@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8studio_server.errors import InvalidRequestError
 
@@ -166,8 +167,8 @@ DataExprRuntimeNode.SPEC = F8OperatorSpec(
     label="Studio Data Expr",
     description="Evaluate a restricted expression over dynamic data inputs in the Web Studio runtime.",
     tags=["studio", "web", "expr", "data", "transform"],
-    dataInPorts=[F8DataPortSpec(name="x", description="Expression input.", valueSchema=any_schema(), definitionProtected=False)],
-    dataOutPorts=[F8DataPortSpec(name="out", description="Expression result.", valueSchema=any_schema(), definitionProtected=False)],
+    dataInPorts=[F8DataPortSpec(name="x", description="Expression input.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False)],
+    dataOutPorts=[F8DataPortSpec(name="out", description="Expression result.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False)],
     editPolicy=F8SpecEditPolicy(
         dataInPorts=editable_collection_edit_policy(),
         dataOutPorts=editable_collection_edit_policy(),

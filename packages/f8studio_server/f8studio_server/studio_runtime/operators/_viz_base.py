@@ -65,7 +65,7 @@ class StudioVizRuntimeNodeBase(OperatorNode):
         data_out_ports: list[str],
         state_fields: list[str],
         initial_state: dict[str, Any] | None,
-        presentation: PresentationOutlet | None = None,
+        presentation: PresentationOutlet,
     ) -> None:
         super().__init__(
             node_id=node_id,
@@ -79,14 +79,7 @@ class StudioVizRuntimeNodeBase(OperatorNode):
 
     @property
     def presentation(self) -> PresentationOutlet:
-        if self._presentation is None:
-            raise RuntimeError(f"presentation outlet is not configured for {self.node_id}")
         return self._presentation
-
-    @presentation.setter
-    def presentation(self, value: PresentationOutlet) -> None:
-        # Retain compatibility for embedded callers; factories inject at construction.
-        self._presentation = value
 
     async def _config_state_value(self, name: str, *, default: Any = None) -> Any:
         try:

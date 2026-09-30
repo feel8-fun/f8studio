@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.codec import parse_number
 import math
@@ -103,7 +104,7 @@ TCodeRuntimeNode.SPEC = F8OperatorSpec(
             F8DataPortSpec(
                 name=axis,
                 description=f"Axis {axis} (0..1).",
-                valueSchema=number_schema(minimum=0.0, maximum=1.0),
+                payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema(minimum=0.0, maximum=1.0)),
                 showOnNode=True if i == 0 else False,
             )
             for i, axis in enumerate(AXES)
@@ -111,12 +112,12 @@ TCodeRuntimeNode.SPEC = F8OperatorSpec(
         F8DataPortSpec(
             name="intervalMs",
             description="Optional interval override in milliseconds (rounded, min 1).",
-            valueSchema=number_schema(default=20, minimum=1, maximum=50000),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema(default=20, minimum=1, maximum=50000)),
             showOnNode=False,
         ),
     ],
     dataOutPorts=[
-        F8DataPortSpec(name="tcode", description="TCode v0.3 command string", valueSchema=string_schema()),
+        F8DataPortSpec(name="tcode", description="TCode v0.3 command string", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=string_schema())),
     ],
     stateFields=[
         F8StateSpec(

@@ -10,14 +10,6 @@ def command(service: str, command: str) -> str:
     return f'f8/cmd/svc/{service}/{command}'
 
 
-def legacy_endpoint(service: str, endpoint: str) -> str:
-    return f'f8/svc/{service}/endpoint/{endpoint}'
-
-
-def legacy_command(service: str) -> str:
-    return f'f8/svc/{service}/cmd'
-
-
 def service_liveliness(service: str, instance: str) -> str:
     return f'f8/live/svc/{service}/instances/{instance}'
 

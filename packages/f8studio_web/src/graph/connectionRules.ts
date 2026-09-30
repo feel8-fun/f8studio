@@ -14,7 +14,7 @@ export function edgeKindForPort(port: GraphPort): GraphEdgeKind {
 }
 
 function dataPayloadKind(port: GraphPort): string {
-  return port.dataSpec?.payloadKind ?? port.dataSpec?.payload?.kind ?? 'json';
+  return port.dataSpec?.payload.kind ?? 'json';
 }
 
 function stateKey(nodeId: string, port: GraphPort): string {

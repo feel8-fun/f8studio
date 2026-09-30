@@ -82,7 +82,7 @@ json print_spec() {
               {"label", "Print"},
               {"description", "Exec/data-driven printer for debugging graph values."},
               {"tags", json::array({"debug", "console", "print"})},
-              {"execInPorts", json::array({"exec"})},
+              {"execInPorts", json::array({json{{"name", "exec"}}})},
               {"dataInPorts", json::array({data_port("value", "value to print", any_schema(), false, true)})},
               {"stateFields", json::array({state_field("strip", "Strip",
                                                        "If true, strip whitespace/newlines from string values before printing.",

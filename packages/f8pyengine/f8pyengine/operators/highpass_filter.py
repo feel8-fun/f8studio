@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from typing import Any
 
@@ -118,8 +119,8 @@ HighpassFilterRuntimeNode.SPEC = F8OperatorSpec(
     label="Highpass Filter",
     description="Butterworth IIR high-pass filter for scalar or vector inputs.",
     tags=["signal", "filter", "highpass", "butterworth"],
-    dataInPorts=[F8DataPortSpec(name="value", description="Value to filter.", valueSchema=any_schema())],
-    dataOutPorts=[F8DataPortSpec(name="value", description="Filtered output.", valueSchema=any_schema())],
+    dataInPorts=[F8DataPortSpec(name="value", description="Value to filter.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()))],
+    dataOutPorts=[F8DataPortSpec(name="value", description="Filtered output.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()))],
     stateFields=[
         F8StateSpec(
             name="sampleIntervalMs",

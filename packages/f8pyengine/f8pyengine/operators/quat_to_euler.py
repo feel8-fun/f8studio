@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.codec import parse_number
 from f8pysdk.codec import coerce_bool
@@ -197,7 +198,7 @@ QuatToEulerRuntimeNode.SPEC = F8OperatorSpec(
         F8DataPortSpec(
             name="quat",
             description="Input quaternion [w,x,y,z].",
-            valueSchema=array_schema(items=number_schema()),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=array_schema(items=number_schema())),
             definitionProtected=False,
         )
     ],
@@ -205,7 +206,7 @@ QuatToEulerRuntimeNode.SPEC = F8OperatorSpec(
         F8DataPortSpec(
             name="euler",
             description="Euler angles [x,y,z] in selected order.",
-            valueSchema=array_schema(items=number_schema()),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=array_schema(items=number_schema())),
         )
     ],
     stateFields=[

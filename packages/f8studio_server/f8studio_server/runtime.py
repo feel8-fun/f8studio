@@ -14,7 +14,7 @@ from f8pysdk.bus import BusBackend
 from f8pysdk.codec import decode_as, decode_obj, encode_obj
 from f8pysdk.f8_naming import cmd_channel_key, ensure_token, new_id, svc_endpoint_key
 from f8pysdk.rungraph_fingerprint import build_rungraph_deploy_fingerprint
-from f8pysdk.runtime_transport import RuntimeTransport
+from f8pysdk.runtime_transport import RuntimeTransport, SubscriptionHandle
 from f8pysdk.service_runtime_tools.deploy.readiness import (
     RungraphDeployStatusTimeout,
     wait_rungraph_deploy_status,
@@ -50,10 +50,6 @@ from .studio_runtime.identifiers import STUDIO_SERVICE_ID
 
 RuntimeMonitorCallback = Callable[[str, bytes], Awaitable[None]]
 logger = logging.getLogger(__name__)
-
-
-class RuntimeSubscription(Protocol):
-    async def unsubscribe(self) -> None: ...
 
 
 class RuntimeGateway(Protocol):
@@ -206,8 +202,8 @@ class ZenohRuntimeGateway:
     live: LiveValueHub | None = None
     studio_service_id: str | None = None
     _transport: RuntimeTransport | None = field(default=None, init=False, repr=False)
-    _monitor_subscription: RuntimeSubscription | None = field(default=None, init=False, repr=False)
-    _state_subscription: RuntimeSubscription | None = field(default=None, init=False, repr=False)
+    _monitor_subscription: SubscriptionHandle | None = field(default=None, init=False, repr=False)
+    _state_subscription: SubscriptionHandle | None = field(default=None, init=False, repr=False)
     _state_values: dict[str, bytes] = field(default_factory=dict, init=False, repr=False)
     _connect_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
 
@@ -266,14 +262,14 @@ class ZenohRuntimeGateway:
                 "f8/svc/*/nodes/*/data/monitor",
                 cb=callback,
             )
-            self._monitor_subscription = cast(RuntimeSubscription, subscription)
+            self._monitor_subscription = subscription
         if self._state_subscription is None:
             state_subscription = await transport.retained_watch(
                 "f8/svc/*/state/nodes/*/state/**",
                 cb=self._ingest_state,
                 with_initial=True,
             )
-            self._state_subscription = cast(RuntimeSubscription, state_subscription)
+            self._state_subscription = state_subscription
 
     async def _ingest_state(self, key: str, payload: bytes) -> None:
         self._state_values[key] = bytes(payload)
@@ -559,6 +555,5 @@ __all__ = [
     "RuntimeConfig",
     "RuntimeGateway",
     "RuntimeMonitorCallback",
-    "RuntimeSubscription",
     "ZenohRuntimeGateway",
 ]

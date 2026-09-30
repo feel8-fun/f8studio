@@ -92,7 +92,7 @@ class MonitorCollectorTests(unittest.IsolatedAsyncioTestCase):
         )
 
         snapshot = collector._build_snapshot(ts_ms=ts)
-        payload = dump_json(snapshot, mode="json", by_alias=True)
+        payload = dump_json(snapshot)
         self.assertEqual(payload.get("schemaVersion"), "f8monitor/1")
         self.assertEqual(str(snapshot.serviceId), "svcA")
         self.assertTrue(bool(snapshot.ready))

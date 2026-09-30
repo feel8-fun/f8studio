@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.specs import exec_port_specs
 
@@ -371,7 +372,7 @@ ReplayerRuntimeNode.SPEC = F8OperatorSpec(
         F8DataPortSpec(
             name=_POSITION_PORT,
             description="Current playback position in milliseconds.",
-            valueSchema=integer_schema(default=0, minimum=0),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=integer_schema(default=0, minimum=0)),
             definitionProtected=False,
         ),
     ],

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.specs import exec_port_specs
 
@@ -371,13 +372,13 @@ DataMuxRuntimeNode.SPEC = F8OperatorSpec(
     execInPorts=exec_port_specs(["exec"]),
     execOutPorts=exec_port_specs(["exec"]),
     dataInPorts=[
-        F8DataPortSpec(name="branch_a", description="Branch A input.", valueSchema=any_schema(), definitionProtected=False),
-        F8DataPortSpec(name="branch_b", description="Branch B input.", valueSchema=any_schema(), definitionProtected=False),
-        F8DataPortSpec(name="branch_c", description="Branch C input.", valueSchema=any_schema(), definitionProtected=False),
-        F8DataPortSpec(name="default", description="Fallback input.", valueSchema=any_schema(), definitionProtected=False),
+        F8DataPortSpec(name="branch_a", description="Branch A input.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
+        F8DataPortSpec(name="branch_b", description="Branch B input.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
+        F8DataPortSpec(name="branch_c", description="Branch C input.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
+        F8DataPortSpec(name="default", description="Fallback input.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
     ],
     dataOutPorts=[
-        F8DataPortSpec(name="out", description="Selected data output.", valueSchema=any_schema(), definitionProtected=False),
+        F8DataPortSpec(name="out", description="Selected data output.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
     ],
     editPolicy=F8SpecEditPolicy(dataInPorts=editable_collection_edit_policy()),
     stateFields=[

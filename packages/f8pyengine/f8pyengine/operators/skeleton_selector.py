@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from typing import Any
 
@@ -221,14 +222,14 @@ SkeletonSelectorRuntimeNode.SPEC = F8OperatorSpec(
     label="Skeleton Selector",
     description="Select a character by stable exporter profile, role, and role index.",
     tags=["skeleton", "character", "stable", "select", "unity"],
-    dataInPorts=[F8DataPortSpec(name="skeletons", description="Decoded skeleton list.", valueSchema=any_schema())],
+    dataInPorts=[F8DataPortSpec(name="skeletons", description="Decoded skeleton list.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()))],
     dataOutPorts=[
-        F8DataPortSpec(name="skeleton", description="Selected skeleton.", valueSchema=any_schema()),
-        F8DataPortSpec(name="stableKey", description="Stable profile/role/index key.", valueSchema=string_schema()),
+        F8DataPortSpec(name="skeleton", description="Selected skeleton.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema())),
+        F8DataPortSpec(name="stableKey", description="Stable profile/role/index key.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=string_schema())),
         F8DataPortSpec(
             name="status",
             description="Selection status on the data channel.",
-            valueSchema=complex_object_schema(
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=complex_object_schema(
                 properties={
                     "valid": boolean_schema(),
                     "stableKey": string_schema(),
@@ -237,7 +238,7 @@ SkeletonSelectorRuntimeNode.SPEC = F8OperatorSpec(
                     "roleIndex": integer_schema(),
                     "reason": string_schema(),
                 }
-            ),
+            )),
         ),
     ],
     stateFields=[

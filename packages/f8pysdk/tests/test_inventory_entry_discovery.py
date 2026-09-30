@@ -158,8 +158,8 @@ def test_load_service_entry_matches_for_relative_and_absolute_service_dir(tmp_pa
     _write_entry(service_dir, workdir="../entry", command="runner")
     monkeypatch.chdir(tmp_path)
 
-    relative_payload = dump_json(load_service_entry(Path("services/f8/entry")), mode="json")
-    absolute_payload = dump_json(load_service_entry(service_dir.resolve()), mode="json")
+    relative_payload = dump_json(load_service_entry(Path('services/f8/entry')))
+    absolute_payload = dump_json(load_service_entry(service_dir.resolve()))
 
     assert relative_payload == absolute_payload
     assert relative_payload["launch"]["workdir"] == str(service_dir.resolve())
@@ -317,3 +317,41 @@ def test_checkout_describe_requires_matching_source_fingerprint(tmp_path: Path) 
     # Packaged descriptions remain supported without a source checkout.
     (tmp_path / "pixi.toml").unlink()
     assert static_is_fresh(service)
+
+
+def test_discovery_rejects_invalid_authoring_instead_of_returning_raw_payload(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture,
+) -> None:
+    service_dir = tmp_path / "invalid"
+    _write_discoverable_service(service_dir, service_class="f8.tests.invalid")
+    path = service_dir / "describe.json"
+    payload = json.loads(path.read_text())
+    payload["service"]["dataInPorts"] = [{"name": "old", "valueSchema": {"type": "any"}}]
+    path.write_text(json.dumps(payload))
+    catalog = ServiceCatalog()
+    with caplog.at_level("ERROR"):
+        load_discovery_into_catalog(roots=[service_dir], catalog=catalog)
+    assert any("Describe payload validation failed" in record.message and record.exc_info for record in caplog.records)
+
+
+@pytest.mark.parametrize("path,value", [
+    (("operators",), [None]),
+    (("operators",), {}),
+    (("service", "stateFields"), ["old-field"]),
+    (("service", "dataOutPorts"), "old-port"),
+])
+def test_discovery_rejects_malformed_descriptor_collections(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, path: tuple[str, ...], value: Any,
+) -> None:
+    service_dir = tmp_path / "invalid"
+    _write_discoverable_service(service_dir, service_class="f8.tests.invalid")
+    describe_path = service_dir / "describe.json"
+    payload = json.loads(describe_path.read_text())
+    target = payload
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] = value
+    describe_path.write_text(json.dumps(payload))
+    with caplog.at_level("ERROR"):
+        load_discovery_into_catalog(roots=[service_dir], catalog=ServiceCatalog())
+    assert any("Describe payload validation failed" in record.message and record.exc_info for record in caplog.records)

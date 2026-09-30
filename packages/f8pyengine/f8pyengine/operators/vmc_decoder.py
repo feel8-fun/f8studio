@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.specs import exec_port_specs
 
@@ -684,19 +685,19 @@ VmcDecoderRuntimeNode.SPEC = F8OperatorSpec(
         F8DataPortSpec(
             name="packet",
             description="Packet payload from udp_in.packet.",
-            valueSchema=any_schema(),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()),
         )
     ],
     dataOutPorts=[
         F8DataPortSpec(
             name="skeletons",
             description="List of latest payloads (ordered by key).",
-            valueSchema=array_schema(items=_skeleton_payload_schema()),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=array_schema(items=_skeleton_payload_schema())),
         ),
         F8DataPortSpec(
             name="selectedSkeleton",
             description="Latest payload matching `selectedKey` (or None).",
-            valueSchema=_skeleton_payload_schema(),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=_skeleton_payload_schema()),
         ),
     ],
     stateFields=[

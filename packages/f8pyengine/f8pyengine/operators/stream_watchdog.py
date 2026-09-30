@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.specs import exec_port_specs
 
@@ -139,22 +140,22 @@ StreamWatchdogRuntimeNode.SPEC = F8OperatorSpec(
     tags=["stream", "watchdog", "safety", "timeout", "gate"],
     execInPorts=exec_port_specs(["check"]),
     execOutPorts=exec_port_specs(["valid"]),
-    dataInPorts=[F8DataPortSpec(name="value", description="Timestamped stream value.", valueSchema=any_schema())],
+    dataInPorts=[F8DataPortSpec(name="value", description="Timestamped stream value.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()))],
     dataOutPorts=[
-        F8DataPortSpec(name="value", description="Input while fresh, otherwise None.", valueSchema=any_schema()),
-        F8DataPortSpec(name="valid", description="Whether the input is fresh.", valueSchema=boolean_schema(default=False)),
-        F8DataPortSpec(name="ageMs", description="Age of the oldest input sample.", valueSchema=number_schema(minimum=0.0)),
+        F8DataPortSpec(name="value", description="Input while fresh, otherwise None.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema())),
+        F8DataPortSpec(name="valid", description="Whether the input is fresh.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=boolean_schema(default=False))),
+        F8DataPortSpec(name="ageMs", description="Age of the oldest input sample.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema(minimum=0.0))),
         F8DataPortSpec(
             name="status",
             description="Per-check freshness status.",
-            valueSchema=complex_object_schema(
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=complex_object_schema(
                 properties={
                     "valid": boolean_schema(),
                     "ageMs": number_schema(minimum=0.0),
                     "timeoutMs": integer_schema(minimum=10),
                     "reason": string_schema(),
                 }
-            ),
+            )),
         ),
     ],
     stateFields=[

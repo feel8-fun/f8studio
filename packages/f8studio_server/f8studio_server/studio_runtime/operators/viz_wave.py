@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from ._throttled_flusher import ThrottledFlusher
 
@@ -55,7 +56,7 @@ class VizWaveRuntimeNode(StudioVizRuntimeNodeBase):
         node_id: str,
         node: F8RuntimeNode,
         initial_state: dict[str, Any] | None = None,
-        presentation: PresentationOutlet | None = None,
+        presentation: PresentationOutlet,
     ) -> None:
         super().__init__(
             node_id=ensure_token(node_id, label="node_id"),
@@ -196,8 +197,8 @@ class VizWaveRuntimeNode(StudioVizRuntimeNodeBase):
         return changed
 
 
-def register_operator(registry: Registry) -> Registry:
-    registry.register_operator(
+def register_spec(registry: Registry) -> Registry:
+    registry.register_operator_spec(
         F8OperatorSpec(
             schemaVersion=F8OperatorSchemaVersion.f8operator_1,
             serviceClass=SERVICE_CLASS,
@@ -211,18 +212,18 @@ def register_operator(registry: Registry) -> Registry:
                 F8DataPortSpec(
                     name="x",
                     description="Numeric input value (y-axis).",
-                    valueSchema=number_schema(),
+                    payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()),
                 ),
                 F8DataPortSpec(
                     name="y",
                     description="Numeric input value (y-axis).",
-                    valueSchema=number_schema(),
+                    payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()),
                     showOnNode=False,
                 ),
                 F8DataPortSpec(
                     name="z",
                     description="Numeric input value (y-axis).",
-                    valueSchema=number_schema(),
+                    payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()),
                     showOnNode=False,
                 ),
             ],
@@ -305,7 +306,6 @@ def register_operator(registry: Registry) -> Registry:
                 *viz_sampling_state_fields(show_on_node=False),
             ],
         ),
-        VizWaveRuntimeNode,
         overwrite=True,
     )
     return registry

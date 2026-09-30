@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 import pytest
 
@@ -31,7 +32,7 @@ def test_data_edge_rejects_video_frame_stream_into_json_port() -> None:
                 serviceId="studio",
                 serviceClass="f8.pystudio",
                 operatorClass="f8.viz.text",
-                dataInPorts=[F8DataPortSpec(name="inputData", valueSchema=any_schema())],
+                dataInPorts=[F8DataPortSpec(name="inputData", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()))],
             ),
         ],
         edges=[

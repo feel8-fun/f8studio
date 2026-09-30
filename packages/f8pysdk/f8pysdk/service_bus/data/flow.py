@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ...runtime_transport import SubscriptionHandle
+
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
@@ -89,11 +91,10 @@ async def subscribe_key(
     bus: "ServiceBus",
     key_expr: str,
     *,
-    queue: str | None = None,
     cb: Callable[[str, bytes], Awaitable[None]] | None = None,
-) -> Any:
-    return await bus.data_router.subscribe_key(key_expr, queue=queue, cb=cb)
+) -> SubscriptionHandle:
+    return await bus.data_router.subscribe_key(key_expr, cb=cb)
 
 
-async def unsubscribe_key(bus: "ServiceBus", handle: Any) -> None:
+async def unsubscribe_key(bus: "ServiceBus", handle: SubscriptionHandle | None) -> None:
     await bus.data_router.unsubscribe_key(handle)

@@ -1,3 +1,4 @@
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 import asyncio
 import os
 import sys
@@ -48,7 +49,7 @@ def _expr_node(
 
 
 def _any_port(name: str) -> F8DataPortSpec:
-    return F8DataPortSpec(name=name, description="", valueSchema=any_schema(), definitionProtected=False)
+    return F8DataPortSpec(name=name, description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False)
 
 
 def _monitor_error_message(bus: object) -> str:

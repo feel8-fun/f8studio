@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.specs import data_port_value_schema
+
 import ast
 import keyword
 import logging
@@ -238,7 +240,7 @@ class _InputsModelBuilder:
             attr_name = self._unique_attr_name(raw_name, used_attrs, scope=f"port[{index}]")
             self.root_attr_to_raw[attr_name] = raw_name
             self.root_raw_to_attr[raw_name] = attr_name
-            field_type = self._schema_to_type(port.valueSchema, hint=f"Port_{attr_name}")
+            field_type = self._schema_to_type(data_port_value_schema(port), hint=f"Port_{attr_name}")
             optional_type = field_type | None
             if attr_name == raw_name:
                 fields.append((attr_name, optional_type, msgspec.field(default=None)))

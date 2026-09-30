@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.codec import parse_number
 import math
@@ -144,17 +145,17 @@ PhaseRuntimeNode.SPEC = F8OperatorSpec(
     description="Phase accumulator. Outputs normalized phase (0..1) and unwrapped phase turns.",
     tags=["signal", "phase", "waveform", "generator", "oscillator"],
     dataInPorts=[
-        F8DataPortSpec(name="hz", description="Frequency override (Hz).", valueSchema=number_schema(), definitionProtected=False),
+        F8DataPortSpec(name="hz", description="Frequency override (Hz).", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()), definitionProtected=False),
         F8DataPortSpec(
-            name="phase", description="Absolute phase override (0..1).", valueSchema=number_schema(), definitionProtected=False
+            name="phase", description="Absolute phase override (0..1).", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()), definitionProtected=False
         ),
         F8DataPortSpec(
-            name="reset", description="If true, reset phase to 0.", valueSchema=boolean_schema(), definitionProtected=False
+            name="reset", description="If true, reset phase to 0.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=boolean_schema()), definitionProtected=False
         ),
     ],
     dataOutPorts=[
-        F8DataPortSpec(name="phase", description="Normalized phase (0..1).", valueSchema=number_schema()),
-        F8DataPortSpec(name="phaseTurns", description="Unwrapped phase turns (cycles).", valueSchema=number_schema()),
+        F8DataPortSpec(name="phase", description="Normalized phase (0..1).", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema())),
+        F8DataPortSpec(name="phaseTurns", description="Unwrapped phase turns (cycles).", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema())),
     ],
     stateFields=[
         F8StateSpec(
@@ -245,33 +246,33 @@ CosineRuntimeNode.SPEC = F8OperatorSpec(
         F8DataPortSpec(
             name="phase",
             description="Phase input (0..1).",
-            valueSchema=number_schema(),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()),
             definitionProtected=True,
             showOnNode=True,
         ),
         F8DataPortSpec(
             name="amp",
             description="Amplitude override.",
-            valueSchema=number_schema(default=0.5),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema(default=0.5)),
             definitionProtected=False,
             showOnNode=False,
         ),
         F8DataPortSpec(
             name="dc",
             description="DC offset override.",
-            valueSchema=number_schema(default=0.5),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema(default=0.5)),
             definitionProtected=False,
             showOnNode=False,
         ),
         F8DataPortSpec(
             name="phaseOffset",
             description="Phase offset override (0..1).",
-            valueSchema=number_schema(),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()),
             definitionProtected=False,
             showOnNode=False,
         ),
     ],
-    dataOutPorts=[F8DataPortSpec(name="value", description="cosine output", valueSchema=number_schema())],
+    dataOutPorts=[F8DataPortSpec(name="value", description="cosine output", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()))],
     stateFields=[
         F8StateSpec(
             name="dc",
@@ -389,40 +390,40 @@ TempestRuntimeNode.SPEC = F8OperatorSpec(
         F8DataPortSpec(
             name="phase",
             description="Phase input (0..1).",
-            valueSchema=number_schema(),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()),
             definitionProtected=True,
             showOnNode=True,
         ),
         F8DataPortSpec(
             name="amp",
             description="Amplitude override.",
-            valueSchema=number_schema(),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()),
             definitionProtected=False,
             showOnNode=False,
         ),
         F8DataPortSpec(
             name="phaseOffset",
             description="Phase offset override (0..1).",
-            valueSchema=number_schema(),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()),
             definitionProtected=False,
             showOnNode=False,
         ),
         F8DataPortSpec(
             name="eccentric",
             description="Eccentricity override",
-            valueSchema=number_schema(),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()),
             definitionProtected=False,
             showOnNode=False,
         ),
         F8DataPortSpec(
             name="dc",
             description="DC offset override.",
-            valueSchema=number_schema(),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()),
             definitionProtected=False,
             showOnNode=False,
         ),
     ],
-    dataOutPorts=[F8DataPortSpec(name="out", description="tempest output", valueSchema=number_schema())],
+    dataOutPorts=[F8DataPortSpec(name="out", description="tempest output", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()))],
     stateFields=[
         F8StateSpec(
             name="dc",

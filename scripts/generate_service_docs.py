@@ -195,7 +195,7 @@ def _parse_field(field_obj: dict[str, Any], *, ctx: str) -> FieldSpec:
         label=_opt_str(field_obj, "label", default=""),
         description=_opt_str(field_obj, "description", default=""),
         access=_opt_str(field_obj, "access", default="rw") or "rw",
-        required=_opt_bool(field_obj, "required", default=False),
+        required=_opt_bool(field_obj, "valueRequired", default=False),
         show_on_node=_opt_bool(field_obj, "showOnNode", default=False),
         value_schema=value_schema,
     )
@@ -206,7 +206,7 @@ def _parse_command_param(param_obj: dict[str, Any], *, ctx: str) -> CommandParam
     return CommandParamSpec(
         name=_req_str(param_obj, "name", ctx=ctx),
         description=_opt_str(param_obj, "description", default=""),
-        required=_opt_bool(param_obj, "required", default=False),
+        required=_opt_bool(param_obj, "valueRequired", default=False),
         value_schema=value_schema,
     )
 
@@ -227,11 +227,13 @@ def _parse_command(command_obj: dict[str, Any], *, ctx: str) -> CommandSpec:
 
 
 def _parse_port(port_obj: dict[str, Any], *, ctx: str) -> PortSpec:
-    value_schema = _as_dict(port_obj.get("valueSchema") or {}, ctx=f"{ctx}.valueSchema")
+    payload = _as_dict(port_obj.get("payload"), ctx=f"{ctx}.payload")
+    schema_key = "valueSchema" if payload.get("kind") == "json" else "metadataSchema"
+    value_schema = _as_dict(payload.get(schema_key) or {}, ctx=f"{ctx}.payload.{schema_key}")
     return PortSpec(
         name=_req_str(port_obj, "name", ctx=ctx),
         description=_opt_str(port_obj, "description", default=""),
-        required=_opt_bool(port_obj, "required", default=False),
+        required=_opt_bool(port_obj, "definitionProtected", default=False),
         show_on_node=_opt_bool(port_obj, "showOnNode", default=False),
         value_schema=value_schema,
     )
@@ -243,15 +245,13 @@ def _parse_operator(operator_obj: dict[str, Any], *, ctx: str) -> OperatorSpec:
 
     exec_in_ports: list[str] = []
     for index, value in enumerate(exec_in_raw):
-        if not isinstance(value, str):
-            raise ValueError(f"{ctx}.execInPorts[{index}]: expected string")
-        exec_in_ports.append(value)
+        port = _as_dict(value, ctx=f"{ctx}.execInPorts[{index}]")
+        exec_in_ports.append(_req_str(port, "name", ctx=f"{ctx}.execInPorts[{index}]"))
 
     exec_out_ports: list[str] = []
     for index, value in enumerate(exec_out_raw):
-        if not isinstance(value, str):
-            raise ValueError(f"{ctx}.execOutPorts[{index}]: expected string")
-        exec_out_ports.append(value)
+        port = _as_dict(value, ctx=f"{ctx}.execOutPorts[{index}]")
+        exec_out_ports.append(_req_str(port, "name", ctx=f"{ctx}.execOutPorts[{index}]"))
 
     state_fields_raw = _as_list(operator_obj.get("stateFields"), ctx=f"{ctx}.stateFields")
     state_fields: list[FieldSpec] = []

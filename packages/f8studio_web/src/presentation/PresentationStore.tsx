@@ -50,11 +50,12 @@ export class PresentationStore {
   private readonly connectionListeners = new Set<Listener>();
   private subscriptions: (() => void)[] = [];
   private liveNodes = new Map<string, readonly JsonValue[]>();
-  private connected = false;
+  private eventConnected = false;
+  private liveConnected = false;
   private arrivalSequence = 0;
 
   readonly getOutputsSnapshot = (): ReadonlyMap<string, PresentationOutput> => this.outputsSnapshot;
-  readonly getConnectionSnapshot = (): boolean => this.connected;
+  readonly getConnectionSnapshot = (): boolean => this.eventConnected && this.liveConnected;
 
   getOutputSnapshot(nodeId: string): PresentationOutput | null {
     return this.outputs.get(nodeId) ?? null;
@@ -112,6 +113,7 @@ export class PresentationStore {
     };
     this.subscriptions = [
       studioLive.subscribe('presentation/', updateLive),
+      studioLive.subscribeConnection(() => this.setConnected('live', studioLive.getConnectionSnapshot())),
       studioEvents.subscribe((event) => {
         const command = parsePresentationCommand(event);
         if (command !== null) this.applyCommand(command);
@@ -123,8 +125,9 @@ export class PresentationStore {
             if (!['viz.text.', 'viz.wave.', 'viz.track.', 'viz.video.', 'viz.audio.', 'viz.three_d.', 'viz.tcode.'].some((prefix) => command.command.startsWith(prefix))) this.applyCommand(command);
           }
         }).catch((error: unknown) => console.error('Failed to restore extension presentation', error));
-      }, (connected) => this.setConnected(connected)),
+      }, (connected) => this.setConnected('events', connected)),
     ];
+    this.setConnected('live', studioLive.getConnectionSnapshot());
     updateLive();
   }
 
@@ -132,7 +135,8 @@ export class PresentationStore {
     for (const unsubscribe of this.subscriptions) unsubscribe();
     this.subscriptions = [];
     this.liveNodes.clear();
-    this.setConnected(false);
+    this.setConnected('events', false);
+    this.setConnected('live', false);
   }
 
   applyCommand(command: PresentationCommand): void {
@@ -174,10 +178,13 @@ export class PresentationStore {
     }
   }
 
-  private setConnected(connected: boolean): void {
-    if (this.connected === connected) return;
-    this.connected = connected;
-    for (const listener of this.connectionListeners) listener();
+  private setConnected(channel: 'events' | 'live', connected: boolean): void {
+    const previous = this.getConnectionSnapshot();
+    if (channel === 'events') this.eventConnected = connected;
+    else this.liveConnected = connected;
+    if (previous !== this.getConnectionSnapshot()) {
+      for (const listener of this.connectionListeners) listener();
+    }
   }
 
 }

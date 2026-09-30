@@ -87,14 +87,6 @@ std::string zenoh_data_key(const std::string& service_id, const std::string& nod
   return wire_keys::data(ensure_token(service_id, "service_id"), ensure_token(node_id, "node_id"), ensure_token(port_id, "port_id"));
 }
 
-std::string zenoh_endpoint_key(const std::string& service_id, const std::string& endpoint) {
-  return wire_keys::legacy_endpoint(ensure_token(service_id, "service_id"), ensure_token(endpoint, "endpoint"));
-}
-
-std::string zenoh_cmd_key(const std::string& service_id) {
-  return wire_keys::legacy_command(ensure_token(service_id, "service_id"));
-}
-
 std::string zenoh_command_key(const std::string& service_id, const std::string& command) {
   return wire_keys::command(ensure_token(service_id, "service_id"), ensure_token(command, "command"));
 }

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 import time
 from typing import Any, TypeAlias
@@ -564,12 +565,12 @@ EnvelopeRuntimeNode.SPEC = F8OperatorSpec(
     ),
     tags=["signal", "envelope", "normalize", "transform"],
     dataInPorts=[
-        F8DataPortSpec(name="value", description="Input value.", valueSchema=number_schema(), definitionProtected=False),
+        F8DataPortSpec(name="value", description="Input value.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()), definitionProtected=False),
     ],
     dataOutPorts=[
-        F8DataPortSpec(name="lower", description="Estimated lower envelope.", valueSchema=number_schema()),
-        F8DataPortSpec(name="upper", description="Estimated upper envelope.", valueSchema=number_schema()),
-        F8DataPortSpec(name="normalized", description="Normalized value (0..1).", valueSchema=number_schema()),
+        F8DataPortSpec(name="lower", description="Estimated lower envelope.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema())),
+        F8DataPortSpec(name="upper", description="Estimated upper envelope.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema())),
+        F8DataPortSpec(name="normalized", description="Normalized value (0..1).", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema())),
     ],
     stateFields=[
         F8StateSpec(

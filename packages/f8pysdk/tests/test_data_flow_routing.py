@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec
 
 import asyncio
 import logging
@@ -148,7 +149,7 @@ def _legacy_video_metadata_schema() -> F8ComplexObjectTypeSchema:
 def _legacy_video_port(name: str) -> F8DataPortSpec:
     return F8DataPortSpec(
         name=name,
-        valueSchema=_legacy_video_metadata_schema(),
+        payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=_legacy_video_metadata_schema()),
         definitionProtected=True,
     )
 
@@ -184,7 +185,7 @@ def _legacy_audio_metadata_schema() -> F8ComplexObjectTypeSchema:
 def _legacy_audio_port(name: str) -> F8DataPortSpec:
     return F8DataPortSpec(
         name=name,
-        valueSchema=_legacy_audio_metadata_schema(),
+        payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=_legacy_audio_metadata_schema()),
         definitionProtected=True,
     )
 
@@ -226,19 +227,16 @@ class DataFlowRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(port.stream.reliability, F8DataStreamReliability.best_effort)
         self.assertEqual(port.stream.congestion, F8DataStreamCongestion.drop)
         self.assertEqual(port.stream.priority, F8DataStreamPriority.real_time)
-        self.assertEqual(port.payloadKind, F8DataPortPayloadKind.video_frame)
-        self.assertEqual(port.delivery, F8DataPortDelivery.latest)
         self.assertEqual(port.payload.schemaVersion, 2)
         self.assertEqual(list(port.payload.formats), ["bgra32", "bgr24", "flow2_f16", "scalar1_f32"])
-        self.assertIs(port.valueSchema, port.payload.metadataSchema)
         self.assertEqual(
-            port.valueSchema.required,
+            port.payload.metadataSchema.required,
             ["schemaVersion", "format", "width", "height", "pitch", "frameId", "tsMs", "streamEpoch"],
         )
-        self.assertEqual(port.valueSchema.title, "F8 Video Frame Stream Metadata")
-        self.assertIn("video_frame data stream", str(port.valueSchema.description))
-        self.assertIs(port.valueSchema.additionalProperties, False)
-        self.assertIs(port.valueSchema.field_comment, UNSET)
+        self.assertEqual(port.payload.metadataSchema.title, "F8 Video Frame Stream Metadata")
+        self.assertIn("video_frame data stream", str(port.payload.metadataSchema.description))
+        self.assertIs(port.payload.metadataSchema.additionalProperties, False)
+        self.assertIs(port.payload.metadataSchema.field_comment, UNSET)
 
     async def test_audio_chunk_port_uses_explicit_payload_and_stream_specs(self) -> None:
         port = audio_chunk_port(name="audio", definition_protected=True)
@@ -246,32 +244,29 @@ class DataFlowRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(port.payload.kind, F8DataPortPayloadKind.audio_chunk)
         self.assertEqual(port.stream.delivery, F8DataPortDelivery.latest)
         self.assertEqual(port.stream.priority, F8DataStreamPriority.real_time)
-        self.assertEqual(port.payloadKind, F8DataPortPayloadKind.audio_chunk)
-        self.assertEqual(port.delivery, F8DataPortDelivery.latest)
         self.assertEqual(port.payload.schemaVersion, 1)
         self.assertEqual(list(port.payload.formats), ["f32le"])
-        self.assertIs(port.valueSchema, port.payload.metadataSchema)
-        self.assertIs(port.valueSchema.additionalProperties, False)
-        self.assertIs(port.valueSchema.field_comment, UNSET)
+        self.assertIs(port.payload.metadataSchema.additionalProperties, False)
+        self.assertIs(port.payload.metadataSchema.field_comment, UNSET)
 
     async def test_video_frame_metadata_schema_has_no_payload_kind_comment(self) -> None:
         schema = video_frame_metadata_schema()
 
         self.assertIs(schema.field_comment, UNSET)
 
-    async def test_legacy_video_metadata_schema_infers_stream_payload_kind(self) -> None:
+    async def test_video_shaped_json_remains_json(self) -> None:
         port = _legacy_video_port("video")
 
-        self.assertEqual(data_port_payload_kind(port), F8DataPortPayloadKind.video_frame)
-        self.assertEqual(data_port_stream_delivery(port), F8DataPortDelivery.latest)
+        self.assertEqual(data_port_payload_kind(port), F8DataPortPayloadKind.json)
+        self.assertEqual(data_port_stream_delivery(port), F8DataPortDelivery.fifo)
 
-    async def test_legacy_audio_metadata_schema_infers_stream_payload_kind(self) -> None:
+    async def test_audio_shaped_json_remains_json(self) -> None:
         port = _legacy_audio_port("audio")
 
-        self.assertEqual(data_port_payload_kind(port), F8DataPortPayloadKind.audio_chunk)
-        self.assertEqual(data_port_stream_delivery(port), F8DataPortDelivery.latest)
+        self.assertEqual(data_port_payload_kind(port), F8DataPortPayloadKind.json)
+        self.assertEqual(data_port_stream_delivery(port), F8DataPortDelivery.fifo)
 
-    async def test_legacy_video_metadata_schema_resolves_stream_key_in_split_graph(self) -> None:
+    async def test_explicit_video_payload_resolves_stream_key_in_split_graph(self) -> None:
         cluster = InMemoryCluster()
         transport = _RecordingTransport(cluster=cluster)
         bus = ServiceBus(ServiceBusConfig(service_id="sink"), transport=transport)
@@ -285,7 +280,7 @@ class DataFlowRoutingTests(unittest.IsolatedAsyncioTestCase):
                     nodeId="sink",
                     serviceId="sink",
                     serviceClass="f8.sink",
-                    dataInPorts=[_legacy_video_port("video")],
+                    dataInPorts=[video_frame_port(name="video")],
                 ),
             ],
             edges=[

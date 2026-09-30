@@ -100,8 +100,8 @@ json runtime_node(const std::string& service_id, const std::string& node_id, con
               {"operatorClass", op},
               {"execInPorts", exec_in},
               {"execOutPorts", exec_out},
-              {"dataInPorts", json::array({json{{"name", "in"}, {"valueSchema", json{{"type", "any"}}}}})},
-              {"dataOutPorts", json::array({json{{"name", "out"}, {"valueSchema", json{{"type", "any"}}}}})},
+              {"dataInPorts", json::array({json{{"name", "in"}, {"payload", {{"kind", "json"}, {"valueSchema", json{{"type", "any"}}}}}}})},
+              {"dataOutPorts", json::array({json{{"name", "out"}, {"payload", {{"kind", "json"}, {"valueSchema", json{{"type", "any"}}}}}}})},
               {"stateFields", json::array()}};
 }
 
@@ -313,7 +313,7 @@ TEST(CppServiceHost, CreatesRecreatesAndRemovesNodes) {
   ASSERT_TRUE(host.apply_rungraph(graph, code, message)) << message;
   ASSERT_NE(host.get_node("n1"), nullptr);
 
-  graph["nodes"][0]["dataInPorts"].push_back(json{{"name", "extra"}, {"valueSchema", json{{"type", "any"}}}});
+  graph["nodes"][0]["dataInPorts"].push_back(json{{"name", "extra"}, {"payload", {{"kind", "json"}, {"valueSchema", json{{"type", "any"}}}}}});
   ASSERT_TRUE(host.apply_rungraph(graph, code, message)) << message;
   ASSERT_NE(host.get_node("n1"), nullptr);
 

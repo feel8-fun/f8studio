@@ -1,3 +1,4 @@
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 import asyncio
 import os
 import sys
@@ -84,7 +85,7 @@ def _graph(*, auto_sample_requests: list[F8AutoSampleRequest]) -> F8RuntimeGraph
                 serviceClass=SERVICE_CLASS,
                 operatorClass="f8.test.source",
                 dataInPorts=[],
-                dataOutPorts=[F8DataPortSpec(name="out", description="", valueSchema=any_schema(), definitionProtected=False)],
+                dataOutPorts=[F8DataPortSpec(name="out", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False)],
                 execInPorts=[],
                 execOutPorts=[],
             ),
@@ -93,7 +94,7 @@ def _graph(*, auto_sample_requests: list[F8AutoSampleRequest]) -> F8RuntimeGraph
                 serviceId="studio",
                 serviceClass="f8.pystudio",
                 operatorClass="f8.viz.text",
-                dataInPorts=[F8DataPortSpec(name="inputData", description="", valueSchema=any_schema(), definitionProtected=False)],
+                dataInPorts=[F8DataPortSpec(name="inputData", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False)],
                 dataOutPorts=[],
                 execInPorts=[],
                 execOutPorts=[],

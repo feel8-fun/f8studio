@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable
+from typing import Awaitable, Callable
+
+from ..runtime_transport import SubscriptionHandle
 
 
 def _match_pattern(pattern: str, key: str) -> bool:
@@ -89,11 +91,8 @@ class _WatchHandle:
         self._pattern = pattern
         self._cb = cb
 
-    async def stop(self) -> None:
-        self._cluster.remove_retained_watch(self._pattern, self._cb)
-
     async def unsubscribe(self) -> None:
-        await self.stop()
+        self._cluster.remove_retained_watch(self._pattern, self._cb)
 
 
 class _ServeHandle:
@@ -109,9 +108,6 @@ class _ServeHandle:
 
     async def unsubscribe(self) -> None:
         self._cluster.unserve(self._key, self._handler)
-
-    async def stop(self) -> None:
-        await self.unsubscribe()
 
 
 class InMemoryTransport:
@@ -131,9 +127,6 @@ class InMemoryTransport:
     async def close(self) -> None:
         return None
 
-    async def require_client(self) -> Any:
-        return self
-
     async def publish(self, key: str, payload: bytes) -> None:
         await self._cluster.publish(str(key).strip("/"), bytes(payload))
 
@@ -141,11 +134,10 @@ class InMemoryTransport:
         self,
         key_expr: str,
         *,
-        queue: str | None = None,
         cb: Callable[[str, bytes], Awaitable[None]] | None = None,
-    ) -> Any:
+    ) -> SubscriptionHandle:
         if cb is None:
-            return None
+            raise ValueError("subscription callback is required")
         cluster = self._cluster
         key_name = str(key_expr).strip("/")
         cluster.subscribe(key_name, cb)
@@ -189,7 +181,7 @@ class InMemoryTransport:
         *,
         cb: Callable[[str, bytes], Awaitable[None]],
         with_initial: bool = True,
-    ) -> Any:
+    ) -> SubscriptionHandle:
         pattern = str(key_expr).strip("/")
         self._cluster.add_retained_watch(pattern, cb)
         if with_initial:

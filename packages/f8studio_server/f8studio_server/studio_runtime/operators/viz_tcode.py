@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from ...presentation_models import TCodeSnapshot
 
@@ -38,7 +39,7 @@ class VizTCodeRuntimeNode(StudioVizRuntimeNodeBase):
         description="Visualize OSR TCode streams in the locally bundled Web renderer.",
         tags=["viz", "tcode", "osr", "device"],
         rendererClass="viz_tcode",
-        dataInPorts=[F8DataPortSpec(name="tcode", valueSchema=string_schema(), definitionProtected=True)],
+        dataInPorts=[F8DataPortSpec(name="tcode", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=string_schema()), definitionProtected=True)],
         dataOutPorts=[],
         stateFields=[
             F8StateSpec(
@@ -67,7 +68,7 @@ class VizTCodeRuntimeNode(StudioVizRuntimeNodeBase):
         node_id: str,
         node: F8RuntimeNode,
         initial_state: dict[str, Any] | None = None,
-        presentation: PresentationOutlet | None = None,
+        presentation: PresentationOutlet,
     ) -> None:
         super().__init__(
             node_id=ensure_token(node_id, label="node_id"),
@@ -152,9 +153,9 @@ class VizTCodeRuntimeNode(StudioVizRuntimeNodeBase):
         return max(32, min(65536, parsed))
 
 
-def register_operator(registry: Registry) -> Registry:
-    registry.register_operator(VizTCodeRuntimeNode.SPEC, VizTCodeRuntimeNode, overwrite=True)
+def register_spec(registry: Registry) -> Registry:
+    registry.register_operator_spec(VizTCodeRuntimeNode.SPEC, overwrite=True)
     return registry
 
 
-__all__ = ["VizTCodeRuntimeNode", "register_operator"]
+__all__ = ["VizTCodeRuntimeNode", "register_spec"]

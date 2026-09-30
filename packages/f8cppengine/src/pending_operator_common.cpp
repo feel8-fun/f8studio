@@ -78,8 +78,14 @@ json pending_operator_spec(const std::string& operator_class, const std::string&
             {"label", label},
             {"description", label + " operator described for C++ engine graphs. Native runtime is pending."},
             {"tags", json::array({"cpp", "pending"})}};
-  if (!exec_in.empty()) spec["execInPorts"] = exec_in;
-  if (!exec_out.empty()) spec["execOutPorts"] = exec_out;
+  if (!exec_in.empty()) {
+    spec["execInPorts"] = json::array();
+    for (const auto& name : exec_in) spec["execInPorts"].push_back(json{{"name", name}});
+  }
+  if (!exec_out.empty()) {
+    spec["execOutPorts"] = json::array();
+    for (const auto& name : exec_out) spec["execOutPorts"].push_back(json{{"name", name}});
+  }
   if (!data_in.empty()) spec["dataInPorts"] = data_in;
   if (!data_out.empty()) spec["dataOutPorts"] = data_out;
   if (!states.empty()) spec["stateFields"] = states;

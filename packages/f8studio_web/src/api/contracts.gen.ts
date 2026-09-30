@@ -538,7 +538,6 @@ export type CreateProviderConnection = {
   readonly "model": string;
   readonly "models": ReadonlyArray<string>;
   readonly "apiKey": string;
-  readonly "supportsImage": boolean;
   readonly "modelCapabilities": ReadonlyArray<ModelCapabilities>;
 };
 
@@ -549,7 +548,6 @@ export type CreateProviderConnectionInput = {
   readonly "model"?: string;
   readonly "models"?: ReadonlyArray<string>;
   readonly "apiKey"?: string;
-  readonly "supportsImage"?: boolean;
   readonly "modelCapabilities"?: ReadonlyArray<ModelCapabilitiesInput>;
 };
 
@@ -1143,26 +1141,20 @@ export type F8DataPortPayloadKindInput = "audio_chunk" | "bytes" | "json" | "vid
 
 export type F8DataPortSpec = {
   readonly "name": string;
-  readonly "valueSchema": F8StringTypeSchema | F8NumberTypeSchema | F8IntegerTypeSchema | F8BooleanTypeSchema | F8NullTypeSchema | F8ComplexObjectTypeSchema | F8ArrayTypeSchema | F8AnyTypeSchema;
-  readonly "payload"?: F8DataPayloadSpec;
+  readonly "payload": F8DataPayloadSpec;
   readonly "stream"?: F8DataStreamSpec;
   readonly "description"?: string;
   readonly "definitionProtected"?: boolean;
   readonly "showOnNode"?: boolean;
-  readonly "payloadKind"?: F8DataPortPayloadKind;
-  readonly "delivery"?: F8DataPortDelivery;
 };
 
 export type F8DataPortSpecInput = {
   readonly "name": string;
-  readonly "valueSchema": F8StringTypeSchemaInput | F8NumberTypeSchemaInput | F8IntegerTypeSchemaInput | F8BooleanTypeSchemaInput | F8NullTypeSchemaInput | F8ComplexObjectTypeSchemaInput | F8ArrayTypeSchemaInput | F8AnyTypeSchemaInput;
-  readonly "payload"?: F8DataPayloadSpecInput;
+  readonly "payload": F8DataPayloadSpecInput;
   readonly "stream"?: F8DataStreamSpecInput;
   readonly "description"?: string;
   readonly "definitionProtected"?: boolean;
   readonly "showOnNode"?: boolean;
-  readonly "payloadKind"?: F8DataPortPayloadKindInput;
-  readonly "delivery"?: F8DataPortDeliveryInput;
 };
 
 export type F8DataStreamCongestion = "block" | "drop";
@@ -3624,10 +3616,9 @@ export type UpdateProviderSettings = {
   readonly "endpoint": string;
   readonly "apiKey": string | null;
   readonly "clearApiKey": boolean;
-  readonly "supportsImage": boolean | null;
   readonly "displayName": string;
   readonly "models": ReadonlyArray<string>;
-  readonly "modelCapabilities": ReadonlyArray<ModelCapabilities>;
+  readonly "modelCapabilities": ReadonlyArray<ModelCapabilities> | null;
 };
 
 export type UpdateProviderSettingsInput = {
@@ -3635,10 +3626,9 @@ export type UpdateProviderSettingsInput = {
   readonly "endpoint"?: string;
   readonly "apiKey"?: string | null;
   readonly "clearApiKey"?: boolean;
-  readonly "supportsImage"?: boolean | null;
   readonly "displayName"?: string;
   readonly "models"?: ReadonlyArray<string>;
-  readonly "modelCapabilities"?: ReadonlyArray<ModelCapabilitiesInput>;
+  readonly "modelCapabilities"?: ReadonlyArray<ModelCapabilitiesInput> | null;
 };
 
 export type ValidateDocumentRequest = {

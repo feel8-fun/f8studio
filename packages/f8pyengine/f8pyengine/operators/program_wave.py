@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.codec import parse_number
 import logging
@@ -259,11 +260,11 @@ ProgramWaveRuntimeNode.SPEC = F8OperatorSpec(
     tags=["signal", "program", "wave", "phase", "lovense"],
     dataInPorts=[],
     dataOutPorts=[
-        F8DataPortSpec(name="phaseTurns", description="Unwrapped phase turns (cycles).", valueSchema=number_schema()),
-        F8DataPortSpec(name="phase", description="Normalized phase (0..1).", valueSchema=number_schema()),
-        F8DataPortSpec(name="active", description="Whether program is in a running window.", valueSchema=boolean_schema()),
-        F8DataPortSpec(name="done", description="Whether program finished (timeSec elapsed).", valueSchema=boolean_schema()),
-        F8DataPortSpec(name="elapsedSec", description="Elapsed seconds since start.", valueSchema=number_schema()),
+        F8DataPortSpec(name="phaseTurns", description="Unwrapped phase turns (cycles).", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema())),
+        F8DataPortSpec(name="phase", description="Normalized phase (0..1).", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema())),
+        F8DataPortSpec(name="active", description="Whether program is in a running window.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=boolean_schema())),
+        F8DataPortSpec(name="done", description="Whether program finished (timeSec elapsed).", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=boolean_schema())),
+        F8DataPortSpec(name="elapsedSec", description="Elapsed seconds since start.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema())),
     ],
     stateFields=[
         F8StateSpec(

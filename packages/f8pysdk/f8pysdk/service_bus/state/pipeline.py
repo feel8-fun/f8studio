@@ -72,7 +72,7 @@ def coerce_state_value(value: Any) -> Any:
 
     # msgspec structs and other dump-able model objects.
     try:
-        dumped = dump_json(value, mode="json")  # type: ignore[attr-defined]
+        dumped = dump_json(value)  # type: ignore[attr-defined]
         return coerce_state_value(dumped)
     except (AttributeError, TypeError, ValueError):
         pass

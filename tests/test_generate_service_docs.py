@@ -116,7 +116,7 @@ class GenerateServiceDocsTest(unittest.TestCase):
                         "label": "Active",
                         "description": "Service active flag",
                         "access": "rw",
-                        "required": False,
+                        "valueRequired": False,
                         "showOnNode": True,
                         "valueSchema": {"type": "boolean", "default": True},
                     }
@@ -124,13 +124,7 @@ class GenerateServiceDocsTest(unittest.TestCase):
                 "commands": [],
                 "dataInPorts": [],
                 "dataOutPorts": [
-                    {
-                        "name": "frame",
-                        "description": "Frame payload",
-                        "required": True,
-                        "showOnNode": True,
-                        "valueSchema": {"type": "object"},
-                    }
+                    {'name': 'frame', 'description': 'Frame payload', 'required': True, 'showOnNode': True, 'payload': {'kind': 'json', 'valueSchema': {'type': 'object'}}}
                 ],
             },
             "operators": [],
@@ -177,27 +171,21 @@ class GenerateServiceDocsTest(unittest.TestCase):
                     "label": "Tick",
                     "description": "Clock pulse node",
                     "execInPorts": [],
-                    "execOutPorts": ["exec"],
+                    "execOutPorts": [{"name": "exec"}],
                     "stateFields": [
                         {
                             "name": "intervalMs",
                             "label": "Interval",
                             "description": "Tick interval",
                             "access": "rw",
-                            "required": False,
+                            "valueRequired": False,
                             "showOnNode": True,
                             "valueSchema": {"type": "integer", "default": 16},
                         }
                     ],
                     "dataInPorts": [],
                     "dataOutPorts": [
-                        {
-                            "name": "processingMs",
-                            "description": "Processing duration",
-                            "required": True,
-                            "showOnNode": True,
-                            "valueSchema": {"type": "integer"},
-                        }
+                        {'name': 'processingMs', 'description': 'Processing duration', 'required': True, 'showOnNode': True, 'payload': {'kind': 'json', 'valueSchema': {'type': 'integer'}}}
                     ],
                 }
             ],

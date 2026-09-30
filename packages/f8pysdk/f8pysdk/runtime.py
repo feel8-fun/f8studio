@@ -16,16 +16,13 @@ class ServiceRuntimeConfig:
     This bundles:
     - `ServiceBus`: runtime transport, routing, state cache
     - `ServiceHost`: rungraph-driven node creation and registration
-    - `RuntimeNodeRegistry`: node factory registry (optionally loaded from modules)
+    - `RuntimeNodeRegistry`: node factory registry (explicitly registered factories)
     """
 
     bus: ServiceBusConfig
-    registry_modules: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        modules = tuple(str(module).strip() for module in self.registry_modules if str(module).strip())
         object.__setattr__(self, "bus", self.bus.normalized())
-        object.__setattr__(self, "registry_modules", modules)
 
     @property
     def service_id(self) -> str:
@@ -58,9 +55,6 @@ class ServiceRuntime:
         self._config = config
         self._registry = registry if registry is not None else create_runtime_node_registry()
         self._closed = False
-
-        for module in config.registry_modules:
-            self._registry.load_modules([str(module)])
 
         self.bus = ServiceBus(config.bus)
         self.host = ServiceHost(self.bus, registry=self._registry)

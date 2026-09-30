@@ -63,6 +63,19 @@ json monitor_snapshot_payload() {
   };
 }
 
+TEST(ProtocolModelsParse, DataPortRejectsStaleMirrors) {
+  json port = f8::cppsdk::describe::video_frame_port("video");
+  F8DataPortSpec decoded{};
+  ParseError error{};
+  ASSERT_TRUE(parse_F8DataPortSpec(port, decoded, error)) << error.message;
+  for (const char* old_field : {"payloadKind", "valueSchema", "delivery"}) {
+    json stale = port;
+    stale[old_field] = "json";
+    EXPECT_FALSE(parse_F8DataPortSpec(stale, decoded, error));
+    EXPECT_NE(error.message.find("unknown field"), std::string::npos);
+  }
+}
+
 TEST(ProtocolModelsParse, CommandInvoke_IgnoreExtra) {
   json j = json::object();
   j["reqId"] = "req-1";

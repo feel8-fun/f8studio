@@ -47,7 +47,6 @@ int main() {
   using namespace f8::cppsdk;
   if (wire_keys::data("svc", "node", "port") != "f8/svc/svc/nodes/node/data/port") return 4;
   if (wire_keys::command("svc", "status") != "f8/cmd/svc/svc/status") return 5;
-  if (wire_keys::legacy_endpoint("svc", "status") != "f8/svc/svc/endpoint/status") return 6;
   VideoFrameHeader video{0xF85A1001,2,64,3,2,12,1,24,0xFEDCBA9876543210ULL,-1234567,0xFFEEDDCCBBAA9988ULL,0x7766554433221100ULL};
   AudioChunkHeader audio{0xF85A2001,1,60,48000,2,1,3,8,24,0xFEDCBA9876543210ULL,0xAABBCCDDEEFF0011ULL,-7654321};
   std::array<std::uint8_t,124> data{};
@@ -80,15 +79,13 @@ int main() {
     assert result.stdout == golden
 
 
-def test_public_naming_preserves_legacy_and_current_command_paths() -> None:
+def test_public_naming_uses_current_command_paths() -> None:
     from f8pysdk.f8_naming import data_key, svc_endpoint_key, cmd_channel_key
-    from f8pysdk.zenoh_naming import zenoh_endpoint_key, zenoh_cmd_key, zenoh_command_key, zenoh_state_key
+    from f8pysdk.zenoh_naming import zenoh_command_key, zenoh_state_key
 
     assert data_key(" svc ", from_node_id="node", port_id="port") == "f8/svc/svc/nodes/node/data/port"
     assert svc_endpoint_key("svc", "status") == zenoh_command_key("svc", "status") == "f8/cmd/svc/svc/status"
     assert cmd_channel_key("svc") == "f8/cmd/svc/svc/cmd"
-    assert zenoh_endpoint_key("svc", "status") == "f8/svc/svc/endpoint/status"
-    assert zenoh_cmd_key("svc") == "f8/svc/svc/cmd"
     assert zenoh_state_key("svc", node_id="node", field="a.b") == "f8/svc/svc/state/nodes/node/state/a/b"
     with pytest.raises(ValueError):
         data_key("bad/service", from_node_id="node", port_id="port")

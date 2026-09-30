@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 import pytest
 
@@ -81,7 +82,7 @@ def test_data_port_spec_rejects_editor_assist_field() -> None:
     with pytest.raises(Exception):
         _ = F8DataPortSpec(
             name="x",
-            valueSchema=any_schema(),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()),
             editorAssist=validate_editor_assist_spec(_editor_assist_payload()),  # type: ignore[call-arg]
         )
 

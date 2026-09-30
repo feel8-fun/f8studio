@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ...runtime_transport import SubscriptionHandle
+
 import asyncio
 import json
 import logging
@@ -120,8 +122,8 @@ class DataRouter:
         self._outputs: CappedOrderedDict[tuple[str, str], OutputBuffer] = CappedOrderedDict(
             max_entries=max(0, int(output_debug_max_ports))
         )
-        self._route_subscriptions: dict[str, Any] = {}
-        self._custom_subscriptions: list[Any] = []
+        self._route_subscriptions: dict[str, SubscriptionHandle] = {}
+        self._custom_subscriptions: list[SubscriptionHandle] = []
         self._on_data_push_queue: deque[tuple[str, str, Any, int]] = deque()
         self._on_data_flush_task: asyncio.Task[None] | None = None
 
@@ -333,7 +335,7 @@ class DataRouter:
         if value is None:
             entry[f"{key_prefix}PayloadKind"] = "null"
             return
-        json_value = dump_json(value, mode="json")
+        json_value = dump_json(value)
         try:
             encoded = json.dumps(json_value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         except (TypeError, ValueError):
@@ -669,17 +671,16 @@ class DataRouter:
         self,
         key_expr: str,
         *,
-        queue: str | None = None,
         cb: Callable[[str, bytes], Awaitable[None]] | None = None,
-    ) -> Any:
+    ) -> SubscriptionHandle:
         key_s = str(key_expr or "").strip("/")
         if not key_s:
             raise ValueError("key_expr must be non-empty")
-        handle = await self._bus._transport.subscribe(key_s, queue=str(queue) if queue else None, cb=cb)
+        handle = await self._bus._transport.subscribe(key_s, cb=cb)
         self._custom_subscriptions.append(handle)
         return handle
 
-    async def unsubscribe_key(self, handle: Any) -> None:
+    async def unsubscribe_key(self, handle: SubscriptionHandle | None) -> None:
         if handle is None:
             return
         await handle.unsubscribe()

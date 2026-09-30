@@ -1,3 +1,4 @@
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 import os
 import sys
 import unittest
@@ -37,7 +38,7 @@ class PlaybackSyncTests(unittest.IsolatedAsyncioTestCase):
             stateValues=dict(state_values or {}),
             execInPorts=["exec"],
             execOutPorts=["exec"],
-            dataInPorts=[F8DataPortSpec(name="playback", description="", valueSchema=any_schema(), definitionProtected=False)],
+            dataInPorts=[F8DataPortSpec(name="playback", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False)],
             dataOutPorts=list(PlaybackSyncRuntimeNode.SPEC.dataOutPorts or []),
         )
         await bus.set_rungraph(F8RuntimeGraph(graphId="g1", revision="r1", nodes=[op], edges=[]))

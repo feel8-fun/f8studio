@@ -1,3 +1,4 @@
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 import asyncio
 import os
 import sys
@@ -216,7 +217,7 @@ class RecorderReplayerTests(unittest.IsolatedAsyncioTestCase):
             stateValues={"path": path, "enabled": True, "append": True},
             execInPorts=["record"],
             execOutPorts=[],
-            dataInPorts=[F8DataPortSpec(name=name, description="", valueSchema=any_schema(), definitionProtected=False) for name in list(data_ports or ["a", "b"])],
+            dataInPorts=[F8DataPortSpec(name=name, description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False) for name in list(data_ports or ["a", "b"])],
             dataOutPorts=[],
         )
 
@@ -234,7 +235,7 @@ class RecorderReplayerTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         data_out_ports = list(ReplayerRuntimeNode.SPEC.dataOutPorts or [])
-        data_out_ports.append(F8DataPortSpec(name="outA", description="", valueSchema=any_schema(), definitionProtected=False))
+        data_out_ports.append(F8DataPortSpec(name="outA", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False))
         return F8RuntimeNode(
             nodeId=node_id,
             serviceId="svcA",
@@ -256,8 +257,8 @@ class RecorderReplayerTests(unittest.IsolatedAsyncioTestCase):
             operatorClass=_PASSIVE_SINK_OPERATOR_CLASS,
             stateFields=[],
             dataInPorts=[
-                F8DataPortSpec(name="outA", description="", valueSchema=any_schema(), definitionProtected=False),
-                F8DataPortSpec(name="positionMs", description="", valueSchema=any_schema(), definitionProtected=False),
+                F8DataPortSpec(name="outA", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
+                F8DataPortSpec(name="positionMs", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
             ],
             dataOutPorts=[],
             execInPorts=[],
@@ -271,7 +272,7 @@ class RecorderReplayerTests(unittest.IsolatedAsyncioTestCase):
             serviceClass=SERVICE_CLASS,
             operatorClass=_PULL_PROBE_OPERATOR_CLASS,
             stateFields=[],
-            dataInPorts=[F8DataPortSpec(name="value", description="", valueSchema=any_schema(), definitionProtected=False)],
+            dataInPorts=[F8DataPortSpec(name="value", description="", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False)],
             dataOutPorts=[],
             execInPorts=["exec"],
             execOutPorts=[],

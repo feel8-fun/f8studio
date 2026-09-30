@@ -137,14 +137,14 @@ def _render_generated_all(names: list[str]) -> str:
 
 def _postprocess_generated(output_path: Path) -> None:
     source = output_path.read_text(encoding="utf-8")
-    updated = re.sub(
-        r"class F8ComponentRecord\(Struct, kw_only=True\):",
-        "class F8ComponentRecord(Struct, kw_only=True, forbid_unknown_fields=True):",
-        source,
-        count=1,
-    )
-    if updated == source:
-        raise RuntimeError("generated module is missing F8ComponentRecord for post-processing")
+    updated = source
+    # Authoring contracts are closed. Reject stale fields instead of silently
+    # discarding configuration that the current runtime no longer understands.
+    for name in ('F8ComponentRecord', 'F8DataPortSpec', 'F8DataPayloadSpec', 'F8DataStreamSpec', 'F8ServiceSpec', 'F8OperatorSpec', 'F8StateSpec', 'F8ExecPortSpec', 'F8Command', 'F8CommandParam', 'F8StateFieldEditPolicy', 'F8SpecEditPolicy'):
+        declaration = f"class {name}(Struct, kw_only=True):"
+        if declaration not in updated:
+            raise RuntimeError(f"generated module is missing {name}")
+        updated = updated.replace(declaration, f"class {name}(Struct, kw_only=True, forbid_unknown_fields=True):", 1)
     public_names = _generated_public_names(updated)
     if "F8RuntimeGraph" not in public_names:
         raise RuntimeError("generated module is missing F8RuntimeGraph for __all__ post-processing")

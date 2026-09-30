@@ -27,17 +27,6 @@ def zenoh_data_key(service_id: str, *, node_id: str, port_id: str) -> str:
     return runtime_keys.data(sid, nid, pid)
 
 
-def zenoh_endpoint_key(service_id: str, endpoint: str) -> str:
-    sid = ensure_token(service_id, label="service_id")
-    ep = ensure_token(endpoint, label="endpoint")
-    return runtime_keys.legacy_endpoint(sid, ep)
-
-
-def zenoh_cmd_key(service_id: str) -> str:
-    sid = ensure_token(service_id, label="service_id")
-    return runtime_keys.legacy_command(sid)
-
-
 def zenoh_command_key(service_id: str, command: str) -> str:
     sid = ensure_token(service_id, label="service_id")
     cmd = ensure_token(command, label="command")
@@ -111,10 +100,8 @@ def zenoh_key_to_state_path(key: str) -> str | None:
 
 
 __all__ = [
-    "zenoh_cmd_key",
     "zenoh_command_key",
     "zenoh_data_key",
-    "zenoh_endpoint_key",
     "zenoh_key_to_state_path",
     "zenoh_service_liveliness_key",
     "zenoh_state_key",

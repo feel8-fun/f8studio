@@ -1,4 +1,5 @@
 from __future__ import annotations
+from .generated import F8DataPayloadSpec, F8DataPortPayloadKind
 
 import asyncio
 import hashlib
@@ -189,7 +190,7 @@ def monitor_snapshot_data_port() -> F8DataPortSpec:
     return F8DataPortSpec(
         name=MONITOR_PORT_NAME,
         description="Unified runtime monitor snapshots (health/resource/perf/error).",
-        valueSchema=monitor_snapshot_value_schema(),
+        payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=monitor_snapshot_value_schema()),
         definitionProtected=True,
         showOnNode=False,
     )
@@ -198,7 +199,7 @@ def monitor_snapshot_data_port() -> F8DataPortSpec:
 def monitor_snapshot_schema_dict() -> dict[str, object]:
     global _MONITOR_SNAPSHOT_SCHEMA_DICT
     if _MONITOR_SNAPSHOT_SCHEMA_DICT is None:
-        raw = dump_json(monitor_snapshot_value_schema(), mode="json", by_alias=True)
+        raw = dump_json(monitor_snapshot_value_schema())
         _MONITOR_SNAPSHOT_SCHEMA_DICT = raw if isinstance(raw, dict) else {}
     return deepcopy(_MONITOR_SNAPSHOT_SCHEMA_DICT)
 
@@ -206,14 +207,14 @@ def monitor_snapshot_schema_dict() -> dict[str, object]:
 def monitor_snapshot_schema_dict_cached() -> dict[str, object]:
     global _MONITOR_SNAPSHOT_SCHEMA_DICT
     if _MONITOR_SNAPSHOT_SCHEMA_DICT is None:
-        raw = dump_json(monitor_snapshot_value_schema(), mode="json", by_alias=True)
+        raw = dump_json(monitor_snapshot_value_schema())
         _MONITOR_SNAPSHOT_SCHEMA_DICT = raw if isinstance(raw, dict) else {}
     return _MONITOR_SNAPSHOT_SCHEMA_DICT
 
 
 def validate_monitor_snapshot_payload(payload: dict[str, Any] | F8MonitorSnapshot) -> F8MonitorSnapshot:
     if isinstance(payload, F8MonitorSnapshot):
-        return validate_as(F8MonitorSnapshot, dump_json(payload, mode="json", by_alias=True))
+        return validate_as(F8MonitorSnapshot, dump_json(payload))
     if not isinstance(payload, dict):
         raise MonitorContractError("monitor snapshot payload must be dict or F8MonitorSnapshot")
     return validate_as(F8MonitorSnapshot, payload)
@@ -221,7 +222,7 @@ def validate_monitor_snapshot_payload(payload: dict[str, Any] | F8MonitorSnapsho
 
 def validate_monitor_report_payload(payload: dict[str, Any] | F8MonitorReport) -> F8MonitorReport:
     if isinstance(payload, F8MonitorReport):
-        return validate_as(F8MonitorReport, dump_json(payload, mode="json", by_alias=True))
+        return validate_as(F8MonitorReport, dump_json(payload))
     if not isinstance(payload, dict):
         raise MonitorContractError("monitor report payload must be dict or F8MonitorReport")
     return validate_as(F8MonitorReport, payload)
@@ -255,17 +256,16 @@ def validate_describe_monitor_contract(payload: dict[str, Any]) -> None:
     protected_raw = monitor_port.get("definitionProtected")
     if protected_raw is not None and not bool(protected_raw):
         raise MonitorContractError("`monitor` dataOutPort must set definitionProtected=true")
-    monitor_schema_obj = monitor_port.get("valueSchema")
+    monitor_payload = monitor_port.get("payload")
+    if not isinstance(monitor_payload, dict) or monitor_payload.get("kind") != "json":
+        raise MonitorContractError("`monitor` must declare a JSON payload")
+    monitor_schema_obj = monitor_payload.get("valueSchema")
     if not isinstance(monitor_schema_obj, dict):
         raise MonitorContractError("`monitor` dataOutPort must contain object valueSchema")
     expected_schema = monitor_snapshot_schema_dict_cached()
     if monitor_schema_obj != expected_schema:
         try:
-            parsed_schema = dump_json(
-                msgspec.convert(monitor_schema_obj, type=F8DataTypeSchema),
-                mode="json",
-                by_alias=True,
-            )
+            parsed_schema = dump_json(msgspec.convert(monitor_schema_obj, type=F8DataTypeSchema))
         except _MONITOR_SCHEMA_PARSE_ERRORS as exc:
             raise MonitorContractError(f"`monitor` valueSchema is invalid: {type(exc).__name__}: {exc}") from exc
         if parsed_schema != expected_schema:
@@ -888,7 +888,7 @@ class MonitorCollector:
             queue=F8MonitorQueue(depth=self._queue_depth()),
             error=error,
         )
-        return validate_as(F8MonitorSnapshot, dump_json(snapshot, mode="json", by_alias=True))
+        return validate_as(F8MonitorSnapshot, dump_json(snapshot))
 
     async def _publish_once(self) -> None:
         await asyncio.sleep(0)
@@ -916,7 +916,7 @@ class MonitorCollector:
     async def _publish_snapshot(self, snapshot: F8MonitorSnapshot) -> None:
         ts_value = int(snapshot.tsMs)
         payload = {
-            "value": dump_json(snapshot, mode="json", by_alias=True),
+            "value": dump_json(snapshot),
             "ts": ts_value,
         }
         key = data_key(

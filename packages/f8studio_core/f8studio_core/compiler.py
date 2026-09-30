@@ -187,7 +187,6 @@ def _semantic_data_port(port: F8DataPortSpec) -> F8DataPortSpec:
         )
     return msgspec.structs.replace(
         port,
-        valueSchema=_semantic_value_schema(port.valueSchema),
         payload=payload,
         description=msgspec.UNSET,
         definitionProtected=msgspec.UNSET,

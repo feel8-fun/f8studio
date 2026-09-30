@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.specs import (
     F8UiControlKind,
@@ -181,12 +182,12 @@ def register_specs(registry: Registry) -> Registry:
                 F8DataPortSpec(
                     name="detections",
                     description="Detection output in schema f8visionDetections/1.",
-                    valueSchema=_detections_payload_schema(),
+                    payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=_detections_payload_schema()),
                 ),
                 F8DataPortSpec(
                     name="skeletons",
                     description="List of UDP-skeleton-compatible JSON payloads for skeleton3d.",
-                    valueSchema=array_schema(items=_skeleton_payload_schema()),
+                    payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=array_schema(items=_skeleton_payload_schema())),
                 ),
             ],
         ),

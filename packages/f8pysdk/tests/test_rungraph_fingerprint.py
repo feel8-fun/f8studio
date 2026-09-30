@@ -33,7 +33,6 @@ def test_deploy_fingerprint_matches_payload_after_json_roundtrip() -> None:
                 dataOutPorts=[
                     F8DataPortSpec(
                         name="frame",
-                        valueSchema={"type": "object"},
                         payload=F8DataPayloadSpec(
                             kind=F8DataPortPayloadKind.video_frame,
                             metadataSchema={"type": "object", "required": ["width", "height"]},
@@ -42,12 +41,10 @@ def test_deploy_fingerprint_matches_payload_after_json_roundtrip() -> None:
                         ),
                         stream=F8DataStreamSpec(
                             delivery=F8DataPortDelivery.latest,
-                            reliability=F8DataStreamReliability.best_effort,
+                                reliability=F8DataStreamReliability.best_effort,
                             congestion=F8DataStreamCongestion.drop,
                             priority=F8DataStreamPriority.real_time,
                         ),
-                        payloadKind=F8DataPortPayloadKind.video_frame,
-                        delivery=F8DataPortDelivery.latest,
                     )
                 ],
                 stateFields=[
@@ -62,7 +59,7 @@ def test_deploy_fingerprint_matches_payload_after_json_roundtrip() -> None:
         ],
         edges=[],
     )
-    graph_payload = dump_json(graph, mode="json", by_alias=True)
+    graph_payload = dump_json(graph)
 
     assert build_rungraph_deploy_fingerprint(graph) == build_rungraph_deploy_fingerprint(graph_payload)
     snapshot = build_rungraph_deploy_snapshot(graph)
@@ -71,8 +68,7 @@ def test_deploy_fingerprint_matches_payload_after_json_roundtrip() -> None:
     state = node["stateFields"][0]
     assert port["payload"]["kind"] == "video_frame"
     assert port["stream"]["delivery"] == "latest"
-    assert port["payloadKind"] == "video_frame"
-    assert port["delivery"] == "latest"
+    assert port["payload"]["kind"] == "video_frame"
     assert state["editPolicy"]["canRename"] is False
 
 
@@ -81,7 +77,7 @@ def test_deploy_fingerprint_survives_runtime_wire_defaults() -> None:
         graphId="g-defaults", revision="r1", services=[], edges=[],
         nodes=[F8RuntimeNode(
             nodeId="source", serviceId="svc", serviceClass="svc.test",
-            dataInPorts=[F8DataPortSpec(name="input", valueSchema=number_schema())],
+            dataInPorts=[F8DataPortSpec(name="input", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()))],
             stateFields=[F8StateSpec(name="label", valueSchema=string_schema(), access=F8StateAccess.rw)],
         )],
     )

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 
 TransportCallback = Callable[[str, bytes], Awaitable[None]]
 RequestHandler = Callable[[bytes], Awaitable[bytes | None]]
+
+
+class SubscriptionHandle(Protocol):
+    async def unsubscribe(self) -> None: ...
 
 
 @runtime_checkable
@@ -28,9 +32,8 @@ class RuntimeTransport(Protocol):
         self,
         key_expr: str,
         *,
-        queue: str | None = None,
         cb: TransportCallback | None = None,
-    ) -> Any: ...
+    ) -> SubscriptionHandle: ...
 
     async def request(
         self,
@@ -41,17 +44,18 @@ class RuntimeTransport(Protocol):
         raise_on_error: bool = False,
     ) -> bytes | None: ...
 
-    async def serve(self, key: str, handler: RequestHandler) -> Any: ...
+    async def serve(self, key: str, handler: RequestHandler) -> SubscriptionHandle: ...
 
     async def retained_put(self, key: str, value: bytes) -> None: ...
 
     async def retained_get(self, key: str) -> bytes | None: ...
 
-    async def retained_watch(self, key_expr: str, *, cb: TransportCallback, with_initial: bool = True) -> Any: ...
+    async def retained_watch(self, key_expr: str, *, cb: TransportCallback, with_initial: bool = True) -> SubscriptionHandle: ...
 
 
 __all__ = [
     "RequestHandler",
     "RuntimeTransport",
+    "SubscriptionHandle",
     "TransportCallback",
 ]

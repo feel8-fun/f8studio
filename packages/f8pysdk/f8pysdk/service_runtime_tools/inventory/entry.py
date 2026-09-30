@@ -13,7 +13,7 @@ import msgspec
 from f8pysdk.codec import dump_json, validate_as
 from f8pysdk.specs import F8ServiceEntry, F8ServiceLaunchSpec
 
-_YAML_SAFE_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+_YAML_SAFE_LOADER = yaml.SafeLoader
 logger = logging.getLogger(__name__)
 _ENTRY_PATH_ERRORS = (OSError, RuntimeError, TypeError, ValueError)
 _ENTRY_YAML_PARSE_ERRORS = (TypeError, ValueError, yaml.YAMLError)
@@ -195,7 +195,7 @@ def load_service_entry(service_dir: Path) -> F8ServiceEntry:
             },
         )
         data = dict(data)
-        data["launch"] = dump_json(launch, mode="json")
+        data["launch"] = dump_json(launch)
 
     try:
         entry = validate_as(F8ServiceEntry, data)

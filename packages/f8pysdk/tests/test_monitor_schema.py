@@ -37,7 +37,7 @@ class MonitorSchemaTests(unittest.TestCase):
             [
                 {
                     "name": "monitor",
-                    "valueSchema": monitor_snapshot_schema_dict(),
+                    "payload": {"kind": "json", "valueSchema": monitor_snapshot_schema_dict()},
                     "definitionProtected": True,
                     "showOnNode": True,
                     "description": "Unified runtime monitor snapshots (health/resource/perf/error).",
@@ -66,7 +66,7 @@ class MonitorSchemaTests(unittest.TestCase):
             [
                 {
                     "name": "monitor",
-                    "valueSchema": monitor_snapshot_schema_dict(),
+                    "payload": {"kind": "json", "valueSchema": monitor_snapshot_schema_dict()},
                     "definitionProtected": True,
                     "showOnNode": True,
                     "description": "Unified runtime monitor snapshots (health/resource/perf/error).",
@@ -88,7 +88,7 @@ class MonitorSchemaTests(unittest.TestCase):
             [
                 {
                     "name": "monitor",
-                    "valueSchema": monitor_snapshot_schema_dict(),
+                    "payload": {"kind": "json", "valueSchema": monitor_snapshot_schema_dict()},
                     "definitionProtected": False,
                     "showOnNode": True,
                     "description": "Unified runtime monitor snapshots (health/resource/perf/error).",

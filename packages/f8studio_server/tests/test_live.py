@@ -65,3 +65,22 @@ def test_runtime_state_live_mapping_uses_logical_studio_identity() -> None:
         hub.unsubscribe(subscription)
 
     asyncio.run(scenario())
+
+
+def test_presentation_snapshot_uses_live_authority_and_preserves_extensions() -> None:
+    from f8studio_server.events import EventJournal
+    from f8studio_server.studio_runtime.presentation import EventPresentationOutlet
+
+    async def scenario() -> None:
+        events = EventJournal(server_epoch="epoch")
+        outlet = EventPresentationOutlet(events)
+        outlet.emit("node", "viz.text.update", {"value": "latest"})
+        outlet.emit("extension", "custom.append", {"value": "event"})
+        assert {item.node_id for item in outlet.snapshot()} == {"node", "extension"}
+        events.live.delete_prefix("presentation/node/")
+        assert [item.node_id for item in outlet.snapshot()] == ["extension"]
+        outlet.emit("extension", "custom.detach", {})
+        assert outlet.snapshot() == ()
+        await outlet.close()
+
+    asyncio.run(scenario())

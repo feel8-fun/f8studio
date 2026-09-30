@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.codec import parse_number
 import time
@@ -219,11 +220,11 @@ SequencePlayerRuntimeNode.SPEC = F8OperatorSpec(
     tags=["signal", "sequence", "pattern", "step", "player", "lovense"],
     dataInPorts=[],
     dataOutPorts=[
-        F8DataPortSpec(name="value", description="Current step value.", valueSchema=number_schema()),
-        F8DataPortSpec(name="index", description="Current 0-based step index.", valueSchema=integer_schema()),
-        F8DataPortSpec(name="active", description="Whether still playing.", valueSchema=boolean_schema()),
-        F8DataPortSpec(name="done", description="Whether playback ended.", valueSchema=boolean_schema()),
-        F8DataPortSpec(name="elapsedSec", description="Elapsed seconds since start.", valueSchema=number_schema()),
+        F8DataPortSpec(name="value", description="Current step value.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema())),
+        F8DataPortSpec(name="index", description="Current 0-based step index.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=integer_schema())),
+        F8DataPortSpec(name="active", description="Whether still playing.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=boolean_schema())),
+        F8DataPortSpec(name="done", description="Whether playback ended.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=boolean_schema())),
+        F8DataPortSpec(name="elapsedSec", description="Elapsed seconds since start.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema())),
     ],
     stateFields=[
         F8StateSpec(

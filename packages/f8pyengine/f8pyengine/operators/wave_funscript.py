@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 import json
 import logging
@@ -564,7 +565,7 @@ WaveFunscriptRuntimeNode.SPEC = F8OperatorSpec(
         F8DataPortSpec(
             name="t",
             description="Scalar time input in seconds. Runtime evaluation uses `t % maxT`.",
-            valueSchema=number_schema(),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()),
             definitionProtected=True,
             showOnNode=True,
         ),
@@ -573,7 +574,7 @@ WaveFunscriptRuntimeNode.SPEC = F8OperatorSpec(
         F8DataPortSpec(
             name="value",
             description="Normalized output from the selected funscript axis using the chosen interpolation mode.",
-            valueSchema=number_schema(),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()),
             definitionProtected=True,
             showOnNode=True,
         ),

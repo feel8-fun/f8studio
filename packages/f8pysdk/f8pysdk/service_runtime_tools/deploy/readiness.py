@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ...codec import decode_obj
-from ...runtime_transport import RuntimeTransport
+from ...runtime_transport import RuntimeTransport, SubscriptionHandle
 from ...time_utils import now_ms
 from ...f8_naming import ensure_token
 
@@ -70,23 +70,9 @@ async def _retained_payload_or_empty(tr: RuntimeTransport, key: str, *, context:
     return _decode_payload_or_empty(raw)
 
 
-async def _stop_retained_watch(watch: Any, *, key: str, context: str) -> None:
-    if isinstance(watch, tuple):
-        watcher, task = watch
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-        except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as exc:
-            log.error("%s watch task stop failed key=%s", context, key, exc_info=exc)
-        try:
-            await watcher.stop()
-        except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as exc:
-            log.error("%s watcher stop failed key=%s", context, key, exc_info=exc)
-        return
+async def _stop_retained_watch(watch: SubscriptionHandle, *, key: str, context: str) -> None:
     try:
-        await watch.stop()
+        await watch.unsubscribe()
     except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as exc:
         log.error("%s watch stop failed key=%s", context, key, exc_info=exc)
 

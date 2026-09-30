@@ -265,7 +265,7 @@ export function SchemaEditor({ node, busy, commit }: {
     </SchemaSection>
     {(['dataInPorts', 'dataOutPorts'] as const).map((key) => <SchemaSection key={key} title={key === 'dataInPorts' ? 'Data inputs' : 'Data outputs'} policy={policy(key)} busy={busy} onAdd={() => {
       const ports = draft[key] ?? [];
-      setData(key, [...ports, { name: nextName(ports.map((port) => port.name), 'data'), valueSchema: { type: 'any' }, definitionProtected: false, showOnNode: true }]);
+      setData(key, [...ports, { name: nextName(ports.map((port) => port.name), 'data'), payload: { kind: 'json', valueSchema: { type: 'any' } }, definitionProtected: false, showOnNode: true }]);
     }}>
       {(draft[key] ?? []).map((port, index) => <div className="schema-item" key={index}>
         <div className="schema-item-main">
@@ -274,17 +274,17 @@ export function SchemaEditor({ node, busy, commit }: {
               trackRename('data', key === 'dataInPorts' ? 'input' : 'output', port.name, event.target.value);
               setData(key, (draft[key] ?? []).map((item, i) => i === index ? { ...item, name: event.target.value } : item));
             }} /> : <span className="schema-item-name">{port.name}</span>}
-          {!allowsEdit(key) ? <span className="schema-kind">{(port.payload?.kind ?? port.payloadKind ?? 'json') === 'json' ? valueType(port.valueSchema) : port.payload?.kind ?? port.payloadKind}</span>
-            : (port.payload?.kind ?? port.payloadKind ?? 'json') === 'json'
-            ? <select className="schema-type-select" aria-label={`${port.name} value type`} value={valueType(port.valueSchema)} disabled={!canEdit(key)}
+          {!allowsEdit(key) ? <span className="schema-kind">{(port.payload.kind) === 'json' ? valueType(port.payload.valueSchema ?? { type: 'any' }) : port.payload.kind}</span>
+            : (port.payload.kind) === 'json'
+            ? <select className="schema-type-select" aria-label={`${port.name} value type`} value={valueType(port.payload.valueSchema ?? { type: 'any' })} disabled={!canEdit(key)}
               onChange={(event) => setData(key, (draft[key] ?? []).map((item, i) => {
                 if (i !== index) return item;
                 const valueSchema: ValueSchema = schemaForType(event.target.value);
-                return { ...item, valueSchema, ...(item.payload === undefined ? {} : { payload: { ...item.payload, valueSchema } }) };
+                return { ...item, payload: { ...item.payload, valueSchema } };
               }))}>
               {['any', 'string', 'number', 'integer', 'boolean'].map((type) => <option key={type}>{type}</option>)}
             </select>
-            : <span className="schema-kind">{port.payload?.kind ?? port.payloadKind}</span>}
+            : <span className="schema-kind">{port.payload.kind}</span>}
           <VisibilityButton visible={port.showOnNode !== false} busy={busy} onChange={(visible) =>
             setData(key, (draft[key] ?? []).map((item, i) => i === index ? { ...item, showOnNode: visible } : item))} />
           <button type="button" title={`Settings for ${port.name}`} aria-label={`Settings for ${port.name}`} onClick={() => setActiveSettings(`${key}:${index}`)}><Settings2 size={14} /></button>
@@ -297,14 +297,14 @@ export function SchemaEditor({ node, busy, commit }: {
               trackRename('data', key === 'dataInPorts' ? 'input' : 'output', port.name, event.target.value);
               setData(key, (draft[key] ?? []).map((item, i) => i === index ? { ...item, name: event.target.value } : item));
             }} /> : <output>{port.name}</output>}</label>
-          <label className="schema-detail-field">Type{allowsEdit(key) && (port.payload?.kind ?? port.payloadKind ?? 'json') === 'json' ? <select aria-label={`${port.name} value type`} value={valueType(port.valueSchema)} disabled={!canEdit(key)}
+          <label className="schema-detail-field">Type{allowsEdit(key) && (port.payload.kind) === 'json' ? <select aria-label={`${port.name} value type`} value={valueType(port.payload.valueSchema ?? { type: 'any' })} disabled={!canEdit(key)}
             onChange={(event) => setData(key, (draft[key] ?? []).map((item, i) => {
               if (i !== index) return item;
               const valueSchema: ValueSchema = schemaForType(event.target.value);
-              return { ...item, valueSchema, ...(item.payload === undefined ? {} : { payload: { ...item.payload, valueSchema } }) };
+              return { ...item, payload: { ...item.payload, valueSchema } };
             }))}>
             {['any', 'string', 'number', 'integer', 'boolean'].map((type) => <option key={type}>{type}</option>)}
-          </select> : <output>{(port.payload?.kind ?? port.payloadKind ?? 'json') === 'json' ? valueType(port.valueSchema) : port.payload?.kind ?? port.payloadKind}</output>}</label>
+          </select> : <output>{(port.payload.kind) === 'json' ? valueType(port.payload.valueSchema ?? { type: 'any' }) : port.payload.kind}</output>}</label>
           <label className="schema-dialog-check"><input type="checkbox" checked={port.showOnNode !== false} disabled={busy}
             onChange={(event) => setData(key, (draft[key] ?? []).map((item, i) => i === index ? { ...item, showOnNode: event.target.checked } : item))} />Show on node</label>
           <label className="schema-detail-field">Description<input aria-label={`${port.name} description`} value={typeof port.description === 'string' ? port.description : ''} disabled={busy}

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from typing import Any
 
@@ -502,7 +503,7 @@ def _register_classifier(registry: Registry) -> None:
                 F8DataPortSpec(
                     name="classifications",
                     description="Classification output in schema f8visionClassifications/1.",
-                    valueSchema=_classifications_payload_schema(),
+                    payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=_classifications_payload_schema()),
                 ),
             ],
         ),
@@ -543,7 +544,7 @@ def _register_detector(registry: Registry) -> None:
                 F8DataPortSpec(
                     name="detections",
                     description="Detection output in schema f8visionDetections/1.",
-                    valueSchema=_detections_payload_schema(),
+                    payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=_detections_payload_schema()),
                 ),
             ],
         ),
@@ -584,7 +585,7 @@ def _register_human_detector(registry: Registry) -> None:
                 F8DataPortSpec(
                     name="detections",
                     description="Detection output in schema f8visionDetections/1.",
-                    valueSchema=_detections_payload_schema(),
+                    payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=_detections_payload_schema()),
                 ),
             ],
         ),
@@ -644,7 +645,7 @@ def _register_detection_sorter(registry: Registry) -> None:
                 F8DataPortSpec(
                     name="detections",
                     description="Detection input in schema f8visionDetections/1.",
-                    valueSchema=_detections_payload_schema(),
+                    payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=_detections_payload_schema()),
                     definitionProtected=True,
                 ),
                 video_frame_port(
@@ -657,7 +658,7 @@ def _register_detection_sorter(registry: Registry) -> None:
                 F8DataPortSpec(
                     name="detections",
                     description="Sorted detections in schema f8visionDetections/1.",
-                    valueSchema=_detections_payload_schema(),
+                    payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=_detections_payload_schema()),
                     definitionProtected=True,
                 ),
             ],
@@ -692,7 +693,7 @@ def _register_tcn_wave(registry: Registry) -> None:
                 F8DataPortSpec(
                     name="predictedChange",
                     description="Temporal model output value per frame.",
-                    valueSchema=number_schema(),
+                    payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()),
                 ),
             ],
         ),

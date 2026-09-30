@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 import asyncio
 import uuid
@@ -98,8 +99,8 @@ def _runtime_node(
     data_in: list[str] | None = None,
     data_out: list[str] | None = None,
 ) -> F8RuntimeNode:
-    data_in_specs = [F8DataPortSpec(name=str(name), valueSchema=string_schema()) for name in list(data_in or [])]
-    data_out_specs = [F8DataPortSpec(name=str(name), valueSchema=string_schema()) for name in list(data_out or [])]
+    data_in_specs = [F8DataPortSpec(name=str(name), payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=string_schema())) for name in list(data_in or [])]
+    data_out_specs = [F8DataPortSpec(name=str(name), payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=string_schema())) for name in list(data_out or [])]
     return F8RuntimeNode(
         nodeId=node_id,
         serviceId=service_id,

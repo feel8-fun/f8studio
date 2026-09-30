@@ -834,25 +834,25 @@ json TemplateMatchService::describe() {
   service["commands"] = json::array({
       json{{"name", "captureTemplateFrame"},
            {"description", "Capture current video frame as an encoded image (base64)."},
-           {"required", true},
+           {"definitionProtected", true},
            {"showOnNode", true},
            {"params", json::array({
-                          json{{"name", "format"}, {"valueSchema", schema_string()}, {"required", true}},
-                          json{{"name", "quality"}, {"valueSchema", schema_integer()}, {"required", true}},
-                          json{{"name", "maxBytes"}, {"valueSchema", schema_integer()}, {"required", true}},
-                          json{{"name", "maxWidth"}, {"valueSchema", schema_integer()}, {"required", true}},
-                          json{{"name", "maxHeight"}, {"valueSchema", schema_integer()}, {"required", true}},
+                          json{{"name", "format"}, {"valueSchema", schema_string()}, {"valueRequired", true}},
+                          json{{"name", "quality"}, {"valueSchema", schema_integer()}, {"valueRequired", true}},
+                          json{{"name", "maxBytes"}, {"valueSchema", schema_integer()}, {"valueRequired", true}},
+                          json{{"name", "maxWidth"}, {"valueSchema", schema_integer()}, {"valueRequired", true}},
+                          json{{"name", "maxHeight"}, {"valueSchema", schema_integer()}, {"valueRequired", true}},
                       })}},
-      json{{"name", "ping"}, {"description", "Health check."}, {"required", true}, {"showOnNode", false}},
+      json{{"name", "ping"}, {"description", "Health check."}, {"definitionProtected", true}, {"showOnNode", false}},
   });
   service["dataInPorts"] = json::array({
       video_frame_port("video", "Input video frame stream."),
   });
   service["dataOutPorts"] = json::array({
       json{{"name", "detections"},
-           {"valueSchema", detections_schema},
+           {"payload", {{"kind", "json"}, {"valueSchema", detections_schema}}},
            {"description", "Detection output in schema f8visionDetections/1 (single best match as 0/1 detection)."},
-           {"required", true},
+           {"definitionProtected", true},
            {"showOnNode", true}},
   });
 

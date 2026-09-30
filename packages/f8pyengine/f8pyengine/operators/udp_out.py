@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.specs import exec_port_specs
 
@@ -282,11 +283,11 @@ UdpOutRuntimeNode.SPEC = F8OperatorSpec(
     description="Sends incoming values to a UDP host/port.",
     tags=["io", "udp", "network", "socket", "tcode"],
     execInPorts=exec_port_specs(["exec"]),
-    dataInPorts=[F8DataPortSpec(name="value", description="Value to send.", valueSchema=any_schema())],
+    dataInPorts=[F8DataPortSpec(name="value", description="Value to send.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()))],
     dataOutPorts=[
-        F8DataPortSpec(name="isOpen", description="Whether the UDP socket is open.", valueSchema=boolean_schema(default=False)),
-        F8DataPortSpec(name="sentBytes", description="Bytes sent by last exec.", valueSchema=integer_schema(default=0, minimum=0)),
-        F8DataPortSpec(name="error", description="Last error (if any).", valueSchema=string_schema(default="")),
+        F8DataPortSpec(name="isOpen", description="Whether the UDP socket is open.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=boolean_schema(default=False))),
+        F8DataPortSpec(name="sentBytes", description="Bytes sent by last exec.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=integer_schema(default=0, minimum=0))),
+        F8DataPortSpec(name="error", description="Last error (if any).", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=string_schema(default=""))),
     ],
     stateFields=[
         F8StateSpec(

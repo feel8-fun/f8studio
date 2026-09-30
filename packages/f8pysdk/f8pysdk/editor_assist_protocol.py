@@ -15,5 +15,5 @@ def validate_editor_assist_spec(payload: F8EditorAssistSpec | dict[str, Any]) ->
 
 def dump_editor_assist_spec(spec: F8EditorAssistSpec) -> dict[str, Any]:
     """Dump editor-assist payload in JSON-compatible form."""
-    return dump_json(spec, mode="json")
+    return dump_json(spec)
 

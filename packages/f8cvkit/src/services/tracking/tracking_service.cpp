@@ -1438,25 +1438,25 @@ json TrackingService::describe() {
   service["commands"] = json::array({
       json{{"name", "stopTracking"},
            {"description", "Stop current tracking and return to waiting for initBox."},
-           {"required", true},
+           {"definitionProtected", true},
            {"showOnNode", true}},
   });
   service["dataInPorts"] = json::array({
       video_frame_port("video", "Input video frame stream."),
       json{
           {"name", "initBox"},
-          {"valueSchema", init_box_schema},
+          {"payload", {{"kind", "json"}, {"valueSchema", init_box_schema}}},
           {"description",
            "Init payload (single bbox or nested detection tree). Recursively extracts bbox candidates and uses the one "
            "selected by initSelect."},
-          {"required", true},
+          {"definitionProtected", true},
           {"showOnNode", true}},
   });
   service["dataOutPorts"] = json::array({
       json{{"name", "tracking"},
-           {"valueSchema", tracking_schema},
+           {"payload", {{"kind", "json"}, {"valueSchema", tracking_schema}}},
            {"description", "Tracking output stream."},
-           {"required", true},
+           {"definitionProtected", true},
            {"showOnNode", true}},
   });
 

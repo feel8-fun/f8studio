@@ -1,3 +1,4 @@
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 import asyncio
 from typing import Any
 
@@ -274,12 +275,12 @@ def test_data_expression_dynamic_outputs_and_context_cache() -> None:
             stateFields=list(DataExprRuntimeNode.SPEC.stateFields),
             stateValues={"code": "{'sum': a + b, 'product': a * b}", "unpackDictOutputs": True},
             dataInPorts=[
-                F8DataPortSpec(name="a", valueSchema=any_schema(), definitionProtected=False),
-                F8DataPortSpec(name="b", valueSchema=any_schema(), definitionProtected=False),
+                F8DataPortSpec(name="a", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
+                F8DataPortSpec(name="b", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
             ],
             dataOutPorts=[
-                F8DataPortSpec(name="sum", valueSchema=any_schema(), definitionProtected=False),
-                F8DataPortSpec(name="product", valueSchema=any_schema(), definitionProtected=False),
+                F8DataPortSpec(name="sum", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
+                F8DataPortSpec(name="product", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False),
             ],
         )
         await bus.set_rungraph(F8RuntimeGraph(graphId="expr", revision="r1", nodes=[node_spec], edges=[]))
@@ -309,8 +310,8 @@ def test_data_expression_reports_unavailable_numpy() -> None:
             operatorClass=DataExprRuntimeNode.SPEC.operatorClass,
             stateFields=list(DataExprRuntimeNode.SPEC.stateFields),
             stateValues={"code": "np.mean(x)", "allowNumpy": True},
-            dataInPorts=[F8DataPortSpec(name="x", valueSchema=any_schema(), definitionProtected=False)],
-            dataOutPorts=[F8DataPortSpec(name="out", valueSchema=any_schema(), definitionProtected=False)],
+            dataInPorts=[F8DataPortSpec(name="x", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False)],
+            dataOutPorts=[F8DataPortSpec(name="out", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()), definitionProtected=False)],
         )
         await bus.set_rungraph(F8RuntimeGraph(graphId="expr_numpy", revision="r1", nodes=[node_spec], edges=[]))
         runtime = bus.get_node("expr_numpy")
@@ -380,7 +381,7 @@ def test_track_visualization_normalizes_detection_history() -> None:
                 serviceId="studio",
                 serviceClass=SERVICE_CLASS,
                 operatorClass=VizTrackRuntimeNode.SPEC.operatorClass,
-                dataInPorts=[F8DataPortSpec(name="detections", valueSchema=any_schema())],
+                dataInPorts=[F8DataPortSpec(name="detections", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()))],
             ),
             initial_state={"throttleMs": 0},
         )
@@ -438,8 +439,8 @@ def test_three_d_visualization_aggregates_ports_and_single_bones() -> None:
                 serviceClass=SERVICE_CLASS,
                 operatorClass=VizThreeDRuntimeNode.SPEC.operatorClass,
                 dataInPorts=[
-                    F8DataPortSpec(name="camA", valueSchema=any_schema()),
-                    F8DataPortSpec(name="camB", valueSchema=any_schema()),
+                    F8DataPortSpec(name="camA", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema())),
+                    F8DataPortSpec(name="camB", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema())),
                 ],
             ),
             initial_state={"throttleMs": 0},
@@ -481,7 +482,7 @@ def test_three_d_visualization_uses_parent_links_from_file_skeletons() -> None:
             node=F8RuntimeNode(
                 nodeId="three1", serviceId="studio", serviceClass=SERVICE_CLASS,
                 operatorClass=VizThreeDRuntimeNode.SPEC.operatorClass,
-                dataInPorts=[F8DataPortSpec(name="skeletons", valueSchema=any_schema())],
+                dataInPorts=[F8DataPortSpec(name="skeletons", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()))],
             ),
             initial_state={"throttleMs": 0},
         )

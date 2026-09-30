@@ -55,7 +55,6 @@ function ProviderForm({ settings, onSaved, onDeleted }: {
       const next = await saveAgentProviderSettings(settings.providerId, {
         model: model.trim(), endpoint: endpoint.trim(), apiKey: apiKey.trim() || undefined, clearApiKey,
         ...(settings.custom ? { displayName: name.trim() } : {}), models: savedModels, modelCapabilities,
-        supportsImage: false,
       });
       setModel(next.model); setModels(next.models ?? (next.model ? [next.model] : []));
       setModelCapabilities(next.modelCapabilities ?? []);
@@ -118,7 +117,7 @@ function NewConnectionForm({ onCreated }: { readonly onCreated: (settings: Agent
     try {
       const created = await createAgentConnection({
         displayName: name.trim(), protocol, endpoint: endpoint.trim(), apiKey: apiKey.trim(),
-        model: model.trim(), models: [...new Set([...models, model.trim()])], supportsImage: false, modelCapabilities,
+        model: model.trim(), models: [...new Set([...models, model.trim()])], modelCapabilities,
       });
       setApiKey('');
       onCreated(created);

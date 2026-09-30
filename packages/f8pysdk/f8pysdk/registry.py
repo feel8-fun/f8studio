@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib
 from collections.abc import Callable
 from typing import Any, TypeAlias, Protocol, cast
 
@@ -175,21 +174,6 @@ class RuntimeNodeRegistry:
 
         registry[normalized_operator_class] = factory
 
-    def register(
-        self,
-        service_class: str,
-        operator_class: str,
-        factory: OperatorFactory,
-        *,
-        overwrite: bool = False,
-    ) -> None:
-        self.register_operator_factory(
-            service_class,
-            operator_class,
-            factory,
-            overwrite=overwrite,
-        )
-
     def register_service_factory(
         self,
         service_class: str,
@@ -285,21 +269,6 @@ class RuntimeNodeRegistry:
             initial_state=dict(initial_state or {}),
         )
 
-    def create(
-        self,
-        *,
-        node_id: str,
-        node: F8RuntimeNode,
-        initial_state: dict[str, Any] | None = None,
-    ) -> RuntimeNode:
-        return self.create_runtime_node(node_id=node_id, node=node, initial_state=initial_state)
-
-    def load_modules(self, modules: list[str]) -> None:
-        for module_name in modules:
-            normalized_name = str(module_name or "").strip()
-            if not normalized_name:
-                continue
-            importlib.import_module(normalized_name)
 
 
 class _ServiceConstructor(Protocol):
@@ -493,10 +462,6 @@ class Registry:
             node=node,
             initial_state=initial_state,
         )
-
-    def load_modules(self, modules: list[str]) -> "Registry":
-        self._runtime_registry.load_modules(modules)
-        return self
 
 
 def create_runtime_node_registry() -> RuntimeNodeRegistry:

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.specs import exec_port_specs
 
@@ -131,7 +132,7 @@ SilenceDetectorRuntimeNode.SPEC = F8OperatorSpec(
     execInPorts=exec_port_specs(["exec"]),
     execOutPorts=exec_port_specs(["exec"]),
     dataInPorts=[
-        F8DataPortSpec(name="value", description="Signal to analyze", valueSchema=number_schema()),
+        F8DataPortSpec(name="value", description="Signal to analyze", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema())),
     ],
     dataOutPorts=[],
     stateFields=[

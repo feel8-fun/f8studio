@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 import asyncio
 import logging
@@ -170,8 +171,8 @@ FbxSkeletonPlayerRuntimeNode.SPEC = F8OperatorSpec(
     label="FBX Skeleton Player",
     description="Play an animated FBX armature as a skeleton stream using Blender for import.",
     tags=["skeleton", "fbx", "animation", "source"],
-    dataInPorts=[F8DataPortSpec(name="timeSec", description="Playback time in seconds.", valueSchema=number_schema())],
-    dataOutPorts=[F8DataPortSpec(name="skeletons", description="Current animated skeleton pose.", valueSchema=any_schema())],
+    dataInPorts=[F8DataPortSpec(name="timeSec", description="Playback time in seconds.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema()))],
+    dataOutPorts=[F8DataPortSpec(name="skeletons", description="Current animated skeleton pose.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema()))],
     stateFields=[
         F8StateSpec(name="path", label="FBX Path", valueSchema=string_schema(default=""), access=F8StateAccess.rw, valueRequired=True, showOnNode=True),
         F8StateSpec(name="blenderPath", label="Blender Path", valueSchema=string_schema(default=""), access=F8StateAccess.rw, valueRequired=True),

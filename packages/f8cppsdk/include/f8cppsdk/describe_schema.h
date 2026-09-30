@@ -22,9 +22,7 @@ nlohmann::json schema_object(
     const nlohmann::json& required = nlohmann::json::array());
 nlohmann::json schema_array(const nlohmann::json& item_schema);
 nlohmann::json schema_video_frame_metadata();
-nlohmann::json schema_video_frame();
 nlohmann::json schema_audio_chunk_metadata();
-nlohmann::json schema_audio_chunk();
 nlohmann::json data_stream(
     std::string delivery = "fifo",
     std::string reliability = "best_effort",

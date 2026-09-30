@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.specs import exec_port_specs
 
@@ -547,7 +548,7 @@ class HandyOutRuntimeNode(OperatorNode):
         except TimeoutError as exc:
             return _HttpResult(status_code=0, headers={}, json_body=None, error_message=f"TimeoutError: {exc}")
         except URLError as exc:
-            reason = getattr(exc, "reason", exc)
+            reason = exc.reason
             return _HttpResult(status_code=0, headers={}, json_body=None, error_message=f"URLError: {reason}")
         except ValueError as exc:
             return _HttpResult(status_code=0, headers={}, json_body=None, error_message=f"ValueError: {exc}")
@@ -616,32 +617,32 @@ HandyOutRuntimeNode.SPEC = F8OperatorSpec(
         F8DataPortSpec(
             name="value",
             description="Normalized position input (0..1).",
-            valueSchema=number_schema(minimum=0.0, maximum=1.0),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema(minimum=0.0, maximum=1.0)),
         ),
         F8DataPortSpec(
             name="durationMs",
             description="Optional duration override for /hdsp/xpt.",
-            valueSchema=number_schema(default=100, minimum=0),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema(default=100, minimum=0)),
             definitionProtected=False,
         ),
         F8DataPortSpec(
             name="immediateResponse",
             description="Optional immediate response override for /hdsp/xpt.",
-            valueSchema=boolean_schema(default=False),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=boolean_schema(default=False)),
             definitionProtected=False,
         ),
         F8DataPortSpec(
             name="stopOnTarget",
             description="Optional stopOnTarget override for /hdsp/xpt.",
-            valueSchema=boolean_schema(default=False),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=boolean_schema(default=False)),
             definitionProtected=False,
         ),
     ],
     dataOutPorts=[
-        F8DataPortSpec(name="sentPosition", description="Last sent position percent (0..100).", valueSchema=number_schema(default=0.0)),
-        F8DataPortSpec(name="httpStatus", description="Last HTTP status code.", valueSchema=integer_schema(default=0, minimum=0)),
-        F8DataPortSpec(name="result", description="Last RPC result code.", valueSchema=number_schema(default=0.0)),
-        F8DataPortSpec(name="error", description="Last runtime error.", valueSchema=string_schema(default="")),
+        F8DataPortSpec(name="sentPosition", description="Last sent position percent (0..100).", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema(default=0.0))),
+        F8DataPortSpec(name="httpStatus", description="Last HTTP status code.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=integer_schema(default=0, minimum=0))),
+        F8DataPortSpec(name="result", description="Last RPC result code.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema(default=0.0))),
+        F8DataPortSpec(name="error", description="Last runtime error.", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=string_schema(default=""))),
     ],
     stateFields=[
         F8StateSpec(

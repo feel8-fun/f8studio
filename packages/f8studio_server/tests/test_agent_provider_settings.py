@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import asyncio
 from pathlib import Path
 
@@ -172,53 +173,47 @@ def test_systemone_connection_and_model_capabilities_are_persisted(tmp_path: Pat
     assert AgentProviderRegistry(tmp_path / "providers.json").settings()[0].model_capabilities[0].thinking is False
 
 
-def test_legacy_local_image_setting_survives_model_edit(tmp_path: Path) -> None:
+def test_model_capability_survives_default_model_edit(tmp_path: Path) -> None:
     store = ProviderSettingsStore(tmp_path / "providers.json")
     store.update("systemone_local", UpdateProviderSettings(
-        model="vision-a", endpoint="http://localhost:8001/v1", supports_image=True,
+        model="vision-a", endpoint="http://localhost:8001/v1",
+        model_capabilities=(ModelCapabilities(model_id="vision-a", image_input=True, image_source="manual"),),
     ))
-    store.update("systemone_local", UpdateProviderSettings(
-        model="vision-b", endpoint="http://localhost:8001/v1",
-    ))
-    assert store.get("systemone_local").supports_image
-
-
-def test_old_custom_image_flag_is_limited_to_its_default_model_and_marked_legacy(tmp_path: Path) -> None:
-    store = ProviderSettingsStore(tmp_path / "providers.json")
-    connection = store.create(CreateProviderConnection(
-        display_name="Old host", protocol="openai_chat", endpoint="https://example.com/v1",
-        model="text-model", supports_image=True,
-    ))
-    assert connection.supports_image
-    assert connection.model_capabilities[0].source == "legacy"
-    assert AgentProviderRegistry(tmp_path / "providers.json").supports_image(connection.provider_id, "text-model")
-    assert not AgentProviderRegistry(tmp_path / "providers.json").supports_image(connection.provider_id, "other-model")
-    changed = store.update(connection.provider_id, UpdateProviderSettings(
-        display_name="Old host", endpoint="https://example.com/v1", model="other-model",
-        models=("text-model", "other-model"), model_capabilities=connection.model_capabilities,
+    changed = store.update("systemone_local", UpdateProviderSettings(
+        model="vision-b", models=("vision-a", "vision-b"), endpoint="http://localhost:8001/v1",
     ))
     assert not changed.supports_image
-    assert changed.model_capabilities[0].model_id == "text-model"
+    assert changed.model_capabilities[0].model_id == "vision-a"
+    assert changed.model_capabilities[0].image_input is True
+    assert "supportsImage" not in json.loads((tmp_path / "providers.json").read_text())["systemone_local"]
 
 
-def test_legacy_image_flag_migration_keeps_thinking_and_can_be_cleared(tmp_path: Path) -> None:
-    store = ProviderSettingsStore(tmp_path / "providers.json")
-    connection = store.create(CreateProviderConnection(
-        display_name="Old host", protocol="openai_chat", endpoint="https://example.com/v1",
-        model="model-a", models=("model-a",), supports_image=True,
-        model_capabilities=(ModelCapabilities(model_id="model-a", thinking=True),),
-    ))
-    legacy = connection.model_capabilities[0]
-    assert legacy.image_input is True and legacy.thinking is True
+def test_offline_image_flag_migration_preserves_thinking_and_model_scope(tmp_path: Path) -> None:
+    from scripts.migrate_authoring_contracts import migrate_providers
+    path = tmp_path / "providers.json"
+    saved = {"connection_old": {
+        "displayName": "Old host", "protocol": "openai_chat", "endpoint": "https://example.com/v1",
+        "model": "model-a", "models": ["model-a", "model-b"], "supportsImage": True,
+        "modelCapabilities": [{"modelId": "model-a", "thinking": True}],
+    }}
+    migrate_providers(saved)
+    path.write_text(json.dumps(saved))
+    store = ProviderSettingsStore(path)
+    connection = store.view("connection_old")
+    capability = connection.model_capabilities[0]
+    assert capability.image_input is True and capability.thinking is True
+    assert capability.image_source == "legacy" and capability.thinking_source == "catalog"
+    registry = AgentProviderRegistry(path)
+    assert registry.supports_image(connection.provider_id, "model-a")
+    assert not registry.supports_image(connection.provider_id, "model-b")
     cleared = store.update(connection.provider_id, UpdateProviderSettings(
         display_name="Old host", endpoint="https://example.com/v1", model="model-a",
-        models=("model-a",), supports_image=False,
-        model_capabilities=(ModelCapabilities(
+        models=("model-a", "model-b"), model_capabilities=(ModelCapabilities(
             model_id="model-a", image_input=None, thinking=True, image_source="catalog"),),
     ))
     assert cleared.model_capabilities[0].image_input is None
     assert cleared.model_capabilities[0].thinking is True
-    assert not cleared.supports_image
+    assert not ProviderSettingsStore(path).view(connection.provider_id).supports_image
 
 
 def test_probe_reads_only_explicit_per_model_capabilities() -> None:
@@ -348,7 +343,8 @@ def test_default_model_capability_does_not_require_duplicate_model_list(tmp_path
 def test_legacy_decision_protocol_and_images_are_model_specific(tmp_path: Path) -> None:
     registry = AgentProviderRegistry(tmp_path / "providers.json")
     connection = registry.update_settings("systemone_local", UpdateProviderSettings(
-        model="vision", endpoint="http://localhost:8001/v1", supports_image=True,
+        model="vision", endpoint="http://localhost:8001/v1",
+        model_capabilities=(ModelCapabilities(model_id="vision", image_input=True),),
         models=("vision", "unknown"),
     ))
     assert connection.protocol == "systemone"

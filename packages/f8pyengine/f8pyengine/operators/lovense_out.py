@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.specs import exec_port_specs
 
@@ -723,7 +724,7 @@ LovenseOutRuntimeNode.SPEC = F8OperatorSpec(
         F8DataPortSpec(
             name="position",
             description="Normalized position input (0..1). Sent on sendPositionCmd as Lovense Position command.",
-            valueSchema=number_schema(minimum=0.0, maximum=1.0),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema(minimum=0.0, maximum=1.0)),
             definitionProtected=True,
         ),
     ],

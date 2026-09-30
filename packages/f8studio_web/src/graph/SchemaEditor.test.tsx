@@ -79,7 +79,7 @@ test('edits data value type and command parameters through the form', () => {
     ...node,
     spec: {
       ...node.spec,
-      dataOutPorts: [{ name: 'result', valueSchema: { type: 'any' }, definitionProtected: false }],
+      dataOutPorts: [{ name: 'result', payload: { kind: 'json', valueSchema: { type: 'any' } }, definitionProtected: false }],
       commands: [{ name: 'Run', params: [] }],
       editPolicy: {
         dataOutPorts: { canEditExisting: true },
@@ -96,7 +96,7 @@ test('edits data value type and command parameters through the form', () => {
   fireEvent.click(screen.getByRole('button', { name: 'Apply changes' }));
   expect(commit).toHaveBeenCalledWith([expect.objectContaining({
     spec: expect.objectContaining({
-      dataOutPorts: [expect.objectContaining({ valueSchema: { type: 'number' } })],
+      dataOutPorts: [expect.objectContaining({ payload: { kind: 'json', valueSchema: { type: 'number' } } })],
       commands: [expect.objectContaining({ params: [expect.objectContaining({ name: 'speed' })] })],
     }),
   })]);
@@ -148,7 +148,7 @@ test('keeps data and exec details in per-item settings', () => {
     ...node,
     spec: {
       ...node.spec,
-      dataOutPorts: [{ name: 'result', valueSchema: { type: 'string' } }],
+      dataOutPorts: [{ name: 'result', payload: { kind: 'json', valueSchema: { type: 'string' } } }],
       execInPorts: [{ name: 'run' }],
     },
   };
@@ -195,7 +195,7 @@ test('edits data, exec and command properties without returning to the item list
     ...node,
     spec: {
       ...node.spec,
-      dataOutPorts: [{ name: 'result', valueSchema: { type: 'string' } }],
+      dataOutPorts: [{ name: 'result', payload: { kind: 'json', valueSchema: { type: 'string' } } }],
       execInPorts: [{ name: 'run' }],
       commands: [{ name: 'Start', showOnNode: false }],
       editPolicy: {
@@ -228,7 +228,7 @@ test('edits data, exec and command properties without returning to the item list
 
   expect(commit).toHaveBeenCalledWith([expect.objectContaining({
     spec: expect.objectContaining({
-      dataOutPorts: [expect.objectContaining({ name: 'output', valueSchema: { type: 'number' }, showOnNode: false })],
+      dataOutPorts: [expect.objectContaining({ name: 'output', payload: { kind: 'json', valueSchema: { type: 'number' } }, showOnNode: false })],
       execInPorts: [expect.objectContaining({ name: 'execute' })],
       commands: [expect.objectContaining({ name: 'Launch', showOnNode: true })],
     }),

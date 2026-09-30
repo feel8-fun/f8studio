@@ -7,10 +7,10 @@ from f8pysdk.specs import F8RuntimeNode
 from ..identifiers import SERVICE_CLASS
 from ..presentation import PresentationOutlet
 
-from .viz_text import VizTextRuntimeNode, register_operator as register_viz_text
-from .viz_wave import VizWaveRuntimeNode, register_operator as register_viz_wave
-from .viz_video import VizVideoRuntimeNode, register_operator as register_viz_video
-from .viz_audio import VizAudioRuntimeNode, register_operator as register_viz_audio
+from .viz_text import VizTextRuntimeNode, register_spec as register_viz_text
+from .viz_wave import VizWaveRuntimeNode, register_spec as register_viz_wave
+from .viz_video import VizVideoRuntimeNode, register_spec as register_viz_video
+from .viz_audio import VizAudioRuntimeNode, register_spec as register_viz_audio
 from .control_panel import ControlPanelRuntimeNode, register_operator as register_control_panel
 from .backdrop import BackdropRuntimeNode, register_operator as register_backdrop
 from .note import NoteRuntimeNode, register_operator as register_note
@@ -18,9 +18,9 @@ from .patch_hub import PatchHubRuntimeNode, register_operator as register_patch_
 from .value_stepper import ValueStepperRuntimeNode, register_operator as register_value_stepper
 from .data_expr import DataExprRuntimeNode, register_operator as register_data_expr
 from .state_expr import StateExprRuntimeNode, register_operator as register_state_expr
-from .viz_track import VizTrackRuntimeNode, register_operator as register_viz_track
-from .viz_three_d import VizThreeDRuntimeNode, register_operator as register_viz_three_d
-from .viz_tcode import VizTCodeRuntimeNode, register_operator as register_viz_tcode
+from .viz_track import VizTrackRuntimeNode, register_spec as register_viz_track
+from .viz_three_d import VizThreeDRuntimeNode, register_spec as register_viz_three_d
+from .viz_tcode import VizTCodeRuntimeNode, register_spec as register_viz_tcode
 
 __all__ = [
     "VizTextRuntimeNode",
@@ -49,7 +49,7 @@ class _VizConstructor(Protocol):
         node_id: str,
         node: F8RuntimeNode,
         initial_state: dict[str, Any] | None = None,
-        presentation: PresentationOutlet | None = None,
+        presentation: PresentationOutlet,
     ) -> StudioVizRuntimeNodeBase: ...
 
 

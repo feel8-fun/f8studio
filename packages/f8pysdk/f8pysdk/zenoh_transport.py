@@ -97,9 +97,6 @@ class _ZenohSubscriptionHandle:
         except (*_ZENOH_LIFECYCLE_ERRORS, *_zenoh_error_types()) as exc:
             log.debug("zenoh undeclare subscription failed", exc_info=exc)
 
-    async def stop(self) -> None:
-        await self.unsubscribe()
-
 
 class _ZenohServeHandle(_ZenohSubscriptionHandle):
     pass
@@ -170,17 +167,8 @@ class ZenohTransport:
             config.insert_json5("connect/endpoints", json.dumps(list(self._config.connect)))
         if self._config.listen:
             config.insert_json5("listen/endpoints", json.dumps(list(self._config.listen)))
-        apply_zenoh_shared_memory_config(
-            config,
-            zenoh_module=zenoh_module,
-            shm_pool_bytes=self._config.shm_pool_bytes,
-            log_context=f"runtime:{self._config.service_id}",
-        )
-        apply_zenoh_timestamping_config(
-            config,
-            zenoh_module=zenoh_module,
-            log_context=f"runtime:{self._config.service_id}",
-        )
+        apply_zenoh_shared_memory_config(config, shm_pool_bytes=self._config.shm_pool_bytes)
+        apply_zenoh_timestamping_config(config)
         return config
 
     async def close(self) -> None:
@@ -241,19 +229,16 @@ class ZenohTransport:
         self,
         key_expr: str,
         *,
-        queue: str | None = None,
         cb: TransportCallback | None = None,
     ) -> _ZenohSubscriptionHandle:
-        return await self.subscribe_stream(key_expr, queue=queue, cb=cb)
+        return await self.subscribe_stream(key_expr, cb=cb)
 
     async def subscribe_stream(
         self,
         key_expr: str,
         *,
-        queue: str | None = None,
         cb: TransportCallback | None = None,
     ) -> _ZenohSubscriptionHandle:
-        del queue
         session = await self._require_session()
         key_expr = _normalize_zenoh_key_expr(key_expr)
         inbox = _ZenohInbox()

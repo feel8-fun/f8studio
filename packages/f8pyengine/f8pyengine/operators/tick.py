@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 from f8pysdk.specs import exec_port_specs
 
@@ -216,24 +217,24 @@ TickRuntimeNode.SPEC = F8OperatorSpec(
         F8DataPortSpec(
             name="elapsedSec",
             description="Seconds since this Tick entrypoint started, sampled on each tick.",
-            valueSchema=number_schema(minimum=0),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=number_schema(minimum=0)),
         ),
         F8DataPortSpec(
             name="processingMs",
             description="Per-tick processing time in milliseconds (excluding sleep).",
-            valueSchema=integer_schema(default=0, minimum=0),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=integer_schema(default=0, minimum=0)),
             showOnNode=False,
         ),
         F8DataPortSpec(
             name="intervalMs",
             description="Actual interval between tick starts in milliseconds.",
-            valueSchema=integer_schema(default=0, minimum=0),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=integer_schema(default=0, minimum=0)),
             showOnNode=False,
         ),
         F8DataPortSpec(
             name="latenessMs",
             description="How late this tick started relative to its scheduled deadline (ms).",
-            valueSchema=integer_schema(default=0, minimum=0),
+            payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=integer_schema(default=0, minimum=0)),
             showOnNode=False,
         ),
     ],

@@ -162,7 +162,7 @@ json tick_spec() {
                                          integer_schema(100, 1, 50000), "rw", true, true),
                             state_field("hiResTimer", "High-res Timer (Windows)",
                                         "Request high-resolution timer behavior where supported.", boolean_schema(true), "rw", true, false)})},
-              {"execOutPorts", json::array({"exec"})},
+              {"execOutPorts", json::array({json{{"name", "exec"}}})},
               {"dataOutPorts",
                json::array({data_port("processingMs", "Per-tick processing time in milliseconds.", integer_schema(0), false, false),
                             data_port("intervalMs", "Actual interval between tick starts in milliseconds.", integer_schema(0), false, false),

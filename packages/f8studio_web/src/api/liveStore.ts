@@ -34,6 +34,20 @@ export class LiveStore {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private retry = 0;
   private users = 0;
+  private connected = false;
+  private readonly connectionListeners = new Set<Listener>();
+
+  getConnectionSnapshot = (): boolean => this.connected;
+  subscribeConnection = (listener: Listener): (() => void) => {
+    this.connectionListeners.add(listener);
+    return () => this.connectionListeners.delete(listener);
+  };
+
+  private setConnected(connected: boolean): void {
+    if (this.connected === connected) return;
+    this.connected = connected;
+    for (const listener of this.connectionListeners) listener();
+  }
 
   getPrefix(prefix: string): ReadonlyMap<string, JsonValue> {
     let selection = this.selections.get(prefix);
@@ -59,6 +73,7 @@ export class LiveStore {
         this.timer = null;
         const socket = this.socket;
         this.socket = null;
+        this.setConnected(false);
         socket?.close();
         this.values.clear();
         this.selections.clear();
@@ -92,7 +107,11 @@ export class LiveStore {
     if (this.users === 0) return;
     const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/live`);
     this.socket = socket;
-    socket.onopen = () => { this.retry = 0; };
+    socket.onopen = () => {
+      if (this.socket !== socket) return;
+      this.retry = 0;
+      this.setConnected(true);
+    };
     socket.onmessage = (event) => {
       if (this.socket !== socket) return;
       try { this.apply(JSON.parse(String(event.data))); }
@@ -102,6 +121,7 @@ export class LiveStore {
     socket.onclose = () => {
       if (this.socket !== socket) return;
       this.socket = null;
+      this.setConnected(false);
       this.apply({ type: 'live.snapshot', values: {} });
       if (this.users > 0) this.timer = setTimeout(() => {
         this.timer = null;

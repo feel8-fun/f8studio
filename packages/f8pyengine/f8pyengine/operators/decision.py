@@ -1,4 +1,5 @@
 from __future__ import annotations
+from f8pysdk.specs import F8DataPayloadSpec, F8DataPortPayloadKind
 
 import asyncio
 import base64
@@ -354,8 +355,8 @@ DecisionRuntimeNode.SPEC = F8OperatorSpec(
     description="Typed probabilistic decisions through a configured System-One host. Samples the latest video frame only on exec.",
     tags=["ai", "decision", "classification", "routing", "typesafe"],
     execInPorts=exec_port_specs(["exec"]), execOutPorts=exec_port_specs(["decided", "uncertain", "error"]),
-    dataInPorts=[F8DataPortSpec(name="state", valueSchema=any_schema()), video_frame_port(name="video", description="Optional latest video frame, sampled on exec.")],
-    dataOutPorts=[F8DataPortSpec(name=name, valueSchema=any_schema()) for name in ["answers", "value", "probabilities", "confidence", "probability", "metrics", "error"]] + [F8DataPortSpec(name="accepted", valueSchema=boolean_schema())],
+    dataInPorts=[F8DataPortSpec(name="state", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema())), video_frame_port(name="video", description="Optional latest video frame, sampled on exec.")],
+    dataOutPorts=[F8DataPortSpec(name=name, payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=any_schema())) for name in ["answers", "value", "probabilities", "confidence", "probability", "metrics", "error"]] + [F8DataPortSpec(name="accepted", payload=F8DataPayloadSpec(kind=F8DataPortPayloadKind.json, valueSchema=boolean_schema()))],
     stateFields=[
         F8StateSpec(name="studioUrl", valueSchema=string_schema(default=""), access=F8StateAccess.rw, description="Empty uses the Studio server that launched this engine; standalone defaults to http://127.0.0.1:8210."),
         F8StateSpec(name="providerId", valueSchema=string_schema(default="typesafe"), access=F8StateAccess.rw, showOnNode=True, description="Connection ID of a System-One provider in Studio settings."),

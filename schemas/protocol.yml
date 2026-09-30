@@ -545,9 +545,6 @@ components:
       properties:
         name:
           type: string
-        valueSchema:
-          $ref: "#/components/schemas/F8DataTypeSchema"
-          description: Legacy-compatible schema mirror. Prefer payload.valueSchema or payload.metadataSchema for new specs.
         payload:
           $ref: "#/components/schemas/F8DataPayloadSpec"
           description: Explicit payload contract for this data port.
@@ -564,17 +561,9 @@ components:
           type: boolean
           default: true
           description: If true, render this port on the node body; otherwise only in the inspector.
-        payloadKind:
-          $ref: "#/components/schemas/F8DataPortPayloadKind"
-          deprecated: true
-          description: Deprecated compatibility mirror of payload.kind.
-        delivery:
-          $ref: "#/components/schemas/F8DataPortDelivery"
-          deprecated: true
-          description: Deprecated compatibility mirror of stream.delivery.
       required:
         - name
-        - valueSchema
+        - payload
       additionalProperties: false
     F8Command:
       title: F8Command

@@ -2840,10 +2840,6 @@
             "openai_responses",
             "systemone"
           ]
-        },
-        "supportsImage": {
-          "default": false,
-          "type": "boolean"
         }
       },
       "required": [
@@ -2853,8 +2849,7 @@
         "model",
         "modelCapabilities",
         "models",
-        "protocol",
-        "supportsImage"
+        "protocol"
       ],
       "title": "CreateProviderConnection",
       "type": "object"
@@ -2897,10 +2892,6 @@
             "openai_responses",
             "systemone"
           ]
-        },
-        "supportsImage": {
-          "default": false,
-          "type": "boolean"
         }
       },
       "required": [
@@ -5162,6 +5153,7 @@
       "type": "object"
     },
     "F8Command": {
+      "additionalProperties": false,
       "properties": {
         "definitionProtected": {
           "default": false,
@@ -5292,6 +5284,7 @@
       "type": "object"
     },
     "F8CommandInput": {
+      "additionalProperties": false,
       "properties": {
         "definitionProtected": {
           "default": false,
@@ -5594,6 +5587,7 @@
       "type": "object"
     },
     "F8CommandParam": {
+      "additionalProperties": false,
       "properties": {
         "control": {
           "$ref": "#/$defs/F8UiControlSpec"
@@ -5660,6 +5654,7 @@
       "type": "object"
     },
     "F8CommandParamInput": {
+      "additionalProperties": false,
       "properties": {
         "control": {
           "$ref": "#/$defs/F8UiControlSpecInput"
@@ -6022,6 +6017,7 @@
       "type": "object"
     },
     "F8DataPayloadSpec": {
+      "additionalProperties": false,
       "properties": {
         "formats": {
           "default": [],
@@ -6132,6 +6128,7 @@
       "type": "object"
     },
     "F8DataPayloadSpecInput": {
+      "additionalProperties": false,
       "properties": {
         "formats": {
           "default": [],
@@ -6276,16 +6273,12 @@
       "title": "F8DataPortPayloadKind"
     },
     "F8DataPortSpec": {
+      "additionalProperties": false,
       "properties": {
         "definitionProtected": {
           "default": true,
           "description": "If true, this data port cannot be deleted from editable definitions.",
           "type": "boolean"
-        },
-        "delivery": {
-          "$ref": "#/$defs/F8DataPortDelivery",
-          "default": "fifo",
-          "description": "Deprecated compatibility mirror of stream.delivery."
         },
         "description": {
           "type": "string"
@@ -6297,11 +6290,6 @@
           "$ref": "#/$defs/F8DataPayloadSpec",
           "description": "Explicit payload contract for this data port."
         },
-        "payloadKind": {
-          "$ref": "#/$defs/F8DataPortPayloadKind",
-          "default": "json",
-          "description": "Deprecated compatibility mirror of payload.kind."
-        },
         "showOnNode": {
           "default": true,
           "description": "If true, render this port on the node body; otherwise only in the inspector.",
@@ -6310,68 +6298,22 @@
         "stream": {
           "$ref": "#/$defs/F8DataStreamSpec",
           "description": "Explicit stream transport preferences for this data port."
-        },
-        "valueSchema": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/F8StringTypeSchema"
-            },
-            {
-              "$ref": "#/$defs/F8NumberTypeSchema"
-            },
-            {
-              "$ref": "#/$defs/F8IntegerTypeSchema"
-            },
-            {
-              "$ref": "#/$defs/F8BooleanTypeSchema"
-            },
-            {
-              "$ref": "#/$defs/F8NullTypeSchema"
-            },
-            {
-              "$ref": "#/$defs/F8ComplexObjectTypeSchema"
-            },
-            {
-              "$ref": "#/$defs/F8ArrayTypeSchema"
-            },
-            {
-              "$ref": "#/$defs/F8AnyTypeSchema"
-            }
-          ],
-          "description": "Legacy-compatible schema mirror. Prefer payload.valueSchema or payload.metadataSchema for new specs.",
-          "discriminator": {
-            "mapping": {
-              "any": "#/$defs/F8AnyTypeSchema",
-              "array": "#/$defs/F8ArrayTypeSchema",
-              "boolean": "#/$defs/F8BooleanTypeSchema",
-              "integer": "#/$defs/F8IntegerTypeSchema",
-              "null": "#/$defs/F8NullTypeSchema",
-              "number": "#/$defs/F8NumberTypeSchema",
-              "object": "#/$defs/F8ComplexObjectTypeSchema",
-              "string": "#/$defs/F8StringTypeSchema"
-            },
-            "propertyName": "type"
-          }
         }
       },
       "required": [
         "name",
-        "valueSchema"
+        "payload"
       ],
       "title": "F8DataPortSpec",
       "type": "object"
     },
     "F8DataPortSpecInput": {
+      "additionalProperties": false,
       "properties": {
         "definitionProtected": {
           "default": true,
           "description": "If true, this data port cannot be deleted from editable definitions.",
           "type": "boolean"
-        },
-        "delivery": {
-          "$ref": "#/$defs/F8DataPortDeliveryInput",
-          "default": "fifo",
-          "description": "Deprecated compatibility mirror of stream.delivery."
         },
         "description": {
           "type": "string"
@@ -6383,11 +6325,6 @@
           "$ref": "#/$defs/F8DataPayloadSpecInput",
           "description": "Explicit payload contract for this data port."
         },
-        "payloadKind": {
-          "$ref": "#/$defs/F8DataPortPayloadKindInput",
-          "default": "json",
-          "description": "Deprecated compatibility mirror of payload.kind."
-        },
         "showOnNode": {
           "default": true,
           "description": "If true, render this port on the node body; otherwise only in the inspector.",
@@ -6396,53 +6333,11 @@
         "stream": {
           "$ref": "#/$defs/F8DataStreamSpecInput",
           "description": "Explicit stream transport preferences for this data port."
-        },
-        "valueSchema": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/F8StringTypeSchemaInput"
-            },
-            {
-              "$ref": "#/$defs/F8NumberTypeSchemaInput"
-            },
-            {
-              "$ref": "#/$defs/F8IntegerTypeSchemaInput"
-            },
-            {
-              "$ref": "#/$defs/F8BooleanTypeSchemaInput"
-            },
-            {
-              "$ref": "#/$defs/F8NullTypeSchemaInput"
-            },
-            {
-              "$ref": "#/$defs/F8ComplexObjectTypeSchemaInput"
-            },
-            {
-              "$ref": "#/$defs/F8ArrayTypeSchemaInput"
-            },
-            {
-              "$ref": "#/$defs/F8AnyTypeSchemaInput"
-            }
-          ],
-          "description": "Legacy-compatible schema mirror. Prefer payload.valueSchema or payload.metadataSchema for new specs.",
-          "discriminator": {
-            "mapping": {
-              "any": "#/$defs/F8AnyTypeSchemaInput",
-              "array": "#/$defs/F8ArrayTypeSchemaInput",
-              "boolean": "#/$defs/F8BooleanTypeSchemaInput",
-              "integer": "#/$defs/F8IntegerTypeSchemaInput",
-              "null": "#/$defs/F8NullTypeSchemaInput",
-              "number": "#/$defs/F8NumberTypeSchemaInput",
-              "object": "#/$defs/F8ComplexObjectTypeSchemaInput",
-              "string": "#/$defs/F8StringTypeSchemaInput"
-            },
-            "propertyName": "type"
-          }
         }
       },
       "required": [
         "name",
-        "valueSchema"
+        "payload"
       ],
       "title": "F8DataPortSpec",
       "type": "object"
@@ -6492,6 +6387,7 @@
       "title": "F8DataStreamReliability"
     },
     "F8DataStreamSpec": {
+      "additionalProperties": false,
       "properties": {
         "congestion": {
           "$ref": "#/$defs/F8DataStreamCongestion",
@@ -6521,6 +6417,7 @@
       "type": "object"
     },
     "F8DataStreamSpecInput": {
+      "additionalProperties": false,
       "properties": {
         "congestion": {
           "$ref": "#/$defs/F8DataStreamCongestionInput",
@@ -7114,6 +7011,7 @@
       "type": "object"
     },
     "F8ExecPortSpec": {
+      "additionalProperties": false,
       "properties": {
         "definitionProtected": {
           "default": false,
@@ -7136,6 +7034,7 @@
       "type": "object"
     },
     "F8ExecPortSpecInput": {
+      "additionalProperties": false,
       "properties": {
         "definitionProtected": {
           "default": false,
@@ -8600,6 +8499,7 @@
       "title": "F8OperatorSchemaVersion"
     },
     "F8OperatorSpec": {
+      "additionalProperties": false,
       "properties": {
         "commands": {
           "default": [],
@@ -8715,6 +8615,7 @@
       "type": "object"
     },
     "F8OperatorSpecInput": {
+      "additionalProperties": false,
       "properties": {
         "commands": {
           "default": [],
@@ -9506,6 +9407,7 @@
       "title": "F8ServiceSchemaVersion"
     },
     "F8ServiceSpec": {
+      "additionalProperties": false,
       "properties": {
         "commands": {
           "default": [],
@@ -9599,6 +9501,7 @@
       "type": "object"
     },
     "F8ServiceSpecInput": {
+      "additionalProperties": false,
       "properties": {
         "commands": {
           "default": [],
@@ -10302,6 +10205,7 @@
       "type": "object"
     },
     "F8SpecEditPolicy": {
+      "additionalProperties": false,
       "properties": {
         "commands": {
           "$ref": "#/$defs/F8CollectionEditPolicy"
@@ -10327,6 +10231,7 @@
       "type": "object"
     },
     "F8SpecEditPolicyInput": {
+      "additionalProperties": false,
       "properties": {
         "commands": {
           "$ref": "#/$defs/F8CollectionEditPolicyInput"
@@ -10368,6 +10273,7 @@
       "title": "F8StateAccess"
     },
     "F8StateFieldEditPolicy": {
+      "additionalProperties": false,
       "properties": {
         "canEditAccess": {
           "description": "Allow editing this state field's access mode when its collection allows editing existing fields.",
@@ -10391,6 +10297,7 @@
       "type": "object"
     },
     "F8StateFieldEditPolicyInput": {
+      "additionalProperties": false,
       "properties": {
         "canEditAccess": {
           "description": "Allow editing this state field's access mode when its collection allows editing existing fields.",
@@ -10414,6 +10321,7 @@
       "type": "object"
     },
     "F8StateSpec": {
+      "additionalProperties": false,
       "properties": {
         "access": {
           "$ref": "#/$defs/F8StateAccess",
@@ -10505,6 +10413,7 @@
       "type": "object"
     },
     "F8StateSpecInput": {
+      "additionalProperties": false,
       "properties": {
         "access": {
           "$ref": "#/$defs/F8StateAccessInput",
@@ -18626,11 +18535,18 @@
           "type": "string"
         },
         "modelCapabilities": {
-          "default": [],
-          "items": {
-            "$ref": "#/$defs/ModelCapabilities"
-          },
-          "type": "array"
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ModelCapabilities"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "models": {
           "default": [],
@@ -18638,17 +18554,6 @@
             "type": "string"
           },
           "type": "array"
-        },
-        "supportsImage": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
         }
       },
       "required": [
@@ -18658,8 +18563,7 @@
         "endpoint",
         "model",
         "modelCapabilities",
-        "models",
-        "supportsImage"
+        "models"
       ],
       "title": "UpdateProviderSettings",
       "type": "object"
@@ -18694,11 +18598,18 @@
           "type": "string"
         },
         "modelCapabilities": {
-          "default": [],
-          "items": {
-            "$ref": "#/$defs/ModelCapabilitiesInput"
-          },
-          "type": "array"
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ModelCapabilitiesInput"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "models": {
           "default": [],
@@ -18706,17 +18617,6 @@
             "type": "string"
           },
           "type": "array"
-        },
-        "supportsImage": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
         }
       },
       "required": [

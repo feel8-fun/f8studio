@@ -979,7 +979,7 @@ json VideoStabService::describe() {
   service["commands"] = json::array({
       json{{"name", "resetStabilizer"},
            {"description", "Reset internal trajectory/smoothing state."},
-           {"required", true},
+           {"definitionProtected", true},
            {"showOnNode", true}},
   });
 
@@ -989,9 +989,9 @@ json VideoStabService::describe() {
   service["dataOutPorts"] = json::array({
       video_frame_port("video", "Stabilized video frame stream."),
       json{{"name", "motion"},
-           {"valueSchema", motion_schema},
+           {"payload", {{"kind", "json"}, {"valueSchema", motion_schema}}},
            {"description", "Per-frame estimated and smoothed motion parameters."},
-           {"required", true},
+           {"definitionProtected", true},
            {"showOnNode", true}},
   });
 
