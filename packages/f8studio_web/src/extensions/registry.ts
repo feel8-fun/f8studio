@@ -11,7 +11,9 @@ export interface ExtensionRenderer {
   readonly id: string;
   readonly commandPrefix: string;
   readonly nodeRendererClass?: string;
-  readonly component: ComponentType<{ readonly nodeId: string; readonly payload: Readonly<Record<string, JsonValue>> }>;
+  readonly panelClass?: string;
+  readonly latestValue?: boolean;
+  readonly component: ComponentType<{ readonly nodeId: string; readonly payload: Readonly<Record<string, JsonValue>>; readonly compact?: boolean }>;
   readonly reduce?: (command: string, previous: Readonly<Record<string, JsonValue>>, payload: Readonly<Record<string, JsonValue>>) => Readonly<Record<string, JsonValue>>;
 }
 
@@ -28,10 +30,27 @@ export interface StudioWebExtension {
   readonly tools?: readonly ExtensionTool[];
 }
 
+// Lazy components keep store imports independent of React/media/3D renderers.
+const BUILTIN_RENDERERS: readonly ExtensionRenderer[] = [
+  { id: 'text', commandPrefix: 'viz.text.', latestValue: true,
+    component: lazy(() => import('../presentation/PresentationText').then((module) => ({ default: module.PresentationText }))) },
+  { id: 'wave', commandPrefix: 'viz.wave.', latestValue: true,
+    component: lazy(() => import('../presentation/PresentationWave').then((module) => ({ default: module.PresentationWave }))) },
+  { id: 'track', commandPrefix: 'viz.track.', latestValue: true,
+    component: lazy(() => import('../presentation/PresentationTrack').then((module) => ({ default: module.PresentationTrack }))) },
+  { id: 'video', commandPrefix: 'viz.video.', latestValue: true,
+    component: lazy(() => import('../presentation/PresentationVideo').then((module) => ({ default: module.PresentationVideo }))) },
+  { id: 'audio', commandPrefix: 'viz.audio.', latestValue: true,
+    component: lazy(() => import('../presentation/PresentationAudio').then((module) => ({ default: module.PresentationAudio }))) },
+  { id: 'three_d', commandPrefix: 'viz.three_d.', latestValue: true, panelClass: 'output-panel-three',
+    component: lazy(() => import('../presentation/PresentationThree').then((module) => ({ default: module.PresentationThree }))),
+    reduce: (command, previous, payload) => command === 'viz.three_d.world_up' ? { ...previous, ...payload } : payload },
+];
+
 // Trusted local modules are registered explicitly and bundled with Studio.
 const LOCAL_EXTENSIONS: readonly StudioWebExtension[] = [
   { id: 'tcode', renderers: [{
-    id: 'tcode', commandPrefix: 'viz.tcode.', nodeRendererClass: 'viz_tcode', component: TCodeView,
+    id: 'tcode', commandPrefix: 'viz.tcode.', latestValue: true, panelClass: 'output-panel-tcode', nodeRendererClass: 'viz_tcode', component: TCodeView,
     reduce: (command, previous, payload) => command.endsWith('.snapshot') ? payload : command.endsWith('.reset')
       ? { ...previous, line: '', channels: {}, resetVersion: (typeof previous.resetVersion === 'number' ? previous.resetVersion : 0) + 1 }
       : command.endsWith('.write') && typeof payload.line === 'string'
@@ -43,8 +62,8 @@ const LOCAL_EXTENSIONS: readonly StudioWebExtension[] = [
 
 function validateExtensions(extensions: readonly StudioWebExtension[]): readonly StudioWebExtension[] {
   const extensionIds = new Set<string>();
-  const rendererIds = new Set(['text', 'wave', 'track', 'video', 'three_d']);
-  const prefixes: string[] = [];
+  const rendererIds = new Set(BUILTIN_RENDERERS.map((renderer) => renderer.id));
+  const prefixes = BUILTIN_RENDERERS.map((renderer) => renderer.commandPrefix);
   const toolIds = new Set(['live', 'pinned']);
   for (const extension of extensions) {
     if (extensionIds.has(extension.id)) throw new Error(`Duplicate Studio extension: ${extension.id}`);
@@ -95,4 +114,16 @@ export function extensionToolById(id: string): ExtensionTool | null {
     if (tool !== undefined) return tool;
   }
   return null;
+}
+
+export const presentationRenderers: readonly ExtensionRenderer[] = [
+  ...BUILTIN_RENDERERS, ...studioExtensions.flatMap((extension) => extension.renderers ?? []),
+];
+
+export function presentationRendererById(id: string): ExtensionRenderer | null {
+  return presentationRenderers.find((renderer) => renderer.id === id) ?? null;
+}
+
+export function presentationRendererForCommand(command: string): ExtensionRenderer | null {
+  return presentationRenderers.find((renderer) => command.startsWith(renderer.commandPrefix)) ?? null;
 }

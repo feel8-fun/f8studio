@@ -46,6 +46,7 @@ from f8pysdk.zenoh_naming import zenoh_state_key
 from .live import LiveValueHub
 from .models import RuntimeActionResult, RuntimeStateField, ServiceDeployResult, ServiceRuntimeStatus
 from .studio_runtime.identifiers import STUDIO_SERVICE_ID
+from .runtime_identity import StudioRuntimeIdentity
 
 
 RuntimeMonitorCallback = Callable[[str, bytes], Awaitable[None]]
@@ -96,13 +97,13 @@ class StudioBoundRuntimeGateway:
 
     def __init__(self, remote: RuntimeGateway, *, studio_service_id: str) -> None:
         self._remote = remote
-        self._studio_service_id = ensure_token(studio_service_id, label="studio_service_id")
+        self._identity = StudioRuntimeIdentity(ensure_token(studio_service_id, label="studio_service_id"))
 
     def _service_id(self, service_id: str) -> str:
-        return self._studio_service_id if service_id == STUDIO_SERVICE_ID else service_id
+        return self._identity.to_runtime(service_id)
 
     def _node_id(self, node_id: str) -> str:
-        return self._studio_service_id if node_id == STUDIO_SERVICE_ID else node_id
+        return self._identity.to_runtime(node_id)
 
     def _bind_graph(self, graph: F8RuntimeGraph) -> F8RuntimeGraph:
         services = graph.services if isinstance(graph.services, list) else []
@@ -165,7 +166,7 @@ class StudioBoundRuntimeGateway:
         if service_id != STUDIO_SERVICE_ID:
             return await self._remote.terminate(service_id)
         graph = F8RuntimeGraph(graphId=new_id(), revision=new_id(), services=[], nodes=[], edges=[])
-        result = await self._remote.deploy(service_id=self._studio_service_id, graph=graph, force_apply=True)
+        result = await self._remote.deploy(service_id=self._identity.to_runtime(STUDIO_SERVICE_ID), graph=graph, force_apply=True)
         return RuntimeActionResult(
             success=result.success,
             result={"stopped": result.success} if result.success else None,
@@ -279,14 +280,10 @@ class ZenohRuntimeGateway:
         if len(parts) != 8 or parts[:2] != ["f8", "svc"] or parts[3:5] != ["state", "nodes"] or parts[6] != "state":
             return
         service_id, node_id, name = parts[2], parts[5], parts[7]
-        if service_id.startswith("studio_"):
-            if service_id != self.studio_service_id:
-                return
-            if node_id == service_id:
-                node_id = "studio"
-            service_id = "studio"
-        elif service_id == "studio" and self.studio_service_id is not None:
+        endpoint = StudioRuntimeIdentity(self.studio_service_id).to_public(service_id, node_id)
+        if endpoint is None:
             return
+        service_id, node_id = endpoint
         decoded = decode_obj(payload)
         if "value" not in decoded:
             raise InvalidRequestError(f"invalid retained state envelope key={key}")

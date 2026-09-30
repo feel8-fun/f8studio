@@ -1,17 +1,12 @@
 import { Activity, ArrowDown, ArrowUp, CircleDot, Pin, Trash2 } from 'lucide-react';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 
-import { extensionRendererById, extensionToolById, studioExtensions } from '../extensions/registry';
-import { SkeletonOutputPreview } from '../three/SkeletonOutputPreview';
+import { presentationRendererById, extensionToolById, studioExtensions } from '../extensions/registry';
 import {
   type PresentationOutput,
   usePresentationConnected,
   usePresentationOutputs,
 } from './PresentationStore';
-import { PresentationVideo } from './PresentationVideo';
-import { PresentationAudio } from './PresentationAudio';
-import { PresentationWave } from './PresentationWave';
-import { PresentationTrack } from './PresentationTrack';
 
 const PINNED_OUTPUTS_KEY = 'f8studio.pinnedOutputs';
 
@@ -73,8 +68,9 @@ export function PresentationWorkspace({ nodeId = null }: { readonly nodeId?: str
     </div>
     {ActiveToolComponent !== undefined ? <Suspense fallback={<div className="view-loading" role="status">Loading tool</div>}><ActiveToolComponent /></Suspense> : <div className="output-grid">
       {visibleOutputs.map((output) => {
-        const ExtensionComponent = extensionRendererById(output.renderer)?.component;
-        return <article className={`output-panel ${output.renderer === 'three_d' ? 'output-panel-three' : ''} ${output.renderer === 'tcode' ? 'output-panel-tcode' : ''}`} key={output.nodeId}>
+        const renderer = presentationRendererById(output.renderer);
+        const OutputComponent = renderer?.component;
+        return <article className={`output-panel ${renderer?.panelClass ?? ''}`} key={output.nodeId}>
         <header><span>{output.nodeId}</span><div className="output-panel-actions"><small>{output.renderer}</small>
           {tab === 'pinned' && <>
             <button className="icon-button" type="button" aria-label={`Move ${output.nodeId} up`} title="Move up" disabled={pinned.indexOf(output.nodeId) <= 0} onClick={() => movePin(output.nodeId, -1)}><ArrowUp size={14} /></button>
@@ -84,13 +80,7 @@ export function PresentationWorkspace({ nodeId = null }: { readonly nodeId?: str
             aria-label={`${pinned.includes(output.nodeId) ? 'Unpin' : 'Pin'} ${output.nodeId}`} title={pinned.includes(output.nodeId) ? 'Unpin output' : 'Pin output'}
             onClick={() => togglePin(output.nodeId)}><Pin size={14} /></button>
         </div></header>
-        {output.renderer === 'text' && <pre>{JSON.stringify(output.payload.value, null, 2)}</pre>}
-        {output.renderer === 'wave' && <PresentationWave payload={output.payload} />}
-        {output.renderer === 'track' && <PresentationTrack payload={output.payload} />}
-        {ExtensionComponent !== undefined && <Suspense fallback={<div className="view-loading" role="status">Loading output</div>}><ExtensionComponent nodeId={output.nodeId} payload={output.payload} /></Suspense>}
-        {output.renderer === 'video' && <PresentationVideo payload={output.payload} />}
-        {output.renderer === 'audio' && <PresentationAudio payload={output.payload} />}
-        {output.renderer === 'three_d' && <SkeletonOutputPreview nodeId={output.nodeId} compact={nodeId === null} className="output-three" />}
+        {OutputComponent !== undefined && <Suspense fallback={<div className="view-loading" role="status">Loading output</div>}><OutputComponent nodeId={output.nodeId} payload={output.payload} compact={nodeId === null} /></Suspense>}
       </article>;})}
       {visibleOutputs.length === 0 && <div className="empty-state centered">{nodeId !== null ? `Waiting for ${nodeId}` : tab === 'pinned' ? 'No pinned outputs are live' : 'Deploy visualization nodes to see live outputs'}</div>}
     </div>}

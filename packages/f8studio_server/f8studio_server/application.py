@@ -25,6 +25,8 @@ from f8studio_core.graph import PortKind, PortDirection
 from f8studio_core.graph import GraphNode, PatchRequest, RevisionConflictError, SetNodeStateOp, StudioDocument
 
 from .agents import AgentService
+from .agents.decisions import SystemOneDecisionClient
+from .agents.providers import AgentProviderRegistry
 from .agents.skills import AgentSkillLibrary
 from .automation_tools import StudioAutomationTools
 from .catalog import CatalogService
@@ -119,12 +121,15 @@ class StudioApplication:
             commits=commits,
             runtime=self.runtime,
         )
+        providers = AgentProviderRegistry(project_repository.database_path.with_name("agent-providers.json"))
+        self.decisions = SystemOneDecisionClient(providers)
         self.agents = AgentService(
             database_path=project_repository.database_path,
             tools=self.tools,
             editor=self.editor,
             local=self.local,
             skills=AgentSkillLibrary(user_root=self.data_dir / "agent-skills"),
+            providers=providers,
             events=self.events,
         )
 
@@ -144,6 +149,7 @@ class StudioApplication:
 
     async def close(self) -> None:
         await self.agents.close()
+        await self.decisions.close()
         await self.local.close()
         await self.jobs.close()
         await self.media_gateway.close()

@@ -1,6 +1,35 @@
 import { expect, test, vi } from 'vitest';
 
+import { studioLive } from '../api/liveStore';
 import { parsePresentationCommand, PresentationStore } from './PresentationStore';
+
+test('restores media, 3D and extension outputs from ordered live snapshots', () => {
+  class Socket {
+    onclose: (() => void) | null = null;
+    close() { this.onclose?.(); }
+  }
+  vi.stubGlobal('WebSocket', Socket);
+  const store = new PresentationStore();
+  try {
+    store.start();
+    studioLive.apply({ type: 'live.snapshot', values: {
+      'presentation/three/up': { nodeId: 'three', command: 'viz.three_d.world_up', payload: { worldUp: '+z' }, seq: 2 },
+      'presentation/three/scene': { nodeId: 'three', command: 'viz.three_d.set', payload: { people: [], worldUp: '+y' }, seq: 1 },
+      'presentation/video': { nodeId: 'video', command: 'viz.video.set', payload: { videoStreamKey: 'video/source' }, seq: 3 },
+      'presentation/audio': { nodeId: 'audio', command: 'viz.audio.set', payload: { audioStreamKey: 'audio/source' }, seq: 4 },
+      'presentation/tcode': { nodeId: 'tcode', command: 'viz.tcode.snapshot', payload: { model: 'SR6', channels: { L0: 5000 } }, seq: 5 },
+    } });
+    expect(store.getOutputSnapshot('three')?.payload).toEqual({ people: [], worldUp: '+z' });
+    expect(store.getOutputSnapshot('video')?.payload.videoStreamKey).toBe('video/source');
+    expect(store.getOutputSnapshot('audio')?.payload.audioStreamKey).toBe('audio/source');
+    expect(store.getOutputSnapshot('tcode')?.payload.channels).toEqual({ L0: 5000 });
+    studioLive.apply({ type: 'live.snapshot', values: {} });
+    expect(store.getOutputsSnapshot().size).toBe(0);
+  } finally {
+    store.stop();
+    vi.unstubAllGlobals();
+  }
+});
 
 test('tracks presentation outputs in delivery order despite source clock changes', () => {
   const store = new PresentationStore();

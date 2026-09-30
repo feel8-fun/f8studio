@@ -8,7 +8,7 @@ import { isGraphNode, type GraphEdge, type GraphNode, type NodeLayout } from '..
 import { nodePortRows } from '../src/graph/portRows';
 
 const SELECTED_PROJECT_KEY = 'f8studio.selectedProjectId';
-const EVIDENCE_PATH = fileURLToPath(new URL('../../../docs/plans/evidence/p4-graph-performance.json', import.meta.url));
+const EVIDENCE_PATH = fileURLToPath(new URL('../../../docs/development/evidence/p4-graph-performance.json', import.meta.url));
 
 interface GraphFixtureResult {
   readonly projectId: string;

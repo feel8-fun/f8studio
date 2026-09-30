@@ -39,7 +39,7 @@ Studio loads `config/service-index.json` deterministically. Startup does not sca
 - Copy and verify existing models: `pixi run install_services --migrate-resources /path/to/old/services --migrate-layout /path/to/old/services`
 - Select another installation: set `F8_SERVICE_INDEX` to its index file.
 
-Registered services receive an absolute `F8_MODEL_ROOT`. Standalone service commands use the platform user data directory unless `F8_MODEL_ROOT` is explicitly set. See [migration notes](docs/development/service-registration-migration.md).
+Registered services receive an absolute `F8_MODEL_ROOT`. Standalone service commands use the platform user data directory unless `F8_MODEL_ROOT` is explicitly set. See [service registration](docs/development/service-registration.md).
 
 ## DL services
 - Detector: `pixi run -e onnx f8pydl_detector`

@@ -5,7 +5,7 @@ import { fetchPresentationSnapshot } from '../api/client';
 import { studioEvents } from '../api/eventStream';
 import { studioLive } from '../api/liveStore';
 import type { JsonValue, PresentationCommand } from '../api/contracts';
-import { extensionRendererForCommand, extensionRendererById } from '../extensions/registry';
+import { presentationRendererForCommand, presentationRendererById } from '../extensions/registry';
 
 export type PresentationRenderer = 'text' | 'wave' | 'track' | 'video' | 'audio' | 'three_d' | (string & {});
 
@@ -33,13 +33,7 @@ export function parsePresentationCommand(value: unknown): PresentationCommand | 
 }
 
 function rendererFor(command: string): PresentationRenderer | null {
-  if (command.startsWith('viz.text.')) return 'text';
-  if (command.startsWith('viz.wave.')) return 'wave';
-  if (command.startsWith('viz.track.')) return 'track';
-  if (command.startsWith('viz.video.')) return 'video';
-  if (command.startsWith('viz.audio.')) return 'audio';
-  if (command.startsWith('viz.three_d.')) return 'three_d';
-  return extensionRendererForCommand(command)?.id ?? null;
+  return presentationRendererForCommand(command)?.id ?? null;
 }
 
 export class PresentationStore {
@@ -122,7 +116,7 @@ export class PresentationStore {
         void fetchPresentationSnapshot().then((commands) => {
           if (this.subscriptions.length === 0) return;
           for (const command of commands) {
-            if (!['viz.text.', 'viz.wave.', 'viz.track.', 'viz.video.', 'viz.audio.', 'viz.three_d.', 'viz.tcode.'].some((prefix) => command.command.startsWith(prefix))) this.applyCommand(command);
+            if (!presentationRendererForCommand(command.command)?.latestValue) this.applyCommand(command);
           }
         }).catch((error: unknown) => console.error('Failed to restore extension presentation', error));
       }, (connected) => this.setConnected('events', connected)),
@@ -151,12 +145,10 @@ export class PresentationStore {
     const prior = this.outputs.get(command.nodeId);
     const updatedAt = ++this.arrivalSequence;
     const priorPayload = prior?.renderer === renderer ? prior.payload : {};
-    const extensionReducer = extensionRendererById(renderer)?.reduce;
-    const payload = extensionReducer !== undefined
-      ? extensionReducer(command.command, priorPayload, command.payload)
-      : renderer === 'three_d' && command.command === 'viz.three_d.world_up'
-        ? { ...priorPayload, ...command.payload }
-        : command.payload;
+    const reducer = presentationRendererById(renderer)?.reduce;
+    const payload = reducer !== undefined
+      ? reducer(command.command, priorPayload, command.payload)
+      : command.payload;
     this.outputs.delete(command.nodeId);
     this.outputs.set(command.nodeId, { nodeId: command.nodeId, renderer, payload, updatedAt });
 

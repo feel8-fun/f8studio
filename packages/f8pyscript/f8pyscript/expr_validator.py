@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import ast
-from f8pysdk.expr_policy import numpy_attribute_allowed
+from f8pysdk.expr_policy import EXPRESSION_AST_NODES, numpy_attribute_allowed
 from types import CodeType
 from typing import Any
 
@@ -56,54 +56,7 @@ class PyExprValidator(ast.NodeVisitor):
         return tree, None
 
     def generic_visit(self, node: ast.AST) -> Any:
-        allowed: tuple[type[ast.AST], ...] = (
-            ast.Expression,
-            ast.Name,
-            ast.Load,
-            ast.Constant,
-            ast.Attribute,
-            ast.Subscript,
-            ast.Slice,
-            ast.Tuple,
-            ast.List,
-            ast.Dict,
-            ast.UnaryOp,
-            ast.UAdd,
-            ast.USub,
-            ast.Not,
-            ast.BinOp,
-            ast.Add,
-            ast.Sub,
-            ast.Mult,
-            ast.Div,
-            ast.FloorDiv,
-            ast.Mod,
-            ast.Pow,
-            ast.BoolOp,
-            ast.And,
-            ast.Or,
-            ast.Compare,
-            ast.Eq,
-            ast.NotEq,
-            ast.Lt,
-            ast.LtE,
-            ast.Gt,
-            ast.GtE,
-            ast.Is,
-            ast.IsNot,
-            ast.In,
-            ast.NotIn,
-            ast.IfExp,
-            ast.comprehension,
-            ast.ListComp,
-            ast.SetComp,
-            ast.DictComp,
-            ast.GeneratorExp,
-            ast.Store,
-            ast.Call,
-            ast.keyword,
-        )
-        if not isinstance(node, allowed):
+        if not isinstance(node, EXPRESSION_AST_NODES):
             self.error(f"disallowed syntax: {type(node).__name__}")
             return None
         return super().generic_visit(node)

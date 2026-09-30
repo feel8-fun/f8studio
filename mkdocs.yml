@@ -69,6 +69,13 @@ nav:
       - Comm Bus (Data + State): deepdives/comm_bus.md
       - Lovense Local API: deepdives/LovenseLocalAPI.md
       - Lovense Mock Server: deepdives/LovenseMockServer.md
+  - Development:
+      - Overview: development/README.md
+      - Service Registration: development/service-registration.md
+      - Graph Schema: development/graph-schema.md
+      - Web Studio Remote Access: development/web-studio-remote-access.md
+      - Web Studio Remaining Work: development/web-studio-remaining-work.md
+      - Remaining Architecture Work: development/remaining-architecture-work.md
 
 theme:
   name: material

@@ -5,6 +5,7 @@ from f8studio_server.errors import InvalidRequestError
 import asyncio
 import logging
 import time
+from typing import Protocol
 
 import httpx
 import msgspec
@@ -12,7 +13,7 @@ import msgspec
 from f8pysdk.decision import DecisionRequest, DecisionResult, validate_questions, validate_result
 from f8pysdk.specs import F8JsonValue
 
-from .providers import AgentProviderRegistry
+from .provider_settings import ProviderConfig
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +26,14 @@ class DecisionResponseError(RuntimeError):
     pass
 
 
+class DecisionProviders(Protocol):
+    def decision_config(self, provider_id: str) -> ProviderConfig: ...
+
+    def supports_image(self, provider_id: str, model_id: str) -> bool: ...
+
+
 class SystemOneDecisionClient:
-    def __init__(self, providers: AgentProviderRegistry, *, transport: httpx.AsyncBaseTransport | None = None) -> None:
+    def __init__(self, providers: DecisionProviders, *, transport: httpx.AsyncBaseTransport | None = None) -> None:
         self._providers = providers
         self._slots = asyncio.Semaphore(4)
         self._last_error: str = ""

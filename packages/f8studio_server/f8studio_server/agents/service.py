@@ -21,7 +21,6 @@ from ..local_integration import (
     LocalIntegrationService,
 )
 from ..project_repository import utc_now_text
-from .decisions import SystemOneDecisionClient
 from .evidence import conversation_prompt, evidence_prompt
 from .execution import AgentToolExecution, ApprovalDeniedError
 from .model_tools import AgentModelTools
@@ -105,7 +104,6 @@ class AgentService:
         self._tools = tools
         self._events = events
         self._providers = providers or AgentProviderRegistry(database_path.with_name("agent-providers.json"))
-        self.decisions = SystemOneDecisionClient(self._providers)
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._lock = asyncio.Lock()
 
@@ -278,7 +276,6 @@ class AgentService:
         for session_id in session_ids:
             await self.cancel(session_id)
         self._tasks.clear()
-        await self.decisions.close()
 
     async def _run(self, session_id: str, prompt: str, reasoning_effort: Literal["low", "medium", "high"] | None = None) -> None:
         try:

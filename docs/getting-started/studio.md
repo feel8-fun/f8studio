@@ -51,7 +51,7 @@ Capture a selected subgraph as a component when you want to reuse structure. Cap
 
 ## Runtime Media
 
-Video Viz, Audio Viz, and 3D Viz preview live data inside graph nodes. Use the node's open-output button for a focused view, or the Outputs workspace for the live/pinned dashboard. All focused views use `?view=outputs&node=<nodeId>`. The temporary Video/Audio/3D Media Lab pages have been removed; unknown workspace URLs open Graph. Audio listening is off by default, and 3D views wait for real scene data instead of showing a demo skeleton. The dedicated media gateway subscribes to Zenoh and serves video/audio through WebRTC. In strict VPN or SSH environments, configure TURN and forward both the Studio HTTP port and TURN TCP port as described in [the migration status](../plans/web-studio-status.md#严格-vpn--ssh-模式).
+Video Viz, Audio Viz, and 3D Viz preview live data inside graph nodes. Use the node's open-output button for a focused view, or the Outputs workspace for the live/pinned dashboard. All focused views use `?view=outputs&node=<nodeId>`. The temporary Video/Audio/3D Media Lab pages have been removed; unknown workspace URLs open Graph. Audio listening is off by default, and 3D views wait for real scene data instead of showing a demo skeleton. The dedicated media gateway subscribes to Zenoh and serves video/audio through WebRTC. In strict VPN or SSH environments, configure TURN and forward both the Studio HTTP port and TURN TCP port as described in [the remote access guide](../development/web-studio-remote-access.md#严格-vpn--ssh-模式).
 
 ## AI, CLI and MCP
 

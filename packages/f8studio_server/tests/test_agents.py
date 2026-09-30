@@ -725,11 +725,11 @@ def test_named_openai_compatible_connections_use_their_own_credentials(tmp_path:
 @pytest.mark.parametrize("upstream_status, expected_status", [(200, 200), (429, 429), (401, 502)])
 def test_decision_gateway_uses_saved_credentials_and_maps_upstream_errors(tmp_path: Path, upstream_status: int, expected_status: int) -> None:
     studio = StudioApplication(data_dir=tmp_path / "data", runtime=AgentRuntimeGateway(), service_roots=(), media_gateway=InProcessMediaGateway())
-    asyncio.run(studio.agents.decisions.close())
+    asyncio.run(studio.decisions.close())
     def respond(request: httpx.Request) -> httpx.Response:
         assert request.headers["Authorization"] == "Bearer decision-secret"
         return httpx.Response(upstream_status, json={"model": "jev-test", "answers": {"q": {"type": "noul", "noul": 0.7}}, "usage": {"input_tokens": 10, "output_tokens": 0}})
-    studio.agents.decisions = SystemOneDecisionClient(studio.agents._providers, transport=httpx.MockTransport(respond))
+    studio.decisions = SystemOneDecisionClient(studio.agents._providers, transport=httpx.MockTransport(respond))
     with TestClient(create_app(web_dist=tmp_path, application=studio)) as client:
         configured = client.put("/api/agents/providers/typesafe/settings", json={"model": "jev-latest", "endpoint": "https://api.typesafe.ai/v1", "apiKey": "decision-secret"})
         assert configured.status_code == 200
@@ -741,6 +741,7 @@ def test_decision_gateway_uses_saved_credentials_and_maps_upstream_errors(tmp_pa
             assert result.json()["answers"]["q"]["noul"] == 0.7
         elif expected_status == 429:
             assert result.headers["Retry-After"] == "2"
+    assert studio.decisions._http.is_closed
 
 
 def test_agent_run_fails_with_tool_context_when_deployment_fails(tmp_path: Path) -> None:

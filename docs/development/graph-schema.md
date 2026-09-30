@@ -1,6 +1,6 @@
-# Graph schema modernization
+# Graph schema and portable format
 
-This document records the implemented authoring boundary. The internal `StudioDocument` is the revisioned editing model (`f8studio-document/2`); `f8graph/3` is the portable project graph format.
+This document defines the current authoring boundary. The internal `StudioDocument` is the revisioned editing model (`f8studio-document/2`); `f8graph/3` is the portable project graph format.
 
 ## Portable graph
 

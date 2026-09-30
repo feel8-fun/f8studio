@@ -663,22 +663,22 @@ def create_app(
         payload = await _decode_body(request, DecisionRequest)
         validate_questions(payload.questions)
         try:
-            return _json_value(await studio.agents.decisions.evaluate(payload))
+            return _json_value(await studio.decisions.evaluate(payload))
         except DecisionCapacityError as exc:
             raise HTTPException(status_code=429, detail=str(exc), headers={"Retry-After": "1"}) from exc
         except DecisionResponseError as exc:
-            studio.agents.decisions.report_failure("Invalid TypeSafe decision response", exc)
+            studio.decisions.report_failure("Invalid TypeSafe decision response", exc)
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         except httpx.HTTPStatusError as exc:
-            studio.agents.decisions.report_failure(f"TypeSafe decision request failed: HTTP {exc.response.status_code}", exc)
+            studio.decisions.report_failure(f"TypeSafe decision request failed: HTTP {exc.response.status_code}", exc)
             if exc.response.status_code in {429, 529}:
                 raise HTTPException(status_code=429, detail="TypeSafe is rate limited or overloaded; reduce query frequency", headers={"Retry-After": "2"}) from exc
             raise HTTPException(status_code=502, detail=f"TypeSafe returned HTTP {exc.response.status_code}; check provider settings") from exc
         except httpx.TimeoutException as exc:
-            studio.agents.decisions.report_failure("TypeSafe decision request timed out", exc)
+            studio.decisions.report_failure("TypeSafe decision request timed out", exc)
             raise HTTPException(status_code=504, detail="TypeSafe decision request timed out") from exc
         except httpx.RequestError as exc:
-            studio.agents.decisions.report_failure("TypeSafe decision connection failed", exc)
+            studio.decisions.report_failure("TypeSafe decision connection failed", exc)
             raise HTTPException(status_code=502, detail="Could not connect to TypeSafe") from exc
 
     @app.put("/api/agents/providers/{provider_id}/settings")
