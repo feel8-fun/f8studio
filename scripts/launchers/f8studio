@@ -1,0 +1,46 @@
+#!/usr/bin/env sh
+set -eu
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+cd "$SCRIPT_DIR"
+if ! command -v pixi >/dev/null 2>&1; then
+    F8_PIXI_HOME="${PIXI_HOME:-$HOME/.pixi}"
+    case "$F8_PIXI_HOME" in
+        '~' | '~'/*) F8_PIXI_HOME="$HOME${F8_PIXI_HOME#\~}" ;;
+    esac
+    PATH="${PIXI_BIN_DIR:-$F8_PIXI_HOME/bin}:$PATH"
+    export PATH
+fi
+if ! command -v pixi >/dev/null 2>&1; then
+    echo 'Installing Pixi from https://pixi.sh ...'
+    F8_PIXI_INSTALLER=$(mktemp)
+    trap 'rm -f "$F8_PIXI_INSTALLER"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    if command -v curl >/dev/null 2>&1; then
+        if ! curl -fsSL --output "$F8_PIXI_INSTALLER" https://pixi.sh/install.sh; then
+            echo 'Failed to download the official Pixi installer.' >&2
+            exit 2
+        fi
+    elif command -v wget >/dev/null 2>&1; then
+        if ! wget -q -O "$F8_PIXI_INSTALLER" https://pixi.sh/install.sh; then
+            echo 'Failed to download the official Pixi installer.' >&2
+            exit 2
+        fi
+    else
+        echo 'Install curl or wget, or install Pixi manually from https://pixi.sh.' >&2
+        exit 2
+    fi
+    if PIXI_NO_PATH_UPDATE=1 sh "$F8_PIXI_INSTALLER"; then
+        rm -f "$F8_PIXI_INSTALLER"
+        trap - EXIT INT TERM
+    else
+        echo 'Pixi installation failed. See the error above; retry or install from https://pixi.sh.' >&2
+        exit 2
+    fi
+    if ! command -v pixi >/dev/null 2>&1; then
+        echo 'Pixi installer finished but pixi was not found in the installation directory.' >&2
+        exit 2
+    fi
+fi
+./install_env.sh
+exec pixi run --locked -e studio-runtime studio_launch "$@"

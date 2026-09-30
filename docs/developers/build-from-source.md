@@ -80,19 +80,21 @@ pixi run -e web-studio-test studio_graph_bench
 
 ## Distribution
 
-Build the launcher, native runtime, non-editable Python wheels, and embedded Web bundle:
+Build the native runtime, non-editable Python wheels, and embedded Web bundle:
 
 ```bash
 pixi run -e ci dist_ci
 pixi run -e ci dist_ci --archive
 ```
 
-Output is written under `build/dist/f8studio-<platform-tag>`. The generated install script creates only release runtime environments and installs repository wheels with `--no-index --no-deps`. The `f8studio-server` wheel contains the production Web bundle, so it does not depend on a source checkout at runtime.
+Output is written under `build/dist/f8studio-<platform-tag>`. The generated install script uses `pixi install --locked` for both third-party dependencies and local wheels. The `f8studio-server` wheel contains the production Web bundle, so it does not depend on a source checkout at runtime.
 
-Build the launcher alone with:
+Startup uses `f8studio.cmd` (Windows) or `./f8studio` (Linux). These small scripts are copied into the release; there is no launcher compilation or separate Python/Tk bundle. If Pixi is missing, the script downloads and runs the official installer (`https://pixi.sh/install.sh` on Linux using curl or wget, `https://pixi.sh/install.ps1` on Windows using PowerShell), then continues without restarting the terminal. The script installs the locked runtime and runs `studio_launch`, which opens the browser after the server has bound its sockets. Keep the terminal open while using Studio; Ctrl+C stops the server.
+
+For the same browser-opening behavior during development:
 
 ```bash
-pixi run -e launcher build_studio_launcher
+pixi run studio_launch
 ```
 
 Windows and Linux release verification must run on their respective operating systems. Linux mocks do not satisfy the Windows gate.

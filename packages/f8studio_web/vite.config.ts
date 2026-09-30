@@ -2,6 +2,7 @@ import react from '@vitejs/plugin-react';
 import { configDefaults, defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  build: { outDir: '../../build/web-studio', emptyOutDir: true },
   plugins: [react()],
   server: {
     proxy: {

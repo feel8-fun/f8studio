@@ -22,7 +22,7 @@ export default defineConfig({
   },
   projects: [{ name: 'graph-performance' }],
   webServer: {
-    command: 'pixi run -e web-studio python -m f8studio_server --host 127.0.0.1 --port 8242 --web-dist packages/f8studio_web/dist',
+    command: 'pixi run -e web-studio python -m f8studio_server --host 127.0.0.1 --port 8242 --web-dist build/web-studio',
     cwd: '../..',
     url: `${baseURL}/api/health`,
     timeout: 30_000,

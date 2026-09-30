@@ -11,9 +11,12 @@ import venv
 import zipfile
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from release_wheels import build_wheels
+
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
-WEB_SOURCE_DIR = REPO_ROOT / "packages" / "f8studio_web" / "dist"
-WEB_PACKAGE_DIR = REPO_ROOT / "packages" / "f8studio_server" / "f8studio_server" / "web_dist"
+WEB_SOURCE_DIR = REPO_ROOT / "build" / "web-studio"
 PACKAGE_DIRS = (
     REPO_ROOT / "packages" / "f8pysdk",
     REPO_ROOT / "packages" / "f8studio_core",
@@ -34,34 +37,13 @@ def _stage_web_bundle() -> None:
     _run([npm_command, "--prefix", "packages/f8studio_web", "run", "build"])
     if not (WEB_SOURCE_DIR / "index.html").is_file():
         raise FileNotFoundError(f"Web build did not produce {WEB_SOURCE_DIR / 'index.html'}")
-    WEB_PACKAGE_DIR.mkdir(parents=True, exist_ok=True)
-    for child in WEB_PACKAGE_DIR.iterdir():
-        if child.name == ".gitkeep":
-            continue
-        if child.is_dir():
-            shutil.rmtree(child)
-        else:
-            child.unlink()
-    shutil.copytree(WEB_SOURCE_DIR, WEB_PACKAGE_DIR, dirs_exist_ok=True)
 
 
 def _build_wheels(wheels_dir: Path) -> tuple[Path, ...]:
-    wheels_dir.mkdir(parents=True, exist_ok=True)
-    for package_dir in PACKAGE_DIRS:
-        _run(
-            [
-                sys.executable,
-                "-m",
-                "pip",
-                "wheel",
-                "--quiet",
-                "--no-deps",
-                "--no-build-isolation",
-                "--wheel-dir",
-                str(wheels_dir),
-                str(package_dir),
-            ]
-        )
+    build_wheels(
+        list(PACKAGE_DIRS), wheels_dir=wheels_dir,
+        staging_dir=wheels_dir.parent / "staging", web_bundle=WEB_SOURCE_DIR,
+    )
     wheels = tuple(sorted(wheels_dir.glob("*.whl")))
     if len(wheels) != len(PACKAGE_DIRS):
         raise RuntimeError(f"expected {len(PACKAGE_DIRS)} wheels, found {len(wheels)}")
@@ -150,9 +132,17 @@ print(f'non-editable release smoke passed: {web_dist}')
     _run([str(python_executable), "-P", "-c", smoke_code], cwd=work_dir)
 
 
+def _verify_dist_lock(work_dir: Path) -> None:
+    from dist_ci import build_runtime_manifest
+
+    build_runtime_manifest(work_dir / "runtime-manifest")
+
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build and verify non-editable Web Studio release wheels.")
     parser.add_argument("--keep", action="store_true", help="Keep temporary wheel and venv output under build/.")
+    parser.add_argument("--verify-dist-lock", action="store_true", help="Build all runtime wheels and validate the release lock.")
     args = parser.parse_args()
     _stage_web_bundle()
     if args.keep:
@@ -163,6 +153,8 @@ def main() -> int:
         wheels = _build_wheels(work_dir / "wheels")
         _assert_wheel_contents(wheels)
         _verify_installed_runtime(work_dir / "venv", wheels, work_dir)
+        if args.verify_dist_lock:
+            _verify_dist_lock(work_dir)
         print(f"release smoke artifacts: {work_dir}")
         return 0
 
@@ -171,6 +163,8 @@ def main() -> int:
         wheels = _build_wheels(work_dir / "wheels")
         _assert_wheel_contents(wheels)
         _verify_installed_runtime(work_dir / "venv", wheels, work_dir)
+        if args.verify_dist_lock:
+            _verify_dist_lock(work_dir)
     return 0
 
 

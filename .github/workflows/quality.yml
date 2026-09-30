@@ -17,6 +17,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: recursive
       - uses: prefix-dev/setup-pixi@v0.9.3
         with:
           environments: default web-studio-test ci
@@ -36,6 +38,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: recursive
       - uses: prefix-dev/setup-pixi@v0.9.3
         with:
           environments: web-studio-test
@@ -43,3 +47,15 @@ jobs:
       - run: pixi run -e web-studio-test npm --prefix packages/f8studio_web ci
       - run: pixi run -e web-studio-test studio_web_typecheck
       - run: pixi run -e web-studio-test studio_web_test
+
+  release-wheels:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - uses: prefix-dev/setup-pixi@v0.9.3
+        with:
+          environments: web-studio-test ci
+          cache: true
+      - run: pixi run --locked -e web-studio-test studio_release_smoke --verify-dist-lock

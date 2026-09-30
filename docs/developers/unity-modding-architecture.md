@@ -155,11 +155,11 @@ manifests, and `f8unitymods-bundle.json` under `unitymods/`. The bundle manifest
 records the submodule commit, dirty flag, size, source path, and SHA-256 for each
 asset. Duplicate release filenames are rejected instead of overwritten.
 
-Local Python packages are built as non-editable wheels. Pixi locks third-party
-dependencies from the root lock seed; `install_env.bat` then installs only the
-local wheels owned by each runtime feature with `pip --no-deps --no-index`.
-This avoids source-tree dependencies and keeps ONNX/MediaPipe packages out of
-the Studio environment unless their feature owns them.
+Local Python packages are built as non-editable wheels from disposable staging
+copies. The release Pixi manifest references these wheels within their owning
+features, and its lock covers both local wheels and third-party dependencies.
+`install_env.bat` and the launcher both install using `pixi install --locked`.
+See [build and release](../development/build-and-release.md) for directory and CI boundaries.
 
 ## Nested Commit Order
 

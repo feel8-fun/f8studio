@@ -71,6 +71,7 @@ nav:
       - Lovense Mock Server: deepdives/LovenseMockServer.md
   - Development:
       - Overview: development/README.md
+      - Build and Release: development/build-and-release.md
       - Service Registration: development/service-registration.md
       - Graph Schema: development/graph-schema.md
       - Web Studio Remote Access: development/web-studio-remote-access.md

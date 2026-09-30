@@ -10,7 +10,7 @@ Get the latest Windows package from:
 
 ## Step 2: Open Studio
 
-Launch `f8studio.exe` on Windows or `./f8studio` on Linux from the extracted release folder. The launcher starts the local server and opens Web Studio in your default browser.
+Launch `f8studio.cmd` on Windows or `./f8studio` on Linux from the extracted release folder. The launcher starts the local server and opens Web Studio in your default browser.
 
 ## Step 3: Pick a Graph Guide
 
@@ -37,3 +37,5 @@ Add the nodes listed in the guide, wire them in the documented order, then revie
 
 - [Studio Quickstart](../getting-started/studio.md)
 - [For Graph Authors](../graph-authors/index.md)
+
+If Pixi is missing, the startup script installs it from the [official Pixi installer](https://pixi.sh), then continues automatically. Linux needs curl or wget; Windows uses PowerShell. Keep the startup terminal open while using Studio; press Ctrl+C to stop the server. Browser automation can be disabled with `--no-browser`.

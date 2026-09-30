@@ -25,7 +25,7 @@ export default defineConfig({
     { name: 'mobile', use: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } },
   ],
   webServer: externalServer ? undefined : {
-    command: 'pixi run -e web-studio python -m f8studio_server --host 127.0.0.1 --port 8240 --web-dist packages/f8studio_web/dist',
+    command: 'pixi run -e web-studio python -m f8studio_server --host 127.0.0.1 --port 8240 --web-dist build/web-studio',
     cwd: '../..',
     url: `${baseURL}/api/health`,
     timeout: 30_000,

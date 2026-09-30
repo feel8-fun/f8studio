@@ -53,7 +53,6 @@ jobs:
           environments: >-
             ci
             cpp
-            launcher
             studio-runtime
 
       - name: Setup MSVC
@@ -122,7 +121,6 @@ jobs:
           environments: >-
             ci
             cpp
-            launcher
             studio-runtime
 
       - name: Setup MSVC
@@ -177,6 +175,9 @@ jobs:
 
       - name: Validate freshly built C++ service contracts
         run: pixi run --frozen python scripts/quality/check_cpp_contracts.py --bin-dir build/Release/bin
+
+      - name: Verify relocated release installation
+        run: pixi run --frozen -e ci python scripts/verify_dist.py build/dist/f8studio-windows-x86_64.zip
 
       - name: Resolve release target
         id: release_target

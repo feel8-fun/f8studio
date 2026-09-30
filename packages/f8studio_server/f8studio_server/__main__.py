@@ -13,6 +13,7 @@ from f8media_protocol.client import RemoteMediaGateway, RemoteMediaGatewayConfig
 
 from .app import DEFAULT_ALLOWED_HOSTS, create_app, default_data_dir
 from .access import StudioAccess
+from .browser import run_server
 from .defaults import DEFAULT_STUDIO_PORT
 from .models import BrowserIceServer, BrowserRtcConfiguration
 from .server_instance import StudioServerAlreadyRunningError, single_server_instance
@@ -29,6 +30,10 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--port", default=DEFAULT_STUDIO_PORT, type=int)
     parser.add_argument("--web-dist", type=Path)
+    parser.add_argument("--open-browser", action=argparse.BooleanOptionalAction, default=False,
+                        help="Open the browser after the server is ready.")
+    parser.add_argument("--no-browser", dest="open_browser", action="store_false",
+                        help="Start without opening a browser.")
     parser.add_argument(
         "--media-gateway-url",
         help="Loopback URL for the Media Gateway. Defaults to a free port when Studio manages the gateway.",
@@ -118,7 +123,8 @@ def main() -> None:
             local_host = "127.0.0.1" if host == "0.0.0.0" else "::1" if host == "::" else host
             url_host = f"[{local_host}]" if ":" in local_host else local_host
             os.environ["F8STUDIO_SERVER_URL"] = f"http://{url_host}:{args.port}"
-            uvicorn.run(app, host=host, port=args.port, log_level="info")
+            server = uvicorn.Server(uvicorn.Config(app, host=host, port=args.port, log_level="info"))
+            run_server(server, browser_url=os.environ["F8STUDIO_SERVER_URL"] if args.open_browser else None)
     except StudioServerAlreadyRunningError as exc:
         raise SystemExit(str(exc)) from exc
 

@@ -36,7 +36,7 @@ There is no dynamic GUI plugin loader. Repository-owned capabilities register ex
 
 ## Distribution
 
-The production Web bundle is embedded in the `f8studio-server` wheel. The launcher installs the `studio-runtime` Pixi environment, starts the server on loopback, waits for `/api/health`, and opens the browser. Runtime distributions install local wheels without editable source paths.
+The production Web bundle is embedded in the `f8studio-server` wheel. The startup script installs the locked Pixi runtime and starts the server on loopback. The server opens the browser after Uvicorn finishes startup and binds its sockets. No compiled launcher is required. Runtime distributions install local wheels without editable source paths.
 
 See [Build from Source](build-from-source.md) for build and verification commands.
 

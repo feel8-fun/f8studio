@@ -4,7 +4,7 @@ Feel8 Web Studio is the graph editor for creating, configuring, deploying, and o
 
 ## Launch
 
-From a packaged release, run `f8studio.exe` on Windows or `./f8studio` on Linux. The launcher installs the pinned runtime when needed, waits for the server health endpoint, and opens `http://127.0.0.1:8210`.
+From a packaged release, run `f8studio.cmd` on Windows or `./f8studio` on Linux. The launcher installs the pinned runtime when needed, waits for the server to be ready, and opens `http://127.0.0.1:8210`.
 
 From a source checkout:
 
@@ -72,3 +72,5 @@ Provider credentials remain server-side. Deterministic graph tools work without 
 - A rejected edge includes the ownership or type rule that failed. Fix the terminal types instead of editing persisted JSON manually.
 
 See [Web Studio Architecture](../developers/web-studio-architecture.md) and [Node Atlas](../node-atlas/index.md) for implementation and node details.
+
+If Pixi is missing, the startup script installs it from the [official Pixi installer](https://pixi.sh), then continues automatically. Linux needs curl or wget; Windows uses PowerShell. Keep the startup terminal open while using Studio; press Ctrl+C to stop the server. Browser automation can be disabled with `--no-browser`.

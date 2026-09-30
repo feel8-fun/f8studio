@@ -99,10 +99,11 @@ T = TypeVar("T")
 
 
 def default_web_dist() -> Path:
-    package_bundle = Path(__file__).resolve().parent / "web_dist"
-    if (package_bundle / "index.html").is_file():
-        return package_bundle
-    return Path(__file__).resolve().parents[2] / "f8studio_web" / "dist"
+    package_dir = Path(__file__).resolve().parent
+    checkout = package_dir.parents[2]
+    if (checkout / "pixi.toml").is_file() and package_dir.parent.parent.name == "packages":
+        return checkout / "build" / "web-studio"
+    return package_dir / "web_dist"
 
 
 def default_data_dir() -> Path:

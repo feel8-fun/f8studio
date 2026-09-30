@@ -157,17 +157,6 @@ datamodel-code-generator = ">=0.50.0,<1"
 [feature.ci.tasks]
 dist_ci = "python scripts/dist_ci.py"
 
-[feature.launcher.dependencies]
-python = ">=3.13,<3.14"
-pip = ">=26.0.1,<27"
-
-[feature.launcher.pypi-dependencies]
-nuitka = ">=2.7.17,<3"
-hatchling = ">=1.28.0,<2"
-
-[feature.launcher.tasks]
-build_studio_launcher = "python scripts/build_studio_launcher.py"
-
 [feature.launcher-runtime]
 
 [feature.web-studio.pypi-dependencies]
@@ -189,6 +178,7 @@ mcp = { version = ">=1.24,<2", extras = ["cli"] }
 [feature.web-studio.tasks]
 studio_media_gateway = "python -m f8media_gateway"
 studio_server = "python -m f8studio_server"
+studio_launch = "python -m f8studio_server --open-browser"
 studio_cli = "python -m f8studio_server.cli"
 studio_mcp = "python -m f8studio_server.mcp_server"
 studio_agent_model_smoke = "python scripts/web_studio/probe_agent_model.py"
@@ -245,7 +235,6 @@ mediapipe = { features = ["python", "sdk", "vision", "mediapipe", "launcher-runt
 doc = { features = ["python", "doc"] }
 cpp = { features = ["cpp"], solve-group = "cpp" }
 ci = { features = ["python", "ci"], solve-group = "ci" }
-launcher = { features = ["launcher"], solve-group = "launcher" }
 web-studio = { features = ["python", "sdk", "web-studio", "web-studio-dev"], solve-group = "web-studio" }
 web-studio-test = { features = ["python", "sdk", "engine", "web-studio", "web-studio-dev", "web-studio-test"], solve-group = "web-studio" }
 web-studio-runtime = { features = ["python", "sdk", "engine"], solve-group = "web-studio" }

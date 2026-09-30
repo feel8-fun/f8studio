@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import importlib.util
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -205,7 +204,11 @@ class DistCiDiscoveryTest(unittest.TestCase):
             'f8unitymods-setup = { path = "external/f8unitymods", editable = true }',
             rendered,
         )
-        self.assertNotIn("f8unitymods-setup =", rendered)
+        self.assertEqual(
+            tomllib.loads(rendered)["feature"]["web-studio"]["pypi-dependencies"]["f8unitymods-setup"],
+            {"path": "wheels/f8unitymods_setup-0.2.0-py3-none-any.whl"},
+        )
+        self.assertNotIn("scripts/", rendered)
 
     def test_ci_environment_reuses_the_runtime_python_feature(self) -> None:
         with Path("pixi.toml").open("rb") as pixi_file:
@@ -270,73 +273,10 @@ class DistCiDiscoveryTest(unittest.TestCase):
     def test_env_install_script_text_installs_only_runtime_environments(self) -> None:
         script_text = self.module._env_install_script_text(["studio-runtime", "onnx"])
 
-        self.assertIn("pixi install -e studio-runtime -e onnx", script_text)
+        self.assertIn("pixi install --locked -e studio-runtime -e onnx", script_text)
         self.assertNotIn("pixi install -a", script_text)
         if os.name == "nt":
             self.assertEqual(script_text.count("if errorlevel 1 exit /b %errorlevel%"), 2)
-
-    def test_env_install_script_installs_local_wheels_in_owned_environments(self) -> None:
-        script_text = self.module._env_install_script_text(
-            ["studio-runtime", "onnx"],
-            {
-                "studio-runtime": [
-                    "wheels/f8studio_server-0.1.0-py3-none-any.whl",
-                    "wheels/f8unitymods_setup-0.2.0-py3-none-any.whl",
-                ],
-                "onnx": ["wheels/f8pydl-0.1.0-py3-none-any.whl"],
-            },
-        )
-
-        self.assertIn(
-            'pixi run -e studio-runtime python -m pip install --no-deps --no-index '
-            '"wheels/f8studio_server-0.1.0-py3-none-any.whl" '
-            '"wheels/f8unitymods_setup-0.2.0-py3-none-any.whl"',
-            script_text,
-        )
-        self.assertIn(
-            'pixi run -e onnx python -m pip install --no-deps --no-index '
-            '"wheels/f8pydl-0.1.0-py3-none-any.whl"',
-            script_text,
-        )
-
-    def test_runtime_environment_wheels_follow_feature_ownership(self) -> None:
-        pixi_toml_path = self.root / "pixi.toml"
-        pixi_toml_path.write_text(
-            "[environments]\n"
-            'studio-runtime = { features = ["sdk", "web-studio"] }\n'
-            'onnx = { features = ["sdk", "onnx"] }\n',
-            encoding="utf-8",
-        )
-        packages = {
-            "f8pysdk": self.module.LocalEditablePackage("packages/f8pysdk", "sdk"),
-            "f8studio-server": self.module.LocalEditablePackage("packages/f8studio_server", "web-studio"),
-            "f8unitymods-setup": self.module.LocalEditablePackage("external/f8unitymods", "web-studio"),
-            "f8pydl": self.module.LocalEditablePackage("packages/f8pydl", "onnx"),
-        }
-        dependency_to_wheel = {
-            dependency_name: f"wheels/{dependency_name}.whl"
-            for dependency_name in packages
-        }
-
-        environment_to_wheels = self.module._runtime_environment_wheels(
-            runtime_environment_names=["studio-runtime", "onnx"],
-            packages=packages,
-            dependency_to_wheel=dependency_to_wheel,
-            pixi_toml_path=pixi_toml_path,
-        )
-
-        self.assertEqual(
-            environment_to_wheels["studio-runtime"],
-            [
-                "wheels/f8pysdk.whl",
-                "wheels/f8studio-server.whl",
-                "wheels/f8unitymods-setup.whl",
-            ],
-        )
-        self.assertEqual(
-            environment_to_wheels["onnx"],
-            ["wheels/f8pysdk.whl", "wheels/f8pydl.whl"],
-        )
 
     def test_filter_dist_environments_keeps_only_runtime_environments(self) -> None:
         pixi_text = (
@@ -619,42 +559,18 @@ class DistCiCppBuildTest(unittest.TestCase):
         self.assertIn("canonical release build preset", str(ctx.exception))
 
 
-class DistCiLauncherIsolationTest(unittest.TestCase):
-    def setUp(self) -> None:
-        self.module = _load_dist_ci_module()
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp_dir.name)
-        self.dist_dir = self.root / "bundle"
-        self.dist_dir.mkdir(parents=True, exist_ok=True)
-        launcher_output_dir = self.root / "build" / "dist"
-        launcher_output_dir.mkdir(parents=True, exist_ok=True)
-        self.launcher_name = self.module._launcher_binary_name()
-        (launcher_output_dir / self.launcher_name).write_text("launcher-binary", encoding="utf-8")
-
-    def tearDown(self) -> None:
-        self.temp_dir.cleanup()
-
-    def test_bundle_studio_launcher_runs_locally_inside_launcher_environment(self) -> None:
-        with (
-            mock.patch.object(self.module, "REPO_ROOT", self.root),
-            mock.patch.object(self.module, "_is_running_inside_pixi_environment", return_value=True),
-            mock.patch.object(self.module, "_run") as run_mock,
-        ):
-            self.module._bundle_studio_launcher(self.dist_dir)
-
-        run_mock.assert_called_once_with(["python", "scripts/build_studio_launcher.py"])
-        self.assertTrue((self.dist_dir / self.launcher_name).is_file())
-
-    def test_bundle_studio_launcher_uses_isolated_launcher_environment(self) -> None:
-        with (
-            mock.patch.object(self.module, "REPO_ROOT", self.root),
-            mock.patch.object(self.module, "_is_running_inside_pixi_environment", return_value=False),
-            mock.patch.object(self.module, "_run") as run_mock,
-        ):
-            self.module._bundle_studio_launcher(self.dist_dir)
-
-        run_mock.assert_called_once_with(["pixi", "run", "--frozen", "-e", "launcher", "build_studio_launcher"])
-        self.assertTrue((self.dist_dir / self.launcher_name).is_file())
+class DistCiLauncherScriptTest(unittest.TestCase):
+    def test_bundle_launcher_copies_script_without_running_a_compiler(self) -> None:
+        module = _load_dist_ci_module()
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            with mock.patch.object(module, "_run") as run:
+                module._bundle_studio_launcher(output)
+            run.assert_not_called()
+            launcher = output / module._launcher_script_name()
+            self.assertIn("studio_launch", launcher.read_text())
+            if os.name != "nt":
+                self.assertTrue(os.access(launcher, os.X_OK))
 
 
 class DistCiUnityModsBundleTest(unittest.TestCase):
@@ -715,57 +631,6 @@ class DistCiUnityModsBundleTest(unittest.TestCase):
                 "--skip-build",
             ]
         )
-
-class DistCiManifestValidationTest(unittest.TestCase):
-    def setUp(self) -> None:
-        self.module = _load_dist_ci_module()
-
-    def test_runtime_dist_manifest_locks_without_unused_feature_warnings(self) -> None:
-        if shutil.which("pixi") is None:
-            self.skipTest("pixi executable is not available")
-
-        runtime_environment_names = self.module._discover_launcher_runtime_environments()
-        self.assertEqual(runtime_environment_names, ["studio-runtime", "onnx", "mediapipe"])
-
-        runtime_feature_names = self.module._discover_environment_feature_names(
-            environment_names=runtime_environment_names
-        )
-        dependency_to_package_dir = self.module._discover_local_editable_package_dirs(
-            allowed_feature_names=set(runtime_feature_names)
-        )
-
-        test_temp_root = Path("build") / "test-tmp"
-        test_temp_root.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(dir=test_temp_root) as temp_dir:
-            temp_root = Path(temp_dir)
-            dependency_to_wheel = {
-                dependency_name: f"wheels/{dependency_name}.whl"
-                for dependency_name in dependency_to_package_dir
-            }
-            dist_pixi_text = self.module._render_dist_pixi_toml(
-                dependency_to_wheel,
-                runtime_environment_names,
-                runtime_feature_names,
-            )
-            self.assertNotIn('preview = ["pixi-build"]', dist_pixi_text)
-            manifest_path = temp_root / "pixi.toml"
-            manifest_path.write_text(dist_pixi_text, encoding="utf-8")
-            shutil.copy2(Path("pixi.lock"), temp_root / "pixi.lock")
-            completed = subprocess.run(
-                ["pixi", "lock", "--manifest-path", os.fspath(manifest_path), "--no-install"],
-                cwd=temp_root,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-
-        combined_output = completed.stdout + completed.stderr
-        self.assertEqual(completed.returncode, 0, combined_output)
-        self.assertNotIn("feature 'doc' is defined but not used", combined_output)
-        self.assertNotIn("feature 'cpp' is defined but not used", combined_output)
-        self.assertNotIn("feature 'ci' is defined but not used", combined_output)
-        self.assertNotIn("feature 'launcher' is defined but not used", combined_output)
-        self.assertNotIn("feature 'test' is defined but not used", combined_output)
 
 if __name__ == "__main__":
     unittest.main()
