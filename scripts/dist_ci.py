@@ -695,7 +695,8 @@ def main() -> int:
 
     _build_cpp_runtime()
     _stage_web_bundle()
-    _run(["pixi", "run", "--frozen", "install_services", "--refresh"])
+    # Select explicitly: the parent dist_ci task runs in the ci environment.
+    _run(["pixi", "run", "--frozen", "-e", "studio-runtime", "install_services", "--refresh"])
 
     platform_tag, platform_dir = _platform_info()
     dist_base_dir = REPO_ROOT / "build" / "dist"
