@@ -59,14 +59,30 @@ jobs:
 
       - uses: prefix-dev/setup-pixi@v0.9.3
         with:
-          # Keep the CLI aligned with the committed v7 lock and local validation.
           pixi-version: v0.81.0
-          cache: true
-          cache-write: true
-          environments: >-
-            ci
-            cpp
-            studio-runtime
+          run-install: false
+          cache: false
+
+      # Own the cache lifecycle: persist environments before any build can fail.
+      - name: Restore Pixi environments
+        id: pixi_cache
+        uses: actions/cache/restore@v5
+        with:
+          path: .pixi
+          key: pixi-dist-v2-all-${{ runner.os }}-0.81.0-${{ hashFiles('pixi.lock') }}-${{ github.workspace }}
+
+      - name: Install locked build and service environments
+        run: pixi install --locked --all
+
+      - name: Save Pixi environments
+        if: success() && steps.pixi_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: .pixi
+          key: ${{ steps.pixi_cache.outputs.cache-primary-key }}
+
+      - name: Check Python service descriptions before native compilation
+        run: pixi run --frozen --no-install -e studio-runtime install_services --refresh --python-only --no-install
 
       - name: Setup MSVC
         shell: pwsh
@@ -139,14 +155,30 @@ jobs:
 
       - uses: prefix-dev/setup-pixi@v0.9.3
         with:
-          # Keep the CLI aligned with the committed v7 lock and local validation.
           pixi-version: v0.81.0
-          cache: true
-          cache-write: false
-          environments: >-
-            ci
-            cpp
-            studio-runtime
+          run-install: false
+          cache: false
+
+      # Own the cache lifecycle: persist environments before any build can fail.
+      - name: Restore Pixi environments
+        id: pixi_cache
+        uses: actions/cache/restore@v5
+        with:
+          path: .pixi
+          key: pixi-dist-v2-all-${{ runner.os }}-0.81.0-${{ hashFiles('pixi.lock') }}-${{ github.workspace }}
+
+      - name: Install locked build and service environments
+        run: pixi install --locked --all
+
+      - name: Save Pixi environments
+        if: success() && steps.pixi_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: .pixi
+          key: ${{ steps.pixi_cache.outputs.cache-primary-key }}
+
+      - name: Check Python service descriptions before native compilation
+        run: pixi run --frozen --no-install -e studio-runtime install_services --refresh --python-only --no-install
 
       - name: Setup MSVC
         shell: pwsh
@@ -172,6 +204,7 @@ jobs:
             }
 
       - name: Restore Conan cache
+        id: conan_cache
         uses: actions/cache/restore@v5
         with:
           path: ${{ env.CONAN_HOME }}
@@ -182,6 +215,17 @@ jobs:
 
       - name: Check pixi lockfile
         run: pixi lock --check
+
+      # Save dependencies before application build/package steps can fail.
+      - name: Prepare Conan dependencies
+        run: pixi run --frozen -e cpp cpp_bootstrap
+
+      - name: Save Conan cache
+        if: success() && steps.conan_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ env.CONAN_HOME }}
+          key: ${{ steps.conan_cache.outputs.cache-primary-key }}
 
       - name: Validate pinned Unity modding submodule
         run: pixi run --frozen -e studio-runtime unitymods_validate

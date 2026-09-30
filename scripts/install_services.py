@@ -11,13 +11,14 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import tomllib
 
 import msgspec
 
 from f8pysdk._specs.builtin_fields import normalize_describe_payload_dict
 from f8pysdk.codec import validate_as
 from f8pysdk.monitoring import validate_describe_monitor_contract
-from f8pysdk.specs import F8ServiceDescribe
+from f8pysdk.specs import F8ServiceDescribe, F8ServiceEntry
 from f8pysdk.resource_paths import service_config_root
 from f8pysdk.service_runtime_tools.inventory.describe import _extract_last_json_obj
 from f8pysdk.service_runtime_tools.inventory.index import default_service_index, indexed_entry, read_service_index
@@ -89,13 +90,61 @@ def migrate_runtime_layout(legacy_root: Path, installation_root: Path) -> int:
     return count
 
 
-def install(index_path: Path, *, refresh: bool, service_classes: set[str]) -> int:
+def pixi_environment(entry: F8ServiceEntry) -> str | None:
+    """Require an explicit, declared task/environment before executing any service."""
+    if entry.launch.command not in {"pixi", "pixi.exe"}:
+        return None
+    args = entry.launch.args or []
+    if len(args) != 4 or args[0] != "run" or args[1] not in {"-e", "--environment"}:
+        raise ValueError(f"{entry.serviceClass}: expected pixi run -e ENV TASK, got {args!r}")
+    environment, task = args[2:]
+    manifest_path = Path(entry.launch.workdir or ".") / "pixi.toml"
+    with manifest_path.open("rb") as source:
+        manifest = tomllib.load(source)
+    environments = manifest.get("environments", {})
+    if environment not in environments:
+        raise ValueError(f"{entry.serviceClass}: unknown Pixi environment {environment!r}")
+    definition = environments[environment]
+    features = definition if isinstance(definition, list) else definition.get("features", [])
+    tasks = set(manifest.get("tasks", {}))
+    for feature in features:
+        tasks.update(manifest.get("feature", {}).get(feature, {}).get("tasks", {}))
+    if task not in tasks:
+        raise ValueError(f"{entry.serviceClass}: task {task!r} is not available in {environment!r}")
+    return environment
+
+
+def describe_service(entry: F8ServiceEntry) -> object:
+    args = list(entry.launch.args or [])
+    if entry.launch.command in {"pixi", "pixi.exe"}:
+        # Dependency installation is a separate phase, outside the describe timeout.
+        args[1:1] = ["--frozen", "--no-install"]
+    command = [entry.launch.command, *args, *(entry.describeArgs or ["--describe"])]
+    env = os.environ.copy()
+    env.update(entry.launch.env or {})
+    print(f"Describe {entry.serviceClass}: {command!r}", flush=True)
+    try:
+        proc = subprocess.run(
+            command, cwd=entry.launch.workdir, env=env, capture_output=True, text=True,
+            timeout=max(30.0, float(entry.timeoutMs or 4000) / 1000), check=True,
+        )
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
+        raise RuntimeError(
+            f"Describe failed for {entry.serviceClass}; cwd={entry.launch.workdir}; "
+            f"command={command!r}; {exc}\nstdout: {exc.stdout}\nstderr: {exc.stderr}"
+        ) from exc
+    return _extract_last_json_obj(proc.stdout)
+
+
+def install(index_path: Path, *, refresh: bool, service_classes: set[str],
+            python_only: bool = False, no_install: bool = False) -> int:
     index_path = index_path.resolve()
     index = read_service_index(index_path)
     known = {item.serviceClass for item in index.services}
     if service_classes - known:
         raise ValueError(f"Unregistered services: {sorted(service_classes - known)}")
-    outputs: list[tuple[Path, bytes]] = []
+    selected: list[tuple[F8ServiceEntry, Path]] = []
+    environments: dict[Path, set[str]] = {}
     for item in index.services:
         if service_classes and item.serviceClass not in service_classes:
             continue
@@ -103,24 +152,34 @@ def install(index_path: Path, *, refresh: bool, service_classes: set[str]) -> in
         if entry is None:
             continue
         target = (index_path.parent / item.describe).resolve()
+        environment = pixi_environment(entry)
+        if python_only and environment is None:
+            continue
+        selected.append((entry, target))
+        if environment is not None and (refresh or not target.is_file()):
+            root = Path(entry.launch.workdir or ".").resolve()
+            environments.setdefault(root, set()).add(environment)
+    # Validate every selected binding before installing or running anything.
+    if not no_install:
+        for root, names in sorted(environments.items()):
+            command = ["pixi", "install", "--locked", "--manifest-path", str(root / "pixi.toml")]
+            for name in sorted(names):
+                command.extend(["-e", name])
+            print(f"Prepare service environments: {command!r}", flush=True)
+            subprocess.run(command, cwd=root, check=True)
+    outputs: list[tuple[Path, bytes]] = []
+    for entry, target in selected:
         if target.is_file() and not refresh:
             raw = msgspec.json.decode(target.read_bytes())
         else:
-            env = os.environ.copy()
-            env.update(entry.launch.env or {})
-            proc = subprocess.run(
-                [entry.launch.command, *(entry.launch.args or []), *(entry.describeArgs or ["--describe"])],
-                cwd=entry.launch.workdir, env=env, capture_output=True, text=True,
-                timeout=max(30.0, float(entry.timeoutMs or 4000) / 1000), check=True,
-            )
-            raw = _extract_last_json_obj(proc.stdout)
+            raw = describe_service(entry)
         if not isinstance(raw, dict):
-            raise ValueError(f"Invalid describe object: {item.serviceClass}")
+            raise ValueError(f"Invalid describe object: {entry.serviceClass}")
         payload = normalize_describe_payload_dict(raw)
         validate_describe_monitor_contract(payload)
         describe = validate_as(F8ServiceDescribe, payload)
-        if describe.service.serviceClass != item.serviceClass:
-            raise ValueError(f"Description class mismatch: {item.serviceClass}")
+        if describe.service.serviceClass != entry.serviceClass:
+            raise ValueError(f"Description class mismatch: {entry.serviceClass}")
         outputs.append((target, msgspec.json.format(msgspec.json.encode(describe), indent=2) + b"\n"))
     # Validate the entire selection before publishing any new descriptions.
     for target, content in outputs:
@@ -139,6 +198,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--index", type=Path)
     parser.add_argument("--refresh", action="store_true", help="Regenerate descriptions by running registered services")
+    parser.add_argument("--python-only", action="store_true", help="Check Pixi services before native compilation")
+    parser.add_argument("--no-install", action="store_true", help="Use environments already prepared by CI")
     parser.add_argument("--service-class", action="append", default=[])
     parser.add_argument("--migrate-resources", type=Path, metavar="OLD_SERVICES_DIR",
                         help="Copy and checksum legacy models; keep original files")
@@ -153,7 +214,8 @@ def main() -> None:
         index = read_service_index(path)
         count = migrate_resources(args.migrate_resources, (path.parent / index.modelRoot).resolve())
         print(f"Verified {count} resource files; originals preserved")
-    count = install(path, refresh=args.refresh, service_classes=set(args.service_class))
+    count = install(path, refresh=args.refresh, service_classes=set(args.service_class),
+                    python_only=args.python_only, no_install=args.no_install)
     print(f"Installed {count} service descriptions from {path}")
 
 
