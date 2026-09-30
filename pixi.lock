@@ -3086,7 +3086,7 @@ packages:
 - pypi: ./packages/f8pysdk
   name: f8pysdk
   version: 0.1.0
-  sha256: eed843b34ece5233c270e544bd8e64d4c8183834693aa85f7f3c11f18a1ce90a
+  sha256: d43e235a8d44c919c19980422bc77ae0e391f336e01b6529b80ccab5bdbdb6bf
   requires_dist:
   - msgspec>=0.18.6
   - eclipse-zenoh>=1.9.0,<1.10

@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [build-system]
-requires = ["hatchling", "datamodel-code-generator[ruff]>=0.50.0", "msgspec>=0.18.6"]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build]
@@ -20,9 +20,6 @@ ignore-vcs = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["f8pysdk"]
-
-[tool.hatch.build.hooks.custom]
-path = "build_hooks.py"
 
 [tool.uv]
 package = true
