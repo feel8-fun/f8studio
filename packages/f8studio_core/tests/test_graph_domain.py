@@ -1,20 +1,17 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import msgspec
 import pytest
 
 from f8pysdk.command import command_input_state_field
-from f8pysdk._specs.builtin_fields import normalize_describe_payload_dict
 from f8pysdk.rungraph_fingerprint import build_rungraph_deploy_fingerprint
 from f8pysdk.specs import (
     F8Command,
     F8EdgeDirection,
     F8EdgeKindEnum,
     F8OperatorSpec,
-    F8ServiceDescribe,
     F8ServiceSpec,
     F8SpecEditPolicy,
     F8StateAccess,
@@ -844,12 +841,11 @@ def test_semantic_revision_ignores_collection_and_mapping_insertion_order() -> N
     assert semantic_graph_revision(document) == semantic_graph_revision(reordered)
 
 
-def test_compiler_uses_repository_service_catalog_fixture() -> None:
-    from f8pysdk.service_runtime_tools.inventory.index import read_service_index
-    index_path = Path(__file__).parents[3] / "config" / "service-index.json"
-    registration = next(item for item in read_service_index(index_path).services if item.serviceClass == "f8.pyengine")
-    describe_path = index_path.parent / registration.describe
-    describe = msgspec.convert(normalize_describe_payload_dict(json.loads(describe_path.read_text())), type=F8ServiceDescribe)
+def test_compiler_uses_real_engine_service_catalog() -> None:
+    from f8pyengine.pyengine_node_registry import register_pyengine_specs
+    from f8pysdk.registry import Registry
+
+    describe = register_pyengine_specs(Registry()).describe("f8.pyengine")
     catalog = NodeCatalog(services=[describe.service], operators=describe.operators)
     service = catalog.create_service_node(node_id="engine", service_class="f8.pyengine")
     phase = catalog.create_operator_node(

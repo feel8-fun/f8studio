@@ -81,6 +81,8 @@ pixi run --locked -e ci dist_ci --archive
 
 ## 验证与 CI
 
+推送 Web 改动前运行 `pixi run --locked -e web-studio-test studio_web_ci`。该命令与 GitHub 的 Web job 共用，依次执行 `npm ci`、TypeScript 检查和全部 Vitest 测试；任一步失败都会停止。
+
 ```sh
 pixi run pytest tests/test_dist_ci.py tests/test_launcher_scripts.py tests/test_release_wheels.py -q
 pixi run --locked -e web-studio-test studio_release_smoke --verify-dist-lock --keep
@@ -89,6 +91,7 @@ pixi run --locked -e ci python scripts/verify_dist.py build/dist/f8studio-window
 
 最后一条应在与发行包对应的平台执行，也支持 Linux tar.gz。
 
+- Python 单元测试不依赖本机的 `runtime/bundles` 或原生编译产物；需要引擎目录时，从真实 PyEngine 注册代码生成临时描述与启动声明。验证 CI 时应使用未安装服务的干净检出目录，避免本机缓存掩盖缺失依赖。
 - quality CI：Python、Web、协议契约检查；额外构建非 editable wheels，验证内嵌页面、HTTP health/root 和全部运行环境的发行锁文件。
 - wheel smoke 的临时 venv 复用测试环境的第三方依赖，但断言项目模块来自已安装 wheel。它不是完全隔离的依赖安装测试。
 - Windows dist CI：构建和原生契约检查后，把压缩包解压到仓库外的临时目录；使用自己的锁文件安装各运行环境，验证本地包安装位置、内嵌页面及实际启动脚本，然后才允许上传。

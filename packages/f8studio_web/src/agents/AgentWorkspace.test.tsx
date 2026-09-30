@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
-import type { AgentSession } from '../api/contracts';
+import type { AgentProviderSummary, AgentSession, ProjectSummary } from '../api/contracts';
 import { AgentWorkspace } from './AgentWorkspace';
 
 const api = vi.hoisted(() => ({
@@ -48,11 +48,22 @@ const baseSession: AgentSession = {
   tracebackId: '',
 };
 
+const baseProject: ProjectSummary = {
+  projectId: 'project1', name: 'Project', description: '', createdAt: '', updatedAt: '',
+  graphRevision: 0, layoutRevision: 0,
+};
+const baseProvider: AgentProviderSummary = {
+  providerId: 'deterministic', displayName: 'Deterministic graph agent',
+  models: ['graph-builder-v1'], configured: true, deterministic: true,
+  supportsImages: false, modelCapabilities: [],
+};
+
 beforeEach(() => {
+  vi.resetAllMocks();
   FakeWebSocket.instances = [];
   vi.stubGlobal('WebSocket', FakeWebSocket);
-  api.fetchProjects.mockResolvedValue([{ projectId: 'project1', name: 'Project', description: '', createdAt: '', updatedAt: '', graphRevision: 0, layoutRevision: 0 }]);
-  api.fetchAgentProviders.mockResolvedValue([{ providerId: 'deterministic', displayName: 'Deterministic graph agent', models: ['graph-builder-v1'], configured: true, deterministic: true }]);
+  api.fetchProjects.mockResolvedValue([baseProject]);
+  api.fetchAgentProviders.mockResolvedValue([baseProvider]);
   api.fetchAgentSessions.mockResolvedValue([]);
   api.createAgentSession.mockResolvedValue(baseSession);
   api.fetchAgentSession.mockResolvedValue(baseSession);
@@ -65,6 +76,32 @@ afterEach(() => {
   vi.clearAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
+});
+
+async function createSession(): Promise<void> {
+  const button = await screen.findByRole('button', { name: 'New agent session' });
+  await waitFor(() => expect(button).toBeEnabled());
+  fireEvent.click(button);
+}
+
+test.each(['projects', 'providers'])('creates a session after delayed %s finish loading', async (resource) => {
+  let finishLoading!: () => void;
+  const loading = new Promise<void>((resolve) => { finishLoading = resolve; });
+  if (resource === 'projects') {
+    api.fetchProjects.mockImplementationOnce(async () => { await loading; return [baseProject]; });
+  } else {
+    api.fetchAgentProviders.mockImplementationOnce(async () => { await loading; return [baseProvider]; });
+  }
+  render(<AgentWorkspace projectId="project1" initialSessionId={null} />);
+  const button = await screen.findByRole('button', { name: 'New agent session' });
+  expect(button).toBeDisabled();
+  fireEvent.click(button);
+  expect(api.createAgentSession).not.toHaveBeenCalled();
+
+  await act(async () => finishLoading());
+  await createSession();
+  expect(await screen.findByRole('textbox', { name: 'Agent prompt' })).toBeInTheDocument();
+  expect(api.createAgentSession).toHaveBeenCalledTimes(1);
 });
 
 test('reconnects after the event socket closes and refreshes the selected session', async () => {
@@ -105,7 +142,7 @@ test('shows exact tool approval and submits its argument hash', async () => {
 
   render(<AgentWorkspace projectId="project1" initialSessionId={null} />);
   await waitFor(() => expect(api.fetchAgentSessions).toHaveBeenCalledWith('project1', expect.any(AbortSignal)));
-  fireEvent.click(await screen.findByRole('button', { name: 'New agent session' }));
+  await createSession();
   fireEvent.change(await screen.findByRole('textbox', { name: 'Agent prompt' }), { target: { value: 'Build graph' } });
   fireEvent.click(screen.getByRole('button', { name: 'Run' }));
 
@@ -125,7 +162,7 @@ test('shows exact tool approval and submits its argument hash', async () => {
 test('renames and deletes a selected session without touching the project', async () => {
   api.renameAgentSession.mockResolvedValue({ ...baseSession, title: 'Cosine graph' });
   render(<AgentWorkspace projectId="project1" initialSessionId={null} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'New agent session' }));
+  await createSession();
   fireEvent.click(await screen.findByRole('button', { name: 'Rename session' }));
   fireEvent.change(screen.getByRole('textbox', { name: 'Session title' }), { target: { value: 'Cosine graph' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save session title' }));
@@ -146,7 +183,7 @@ test('cancels an active run from the workspace', async () => {
 
   render(<AgentWorkspace projectId="project1" initialSessionId={null} />);
   await waitFor(() => expect(api.fetchAgentSessions).toHaveBeenCalledWith('project1', expect.any(AbortSignal)));
-  fireEvent.click(await screen.findByRole('button', { name: 'New agent session' }));
+  await createSession();
   fireEvent.change(await screen.findByRole('textbox', { name: 'Agent prompt' }), { target: { value: 'Inspect graph' } });
   fireEvent.click(await screen.findByRole('button', { name: 'Run' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Cancel agent run' }));
@@ -161,7 +198,7 @@ test('prefers a configured model provider for new sessions', async () => {
     { providerId: 'openai', displayName: 'OpenAI', models: ['configured-model'], configured: true, deterministic: false },
   ]);
   render(<AgentWorkspace projectId="project1" initialSessionId={null} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'New agent session' }));
+  await createSession();
   await waitFor(() => expect(api.createAgentSession).toHaveBeenCalledWith({
     projectId: 'project1', title: 'Studio agent', providerId: 'openai', modelId: 'configured-model',
   }));
@@ -176,7 +213,7 @@ test('switches the model on an existing session and sends an attached image', as
   api.selectAgentModel.mockResolvedValue(selected);
   api.startAgentRun.mockResolvedValue({ ...selected, status: 'running' });
   render(<AgentWorkspace projectId="project1" initialSessionId={null} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'New agent session' }));
+  await createSession();
   await screen.findByRole('textbox', { name: 'Agent prompt' });
   expect(screen.getByRole('button', { name: 'Attach images' })).toBeDisabled();
   fireEvent.change(screen.getByRole('combobox', { name: 'Session provider' }), { target: { value: 'openai' } });
@@ -211,7 +248,7 @@ test('allows images only for the selected model on a shared connection', async (
   api.createAgentSession.mockResolvedValue(textSession);
   api.selectAgentModel.mockResolvedValue({ ...textSession, modelId: 'vision-model' });
   render(<AgentWorkspace projectId="project1" initialSessionId={null} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'New agent session' }));
+  await createSession();
   expect(await screen.findByRole('button', { name: 'Attach images' })).toBeDisabled();
   fireEvent.change(screen.getByRole('combobox', { name: 'Session model' }), { target: { value: 'vision-model' } });
   fireEvent.click(screen.getByRole('button', { name: 'Apply session model' }));
@@ -229,7 +266,7 @@ test('sends the selected reasoning effort only when the user chooses one', async
   api.fetchAgentSession.mockResolvedValue(selected);
   api.startAgentRun.mockResolvedValue({ ...selected, status: 'running' });
   render(<AgentWorkspace projectId="project1" initialSessionId={null} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'New agent session' }));
+  await createSession();
   const effort = await screen.findByRole('combobox', { name: 'Reasoning effort' });
   expect(effort).toHaveValue('auto');
   fireEvent.change(effort, { target: { value: 'high' } });
@@ -250,7 +287,7 @@ test('shows all provider models in the existing session dropdown', async () => {
   render(<AgentWorkspace projectId="project1" initialSessionId={null} />);
   const newModel = await screen.findByRole('combobox', { name: 'Agent model' });
   expect(newModel.querySelectorAll('option')).toHaveLength(27);
-  fireEvent.click(screen.getByRole('button', { name: 'New agent session' }));
+  await createSession();
   const sessionModel = await screen.findByRole('combobox', { name: 'Session model' });
   expect(sessionModel.querySelectorAll('option')).toHaveLength(28);
   fireEvent.change(sessionModel, { target: { value: 'model-27' } });
@@ -304,7 +341,7 @@ test('reports session loading failures in the workspace', async () => {
 test('coalesces event bursts and fetches again after an in-flight refresh', async () => {
   api.fetchAgentSession.mockResolvedValue(baseSession);
   render(<AgentWorkspace projectId="project1" initialSessionId={null} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'New agent session' }));
+  await createSession();
   await screen.findByRole('textbox', { name: 'Agent prompt' });
   let finishRefresh!: (session: AgentSession) => void;
   api.fetchAgentSession.mockImplementationOnce(() => new Promise<AgentSession>((resolve) => { finishRefresh = resolve; }));
@@ -323,7 +360,7 @@ test('coalesces event bursts and fetches again after an in-flight refresh', asyn
 test('clears the prompt only after a successful submission', async () => {
   api.startAgentRun.mockRejectedValueOnce(new Error('Model unavailable')).mockResolvedValueOnce({ ...baseSession, status: 'running' });
   render(<AgentWorkspace projectId="project1" initialSessionId={null} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'New agent session' }));
+  await createSession();
   const prompt = await screen.findByRole('textbox', { name: 'Agent prompt' });
   fireEvent.change(prompt, { target: { value: 'Inspect graph' } });
   fireEvent.click(screen.getByRole('button', { name: 'Run' }));
@@ -336,7 +373,7 @@ test('clears the prompt only after a successful submission', async () => {
 test('sends with Ctrl or Command Enter, preserving newlines and IME composition', async () => {
   api.startAgentRun.mockResolvedValue(baseSession);
   render(<AgentWorkspace projectId="project1" initialSessionId={null} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'New agent session' }));
+  await createSession();
   const prompt = await screen.findByRole('textbox', { name: 'Agent prompt' });
   fireEvent.change(prompt, { target: { value: 'Inspect graph' } });
   fireEvent.keyDown(prompt, { key: 'Enter' });
@@ -361,7 +398,7 @@ test('shows tool activity between the request and response with expandable detai
     toolCalls: [{ toolCallId: 'inspect', toolName: 'graph.read', arguments: { projectId: 'project1' }, argumentsHash: '', targetGraphRevision: 0, status: 'succeeded', createdAt: '2026-09-23T00:00:02Z', updatedAt: '', result: { nodeCount: 2 }, errorMessage: '', tracebackId: '' }],
   });
   render(<AgentWorkspace projectId="project1" initialSessionId={null} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'New agent session' }));
+  await createSession();
   await screen.findByText('Graph inspected');
   const entries = screen.getAllByRole('article');
   expect(entries[0]).toHaveTextContent('Inspect graph');
@@ -382,7 +419,7 @@ test('collapses completed tool bursts while keeping their details available', as
     })),
   });
   render(<AgentWorkspace projectId="project1" initialSessionId={null} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'New agent session' }));
+  await createSession();
   expect(await screen.findByText('3 tool calls')).toBeInTheDocument();
   const group = screen.getByText('3 tool calls').closest('details');
   expect(group).not.toHaveAttribute('open');
@@ -400,7 +437,7 @@ test('drops selected reasoning effort when refreshed model capabilities disable 
   api.createAgentSession.mockResolvedValue(selected);
   api.startAgentRun.mockResolvedValue({ ...selected, status: 'running' });
   render(<AgentWorkspace projectId="project1" initialSessionId={null} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'New agent session' }));
+  await createSession();
   fireEvent.change(await screen.findByRole('combobox', { name: 'Reasoning effort' }), { target: { value: 'high' } });
   api.fetchAgentProviders.mockResolvedValue([
     { ...provider, modelCapabilities: [{ modelId: 'model', thinking: false }] },

@@ -208,6 +208,7 @@ studio_core_test = "python -m pytest -q packages/f8studio_core/tests"
 studio_server_test = "python -m pytest -q packages/f8studio_server/tests"
 studio_media_gateway_test = "python -m pytest -q packages/f8media_gateway/tests"
 studio_web_test = "npm --prefix packages/f8studio_web run test"
+studio_web_ci = "npm --prefix packages/f8studio_web ci && npm --prefix packages/f8studio_web run typecheck && npm --prefix packages/f8studio_web run test"
 studio_web_typecheck = "npm --prefix packages/f8studio_web run typecheck"
 studio_web_e2e = { cmd = "npm --prefix packages/f8studio_web run test:e2e", depends-on = ["studio_web_build"] }
 studio_graph_bench = { cmd = "npm --prefix packages/f8studio_web run test:graph-performance", depends-on = ["studio_web_build"] }

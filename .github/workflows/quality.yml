@@ -44,9 +44,8 @@ jobs:
         with:
           environments: web-studio-test
           cache: true
-      - run: pixi run -e web-studio-test npm --prefix packages/f8studio_web ci
-      - run: pixi run -e web-studio-test studio_web_typecheck
-      - run: pixi run -e web-studio-test studio_web_test
+      - name: Validate Web (same command as local)
+        run: pixi run --locked -e web-studio-test studio_web_ci
 
   release-wheels:
     runs-on: ubuntu-24.04

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
@@ -16,7 +17,7 @@ from fastapi.testclient import TestClient
 
 from f8media_gateway.service import InProcessMediaGateway
 from f8pysdk.specs import F8JsonValue, F8RuntimeGraph
-from f8studio_core.graph import CreateNodeOp, GraphStore, OperatorNode, PatchRequest, RevisionConflictError, new_document, replace_node_spec
+from f8studio_core.graph import CreateNodeOp, OperatorNode, PatchRequest, RevisionConflictError, new_document, replace_node_spec
 from f8studio_server import create_app
 from f8studio_server.agents.models import AgentImage, AgentProviderSummary
 from f8studio_server.agents.providers import AgentProviderRegistry
@@ -35,6 +36,24 @@ from f8studio_server.models import (
     ServiceRuntimeStatus,
 )
 from f8studio_server.runtime import RuntimeMonitorCallback
+
+
+@pytest.fixture
+def engine_service_root(tmp_path: Path) -> Path:
+    """Use real engine specs without requiring installed native/runtime bundles."""
+    from f8pyengine.pyengine_node_registry import register_pyengine_specs
+    from f8pysdk.registry import Registry
+
+    root = tmp_path / "services" / "f8.pyengine"
+    root.mkdir(parents=True)
+    describe = register_pyengine_specs(Registry()).describe("f8.pyengine")
+    (root / "describe.json").write_bytes(msgspec.json.encode(describe))
+    (root / "service.yml").write_text(json.dumps({
+        "schemaVersion": "f8serviceEntry/1", "serviceClass": "f8.pyengine",
+        "label": "PyEngine", "version": "0.0.1",
+        "launch": {"command": sys.executable, "args": ["-m", "f8pyengine.main"], "workdir": str(root)},
+    }), encoding="utf-8")
+    return root
 
 
 class AgentRuntimeGateway:
@@ -806,9 +825,9 @@ def test_cancelling_pending_agent_run_cancels_approval_and_tool(tmp_path: Path) 
         assert project["document"]["graphRevision"] == 0
 
 
-def test_model_tool_loop_edits_graph_and_python_node_code(tmp_path: Path) -> None:
+def test_model_tool_loop_edits_graph_and_python_node_code(tmp_path: Path, engine_service_root: Path) -> None:
     studio = StudioApplication(
-        data_dir=tmp_path / "data", runtime=AgentRuntimeGateway(),
+        data_dir=tmp_path / "data", runtime=AgentRuntimeGateway(), service_roots=(engine_service_root,),
         media_gateway=InProcessMediaGateway(),
     )
     studio.agents._providers = ScriptEditingProvider()
@@ -935,10 +954,10 @@ class GraphProposalProvider(AgentProviderRegistry):
         return "Built the requested cosine and TCode graph."
 
 
-def test_compact_graph_proposal_reaches_approval_and_applies_complete_cosine_chain(tmp_path: Path) -> None:
+def test_compact_graph_proposal_reaches_approval_and_applies_complete_cosine_chain(tmp_path: Path, engine_service_root: Path) -> None:
     from f8studio_core.compiler import compile_document
 
-    studio = StudioApplication(data_dir=tmp_path / "data", runtime=AgentRuntimeGateway(), media_gateway=InProcessMediaGateway())
+    studio = StudioApplication(data_dir=tmp_path / "data", runtime=AgentRuntimeGateway(), service_roots=(engine_service_root,), media_gateway=InProcessMediaGateway())
     studio.agents._providers = GraphProposalProvider()
     studio.projects.create(CreateProjectRequest(project_id="cosine_proposal", name="Cosine proposal"))
     nodes = [studio.catalog.create_node(request) for request in (
@@ -969,9 +988,9 @@ def test_compact_graph_proposal_reaches_approval_and_applies_complete_cosine_cha
         }
 
 
-def test_compact_proposal_refreshes_stale_installed_specs_before_graph_edit(tmp_path: Path) -> None:
+def test_compact_proposal_refreshes_stale_installed_specs_before_graph_edit(tmp_path: Path, engine_service_root: Path) -> None:
     data_dir = tmp_path / "data"
-    studio = StudioApplication(data_dir=data_dir, runtime=AgentRuntimeGateway(), media_gateway=InProcessMediaGateway())
+    studio = StudioApplication(data_dir=data_dir, runtime=AgentRuntimeGateway(), service_roots=(engine_service_root,), media_gateway=InProcessMediaGateway())
     catalog = studio.catalog
     engine = catalog.create_node(CreateCatalogNodeRequest(kind="service", node_id="engine", service_class="f8.pyengine"))
     web = catalog.create_node(CreateCatalogNodeRequest(kind="service", node_id="studio", service_class="f8.pystudio"))
@@ -998,7 +1017,7 @@ def test_compact_proposal_refreshes_stale_installed_specs_before_graph_edit(tmp_
         ), request_id="empty-edit")
     studio.projects.create(CreateProjectRequest(project_id="stale_agent_graph", name="Stale agent graph"))
     ProjectRepository(data_dir / "studio.sqlite3").replace_document("stale_agent_graph", document)
-    studio = StudioApplication(data_dir=data_dir, runtime=AgentRuntimeGateway(), media_gateway=InProcessMediaGateway())
+    studio = StudioApplication(data_dir=data_dir, runtime=AgentRuntimeGateway(), service_roots=(engine_service_root,), media_gateway=InProcessMediaGateway())
     changes = msgspec.convert({
         "expectedGraphRevision": 0, "expectedLayoutRevision": 0,
         "nodes": [
