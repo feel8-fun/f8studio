@@ -496,16 +496,11 @@ class DistCiDiscoveryTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "'web-studio'"):
             self.module._validate_dist_service_environments(self.root / "services", ["studio-runtime", "onnx"])
 
-    def test_copy_dist_config_copies_service_discovery_policy(self) -> None:
+    def test_copy_dist_config_copies_service_index(self) -> None:
         config_root = self.root / "config"
         config_root.mkdir(parents=True, exist_ok=True)
-        policy_path = config_root / "service_discovery_policy.yml"
-        policy_path.write_text(
-            "schemaVersion: f8serviceDiscoveryPolicy/1\n"
-            "disabledServiceClasses:\n"
-            "  - f8.cppengine\n",
-            encoding="utf-8",
-        )
+        index_path = config_root / "service-index.json"
+        index_path.write_text('{"schemaVersion":"f8serviceIndex/1","services":[],"modelRoot":"../resources/models"}\n', encoding="utf-8")
         dist_dir = self.root / "dist"
         dist_dir.mkdir(parents=True, exist_ok=True)
 
@@ -514,8 +509,8 @@ class DistCiDiscoveryTest(unittest.TestCase):
 
         self.assertEqual(copied_root, dist_dir / "config")
         self.assertEqual(
-            (dist_dir / "config" / "service_discovery_policy.yml").read_text(encoding="utf-8"),
-            policy_path.read_text(encoding="utf-8"),
+            (dist_dir / "config" / "service-index.json").read_text(encoding="utf-8"),
+            index_path.read_text(encoding="utf-8"),
         )
 
 

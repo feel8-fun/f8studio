@@ -56,6 +56,14 @@ def test_index_is_relocatable(tmp_path: Path) -> None:
     assert catalog.service_entry("test.service").launch.workdir == str(tmp_path / "after")
 
 
+def test_disabled_service_environment_still_filters_index(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = make_index(tmp_path)
+    monkeypatch.setenv("F8_DISABLED_SERVICE_CLASSES", "test.service")
+    catalog = ServiceCatalog()
+    assert load_index_into_catalog(path=path, catalog=catalog) == []
+    assert catalog.service_entry("test.service") is None
+
+
 def test_missing_describe_does_not_fall_back_to_subprocess(tmp_path: Path) -> None:
     path = make_index(tmp_path)
     (tmp_path / "describe.json").unlink()

@@ -22,25 +22,6 @@ _ENTRY_CANDIDATE_LOAD_ERRORS = (OSError, RuntimeError, TypeError, ValueError)
 _ENTRY_VALIDATION_ERRORS = (TypeError, ValueError, msgspec.ValidationError)
 
 
-def _default_roots() -> list[Path]:
-    env = (os.environ.get("F8_SERVICE_DISCOVERY_DIRS") or "").strip()
-    if env:
-        return [Path(p).expanduser().resolve() for p in env.split(os.pathsep) if p.strip()]
-
-    try:
-        for parent in Path(__file__).resolve().parents:
-            candidate = parent / "config" / "services"
-            if candidate.is_dir():
-                return [candidate.resolve()]
-    except _ENTRY_PATH_ERRORS as exc:
-        logger.debug("default service discovery root probe failed", exc_info=exc)
-    return []
-
-
-def default_discovery_roots() -> list[Path]:
-    return _default_roots()
-
-
 def _read_yaml(path: Path) -> Any:
     try:
         raw = path.read_text("utf-8")
@@ -205,4 +186,4 @@ def load_service_entry(service_dir: Path) -> F8ServiceEntry:
     return _absolutize_entry_paths(entry, service_dir=service_dir)
 
 
-__all__ = ["default_discovery_roots", "find_service_dirs", "load_service_entry"]
+__all__ = ["find_service_dirs", "load_service_entry"]

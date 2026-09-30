@@ -18,10 +18,6 @@ from f8pysdk.service_runtime_tools.inventory.describe import (
 from f8pysdk.service_runtime_tools.inventory.discovery import load_discovery_into_catalog
 from f8pysdk.service_runtime_tools.inventory.entry import find_service_dirs, load_service_entry
 from f8pysdk.service_runtime_tools.inventory.policy import (
-    SERVICE_DISCOVERY_POLICY_ENV,
-    ServiceDiscoveryPolicy,
-    load_default_service_discovery_policy,
-    load_service_discovery_policy,
     merge_disabled_service_classes,
 )
 
@@ -257,47 +253,15 @@ def test_load_discovery_into_catalog_skips_disabled_service_class(tmp_path: Path
         catalog.clear()
 
 
-def test_load_service_discovery_policy_reads_disabled_service_classes(tmp_path: Path) -> None:
-    policy_path = tmp_path / "service_discovery_policy.yml"
-    policy_path.write_text(
-        "schemaVersion: f8serviceDiscoveryPolicy/1\n"
-        "disabledServiceClasses:\n"
-        "  - f8.cppengine\n"
-        "  - f8.tests.experimental\n",
-        encoding="utf-8",
-    )
-
-    policy = load_service_discovery_policy(policy_path)
-
-    assert policy.disabled_service_classes == ("f8.cppengine", "f8.tests.experimental")
-
-
-def test_load_default_service_discovery_policy_uses_env_path(tmp_path: Path, monkeypatch: Any) -> None:
-    policy_path = tmp_path / "policy.yml"
-    policy_path.write_text(
-        "schemaVersion: f8serviceDiscoveryPolicy/1\n"
-        "disabledServiceClasses:\n"
-        "  - f8.cppengine\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setenv(SERVICE_DISCOVERY_POLICY_ENV, str(policy_path))
-
-    policy = load_default_service_discovery_policy(start_path=tmp_path)
-
-    assert policy.disabled_service_classes == ("f8.cppengine",)
-
-
-def test_merge_disabled_service_classes_dedupes_policy_explicit_and_env(monkeypatch: Any) -> None:
-    policy_path_value = "f8.policy,f8.shared"
-    monkeypatch.setenv("F8_DISABLED_SERVICE_CLASSES", f"{policy_path_value}{os.pathsep}f8.env")
+def test_merge_disabled_service_classes_dedupes_explicit_and_env(monkeypatch: Any) -> None:
+    monkeypatch.setenv("F8_DISABLED_SERVICE_CLASSES", f"f8.policy,f8.shared{os.pathsep}f8.env")
 
     merged = merge_disabled_service_classes(
-        policy=ServiceDiscoveryPolicy(disabled_service_classes=("f8.policy",)),
         explicit_service_classes=("f8.cli", "f8.shared"),
         include_env=True,
     )
 
-    assert merged == ("f8.policy", "f8.cli", "f8.shared", "f8.env")
+    assert merged == ("f8.cli", "f8.shared", "f8.policy", "f8.env")
 
 
 def test_checkout_describe_requires_matching_source_fingerprint(tmp_path: Path) -> None:

@@ -30,6 +30,7 @@ pixi run update_describes --service-class f8.pyengine
 ```
 
 `F8_SERVICE_INDEX` 可指定其他安装的索引。重复服务类、服务类不匹配、非法或缺失描述会报错，不自动回退到动态发现；不支持的平台跳过，不尝试其他平台启动文件。
+需要临时禁用服务时，设置 `F8_DISABLED_SERVICE_CLASSES`（多个服务类用逗号分隔）；旧的 `config/service_discovery_policy.yml` 已移除。
 
 CMake 已部署到 `runtime/bundles/`。发行打包复制声明、运行包及共享资源，不携带迁移备份或历史用户配置。文档与节点图鉴也默认读取索引。旧 `scripts/update_static_describes.py` 已删除。
 

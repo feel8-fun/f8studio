@@ -38,13 +38,11 @@ _DISCOVERY_PATH_REWRITE_ERRORS = (AttributeError, OSError, RuntimeError, TypeErr
 def load_discovery_into_catalog(
     *,
     roots: list[Path] | None = None,
-    overwrite: bool = True,
     catalog: ServiceCatalog | None = None,
     builtin_injectors: Sequence[Callable[[ServiceCatalog], str | None]] = (),
     disabled_service_classes: Sequence[str] | None = None,
     force_dynamic_service_classes: Sequence[str] = (),
 ) -> list[str]:
-    _ = overwrite
     clear_discovery_errors()
 
     if roots is None:
@@ -206,21 +204,4 @@ def load_discovery_into_catalog(
     return found
 
 
-def load_discovery_into_registries(
-    *,
-    roots: list[Path] | None = None,
-    overwrite: bool = True,
-    catalog: ServiceCatalog | None = None,
-    builtin_injectors: Sequence[Callable[[ServiceCatalog], str | None]] = (),
-    disabled_service_classes: Sequence[str] | None = None,
-) -> list[str]:
-    return load_discovery_into_catalog(
-        roots=roots,
-        overwrite=overwrite,
-        catalog=catalog,
-        builtin_injectors=builtin_injectors,
-        disabled_service_classes=disabled_service_classes,
-    )
-
-
-__all__ = ["DISABLED_SERVICE_CLASSES_ENV", "load_discovery_into_catalog", "load_discovery_into_registries"]
+__all__ = ["DISABLED_SERVICE_CLASSES_ENV", "load_discovery_into_catalog"]

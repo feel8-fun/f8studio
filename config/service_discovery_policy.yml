@@ -1,3 +1,0 @@
-schemaVersion: f8serviceDiscoveryPolicy/1
-disabledServiceClasses:
-  - f8.cppengine
