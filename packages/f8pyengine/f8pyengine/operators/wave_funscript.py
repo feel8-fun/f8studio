@@ -175,7 +175,8 @@ def _make_linear_model_from_active_points(
         t_values = np.concatenate((t_values, [float(max_t)]))
         y_values = np.concatenate((y_values, [y_values[0]]))
 
-    linear = interp1d(t_values, y_values, kind="linear", bounds_error=False, fill_value="extrapolate", assume_sorted=True)
+    # SciPy documents the string "extrapolate"; its installed annotation only accepts float.
+    linear = interp1d(t_values, y_values, kind="linear", bounds_error=False, fill_value="extrapolate", assume_sorted=True)  # pyright: ignore[reportArgumentType]
 
     def _evaluate(xs: np.ndarray) -> np.ndarray:
         return np.asarray(linear(xs), dtype=np.float64)
@@ -229,7 +230,8 @@ def _extract_axis_map(document: dict[str, Any]) -> tuple[list[str], dict[str, li
             all_axes.append(axis_id)
             axis_points[axis_id] = _normalize_actions(entry.get("actions"))
 
-    metadata = document.get("metadata") if isinstance(document.get("metadata"), dict) else {}
+    metadata_value = document.get("metadata")
+    metadata = metadata_value if isinstance(metadata_value, dict) else {}
     duration_value = _to_float_or_none(metadata.get("duration"))
     duration_from_text = _parse_duration_time_seconds(metadata.get("durationTime"))
     selected_for_fallback = top_actions

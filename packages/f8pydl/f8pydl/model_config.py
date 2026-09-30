@@ -160,14 +160,22 @@ def load_model_spec(yaml_path: Path) -> ModelSpec:
     if schema != "f8onnxModel/1":
         raise ValueError(f"Unsupported model schemaVersion in {yaml_path}: {schema!r}")
 
-    model = data.get("model") if isinstance(data.get("model"), dict) else {}
-    thresholds = data.get("thresholds") if isinstance(data.get("thresholds"), dict) else {}
-    inp = data.get("input") if isinstance(data.get("input"), dict) else {}
-    labels = data.get("labels") if isinstance(data.get("labels"), dict) else {}
-    pose = data.get("pose") if isinstance(data.get("pose"), dict) else {}
-    classification = data.get("classification") if isinstance(data.get("classification"), dict) else {}
-    optflow = data.get("optflow") if isinstance(data.get("optflow"), dict) else {}
-    temporal = data.get("temporal") if isinstance(data.get("temporal"), dict) else {}
+    model_value = data.get("model")
+    model = model_value if isinstance(model_value, dict) else {}
+    thresholds_value = data.get("thresholds")
+    thresholds = thresholds_value if isinstance(thresholds_value, dict) else {}
+    inp_value = data.get("input")
+    inp = inp_value if isinstance(inp_value, dict) else {}
+    labels_value = data.get("labels")
+    labels = labels_value if isinstance(labels_value, dict) else {}
+    pose_value = data.get("pose")
+    pose = pose_value if isinstance(pose_value, dict) else {}
+    classification_value = data.get("classification")
+    classification = classification_value if isinstance(classification_value, dict) else {}
+    optflow_value = data.get("optflow")
+    optflow = optflow_value if isinstance(optflow_value, dict) else {}
+    temporal_value = data.get("temporal")
+    temporal = temporal_value if isinstance(temporal_value, dict) else {}
 
     task_value = _as_str(model.get("task"))
     task = _parse_task(task_value)
@@ -234,7 +242,8 @@ def load_model_spec(yaml_path: Path) -> ModelSpec:
             yaml_path=yaml_path,
         )
 
-    meta = data.get("meta") if isinstance(data.get("meta"), dict) else {}
+    meta_value = data.get("meta")
+    meta = meta_value if isinstance(meta_value, dict) else {}
     return ModelSpec(
         model_id=model_id,
         display_name=display_name,

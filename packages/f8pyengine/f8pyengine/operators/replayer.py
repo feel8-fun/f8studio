@@ -6,7 +6,7 @@ from f8pysdk.codec import coerce_int, coerce_flag
 import asyncio
 import logging
 import time
-from typing import Any, Final
+from typing import Literal, Any, Final
 
 import msgspec
 
@@ -71,7 +71,7 @@ class ReplayerRuntimeNode(OperatorNode):
         self._initial_state = dict(initial_state or {})
         self._path = str(self._initial_state.get("path") or "").strip()
         self._loop_enabled = coerce_flag(self._initial_state.get("loop"), default=False)
-        self._time_mode = _coerce_time_mode(self._initial_state.get("timeMode"), default=TIME_MODE_OFFSET_FROM_PLAY)
+        self._time_mode: Literal["recorded_epoch", "offset_from_play"] = _coerce_time_mode(self._initial_state.get("timeMode"), default=TIME_MODE_OFFSET_FROM_PLAY)
         self._playing = coerce_flag(self._initial_state.get("playing"), default=False)
         self._duration_ms = coerce_int(self._initial_state.get("durationMs"), default=0)
         self._loaded = False
@@ -348,11 +348,11 @@ def _event_ts_ms(event: Any) -> int:
     return int(event.state_ts_ms)
 
 
-def _coerce_time_mode(value: Any, *, default: str) -> str:
+def _coerce_time_mode(value: Any, *, default: Literal["recorded_epoch", "offset_from_play"]) -> Literal["recorded_epoch", "offset_from_play"]:
     text = str(value or "").strip().lower()
-    if text in (TIME_MODE_RECORDED_EPOCH, TIME_MODE_OFFSET_FROM_PLAY):
+    if text == "recorded_epoch" or text == "offset_from_play":
         return text
-    return str(default)
+    return default
 
 
 ReplayerRuntimeNode.SPEC = F8OperatorSpec(

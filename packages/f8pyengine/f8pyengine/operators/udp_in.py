@@ -174,7 +174,7 @@ class UdpInRuntimeNode(OperatorNode, EntrypointNode):
             return
         loop.create_task(self._ensure_receiver(), name=f"udp_in:attach_start:{self.node_id}")
 
-    async def on_lifecycle(self, active: bool, _meta: dict[str, Any]) -> None:
+    async def on_lifecycle(self, active: bool, meta: dict[str, Any]) -> None:
         if bool(active):
             await self._ensure_receiver()
         else:

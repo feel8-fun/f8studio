@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import logging
+import math
 from typing import Any
+
+from f8pysdk.codec import coerce_bool, parse_int, parse_float
 
 from f8pysdk.specs import F8StateAccess, F8StateSpec, integer_schema, string_schema
 from f8pysdk.nodes import OperatorNode
 
 from ..presentation import PresentationOutlet
 
+
+logger = logging.getLogger(__name__)
 
 UPSTREAM_SAMPLING_MODE_PASSIVE = "passive"
 UPSTREAM_SAMPLING_MODE_AUTO = "auto"
@@ -51,8 +57,6 @@ class StudioVizRuntimeNodeBase(OperatorNode):
     Shared helpers for Studio visualization runtime nodes.
     """
 
-    presentation: PresentationOutlet
-
     def __init__(
         self,
         *,
@@ -61,6 +65,7 @@ class StudioVizRuntimeNodeBase(OperatorNode):
         data_out_ports: list[str],
         state_fields: list[str],
         initial_state: dict[str, Any] | None,
+        presentation: PresentationOutlet | None = None,
     ) -> None:
         super().__init__(
             node_id=node_id,
@@ -69,37 +74,62 @@ class StudioVizRuntimeNodeBase(OperatorNode):
             state_fields=state_fields,
         )
         self._initial_state = dict(initial_state or {})
+        self._presentation = presentation
+        self._state_errors: dict[str, tuple[type[BaseException], str]] = {}
+
+    @property
+    def presentation(self) -> PresentationOutlet:
+        if self._presentation is None:
+            raise RuntimeError(f"presentation outlet is not configured for {self.node_id}")
+        return self._presentation
+
+    @presentation.setter
+    def presentation(self, value: PresentationOutlet) -> None:
+        # Retain compatibility for embedded callers; factories inject at construction.
+        self._presentation = value
+
+    async def _config_state_value(self, name: str, *, default: Any = None) -> Any:
+        try:
+            value = await self.get_state_value(name)
+        except (RuntimeError, OSError, TypeError, ValueError) as exc:
+            key = (type(exc), str(exc))
+            if self._state_errors.get(name) != key:
+                logger.exception(
+                    "visualization state read failed node_id=%s field=%s; using initial value", self.node_id, name
+                )
+            self._state_errors[name] = key
+            return self._initial_state.get(name, default)
+        self._state_errors.pop(name, None)
+        return value if value is not None else self._initial_state.get(name, default)
+
+    async def _get_int_state(self, name: str, *, default: int, minimum: int, maximum: int) -> int:
+        raw = await self._config_state_value(name)
+        value = None if isinstance(raw, float) and not math.isfinite(raw) else parse_int(raw)
+        return max(minimum, min(maximum, default if value is None else value))
+
+    async def _get_float_state_optional(self, name: str) -> float | None:
+        value = parse_float(await self._config_state_value(name))
+        return value if value is not None and math.isfinite(value) else None
+
+    async def _get_float_state(self, name: str, *, default: float, minimum: float, maximum: float) -> float:
+        value = await self._get_float_state_optional(name)
+        return max(minimum, min(maximum, default if value is None else value))
+
+    async def _get_bool_state(self, name: str, *, default: bool) -> bool:
+        return coerce_bool(await self._config_state_value(name), default=default)
+
+    async def _get_str_state(self, name: str, *, default: str) -> str:
+        value = await self._config_state_value(name)
+        return str(value) if value is not None else default
 
     async def get_upstream_sampling_mode(self) -> str:
-        mode_any: Any = None
-        try:
-            mode_any = await self.get_state_value("upstreamSamplingMode")
-        except (RuntimeError, TypeError, ValueError):
-            mode_any = None
-        if mode_any is None:
-            mode_any = self._initial_state.get("upstreamSamplingMode", UPSTREAM_SAMPLING_MODE_AUTO)
-        mode = str(mode_any or "").strip().lower()
-        if mode not in UPSTREAM_SAMPLING_MODE_VALUES:
-            return UPSTREAM_SAMPLING_MODE_AUTO
-        return mode
+        mode = (await self._get_str_state("upstreamSamplingMode", default=UPSTREAM_SAMPLING_MODE_AUTO)).strip().lower()
+        return mode if mode in UPSTREAM_SAMPLING_MODE_VALUES else UPSTREAM_SAMPLING_MODE_AUTO
 
     async def get_upstream_sample_interval_ms(self) -> int:
-        interval_any: Any = None
-        try:
-            interval_any = await self.get_state_value("upstreamSampleIntervalMs")
-        except (RuntimeError, TypeError, ValueError):
-            interval_any = None
-        if interval_any is None:
-            interval_any = self._initial_state.get(
-                "upstreamSampleIntervalMs",
-                UPSTREAM_SAMPLE_INTERVAL_MS_DEFAULT,
-            )
-        try:
-            interval_ms = int(interval_any) if interval_any is not None else UPSTREAM_SAMPLE_INTERVAL_MS_DEFAULT
-        except (TypeError, ValueError):
-            interval_ms = UPSTREAM_SAMPLE_INTERVAL_MS_DEFAULT
-        if interval_ms < UPSTREAM_SAMPLE_INTERVAL_MS_MIN:
-            interval_ms = UPSTREAM_SAMPLE_INTERVAL_MS_MIN
-        if interval_ms > UPSTREAM_SAMPLE_INTERVAL_MS_MAX:
-            interval_ms = UPSTREAM_SAMPLE_INTERVAL_MS_MAX
-        return interval_ms
+        return await self._get_int_state(
+            "upstreamSampleIntervalMs",
+            default=UPSTREAM_SAMPLE_INTERVAL_MS_DEFAULT,
+            minimum=UPSTREAM_SAMPLE_INTERVAL_MS_MIN,
+            maximum=UPSTREAM_SAMPLE_INTERVAL_MS_MAX,
+        )

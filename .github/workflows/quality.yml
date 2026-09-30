@@ -27,6 +27,7 @@ jobs:
       - run: pixi run -e web-studio-test python scripts/web_studio/generate_contracts.py --check
       - run: pixi run -e ci python scripts/protocol_codegen_msgspec.py --protocol schemas/protocol.yml --output packages/f8pysdk/f8pysdk/generated/__init__.py --check
       - run: pixi run python scripts/generate_runtime_keys.py --check
+      - run: pixi run python scripts/generate_runtime_policy.py --check
       - run: pixi run python scripts/generate_stream_wire.py --check
       - run: pixi run lint
       - run: pixi run lint_imports

@@ -225,6 +225,8 @@ test('sends the selected reasoning effort only when the user chooses one', async
   ]);
   const selected = { ...baseSession, providerId: 'openai', modelId: 'reasoning-model' };
   api.createAgentSession.mockResolvedValue(selected);
+  // A reconnect/resync must return the same model as session creation.
+  api.fetchAgentSession.mockResolvedValue(selected);
   api.startAgentRun.mockResolvedValue({ ...selected, status: 'running' });
   render(<AgentWorkspace projectId="project1" initialSessionId={null} />);
   fireEvent.click(await screen.findByRole('button', { name: 'New agent session' }));

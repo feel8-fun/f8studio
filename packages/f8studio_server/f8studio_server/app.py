@@ -83,9 +83,19 @@ from .models import (
 from .runtime import RuntimeConfig, RuntimeGateway
 
 
+from .access import StudioAccess, StudioAccessMiddleware
+from .errors import ConflictError, ServiceUnavailableError, api_error
+from f8pysdk.f8_naming import TokenValidationError
+from f8media_protocol.models import MediaInputError
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
 logger = logging.getLogger(__name__)
 SERVER_VERSION = "0.1.0"
 T = TypeVar("T")
+
+
+
 
 
 def default_web_dist() -> Path:
@@ -102,12 +112,7 @@ def default_data_dir() -> Path:
     return (Path.home() / ".local" / "share" / "f8studio-web").resolve()
 
 
-from .access import StudioAccess, StudioAccessMiddleware
-from .errors import ConflictError, ServiceUnavailableError, api_error
-from f8pysdk.f8_naming import TokenValidationError
-from f8media_protocol.models import MediaInputError
-from fastapi.exceptions import RequestValidationError
-from starlette.exceptions import HTTPException as StarletteHTTPException
+
 
 
 DEFAULT_ALLOWED_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "testserver"})

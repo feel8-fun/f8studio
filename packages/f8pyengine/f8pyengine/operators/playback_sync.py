@@ -119,7 +119,7 @@ class PlaybackSyncRuntimeNode(OperatorNode):
         self._last_ctx_id: str | int | None = None
         self._last_snapshot: _EstimateSnapshot | None = None
 
-    async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
+    async def on_exec(self, exec_id: str | int, in_port: str | None = None) -> list[str]:
         return list(self._exec_out_ports)
 
     async def on_data(self, port: str, value: Any, *, ts_ms: int | None = None) -> None:

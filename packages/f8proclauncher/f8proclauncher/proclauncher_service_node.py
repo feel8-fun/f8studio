@@ -242,7 +242,7 @@ class ProcLauncherServiceNode(ServiceNode, ClosableNode):
         initial_detached = _coerce_bool(self._initial_state.get(_FIELD_DETACHED, True))
         self._detached = True if initial_detached is None else bool(initial_detached)
 
-        self._proc: subprocess.Popen[str] | None = None
+        self._proc: subprocess.Popen[bytes] | None = None
         self._pidfile: Path | None = None
         self._last_error_sig: str | None = None
 
@@ -372,22 +372,11 @@ class ProcLauncherServiceNode(ServiceNode, ClosableNode):
         await self._spawn(argv, detached=detached)
 
     async def _spawn(self, argv: list[str], *, detached: bool) -> None:
-        kwargs: dict[str, object] = {
-            "stdin": subprocess.DEVNULL,
-            "stdout": subprocess.DEVNULL,
-            "stderr": subprocess.DEVNULL,
-            "close_fds": True,
-        }
-        if detached:
-            if _is_windows():
-                kwargs["creationflags"] = (
-                    subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS | subprocess.CREATE_NO_WINDOW
-                )
-            else:
-                kwargs["start_new_session"] = True
-
+        creationflags = 0
+        if detached and _is_windows():
+            creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS | subprocess.CREATE_NO_WINDOW
         try:
-            proc = subprocess.Popen([str(x) for x in argv], **kwargs)
+            proc = subprocess.Popen([str(x) for x in argv], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True, creationflags=creationflags, start_new_session=detached and not _is_windows())
         except FileNotFoundError:
             self._log_once(f"program not found argv={argv!r}", sig=f"spawn:fnf:{argv!r}", level="error")
             return

@@ -1,0 +1,13 @@
+{
+  "graph": {
+    "graphId": "ignored", "revision": "ignored",
+    "nodes": [{"nodeId":"node", "serviceId":"service", "serviceClass":"demo", "stateValues":{"gain":99}, "execOutPorts":["z","a"], "dataInPorts":[{"name":"signal","valueSchema":{"type":"number"},"definitionProtected":true,"showOnNode":true}], "stateFields":[{"name":"gain","valueSchema":{"type":"number","default":1.25},"access":"rw","showOnNode":false,"redactOnPublish":false,"control":{"kind":"slider"},"label":"增益"}]}],
+    "services": [{"serviceId":"z","serviceClass":"demo"},{"serviceId":"a","serviceClass":"demo"}],
+    "edges": [{"edgeId":"ignored","kind":"exec","fromServiceId":"service","fromPort":"a","toServiceId":"other","toPort":"in"}]
+  },
+  "snapshot": {
+    "nodes": [{"nodeId":"node", "serviceId":"service", "serviceClass":"demo", "execOutPorts":["a","z"], "dataInPorts":[{"name":"signal","valueSchema":{"type":"number"}}], "stateFields":[{"name":"gain","valueSchema":{"type":"number","default":1.25},"access":"rw","label":"增益"}]}],
+    "services": [{"serviceId":"a","serviceClass":"demo"},{"serviceId":"z","serviceClass":"demo"}],
+    "edges": [{"kind":"exec","fromServiceId":"service","fromPort":"a","toServiceId":"other","toPort":"in"}]
+  }
+}

@@ -1,6 +1,5 @@
-from __future__ import annotations
-
 """Workflow-side metadata builders owned by `service_bus`."""
+from __future__ import annotations
 
 from typing import Any
 

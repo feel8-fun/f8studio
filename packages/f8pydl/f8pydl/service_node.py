@@ -899,7 +899,6 @@ class OnnxVisionServiceNode(ServiceNode):
                     bgra = rows[:, : width * 4].reshape((height, width, 4))
                     frame_bgr = bgra[:, :, 0:3]
 
-                    t_infer0 = time.perf_counter()
                     if temporal_runtime is not None:
                         prepared = await self._prepare_temporal_frame(temporal_runtime, frame_bgr)
                         self._append_temporal_frame(

@@ -1,6 +1,5 @@
-from __future__ import annotations
-
 """Internal logging helpers owned by `service_bus`."""
+from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING

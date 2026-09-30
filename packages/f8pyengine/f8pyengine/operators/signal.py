@@ -6,6 +6,7 @@ import time
 from typing import Any
 
 from f8pysdk.specs import (
+    boolean_schema,
     F8DataPortSpec,
     F8OperatorSchemaVersion,
     F8OperatorSpec,
@@ -148,7 +149,7 @@ PhaseRuntimeNode.SPEC = F8OperatorSpec(
             name="phase", description="Absolute phase override (0..1).", valueSchema=number_schema(), definitionProtected=False
         ),
         F8DataPortSpec(
-            name="reset", description="If true, reset phase to 0.", valueSchema={"type": "boolean"}, definitionProtected=False
+            name="reset", description="If true, reset phase to 0.", valueSchema=boolean_schema(), definitionProtected=False
         ),
     ],
     dataOutPorts=[

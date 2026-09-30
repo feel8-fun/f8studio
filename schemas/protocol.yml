@@ -1248,6 +1248,12 @@ components:
               default: array
             items:
               $ref: "#/components/schemas/F8DataTypeSchema"
+            minItems:
+              type: integer
+              minimum: 0
+            maxItems:
+              type: integer
+              minimum: 0
           required:
             - type
             - items

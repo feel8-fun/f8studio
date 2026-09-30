@@ -25,11 +25,11 @@ from f8pysdk.nodes import OperatorNode
 from f8pysdk.registry import Registry
 
 from ..constants import SERVICE_CLASS
+from ._py_expr_eval import np as np
 from ._py_expr_eval import (
     compile_expr,
     is_identifier,
     normalize_expr_code,
-    np,
     safe_eval_compiled,
     unwrap_wrapped_value,
     wrap_value,

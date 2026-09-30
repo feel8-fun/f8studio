@@ -801,7 +801,6 @@ class OnnxOptflowServiceNode(ServiceNode):
                     if (int(self._new_frame_counter) % int(self._compute_every_n_frames)) != 0:
                         continue
 
-                    t_infer0 = time.perf_counter()
                     prev_frame, current_frame = pair
                     try:
                         flow = runtime.infer_preprocessed(

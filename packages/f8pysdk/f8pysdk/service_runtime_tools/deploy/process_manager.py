@@ -204,7 +204,7 @@ def _find_windows_service_processes_by_service_id(
     for row in command_rows:
         pid_raw = row.get("ProcessId")
         try:
-            pid = int(pid_raw)
+            pid = int(pid_raw) if isinstance(pid_raw, (str, int, float)) else 0
         except (TypeError, ValueError):
             continue
         if int(pid) == int(current_pid):

@@ -114,7 +114,7 @@ class ExecBranchRuntimeNode(OperatorNode):
             return _normalized_selector(value)
         return value
 
-    async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
+    async def on_exec(self, exec_id: str | int, in_port: str | None = None) -> list[str]:
         resolved = self._resolve_branch()
         self._resolved_branch = resolved
         await self._publish_resolved_branch_if_needed()
@@ -213,7 +213,7 @@ class ExecMergeRuntimeNode(OperatorNode):
             exec_out_ports=exec_out_ports(node, default=["exec"]),
         )
 
-    async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
+    async def on_exec(self, exec_id: str | int, in_port: str | None = None) -> list[str]:
         if "exec" in self.exec_out_ports:
             return ["exec"]
         if self.exec_out_ports:
@@ -277,7 +277,7 @@ class DataMuxRuntimeNode(OperatorNode):
             return _normalized_selector(value)
         return value
 
-    async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
+    async def on_exec(self, exec_id: str | int, in_port: str | None = None) -> list[str]:
         if "exec" in self.exec_out_ports:
             return ["exec"]
         if self.exec_out_ports:

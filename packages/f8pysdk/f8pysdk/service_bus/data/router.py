@@ -589,7 +589,7 @@ class DataRouter:
             return False
         try:
             timeout = edge.timeoutMs
-            if timeout is None:
+            if timeout is None or isinstance(timeout, msgspec.UnsetType):
                 return False
             timeout_i = int(timeout)
             if timeout_i <= 0:
@@ -630,7 +630,8 @@ class DataRouter:
         max_n = self._default_queue_size
         if buf.edge is not None:
             try:
-                max_n = max(1, int(buf.edge.queueSize))
+                queue_size = buf.edge.queueSize
+                max_n = max(1, queue_size) if isinstance(queue_size, int) else self._default_queue_size
             except (AttributeError, TypeError, ValueError):
                 max_n = self._default_queue_size
         dropped_count = 0

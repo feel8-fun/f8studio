@@ -17,7 +17,6 @@ from .describe import (
     discovery_parallelism,
     discovery_slow_ms_default,
     last_discovery_error_lines,
-    last_discovery_timing_lines,
     read_static_describe_payload,
     set_discovery_timing_lines,
 )
@@ -158,7 +157,7 @@ def load_discovery_into_catalog(
     else:
         set_discovery_timing_lines([])
 
-    for service_dir, entry in entries:
+    for service_dir, _entry in entries:
         payload = payload_by_dir.get(service_dir)
         if payload is None:
             continue

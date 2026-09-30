@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 State-side internal owner package for `service_bus`.
 
@@ -12,3 +10,4 @@ Import concrete owner modules directly:
 - `f8pysdk.service_bus.state.helpers`
 - `f8pysdk.service_bus.state.options`
 """
+from __future__ import annotations

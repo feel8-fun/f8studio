@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import importlib
 from collections.abc import Callable
-from typing import Any, TypeAlias
+from typing import Any, TypeAlias, Protocol, cast
 
 import msgspec
 
@@ -302,6 +302,14 @@ class RuntimeNodeRegistry:
             importlib.import_module(normalized_name)
 
 
+class _ServiceConstructor(Protocol):
+    def __call__(self, *, node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode: ...
+
+
+class _OperatorConstructor(Protocol):
+    def __call__(self, *, node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> OperatorNode: ...
+
+
 ServiceFactoryLike: TypeAlias = ServiceFactory | type[RuntimeNode]
 OperatorFactoryLike: TypeAlias = OperatorFactory | type[OperatorNode]
 
@@ -312,7 +320,7 @@ def _coerce_service_factory(factory: ServiceFactoryLike) -> ServiceFactory:
             raise TypeError(f"service factory type must inherit RuntimeNode, got {factory.__name__}")
 
         def _build(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
-            created = factory(
+            created = cast(_ServiceConstructor, factory)(
                 node_id=str(node_id),
                 node=node,
                 initial_state=dict(initial_state or {}),
@@ -331,7 +339,7 @@ def _coerce_operator_factory(factory: OperatorFactoryLike) -> OperatorFactory:
             raise TypeError(f"operator factory type must inherit OperatorNode, got {factory.__name__}")
 
         def _build(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> OperatorNode:
-            created = factory(
+            created = cast(_OperatorConstructor, factory)(
                 node_id=str(node_id),
                 node=node,
                 initial_state=dict(initial_state or {}),

@@ -157,7 +157,8 @@ def _make_linear_model(points: list[tuple[float, float]], *, max_t: float) -> Ca
         t_values = np.concatenate((t_values, [float(max_t)]))
         y_values = np.concatenate((y_values, [y_values[0]]))
 
-    linear = interp1d(t_values, y_values, kind="linear", bounds_error=False, fill_value="extrapolate", assume_sorted=True)
+    # SciPy documents the string "extrapolate"; its installed annotation only accepts float.
+    linear = interp1d(t_values, y_values, kind="linear", bounds_error=False, fill_value="extrapolate", assume_sorted=True)  # pyright: ignore[reportArgumentType]
 
     def _evaluate(xs: np.ndarray) -> np.ndarray:
         out = linear(xs)

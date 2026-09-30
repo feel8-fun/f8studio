@@ -51,11 +51,21 @@ Wire definitions have one source per boundary:
 | Event/live messages and built-in visualization payloads | `presentation_models.py` and `events.py` | TypeScript models; publishers construct the same models |
 | Audio/video binary headers and format constants | `schemas/stream-wire.json` | Explicit Python/C++ header codecs |
 | Runtime key templates | `schemas/runtime-keys.json` | Python/C++ key builders used by public naming APIs |
+| Runtime control endpoint names | `schemas/runtime-control.json` | Python enum and C++ endpoint constants/registration list |
+| Rungraph fingerprint normalization | `schemas/rungraph-fingerprint.json` | Python/C++ normalization and canonical serialization |
 
-Run `pixi run protocol_codegen_all` after changing shared schemas or server models. CMake also generates its protocol header in the build tree and checks the checked-in stream/key files. CI checks Python protocol generation, Studio contracts, stream headers and key templates for drift.
+Run `pixi run protocol_codegen_all` after changing shared schemas or server models. CMake also generates its protocol header in the build tree and checks the checked-in stream/key/policy files. CI checks Python protocol generation, Studio contracts, stream headers, key templates and runtime policies for drift.
 
 Generated `FooInput` models describe accepted requests: defaulted fields may be omitted. Generated `Foo` models describe emitted responses: ordinary defaults are present, while `UNSET` and `omit_defaults` preserve optionality. Recursive references and discriminator mappings stay within their input/output direction. `ApiRequests` binds browser JSON body builders to route keys; `contracts.ts` is an alias/validation facade without independent wire interfaces.
 
 Generation does not replace boundary validation. Browser validators and server decoders still validate untrusted input. User-defined state, custom service payloads and extension presentation commands remain JSON values because their schemas are defined at runtime. UI rendering state, leases and normalized display projections remain local types. Key validation, wildcard/path normalization, and transport behavior remain explicit application code around the generated formats. Legacy command paths keep their existing spelling.
 
 Compile-only TypeScript tests check defaults, nullability, recursive schemas, operation tags, request bodies and fixed-size coordinates. Cross-language tests compile a C++ fixture and compare its encoded bytes with the historical Python wire layout, including negative timestamps and large 64-bit identifiers.
+
+C++ JSON models use concrete nested structs, maps, vectors, enums and recursive schema variants. Optional fields reject malformed values; optional nullable fields distinguish absence from explicit null. Parsing commits the output only on success. Explicitly dynamic `F8JsonValue` payloads remain JSON. These decoders check shapes, types and constants, not every JSON Schema numeric/string constraint. Unsupported schema constructs and conflicting enum definitions fail generation. Python/C++ fingerprint tests share a fixture including Unicode, ordering and ignored UI metadata.
+
+## Static checks and shared lifecycle helpers
+
+`pixi run typecheck` uses Pyright standard mode for SDK, engine and Python services; `pixi run -e web-studio-test studio_python_typecheck` retains strict Studio/media checking. Argument, assignment, call and optional-member diagnostics are enabled. Missing third-party stubs remain exempt; two localized SciPy `interp1d` suppressions document an incorrect installed annotation. `pixi run lint` checks E4/E7/E9/F and Bugbear rules; `lint_imports` checks package boundaries and `quality_exceptions` prevents broad/silent exception regressions.
+
+All seven built-in Viz nodes share typed presentation injection and configuration conversion. Wave, track and 3D views share one throttled refresh owner that coalesces pending updates, reports background failures and finishes shutdown before detach. Audio/video gateway managers share typed negotiation, source leases, disconnected-session reaping and shutdown through `SessionManager`; media-specific tracks, quality settings, overlays and drop accounting stay in their concrete managers. Shutdown cancels in-flight negotiations and attempts all session cleanup before reporting failures.

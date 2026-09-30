@@ -25,7 +25,6 @@ from ..rungraph_fingerprint import build_rungraph_deploy_fingerprint
 from ..service_runtime_tools.deploy.readiness import rungraph_deploy_request_status_key
 from ..runtime_transport import RuntimeTransport
 from ..zenoh_transport import ZenohTransport, ZenohTransportConfig
-from ..zenoh_naming import zenoh_data_key, zenoh_state_path_key
 from ..state import StateRead, StateWriteOrigin, StateWriteSource
 from ..time_utils import now_ms
 from .config import ServiceBusConfig, _debug_state_enabled
@@ -60,6 +59,10 @@ def _coerce_data_delivery_mode(value: Any) -> DataDeliveryMode | None:
     if text in ("buffered", "callback"):
         return text
     return None
+
+
+class ExecEmitter(Protocol):
+    def __call__(self, node_id: str, port: str, /, *, exec_id: str | int) -> Awaitable[None]: ...
 
 
 class _ServiceBusNode(StatefulNode, BusAttachableNode, Protocol):
@@ -290,7 +293,7 @@ class ServiceBus:
                 gpu_enabled=bool(config.monitor_gpu_enabled),
             ),
         )
-        self._exec_emitter: Callable[[str, str, str | int], Awaitable[None]] | None = None
+        self._exec_emitter: ExecEmitter | None = None
         if self._monitor_collector.enabled:
             self._monitor_record_emit = self._record_emit_metrics_enabled
             self._monitor_record_wait = self._record_wait_metrics_enabled
@@ -989,7 +992,7 @@ class ServiceBus:
         port_s = ensure_token(port, label="port_id")
         await self._data_router.emit_data(node_id_s, port_s, value, ts_ms=ts_ms, ctx_id=ctx_id)
 
-    def set_exec_emitter(self, emitter: Callable[[str, str, str | int], Awaitable[None]] | None) -> None:
+    def set_exec_emitter(self, emitter: ExecEmitter | None) -> None:
         self._exec_emitter = emitter
 
     async def emit_exec(self, node_id: str, port: str, *, exec_id: str | int) -> None:

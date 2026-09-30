@@ -132,10 +132,12 @@ def _parse_pose(value: Any) -> _Pose | None:
     rotation_values = tuple(_finite_float(item) for item in rotation_raw)
     if any(item is None for item in position_values) or any(item is None for item in rotation_values):
         return None
-    position = (float(position_values[0]), float(position_values[1]), float(position_values[2]))
-    rotation = _normalize_quaternion(
-        (float(rotation_values[0]), float(rotation_values[1]), float(rotation_values[2]), float(rotation_values[3]))
-    )
+    px, py, pz = position_values
+    rx, ry, rz, rw = rotation_values
+    if px is None or py is None or pz is None or rx is None or ry is None or rz is None or rw is None:
+        return None
+    position = (px, py, pz)
+    rotation = _normalize_quaternion((rx, ry, rz, rw))
     if rotation is None:
         return None
     return _Pose(position=position, rotation=rotation)
@@ -177,7 +179,7 @@ def _relative_axes(reference: _Pose, target: _Pose, primary_axis: str, invert_pr
 
 
 def _finite_float(value: object) -> float | None:
-    if value is None or isinstance(value, bool):
+    if not isinstance(value, (str, int, float)) or isinstance(value, bool):
         return None
     try:
         numeric = float(value)

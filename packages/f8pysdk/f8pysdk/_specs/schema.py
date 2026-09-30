@@ -206,23 +206,18 @@ def number_schema(
     minimum: float | None = None,
     maximum: float | None = None,
 ) -> F8NumberTypeSchema:
-    kwargs: dict[str, object] = {}
-    if default is not None:
-        kwargs["default"] = default
-    if minimum is not None:
-        kwargs["minimum"] = minimum
-    if maximum is not None:
-        kwargs["maximum"] = maximum
-    return F8NumberTypeSchema(**kwargs)
+    return F8NumberTypeSchema(
+        default=default if default is not None else UNSET,
+        minimum=minimum if minimum is not None else UNSET,
+        maximum=maximum if maximum is not None else UNSET,
+    )
 
 
 def string_schema(*, default: str | None = None, enum: list[str] | None = None) -> F8StringTypeSchema:
-    kwargs: dict[str, object] = {}
-    if default is not None:
-        kwargs["default"] = default
-    if enum is not None:
-        kwargs["enum"] = enum
-    return F8StringTypeSchema(**kwargs)
+    return F8StringTypeSchema(
+        default=default if default is not None else UNSET,
+        enum=enum if enum is not None else UNSET,
+    )
 
 
 def integer_schema(
@@ -231,21 +226,17 @@ def integer_schema(
     minimum: int | None = None,
     maximum: int | None = None,
 ) -> F8IntegerTypeSchema:
-    kwargs: dict[str, object] = {}
-    if default is not None:
-        kwargs["default"] = default
-    if minimum is not None:
-        kwargs["minimum"] = minimum
-    if maximum is not None:
-        kwargs["maximum"] = maximum
-    return F8IntegerTypeSchema(**kwargs)
+    return F8IntegerTypeSchema(
+        default=default if default is not None else UNSET,
+        minimum=minimum if minimum is not None else UNSET,
+        maximum=maximum if maximum is not None else UNSET,
+    )
 
 
 def boolean_schema(*, default: bool | None = None) -> F8BooleanTypeSchema:
-    kwargs: dict[str, object] = {}
-    if default is not None:
-        kwargs["default"] = default
-    return F8BooleanTypeSchema(**kwargs)
+    return F8BooleanTypeSchema(
+        default=default if default is not None else UNSET,
+    )
 
 
 def array_schema(
@@ -253,10 +244,10 @@ def array_schema(
     items: F8DataTypeSchema,
     default: list[object] | None = None,
 ) -> F8ArrayTypeSchema:
-    kwargs: dict[str, object] = {"items": items}
-    if default is not None:
-        kwargs["default"] = list(default)
-    return F8ArrayTypeSchema(**kwargs)
+    return F8ArrayTypeSchema(
+        items=items,
+        default=default if default is not None else UNSET,
+    )
 
 
 def any_schema() -> F8AnyTypeSchema:

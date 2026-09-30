@@ -1,11 +1,10 @@
-from __future__ import annotations
-
 """
 Internal typed controls for one data emission.
 
 These router options are intentionally not part of the public SDK surface.
 Repo-internal imports should use `f8pysdk.service_bus.data.*` owner modules.
 """
+from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Literal, TypeAlias

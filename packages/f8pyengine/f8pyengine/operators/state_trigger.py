@@ -58,7 +58,7 @@ class StateTriggerRuntimeNode(OperatorNode, EntrypointNode):
         self._emit_task: asyncio.Task[None] | None = None
         self._emit_seq = 0
 
-    async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
+    async def on_exec(self, exec_id: str | int, in_port: str | None = None) -> list[str]:
         return ["changed"]
 
     async def start_entrypoint(self, ctx: EntrypointContext) -> None:

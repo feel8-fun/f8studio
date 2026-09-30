@@ -73,7 +73,7 @@ class StateRouter:
     def update_cross_state_bindings(self, graph: F8RuntimeGraph) -> None:
         want: dict[CrossStateBindingKey, list[StateRouteTarget]] = {}
         targets: set[tuple[str, str]] = set()
-        for edge in graph.edges:
+        for edge in graph.edges if isinstance(graph.edges, list) else []:
             if edge.kind != F8EdgeKindEnum.state:
                 continue
             if str(edge.fromServiceId) == str(edge.toServiceId):

@@ -797,7 +797,6 @@ class OnnxTcnWaveServiceNode(ServiceNode):
                     for sequence_index, prepared_frame in enumerate(self._window):
                         sequence_buffer[sequence_index] = prepared_frame
                     sequence = sequence_buffer
-                    t_infer0 = time.perf_counter()
                     values_np = runtime.infer_sequence(sequence)
                     values = self._to_float_list(values_np.tolist())
                     output_length = self._aggregator.apply_window(window_end_index=frame_index, values=values)

@@ -37,7 +37,7 @@ class ExecSequenceRuntimeNode(OperatorNode):
         )
         self._exec_out_ports = exec_out_ports(node)
 
-    async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
+    async def on_exec(self, exec_id: str | int, in_port: str | None = None) -> list[str]:
         return list(self._exec_out_ports)
 
 

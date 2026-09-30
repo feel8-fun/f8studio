@@ -51,6 +51,7 @@ add_dependencies(f8cppsdk f8cppsdk_codegen_protocol_models)
 add_custom_target(f8cppsdk_check_stream_wire
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/generate_stream_wire.py --check
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/generate_runtime_keys.py --check
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/generate_runtime_policy.py --check
   VERBATIM
 )
 add_dependencies(f8cppsdk f8cppsdk_check_stream_wire)

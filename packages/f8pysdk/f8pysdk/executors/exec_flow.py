@@ -230,7 +230,7 @@ class ExecFlowExecutor:
 
     def _rebuild_half_out_ports(self, graph: F8RuntimeGraph) -> None:
         out: dict[str, set[str]] = {}
-        for edge in graph.edges:
+        for edge in graph.edges if isinstance(graph.edges, list) else []:
             if edge.kind != F8EdgeKindEnum.data:
                 continue
             if edge.direction != F8EdgeDirection.out:

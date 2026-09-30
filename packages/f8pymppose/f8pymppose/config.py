@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from f8pysdk.codec import coerce_float, coerce_int, coerce_str
+from f8pysdk.codec import coerce_float as coerce_float, coerce_int as coerce_int, coerce_str
 
 SkeletonSource = Literal["camera", "world"]
 ModelComplexity = Literal["lite", "full", "heavy"]

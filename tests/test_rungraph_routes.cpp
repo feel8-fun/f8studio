@@ -58,10 +58,8 @@ TEST(RungraphRoutes, ServiceNodeDefaultsOperatorIdToServiceId) {
       {json{{"edgeId", "e1"},
             {"kind", "data"},
             {"fromServiceId", "svcA"},
-            {"fromOperatorId", nullptr},
             {"fromPort", "out"},
             {"toServiceId", "svcB"},
-            {"toOperatorId", nullptr},
             {"toPort", "in"}}});
 
   const auto routes = f8::cppsdk::parse_cross_service_data_routes(g, "svcB");

@@ -8,6 +8,8 @@ from typing import Any
 import numpy as np
 
 from f8pysdk.specs import (
+    array_schema,
+    F8ArrayTypeSchema,
     F8UiControlKind,
     F8UiControlSpec,
     F8DataPortSpec,
@@ -525,16 +527,7 @@ WaveExprRuntimeNode.SPEC = F8OperatorSpec(
             name="preview",
             label="Preview",
             description="Preview waveform samples as `[t, value]` pairs over `[0, maxT)`. Changes in preview coordinates trigger redraw.",
-            valueSchema={
-                "type": "array",
-                "items": {
-                    "type": "array",
-                    "items": {"type": "number"},
-                    "minItems": 2,
-                    "maxItems": 2,
-                },
-                "default": [],
-            },
+            valueSchema=array_schema(items=F8ArrayTypeSchema(items=number_schema(), minItems=2, maxItems=2), default=[]),
             access=F8StateAccess.ro,
             valueRequired=True,
             control=F8UiControlSpec(kind=F8UiControlKind.custom, rendererKey="wave_preview"),

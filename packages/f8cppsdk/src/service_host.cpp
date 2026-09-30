@@ -248,7 +248,7 @@ std::vector<std::string> ServiceHost::string_vector(const std::optional<std::vec
 }
 
 nlohmann::json ServiceHost::initial_state(const generated::F8RuntimeNode& node) {
-  return node.stateValues.is_object() ? node.stateValues : nlohmann::json::object();
+  return node.stateValues ? generated::wire_json(*node.stateValues) : nlohmann::json::object();
 }
 
 bool ServiceHost::needs_recreate(const OperatorNode& node, const generated::F8RuntimeNode& snapshot) {

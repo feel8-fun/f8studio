@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .session_manager import SessionManager
+
 import asyncio
 import logging
 import math
@@ -10,9 +12,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from fractions import Fraction
 from typing import Protocol
-from uuid import uuid4
 
-from aiortc import AudioStreamTrack, RTCPeerConnection, RTCSessionDescription
+from aiortc import AudioStreamTrack, RTCPeerConnection
 from aiortc.mediastreams import MediaStreamError
 from av import AudioFrame
 import numpy as np
@@ -26,8 +27,6 @@ from f8pysdk.audio_transport import (
 from f8media_protocol.models import MediaInputError
 from f8media_protocol.models import AudioSessionAnswer, AudioSessionOffer
 
-from .peer_lifecycle import PeerCloseQueue
-from .hub_pool import HubPool
 from f8pysdk.binary_stream_transport import SharedStreamSession
 
 
@@ -93,9 +92,13 @@ class SyntheticToneProducer:
 
 class ZenohAudioProducer:
     def __init__(self, source: str, session: SharedStreamSession | None = None) -> None:
-        self._transport = (ZenohLatestAudioChunkTransport.open_subscriber(source) if session is None else
-                           ZenohLatestAudioChunkTransport(key_expr=source, raw_transport=session.subscribe(
-                               source, log_context="audio", max_pending_samples=16)))
+        self._transport = (
+            ZenohLatestAudioChunkTransport.open_subscriber(source)
+            if session is None
+            else ZenohLatestAudioChunkTransport(
+                key_expr=source, raw_transport=session.subscribe(source, log_context="audio", max_pending_samples=16)
+            )
+        )
         self._closed = False
 
     async def read(self) -> RawAudioChunk | None:
@@ -135,9 +138,7 @@ def create_audio_producer(source: str, session: SharedStreamSession | None = Non
     if normalized == "synthetic://tone-stereo":
         return SyntheticToneProducer(channels=2)
     if not normalized.startswith("f8/") or len(normalized) > 512:
-        raise MediaInputError(
-            "audio source must be synthetic://tone, synthetic://tone-stereo, or an f8/ Zenoh key"
-        )
+        raise MediaInputError("audio source must be synthetic://tone, synthetic://tone-stereo, or an f8/ Zenoh key")
     return ZenohAudioProducer(normalized, session)
 
 
@@ -251,30 +252,16 @@ class AudioSession:
     track: LatestAudioTrack
 
 
-class AudioSessionManager:
+class AudioSessionManager(SessionManager[LatestAudioHub, AudioSession]):
     def __init__(
         self,
         *,
         producer_factory: Callable[[str], AsyncAudioProducer] = create_audio_producer,
         disconnected_grace_s: float = 10.0,
     ) -> None:
-        self._sessions: dict[str, AudioSession] = {}
-        self._hubs: HubPool[LatestAudioHub] = HubPool(self._make_hub)
-        self._lock = asyncio.Lock()
-        self._janitor: asyncio.Task[None] | None = None
         self._producer_factory = producer_factory
-        self._disconnected_grace_s = disconnected_grace_s
-        self._disconnected_since: dict[str, float] = {}
+        super().__init__(hub_factory=self._make_hub, disconnected_grace_s=disconnected_grace_s, kind="audio")
         self._closed_dropped_chunks = 0
-        self._peer_closer = PeerCloseQueue()
-
-    @property
-    def session_count(self) -> int:
-        return len(self._sessions)
-
-    @property
-    def source_count(self) -> int:
-        return self._hubs.source_count
 
     @property
     def dropped_chunks(self) -> int:
@@ -282,58 +269,13 @@ class AudioSessionManager:
 
     async def create(self, offer: AudioSessionOffer) -> AudioSessionAnswer:
         source = offer.source.strip()
-        if offer.type != "offer" or not offer.sdp.strip():
-            raise MediaInputError("a non-empty WebRTC offer SDP is required")
-        hub = await self._acquire_hub(source)
-        peer = RTCPeerConnection()
-        session_id = uuid4().hex
 
-        @peer.on("iceconnectionstatechange")
-        async def ice_connection_state_changed() -> None:
-            logger.info(
-                "audio ICE state changed session_id=%s source=%s state=%s",
-                session_id,
-                source,
-                peer.iceConnectionState,
-            )
+        def build(hub: LatestAudioHub, session_id: str, peer: RTCPeerConnection) -> AudioSession:
+            return AudioSession(hub=hub, session_id=session_id, source=source, peer=peer, track=LatestAudioTrack(hub))
 
-        @peer.on("connectionstatechange")
-        async def connection_state_changed() -> None:
-            logger.info(
-                "audio peer state changed session_id=%s source=%s state=%s",
-                session_id,
-                source,
-                peer.connectionState,
-            )
-
-        track = LatestAudioTrack(hub)
-        peer.addTrack(track)
-        try:
-            await peer.setRemoteDescription(RTCSessionDescription(sdp=offer.sdp, type=offer.type))
-            answer = await peer.createAnswer()
-            await peer.setLocalDescription(answer)
-        except asyncio.CancelledError:
-            track.stop()
-            await peer.close()
-            await self._release_hub(hub)
-            raise
-        except Exception:
-            logger.exception("failed to negotiate audio session source=%s", source)
-            track.stop()
-            await peer.close()
-            await self._release_hub(hub)
-            raise
-
-        async with self._lock:
-            self._sessions[session_id] = AudioSession(
-                hub=hub,
-                session_id=session_id, source=source, peer=peer, track=track
-            )
-            if self._janitor is None:
-                self._janitor = asyncio.create_task(self._run_janitor(), name="audio-session-janitor")
-        local = peer.localDescription
+        session, local = await self._create_session(source=source, sdp=offer.sdp, offer_type=offer.type, build=build)
         return AudioSessionAnswer(
-            session_id=session_id,
+            session_id=session.session_id,
             source=source,
             sdp=local.sdp,
             type="answer",
@@ -342,61 +284,11 @@ class AudioSessionManager:
             transport_policy="bounded-queue-16; overflow gaps are dropped and counted",
         )
 
+    def _session_closed(self, session: AudioSession) -> None:
+        self._closed_dropped_chunks += session.track.dropped_chunks
+
     def _make_hub(self, source: str) -> LatestAudioHub:
         return LatestAudioHub(source=source, producer=self._producer_factory(source))
-
-    async def _acquire_hub(self, source: str) -> LatestAudioHub:
-        return await self._hubs.acquire(source)
-
-    async def _release_hub(self, hub: LatestAudioHub) -> None:
-        await self._hubs.release(hub)
-
-    async def close_session(self, session_id: str) -> bool:
-        async with self._lock:
-            session = self._sessions.pop(session_id, None)
-            self._disconnected_since.pop(session_id, None)
-        if session is None:
-            return False
-        self._closed_dropped_chunks += session.track.dropped_chunks
-        session.track.stop()
-        await self._peer_closer.close(session.peer, context=f"audio:{session_id}")
-        await self._release_hub(session.hub)
-        return True
-
-    async def _run_janitor(self) -> None:
-        try:
-            while True:
-                await asyncio.sleep(2.0)
-                now = asyncio.get_running_loop().time()
-                async with self._lock:
-                    stale: list[str] = []
-                    for session_id, session in self._sessions.items():
-                        state = session.peer.connectionState
-                        if session.hub.closed or state in {"failed", "closed"}:
-                            stale.append(session_id)
-                        elif state == "disconnected":
-                            disconnected_at = self._disconnected_since.setdefault(session_id, now)
-                            if now - disconnected_at >= self._disconnected_grace_s:
-                                stale.append(session_id)
-                        else:
-                            self._disconnected_since.pop(session_id, None)
-                for session_id in stale:
-                    await self.close_session(session_id)
-        except asyncio.CancelledError:
-            raise
-
-    async def close(self) -> None:
-        janitor = self._janitor
-        self._janitor = None
-        if janitor is not None:
-            janitor.cancel()
-            await asyncio.gather(janitor, return_exceptions=True)
-        async with self._lock:
-            session_ids = tuple(self._sessions)
-        for session_id in session_ids:
-            await self.close_session(session_id)
-        await self._hubs.close()
-        await self._peer_closer.shutdown()
 
 
 __all__ = [

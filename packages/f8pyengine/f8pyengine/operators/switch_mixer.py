@@ -88,7 +88,7 @@ class SwitchMixerRuntimeNode(OperatorNode):
         self._last_resolved_published: str | None = None
         self._refresh_runtime_params(self._initial_state)
 
-    async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
+    async def on_exec(self, exec_id: str | int, in_port: str | None = None) -> list[str]:
         return list(self._exec_out_ports)
 
     async def on_lifecycle(self, active: bool, meta: dict[str, Any]) -> None:

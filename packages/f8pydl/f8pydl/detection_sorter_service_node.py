@@ -243,6 +243,12 @@ class RankedDetection:
     rank_score: float | None
 
 
+def _required_rank_score(item: RankedDetection) -> float:
+    if item.rank_score is None:
+        raise ValueError("rank score is required for ranked sorting")
+    return item.rank_score
+
+
 def _sort_valid_detections(
     ranked: list[RankedDetection],
     *,
@@ -252,12 +258,12 @@ def _sort_valid_detections(
 ) -> None:
     reverse = sort_direction == "desc"
     if temperature <= 0.0 or len(ranked) < 2:
-        ranked.sort(key=lambda item: float(item.rank_score), reverse=reverse)
+        ranked.sort(key=lambda item: _required_rank_score(item), reverse=reverse)
         return
 
-    rank_scores = np.asarray([float(item.rank_score) for item in ranked], dtype=np.float64)
+    rank_scores = np.asarray([_required_rank_score(item) for item in ranked], dtype=np.float64)
     if not np.all(np.isfinite(rank_scores)):
-        ranked.sort(key=lambda item: float(item.rank_score), reverse=reverse)
+        ranked.sort(key=lambda item: _required_rank_score(item), reverse=reverse)
         return
 
     lowest_score = float(np.min(rank_scores))

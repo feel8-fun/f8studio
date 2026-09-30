@@ -9,7 +9,6 @@ import re
 from typing import Any
 
 from f8pysdk.f8_naming import ensure_token
-from f8pysdk.nodes import OperatorNode
 from f8pysdk.registry import Registry
 from f8pysdk.specs import (
     F8DataPortSpec,
@@ -25,12 +24,10 @@ from f8pysdk.specs import (
 from ..identifiers import SERVICE_CLASS
 from ..presentation import PresentationOutlet
 from .categories import PALETTE_CATEGORY_VIZ
-from ._viz_base import viz_sampling_state_fields
+from ._viz_base import StudioVizRuntimeNodeBase, viz_sampling_state_fields
 
 
-class VizTCodeRuntimeNode(OperatorNode):
-    presentation: PresentationOutlet
-
+class VizTCodeRuntimeNode(StudioVizRuntimeNodeBase):
     SPEC = F8OperatorSpec(
         schemaVersion=F8OperatorSchemaVersion.f8operator_1,
         serviceClass=SERVICE_CLASS,
@@ -64,12 +61,21 @@ class VizTCodeRuntimeNode(OperatorNode):
         ],
     )
 
-    def __init__(self, *, node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        node_id: str,
+        node: F8RuntimeNode,
+        initial_state: dict[str, Any] | None = None,
+        presentation: PresentationOutlet | None = None,
+    ) -> None:
         super().__init__(
             node_id=ensure_token(node_id, label="node_id"),
             data_in_ports=["tcode"],
             data_out_ports=[],
             state_fields=[field.name for field in (node.stateFields or [])],
+            initial_state=initial_state,
+            presentation=presentation,
         )
         state = initial_state or {}
         self._model = self._model_value(state.get("model"))

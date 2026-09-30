@@ -1,12 +1,12 @@
+"""Internal cache primitives owned by `service_bus`."""
 from __future__ import annotations
 
-"""Internal cache primitives owned by `service_bus`."""
-
 from collections import OrderedDict
-from typing import Generic, TypeVar
+from typing import Generic, TypeVar, overload
 
 _K = TypeVar("_K")
 _V = TypeVar("_V")
+_D = TypeVar("_D")
 
 
 class CappedOrderedDict(OrderedDict[_K, _V], Generic[_K, _V]):
@@ -26,7 +26,16 @@ class CappedOrderedDict(OrderedDict[_K, _V], Generic[_K, _V]):
         super().move_to_end(key)
         return value
 
-    def get(self, key: _K, default: _V | None = None) -> _V | None:
+    @overload
+    def get(self, key: _K, default: None = None) -> _V | None: ...
+
+    @overload
+    def get(self, key: _K, default: _V) -> _V: ...
+
+    @overload
+    def get(self, key: _K, default: _D) -> _V | _D: ...
+
+    def get(self, key: _K, default: _D | None = None) -> _V | _D | None:
         if key in self:
             return self[key]
         return default

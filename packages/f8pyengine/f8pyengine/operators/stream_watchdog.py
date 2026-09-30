@@ -62,7 +62,7 @@ class StreamWatchdogRuntimeNode(OperatorNode):
             raise ValueError("timeoutMs must be in range 10..60000")
         return timeout_ms
 
-    async def on_exec(self, exec_id: str | int, _in_port: str | None = None) -> list[str]:
+    async def on_exec(self, exec_id: str | int, in_port: str | None = None) -> list[str]:
         value = await self.pull("value", ctx_id=exec_id)
         valid, _age_ms, _reason = self._freshness(value)
         return ["valid"] if valid else []
@@ -108,7 +108,7 @@ def _receive_timestamps(value: Any) -> list[float]:
 
 
 def _finite_number(value: object) -> float | None:
-    if value is None or isinstance(value, bool):
+    if not isinstance(value, (str, int, float)) or isinstance(value, bool):
         return None
     try:
         numeric = float(value)
@@ -120,7 +120,7 @@ def _finite_number(value: object) -> float | None:
 
 
 def _integer_or_default(value: object, default: int) -> int:
-    if isinstance(value, bool):
+    if not isinstance(value, (str, int, float)) or isinstance(value, bool):
         return default
     try:
         return int(value)

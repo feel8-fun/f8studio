@@ -1,3 +1,5 @@
+#include "f8cppsdk/generated/control.h"
+#include "f8cppsdk/generated/runtime_fingerprint.h"
 #include "f8cppsdk/service_bus.h"
 
 #include <algorithm>
@@ -192,163 +194,8 @@ void stop_runtime_subscriptions(std::vector<std::unique_ptr<RuntimeSubscription>
   }
 }
 
-json sorted_json_array(const json& arr, const std::function<std::string(const json&)>& key_fn) {
-  if (!arr.is_array()) return json::array();
-  std::vector<json> items;
-  for (const auto& item : arr) {
-    items.push_back(item);
-  }
-  std::sort(items.begin(), items.end(), [&](const json& a, const json& b) { return key_fn(a) < key_fn(b); });
-  json out = json::array();
-  for (const auto& item : items) {
-    out.push_back(item);
-  }
-  return out;
-}
-
-std::string json_string_value(const json& obj, const char* key) {
-  if (!obj.is_object() || !obj.contains(key)) return "";
-  const auto& value = obj.at(key);
-  if (value.is_string()) return value.get<std::string>();
-  if (value.is_null()) return "";
-  return value.dump();
-}
-
-json normalize_spec_payload(const json& payload) {
-  if (payload.is_object()) {
-    json out = json::object();
-    std::vector<std::string> keys;
-    for (auto it = payload.begin(); it != payload.end(); ++it) {
-      keys.push_back(it.key());
-    }
-    std::sort(keys.begin(), keys.end());
-    for (const auto& key : keys) {
-      out[key] = normalize_spec_payload(payload.at(key));
-    }
-    return out;
-  }
-  if (payload.is_array()) {
-    json out = json::array();
-    for (const auto& item : payload) {
-      out.push_back(normalize_spec_payload(item));
-    }
-    return out;
-  }
-  return payload;
-}
-
-std::string normalized_named_spec_sort_key(const json& payload) {
-  if (!payload.is_object()) return std::string("|") + payload.dump();
-  return json_string_value(payload, "name") + "|" + json_string_value(payload, "type") + "|" +
-         json_string_value(payload, "access");
-}
-
-json normalize_named_specs(const json& specs) {
-  if (!specs.is_array()) return json::array();
-  json normalized = json::array();
-  for (const auto& item : specs) {
-    normalized.push_back(normalize_spec_payload(item));
-  }
-  return sorted_json_array(normalized, normalized_named_spec_sort_key);
-}
-
-json normalize_deploy_service_payload(const json& payload) {
-  if (!payload.is_object()) return json::object();
-  json out = json::object();
-  std::vector<std::string> keys;
-  for (auto it = payload.begin(); it != payload.end(); ++it) {
-    keys.push_back(it.key());
-  }
-  std::sort(keys.begin(), keys.end());
-  for (const auto& key : keys) {
-    out[key] = normalize_spec_payload(payload.at(key));
-  }
-  return out;
-}
-
-json normalize_deploy_node_payload(const json& payload) {
-  if (!payload.is_object()) return json::object();
-  json out = json::object();
-  std::vector<std::string> keys;
-  for (auto it = payload.begin(); it != payload.end(); ++it) {
-    keys.push_back(it.key());
-  }
-  std::sort(keys.begin(), keys.end());
-  for (const auto& key : keys) {
-    if (key == "stateValues") continue;
-    const auto& value = payload.at(key);
-    if ((key == "execInPorts" || key == "execOutPorts") && value.is_array()) {
-      std::vector<std::string> ports;
-      for (const auto& item : value) {
-        ports.push_back(item.is_string() ? item.get<std::string>() : item.dump());
-      }
-      std::sort(ports.begin(), ports.end());
-      out[key] = ports;
-      continue;
-    }
-    if ((key == "dataInPorts" || key == "dataOutPorts" || key == "stateFields") && value.is_array()) {
-      out[key] = normalize_named_specs(value);
-      continue;
-    }
-    out[key] = normalize_spec_payload(value);
-  }
-  return out;
-}
-
-json normalize_deploy_edge_payload(const json& payload) {
-  if (!payload.is_object()) return json::object();
-  json out = json::object();
-  std::vector<std::string> keys;
-  for (auto it = payload.begin(); it != payload.end(); ++it) {
-    if (it.key() == "edgeId") continue;
-    keys.push_back(it.key());
-  }
-  std::sort(keys.begin(), keys.end());
-  for (const auto& key : keys) {
-    out[key] = normalize_spec_payload(payload.at(key));
-  }
-  return out;
-}
-
-std::string normalized_service_sort_key(const json& payload) {
-  return json_string_value(payload, "serviceId") + "|" + json_string_value(payload, "serviceClass");
-}
-
-std::string normalized_node_sort_key(const json& payload) {
-  return json_string_value(payload, "serviceId") + "|" + json_string_value(payload, "nodeId") + "|" +
-         json_string_value(payload, "operatorClass");
-}
-
-std::string normalized_edge_sort_key(const json& payload) {
-  return json_string_value(payload, "kind") + "|" + json_string_value(payload, "fromServiceId") + "|" +
-         json_string_value(payload, "fromOperatorId") + "|" + json_string_value(payload, "fromPort") + "|" +
-         json_string_value(payload, "toServiceId") + "|" + json_string_value(payload, "toPort");
-}
-
 std::string build_rungraph_deploy_fingerprint(const json& graph_obj) {
-  json services = json::array();
-  if (graph_obj.is_object() && graph_obj.contains("services") && graph_obj["services"].is_array()) {
-    for (const auto& item : graph_obj["services"]) {
-      services.push_back(normalize_deploy_service_payload(item));
-    }
-    services = sorted_json_array(services, normalized_service_sort_key);
-  }
-  json nodes = json::array();
-  if (graph_obj.is_object() && graph_obj.contains("nodes") && graph_obj["nodes"].is_array()) {
-    for (const auto& item : graph_obj["nodes"]) {
-      nodes.push_back(normalize_deploy_node_payload(item));
-    }
-    nodes = sorted_json_array(nodes, normalized_node_sort_key);
-  }
-  json edges = json::array();
-  if (graph_obj.is_object() && graph_obj.contains("edges") && graph_obj["edges"].is_array()) {
-    for (const auto& item : graph_obj["edges"]) {
-      edges.push_back(normalize_deploy_edge_payload(item));
-    }
-    edges = sorted_json_array(edges, normalized_edge_sort_key);
-  }
-  json snapshot = json{{"services", services}, {"nodes", nodes}, {"edges", edges}};
-  return snapshot.dump(-1, ' ', false, json::error_handler_t::strict);
+  return wire_policy::fingerprint(graph_obj);
 }
 
 std::string new_control_req_id() {
@@ -1086,17 +933,11 @@ bool ServiceBus::start_runtime_control_endpoints() {
     std::string key;
   };
 
-  const std::vector<EndpointRegistration> registrations = {
-      {"activate", svc_endpoint_key(cfg_.service_id, "activate")},
-      {"deactivate", svc_endpoint_key(cfg_.service_id, "deactivate")},
-      {"set_active", svc_endpoint_key(cfg_.service_id, "set_active")},
-      {"status", svc_endpoint_key(cfg_.service_id, "status")},
-      {"terminate", svc_endpoint_key(cfg_.service_id, "terminate")},
-      {"quit", svc_endpoint_key(cfg_.service_id, "quit")},
-      {"cmd", cmd_channel_key(cfg_.service_id)},
-      {"set_state", svc_endpoint_key(cfg_.service_id, "set_state")},
-      {"set_rungraph", svc_endpoint_key(cfg_.service_id, "set_rungraph")},
-  };
+  std::vector<EndpointRegistration> registrations;
+  for (const auto endpoint : kSharedControlEndpoints) {
+    const std::string name(endpoint_name(endpoint));
+    registrations.push_back({name, svc_endpoint_key(cfg_.service_id, name)});
+  }
 
   for (const EndpointRegistration& registration : registrations) {
     auto handle = runtime_transport_->serve(
@@ -1248,7 +1089,7 @@ RuntimeBytes ServiceBus::handle_runtime_control_request(const std::string& endpo
         return error_response("INVALID_ARGS", perr.message.empty() ? "invalid request" : perr.message);
       }
       json out;
-      const bool ok = on_command(req.call, req.args, req.meta, out, err_code, err_msg);
+      const bool ok = on_command(req.call, generated::wire_json(req.args), generated::wire_json(req.meta), out, err_code, err_msg);
       if (!ok) {
         return error_response(err_code, err_msg);
       }
@@ -2577,9 +2418,9 @@ bool ServiceBus::build_rungraph_state_routing_plan(const f8::cppsdk::generated::
       }
     }
 
-    if (n.stateValues.is_object()) {
-      for (auto it = n.stateValues.begin(); it != n.stateValues.end(); ++it) {
-        const std::string field = it.key();
+    if (n.stateValues.has_value()) {
+      for (auto it = n.stateValues->begin(); it != n.stateValues->end(); ++it) {
+        const std::string field = it->first;
         const auto access_it = access_by_name.find(field);
         if (access_it == access_by_name.end()) {
           error_code = "INVALID_RUNGRAPH";
@@ -2711,11 +2552,11 @@ void ServiceBus::apply_rungraph_state_values(
   for (const auto& n : graph.nodes.value_or(std::vector<F8RuntimeNode>{})) {
     if (n.serviceId != sid) continue;
     const std::string node_id = n.nodeId;
-    if (!n.stateValues.is_object()) continue;
+    if (!n.stateValues.has_value()) continue;
 
-    for (auto it = n.stateValues.begin(); it != n.stateValues.end(); ++it) {
-      const std::string field = it.key();
-      const json value = it.value();
+    for (auto it = n.stateValues->begin(); it != n.stateValues->end(); ++it) {
+      const std::string field = it->first;
+      const json value = it->second;
 
       // Cross-service state edges are directional: downstream follows upstream.
       // Do not apply rungraph stateValues to fields that are cross-state targets,

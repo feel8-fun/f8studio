@@ -1,6 +1,5 @@
-from __future__ import annotations
-
 """State-side helper functions owned by `service_bus`."""
+from __future__ import annotations
 
 from typing import Any
 

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from ...generated import F8Edge
 from .emit import DataEmitOptions
-from .router import DataRouter, InputBuffer as _InputBuffer
+from .router import DataRouter
 
 if TYPE_CHECKING:
     from ..runtime import ServiceBus

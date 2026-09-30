@@ -65,7 +65,7 @@ class SerialOutRuntimeNode(OperatorNode):
         self._serial: Any = None
         self._last_error: str | None = None
 
-    async def on_exec(self, exec_id: str | int, _in_port: str | None = None) -> list[str]:
+    async def on_exec(self, exec_id: str | int, in_port: str | None = None) -> list[str]:
         await self._ensure_serial()
         value = await self.pull("value", ctx_id=exec_id)
         if value is None:

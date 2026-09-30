@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from ._throttled_flusher import ThrottledFlusher
+
+from ..presentation import PresentationOutlet
+
 from ...presentation_models import WaveScene
 
 import msgspec
 
-import asyncio
 import logging
 import time
 from typing import Any
@@ -36,8 +39,6 @@ RENDERER_CLASS = "viz_wave"
 
 logger = logging.getLogger(__name__)
 
-_STATE_READ_ERRORS = (RuntimeError, OSError, TypeError, ValueError)
-_NUMERIC_PARSE_ERRORS = (TypeError, ValueError, OverflowError)
 
 
 class VizWaveRuntimeNode(StudioVizRuntimeNodeBase):
@@ -48,18 +49,25 @@ class VizWaveRuntimeNode(StudioVizRuntimeNodeBase):
     containing a bounded buffer of points.
     """
 
-    def __init__(self, *, node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        node_id: str,
+        node: F8RuntimeNode,
+        initial_state: dict[str, Any] | None = None,
+        presentation: PresentationOutlet | None = None,
+    ) -> None:
         super().__init__(
             node_id=ensure_token(node_id, label="node_id"),
             data_in_ports=[p.name for p in (node.dataInPorts or [])],
             data_out_ports=[],
             state_fields=[s.name for s in (node.stateFields or [])],
             initial_state=initial_state,
+            presentation=presentation,
         )
-        self._refresh_task: asyncio.Task[object] | None = None
+        self._flusher = ThrottledFlusher(self._flush, name=f"viz:wave:{self.node_id}")
         self._config_loaded = False
         self._series: dict[str, list[tuple[int, float]]] = {}
-        self._last_refresh_ms: int | None = None
         self._dirty: bool = False
         self._throttle_ms: int = 100
         self._window_ms: int = 10000
@@ -67,21 +75,13 @@ class VizWaveRuntimeNode(StudioVizRuntimeNodeBase):
         self._show_legend: bool = False
         self._y_min: float | None = None
         self._y_max: float | None = None
-        self._scheduled_refresh_ms: int | None = None
 
     def attach(self, bus: Any) -> None:
         super().attach(bus)
         return
 
     async def close(self) -> None:
-        task = self._refresh_task
-        self._refresh_task = None
-        if task is not None:
-            task.cancel()
-            results = await asyncio.gather(task, return_exceptions=True)
-            for result in results:
-                if isinstance(result, Exception):
-                    logger.error("viz wave background task failed node_id=%s", self.node_id, exc_info=result)
+        await self._flusher.close()
         self.presentation.emit(self.node_id, "viz.wave.detach", {}, ts_ms=int(time.time() * 1000))
 
     async def on_data(self, port: str, value: Any, *, ts_ms: int | None = None) -> None:
@@ -137,40 +137,10 @@ class VizWaveRuntimeNode(StudioVizRuntimeNodeBase):
         self._y_max = await self._get_float_state_optional("maxVal")
         self._config_loaded = True
 
-    async def _schedule_refresh(self, *, now_ms: int) -> None:
-        throttle_ms = max(0, int(self._throttle_ms))
-        last_refresh = int(self._last_refresh_ms or 0)
-        if throttle_ms <= 0 or last_refresh <= 0:
-            await self._flush(now_ms=now_ms)
-            return
+    async def _schedule_refresh(self, now_ms: int) -> None:
+        await self._flusher.schedule(now_ms=now_ms, throttle_ms=self._throttle_ms)
 
-        target_ms = last_refresh + throttle_ms
-        if int(now_ms) >= int(target_ms):
-            await self._flush(now_ms=now_ms)
-            return
-
-        if self._refresh_task is not None and not self._refresh_task.done():
-            return
-
-        delay_ms = max(0, int(target_ms) - int(now_ms))
-        self._scheduled_refresh_ms = int(target_ms)
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return
-        self._refresh_task = loop.create_task(
-            self._flush_after(delay_ms), name=f"pystudio:timeseries:flush:{self.node_id}"
-        )
-
-    async def _flush_after(self, delay_ms: int) -> None:
-        try:
-            await asyncio.sleep(float(max(0, int(delay_ms))) / 1000.0)
-        except (RuntimeError, TypeError, ValueError):
-            return
-        await self._flush(now_ms=int(time.time() * 1000))
-
-    async def _flush(self, *, now_ms: int) -> None:
-        self._scheduled_refresh_ms = None
+    async def _flush(self, now_ms: int) -> None:
         changed = False
         if self._prune_points(window_ms=self._window_ms, buffer_limit=self._buffer_limit, now_ms=int(now_ms)):
             changed = True
@@ -202,53 +172,7 @@ class VizWaveRuntimeNode(StudioVizRuntimeNodeBase):
                 ts_ms=int(now_ms),
             )
 
-        self._last_refresh_ms = int(now_ms)
         self._dirty = False
-
-    async def _get_int_state(self, name: str, *, default: int, minimum: int, maximum: int) -> int:
-        v = await self._config_state_value(name)
-        try:
-            out = int(v) if v is not None else int(default)
-        except _NUMERIC_PARSE_ERRORS:
-            out = int(default)
-        if out < minimum:
-            out = minimum
-        if out > maximum:
-            out = maximum
-        return out
-
-    async def _get_bool_state(self, name: str, *, default: bool) -> bool:
-        v = await self._config_state_value(name)
-        return bool(v) if v is not None else bool(default)
-
-    async def _get_float_state_optional(self, name: str) -> float | None:
-        v = await self._config_state_value(name)
-        if v is None:
-            return None
-        if isinstance(v, str) and not v.strip():
-            return None
-        try:
-            out = float(v)
-        except _NUMERIC_PARSE_ERRORS:
-            return None
-        if out != out:  # NaN
-            return None
-        return out
-
-    async def _config_state_value(self, name: str) -> Any:
-        try:
-            value = await self.get_state_value(name)
-        except _STATE_READ_ERRORS:
-            logger.debug(
-                "Viz wave state read failed; falling back to initial state node_id=%s field=%s",
-                self.node_id,
-                name,
-                exc_info=True,
-            )
-            value = None
-        if value is not None:
-            return value
-        return self._initial_state.get(name)
 
     def _prune_points(self, *, window_ms: int, buffer_limit: int, now_ms: int) -> bool:
         changed = False

@@ -5,6 +5,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from ...generated.control import ControlEndpoint
 from ...codec import encode_obj
 from ...generated import Code, F8CommandError, F8CommandInvokeReply
 from ...f8_naming import cmd_channel_key, svc_endpoint_key
@@ -44,16 +45,16 @@ class RuntimeTransportServiceControlEndpointServer:
     async def start(self) -> Any:
         sid = str(self._bus.service_id)
         registrations: tuple[tuple[str, Callable[[Any], Awaitable[None]]], ...] = (
-            (svc_endpoint_key(sid, "activate"), self._handlers._activate),
-            (svc_endpoint_key(sid, "deactivate"), self._handlers._deactivate),
-            (svc_endpoint_key(sid, "set_active"), self._handlers._set_active),
-            (svc_endpoint_key(sid, "status"), self._handlers._status),
-            (svc_endpoint_key(sid, "terminate"), self._handlers._terminate),
-            (svc_endpoint_key(sid, "quit"), self._handlers._terminate),
+            (svc_endpoint_key(sid, ControlEndpoint.activate), self._handlers._activate),
+            (svc_endpoint_key(sid, ControlEndpoint.deactivate), self._handlers._deactivate),
+            (svc_endpoint_key(sid, ControlEndpoint.set_active), self._handlers._set_active),
+            (svc_endpoint_key(sid, ControlEndpoint.status), self._handlers._status),
+            (svc_endpoint_key(sid, ControlEndpoint.terminate), self._handlers._terminate),
+            (svc_endpoint_key(sid, ControlEndpoint.quit), self._handlers._terminate),
             (cmd_channel_key(sid), self._handlers._cmd),
-            (svc_endpoint_key(sid, "set_state"), self._handlers._set_state),
-            (svc_endpoint_key(sid, "set_rungraph"), self._handlers._set_rungraph),
-            (svc_endpoint_key(sid, "debug_data"), self._handlers._debug_data),
+            (svc_endpoint_key(sid, ControlEndpoint.set_state), self._handlers._set_state),
+            (svc_endpoint_key(sid, ControlEndpoint.set_rungraph), self._handlers._set_rungraph),
+            (svc_endpoint_key(sid, ControlEndpoint.debug_data), self._handlers._debug_data),
         )
         for key, handler in registrations:
             self._handles.append(await self._bus._transport.serve(key, self._wrap_handler(key, handler)))

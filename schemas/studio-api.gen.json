@@ -4885,6 +4885,14 @@
             "propertyName": "type"
           }
         },
+        "maxItems": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "minItems": {
+          "minimum": 0,
+          "type": "integer"
+        },
         "title": {
           "type": "string"
         },
@@ -4954,6 +4962,14 @@
             },
             "propertyName": "type"
           }
+        },
+        "maxItems": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "minItems": {
+          "minimum": 0,
+          "type": "integer"
         },
         "title": {
           "type": "string"

@@ -293,15 +293,11 @@ def _run_supervisor(
 ) -> int:
     if not child_cmd:
         raise ValueError("child command is empty")
-    popen_kwargs: dict[str, object] = {"stdin": subprocess.DEVNULL}
-    if os.name != "nt":
-        popen_kwargs["start_new_session"] = True
-    else:
-        try:
-            popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-        except AttributeError:
-            pass
-    proc = subprocess.Popen(list(child_cmd), **popen_kwargs)
+    proc = subprocess.Popen(
+        list(child_cmd), stdin=subprocess.DEVNULL,
+        start_new_session=os.name != "nt",
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+    )
     job = _create_windows_kill_on_close_job(proc)
     print(f"[supervisor] child started pid={proc.pid} parentPid={int(parent_pid)}", flush=True)
     try:

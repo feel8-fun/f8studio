@@ -237,7 +237,7 @@ class DeployCoordinator:
         except (TimeoutError, OSError):
             await processes.start(service_id, service_class=service_class)
             if not processes.is_running(service_id):
-                raise RuntimeError("managed service process exited during startup")
+                raise RuntimeError("managed service process exited during startup") from None
             return
         if status.service_class != service_class:
             raise InvalidRequestError(

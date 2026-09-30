@@ -83,7 +83,7 @@ class HubPool(Generic[H]):
             if gate.users == 0:
                 del self._gates[source]
 
-    async def release(self, hub: H) -> None:
+    async def release(self, hub: SourceHub) -> None:
         lease = self._leases.get(id(hub))
         if lease is None:
             return

@@ -42,7 +42,7 @@ def _acquire_lock(lock_path: Path, *, timeout_s: float) -> int:
             return os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
         except FileExistsError:
             if time.monotonic() >= deadline:
-                raise TimeoutError(f"Timed out waiting download lock: {lock_path}")
+                raise TimeoutError(f"Timed out waiting download lock: {lock_path}") from None
             time.sleep(0.2)
 
 

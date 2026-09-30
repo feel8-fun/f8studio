@@ -1,4 +1,5 @@
-from typing import Any
+from typing import Any, Protocol
+from ._viz_base import StudioVizRuntimeNodeBase
 
 from f8pysdk.registry import Registry, RuntimeNodeRegistry, create_runtime_node_registry
 from f8pysdk.specs import F8RuntimeNode
@@ -41,49 +42,35 @@ __all__ = [
 ]
 
 
+class _VizConstructor(Protocol):
+    def __call__(
+        self,
+        *,
+        node_id: str,
+        node: F8RuntimeNode,
+        initial_state: dict[str, Any] | None = None,
+        presentation: PresentationOutlet | None = None,
+    ) -> StudioVizRuntimeNodeBase: ...
+
+
 def _register_presentation_factories(registry: Registry, presentation: PresentationOutlet) -> None:
-    def text_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> VizTextRuntimeNode:
-        created = VizTextRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
-        created.presentation = presentation
-        return created
+    def factory(constructor: _VizConstructor):
+        def create(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> StudioVizRuntimeNodeBase:
+            return constructor(node_id=node_id, node=node, initial_state=initial_state, presentation=presentation)
 
-    def wave_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> VizWaveRuntimeNode:
-        created = VizWaveRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
-        created.presentation = presentation
-        return created
+        return create
 
-    def video_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> VizVideoRuntimeNode:
-        created = VizVideoRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
-        created.presentation = presentation
-        return created
-
-    def audio_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> VizAudioRuntimeNode:
-        created = VizAudioRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
-        created.presentation = presentation
-        return created
-
-    def track_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> VizTrackRuntimeNode:
-        created = VizTrackRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
-        created.presentation = presentation
-        return created
-
-    def three_d_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> VizThreeDRuntimeNode:
-        created = VizThreeDRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
-        created.presentation = presentation
-        return created
-
-    def tcode_factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> VizTCodeRuntimeNode:
-        created = VizTCodeRuntimeNode(node_id=node_id, node=node, initial_state=initial_state)
-        created.presentation = presentation
-        return created
-
-    registry.register_operator_factory(SERVICE_CLASS, "f8.viz.text", text_factory, overwrite=True)
-    registry.register_operator_factory(SERVICE_CLASS, "f8.viz.wave", wave_factory, overwrite=True)
-    registry.register_operator_factory(SERVICE_CLASS, "f8.viz.video", video_factory, overwrite=True)
-    registry.register_operator_factory(SERVICE_CLASS, "f8.viz.audio", audio_factory, overwrite=True)
-    registry.register_operator_factory(SERVICE_CLASS, "f8.viz.track", track_factory, overwrite=True)
-    registry.register_operator_factory(SERVICE_CLASS, "f8.viz.three_d", three_d_factory, overwrite=True)
-    registry.register_operator_factory(SERVICE_CLASS, "f8.viz.tcode", tcode_factory, overwrite=True)
+    constructors: tuple[tuple[str, _VizConstructor], ...] = (
+        ("f8.viz.text", VizTextRuntimeNode),
+        ("f8.viz.wave", VizWaveRuntimeNode),
+        ("f8.viz.video", VizVideoRuntimeNode),
+        ("f8.viz.audio", VizAudioRuntimeNode),
+        ("f8.viz.track", VizTrackRuntimeNode),
+        ("f8.viz.three_d", VizThreeDRuntimeNode),
+        ("f8.viz.tcode", VizTCodeRuntimeNode),
+    )
+    for operator_class, constructor in constructors:
+        registry.register_operator_factory(SERVICE_CLASS, operator_class, factory(constructor), overwrite=True)
 
 
 def register_operator(registry: Registry, *, presentation: PresentationOutlet) -> Registry:

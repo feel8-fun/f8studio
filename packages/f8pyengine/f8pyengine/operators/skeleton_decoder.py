@@ -133,7 +133,7 @@ class SkeletonDecoderRuntimeNode(OperatorNode):
         self._ctx_output_cache: dict[tuple[str, str | int | None], tuple[int, Any]] = {}
         self._reported_decode_errors: set[str] = set()
 
-    async def on_exec(self, exec_id: str | int, _in_port: str | None = None) -> list[str]:
+    async def on_exec(self, exec_id: str | int, in_port: str | None = None) -> list[str]:
         packet_value = await self.pull("packet", ctx_id=exec_id)
         input_packet = self._coerce_input_packet(packet_value)
         if input_packet is None:
@@ -257,7 +257,7 @@ class SkeletonDecoderRuntimeNode(OperatorNode):
                 return None
             timestamp_value = packet_value.get("timestampMs")
             try:
-                rx_ts_ms = int(timestamp_value)
+                rx_ts_ms = int(timestamp_value) if isinstance(timestamp_value, (str, int, float)) else int(now_ms())
             except (TypeError, ValueError):
                 rx_ts_ms = int(now_ms())
             remote_address = str(packet_value.get("remoteAddress") or "").strip()

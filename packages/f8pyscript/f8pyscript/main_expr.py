@@ -56,7 +56,7 @@ class _ExprRuntimeHooks(RungraphHook):
         node_any.state_fields = [str(s.name) for s in list(service_snapshot.stateFields or [])]
         ts_ms: int | None = None
         meta = graph.meta
-        if meta is not None and not isinstance(meta, msgspec.UnsetType) and meta.ts is not None:
+        if meta is not None and not isinstance(meta, msgspec.UnsetType) and meta.ts is not None and not isinstance(meta.ts, msgspec.UnsetType):
             try:
                 ts_ms = int(meta.ts)
             except (TypeError, ValueError):

@@ -452,7 +452,7 @@ class LovenseMockServerRuntimeNode(OperatorNode, ClosableNode, EntrypointNode):
         self._entrypoint_ctx = None
         await self._cancel_emit_task()
 
-    async def on_lifecycle(self, active: bool, _meta: dict[str, Any]) -> None:
+    async def on_lifecycle(self, active: bool, meta: dict[str, Any]) -> None:
         if bool(active):
             await self._ensure_server()
         else:

@@ -101,7 +101,7 @@ def compute_pulse_clarity(onset_envelope: np.ndarray) -> float:
     return float(clarity)
 
 
-def select_recent_onset(envelope: Sequence[float], *, hops: int) -> np.ndarray:
+def select_recent_onset(envelope: Sequence[float] | np.ndarray, *, hops: int) -> np.ndarray:
     if int(hops) <= 0:
         return np.asarray([], dtype=np.float32)
     arr = np.asarray(list(envelope), dtype=np.float32)

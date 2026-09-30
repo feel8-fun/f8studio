@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-import asyncio
+from ._throttled_flusher import ThrottledFlusher
+
+from ..presentation import PresentationOutlet
+
 import logging
 import time
 from dataclasses import dataclass
@@ -83,13 +86,21 @@ class ScenePerson:
 
 
 class VizThreeDRuntimeNode(StudioVizRuntimeNodeBase):
-    def __init__(self, *, node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        node_id: str,
+        node: F8RuntimeNode,
+        initial_state: dict[str, Any] | None = None,
+        presentation: PresentationOutlet | None = None,
+    ) -> None:
         super().__init__(
             node_id=ensure_token(node_id, label="node_id"),
             data_in_ports=[port.name for port in (node.dataInPorts or [])],
             data_out_ports=[],
             state_fields=[field.name for field in (node.stateFields or [])],
             initial_state=initial_state,
+            presentation=presentation,
         )
         state = self._initial_state
         self._throttle_ms = coerce_int(state.get("throttleMs"), default=33, minimum=0, maximum=60_000)
@@ -107,17 +118,12 @@ class VizThreeDRuntimeNode(StudioVizRuntimeNodeBase):
         self._marker_scale = coerce_float(state.get("markerScale"), default=1.0, minimum=0.1, maximum=100_000.0)
         self._people_by_port: dict[str, list[ScenePerson]] = {}
         self._last_input_ts_ms = 0
-        self._last_refresh_ms = 0
         self._dirty = False
-        self._refresh_task: asyncio.Task[object] | None = None
+        self._flusher = ThrottledFlusher(self._flush, name=f"viz:three_d:{self.node_id}")
         self._warned_inputs: set[str] = set()
 
     async def close(self) -> None:
-        task = self._refresh_task
-        self._refresh_task = None
-        if task is not None:
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+        await self._flusher.close()
         self.presentation.emit(self.node_id, "viz.three_d.detach", {}, ts_ms=int(time.time() * 1_000))
 
     async def on_data(self, port: str, value: Any, *, ts_ms: int | None = None) -> None:
@@ -262,18 +268,7 @@ class VizThreeDRuntimeNode(StudioVizRuntimeNodeBase):
         return output
 
     async def _schedule_refresh(self, now_ms: int) -> None:
-        target_ms = self._last_refresh_ms + self._throttle_ms
-        if self._throttle_ms <= 0 or self._last_refresh_ms <= 0 or now_ms >= target_ms:
-            await self._flush(now_ms)
-            return
-        if self._refresh_task is None or self._refresh_task.done():
-            self._refresh_task = asyncio.create_task(
-                self._flush_after(target_ms - now_ms), name=f"web-studio:three-d:{self.node_id}"
-            )
-
-    async def _flush_after(self, delay_ms: int) -> None:
-        await asyncio.sleep(max(0, delay_ms) / 1_000)
-        await self._flush(int(time.time() * 1_000))
+        await self._flusher.schedule(now_ms=now_ms, throttle_ms=self._throttle_ms)
 
     async def _flush(self, now_ms: int) -> None:
         people = self._aggregate_people()
@@ -328,7 +323,6 @@ class VizThreeDRuntimeNode(StudioVizRuntimeNodeBase):
             ),
         )
         self.presentation.emit(self.node_id, "viz.three_d.set", msgspec.to_builtins(scene), ts_ms=now_ms)
-        self._last_refresh_ms = now_ms
         self._dirty = False
 
     @staticmethod

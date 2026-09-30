@@ -143,7 +143,7 @@ class ServiceHost:
 
         want_operator_nodes: list[F8RuntimeNode] = []
         service_snapshot: F8RuntimeNode | None = None
-        for node in graph.nodes:
+        for node in graph.nodes if isinstance(graph.nodes, list) else []:
             if service_class and str(node.serviceClass) != service_class:
                 continue
             operator_class = node.operatorClass

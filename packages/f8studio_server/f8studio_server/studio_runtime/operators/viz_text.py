@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ..presentation import PresentationOutlet
+
 import msgspec
 from ...presentation_models import TextUpdate
 
@@ -40,13 +42,21 @@ class VizTextRuntimeNode(StudioVizRuntimeNodeBase):
     pulls its `inputData` buffer, then emits presentation updates.
     """
 
-    def __init__(self, *, node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        node_id: str,
+        node: F8RuntimeNode,
+        initial_state: dict[str, Any] | None = None,
+        presentation: PresentationOutlet | None = None,
+    ) -> None:
         super().__init__(
             node_id=ensure_token(node_id, label="node_id"),
             data_in_ports=[p.name for p in (node.dataInPorts or [])],
             data_out_ports=[],
             state_fields=[s.name for s in (node.stateFields or [])],
             initial_state=initial_state,
+            presentation=presentation,
         )
         self._task: asyncio.Task[object] | None = None
         self._last_preview_value: Any = None

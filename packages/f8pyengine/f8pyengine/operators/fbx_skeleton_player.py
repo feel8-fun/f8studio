@@ -156,7 +156,7 @@ class FbxSkeletonPlayerRuntimeNode(OperatorNode):
         bones = [
             {"name": name, "parent": clip.bone_names[clip.parents[bone_index]] if clip.parents[bone_index] >= 0 else "",
              "pos": list(sample[:3]), "rot": list(sample[3:])}
-            for bone_index, (name, sample) in enumerate(zip(clip.bone_names, frame))
+            for bone_index, (name, sample) in enumerate(zip(clip.bone_names, frame, strict=False))
         ]
         return {"modelName": Path(self._path).stem, "skeletonProtocol": "fbx", "bones": bones}
 

@@ -1,6 +1,5 @@
-from __future__ import annotations
-
 """Internal command execution owner boundary for `ServiceBus`."""
+from __future__ import annotations
 
 import asyncio
 import logging

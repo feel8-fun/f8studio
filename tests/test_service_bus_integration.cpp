@@ -182,15 +182,9 @@ class RejectingSetStateNode final : public f8::cppsdk::SetStateHandlerNode {
 };
 
 json service_node(const std::string& service_id, const std::string& node_id, const json& state_fields = json::array()) {
-  json operator_class = nullptr;
-  if (node_id != service_id) {
-    operator_class = "OpClass";
-  }
-  return json{{"nodeId", node_id},
-              {"serviceId", service_id},
-              {"serviceClass", "demo"},
-              {"operatorClass", operator_class},
-              {"stateFields", state_fields}};
+  json node{{"nodeId", node_id}, {"serviceId", service_id}, {"serviceClass", "demo"}, {"stateFields", state_fields}};
+  if (node_id != service_id) node["operatorClass"]="OpClass";
+  return node;
 }
 
 }  // namespace
@@ -267,8 +261,8 @@ TEST(ServiceBusIntegration, ZenohRetainedStateRouteMirrorsRemoteState) {
   graph["graphId"] = "g1";
   graph["revision"] = "r1";
   graph["nodes"] = json::array({
-      service_node(svc_a, "op1", json::array({json{{"name", "out"}, {"access", "rw"}, {"valueSchema", json::object()}}})),
-      service_node(svc_b, "op2", json::array({json{{"name", "in"}, {"access", "rw"}, {"valueSchema", json::object()}}})),
+      service_node(svc_a, "op1", json::array({json{{"name", "out"}, {"access", "rw"}, {"valueSchema", json{{"type", "any"}}}}})),
+      service_node(svc_b, "op2", json::array({json{{"name", "in"}, {"access", "rw"}, {"valueSchema", json{{"type", "any"}}}}})),
   });
   graph["edges"] = json::array({
       json{{"edgeId", "e1"},
@@ -331,9 +325,9 @@ TEST(ServiceBusIntegration, HiddenCommandInputBypassesRejectingSetStateHandler) 
           svc,
           svc,
           json::array({
-              json{{"name", input_field}, {"access", "wo"}, {"valueSchema", json::object()}},
-              json{{"name", output_field}, {"access", "ro"}, {"valueSchema", json::object()}},
-              json{{"name", "result"}, {"access", "rw"}, {"valueSchema", json::object()}},
+              json{{"name", input_field}, {"access", "wo"}, {"valueSchema", json{{"type", "any"}}}},
+              json{{"name", output_field}, {"access", "ro"}, {"valueSchema", json{{"type", "any"}}}},
+              json{{"name", "result"}, {"access", "rw"}, {"valueSchema", json{{"type", "any"}}}},
           })),
   });
   graph["edges"] = json::array({

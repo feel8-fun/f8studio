@@ -685,7 +685,7 @@ async def rebuild_routes(bus: "ServiceBus") -> None:
     intra: dict[tuple[str, str], list[tuple[str, str, F8Edge]]] = {}
     intra_in: dict[tuple[str, str], list[tuple[str, str, F8Edge]]] = {}
     input_stream_keys: dict[tuple[str, str], str] = {}
-    for edge in graph.edges:
+    for edge in graph.edges if isinstance(graph.edges, list) else []:
         if edge.kind != F8EdgeKindEnum.data:
             continue
         if str(edge.fromServiceId) != bus.service_id or str(edge.toServiceId) != bus.service_id:
@@ -705,7 +705,7 @@ async def rebuild_routes(bus: "ServiceBus") -> None:
 
     # Intra-service state fanout: local state edges.
     intra_state_out: dict[tuple[str, str], list[tuple[str, str, F8Edge]]] = {}
-    for edge in graph.edges:
+    for edge in graph.edges if isinstance(graph.edges, list) else []:
         if edge.kind != F8EdgeKindEnum.state:
             continue
         if str(edge.fromServiceId) != bus.service_id or str(edge.toServiceId) != bus.service_id:
@@ -718,7 +718,7 @@ async def rebuild_routes(bus: "ServiceBus") -> None:
     # Cross routing.
     cross_in: dict[str, list[tuple[str, str, F8Edge]]] = {}
     cross_out: dict[tuple[str, str], str] = {}
-    for edge in graph.edges:
+    for edge in graph.edges if isinstance(graph.edges, list) else []:
         if edge.kind != F8EdgeKindEnum.data:
             continue
         if str(edge.fromServiceId) == str(edge.toServiceId):

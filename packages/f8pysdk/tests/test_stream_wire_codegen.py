@@ -19,8 +19,9 @@ def test_generated_stream_files_are_current() -> None:
     from scripts.generate_stream_wire import generate
 
     from scripts.generate_runtime_keys import generate as generate_keys
+    from scripts.generate_runtime_policy import generate as generate_policy
 
-    for path, content in (generate() | generate_keys()).items():
+    for path, content in (generate() | generate_keys() | generate_policy()).items():
         assert path.read_text() == content, f"Regenerate {path}"
 
 

@@ -41,7 +41,7 @@ class PyScriptServiceContext:
     read_state_value: Callable[[str], Awaitable[Any]]
     subscribe_video_latest_value: VideoLatestSubscribeCallback
     get_video_latest_value: Callable[[str], dict[str, Any] | None]
-    unsubscribe_video_latest_value: Callable[[str], None]
+    unsubscribe_video_latest_value: Callable[[str], object]
     list_video_latest_values: Callable[[], list[dict[str, Any]]]
     exec_local_value: LocalExecCallback
 

@@ -76,8 +76,8 @@ TEST(ProtocolModelsParse, CommandInvoke_IgnoreExtra) {
   EXPECT_TRUE(parse_F8CommandInvokeRequest(j, req, err)) << err.message;
   EXPECT_EQ(req.reqId, "req-1");
   EXPECT_EQ(req.call, "pickRegion");
-  EXPECT_TRUE(req.args.is_object());
-  EXPECT_TRUE(req.meta.is_object());
+  EXPECT_EQ(req.args.at("x"), 1);
+  EXPECT_EQ(req.meta.at("traceId"), "t1");
 }
 
 TEST(ProtocolModelsParse, SetActiveArgs_Parse) {
@@ -149,4 +149,64 @@ TEST(ProtocolModelsParse, MonitorSnapshot_NestedErrorsNameField) {
   EXPECT_NE(err.message.find("frame:"), std::string::npos) << err.message;
 }
 
+TEST(ProtocolModelsParse, RecursiveSchemaRoundTripAndTypedAccess) {
+  const json source = {{"type","object"}, {"properties", {
+    {"points", {{"type","array"}, {"items", {{"type","number"}, {"minimum",0.0}}}, {"minItems",2}}}
+  }}};
+  F8DataTypeSchema schema;
+  ParseError error;
+  ASSERT_TRUE(parse_F8DataTypeSchema(source, schema, error)) << error.message;
+  const auto object = std::get<std::shared_ptr<F8ComplexObjectTypeSchema>>(schema.value);
+  const auto array = std::get<std::shared_ptr<F8ArrayTypeSchema>>(object->properties.at("points").value);
+  ASSERT_EQ(array->minItems, 2);
+  const auto number = std::get<std::shared_ptr<F8NumberTypeSchema>>(array->items.value);
+  ASSERT_EQ(number->minimum, 0.0);
+  EXPECT_EQ(json(schema), source);
+}
+
+TEST(ProtocolModelsParse, RejectsMalformedOptionalFieldsAndPreservesPreviousValue) {
+  F8RuntimeGraph graph;
+  ParseError error;
+  ASSERT_TRUE(parse_F8RuntimeGraph(json{{"graphId","g"},{"revision","r"}}, graph, error));
+  EXPECT_FALSE(parse_F8RuntimeGraph(json{{"graphId","replacement"},{"revision","r"},{"nodes",17}}, graph, error));
+  EXPECT_EQ(graph.graphId, "g");
+  F8DataTypeSchema schema;
+  EXPECT_FALSE(parse_F8DataTypeSchema(json{{"type","array"}}, schema, error));
+  EXPECT_FALSE(parse_F8DataTypeSchema(json{{"type","number"},{"minimum","bad"}}, schema, error));
+  EXPECT_FALSE(parse_F8DataTypeSchema(json{{"type","invented"}}, schema, error));
+}
+
+TEST(ProtocolModelsParse, NullableAndAbsentAreDistinct) {
+  F8VariantRef absent, null_value, named;
+  ParseError error;
+  json payload{{"variantId","v"},{"kind","operator"},{"baseNodeType","node"},{"serviceClass","svc"},{"name","name"}};
+  ASSERT_TRUE(parse_F8VariantRef(payload, absent, error));
+  payload["operatorClass"] = nullptr;
+  ASSERT_TRUE(parse_F8VariantRef(payload, null_value, error));
+  EXPECT_FALSE(absent.operatorClass.has_value());
+  ASSERT_TRUE(null_value.operatorClass.has_value());
+  EXPECT_FALSE(null_value.operatorClass->has_value());
+  EXPECT_EQ(json(null_value), payload);
+  payload["operatorClass"] = "operator";
+  ASSERT_TRUE(parse_F8VariantRef(payload, named, error));
+  ASSERT_TRUE(named.operatorClass.has_value());
+  EXPECT_EQ(named.operatorClass->value(), "operator");
+}
+
 }  // namespace
+
+#include <fstream>
+#include "f8cppsdk/generated/runtime_fingerprint.h"
+#include "f8cppsdk/generated/control.h"
+TEST(RuntimePolicy, SharedFingerprintGolden) {
+  std::ifstream input(std::string(F8_TEST_FIXTURES) + "/rungraph-fingerprint.json");
+  ASSERT_TRUE(input.good());
+  nlohmann::json fixture;
+  input >> fixture;
+  EXPECT_EQ(f8::cppsdk::wire_policy::normalize_snapshot(fixture["graph"]), fixture["snapshot"]);
+  EXPECT_EQ(f8::cppsdk::wire_policy::fingerprint(fixture["graph"]), fixture["snapshot"].dump(-1,' ',true));
+  for (auto endpoint : f8::cppsdk::kSharedControlEndpoints) {
+    EXPECT_NE(endpoint, f8::cppsdk::ControlEndpoint::debug_data);
+    EXPECT_FALSE(f8::cppsdk::endpoint_name(endpoint).empty());
+  }
+}

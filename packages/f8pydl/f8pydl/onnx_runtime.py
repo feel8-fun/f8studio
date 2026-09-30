@@ -101,7 +101,7 @@ def _choose_ort_providers_from_available(
 def _choose_ort_providers(*, prefer: Literal["auto", "cuda", "cpu"]) -> list[str]:
     import onnxruntime as ort  # type: ignore
 
-    return _choose_ort_providers_from_available(_available_ort_providers(ort), prefer=prefer)
+    return _choose_ort_providers_from_available(_available_ort_providers(cast(_OrtModule, ort)), prefer=prefer)
 
 
 def _create_ort_session(
@@ -110,14 +110,14 @@ def _create_ort_session(
     *,
     ort_provider: Literal["auto", "cuda", "cpu"],
 ) -> _OrtSessionInitResult:
-    providers = _choose_ort_providers_from_available(_available_ort_providers(ort), prefer=ort_provider)
+    providers = _choose_ort_providers_from_available(_available_ort_providers(cast(_OrtModule, ort)), prefer=ort_provider)
     try:
         session = ort.InferenceSession(model_path, providers=providers)
         return _OrtSessionInitResult(session=session, provider_warning="")
     except Exception as exc:
         if ort_provider == "cpu":
             raise
-        available = _available_ort_providers(ort)
+        available = _available_ort_providers(cast(_OrtModule, ort))
         provider_warning = (
             f"Failed to init ORT providers={providers!r}; falling back to CPUExecutionProvider. "
             f"availableProviders={available!r}; error={exc}"
@@ -138,7 +138,7 @@ class _OnnxSession:
     def __init__(self, model_path: str, *, ort_provider: Literal["auto", "cuda", "cpu"]) -> None:
         import onnxruntime as ort  # type: ignore
 
-        session_result = _create_ort_session(ort, model_path, ort_provider=ort_provider)
+        session_result = _create_ort_session(cast(_OrtModule, ort), model_path, ort_provider=ort_provider)
         self._session = session_result.session
         self.provider_warning = session_result.provider_warning
         inputs = list(self._session.get_inputs())
@@ -892,7 +892,7 @@ class OnnxNeuFlowRuntime:
         import onnxruntime as ort  # type: ignore
 
         self.spec = spec
-        session_result = _create_ort_session(ort, str(spec.onnx_path), ort_provider=ort_provider)
+        session_result = _create_ort_session(cast(_OrtModule, ort), str(spec.onnx_path), ort_provider=ort_provider)
         self._session = session_result.session
         self.provider_warning = session_result.provider_warning
         inputs = list(self._session.get_inputs())
@@ -1013,7 +1013,7 @@ class OnnxTemporalWaveRuntime:
         self.spec = spec
         self.output_scale = float(output_scale)
         self.output_bias = float(output_bias)
-        session_result = _create_ort_session(ort, str(spec.onnx_path), ort_provider=ort_provider)
+        session_result = _create_ort_session(cast(_OrtModule, ort), str(spec.onnx_path), ort_provider=ort_provider)
         self._session = session_result.session
         self.provider_warning = session_result.provider_warning
 

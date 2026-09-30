@@ -16,6 +16,7 @@ import msgspec
 
 from .codec import dump_json, encode_obj, validate_as
 from .generated import (
+    LastSeverity, CurrentSeverity, SchemaVersion1,
     F8ComplexObjectTypeSchema,
     F8DataPortSpec,
     F8DataTypeSchema,
@@ -261,7 +262,7 @@ def validate_describe_monitor_contract(payload: dict[str, Any]) -> None:
     if monitor_schema_obj != expected_schema:
         try:
             parsed_schema = dump_json(
-                validate_as(F8DataTypeSchema, monitor_schema_obj),
+                msgspec.convert(monitor_schema_obj, type=F8DataTypeSchema),
                 mode="json",
                 by_alias=True,
             )
@@ -747,8 +748,7 @@ class MonitorCollector:
             if should_publish_now:
                 self._last_error_publish_fingerprint = fingerprint_s
                 self._last_error_publish_ts_ms = now_ts
-            else:
-                delay_ms = max(1, interval_ms - max(0, elapsed_ms))
+            delay_ms = max(1, interval_ms - max(0, elapsed_ms))
 
         if should_publish_now:
             self._cancel_pending_error_publish()
@@ -842,14 +842,14 @@ class MonitorCollector:
                 lastNodeId=str(self._last_error_node_id),
                 lastCode=str(self._last_error_code),
                 lastMessage=str(self._last_error_message),
-                lastSeverity=str(self._last_error_severity),
+                lastSeverity=LastSeverity(self._last_error_severity),
                 lastFingerprint=str(self._last_error_fingerprint),
                 lastRepeatCount=int(self._last_error_repeat_count),
                 lastTsMs=int(self._last_error_ts_ms) if self._last_error_ts_ms is not None else None,
                 currentNodeId=str(self._current_error_node_id),
                 currentCode=str(self._current_error_code),
                 currentMessage=str(self._current_error_message),
-                currentSeverity=str(self._current_error_severity),
+                currentSeverity=CurrentSeverity(self._current_error_severity),
                 currentTsMs=int(self._current_error_ts_ms) if self._current_error_ts_ms is not None else None,
             )
             ready = bool(self._ready)
@@ -858,7 +858,7 @@ class MonitorCollector:
         process_avg = (sum(process_values) / float(len(process_values))) if process_values else None
         latency_avg = (sum(latency_values) / float(len(latency_values))) if latency_values else None
         snapshot = F8MonitorSnapshot(
-            schemaVersion="f8monitor/1",
+            schemaVersion=SchemaVersion1.f8monitor_1,
             serviceId=str(self._bus.service_id),
             serviceClass=str(self._bus._service_class),
             nodeId=str(self._bus.service_id),

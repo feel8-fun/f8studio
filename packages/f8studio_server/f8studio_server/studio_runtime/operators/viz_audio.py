@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ._viz_base import StudioVizRuntimeNodeBase
+
 from ...presentation_models import AudioConfig
 
 import msgspec
@@ -11,7 +13,6 @@ from typing import Any, cast
 
 from f8pysdk.capabilities import RungraphHookBus
 from f8pysdk.f8_naming import ensure_token
-from f8pysdk.nodes import OperatorNode
 from f8pysdk.registry import Registry
 from f8pysdk.specs import (
     F8OperatorSchemaVersion,
@@ -37,14 +38,12 @@ RENDERER_CLASS = "viz_audio"
 logger = logging.getLogger(__name__)
 
 
-class VizAudioRuntimeNode(OperatorNode):
+class VizAudioRuntimeNode(StudioVizRuntimeNodeBase):
     """
     Studio visualization node for latest-audio waveforms.
 
     This runtime node sends stream configuration to the injected presentation outlet.
     """
-
-    presentation: PresentationOutlet
 
     SPEC = F8OperatorSpec(
         schemaVersion=F8OperatorSchemaVersion.f8operator_1,
@@ -104,14 +103,22 @@ class VizAudioRuntimeNode(OperatorNode):
         ],
     )
 
-    def __init__(self, *, node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        node_id: str,
+        node: F8RuntimeNode,
+        initial_state: dict[str, Any] | None = None,
+        presentation: PresentationOutlet | None = None,
+    ) -> None:
         super().__init__(
             node_id=ensure_token(node_id, label="node_id"),
             data_in_ports=["audio"],
             data_out_ports=[],
             state_fields=[s.name for s in (node.stateFields or [])],
+            initial_state=initial_state,
+            presentation=presentation,
         )
-        self._initial_state = dict(initial_state or {})
         self._config_loaded = False
         self._throttle_ms = 20
         self._history_ms = 250
@@ -207,24 +214,6 @@ class VizAudioRuntimeNode(OperatorNode):
             payload,
             ts_ms=int(now_ms),
         )
-
-    async def _get_int_state(self, name: str, *, default: int, minimum: int, maximum: int) -> int:
-        v: Any = None
-        try:
-            v = await self.get_state_value(name)
-        except (RuntimeError, TypeError, ValueError):
-            v = None
-        if v is None:
-            v = self._initial_state.get(name)
-        try:
-            out = int(v) if v is not None else int(default)
-        except (TypeError, ValueError):
-            out = int(default)
-        if out < minimum:
-            out = minimum
-        if out > maximum:
-            out = maximum
-        return out
 
 
 def register_operator(registry: Registry) -> Registry:

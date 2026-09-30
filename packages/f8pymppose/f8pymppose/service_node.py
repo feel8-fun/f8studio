@@ -11,6 +11,7 @@ from f8pysdk.f8_naming import ensure_token
 from f8pysdk.nodes import ServiceNode
 
 from .config import (
+    ModelComplexity, SkeletonSource,
     DEFAULT_INFER_EVERY_N,
     DEFAULT_MIN_DETECTION_CONFIDENCE,
     DEFAULT_MIN_TRACKING_CONFIDENCE,
@@ -228,11 +229,11 @@ class MediaPipePoseServiceNode(ServiceNode):
 
     def _apply_config(self, config: PoseServiceConfig) -> None:
         self._infer_every_n = config.infer_every_n
-        self._model_complexity = config.model_complexity
+        self._model_complexity: ModelComplexity = config.model_complexity
         self._min_detection_confidence = config.min_detection_confidence
         self._min_tracking_confidence = config.min_tracking_confidence
         self._visibility_threshold = config.visibility_threshold
-        self._skeleton_source = config.skeleton_source
+        self._skeleton_source: SkeletonSource = config.skeleton_source
 
     async def _set_last_error(self, message: str) -> None:
         normalized = str(message or "")

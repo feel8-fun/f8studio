@@ -937,6 +937,8 @@ export type F8ArrayTypeSchema = {
   readonly "examples"?: ReadonlyArray<JsonValue>;
   readonly "$comment"?: string;
   readonly "items": F8StringTypeSchema | F8NumberTypeSchema | F8IntegerTypeSchema | F8BooleanTypeSchema | F8NullTypeSchema | F8ComplexObjectTypeSchema | F8ArrayTypeSchema | F8AnyTypeSchema;
+  readonly "minItems"?: number;
+  readonly "maxItems"?: number;
 };
 
 export type F8ArrayTypeSchemaInput = {
@@ -947,6 +949,8 @@ export type F8ArrayTypeSchemaInput = {
   readonly "examples"?: ReadonlyArray<JsonValue>;
   readonly "$comment"?: string;
   readonly "items": F8StringTypeSchemaInput | F8NumberTypeSchemaInput | F8IntegerTypeSchemaInput | F8BooleanTypeSchemaInput | F8NullTypeSchemaInput | F8ComplexObjectTypeSchemaInput | F8ArrayTypeSchemaInput | F8AnyTypeSchemaInput;
+  readonly "minItems"?: number;
+  readonly "maxItems"?: number;
 };
 
 export type F8AutoSampleRequest = {

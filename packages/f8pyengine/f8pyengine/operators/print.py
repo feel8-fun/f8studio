@@ -55,7 +55,7 @@ class PrintRuntimeNode(OperatorNode):
                     v = v.strip()
             print(f"[{self.node_id}] value={v}")
 
-    async def on_exec(self, exec_id: str | int, _in_port: str | None = None) -> list[str]:
+    async def on_exec(self, exec_id: str | int, in_port: str | None = None) -> list[str]:
         v = await self.pull("value", ctx_id=exec_id)
         if self._strip:
             if isinstance(v, (bytes, bytearray)):

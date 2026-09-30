@@ -89,3 +89,13 @@ def test_deploy_fingerprint_survives_runtime_wire_defaults() -> None:
     assert build_rungraph_deploy_fingerprint(graph) == build_rungraph_deploy_fingerprint(
         decode_as(encode_obj(graph), F8RuntimeGraph)
     )
+
+
+def test_shared_cross_language_fingerprint_fixture() -> None:
+    import json
+    from pathlib import Path
+
+    fixture = Path(__file__).resolve().parents[3] / 'tests/fixtures/rungraph-fingerprint.json'
+    value = json.loads(fixture.read_text())
+    assert build_rungraph_deploy_snapshot(value['graph']) == value['snapshot']
+    assert build_rungraph_deploy_fingerprint(value['graph']) == json.dumps(value['snapshot'], sort_keys=True, separators=(',', ':'))

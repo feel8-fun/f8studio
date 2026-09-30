@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Explicit internal-only service bus boundary.
 
@@ -24,3 +22,4 @@ Data runtime owners live under:
 - `f8pysdk.service_bus.data.flow`
 - `f8pysdk.service_bus.data.router`
 """
+from __future__ import annotations

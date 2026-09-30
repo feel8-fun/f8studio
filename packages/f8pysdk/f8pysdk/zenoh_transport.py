@@ -3,14 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
 from .runtime_transport import RequestHandler, TransportCallback
 from .zenoh_config import apply_zenoh_shared_memory_config, apply_zenoh_timestamping_config
 from .zenoh_naming import (
-    zenoh_key_to_state_path,
     zenoh_service_liveliness_key,
 )
 from .zenoh_shutdown import close_zenoh_session_best_effort

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ._viz_base import StudioVizRuntimeNodeBase
+
 from ...presentation_models import VideoConfig
 
 import msgspec
@@ -24,7 +26,6 @@ from f8pysdk.specs import (
 )
 from f8pysdk.capabilities import RungraphHookBus
 from f8pysdk.f8_naming import ensure_token
-from f8pysdk.nodes import OperatorNode
 from f8pysdk.registry import Registry
 
 from ..identifiers import SERVICE_CLASS
@@ -36,19 +37,15 @@ OPERATOR_CLASS = "f8.viz.video"
 RENDERER_CLASS = "viz_video"
 log = logging.getLogger(__name__)
 
-_STATE_READ_ERRORS = (RuntimeError, OSError, TypeError, ValueError)
-_NUMERIC_PARSE_ERRORS = (TypeError, ValueError, OverflowError)
 
 
-class VizVideoRuntimeNode(OperatorNode):
+class VizVideoRuntimeNode(StudioVizRuntimeNodeBase):
     """
     Studio visualization node for Zenoh latest-frame video.
 
     This runtime node sends stream configuration through the presentation outlet;
     frame payloads remain on the media/data transport.
     """
-
-    presentation: PresentationOutlet
 
     SPEC = F8OperatorSpec(
         schemaVersion=F8OperatorSchemaVersion.f8operator_1,
@@ -217,14 +214,22 @@ class VizVideoRuntimeNode(OperatorNode):
         ],
     )
 
-    def __init__(self, *, node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        node_id: str,
+        node: F8RuntimeNode,
+        initial_state: dict[str, Any] | None = None,
+        presentation: PresentationOutlet | None = None,
+    ) -> None:
         super().__init__(
             node_id=ensure_token(node_id, label="node_id"),
             data_in_ports=[],
             data_out_ports=[],
             state_fields=[s.name for s in (node.stateFields or [])],
+            initial_state=initial_state,
+            presentation=presentation,
         )
-        self._initial_state = dict(initial_state or {})
         self._config_loaded = False
         self._throttle_ms = 33
         self._flow_display_mode = "off"
@@ -372,7 +377,7 @@ class VizVideoRuntimeNode(OperatorNode):
         self._flow_display_mode = flow_mode if flow_mode in ("off", "hsv", "arrows") else "off"
         self._flow_mag_scale = await self._get_float_state("flowMagScale", default=20.0, minimum=0.1, maximum=500.0)
         self._flow_stride = await self._get_int_state("flowStride", default=12, minimum=2, maximum=128)
-        mode = (await self._get_str_state("scaleMode", default="native")).strip().lower()
+        mode = (await self._get_str_state("scaleMode", default="fit")).strip().lower()
         self._scale_mode = mode if mode in ("native", "fit") else "native"
         scalar_display = (await self._get_str_state("scalarDisplayMode", default="off")).strip().lower()
         self._scalar_display_mode = self._normalize_scalar_display_mode(scalar_display)
@@ -430,7 +435,7 @@ class VizVideoRuntimeNode(OperatorNode):
                 flowDisplayMode=str(self._flow_display_mode or "off"),
                 flowMagScale=float(self._flow_mag_scale),
                 flowStride=int(self._flow_stride),
-                scaleMode=str(self._scale_mode or "native"),
+                scaleMode=str(self._scale_mode or "fit"),
                 scalarStreamKey=scalar_stream_key,
                 scalarDisplayMode=self._normalize_scalar_display_mode(self._scalar_display_mode),
                 scalarColormap=self._normalize_scalar_colormap(self._scalar_colormap),
@@ -449,62 +454,6 @@ class VizVideoRuntimeNode(OperatorNode):
             payload,
             ts_ms=int(now_ms),
         )
-
-    async def _get_int_state(self, name: str, *, default: int, minimum: int, maximum: int) -> int:
-        v = await self._config_state_value(name)
-        try:
-            out = int(v) if v is not None else int(default)
-        except _NUMERIC_PARSE_ERRORS:
-            out = int(default)
-        if out < minimum:
-            out = minimum
-        if out > maximum:
-            out = maximum
-        return out
-
-    async def _get_str_state(self, name: str, *, default: str) -> str:
-        v = await self._config_state_value(name)
-        return str(v) if v is not None else str(default)
-
-    async def _get_bool_state(self, name: str, *, default: bool) -> bool:
-        v = await self._config_state_value(name, default=default)
-        if isinstance(v, bool):
-            return v
-        if isinstance(v, (int, float)):
-            return bool(v)
-        text = str(v or "").strip().lower()
-        if text in ("1", "true", "yes", "on"):
-            return True
-        if text in ("0", "false", "no", "off"):
-            return False
-        return bool(default)
-
-    async def _get_float_state(self, name: str, *, default: float, minimum: float, maximum: float) -> float:
-        v = await self._config_state_value(name)
-        try:
-            out = float(v) if v is not None else float(default)
-        except _NUMERIC_PARSE_ERRORS:
-            out = float(default)
-        if out < minimum:
-            out = minimum
-        if out > maximum:
-            out = maximum
-        return out
-
-    async def _config_state_value(self, name: str, *, default: Any = None) -> Any:
-        try:
-            value = await self.get_state_value(name)
-        except _STATE_READ_ERRORS:
-            log.debug(
-                "viz video state read failed; falling back to initial state node_id=%s field=%s",
-                self.node_id,
-                name,
-                exc_info=True,
-            )
-            value = None
-        if value is not None:
-            return value
-        return self._initial_state.get(name, default)
 
     @staticmethod
     def _normalize_scalar_display_mode(mode: str) -> str:

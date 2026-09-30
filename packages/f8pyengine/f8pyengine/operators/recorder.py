@@ -74,7 +74,7 @@ class RecorderRuntimeNode(OperatorNode):
     async def close(self) -> None:
         self._close_writer()
 
-    async def on_exec(self, exec_id: str | int, _in_port: str | None = None) -> list[str]:
+    async def on_exec(self, exec_id: str | int, in_port: str | None = None) -> list[str]:
         event_ts_ms = now_ms()
         await self._record_tick(exec_id=exec_id, event_ts_ms=event_ts_ms)
         return []

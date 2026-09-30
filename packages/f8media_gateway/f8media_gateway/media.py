@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .session_manager import SessionManager
+
 import asyncio
 import logging
 import math
@@ -12,7 +14,7 @@ from fractions import Fraction
 from typing import Literal, Protocol
 from uuid import uuid4
 
-from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
+from aiortc import RTCPeerConnection, VideoStreamTrack
 from aiortc.mediastreams import MediaStreamError
 from av import VideoFrame
 import numpy as np
@@ -35,8 +37,6 @@ from f8media_protocol.models import (
     OverlayResult,
 )
 from .overlay import OverlayStore, compose_overlay_bgra
-from .peer_lifecycle import PeerCloseQueue
-from .hub_pool import HubPool
 from f8pysdk.binary_stream_transport import SharedStreamSession
 
 
@@ -145,9 +145,13 @@ class SyntheticFrameProducer:
 
 class ZenohFrameProducer:
     def __init__(self, source: str, session: SharedStreamSession | None = None) -> None:
-        self._transport = (ZenohLatestVideoFrameTransport.open_subscriber(source) if session is None else
-                           ZenohLatestVideoFrameTransport(key_expr=source, raw_transport=session.subscribe(
-                               source, log_context="video", max_pending_samples=1)))
+        self._transport = (
+            ZenohLatestVideoFrameTransport.open_subscriber(source)
+            if session is None
+            else ZenohLatestVideoFrameTransport(
+                key_expr=source, raw_transport=session.subscribe(source, log_context="video", max_pending_samples=1)
+            )
+        )
         self._closed = False
 
     async def read(self) -> RawVideoFrame | None:
@@ -330,8 +334,9 @@ def _flow_preview_frame(raw: RawVideoFrame, *, magnitude_scale: float = 20.0) ->
         raise ValueError("FLOW2_F16 payload is smaller than pitch * height")
     if magnitude_scale <= 0 or not math.isfinite(magnitude_scale):
         raise ValueError("magnitude_scale must be finite and positive")
-    flow = np.ndarray((raw.height, raw.width, 2), dtype="<f2", buffer=raw.payload,
-                      strides=(raw.pitch, 4, 2)).astype(np.float64)
+    flow = np.ndarray((raw.height, raw.width, 2), dtype="<f2", buffer=raw.payload, strides=(raw.pitch, 4, 2)).astype(
+        np.float64
+    )
     finite = np.isfinite(flow).all(axis=2)
     flow[~finite] = 0
     dx, dy = flow[:, :, 0], flow[:, :, 1]
@@ -366,8 +371,9 @@ def _scalar_preview_frame(raw: RawVideoFrame) -> VideoFrame:
         raise ValueError("SCALAR1_F32 payload is smaller than pitch * height")
 
     sample_stride = max(1, math.isqrt(max(1, raw.width * raw.height // 65_536)))
-    values = np.ndarray((raw.height, raw.width), dtype="<f4", buffer=raw.payload,
-                        strides=(raw.pitch, 4)).astype(np.float64)
+    values = np.ndarray((raw.height, raw.width), dtype="<f4", buffer=raw.payload, strides=(raw.pitch, 4)).astype(
+        np.float64
+    )
     sampled = values[::sample_stride, ::sample_stride]
     sampled = np.sort(sampled[np.isfinite(sampled)])
     if sampled.size:
@@ -584,102 +590,40 @@ class MediaSession:
     overlay: bool
 
 
-class MediaSessionManager:
+class MediaSessionManager(SessionManager[LatestFrameHub, MediaSession]):
     def __init__(
         self,
         *,
         producer_factory: Callable[[str], AsyncFrameProducer] = create_frame_producer,
         disconnected_grace_s: float = 10.0,
     ) -> None:
-        if disconnected_grace_s < 0:
-            raise ValueError("disconnected grace period must be non-negative")
-        self._sessions: dict[str, MediaSession] = {}
-        self._hubs: HubPool[LatestFrameHub] = HubPool(self._make_hub)
-        self._lock = asyncio.Lock()
-        self._janitor: asyncio.Task[None] | None = None
         self._producer_factory = producer_factory
-        self._disconnected_grace_s = disconnected_grace_s
-        self._disconnected_since: dict[str, float] = {}
-        self._peer_closer = PeerCloseQueue()
+        super().__init__(hub_factory=self._make_hub, disconnected_grace_s=disconnected_grace_s, kind="video")
         self.overlays = OverlayStore()
-
-    @property
-    def session_count(self) -> int:
-        return len(self._sessions)
-
-    @property
-    def source_count(self) -> int:
-        return self._hubs.source_count
 
     async def create(self, offer: MediaSessionOffer) -> MediaSessionAnswer:
         source = offer.source.strip()
         quality = MEDIA_QUALITIES.get(offer.quality)
         if quality is None:
             raise MediaInputError("media quality must be thumbnail or main")
-        if offer.type != "offer" or not offer.sdp.strip():
-            raise MediaInputError("a non-empty WebRTC offer SDP is required")
 
-        hub = await self._acquire_hub(source)
-        peer = RTCPeerConnection()
-        session_id = uuid4().hex
-
-        @peer.on("iceconnectionstatechange")
-        async def ice_connection_state_changed() -> None:
-            logger.info(
-                "video ICE state changed session_id=%s source=%s state=%s",
-                session_id,
-                source,
-                peer.iceConnectionState,
+        def build(hub: LatestFrameHub, session_id: str, peer: RTCPeerConnection) -> MediaSession:
+            track = LatestFrameVideoTrack(
+                hub, quality, session_id=session_id, overlay_store=self.overlays if offer.overlay else None
+            )
+            return MediaSession(
+                hub=hub,
+                session_id=session_id,
+                source=source,
+                peer=peer,
+                track=track,
+                quality=quality,
+                overlay=offer.overlay,
             )
 
-        @peer.on("connectionstatechange")
-        async def connection_state_changed() -> None:
-            logger.info(
-                "video peer state changed session_id=%s source=%s state=%s",
-                session_id,
-                source,
-                peer.connectionState,
-            )
-
-        track = LatestFrameVideoTrack(
-            hub,
-            quality,
-            session_id=session_id,
-            overlay_store=self.overlays if offer.overlay else None,
-        )
-        peer.addTrack(track)
-        try:
-            await peer.setRemoteDescription(RTCSessionDescription(sdp=offer.sdp, type=offer.type))
-            answer = await peer.createAnswer()
-            await peer.setLocalDescription(answer)
-        except asyncio.CancelledError:
-            track.stop()
-            await peer.close()
-            await self._release_hub(hub)
-            raise
-        except Exception:
-            logger.exception("failed to negotiate media session source=%s quality=%s", source, quality.name)
-            track.stop()
-            await peer.close()
-            await self._release_hub(hub)
-            raise
-
-        session = MediaSession(
-            hub=hub,
-            session_id=session_id,
-            source=source,
-            quality=quality,
-            peer=peer,
-            track=track,
-            overlay=offer.overlay,
-        )
-        async with self._lock:
-            self._sessions[session_id] = session
-            if self._janitor is None:
-                self._janitor = asyncio.create_task(self._run_janitor(), name="media-session-janitor")
-        local = peer.localDescription
+        session, local = await self._create_session(source=source, sdp=offer.sdp, offer_type=offer.type, build=build)
         return MediaSessionAnswer(
-            session_id=session_id,
+            session_id=session.session_id,
             source=source,
             quality=quality.name,
             sdp=local.sdp,
@@ -711,59 +655,6 @@ class MediaSessionManager:
 
     def _make_hub(self, source: str) -> LatestFrameHub:
         return LatestFrameHub(source=source, producer=self._producer_factory(source))
-
-    async def _acquire_hub(self, source: str) -> LatestFrameHub:
-        return await self._hubs.acquire(source)
-
-    async def _release_hub(self, hub: LatestFrameHub) -> None:
-        await self._hubs.release(hub)
-
-    async def close_session(self, session_id: str) -> bool:
-        async with self._lock:
-            session = self._sessions.pop(session_id, None)
-            self._disconnected_since.pop(session_id, None)
-        if session is None:
-            return False
-        session.track.stop()
-        await self._peer_closer.close(session.peer, context=f"video:{session_id}")
-        await self._release_hub(session.hub)
-        return True
-
-    async def _run_janitor(self) -> None:
-        try:
-            while True:
-                await asyncio.sleep(2.0)
-                now = asyncio.get_running_loop().time()
-                async with self._lock:
-                    stale: list[str] = []
-                    for session_id, session in self._sessions.items():
-                        state = session.peer.connectionState
-                        if session.hub.closed or state in {"failed", "closed"}:
-                            stale.append(session_id)
-                            continue
-                        if state == "disconnected":
-                            disconnected_at = self._disconnected_since.setdefault(session_id, now)
-                            if now - disconnected_at >= self._disconnected_grace_s:
-                                stale.append(session_id)
-                        else:
-                            self._disconnected_since.pop(session_id, None)
-                for session_id in stale:
-                    await self.close_session(session_id)
-        except asyncio.CancelledError:
-            raise
-
-    async def close(self) -> None:
-        janitor = self._janitor
-        self._janitor = None
-        if janitor is not None:
-            janitor.cancel()
-            await asyncio.gather(janitor, return_exceptions=True)
-        async with self._lock:
-            session_ids = tuple(self._sessions)
-        for session_id in session_ids:
-            await self.close_session(session_id)
-        await self._hubs.close()
-        await self._peer_closer.shutdown()
 
 
 __all__ = [

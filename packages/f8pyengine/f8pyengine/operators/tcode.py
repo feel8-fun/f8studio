@@ -19,7 +19,6 @@ from f8pysdk.nodes import OperatorNode
 from f8pysdk.registry import Registry
 
 from ..constants import SERVICE_CLASS
-from ._ports import exec_out_ports
 
 OPERATOR_CLASS: Final[str] = "f8.tcode"
 

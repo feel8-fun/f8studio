@@ -116,3 +116,24 @@ Validation:
 - Python protocol regeneration matches tracked output (timestamp excluded); protocol/Studio/stream/key drift checks pass.
 - Lint, all 3 import contracts, exception budget (110 broad / 0 silent), and `git diff --check` pass.
 - Generation coverage and commands are documented in `docs/developers/web-studio-architecture.md`.
+
+## Static checks, generated boundaries and shared Viz/gateway logic (2026-09-29)
+
+- SDK/engine/service Pyright moved from basic mode with disabled diagnostics to standard mode. Argument, assignment, call, general type and optional-member errors are enabled; Studio/media retain strict mode. Ruff now enables E4/E7/E9/F and Bugbear. Fixed the newly exposed issues with explicit signatures, narrowing and public reexports. Third-party stub absence remains exempt; two local SciPy suppressions explain the installed stub mismatch. This is not a claim that the whole repository uses strict mode or contains no `Any`.
+- C++ protocol generation now emits concrete nested objects, maps, vectors, enums and recursive schema variants. Malformed optional values reject, failed parses preserve the previous output, and optional nullable fields retain absent/null distinction. Unsupported typed constructs and conflicting enums fail generation rather than silently becoming JSON. User/extension payloads intentionally remain `F8JsonValue`; the parser is not a complete JSON Schema constraint validator.
+- Added array `minItems`/`maxItems` to the shared schema and regenerated Python/Studio contracts, retaining the wave-expression pair-size contract.
+- Control endpoint names and rungraph normalization rules now have shared schema sources with generated Python/C++ consumers. Fingerprints agree on ignored UI metadata and collection ordering; shared fixtures cover recursive types, Unicode and cross-language normalization. CMake/CI/codegen tasks include runtime policy checks.
+- All seven Viz nodes share configuration readers and explicit presentation injection/factories. Wave/track/3D share owned throttled refresh scheduling, cancellation, failure reporting and shutdown-before-detach. Boolean strings and nonfinite numeric configuration are handled consistently; video uses the spec's `fit` default.
+- Audio/video gateways now share a generic typed session manager for negotiation, leases, disconnect grace/reconnection and shutdown. Closing cancels in-flight offers, prevents late session registration and attempts all session cleanup before propagating errors. Track implementations, video quality/overlays and audio drop accounting remain concrete.
+- Added regressions for scheduling coalescence, immediate/delayed replacement, close synchronization, failure recovery, config conversion, negotiation cancellation/failure, disconnect grace reset and partial shutdown failure. Corrected an unrelated flaky frontend fixture whose reconnect query returned a different model from session creation.
+- Large-file responsibility decomposition remains separate from this task.
+
+Validation:
+
+- SDK standard and Studio/media strict checks: **0 errors**; lint, all **3** import contracts and exception checks (**109 broad / 0 silent**) pass.
+- Viz/gateway/Studio stage regression: **203 passed**. New focused generation/lifecycle regressions: **13 passed**.
+- Frontend after fixture correction: **99 passed**, TypeScript clean.
+- C++ SDK/tests and engine rebuilt; CTest **1/1 passed**, containing **31** GoogleTest cases.
+- Python protocol, Studio contract, stream/key/policy generated-file checks pass. `git diff --check` passes.
+- First full Python run alongside C++ compilation: **1064 passed**, one language-server completion timeout. An isolated final run is recorded below when complete.
+- Final isolated full Python regression with fresh product descriptions: **1065 passed, 0 skipped**, one third-party Scapy/cryptography deprecation warning, **87.35 s** (`/tmp/f8-final-full-tests-clean.log`). The completion timeout did not recur.

@@ -25,7 +25,7 @@ def _optional_text(value: object) -> str:
 
 def _data_port_by_name(ports: object, port_name: str) -> F8DataPortSpec | None:
     target = str(port_name or "").strip()
-    if not target or isinstance(ports, msgspec.UnsetType):
+    if not target or not isinstance(ports, (list, tuple)):
         return None
     for port in list(ports or []):
         if not isinstance(port, F8DataPortSpec):

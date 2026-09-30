@@ -47,9 +47,8 @@ class BandpassFilterRuntimeNode(OperatorNode):
         self._low_cutoff = clamp_positive(self._initial_state.get("low_cutoff"), default=1.0, minimum=1e-6)
         self._high_cutoff = clamp_positive(self._initial_state.get("high_cutoff"), default=8.0, minimum=1e-6)
         self._order = clamp_order(self._initial_state.get("order"), default=2)
-        self._reset_on_state_change = parse_bool(self._initial_state.get("reset_on_state_change"))
-        if self._reset_on_state_change is None:
-            self._reset_on_state_change = True
+        reset_on_state_change = parse_bool(self._initial_state.get("reset_on_state_change"))
+        self._reset_on_state_change: bool = True if reset_on_state_change is None else reset_on_state_change
         self._sos = design_bandpass(
             sampling_hz=sampling_hz_from_interval_ms(self._sample_interval_ms, default_interval_ms=1000.0 / 120.0),
             low_cutoff=self._low_cutoff,

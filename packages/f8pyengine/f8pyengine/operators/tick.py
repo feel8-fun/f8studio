@@ -57,7 +57,7 @@ class TickRuntimeNode(OperatorNode, EntrypointNode):
             self._tick_ms = 100
         self._want_hires = coerce_flag(self._initial_state.get("hiResTimer"), default=True)
 
-    async def on_exec(self, _exec_id: str | int, _in_port: str | None = None) -> list[str]:
+    async def on_exec(self, exec_id: str | int, in_port: str | None = None) -> list[str]:
         return list(self._exec_out_ports)
 
     async def validate_state(
