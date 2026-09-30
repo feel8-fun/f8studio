@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+from f8pysdk.expr_policy import numpy_attribute_allowed
 from types import CodeType
 from typing import Any
 
@@ -108,6 +109,9 @@ class PyExprValidator(ast.NodeVisitor):
         return super().generic_visit(node)
 
     def visit_Attribute(self, node: ast.Attribute) -> Any:
+        if not numpy_attribute_allowed(node):
+            self.error("numpy member is not allowed in numeric expressions")
+            return None
         if str(node.attr or "").startswith("_"):
             self.error("private/dunder attribute access is not allowed")
             return None

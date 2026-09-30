@@ -32,7 +32,7 @@ export interface StudioWebExtension {
 const LOCAL_EXTENSIONS: readonly StudioWebExtension[] = [
   { id: 'tcode', renderers: [{
     id: 'tcode', commandPrefix: 'viz.tcode.', nodeRendererClass: 'viz_tcode', component: TCodeView,
-    reduce: (command, previous, payload) => command.endsWith('.reset')
+    reduce: (command, previous, payload) => command.endsWith('.snapshot') ? payload : command.endsWith('.reset')
       ? { ...previous, line: '', channels: {}, resetVersion: (typeof previous.resetVersion === 'number' ? previous.resetVersion : 0) + 1 }
       : command.endsWith('.write') && typeof payload.line === 'string'
         ? { ...previous, ...payload, channels: mergeTCodeChannels(previous.channels, payload.line) }

@@ -1211,3 +1211,18 @@ def test_disabled_nodes_are_excluded_and_disabled_services_fail_explicitly() -> 
     invalid = msgspec.structs.replace(document, nodes=(disabled_service, source, sink))
     with pytest.raises(ValueError, match="disabled or missing service"):
         compile_document(invalid)
+
+
+def test_history_keeps_only_the_configured_number_of_documents() -> None:
+    _, service, _, _ = base_nodes()
+    store = GraphStore(new_document(project_id="bounded", graph_id="graph"), undo_limit=2)
+    for revision in range(3):
+        operation = CreateNodeOp(node=service) if revision == 0 else RenameNodeOp(node_id="engine", name=f"Name {revision}")
+        store.apply(PatchRequest(request_id=f"edit-{revision}", expected_graph_revision=revision,
+                                 expected_layout_revision=0, operations=(operation,)))
+    for revision in (3, 4):
+        store.undo(HistoryRequest(request_id=f"undo-{revision}", expected_graph_revision=revision,
+                                  expected_layout_revision=0))
+    with pytest.raises(OperationTargetError, match="undo history is empty"):
+        store.undo(HistoryRequest(request_id="overflow", expected_graph_revision=5, expected_layout_revision=0))
+    assert len(store.snapshot().nodes) == 1

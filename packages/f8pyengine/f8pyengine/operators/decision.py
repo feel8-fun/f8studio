@@ -136,7 +136,9 @@ class DecisionRuntimeNode(OperatorNode):
         self._validate_config(config)
         self._config = config
         self._generation += 1
-        self._pending = None
+        pending, self._pending = self._pending, None
+        if pending is not None:
+            await self._discard(pending, "configuration or lifecycle changed")
         self._outputs["accepted"] = False
         await self.emit("accepted", False)
 
@@ -144,7 +146,9 @@ class DecisionRuntimeNode(OperatorNode):
         del meta
         self._active = active
         self._generation += 1
-        self._pending = None
+        pending, self._pending = self._pending, None
+        if pending is not None:
+            await self._discard(pending, "configuration or lifecycle changed")
         self._outputs["accepted"] = False
         await self.emit("accepted", False)
 
@@ -176,7 +180,7 @@ class DecisionRuntimeNode(OperatorNode):
             await self.emit_exec("error", exec_id=exec_id)
             return []
         if self._pending is not None:
-            self._dropped += 1
+            await self._discard(self._pending, "superseded by a newer trigger")
         self._pending = PendingDecision(request, exec_id, time.monotonic(), self._generation, self._config)
         if self._worker is None:
             self._client = httpx.AsyncClient(timeout=12, limits=httpx.Limits(max_connections=1, max_keepalive_connections=1))
@@ -245,7 +249,12 @@ class DecisionRuntimeNode(OperatorNode):
         if self._client is None:
             raise RuntimeError("Decision HTTP client is not running")
         endpoint = pending.config.studio_url.strip() or os.environ.get("F8STUDIO_SERVER_URL", "http://127.0.0.1:8210")
-        response = await self._client.post(f"{endpoint.rstrip('/')}/api/decisions/evaluate", content=msgspec.json.encode(pending.request), headers={"Content-Type": "application/json"})
+        headers = {"Content-Type": "application/json"}
+        token = os.environ.get("F8STUDIO_ACCESS_TOKEN", "")
+        launched_url = os.environ.get("F8STUDIO_SERVER_URL", "")
+        if token and urlsplit(endpoint).netloc == urlsplit(launched_url).netloc and urlsplit(endpoint).scheme == urlsplit(launched_url).scheme:
+            headers["Authorization"] = f"Bearer {token}"
+        response = await self._client.post(f"{endpoint.rstrip('/')}/api/decisions/evaluate", content=msgspec.json.encode(pending.request), headers=headers)
         response.raise_for_status()
         result = msgspec.json.decode(response.content, type=DecisionResult)
         validate_result(result, pending.request.questions)
@@ -264,6 +273,13 @@ class DecisionRuntimeNode(OperatorNode):
         await self._publish("metrics", {"processed": self._processed, "dropped": self._dropped, "failed": self._failed,
                                       "ageMs": (time.monotonic() - pending.received_at) * 1000, "requestId": str(pending.exec_id)}, pending)
 
+    async def _discard(self, pending: PendingDecision, reason: str) -> None:
+        self._dropped += 1
+        await self._publish("accepted", False, pending)
+        await self._publish("error", reason, pending)
+        await self._metrics(pending)
+        await self.emit_exec("error", exec_id=pending.exec_id)
+
     async def _run(self) -> None:
         next_request_at = 0.0
         while True:
@@ -276,17 +292,14 @@ class DecisionRuntimeNode(OperatorNode):
             next_request_at = time.monotonic() + pending.config.min_interval_ms / 1000
             try:
                 if (time.monotonic() - pending.received_at) * 1000 > pending.config.max_age_ms:
-                    self._dropped += 1
-                    await self._publish("accepted", False, pending)
-                    await self._metrics(pending)
+                    await self._discard(pending, "decision expired")
                     continue
                 result = await self._evaluate(pending)
                 if not self._active or pending.generation != self._generation:
+                    await self._discard(pending, "configuration or lifecycle changed")
                     continue
                 if (time.monotonic() - pending.received_at) * 1000 > pending.config.max_age_ms:
-                    self._dropped += 1
-                    await self._publish("accepted", False, pending)
-                    await self._metrics(pending)
+                    await self._discard(pending, "decision expired")
                     continue
                 answer = result.answers[pending.config.route_question]
                 probability: float | None = None

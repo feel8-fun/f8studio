@@ -52,8 +52,31 @@ class ZenohTransportConfig:
 StreamDeliveryPolicy = Literal["latest", "fifo", "reliable"]
 
 
+class _ZenohInbox:
+    """Bridge Zenoh callback threads into one ordered asyncio consumer."""
+
+    def __init__(self) -> None:
+        self.loop = asyncio.get_running_loop()
+        self.queue: asyncio.Queue[Any] = asyncio.Queue()
+        self.closed = False
+
+    def receive(self, value: Any) -> None:
+        if not self.closed and not self.loop.is_closed():
+            self.loop.call_soon_threadsafe(self._deliver, value)
+
+    def _deliver(self, value: Any) -> None:
+        if not self.closed:
+            self.queue.put_nowait(value)
+
+    def close(self) -> None:
+        self.closed = True
+        while not self.queue.empty():
+            self.queue.get_nowait()
+
+
 class _ZenohSubscriptionHandle:
-    def __init__(self, declaration: Any, task: asyncio.Task[None]) -> None:
+    def __init__(self, declaration: Any, task: asyncio.Task[None], inbox: _ZenohInbox) -> None:
+        self._inbox = inbox
         self._declaration = declaration
         self._task = task
         self._closed = False
@@ -62,6 +85,7 @@ class _ZenohSubscriptionHandle:
         if self._closed:
             return
         self._closed = True
+        self._inbox.close()
         task = self._task
         if not task.done():
             task.cancel()
@@ -233,12 +257,13 @@ class ZenohTransport:
         del queue
         session = await self._require_session()
         key_expr = _normalize_zenoh_key_expr(key_expr)
-        declaration = await asyncio.to_thread(session.declare_subscriber, key_expr)
+        inbox = _ZenohInbox()
+        declaration = await asyncio.to_thread(session.declare_subscriber, key_expr, inbox.receive)
         task = asyncio.create_task(
-            self._pump_subscriber(declaration, key_expr=key_expr, cb=cb, key_converter=lambda item: item),
+            self._pump_subscriber(inbox.queue, key_expr=key_expr, cb=cb, key_converter=lambda item: item),
             name=f"zenoh_sub:{key_expr}",
         )
-        handle = _ZenohSubscriptionHandle(declaration, task)
+        handle = _ZenohSubscriptionHandle(declaration, task, inbox)
         self._subs.append(handle)
         await asyncio.sleep(_SUBSCRIPTION_SETTLE_S)
         return handle
@@ -312,12 +337,13 @@ class ZenohTransport:
     async def serve_queryable(self, key: str, handler: RequestHandler) -> _ZenohServeHandle:
         session = await self._require_session()
         key_expr = _normalize_zenoh_key(key)
-        declaration = await asyncio.to_thread(_declare_queryable, session, key_expr)
+        inbox = _ZenohInbox()
+        declaration = await asyncio.to_thread(_declare_queryable, session, key_expr, inbox.receive)
         task = asyncio.create_task(
-            self._pump_queryable(declaration, key_expr=key_expr, handler=handler),
+            self._pump_queryable(inbox.queue, key_expr=key_expr, handler=handler),
             name=f"zenoh_queryable:{key_expr}",
         )
-        handle = _ZenohServeHandle(declaration, task)
+        handle = _ZenohServeHandle(declaration, task, inbox)
         self._serve_handles.append(handle)
         await asyncio.sleep(_QUERYABLE_SETTLE_S)
         return handle
@@ -349,16 +375,17 @@ class ZenohTransport:
     ) -> _ZenohSubscriptionHandle:
         session = await self._require_session()
         key_expr_s = _normalize_zenoh_key_expr(key_expr)
+        inbox = _ZenohInbox()
         if with_initial:
-            declaration = await asyncio.to_thread(_declare_retained_state_subscriber, session, key_expr_s)
+            declaration = await asyncio.to_thread(_declare_retained_state_subscriber, session, key_expr_s, inbox.receive)
         else:
-            declaration = await asyncio.to_thread(session.declare_subscriber, key_expr_s)
+            declaration = await asyncio.to_thread(session.declare_subscriber, key_expr_s, inbox.receive)
 
         task = asyncio.create_task(
-            self._pump_subscriber(declaration, key_expr=key_expr_s, cb=cb, key_converter=lambda item: item),
+            self._pump_subscriber(inbox.queue, key_expr=key_expr_s, cb=cb, key_converter=lambda item: item),
             name=f"zenoh_retained_watch:{key_expr_s}",
         )
-        handle = _ZenohSubscriptionHandle(declaration, task)
+        handle = _ZenohSubscriptionHandle(declaration, task, inbox)
         self._subs.append(handle)
         await asyncio.sleep(_SUBSCRIPTION_SETTLE_S)
         return handle
@@ -372,7 +399,7 @@ class ZenohTransport:
 
     async def _pump_subscriber(
         self,
-        declaration: Any,
+        inbox: asyncio.Queue[Any],
         *,
         key_expr: str,
         cb: TransportCallback | None,
@@ -380,10 +407,7 @@ class ZenohTransport:
     ) -> None:
         while True:
             try:
-                sample = declaration.try_recv()
-                if sample is None:
-                    await asyncio.sleep(0.001)
-                    continue
+                sample = await inbox.get()
                 if cb is not None:
                     try:
                         await cb(key_converter(str(sample.key_expr)), bytes(sample.payload))
@@ -396,24 +420,24 @@ class ZenohTransport:
                 log.error("zenoh subscriber pump failed key_expr=%s", key_expr, exc_info=exc)
                 await asyncio.sleep(0.05)
 
-    async def _pump_queryable(self, declaration: Any, *, key_expr: str, handler: RequestHandler) -> None:
+    async def _pump_queryable(self, inbox: asyncio.Queue[Any], *, key_expr: str, handler: RequestHandler) -> None:
         while True:
             try:
-                query = declaration.try_recv()
-                if query is None:
-                    await asyncio.sleep(0.001)
-                    continue
-                payload = bytes(query.payload) if query.payload is not None else b""
+                query = await inbox.get()
                 try:
-                    response = await handler(payload)
-                except _TRANSPORT_CALLBACK_ERRORS as exc:
-                    log.error("zenoh queryable handler failed key_expr=%s", key_expr, exc_info=exc)
-                    await asyncio.to_thread(_reply_query_error, query, b"query handler failed")
-                    continue
-                if response is None:
-                    await asyncio.to_thread(_reply_query_error, query, b"empty response")
-                    continue
-                await asyncio.to_thread(_reply_query_ok, query, bytes(response))
+                    payload = bytes(query.payload) if query.payload is not None else b""
+                    try:
+                        response = await handler(payload)
+                    except _TRANSPORT_CALLBACK_ERRORS as exc:
+                        log.error("zenoh queryable handler failed key_expr=%s", key_expr, exc_info=exc)
+                        await asyncio.to_thread(_reply_query_error, query, b"query handler failed")
+                        continue
+                    if response is None:
+                        await asyncio.to_thread(_reply_query_error, query, b"empty response")
+                        continue
+                    await asyncio.to_thread(_reply_query_ok, query, bytes(response))
+                finally:
+                    query.drop()
             except asyncio.CancelledError:
                 raise
             except (*_ZENOH_PUMP_ERRORS, *_zenoh_error_types()) as exc:
@@ -462,8 +486,8 @@ def _put_reliable_control(session: Any, key: str, payload: bytes) -> None:
     )
 
 
-def _declare_queryable(session: Any, key_expr: str) -> Any:
-    return session.declare_queryable(str(key_expr), complete=True)
+def _declare_queryable(session: Any, key_expr: str, callback: Callable[[Any], None]) -> Any:
+    return session.declare_queryable(str(key_expr), callback, complete=True)
 
 
 def _query_once(session: Any, key: str, payload: bytes, on_reply: Callable[[Any], None], timeout_ms: int) -> None:
@@ -547,7 +571,7 @@ def _declare_retained_state_publisher(session: Any, key: str) -> Any:
     )
 
 
-def _declare_retained_state_subscriber(session: Any, key_expr: str) -> Any:
+def _declare_retained_state_subscriber(session: Any, key_expr: str, callback: Callable[[Any], None]) -> Any:
     try:
         import zenoh  # type: ignore[import-not-found]
     except ImportError as exc:
@@ -555,6 +579,7 @@ def _declare_retained_state_subscriber(session: Any, key_expr: str) -> Any:
     return zenoh.ext.declare_advanced_subscriber(
         session,
         key_expr,
+        callback,
         history=zenoh.ext.HistoryConfig(detect_late_publishers=True, max_samples=1),
     )
 

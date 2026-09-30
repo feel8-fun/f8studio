@@ -2,7 +2,7 @@ import { expect, test, vi } from 'vitest';
 
 import { parsePresentationCommand, PresentationStore } from './PresentationStore';
 
-test('tracks presentation outputs per node and ignores stale commands', () => {
+test('tracks presentation outputs in delivery order despite source clock changes', () => {
   const store = new PresentationStore();
   const nodeListener = vi.fn();
   const otherNodeListener = vi.fn();
@@ -24,15 +24,15 @@ test('tracks presentation outputs per node and ignores stale commands', () => {
 
   expect(store.getOutputSnapshot('video-1')).toMatchObject({
     renderer: 'video',
-    payload: { videoStreamKey: 'f8/video' },
-    updatedAt: 20,
+    payload: { videoStreamKey: 'stale/video' },
+    updatedAt: 2,
   });
-  expect(nodeListener).toHaveBeenCalledTimes(1);
+  expect(nodeListener).toHaveBeenCalledTimes(2);
   expect(otherNodeListener).not.toHaveBeenCalled();
 
   store.applyCommand({ nodeId: 'video-1', command: 'viz.video.detach', payload: {}, tsMs: 30 });
   expect(store.getOutputSnapshot('video-1')).toBeNull();
-  expect(nodeListener).toHaveBeenCalledTimes(2);
+  expect(nodeListener).toHaveBeenCalledTimes(3);
 });
 
 test('exposes Audio Viz configuration and removes it on detach', () => {

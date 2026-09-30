@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8studio_server.errors import InvalidRequestError, NotFoundError
+
 import asyncio
 import concurrent.futures
 import logging
@@ -9,6 +11,9 @@ import socket
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from contextlib import AbstractContextManager
+
+from .database import StudioDatabase
 from threading import RLock
 from typing import Any, Literal, cast
 from uuid import uuid4
@@ -145,6 +150,7 @@ class LocalIntegrationService:
         self._unity_plans: dict[str, tuple[PreviewUnityInstallRequest, dict[str, object]]] = {}
         self._database_path = database_path.resolve() if database_path is not None else None
         self._hotkeys = self._load_hotkeys()
+        self._registered_hotkeys: dict[str, HotkeyBinding] = {}
         self._hotkey_status: dict[str, tuple[Literal["registered", "disabled", "error"], str]] = {}
         self._hotkey_backend = hotkey_backend
         self._hotkey_backend_injected = hotkey_backend is not None
@@ -174,6 +180,8 @@ class LocalIntegrationService:
     async def close(self) -> None:
         backend = self._hotkey_backend
         self._hotkey_backend = None
+        with self._hotkey_lock:
+            self._registered_hotkeys.clear()
         if backend is not None:
             try:
                 await asyncio.to_thread(backend.close)
@@ -250,7 +258,7 @@ class LocalIntegrationService:
     def detect_modding_target(self, request: DetectModdingTargetRequest) -> F8JsonValue:
         target = Path(request.target_path).expanduser().resolve()
         if not target.exists():
-            raise FileNotFoundError(f"modding target not found: {target}")
+            raise NotFoundError(f"modding target not found: {target}")
         suffix = target.suffix.lower()
         directory = target.parent if target.is_file() else target
         unreal_binary = directory.name.lower() in {"win64", "win32"} and directory.parent.name.lower() == "binaries"
@@ -272,7 +280,7 @@ class LocalIntegrationService:
 
     def preview_unity_install(self, request: PreviewUnityInstallRequest) -> UnityInstallPlan:
         if not (1 <= request.udp_port <= 65535):
-            raise ValueError("udpPort must be between 1 and 65535")
+            raise InvalidRequestError("udpPort must be between 1 and 65535")
         try:
             from f8unitymods_setup import game_setup
             from f8unitymods_setup.common import load_setup_config
@@ -280,7 +288,7 @@ class LocalIntegrationService:
             raise RuntimeError("f8unitymods_setup is unavailable in the Web Studio runtime environment") from exc
         target = Path(request.target_path).expanduser().resolve()
         if not target.exists():
-            raise FileNotFoundError(f"Unity target not found: {target}")
+            raise NotFoundError(f"Unity target not found: {target}")
         raw = cast(dict[str, object], game_setup.run_diagnose(
             target=str(target),
             config=load_setup_config(),
@@ -330,16 +338,16 @@ class LocalIntegrationService:
 
     def apply_unity_install(self, request: ApplyUnityInstallRequest) -> F8JsonValue:
         if not request.confirm:
-            raise ValueError("Unity installation requires confirm=true after reviewing the plan")
+            raise InvalidRequestError("Unity installation requires confirm=true after reviewing the plan")
         stored = self._unity_plans.pop(request.plan_id, None)
         if stored is None:
-            raise FileNotFoundError(f"Unity install plan not found or already used: {request.plan_id}")
+            raise NotFoundError(f"Unity install plan not found or already used: {request.plan_id}")
         preview, raw = stored
         raw_plan = raw.get("plan")
         plan_payload = cast(dict[str, object], raw_plan) if isinstance(raw_plan, dict) else {}
         blocking = plan_payload.get("blocking_errors", [])
         if isinstance(blocking, list) and blocking:
-            raise ValueError("Unity install plan has blocking errors")
+            raise InvalidRequestError("Unity install plan has blocking errors")
         try:
             from f8unitymods_setup import game_setup
             from f8unitymods_setup.common import load_setup_config
@@ -366,11 +374,11 @@ class LocalIntegrationService:
 
     async def verify_skeleton_udp(self, request: VerifySkeletonUdpRequest) -> SkeletonUdpVerification:
         if not (1 <= request.port <= 65535):
-            raise ValueError("UDP port must be between 1 and 65535")
+            raise InvalidRequestError("UDP port must be between 1 and 65535")
         if not (100 <= request.timeout_ms <= 30_000):
-            raise ValueError("timeoutMs must be between 100 and 30000")
+            raise InvalidRequestError("timeoutMs must be between 100 and 30000")
         if not (1 <= request.minimum_frames <= 100):
-            raise ValueError("minimumFrames must be between 1 and 100")
+            raise InvalidRequestError("minimumFrames must be between 1 and 100")
         return await asyncio.to_thread(self._verify_skeleton_udp_blocking, request)
 
     def list_hotkeys(self, project_id: str | None = None) -> tuple[HotkeyBinding, ...]:
@@ -394,7 +402,7 @@ class LocalIntegrationService:
                 None,
             )
             if conflict is not None:
-                raise ValueError(f"hotkey accelerator is already registered: {accelerator}")
+                raise InvalidRequestError(f"hotkey accelerator is already registered: {accelerator}")
             binding = HotkeyBinding(
                 binding_id=binding_id,
                 accelerator=accelerator,
@@ -412,7 +420,7 @@ class LocalIntegrationService:
     def unregister_hotkey(self, binding_id: str) -> None:
         with self._hotkey_lock:
             if binding_id not in self._hotkeys:
-                raise FileNotFoundError(f"hotkey binding not found: {binding_id}")
+                raise NotFoundError(f"hotkey binding not found: {binding_id}")
             self._delete_hotkey(binding_id)
             self._hotkeys.pop(binding_id)
             self._refresh_hotkey_backend()
@@ -471,14 +479,31 @@ class LocalIntegrationService:
         )
 
     def _refresh_hotkey_backend(self) -> None:
+        with self._hotkey_lock:
+            self._refresh_hotkey_backend_locked()
+
+    def _refresh_hotkey_backend_locked(self) -> None:
+        if self._hotkey_backend is None:
+            message = self._hotkey_backend_error or "Native global hotkey backend is not running"
+            self._hotkey_status = {key: ("disabled", message) for key in self._hotkeys}
+            self._registered_hotkeys.clear()
+            return
+        # Graph edits that do not change hotkey targets must not ungrab keys.
+        valid: dict[str, HotkeyBinding] = {}
+        invalid: dict[str, tuple[Literal["registered", "disabled", "error"], str]] = {}
+        for binding_id, binding in self._hotkeys.items():
+            try:
+                if self._hotkey_validator is not None:
+                    self._hotkey_validator(binding)
+                valid[binding_id] = binding
+            except (FileNotFoundError, ValueError) as exc:
+                invalid[binding_id] = ("error", str(exc))
+                logger.warning("hotkey target is no longer valid binding_id=%s", binding_id, exc_info=exc)
+        if valid == self._registered_hotkeys and set(valid) == set(self._hotkeys):
+            return
+        self._registered_hotkeys = {}
         backend = self._hotkey_backend
         self._hotkey_status.clear()
-        if backend is None:
-            message = self._hotkey_backend_error or "Native global hotkey backend is not running"
-            self._hotkey_status.update(
-                (binding_id, ("disabled", message)) for binding_id in self._hotkeys
-            )
-            return
         try:
             backend.unregister_all()
         except Exception as exc:
@@ -486,13 +511,8 @@ class LocalIntegrationService:
             message = f"{type(exc).__name__}: {exc}"
             self._hotkey_status.update((binding_id, ("error", message)) for binding_id in self._hotkeys)
             return
-        for binding in self._hotkeys.values():
-            if self._hotkey_validator is not None:
-                try:
-                    self._hotkey_validator(binding)
-                except (FileNotFoundError, ValueError) as exc:
-                    self._hotkey_status[binding.binding_id] = ("error", str(exc))
-                    continue
+        self._hotkey_status.update(invalid)
+        for binding in valid.values():
             try:
                 backend.register_hotkey(
                     NativeHotkeyBinding(
@@ -510,12 +530,18 @@ class LocalIntegrationService:
                 )
             else:
                 self._hotkey_status[binding.binding_id] = ("registered", "")
+                self._registered_hotkeys[binding.binding_id] = binding
 
     def _binding_with_status(self, binding: HotkeyBinding) -> HotkeyBinding:
         status, message = self._hotkey_status.get(binding.binding_id, ("configured", ""))
         return msgspec.structs.replace(binding, status=status, message=message)
 
     def _on_native_hotkey(self, binding_id: str) -> None:
+        loop = self._event_loop
+        if loop is not None and not loop.is_closed():
+            loop.call_soon_threadsafe(self._dispatch_native_hotkey, binding_id)
+
+    def _dispatch_native_hotkey(self, binding_id: str) -> None:
         with self._hotkey_lock:
             binding = self._hotkeys.get(binding_id)
         loop = self._event_loop
@@ -540,12 +566,10 @@ class LocalIntegrationService:
         except Exception:
             logger.exception("native global hotkey action failed")
 
-    def _connect_hotkeys(self) -> sqlite3.Connection:
+    def _connect_hotkeys(self) -> AbstractContextManager[sqlite3.Connection]:
         if self._database_path is None:
             raise RuntimeError("hotkey persistence is not configured")
-        connection = sqlite3.connect(self._database_path, timeout=10.0)
-        connection.execute("PRAGMA journal_mode = WAL")
-        return connection
+        return StudioDatabase(self._database_path).connection()
 
     def _load_hotkeys(self) -> dict[str, HotkeyBinding]:
         if self._database_path is None:
@@ -605,7 +629,7 @@ class LocalIntegrationService:
                     ),
                 )
         except sqlite3.IntegrityError as exc:
-            raise ValueError(f"hotkey accelerator is already registered: {binding.accelerator}") from exc
+            raise InvalidRequestError(f"hotkey accelerator is already registered: {binding.accelerator}") from exc
 
     def _delete_hotkey(self, binding_id: str) -> None:
         if self._database_path is None:

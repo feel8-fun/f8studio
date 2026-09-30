@@ -326,7 +326,7 @@ def test_recent_logs_endpoint_exposes_bounded_service_output(tmp_path: Path) -> 
 
     asyncio.run(studio.events.publish(
         event_type="service.log", scope="service:capture",
-        payload={"serviceId": "capture", "line": "capture started"}, reliable=False,
+        payload={"serviceId": "capture", "line": "capture started"},
     ))
     response = asyncio.run(request(app, "/api/logs?limit=1"))
 
@@ -454,7 +454,8 @@ def test_media_api_unknown_session_is_not_found(tmp_path: Path) -> None:
     with TestClient(app) as client:
         response = client.delete("/api/media/sessions/missing")
         assert response.status_code == 404
-        assert response.json() == {"detail": "media session not found"}
+        assert response.json()["detail"] == "media session not found"
+        assert "code" in response.json() and "message" in response.json()
 
 
 def test_studio_proxies_remote_gateway_responses(tmp_path: Path) -> None:
@@ -490,9 +491,11 @@ def test_studio_proxies_remote_gateway_responses(tmp_path: Path) -> None:
         assert health.status_code == 200
         assert health.json()["protocolVersion"] == MEDIA_API_VERSION
         assert invalid.status_code == 422
-        assert invalid.json() == {"detail": "media quality must be thumbnail or main"}
+        assert invalid.json()["detail"] == "media quality must be thumbnail or main"
+        assert "code" in invalid.json() and "message" in invalid.json()
         assert missing.status_code == 404
-        assert missing.json() == {"detail": "media session not found"}
+        assert missing.json()["detail"] == "media session not found"
+        assert "code" in missing.json() and "message" in missing.json()
     finally:
         asyncio.run(gateway_client.aclose())
 
@@ -689,7 +692,8 @@ def test_unknown_api_route_is_not_replaced_by_web_app(tmp_path: Path) -> None:
     response = asyncio.run(request(app, "/api/misspelled"))
 
     assert response.status_code == 404
-    assert response.json() == {"detail": "API route not found"}
+    assert response.json()["detail"] == "API route not found"
+    assert "code" in response.json() and "message" in response.json()
 
 
 def test_project_patch_api_persists_and_reports_revision_conflicts(tmp_path: Path) -> None:
@@ -854,7 +858,7 @@ def test_event_websocket_snapshot_commit_replay_and_origin(tmp_path: Path) -> No
     with TestClient(app) as client:
         with client.websocket_connect("/api/events") as websocket:
             snapshot = websocket.receive_json()
-            assert snapshot["type"] == "stream.snapshot"
+            assert snapshot["type"] == "stream.hello"
             assert snapshot["sequence"] == 0
             epoch = snapshot["serverEpoch"]
 
@@ -897,6 +901,7 @@ def test_event_websocket_snapshot_commit_replay_and_origin(tmp_path: Path) -> No
             assert next_event["sequence"] == 3
 
         with client.websocket_connect(f"/api/events?epoch={epoch}&after=1") as websocket:
+            assert websocket.receive_json()["resumed"] is True
             replayed_graph = websocket.receive_json()
             replayed_update = websocket.receive_json()
             assert [replayed_graph["type"], replayed_update["type"]] == [
@@ -974,3 +979,36 @@ def test_runtime_disconnect_maps_to_service_unavailable(tmp_path: Path) -> None:
         assert response.json()["detail"] == "OSError: Zenoh endpoint disconnected: offline"
 
     assert runtime.closed is True
+
+
+def test_incidental_value_error_is_logged_as_internal_error(tmp_path: Path, monkeypatch, caplog) -> None:
+    studio = StudioApplication(data_dir=tmp_path / "data", runtime=FakeRuntimeGateway(), service_roots=(),
+                               media_gateway=InProcessMediaGateway())
+
+    def broken_get(_project_id: str):
+        raise ValueError("internal conversion bug")
+
+    monkeypatch.setattr(studio.projects, "get", broken_get)
+    with TestClient(create_app(web_dist=tmp_path, application=studio), raise_server_exceptions=False) as client:
+        response = client.get('/api/projects/example')
+    assert response.status_code == 500
+    assert response.json()['code'] == 'internal_error'
+    assert 'internal conversion bug' not in response.text
+    assert any(record.exc_info is not None and 'unhandled Web Studio API error' in record.message
+               for record in caplog.records)
+
+
+def test_graph_import_rejects_stale_layout_revision(tmp_path: Path) -> None:
+    app = create_app(web_dist=tmp_path, data_dir=tmp_path / 'data', service_roots=(),
+                     runtime=FakeRuntimeGateway(), media_gateway=InProcessMediaGateway())
+    with TestClient(app) as client:
+        client.post('/api/projects', json={'projectId': 'import-conflict', 'name': 'Import'})
+        exported = client.get('/api/projects/import-conflict/graph/export').content
+        first = client.post('/api/projects/import-conflict/graph/import', content=exported,
+                            params={'expected_graph_revision': 0, 'expected_layout_revision': 0})
+        assert first.status_code == 200
+        stale = client.post('/api/projects/import-conflict/graph/import', content=exported,
+                            params={'expected_graph_revision': 1, 'expected_layout_revision': 0})
+        assert stale.status_code == 409
+        document = client.get('/api/projects/import-conflict').json()['document']
+        assert document['graphRevision'] == document['layoutRevision'] == 1

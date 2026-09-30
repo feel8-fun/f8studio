@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8studio_server.errors import InvalidRequestError
+
 import json
 import logging
 import queue
@@ -225,13 +227,13 @@ class PythonLanguageServer:
             if separator and key.strip().lower() == "content-length":
                 content_length = int(value.strip())
         if content_length is None:
-            raise ValueError("language server response is missing Content-Length")
+            raise InvalidRequestError("language server response is missing Content-Length")
         raw = stream.read(content_length)
         if len(raw) != content_length:
             return None
         decoded = cast(object, json.loads(raw.decode("utf-8")))
         if not isinstance(decoded, dict):
-            raise ValueError("language server response must be an object")
+            raise InvalidRequestError("language server response must be an object")
         return cast(dict[str, object], decoded)
 
 

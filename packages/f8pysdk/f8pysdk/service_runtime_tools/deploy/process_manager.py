@@ -7,6 +7,7 @@ import signal
 import subprocess
 import sys
 import threading
+from collections.abc import Callable
 import time
 import json
 from dataclasses import dataclass
@@ -319,19 +320,23 @@ class ServiceProcessManager:
     Launch/track local service processes based on discovery `service.yml`.
     """
 
-    def __init__(self, catalog: ServiceCatalog | None = None) -> None:
+    def __init__(self, catalog: ServiceCatalog | None = None, *, catalog_provider: Callable[[], ServiceCatalog] | None = None) -> None:
         self._catalog = catalog or ServiceCatalog.instance()
+        self._catalog_provider = catalog_provider
         self._procs: dict[str, subprocess.Popen[Any]] = {}
         self._threads: dict[str, threading.Thread] = {}
         self._entries_lock = threading.Lock()
         self._exception_log_once = ExceptionLogOnce()
+
+    def _current_catalog(self) -> ServiceCatalog:
+        return self._catalog if self._catalog_provider is None else self._catalog_provider()
 
     def service_ids(self) -> list[str]:
         with self._entries_lock:
             return list(self._procs.keys())
 
     def has_launcher(self, service_class: str) -> bool:
-        return self._catalog.service_entry_path(service_class) is not None
+        return self._current_catalog().service_entry_path(service_class) is not None
 
     def _start_reader(self, *, service_id: str, proc: subprocess.Popen[Any], on_output: Any | None) -> None:
         if on_output is None:
@@ -499,7 +504,7 @@ class ServiceProcessManager:
         if bus_backend not in {"zenoh", "mem"}:
             raise ValueError("Invalid process bus_backend; expected 'zenoh' or 'mem'.")
 
-        entry_path = self._catalog.service_entry_path(service_class)
+        entry_path = self._current_catalog().service_entry_path(service_class)
         if entry_path is None:
             raise ValueError(f"Missing discovery entry path for serviceClass={service_class!r}")
         service_dir = Path(entry_path).resolve()

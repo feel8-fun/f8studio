@@ -51,11 +51,9 @@ class RuntimeMonitorStore:
         identity = (str(snapshot.serviceId), str(snapshot.nodeId))
         async with self._lock:
             self._latest[identity] = snapshot
-        await self._events.publish(
-            event_type="runtime.monitor",
-            scope=f"service:{snapshot.serviceId}",
-            payload=msgspec.to_builtins(snapshot, str_keys=True),
-            reliable=False,
+        self._events.live.set(
+            f"monitor/{snapshot.serviceId}/{snapshot.nodeId}",
+            msgspec.to_builtins(snapshot, str_keys=True),
         )
 
     async def snapshot(self) -> tuple[F8MonitorSnapshot, ...]:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import re
 from typing import Any
 
 from f8pysdk.f8_naming import ensure_token
@@ -70,6 +71,8 @@ class VizTCodeRuntimeNode(OperatorNode):
         self._model = self._model_value(state.get("model"))
         self._max_line_length = self._line_limit(state.get("maxLineLength"))
         self._model_sent = False
+        self._channels: dict[str, int] = {}
+        self._reset_version = 0
 
     async def close(self) -> None:
         self.presentation.emit(self.node_id, "viz.tcode.detach", {}, ts_ms=int(time.time() * 1000))
@@ -84,7 +87,9 @@ class VizTCodeRuntimeNode(OperatorNode):
             return
         if not line.endswith("\n"):
             line += "\n"
-        self.presentation.emit(self.node_id, "viz.tcode.write", {"line": line}, ts_ms=timestamp)
+        for match in re.finditer(r"(?:^|\s)([LRVA][0-9])(\d{1,4})(?=[IS\s]|$)", line):
+            self._channels[match.group(1)] = min(9999, int(match.group(2)))
+        self._emit_snapshot(line, timestamp)
 
     async def on_state(self, field: str, value: Any, *, ts_ms: int | None = None) -> None:
         timestamp = int(ts_ms) if ts_ms is not None else int(time.time() * 1000)
@@ -94,15 +99,23 @@ class VizTCodeRuntimeNode(OperatorNode):
                 self._model = model
                 self._model_sent = False
                 self._emit_model(timestamp)
-                self.presentation.emit(self.node_id, "viz.tcode.reset", {}, ts_ms=timestamp)
+                self._channels.clear()
+                self._reset_version += 1
+                self._emit_snapshot("", timestamp)
         elif field == "maxLineLength":
             self._max_line_length = self._line_limit(value)
 
     def _emit_model(self, timestamp: int) -> None:
         if self._model_sent:
             return
-        self.presentation.emit(self.node_id, "viz.tcode.set_model", {"model": self._model}, ts_ms=timestamp)
+        self._emit_snapshot("", timestamp)
         self._model_sent = True
+
+    def _emit_snapshot(self, line: str, timestamp: int) -> None:
+        self.presentation.emit(self.node_id, "viz.tcode.snapshot", {
+            "model": self._model, "line": line, "channels": dict(self._channels),
+            "resetVersion": self._reset_version,
+        }, ts_ms=timestamp)
 
     @staticmethod
     def _model_value(value: object) -> str:

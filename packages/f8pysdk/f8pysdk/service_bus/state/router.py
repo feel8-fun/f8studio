@@ -37,6 +37,7 @@ class StateRouter:
         self._intra_state_out: StateRouteTable = {}
         self._cross_state_in_by_key: CrossStateBindingTable = {}
         self._remote_state_watches: dict[CrossStateBindingKey, Any] = {}
+        self._remote_latest: dict[CrossStateBindingKey, bytes] = {}
         self._cross_state_targets: set[tuple[str, str]] = set()
         self._cross_state_last_ts: dict[tuple[str, str], int] = {}
 
@@ -105,6 +106,7 @@ class StateRouter:
                 continue
             await self._stop_watch_handle(watch, key=key)
             self._remote_state_watches.pop(key, None)
+            self._remote_latest.pop(key, None)
 
     async def sync_cross_state_watches(self) -> None:
         initial_sync_jobs: list[tuple[str, str]] = []
@@ -127,8 +129,7 @@ class StateRouter:
                     )
                     continue
 
-            if self._bus.bus_backend != "zenoh":
-                initial_sync_jobs.append((peer, remote_key))
+            initial_sync_jobs.append((peer, remote_key))
 
         if not initial_sync_jobs:
             return
@@ -140,7 +141,7 @@ class StateRouter:
         async def _sync_one(peer: str, remote_key: str) -> None:
             async with sem:
                 try:
-                    raw = await self._bus._transport.retained_get(remote_key)
+                    raw = self._remote_latest.get((peer, remote_key))
                 except STATE_TRANSPORT_ERRORS as exc:
                     log_error_once(
                         self._bus,
@@ -203,6 +204,7 @@ class StateRouter:
         targets = self._cross_state_in_by_key.get((peer_service_id_s, remote_key)) or ()
         if not targets:
             return
+        self._remote_latest[(peer_service_id_s, remote_key)] = bytes(value)
         try:
             payload = decode_obj(value)
         except ValueError:

@@ -321,9 +321,12 @@ def test_zenoh_subscriber_pump_logs_callback_failure_and_continues(caplog) -> No
             if payload == b"bad":
                 raise RuntimeError("callback failed")
 
+        inbox: asyncio.Queue[Any] = asyncio.Queue()
+        inbox.put_nowait(_Sample("f8/test/a", b"bad"))
+        inbox.put_nowait(_Sample("f8/test/b", b"good"))
         task = asyncio.create_task(
             transport._pump_subscriber(
-                _Declaration(),
+                inbox,
                 key_expr="f8/test/**",
                 cb=_callback,
                 key_converter=lambda item: item,
@@ -354,6 +357,9 @@ def test_zenoh_queryable_pump_replies_error_when_handler_fails(caplog) -> None:
         def __init__(self) -> None:
             self.error_replies: list[bytes] = []
 
+        def drop(self) -> None:
+            return None
+
         def reply_err(self, payload: bytes, **kwargs: Any) -> None:
             _ = kwargs
             self.error_replies.append(bytes(payload))
@@ -373,9 +379,11 @@ def test_zenoh_queryable_pump_replies_error_when_handler_fails(caplog) -> None:
         async def _handler(_payload: bytes) -> bytes:
             raise RuntimeError("handler failed")
 
+        inbox: asyncio.Queue[Any] = asyncio.Queue()
+        inbox.put_nowait(query)
         task = asyncio.create_task(
             transport._pump_queryable(
-                _Declaration(query),
+                inbox,
                 key_expr="f8/test/query",
                 handler=_handler,
             )
@@ -396,3 +404,24 @@ def test_zenoh_queryable_pump_replies_error_when_handler_fails(caplog) -> None:
 
     assert replies == [b"query handler failed"]
     assert "zenoh queryable handler failed key_expr=f8/test/query" in caplog.text
+
+
+def test_memory_retained_reads_are_owner_local_but_watches_cross_transport() -> None:
+    async def scenario() -> None:
+        cluster = InMemoryCluster()
+        owner = InMemoryTransport(cluster=cluster)
+        reader = InMemoryTransport(cluster=cluster)
+        key = "f8/svc/owner/state/nodes/node/state/value"
+        await owner.retained_put(key, b"value")
+        assert await owner.retained_get(key) == b"value"
+        assert await reader.retained_get(key) is None
+        observed: list[bytes] = []
+
+        async def receive(_key: str, payload: bytes) -> None:
+            observed.append(payload)
+
+        watch = await reader.retained_watch(key, cb=receive, with_initial=True)
+        assert observed == [b"value"]
+        await watch.unsubscribe()
+
+    asyncio.run(scenario())

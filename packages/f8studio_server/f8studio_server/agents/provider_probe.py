@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8studio_server.errors import InvalidRequestError
+
 from typing import Literal, cast
 from urllib.parse import urlsplit
 
@@ -73,7 +75,7 @@ async def probe_provider(request: ProbeProviderRequest, *, saved_api_key: str = 
     parsed = urlsplit(endpoint)
     if (parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password
             or parsed.query or parsed.fragment or any(character.isspace() for character in endpoint)):
-        raise ValueError("Endpoint must be an HTTP(S) URL without credentials, query, or fragment")
+        raise InvalidRequestError("Endpoint must be an HTTP(S) URL without credentials, query, or fragment")
     api_key = request.api_key.strip() or saved_api_key
     if request.protocol not in {"openai_chat", "systemone"} and not api_key:
         return ProviderProbeResult(connected=False, models=(), detail="API key is required", verified="none")
@@ -86,7 +88,7 @@ async def probe_provider(request: ProbeProviderRequest, *, saved_api_key: str = 
         async with httpx.AsyncClient(timeout=10.0, follow_redirects=False, transport=transport) as client:
             if request.verify_model:
                 if not request.model.strip():
-                    raise ValueError("Select a model before testing inference")
+                    raise InvalidRequestError("Select a model before testing inference")
                 if request.protocol == "systemone":
                     path = "/systemone"
                     payload: dict[str, object] = {"model": request.model.strip(), "state": "connection test", "questions": {

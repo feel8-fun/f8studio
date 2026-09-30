@@ -18,8 +18,16 @@ def test_server_lock_rejects_second_instance_and_releases_on_exit(tmp_path: Path
         pass
 
 
+def test_distinct_data_directories_have_distinct_instance_locks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("F8STUDIO_DATA_DIR", str(tmp_path / "first"))
+    with single_server_instance():
+        monkeypatch.setenv("F8STUDIO_DATA_DIR", str(tmp_path / "second"))
+        with single_server_instance():
+            assert (tmp_path / "second" / "server.lock").exists()
+
+
 def test_server_entrypoint_rejects_second_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("F8STUDIO_DATA_DIR", str(tmp_path))
     with single_server_instance():
         result = subprocess.run(
             [sys.executable, "-m", "f8studio_server", "--port", "8259"],
@@ -30,4 +38,4 @@ def test_server_entrypoint_rejects_second_process(tmp_path: Path, monkeypatch: p
             check=False,
         )
     assert result.returncode != 0
-    assert "A Web Studio server is already running for this user" in result.stderr
+    assert "A Web Studio server is already running for this data directory" in result.stderr

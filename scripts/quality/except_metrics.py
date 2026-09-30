@@ -1,14 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import fnmatch
-import re
 from collections import Counter
 from pathlib import Path
-
-
-EXCEPT_EXCEPTION_RE = re.compile(r"^\s*except\s+Exception\b")
-SILENT_STATEMENT_RE = re.compile(r"^\s*(pass|return|continue)\s*(#.*)?$")
 
 
 def _matches_exclude(path: Path, *, root: Path, exclude_globs: tuple[str, ...]) -> bool:
@@ -25,23 +21,42 @@ def iter_py_files(root: Path, *, exclude_globs: tuple[str, ...] = ()) -> list[Pa
 
 
 def count_metrics(file_path: Path) -> tuple[int, int]:
-    total_except_exception = 0
-    silent_except_exception = 0
-    lines = file_path.read_text(encoding="utf-8", errors="replace").splitlines()
-    for index, line in enumerate(lines):
-        if not EXCEPT_EXCEPTION_RE.match(line):
-            continue
-        total_except_exception += 1
+    tree = ast.parse(file_path.read_text(encoding="utf-8"), filename=str(file_path))
+    # Resolve explicit module-level exception tuples used by runtime boundaries.
+    aliases: dict[str, ast.expr] = {}
+    for statement in tree.body:
+        if isinstance(statement, ast.Assign):
+            for target in statement.targets:
+                if isinstance(target, ast.Name):
+                    aliases[target.id] = statement.value
 
-        trailing = line.split(":", 1)
-        inline_statement = trailing[1].strip() if len(trailing) == 2 else ""
-        if inline_statement and SILENT_STATEMENT_RE.match(inline_statement):
-            silent_except_exception += 1
-            continue
-        if index + 1 < len(lines) and SILENT_STATEMENT_RE.match(lines[index + 1]):
-            silent_except_exception += 1
+    def broad(expression: ast.expr | None, seen: frozenset[str] = frozenset()) -> bool:
+        if expression is None:
+            return True
+        if isinstance(expression, ast.Name):
+            if expression.id in {"Exception", "BaseException"}:
+                return True
+            if expression.id in aliases and expression.id not in seen:
+                return broad(aliases[expression.id], seen | {expression.id})
+        if isinstance(expression, ast.Tuple):
+            return any(broad(item, seen) for item in expression.elts)
+        if isinstance(expression, ast.Attribute):
+            return expression.attr in {"Exception", "BaseException"}
+        return False
 
-    return total_except_exception, silent_except_exception
+    handlers = [node for node in ast.walk(tree) if isinstance(node, ast.ExceptHandler) and broad(node.type)]
+    def silent_handler(node: ast.ExceptHandler) -> bool:
+        # Returning the exception in a typed error result transfers reporting to
+        # the caller; it does not discard the exception or its traceback.
+        for statement in node.body:
+            if isinstance(statement, ast.Return) and isinstance(statement.value, ast.Call):
+                if any(keyword.arg == "error" and isinstance(keyword.value, ast.Name)
+                       and keyword.value.id == node.name for keyword in statement.value.keywords):
+                    return False
+        return all(isinstance(statement, (ast.Pass, ast.Return, ast.Continue, ast.Break)) for statement in node.body)
+
+    silent = sum(silent_handler(node) for node in handlers)
+    return len(handlers), silent
 
 
 def main() -> int:

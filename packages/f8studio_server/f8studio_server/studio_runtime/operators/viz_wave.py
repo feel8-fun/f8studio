@@ -72,15 +72,13 @@ class VizWaveRuntimeNode(StudioVizRuntimeNodeBase):
     async def close(self) -> None:
         task = self._refresh_task
         self._refresh_task = None
-        self._scheduled_refresh_ms = None
-        if task is None:
-            return
-
-        task.cancel()
-        try:
-            await asyncio.gather(task, return_exceptions=True)
-        except RuntimeError:
-            logger.debug("Viz wave refresh task close failed node_id=%s", self.node_id, exc_info=True)
+        if task is not None:
+            task.cancel()
+            results = await asyncio.gather(task, return_exceptions=True)
+            for result in results:
+                if isinstance(result, Exception):
+                    logger.error("viz wave background task failed node_id=%s", self.node_id, exc_info=result)
+        self.presentation.emit(self.node_id, "viz.wave.detach", {}, ts_ms=int(time.time() * 1000))
 
     async def on_data(self, port: str, value: Any, *, ts_ms: int | None = None) -> None:
         # Timeseries supports arbitrary editable data-in ports.

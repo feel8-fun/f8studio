@@ -205,18 +205,18 @@ async def consume_presentation(
     stop: asyncio.Event,
     counters: dict[str, int],
 ) -> None:
-    stream = await studio.events.open_stream(client_epoch=None, after_sequence=None)
+    stream, _ = studio.events.live.subscribe()
     try:
         while not stop.is_set():
-            counters["queue_max"] = max(counters.get("queue_max", 0), stream.queue.qsize())
+            counters["queue_max"] = max(counters.get("queue_max", 0), len(stream.pending))
             try:
-                event = await asyncio.wait_for(stream.queue.get(), timeout=1.0)
+                event = await asyncio.wait_for(stream.next_patch(), timeout=1.0)
             except TimeoutError:
                 continue
-            if event.type == "presentation.command":
+            if event["type"] in {"live.patch", "live.snapshot"}:
                 counters["consumed"] = counters.get("consumed", 0) + 1
     finally:
-        await studio.events.close_stream(stream.subscription_id)
+        studio.events.live.unsubscribe(stream)
 
 
 async def drive_control_api(

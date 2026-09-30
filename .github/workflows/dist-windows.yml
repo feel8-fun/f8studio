@@ -175,6 +175,9 @@ jobs:
       - name: Build runtime distribution
         run: pixi run --frozen -e ci dist_ci --archive --reuse-unitymods-assets
 
+      - name: Validate freshly built C++ service contracts
+        run: pixi run --frozen python scripts/quality/check_cpp_contracts.py --bin-dir build/Release/bin
+
       - name: Resolve release target
         id: release_target
         shell: pwsh

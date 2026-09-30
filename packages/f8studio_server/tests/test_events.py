@@ -32,24 +32,23 @@ def test_event_journal_requires_snapshot_for_expired_cursor_and_bounds_slow_clie
         await journal.publish(event_type="four", scope="server", payload={})
         await journal.publish(event_type="five", scope="server", payload={})
         reset = slow.queue.get_nowait()
-        assert reset.type == "stream.resync_required"
+        assert reset is None
         await journal.close_stream(slow.subscription_id)
 
     asyncio.run(scenario())
 
 
-def test_unreliable_events_drop_when_subscriber_queue_is_full() -> None:
+def test_overflow_can_replay_from_last_processed_cursor_without_loss() -> None:
     async def scenario() -> None:
         journal = EventJournal(server_epoch="epoch1", subscriber_queue_size=1)
         stream = await journal.open_stream(client_epoch=None, after_sequence=None)
-        first = await journal.publish(event_type="runtime.monitor", scope="service:a", payload={}, reliable=False)
-        await journal.publish(event_type="runtime.monitor", scope="service:a", payload={}, reliable=False)
-
-        queued = stream.queue.get_nowait()
-        assert queued == first
-        assert queued.type == "runtime.monitor"
-        assert stream.queue.empty()
-        await journal.close_stream(stream.subscription_id)
+        first = await journal.publish(event_type="graph.committed", scope="project:p", payload={})
+        second = await journal.publish(event_type="graph.committed", scope="project:p", payload={})
+        assert stream.queue.get_nowait() is None
+        replay = await journal.open_stream(client_epoch="epoch1", after_sequence=0)
+        assert replay.replay == (first, second)
+        assert not replay.snapshot_required
+        await journal.close_stream(replay.subscription_id)
 
     asyncio.run(scenario())
 
@@ -58,7 +57,7 @@ def test_log_history_retains_recent_service_output_and_deployment_errors() -> No
     async def scenario() -> None:
         journal = EventJournal(server_epoch="epoch1", log_retention=2)
         await journal.publish(event_type="graph.committed", scope="project:p1", payload={})
-        await journal.publish(event_type="service.log", scope="service:capture", payload={"line": "started"}, reliable=False)
+        await journal.publish(event_type="service.log", scope="service:capture", payload={"line": "started"})
         failure = await journal.publish(
             event_type="deploy.finished", scope="project:p1", payload={"status": "failed"},
         )

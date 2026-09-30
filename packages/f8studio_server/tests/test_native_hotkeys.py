@@ -264,3 +264,28 @@ def test_local_hotkey_validator_runs_before_persistence(tmp_path: Path) -> None:
     binding = service.register_hotkey(_request(accelerator="Ctrl+Shift+K"))
 
     assert validated == [binding.binding_id]
+
+
+def test_x11_commands_run_on_listener_thread() -> None:
+    thread_ids: list[int] = []
+
+    class ThreadTrackingDisplay(FakeXDisplay):
+        @staticmethod
+        def sync() -> None:
+            thread_ids.append(threading.get_ident())
+
+        @staticmethod
+        def close() -> None:
+            thread_ids.append(threading.get_ident())
+
+    display = ThreadTrackingDisplay()
+    backend = X11NativeHotkeyBackend(activation_callback=lambda _binding: None,
+                                    display_factory=lambda: display, x_module=FakeX, xk_module=FakeXK)
+    try:
+        backend.register_hotkey(NativeHotkeyBinding(binding_id="thread", spec=parse_native_hotkey("Ctrl+Alt+P")))
+        backend.unregister_all()
+    finally:
+        backend.close()
+    assert thread_ids
+    assert len(set(thread_ids)) == 1
+    assert thread_ids[0] != threading.get_ident()

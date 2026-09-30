@@ -159,7 +159,8 @@ class PythonExprServiceNode(ServiceNode, ClosableNode):
             now_ms = self._now_ms()
             sig = f"{type(exc).__name__}:{exc}"
             if self._error_reporter.should_log_eval_error(sig, now_ms=now_ms):
-                logger.warning("[%s:pyexpr] eval failed: %s", self.node_id, exc)
+                logger.warning("[%s:pyexpr] eval failed: %s", self.node_id, exc,
+                               exc_info=(type(exc), exc, exc.__traceback__))
             await self._error_reporter.set_error(f"eval: {exc}")
             return None
         await self._error_reporter.clear_error()

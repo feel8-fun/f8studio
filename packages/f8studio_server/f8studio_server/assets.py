@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+from f8studio_server.errors import InvalidRequestError, NotFoundError
+
 import enum
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
+from contextlib import AbstractContextManager
+
+from .database import database_text as _text
+from .database import database_integer as _integer
+from .database import database_bytes as _bytes
+from .database import StudioDatabase
 from typing import cast
 from uuid import uuid4
 
@@ -100,22 +108,7 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
-def _text(value: object) -> str:
-    if not isinstance(value, str):
-        raise TypeError(f"expected database text, got {type(value).__name__}")
-    return value
 
-
-def _integer(value: object) -> int:
-    if not isinstance(value, int):
-        raise TypeError(f"expected database integer, got {type(value).__name__}")
-    return value
-
-
-def _bytes(value: object) -> bytes:
-    if not isinstance(value, bytes):
-        raise TypeError(f"expected database bytes, got {type(value).__name__}")
-    return value
 
 
 def _json(value: object) -> F8JsonValue:
@@ -131,58 +124,56 @@ def _validate_content(kind: AssetKind, content: F8JsonValue) -> F8JsonValue:
     if kind is AssetKind.component:
         component = msgspec.json.decode(encoded, type=ComponentContent)
         if component.schema_version != COMPONENT_SCHEMA_VERSION:
-            raise ValueError(f"unsupported component schema: {component.schema_version}")
+            raise InvalidRequestError(f"unsupported component schema: {component.schema_version}")
         node_ids = {node.node_id for node in component.nodes}
         if len(node_ids) != len(component.nodes):
-            raise ValueError("component node ids must be unique")
+            raise InvalidRequestError("component node ids must be unique")
         if any(edge.from_node_id not in node_ids or edge.to_node_id not in node_ids for edge in component.edges):
-            raise ValueError("component edges must reference component nodes")
+            raise InvalidRequestError("component edges must reference component nodes")
         layout_ids = [layout.node_id for layout in component.layout]
         if len(set(layout_ids)) != len(layout_ids):
-            raise ValueError("component layout node ids must be unique")
+            raise InvalidRequestError("component layout node ids must be unique")
         if any(node_id not in node_ids for node_id in layout_ids):
-            raise ValueError("component layout must reference component nodes")
+            raise InvalidRequestError("component layout must reference component nodes")
         service_classes = {
             node.service_id: node.service_class
             for node in component.nodes
             if isinstance(node, ServiceNode)
         }
         if len(service_classes) != sum(isinstance(node, ServiceNode) for node in component.nodes):
-            raise ValueError("component service ids must be unique")
+            raise InvalidRequestError("component service ids must be unique")
         for node in component.nodes:
             if not isinstance(node, OperatorNode):
                 continue
             service_class = service_classes.get(node.service_id)
             if service_class is None:
-                raise ValueError("component operators must reference component services")
+                raise InvalidRequestError("component operators must reference component services")
             if service_class != node.service_class:
-                raise ValueError("component operator and service classes must match")
+                raise InvalidRequestError("component operator and service classes must match")
         return _json(component)
     if kind is AssetKind.variant:
         variant = msgspec.json.decode(encoded, type=VariantContent)
         if variant.schema_version != VARIANT_SCHEMA_VERSION:
-            raise ValueError(f"unsupported variant schema: {variant.schema_version}")
+            raise InvalidRequestError(f"unsupported variant schema: {variant.schema_version}")
         if not variant.service_class.strip():
-            raise ValueError("variant serviceClass must be non-empty")
+            raise InvalidRequestError("variant serviceClass must be non-empty")
         return _json(variant)
     if not isinstance(content, dict):
-        raise ValueError("modding recipe content must be an object")
+        raise InvalidRequestError("modding recipe content must be an object")
     schema = content.get("schemaVersion")
     if not isinstance(schema, str) or not schema.strip():
-        raise ValueError("modding recipe content requires schemaVersion")
+        raise InvalidRequestError("modding recipe content requires schemaVersion")
     return content
 
 
 class AssetRepository:
-    def __init__(self, database_path: Path) -> None:
-        self._database_path = database_path.resolve()
+    def __init__(self, database_path: Path | StudioDatabase) -> None:
+        self._database = database_path if isinstance(database_path, StudioDatabase) else StudioDatabase(database_path)
+        self._database_path = self._database.path
         self._initialize()
 
-    def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self._database_path, timeout=10.0)
-        connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute("PRAGMA journal_mode = WAL")
-        return connection
+    def _connect(self) -> AbstractContextManager[sqlite3.Connection]:
+        return self._database.connection()
 
     def _initialize(self) -> None:
         with self._connect() as connection:
@@ -235,7 +226,7 @@ class AssetRepository:
         asset_id = ensure_token(request.asset_id or uuid4().hex, label="asset_id")
         name = request.name.strip()
         if not name:
-            raise ValueError("asset name must be non-empty")
+            raise InvalidRequestError("asset name must be non-empty")
         content = _validate_content(request.kind, request.content)
         timestamp = _now()
         tags = _normalize_tags(request.tags)
@@ -268,7 +259,7 @@ class AssetRepository:
                 (asset_id,),
             ).fetchone()
         if row is None:
-            raise FileNotFoundError(f"asset not found: {asset_id}")
+            raise NotFoundError(f"asset not found: {asset_id}")
         summary = self._summary(row[:8])
         return AssetRecord(
             asset_id=summary.asset_id,
@@ -286,7 +277,7 @@ class AssetRepository:
         asset_id = ensure_token(asset_id, label="asset_id")
         name = request.name.strip()
         if not name:
-            raise ValueError("asset name must be non-empty")
+            raise InvalidRequestError("asset name must be non-empty")
         timestamp = _now()
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -295,7 +286,7 @@ class AssetRepository:
                 (asset_id,),
             ).fetchone()
             if current is None:
-                raise FileNotFoundError(f"asset not found: {asset_id}")
+                raise NotFoundError(f"asset not found: {asset_id}")
             content = _validate_content(AssetKind(_text(current[0])), request.content)
             version = _integer(current[1]) + 1
             connection.execute(
@@ -314,7 +305,7 @@ class AssetRepository:
         with self._connect() as connection:
             cursor = connection.execute("DELETE FROM local_assets WHERE asset_id = ?", (asset_id,))
             if cursor.rowcount != 1:
-                raise FileNotFoundError(f"asset not found: {asset_id}")
+                raise NotFoundError(f"asset not found: {asset_id}")
 
     def versions(self, asset_id: str) -> tuple[AssetVersion, ...]:
         _ = self.get(asset_id)
@@ -338,24 +329,24 @@ class AssetRepository:
 
     def import_asset(self, payload: AssetExport) -> AssetRecord:
         if payload.schema_version != ASSET_SCHEMA_VERSION:
-            raise ValueError(f"unsupported asset export schema: {payload.schema_version}")
+            raise InvalidRequestError(f"unsupported asset export schema: {payload.schema_version}")
         asset = payload.asset
         asset_id = ensure_token(asset.asset_id, label="asset_id")
         if not asset.name.strip():
-            raise ValueError("asset name must be non-empty")
+            raise InvalidRequestError("asset name must be non-empty")
         versions = tuple(sorted(payload.versions, key=lambda item: item.version))
         if not versions or versions[-1].version != asset.current_version:
-            raise ValueError("asset export does not contain its current version")
+            raise InvalidRequestError("asset export does not contain its current version")
         if len({version.version for version in versions}) != len(versions):
-            raise ValueError("asset export contains duplicate versions")
+            raise InvalidRequestError("asset export contains duplicate versions")
         for version in versions:
             if version.asset_id != asset_id or version.version < 1:
-                raise ValueError("asset export version identity is invalid")
+                raise InvalidRequestError("asset export version identity is invalid")
         normalized = tuple(
             (version, _validate_content(asset.kind, version.content)) for version in versions
         )
         if normalized[-1][1] != _validate_content(asset.kind, asset.content):
-            raise ValueError("asset current content does not match current version")
+            raise InvalidRequestError("asset current content does not match current version")
         try:
             with self._connect() as connection:
                 connection.execute("BEGIN IMMEDIATE")
@@ -388,7 +379,7 @@ class AssetRepository:
     def create_project_version(self, project_id: str, name: str, document: StudioDocument) -> ProjectVersion:
         validate_document(document)
         if document.project_id != project_id:
-            raise ValueError("version document projectId does not match route project id")
+            raise InvalidRequestError("version document projectId does not match route project id")
         clean_name = name.strip() or "Snapshot"
         version = ProjectVersion(
             version_id=uuid4().hex,
@@ -425,7 +416,7 @@ class AssetRepository:
         versions = self.list_project_versions(project_id)
         found = next((version for version in versions if version.version_id == version_id), None)
         if found is None:
-            raise FileNotFoundError(f"project version not found: {version_id}")
+            raise NotFoundError(f"project version not found: {version_id}")
         return found
 
     @staticmethod

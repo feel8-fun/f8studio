@@ -1,3 +1,4 @@
+import { studioEvents } from '../api/eventStream';
 import { CircleDot, RefreshCw, Search } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
@@ -150,41 +151,12 @@ export function LogsWorkspace({ compact = false, toolbarTarget }: {
 
   useEffect(() => {
     const controller = new AbortController();
-    let socket: WebSocket | null = null;
-    let retryTimer: number | null = null;
-    let retry = 0;
-    const connect = () => {
-      if (controller.signal.aborted) return;
-      socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/events`);
-      socket.onopen = () => {
-        retry = 0;
-        setConnected(true);
-        if (!historyModeRef.current) void loadLatest(controller.signal);
-      };
-      socket.onmessage = (message) => {
-        let decoded: unknown;
-        try {
-          decoded = JSON.parse(String(message.data));
-        } catch (reason: unknown) {
-          console.error('Invalid log event JSON', reason);
-          return;
-        }
-        if (isStudioLogEvent(decoded) && isLogType(decoded.type)) {
-          if (!historyModeRef.current) setEvents((current) => mergeLogs(current, [decoded]));
-        }
-      };
-      socket.onclose = () => {
-        setConnected(false);
-        if (!controller.signal.aborted) retryTimer = window.setTimeout(connect, Math.min(5000, 300 * 2 ** retry++));
-      };
-      socket.onerror = () => socket?.close();
-    };
-    connect();
-    return () => {
-      controller.abort();
-      socket?.close();
-      if (retryTimer !== null) window.clearTimeout(retryTimer);
-    };
+    const unsubscribe = studioEvents.subscribe((event) => {
+      if (isStudioLogEvent(event) && isLogType(event.type) && !historyModeRef.current) {
+        setEvents((current) => mergeLogs(current, [event]));
+      }
+    }, () => { if (!historyModeRef.current) void loadLatest(controller.signal); }, setConnected);
+    return () => { controller.abort(); unsubscribe(); };
   }, [loadLatest]);
 
   const visible = useMemo(() => events.flatMap((event) => {

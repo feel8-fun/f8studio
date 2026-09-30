@@ -44,9 +44,16 @@ class MediaGatewayRequestError(RuntimeError):
 
 @dataclass(frozen=True)
 class RemoteMediaGatewayConfig:
-    base_url: str = "http://127.0.0.1:8211"
+    # ``None`` lets a managed gateway bind a free loopback port. The gateway is
+    # private to Studio (browsers reach it through the Studio proxy), so a fixed
+    # port only creates collisions between instances and test runs.
+    base_url: str | None = None
     manage_process: bool = True
     startup_timeout_s: float = 10.0
+
+    def __post_init__(self) -> None:
+        if self.base_url is None and not self.manage_process:
+            raise ValueError("an external Media Gateway requires base_url")
 
 
 class RemoteMediaGateway:
@@ -62,27 +69,44 @@ class RemoteMediaGateway:
         self._process: asyncio.subprocess.Process | None = None
 
     async def start(self) -> None:
-        if self._client is None:
-            self._client = httpx.AsyncClient(base_url=self._config.base_url, timeout=5.0)
+        if self._process is not None:
+            raise RuntimeError("Media Gateway process is already running")
+        base_url = self._config.base_url
         try:
             if self._config.manage_process:
-                if self._process is not None:
-                    raise RuntimeError("Media Gateway process is already running")
-                host, port = _loopback_endpoint(self._config.base_url)
+                host, port = ("127.0.0.1", 0) if base_url is None else _loopback_endpoint(base_url)
+                arguments = [
+                    sys.executable, "-m", "f8media_gateway", "--host", host,
+                    "--port", str(port), "--exit-on-stdin-close",
+                ]
+                if base_url is None:
+                    arguments.append("--report-bound-port")
                 self._process = await asyncio.create_subprocess_exec(
-                    sys.executable,
-                    "-m",
-                    "f8media_gateway",
-                    "--host",
-                    host,
-                    "--port",
-                    str(port),
-                    "--exit-on-stdin-close",
+                    *arguments,
                     stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE if base_url is None else None,
                 )
+                if base_url is None:
+                    output = self._process.stdout
+                    if output is None:
+                        raise RuntimeError("Media Gateway startup pipe is unavailable")
+                    line = await asyncio.wait_for(output.readline(), timeout=self._config.startup_timeout_s)
+                    if not line.strip().isdigit():
+                        raise MediaGatewayUnavailable("Media Gateway did not report a bound port")
+                    bound_port = int(line)
+                    if not 1 <= bound_port <= 65535:
+                        raise MediaGatewayUnavailable("Media Gateway reported an invalid bound port")
+                    base_url = f"http://127.0.0.1:{bound_port}"
+            if base_url is None:
+                raise ValueError("an external Media Gateway requires base_url")
+            if self._client is None:
+                self._client = httpx.AsyncClient(base_url=base_url, timeout=5.0)
             await self._wait_until_ready()
+        except asyncio.CancelledError:
+            await self.close()
+            raise
         except Exception:
-            logger.exception("Media Gateway failed to start base_url=%s", self._config.base_url)
+            logger.exception("Media Gateway failed to start base_url=%s", base_url)
             await self.close()
             raise
 

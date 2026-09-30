@@ -37,7 +37,10 @@ def _unlock_file(handle: BinaryIO) -> None:
 
 @contextmanager
 def single_server_instance(lock_path: Path | None = None) -> Generator[None]:
-    path = lock_path or Path.home() / ".f8studio-web-server.lock"
+    configured = os.environ.get("F8STUDIO_DATA_DIR", "").strip()
+    data_dir = Path(configured).expanduser().resolve() if configured else Path.home() / ".local" / "share" / "f8studio-web"
+    path = lock_path or data_dir / "server.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a+b") as handle:
         if handle.tell() == 0:
             handle.write(b"\0")
@@ -47,7 +50,7 @@ def single_server_instance(lock_path: Path | None = None) -> Generator[None]:
         except OSError as exc:
             if exc.errno not in {errno.EACCES, errno.EAGAIN, errno.EDEADLK}:
                 raise
-            raise StudioServerAlreadyRunningError("A Web Studio server is already running for this user") from exc
+            raise StudioServerAlreadyRunningError("A Web Studio server is already running for this data directory") from exc
         try:
             yield
         finally:

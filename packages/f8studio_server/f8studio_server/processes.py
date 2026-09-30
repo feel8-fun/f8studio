@@ -28,10 +28,11 @@ class ManagedServiceProcesses:
         runtime_config: RuntimeConfig,
         events: EventJournal,
     ) -> None:
-        self._manager = ServiceProcessManager(catalog.sdk_catalog)
+        self._manager = ServiceProcessManager(catalog.sdk_catalog, catalog_provider=lambda: catalog.sdk_catalog)
         self._runtime_config = runtime_config
         self._events = events
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._log_tasks: set[asyncio.Task[object]] = set()
 
     def can_start(self, service_class: str) -> bool:
         return self._manager.has_launcher(service_class)
@@ -77,6 +78,11 @@ class ManagedServiceProcesses:
             if not stopped:
                 logger.error("managed service did not stop during shutdown service_id=%s", service_id)
         self._loop = None
+        tasks = tuple(self._log_tasks)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     def _on_output(self, service_id: str, line: str) -> None:
         line = line.rstrip()[:8192]
@@ -89,15 +95,18 @@ class ManagedServiceProcesses:
         loop.call_soon_threadsafe(self._schedule_log_event, service_id, line)
 
     def _schedule_log_event(self, service_id: str, line: str) -> None:
+        if self._loop is None:
+            return
         task = asyncio.create_task(
             self._events.publish(
                 event_type="service.log",
                 scope=f"service:{service_id}",
                 payload={"serviceId": service_id, "line": line},
-                reliable=False,
-            ),
+                ),
             name=f"service-log-event:{service_id}",
         )
+        self._log_tasks.add(task)
+        task.add_done_callback(self._log_tasks.discard)
         task.add_done_callback(self._report_log_event_failure)
 
     @staticmethod

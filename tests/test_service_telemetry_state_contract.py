@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import unittest
 from pathlib import Path
@@ -45,7 +46,10 @@ SOURCE_SUFFIXES = {
 
 class ServiceTelemetryStateContractTest(unittest.TestCase):
     def test_service_describes_do_not_expose_runtime_telemetry_as_state_fields(self) -> None:
-        describe_paths = sorted(Path("services").rglob("describe.json"))
+        root = os.environ.get("F8_CPP_DESCRIBE_ROOT")
+        if not root:
+            self.skipTest("built C++ contract test requires F8_CPP_DESCRIBE_ROOT")
+        describe_paths = sorted(Path(root).rglob("describe.json"))
         self.assertTrue(describe_paths)
 
         leaks: dict[str, list[str]] = {}

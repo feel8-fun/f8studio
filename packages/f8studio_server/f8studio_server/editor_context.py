@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8studio_server.errors import InvalidRequestError, NotFoundError
+
 import keyword
 from typing import Any
 
@@ -47,7 +49,7 @@ def _python_type(schema: F8DataTypeSchema) -> str:
 
 def _dynamic_module(type_name: str, fields: list[tuple[str, F8DataTypeSchema]], *, mapping: bool) -> str:
     if not type_name.isidentifier() or keyword.iskeyword(type_name):
-        raise ValueError(f"invalid editor binding type name: {type_name}")
+        raise InvalidRequestError(f"invalid editor binding type name: {type_name}")
     lines = ["from __future__ import annotations", "from typing import Any, Literal, Protocol", "", f"class {type_name}(Protocol):"]
     if mapping:
         lines.append("    def __getitem__(self, key: str) -> Any: ...")
@@ -64,10 +66,10 @@ def editor_support_files(node: GraphNode, field_name: str) -> tuple[EditorSuppor
     fields = () if isinstance(state_fields, msgspec.UnsetType) else state_fields
     field = next((item for item in fields if item.name == field_name), None)
     if field is None:
-        raise FileNotFoundError(f"code field not found: {node.node_id}.{field_name}")
+        raise NotFoundError(f"code field not found: {node.node_id}.{field_name}")
     control = field.control
     if isinstance(control, msgspec.UnsetType) or control.kind.value != "code":
-        raise ValueError(f"state field is not a code editor: {node.node_id}.{field_name}")
+        raise InvalidRequestError(f"state field is not a code editor: {node.node_id}.{field_name}")
     assist = field.editorAssist
     if isinstance(assist, msgspec.UnsetType) or isinstance(assist.python, msgspec.UnsetType):
         return ()
@@ -80,7 +82,7 @@ def editor_support_files(node: GraphNode, field_name: str) -> tuple[EditorSuppor
             module = inputs.module_name
             type_name = inputs.type_name
             if isinstance(module, msgspec.UnsetType) or isinstance(type_name, msgspec.UnsetType) or not module.isidentifier():
-                raise ValueError("invalid inputs editor binding metadata")
+                raise InvalidRequestError("invalid inputs editor binding metadata")
             data_ports = node.spec.dataInPorts
             ports = () if isinstance(data_ports, msgspec.UnsetType) else data_ports
             files[f"{module}.pyi"] = _dynamic_module(
@@ -91,7 +93,7 @@ def editor_support_files(node: GraphNode, field_name: str) -> tuple[EditorSuppor
             module = states.module_name
             type_name = states.type_name
             if isinstance(module, msgspec.UnsetType) or isinstance(type_name, msgspec.UnsetType) or not module.isidentifier():
-                raise ValueError("invalid states editor binding metadata")
+                raise InvalidRequestError("invalid states editor binding metadata")
             files[f"{module}.pyi"] = _dynamic_module(
                 type_name, [(item.name, item.valueSchema) for item in fields], mapping=True,
             )

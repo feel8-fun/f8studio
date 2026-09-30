@@ -30,9 +30,15 @@ export function TCode3D({ payload, line, model, resetVersion }: {
   }, [model, resetVersion]);
 
   useEffect(() => {
-    if (line === '' || emulatorRef.current === null) return;
+    if (emulatorRef.current === null) return;
     try {
-      emulatorRef.current.write(line.endsWith('\n') ? line : `${line}\n`);
+      const channels = payload.channels;
+      const snapshot = typeof channels === 'object' && channels !== null && !Array.isArray(channels)
+        ? Object.entries(channels).flatMap(([key, value]) => typeof value === 'number' && /^[LRVA][0-9]$/.test(key)
+          ? [`${key}${Math.max(0, Math.min(9999, Math.round(value))).toString().padStart(4, '0')}`] : []).join(' ')
+        : '';
+      const command = [snapshot, line.trim()].filter(Boolean).join(' ');
+      if (command !== '') emulatorRef.current.write(`${command}\n`);
     } catch (reason) {
       console.error('Failed to update TCode visualizer', reason);
       setError('Unable to apply TCode command');

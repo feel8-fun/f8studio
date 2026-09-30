@@ -8,6 +8,7 @@ from typing import TypeVar, cast
 from urllib.error import HTTPError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
+from f8studio_server.access import client_access_headers
 from uuid import uuid4
 
 import msgspec
@@ -32,7 +33,8 @@ T = TypeVar("T")
 
 class ProbeEvent(msgspec.Struct, rename="camel"):
     type: str
-    payload: object
+    values: dict[str, object] = msgspec.field(default_factory=dict)
+    set: dict[str, object] = msgspec.field(default_factory=dict)
 
 
 class ProbePresentation(msgspec.Struct, rename="camel"):
@@ -46,7 +48,7 @@ def _request(base_url: str, method: str, path: str, *, response_type: type[T], b
     request = Request(
         f"{base_url.rstrip('/')}{path}",
         data=encoded,
-        headers={} if encoded is None else {"content-type": "application/json"},
+        headers={**client_access_headers(base_url), **({} if encoded is None else {"content-type": "application/json"})},
         method=method,
     )
     try:
@@ -88,11 +90,11 @@ async def run_probe(base_url: str) -> None:
     )
 
     parsed = urlparse(base_url)
-    websocket_url = f"ws://{parsed.netloc}/api/events"
-    async with connect(websocket_url, origin=Origin(base_url)) as websocket:
+    websocket_url = f"ws://{parsed.netloc}/api/live"
+    async with connect(websocket_url, origin=Origin(base_url), additional_headers=client_access_headers(base_url)) as websocket:
         snapshot_raw = await asyncio.wait_for(websocket.recv(), timeout=5.0)
         snapshot = msgspec.json.decode(snapshot_raw, type=ProbeEvent)
-        if snapshot.type != "stream.snapshot":
+        if snapshot.type != "live.snapshot":
             raise RuntimeError(f"expected initial event snapshot, received {snapshot!r}")
 
         await asyncio.to_thread(
@@ -146,12 +148,11 @@ async def run_probe(base_url: str) -> None:
         while asyncio.get_running_loop().time() < deadline:
             raw_event = await asyncio.wait_for(websocket.recv(), timeout=deadline - asyncio.get_running_loop().time())
             event = msgspec.json.decode(raw_event, type=ProbeEvent)
-            if event.type != "presentation.command":
+            values = event.values if event.type == "live.snapshot" else event.set
+            candidate = values.get("presentation/three1/viz.three_d.world_up")
+            if candidate is None:
                 continue
-            try:
-                payload = msgspec.convert(event.payload, type=ProbePresentation)
-            except (msgspec.ValidationError, TypeError):
-                continue
+            payload = msgspec.convert(candidate, type=ProbePresentation)
             if payload.node_id != "three1" or payload.command != "viz.three_d.world_up":
                 continue
             command_payload = payload.payload

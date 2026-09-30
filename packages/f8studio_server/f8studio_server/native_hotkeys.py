@@ -463,6 +463,7 @@ class X11NativeHotkeyBackend:
         self._grabs: dict[str, list[tuple[int, int]]] = {}
         self._event_bindings: dict[tuple[int, int], str] = {}
         self._stop = threading.Event()
+        self._commands: queue.Queue[tuple[Callable[[], None], threading.Event, list[Exception]]] = queue.Queue()
         self._last_error_log: dict[str, float] = {}
         self._ignored_masks = self._build_ignored_masks()
         self._listener: threading.Thread | None = None
@@ -470,7 +471,24 @@ class X11NativeHotkeyBackend:
             self._listener = threading.Thread(target=self._event_loop, name="f8studio-x11-hotkeys", daemon=True)
             self._listener.start()
 
+    def _execute(self, operation: Callable[[], None]) -> None:
+        if self._listener is None:
+            operation()
+            return
+        if not self._listener.is_alive():
+            raise NativeHotkeyRegistrationError("X11 global hotkey worker is not running")
+        done = threading.Event()
+        errors: list[Exception] = []
+        self._commands.put((operation, done, errors))
+        if not done.wait(timeout=2):
+            raise NativeHotkeyRegistrationError("X11 global hotkey worker did not respond")
+        if errors:
+            raise errors[0]
+
     def register_hotkey(self, binding: NativeHotkeyBinding) -> None:
+        self._execute(lambda: self._register_hotkey(binding))
+
+    def _register_hotkey(self, binding: NativeHotkeyBinding) -> None:
         keysym = self._xk.string_to_keysym(_x11_keysym_name(binding.spec.key_name))
         keycode = self._display.keysym_to_keycode(keysym)
         if keysym <= 0 or keycode <= 0:
@@ -495,6 +513,9 @@ class X11NativeHotkeyBackend:
         self._grabs[binding.binding_id] = grabs
 
     def unregister_all(self) -> None:
+        self._execute(self._unregister_all)
+
+    def _unregister_all(self) -> None:
         for binding_id, grabs in tuple(self._grabs.items()):
             for keycode, modifiers in grabs:
                 try:
@@ -509,10 +530,15 @@ class X11NativeHotkeyBackend:
             self._log_error("sync", "X11 hotkey sync failed during unregister", exc=exc)
 
     def close(self) -> None:
+        if self._stop.is_set():
+            return
+        self._execute(self._close_owned)
+        if self._listener is not None:
+            self._listener.join(timeout=2)
+
+    def _close_owned(self) -> None:
         self._stop.set()
-        self.unregister_all()
-        if self._listener is not None and self._listener.is_alive():
-            self._listener.join(timeout=0.2)
+        self._unregister_all()
         try:
             self._display.close()
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
@@ -521,8 +547,22 @@ class X11NativeHotkeyBackend:
     def _event_loop(self) -> None:
         while not self._stop.is_set():
             try:
+                command = self._commands.get(timeout=0.02)
+            except queue.Empty:
+                command = None
+            if command is not None:
+                operation, done, errors = command
+                try:
+                    operation()
+                except Exception as exc:
+                    logger.exception("X11 hotkey command failed")
+                    errors.append(exc)
+                finally:
+                    done.set()
+            if self._stop.is_set():
+                return
+            try:
                 if self._display.pending_events() <= 0:
-                    time.sleep(0.01)
                     continue
                 event = self._display.next_event()
                 if event.type != self._x.KeyPress:

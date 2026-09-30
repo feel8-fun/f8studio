@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8studio_server.errors import InvalidRequestError
+
 from collections.abc import Sequence
 from pathlib import Path
 from threading import RLock
@@ -44,16 +46,12 @@ class CatalogService:
             updated.register_service(describe.service)
             operators = () if isinstance(describe.operators, msgspec.UnsetType) else describe.operators
             updated.register_operators(operators)
-        entry_paths = updated.service_entry_paths()
         with self._lock:
             missing = [service_class for service_class in force_dynamic_service_classes
                        if self._catalog.services.has(service_class) and not updated.services.has(service_class)]
             if missing:
                 raise RuntimeError(f"Live service description failed for: {', '.join(missing)}")
-            self._catalog.clear()
-            for service in updated.services.all():
-                self._catalog.register_service(service, service_entry_path=entry_paths.get(str(service.serviceClass)))
-            self._catalog.register_operators(updated.operators.all())
+            self._catalog = updated
             self._discovered_service_classes = tuple(sorted(discovered))
             return self.snapshot()
 
@@ -87,9 +85,9 @@ class CatalogService:
                     name=request.name,
                 )
             except KeyError as exc:
-                raise ValueError(f"unknown serviceClass: {request.service_class}") from exc
+                raise InvalidRequestError(f"unknown serviceClass: {request.service_class}") from exc
         if request.operator_class is None or request.service_id is None:
-            raise ValueError("operatorClass and serviceId are required for operator nodes")
+            raise InvalidRequestError("operatorClass and serviceId are required for operator nodes")
         try:
             return catalog.create_operator_node(
                 node_id=request.node_id,
@@ -99,7 +97,7 @@ class CatalogService:
                 name=request.name,
             )
         except KeyError as exc:
-            raise ValueError(
+            raise InvalidRequestError(
                 f"unknown operator: {request.service_class}/{request.operator_class}"
             ) from exc
 

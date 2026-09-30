@@ -8,6 +8,9 @@ import httpx
 
 from f8pysdk.specs import F8JsonValue
 
+from .defaults import DEFAULT_STUDIO_URL
+from .access import client_access_token
+
 
 class StudioApiError(RuntimeError):
     def __init__(self, message: str, *, status_code: int) -> None:
@@ -16,8 +19,10 @@ class StudioApiError(RuntimeError):
 
 
 class StudioApiClient:
-    def __init__(self, base_url: str = "http://127.0.0.1:8260", *, timeout_s: float = 30.0) -> None:
-        self._client = httpx.Client(base_url=base_url.rstrip("/"), timeout=timeout_s)
+    def __init__(self, base_url: str = DEFAULT_STUDIO_URL, *, timeout_s: float = 30.0) -> None:
+        token = client_access_token(base_url)
+        self._client = httpx.Client(base_url=base_url.rstrip("/"), timeout=timeout_s,
+                                    headers={} if token is None else {"Authorization": f"Bearer {token}"})
 
     def close(self) -> None:
         self._client.close()

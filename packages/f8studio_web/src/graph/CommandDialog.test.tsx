@@ -38,7 +38,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 test('validates parameters and invokes a service command with typed values', async () => {
-  vi.mocked(invokeRuntimeCommand).mockResolvedValue({ success: true, result: 3 });
+  vi.mocked(invokeRuntimeCommand).mockResolvedValue({ success: true, result: 3, errorMessage: "" });
   const onClose = vi.fn();
   const onResult = vi.fn();
   render(<CommandDialog node={service} command={command} onClose={onClose} onResult={onResult} />);
@@ -55,7 +55,7 @@ test('validates parameters and invokes a service command with typed values', asy
 });
 
 test('submits an operator command through its declared command input', async () => {
-  vi.mocked(setRuntimeState).mockResolvedValue({ success: true });
+  vi.mocked(setRuntimeState).mockResolvedValue({ success: true, result: null, errorMessage: "" });
   const onResult = vi.fn();
   render(<CommandDialog node={operator} command={command} onClose={() => undefined} onResult={onResult} />);
   fireEvent.change(screen.getByRole('spinbutton', { name: 'count *' }), { target: { value: '2' } });
@@ -65,7 +65,7 @@ test('submits an operator command through its declared command input', async () 
 });
 
 test('reports runtime rejection and keeps the parameter dialog open', async () => {
-  vi.mocked(invokeRuntimeCommand).mockResolvedValue({ success: false, errorMessage: 'Player is offline' });
+  vi.mocked(invokeRuntimeCommand).mockResolvedValue({ success: false, result: null, errorMessage: 'Player is offline' });
   const onClose = vi.fn();
   const onResult = vi.fn();
   render(<CommandDialog node={service} command={command} onClose={onClose} onResult={onResult} />);

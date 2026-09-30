@@ -226,7 +226,7 @@ class VizVideoRuntimeNode(OperatorNode):
         self._flow_display_mode = "off"
         self._flow_mag_scale = 20.0
         self._flow_stride = 12
-        self._scale_mode = "native"
+        self._scale_mode = "fit"
         self._scalar_display_mode = "off"
         self._scalar_colormap = "turbo"
         self._scalar_range_mode = "auto"
@@ -237,6 +237,7 @@ class VizVideoRuntimeNode(OperatorNode):
         self._scalar_invert = False
         self._scalar_nan_mode = "transparent"
         self._pending_task: asyncio.Task[object] | None = None
+        self._init_task: asyncio.Task[None] | None = None
         self._rungraph_bus: RungraphHookBus | None = None
 
     def attach(self, bus: Any) -> None:
@@ -246,23 +247,25 @@ class VizVideoRuntimeNode(OperatorNode):
         self._rungraph_bus = rungraph_bus
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(self._ensure_config_loaded(), name=f"pystudio:video:init:{self.node_id}")
+            self._init_task = loop.create_task(self._ensure_config_loaded(), name=f"pystudio:video:init:{self.node_id}")
         except RuntimeError:
             log.debug("viz video config init deferred; no running event loop node_id=%s", self.node_id, exc_info=True)
 
     async def close(self) -> None:
-        try:
-            rungraph_bus = self._rungraph_bus
-            self._rungraph_bus = None
-            if rungraph_bus is not None:
-                rungraph_bus.unregister_rungraph_hook(self)
-            t = self._pending_task
-            self._pending_task = None
-            if t is not None:
-                t.cancel()
-                await asyncio.gather(t, return_exceptions=True)
-        except (RuntimeError, TypeError, ValueError):
-            log.debug("viz video node close cleanup failed node_id=%s", self.node_id, exc_info=True)
+        rungraph_bus = self._rungraph_bus
+        self._rungraph_bus = None
+        if rungraph_bus is not None:
+            rungraph_bus.unregister_rungraph_hook(self)
+        tasks = [task for task in (self._init_task, self._pending_task) if task is not None]
+        self._init_task = None
+        self._pending_task = None
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for result in results:
+                if isinstance(result, Exception):
+                    log.error("viz video background task failed node_id=%s", self.node_id, exc_info=result)
         self.presentation.emit(self.node_id, "viz.video.detach", {}, ts_ms=int(time.time() * 1000))
 
     async def validate_rungraph(self, graph: F8RuntimeGraph) -> None:

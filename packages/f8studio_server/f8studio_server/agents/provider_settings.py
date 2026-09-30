@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8studio_server.errors import InvalidRequestError
+
 import os
 import tempfile
 from pathlib import Path
@@ -134,11 +136,11 @@ class ProviderSettingsStore:
     def get(self, provider_id: str) -> ProviderConfig:
         with self._lock:
             if provider_id not in self._defaults and provider_id not in self._saved:
-                raise ValueError("Unknown configurable agent provider")
+                raise InvalidRequestError("Unknown configurable agent provider")
             if provider_id in self._saved:
                 config = self._saved[provider_id]
                 if config.disabled:
-                    raise ValueError("Provider connection was deleted")
+                    raise InvalidRequestError("Provider connection was deleted")
                 return config
             return self._defaults[provider_id]
 
@@ -201,34 +203,34 @@ class ProviderSettingsStore:
     def _validate(provider_id: str, config: ProviderConfig) -> None:
         custom = provider_id.startswith("connection_")
         if provider_id not in _PROVIDER_NAMES and not custom:
-            raise ValueError("Unknown configurable agent provider")
+            raise InvalidRequestError("Unknown configurable agent provider")
         if config.disabled:
             if custom or config != ProviderConfig(model="", disabled=True):
-                raise ValueError("Invalid deleted provider marker")
+                raise InvalidRequestError("Invalid deleted provider marker")
             return
         if (not config.model and not custom) or len(config.model) > 256 or any(character.isspace() for character in config.model):
-            raise ValueError("Model ID must be non-empty, at most 256 characters, and contain no whitespace")
+            raise InvalidRequestError("Model ID must be non-empty, at most 256 characters, and contain no whitespace")
         if (custom or provider_id in {"google_gemini", "ollama", "typesafe", "systemone_local"}) and not config.endpoint:
-            raise ValueError("This provider requires an endpoint URL")
+            raise InvalidRequestError("This provider requires an endpoint URL")
         if config.supports_image and provider_id != "systemone_local" and not custom:
-            raise ValueError("Image input is only available for a compatible local decision host")
+            raise InvalidRequestError("Image input is only available for a compatible local decision host")
         if custom and (config.protocol not in {"openai_responses", "openai_chat", "anthropic", "systemone"}
                        or not config.display_name.strip() or len(config.display_name) > 80):
-            raise ValueError("Custom connections require a protocol and a name of at most 80 characters")
+            raise InvalidRequestError("Custom connections require a protocol and a name of at most 80 characters")
         if len(config.models) > 500 or any(not model or len(model) > 256 or any(char.isspace() for char in model) for model in config.models):
-            raise ValueError("Model list contains an invalid ID or exceeds 500 models")
+            raise InvalidRequestError("Model list contains an invalid ID or exceeds 500 models")
         if len(config.model_capabilities) > 500 or any(item.model_id not in config.models for item in config.model_capabilities):
-            raise ValueError("Model capabilities must refer to saved models")
+            raise InvalidRequestError("Model capabilities must refer to saved models")
         if len({item.model_id for item in config.model_capabilities}) != len(config.model_capabilities):
-            raise ValueError("Model capabilities contain duplicate model IDs")
+            raise InvalidRequestError("Model capabilities contain duplicate model IDs")
         if config.endpoint:
             endpoint = urlsplit(config.endpoint)
             if (endpoint.scheme not in {"http", "https"} or not endpoint.hostname
                     or endpoint.username is not None or endpoint.password is not None
                     or endpoint.query or endpoint.fragment or any(character.isspace() for character in config.endpoint)):
-                raise ValueError("Endpoint must be an HTTP(S) URL without credentials, query parameters, or fragments")
+                raise InvalidRequestError("Endpoint must be an HTTP(S) URL without credentials, query parameters, or fragments")
         if len(config.api_key) > 8192 or any(character.isspace() for character in config.api_key):
-            raise ValueError("API key must contain no whitespace and be at most 8192 characters")
+            raise InvalidRequestError("API key must contain no whitespace and be at most 8192 characters")
 
     @staticmethod
     def _models(default_model: str, models: tuple[str, ...]) -> tuple[str, ...]:
@@ -239,7 +241,7 @@ class ProviderSettingsStore:
         with self._lock:
             current = self.get(provider_id)
             if request.clear_api_key and request.api_key:
-                raise ValueError("Cannot replace and clear an API key at the same time")
+                raise InvalidRequestError("Cannot replace and clear an API key at the same time")
             config = ProviderConfig(
                 model=request.model.strip(),
                 endpoint=request.endpoint.strip().rstrip("/"),
@@ -279,16 +281,16 @@ class ProviderSettingsStore:
         with self._lock:
             if provider_id.startswith("connection_"):
                 if provider_id not in self._saved:
-                    raise ValueError("Unknown provider connection")
+                    raise InvalidRequestError("Unknown provider connection")
                 saved = {key: value for key, value in self._saved.items() if key != provider_id}
             elif provider_id in _PROVIDER_NAMES:
                 if provider_id in self._saved and self._saved[provider_id].disabled:
-                    raise ValueError("Provider connection was deleted")
+                    raise InvalidRequestError("Provider connection was deleted")
                 if provider_id not in self._saved and not self._environment_configured(provider_id):
-                    raise ValueError("Provider connection is not configured")
+                    raise InvalidRequestError("Provider connection is not configured")
                 saved = {**self._saved, provider_id: ProviderConfig(model="", disabled=True)}
             else:
-                raise ValueError("Unknown provider connection")
+                raise InvalidRequestError("Unknown provider connection")
             self._persist(saved)
             self._saved = saved
 

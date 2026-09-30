@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from typing import Protocol, cast
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from f8studio_server.access import client_access_headers
 
 import msgspec
 from aiortc import RTCPeerConnection, RTCSessionDescription
@@ -25,7 +26,7 @@ def _request(base_url: str, method: str, path: str, *, body: object | None = Non
     request = Request(
         f"{base_url.rstrip('/')}{path}",
         data=encoded,
-        headers={} if encoded is None else {"content-type": "application/json"},
+        headers={**client_access_headers(base_url), **({} if encoded is None else {"content-type": "application/json"})},
         method=method,
     )
     try:

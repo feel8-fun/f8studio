@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from f8studio_server.errors import InvalidRequestError, NotFoundError
+
+import asyncio
 import logging
 from pathlib import Path
 from typing import cast
@@ -18,6 +21,7 @@ from f8pysdk.generated import (
     F8StringTypeSchema,
 )
 from f8pysdk.specs import F8JsonValue
+from f8studio_core.graph import PortKind, PortDirection
 from f8studio_core.graph import GraphNode, PatchRequest, RevisionConflictError, SetNodeStateOp, StudioDocument
 
 from .agents import AgentService
@@ -25,7 +29,9 @@ from .agents.skills import AgentSkillLibrary
 from .automation_tools import StudioAutomationTools
 from .catalog import CatalogService
 from .assets import AssetRepository
+from .database import StudioDatabase
 from .editor import EditorSessionService
+from .runtime_sync import service_was_deployed
 from .events import EventJournal
 from .job_repository import JobRepository
 from .jobs import DeployCoordinator
@@ -34,6 +40,8 @@ from .local_integration import HotkeyBinding, LocalIntegrationService
 from .processes import ManagedServiceProcesses
 from .project_repository import ProjectRepository
 from .projects import ProjectService
+from .project_lifecycle import ProjectLifecycle
+from .project_commits import ProjectCommits
 from .runtime import RuntimeConfig, RuntimeGateway, StudioBoundRuntimeGateway, ZenohRuntimeGateway
 from .studio_runtime import EventPresentationOutlet, StudioRuntimeConfig, StudioRuntimeService
 
@@ -71,9 +79,10 @@ class StudioApplication:
             presentation=self.presentation,
         )
         self.catalog = CatalogService(roots=service_roots, builtins=(self.studio_runtime.describe,))
-        project_repository = ProjectRepository(self.data_dir / "studio.sqlite3")
+        self.database = StudioDatabase(self.data_dir / "studio.sqlite3")
+        project_repository = ProjectRepository(self.database)
         self.projects = ProjectService(project_repository, spec_resolver=self.catalog.spec_for_node)
-        self.assets = AssetRepository(project_repository.database_path)
+        self.assets = AssetRepository(self.database)
         self.editor = EditorSessionService(root=self.data_dir / "editor-sessions")
         self.local = LocalIntegrationService(
             database_path=project_repository.database_path,
@@ -82,7 +91,8 @@ class StudioApplication:
         )
         self._owns_runtime = runtime is None
         self.runtime = runtime or StudioBoundRuntimeGateway(
-            ZenohRuntimeGateway(config), studio_service_id=self.studio_runtime.service_id,
+            ZenohRuntimeGateway(config, live=self.events.live, studio_service_id=self.studio_runtime.service_id),
+            studio_service_id=self.studio_runtime.service_id,
         )
         self.monitors = RuntimeMonitorStore(self.events, studio_service_id=self.studio_runtime.service_id)
         if media_gateway is None:
@@ -95,18 +105,18 @@ class StudioApplication:
         )
         self.jobs = DeployCoordinator(
             projects=self.projects,
-            repository=JobRepository(project_repository.database_path),
+            repository=JobRepository(self.database),
             runtime=self.runtime,
             events=self.events,
             processes=self.processes,
         )
+        commits = ProjectCommits(self.events, self.local.refresh_hotkeys)
         self.tools = StudioAutomationTools(
             catalog=self.catalog,
             projects=self.projects,
             jobs=self.jobs,
             monitors=self.monitors,
-            events=self.events,
-            refresh_hotkeys=self.local.refresh_hotkeys,
+            commits=commits,
             runtime=self.runtime,
         )
         self.agents = AgentService(
@@ -118,7 +128,14 @@ class StudioApplication:
             events=self.events,
         )
 
+        self.lifecycle = ProjectLifecycle(
+            projects=self.projects, jobs=self.jobs, agents=self.agents, processes=self.processes,
+            local=self.local, events=self.events, assets=self.assets, catalog=self.catalog,
+            runtime=self.runtime, commits=commits,
+        )
+
     async def start(self) -> None:
+        self.editor.start()
         await self.media_gateway.start()
         if self._owns_runtime:
             await self.studio_runtime.start()
@@ -134,12 +151,12 @@ class StudioApplication:
         await self.studio_runtime.stop()
         await self.runtime.close()
         await self.presentation.close()
-        self.editor.close()
+        await asyncio.to_thread(self.editor.close)
 
     def _validate_hotkey(self, binding: HotkeyBinding) -> None:
         document, node, field = self._hotkey_target(binding)
         if field.access is not F8StateAccess.rw:
-            raise ValueError("global hotkeys require a writable state field")
+            raise InvalidRequestError("global hotkeys require a writable state field")
         control = self._state_control(field)
         is_numeric_button = control == "button" and isinstance(
             field.valueSchema,
@@ -147,14 +164,14 @@ class StudioApplication:
         )
         is_select = control in _HOTKEY_SELECT_CONTROLS or bool(self._enum_values(field))
         if not is_numeric_button and not is_select:
-            raise ValueError("global hotkeys support numeric button and select state controls")
+            raise InvalidRequestError("global hotkeys support numeric button and select state controls")
         input_port_ids = {
             port.port_id
             for port in node.ports
-            if port.kind.value == "state" and port.direction.value == "input" and port.runtime_name == field.name
+            if port.kind is PortKind.state and port.direction is PortDirection.input and port.runtime_name == field.name
         }
         if any(edge.to_node_id == node.node_id and edge.to_port_id in input_port_ids for edge in document.edges):
-            raise ValueError("global hotkey target is driven by an upstream state connection")
+            raise InvalidRequestError("global hotkey target is driven by an upstream state connection")
 
     async def _activate_hotkey(self, binding: HotkeyBinding) -> None:
         result = None
@@ -180,9 +197,7 @@ class StudioApplication:
         if result.runtime_errors:
             logger.warning("global hotkey runtime state sync failed: %s", "; ".join(result.runtime_errors))
         deployment = await self.jobs.latest(binding.project_id)
-        if deployment is None or not any(
-            item.service_id == node.service_id and item.success for item in deployment.service_results
-        ):
+        if not service_was_deployed(deployment, node.service_id):
             try:
                 response = await self.runtime.set_state(
                     node.service_id, node_id=node.node_id, field=binding.field, value=next_value,
@@ -196,12 +211,12 @@ class StudioApplication:
         document = self.projects.document(binding.project_id)
         node = next((candidate for candidate in document.nodes if candidate.node_id == binding.node_id), None)
         if node is None:
-            raise FileNotFoundError(f"global hotkey node not found: {binding.node_id}")
+            raise NotFoundError(f"global hotkey node not found: {binding.node_id}")
         state_fields = node.spec.stateFields
         fields = () if isinstance(state_fields, msgspec.UnsetType) else state_fields
         field = next((candidate for candidate in fields if candidate.name == binding.field), None)
         if field is None:
-            raise FileNotFoundError(f"global hotkey state field not found: {binding.node_id}.{binding.field}")
+            raise NotFoundError(f"global hotkey state field not found: {binding.node_id}.{binding.field}")
         return document, node, field
 
     def _next_hotkey_value(self, node: GraphNode, field: F8StateSpec) -> F8JsonValue:
@@ -213,7 +228,7 @@ class StudioApplication:
                 return float(current) + 1.0 if isinstance(current, (int, float)) and not isinstance(current, bool) else 1.0
         choices = self._enum_values(field) or self._pool_values(node, field)
         if not choices:
-            raise ValueError(f"global hotkey select field has no choices: {node.node_id}.{field.name}")
+            raise InvalidRequestError(f"global hotkey select field has no choices: {node.node_id}.{field.name}")
         try:
             index = choices.index(current)
         except ValueError:

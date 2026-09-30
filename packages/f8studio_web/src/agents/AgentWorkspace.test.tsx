@@ -26,6 +26,7 @@ class FakeWebSocket {
   onopen: (() => void) | null = null;
   onmessage: ((event: MessageEvent) => void) | null = null;
   onerror: (() => void) | null = null;
+  onclose: (() => void) | null = null;
   close() {}
 }
 
@@ -62,6 +63,21 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
+
+test('reconnects after the event socket closes and refreshes the selected session', async () => {
+  api.fetchAgentSessions.mockResolvedValue([baseSession]);
+  render(<AgentWorkspace projectId="project1" initialSessionId="session1" />);
+  await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+  vi.useFakeTimers();
+  act(() => FakeWebSocket.instances[0]?.onclose?.());
+  await act(async () => { await vi.advanceTimersByTimeAsync(250); });
+  expect(FakeWebSocket.instances).toHaveLength(2);
+  const count = api.fetchAgentSession.mock.calls.length;
+  await act(async () => { FakeWebSocket.instances[1]?.onopen?.();
+    FakeWebSocket.instances[1]?.onmessage?.(new MessageEvent('message', { data: JSON.stringify({ type: 'stream.hello', serverEpoch: 'reconnect', sequence: 0, resumed: false }) })); });
+  expect(api.fetchAgentSession.mock.calls.length).toBeGreaterThan(count);
 });
 
 test('shows exact tool approval and submits its argument hash', async () => {
@@ -290,8 +306,12 @@ test('coalesces event bursts and fetches again after an in-flight refresh', asyn
   let finishRefresh!: (session: AgentSession) => void;
   api.fetchAgentSession.mockImplementationOnce(() => new Promise<AgentSession>((resolve) => { finishRefresh = resolve; }));
   const socket = FakeWebSocket.instances.at(-1)!;
-  const event = new MessageEvent('message', { data: JSON.stringify({ type: 'agent.session.updated', payload: { sessionId: 'session1' } }) });
-  act(() => { for (let index = 0; index < 20; index += 1) socket.onmessage?.(event); });
+  act(() => {
+    socket.onmessage?.(new MessageEvent('message', { data: JSON.stringify({ type: 'stream.hello', serverEpoch: 'burst', sequence: 0, resumed: false }) }));
+    for (let index = 1; index <= 20; index += 1) socket.onmessage?.(new MessageEvent('message', { data: JSON.stringify({
+      type: 'agent.session.updated', serverEpoch: 'burst', sequence: index, scope: 'project:project1', payload: { sessionId: 'session1' },
+    }) }));
+  });
   expect(api.fetchAgentSession).toHaveBeenCalledTimes(1);
   await act(async () => finishRefresh(baseSession));
   expect(api.fetchAgentSession).toHaveBeenCalledTimes(2);

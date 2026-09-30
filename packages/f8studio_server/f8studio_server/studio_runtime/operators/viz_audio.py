@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from typing import Any, cast
 
@@ -27,6 +28,9 @@ from .categories import PALETTE_CATEGORY_VIZ
 
 OPERATOR_CLASS = "f8.viz.audio"
 RENDERER_CLASS = "viz_audio"
+
+
+logger = logging.getLogger(__name__)
 
 
 class VizAudioRuntimeNode(OperatorNode):
@@ -109,6 +113,7 @@ class VizAudioRuntimeNode(OperatorNode):
         self._history_ms = 250
         self._channel = 0
         self._pending_task: asyncio.Task[object] | None = None
+        self._init_task: asyncio.Task[None] | None = None
         self._rungraph_bus: RungraphHookBus | None = None
 
     def attach(self, bus: Any) -> None:
@@ -118,23 +123,25 @@ class VizAudioRuntimeNode(OperatorNode):
         self._rungraph_bus = rungraph_bus
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(self._ensure_config_loaded(), name=f"pystudio:audio:init:{self.node_id}")
+            self._init_task = loop.create_task(self._ensure_config_loaded(), name=f"pystudio:audio:init:{self.node_id}")
         except RuntimeError:
-            pass
+            logger.debug("viz audio initialization deferred; no event loop node_id=%s", self.node_id, exc_info=True)
 
     async def close(self) -> None:
         rungraph_bus = self._rungraph_bus
         self._rungraph_bus = None
         if rungraph_bus is not None:
             rungraph_bus.unregister_rungraph_hook(self)
-        try:
-            t = self._pending_task
-            self._pending_task = None
-            if t is not None:
-                t.cancel()
-                await asyncio.gather(t, return_exceptions=True)
-        except (RuntimeError, TypeError):
-            pass
+        tasks = [task for task in (self._init_task, self._pending_task) if task is not None]
+        self._init_task = None
+        self._pending_task = None
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for result in results:
+                if isinstance(result, Exception):
+                    logger.error("viz audio background task failed node_id=%s", self.node_id, exc_info=result)
         self.presentation.emit(self.node_id, "viz.audio.detach", {}, ts_ms=int(time.time() * 1000))
 
     async def validate_rungraph(self, graph: F8RuntimeGraph) -> None:

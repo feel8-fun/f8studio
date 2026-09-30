@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8studio_server.errors import InvalidRequestError, NotFoundError
+
 import hashlib
 from dataclasses import dataclass
 from collections.abc import Callable
@@ -11,6 +13,7 @@ import msgspec
 from f8pysdk.f8_naming import ensure_token
 from f8pysdk.specs import F8OperatorSpec, F8ServiceSpec
 from f8studio_core.graph import (
+    RevisionConflictError,
     GraphNode,
     GraphStore,
     HistoryRequest,
@@ -75,14 +78,14 @@ class ProjectService:
         project_id = ensure_token(project_id, label="project_id")
         record = self._repository.get_project(project_id)
         if record is None:
-            raise FileNotFoundError(f"project not found: {project_id}")
+            raise NotFoundError(f"project not found: {project_id}")
         return record
 
     def summary(self, project_id: str) -> ProjectSummary:
         project_id = ensure_token(project_id, label="project_id")
         summary = self._repository.get_project_summary(project_id)
         if summary is None:
-            raise FileNotFoundError(f"project not found: {project_id}")
+            raise NotFoundError(f"project not found: {project_id}")
         return summary
 
     def service_ids(self, project_id: str) -> frozenset[str]:
@@ -93,7 +96,7 @@ class ProjectService:
         project_id = ensure_token(project_id, label="project_id")
         name = request.name.strip()
         if not name:
-            raise ValueError("project name must be non-empty")
+            raise InvalidRequestError("project name must be non-empty")
         return self._repository.update_metadata(
             project_id,
             name=name,
@@ -121,14 +124,19 @@ class ProjectService:
             try:
                 validate_spec_edit(self._spec_resolver(node), node.spec)
             except (KeyError, TypeError, ValueError) as exc:
-                raise ValueError(f"node {node.node_id} differs from installed definition: {exc}") from exc
+                raise InvalidRequestError(f"node {node.node_id} differs from installed definition: {exc}") from exc
 
-    def restore(self, project_id: str, snapshot: StudioDocument) -> ProjectRecord:
+    def restore(self, project_id: str, snapshot: StudioDocument, *,
+                expected_graph_revision: int | None = None,
+                expected_layout_revision: int | None = None) -> ProjectRecord:
         project_id = ensure_token(project_id, label="project_id")
         if snapshot.project_id != project_id:
-            raise ValueError("snapshot projectId does not match target project")
+            raise InvalidRequestError("snapshot projectId does not match target project")
         with self._lock:
             current = self.get(project_id).document
+            if ((expected_graph_revision is not None and current.graph_revision != expected_graph_revision)
+                    or (expected_layout_revision is not None and current.layout_revision != expected_layout_revision)):
+                raise RevisionConflictError("project changed before import; refresh and retry")
             restored = msgspec.structs.replace(
                 snapshot,
                 graph_id=current.graph_id,
@@ -193,7 +201,7 @@ class ProjectService:
             if action == "redo":
                 result = store.redo_with_commit(request, before_commit=persist)
                 return ProjectMutationResult(result=result, replayed=False)
-            raise ValueError(f"unsupported project action: {action}")
+            raise InvalidRequestError(f"unsupported project action: {action}")
 
     @staticmethod
     def _stored_result(stored: StoredRequest, *, action: str, fingerprint: str) -> PatchResult:
@@ -207,7 +215,7 @@ class ProjectService:
             return store
         record = self._repository.get_project(project_id)
         if record is None:
-            raise FileNotFoundError(f"project not found: {project_id}")
+            raise NotFoundError(f"project not found: {project_id}")
         store = GraphStore(record.document, spec_resolver=self._spec_resolver)
         self._stores[project_id] = store
         return store

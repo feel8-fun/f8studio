@@ -348,9 +348,12 @@ def _operation_changes_graph(operation: GraphOperation) -> bool:
 
 
 class GraphStore:
-    def __init__(self, document: StudioDocument, *, request_history_limit: int = 2048, spec_resolver: SpecResolver | None = None) -> None:
+    def __init__(self, document: StudioDocument, *, request_history_limit: int = 2048, undo_limit: int = 100, spec_resolver: SpecResolver | None = None) -> None:
         if request_history_limit < 1:
             raise ValueError("request_history_limit must be positive")
+        if undo_limit < 1:
+            raise ValueError("undo_limit must be positive")
+        self._undo_limit = undo_limit
         validate_document(document)
         self._document = clone_document(document)
         self._request_history_limit = request_history_limit
@@ -421,6 +424,7 @@ class GraphStore:
                 before_commit(_clone_result(result))
             if graph_changed or layout_changed:
                 self._undo.append(before)
+                del self._undo[:-self._undo_limit]
                 self._redo.clear()
                 self._document = clone_document(committed)
             self._remember(request.request_id, fingerprint, result)
@@ -452,6 +456,7 @@ class GraphStore:
                 before_commit(_clone_result(result))
             self._undo.pop()
             self._redo.append(current)
+            del self._redo[:-self._undo_limit]
             self._document = clone_document(result.document)
             self._remember(request.request_id, fingerprint, result)
             return _clone_result(result)
@@ -482,6 +487,7 @@ class GraphStore:
                 before_commit(_clone_result(result))
             self._redo.pop()
             self._undo.append(current)
+            del self._undo[:-self._undo_limit]
             self._document = clone_document(result.document)
             self._remember(request.request_id, fingerprint, result)
             return _clone_result(result)

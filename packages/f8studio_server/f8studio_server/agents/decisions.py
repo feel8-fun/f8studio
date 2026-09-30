@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8studio_server.errors import InvalidRequestError
+
 import asyncio
 import logging
 import time
@@ -41,13 +43,13 @@ class SystemOneDecisionClient:
         state: F8JsonValue = request.state
         if request.image_data_url is not None:
             if not self._providers.supports_image(request.provider_id, config.model):
-                raise ValueError("Selected decision provider does not support image input")
+                raise InvalidRequestError("Selected decision provider does not support image input")
             image_url = request.image_data_url
             if not image_url.startswith("data:image/jpeg;base64,") or len(image_url) > 2_000_000:
-                raise ValueError("Decision image must be a JPEG data URL smaller than 2 MB")
+                raise InvalidRequestError("Decision image must be a JPEG data URL smaller than 2 MB")
             if isinstance(state, dict):
                 if "image" in state:
-                    raise ValueError("State already contains an image field")
+                    raise InvalidRequestError("State already contains an image field")
                 state = {**state, "image": image_url}
             else:
                 state = {"text": state, "image": image_url}

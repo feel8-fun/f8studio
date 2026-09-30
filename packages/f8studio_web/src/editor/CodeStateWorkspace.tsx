@@ -1,3 +1,4 @@
+import { studioEvents } from '../api/eventStream';
 import { Save } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { editor } from 'monaco-editor';
@@ -107,8 +108,10 @@ export function CodeStateWorkspace() {
       }
     };
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 2000);
-    return () => { disposed = true; window.clearInterval(timer); };
+    const unsubscribe = studioEvents.subscribe((event) => {
+      if (event.scope === `project:${target.projectId}` && ['graph.committed', 'project.deleted'].includes(event.type)) void refresh();
+    }, () => void refresh());
+    return () => { disposed = true; unsubscribe(); };
   }, [exclusive, target]);
 
   const loaded = record !== null;

@@ -51,9 +51,9 @@ eclipse-zenoh = ">=1.9.0,<1.10"
 
 [feature.sdk.tasks]
 update_describes = "python scripts/update_static_describes.py"
-protocol_codegen_py = "python scripts/protocol_codegen_msgspec.py --protocol schemas/protocol.yml --output packages/f8pysdk/f8pysdk/generated/__init__.py"
+protocol_codegen_py = "pixi run -e ci python scripts/protocol_codegen_msgspec.py --protocol schemas/protocol.yml --output packages/f8pysdk/f8pysdk/generated/__init__.py"
 protocol_codegen_cpp = "python scripts/gen_cpp_protocol_models.py --protocol schemas/protocol.yml --out packages/f8cppsdk/include/f8cppsdk/generated/protocol_models.h"
-protocol_codegen_all = "python scripts/protocol_codegen_msgspec.py --protocol schemas/protocol.yml --output packages/f8pysdk/f8pysdk/generated/__init__.py && python scripts/gen_cpp_protocol_models.py --protocol schemas/protocol.yml --out packages/f8cppsdk/include/f8cppsdk/generated/protocol_models.h"
+protocol_codegen_all = "pixi run -e ci python scripts/protocol_codegen_msgspec.py --protocol schemas/protocol.yml --output packages/f8pysdk/f8pysdk/generated/__init__.py && python scripts/gen_cpp_protocol_models.py --protocol schemas/protocol.yml --out packages/f8cppsdk/include/f8cppsdk/generated/protocol_models.h"
 
 [feature.test.dependencies]
 pytest = ">=8.4.2,<9"
@@ -69,7 +69,7 @@ pytest_sdk = "python -m pytest -q packages/f8pysdk/tests"
 # checked surface incrementally as more packages are annotated and cleaned up.
 lint = "ruff check packages/f8proclauncher/f8proclauncher packages/f8pymppose/f8pymppose packages/f8pyscript/f8pyscript packages/f8pyaudiofeat/f8pyaudiofeat packages/f8pydl/f8pydl packages/f8pysdk/f8pysdk packages/f8pyengine/f8pyengine packages/f8studio_core/f8studio_core packages/f8media_protocol/f8media_protocol packages/f8media_gateway/f8media_gateway packages/f8studio_server/f8studio_server"
 typecheck = "basedpyright -p pyrightconfig.json"
-quality_exceptions = "python scripts/quality/except_metrics.py packages --exclude-glob '**/tests/**' --max-broad 844 --max-silent 40"
+quality_exceptions = "python scripts/quality/except_metrics.py packages --exclude-glob '**/tests/**' --max-broad 110 --max-silent 0"
 lint_imports = "lint-imports"
 
 [feature.audio.pypi-dependencies]
@@ -246,5 +246,5 @@ cpp = { features = ["cpp"], solve-group = "cpp" }
 ci = { features = ["python", "ci"], solve-group = "ci" }
 launcher = { features = ["launcher"], solve-group = "launcher" }
 web-studio = { features = ["python", "sdk", "web-studio", "web-studio-dev"], solve-group = "web-studio" }
-web-studio-test = { features = ["python", "sdk", "web-studio", "web-studio-dev", "web-studio-test"], solve-group = "web-studio" }
+web-studio-test = { features = ["python", "sdk", "engine", "web-studio", "web-studio-dev", "web-studio-test"], solve-group = "web-studio" }
 web-studio-runtime = { features = ["python", "sdk", "engine"], solve-group = "web-studio" }

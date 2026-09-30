@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from typing import TypeVar
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from f8studio_server.access import client_access_headers
 from uuid import uuid4
 
 import msgspec
@@ -44,7 +45,7 @@ def _request(
     request = Request(
         f"{base_url.rstrip('/')}{path}",
         data=encoded,
-        headers={} if encoded is None else {"content-type": "application/json"},
+        headers={**client_access_headers(base_url), **({} if encoded is None else {"content-type": "application/json"})},
         method=method,
     )
     try:

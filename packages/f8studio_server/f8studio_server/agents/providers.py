@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8studio_server.errors import InvalidRequestError
+
 from pathlib import Path
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Literal, cast
@@ -39,16 +41,16 @@ class AgentProviderRegistry:
         config = self._settings.get(provider_id)
         setting = self._settings.view(provider_id)
         if setting.protocol is None:
-            raise ValueError(f"provider is not a conversational agent: {provider_id}")
+            raise InvalidRequestError(f"provider is not a conversational agent: {provider_id}")
         return config, setting.protocol
 
     def decision_config(self, provider_id: str) -> ProviderConfig:
         setting = next((item for item in self.settings() if item.provider_id == provider_id), None)
         if setting is None or setting.kind != "decision":
-            raise ValueError("Provider does not support typed decisions")
+            raise InvalidRequestError("Provider does not support typed decisions")
         config = self._settings.get(provider_id)
         if not config.model or not config.endpoint or (provider_id == "typesafe" and not config.api_key):
-            raise ValueError("Configure the decision provider in Studio Settings before evaluating decisions")
+            raise InvalidRequestError("Configure the decision provider in Studio Settings before evaluating decisions")
         return config
 
     def summaries(self) -> tuple[AgentProviderSummary, ...]:
@@ -78,14 +80,14 @@ class AgentProviderRegistry:
         summary = next((provider for provider in self.summaries() if provider.provider_id == provider_id), None)
         if summary is None:
             if provider_id in {"openai", "anthropic", "google_gemini", "ollama"}:
-                raise ValueError(f"agent provider is not configured: {provider_id}")
-            raise ValueError(f"unknown agent provider: {provider_id}")
+                raise InvalidRequestError(f"agent provider is not configured: {provider_id}")
+            raise InvalidRequestError(f"unknown agent provider: {provider_id}")
         if not summary.configured:
-            raise ValueError(f"agent provider is not configured: {provider_id}")
+            raise InvalidRequestError(f"agent provider is not configured: {provider_id}")
         if not model_id or len(model_id) > 256 or any(character.isspace() for character in model_id):
-            raise ValueError("model ID must be non-empty, at most 256 characters, and contain no whitespace")
+            raise InvalidRequestError("model ID must be non-empty, at most 256 characters, and contain no whitespace")
         if summary.deterministic and model_id not in summary.models:
-            raise ValueError(f"unknown model for provider {provider_id}: {model_id}")
+            raise InvalidRequestError(f"unknown model for provider {provider_id}: {model_id}")
 
     async def complete(self, *, provider_id: str, model_id: str, prompt: str) -> str:
         self.validate_selection(provider_id, model_id)
@@ -108,9 +110,9 @@ class AgentProviderRegistry:
     ) -> str:
         self.validate_selection(provider_id, model_id)
         if provider_id == "deterministic":
-            raise ValueError("the deterministic provider does not support model tool calls")
+            raise InvalidRequestError("the deterministic provider does not support model tool calls")
         if images and not self.supports_image(provider_id, model_id):
-            raise ValueError(f"agent provider does not support image input: {provider_id}")
+            raise InvalidRequestError(f"agent provider does not support image input: {provider_id}")
         return await self._run_model(
             provider_id=provider_id, model_id=model_id, prompt=prompt, tools=tools,
             images=images, reasoning_effort=reasoning_effort,
@@ -176,7 +178,7 @@ class AgentProviderRegistry:
             response = cast(AgentResponse[None], await agent.run(input_message, options=chat_options))
             return response.text
 
-        raise ValueError(f"Protocol does not support conversational agents: {protocol}")
+        raise InvalidRequestError(f"Protocol does not support conversational agents: {protocol}")
 
     @staticmethod
     def _tool_instructions() -> str:

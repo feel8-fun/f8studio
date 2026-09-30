@@ -1,21 +1,34 @@
 from __future__ import annotations
 
+from f8studio_server.errors import InvalidRequestError
+
 import asyncio
 from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import uuid4
+from typing import Literal
 
 import msgspec
 
 from f8pysdk.specs import F8JsonValue
+from .live import LiveValueHub
+
+
+StudioEventType = Literal[
+    "agent.session.deleted", "agent.session.updated", "asset.created", "asset.updated", "asset.deleted",
+    "project.created", "project.updated", "project.deleted", "graph.committed",
+    "deploy.queued", "deploy.running", "deploy.cancelled", "deploy.finished",
+    "service.process_started", "service.process_stopped", "service.log",
+    "runtime.error", "media.error", "server.error", "presentation.command",
+]
 
 
 class EventEnvelope(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
     event_id: str
     server_epoch: str
     sequence: int
-    type: str
+    type: StudioEventType
     scope: str
     timestamp: str
     payload: F8JsonValue
@@ -24,7 +37,7 @@ class EventEnvelope(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
 @dataclass(frozen=True)
 class OpenEventStream:
     subscription_id: str
-    queue: asyncio.Queue[EventEnvelope]
+    queue: asyncio.Queue[EventEnvelope | None]
     replay: tuple[EventEnvelope, ...]
     snapshot_required: bool
     current_sequence: int
@@ -45,16 +58,17 @@ class EventJournal:
         subscriber_queue_size: int = 256,
     ) -> None:
         if retention < 1:
-            raise ValueError("event retention must be positive")
+            raise InvalidRequestError("event retention must be positive")
         if log_retention < 1:
-            raise ValueError("log retention must be positive")
+            raise InvalidRequestError("log retention must be positive")
         if subscriber_queue_size < 1:
-            raise ValueError("subscriber queue size must be positive")
+            raise InvalidRequestError("subscriber queue size must be positive")
+        self.live = LiveValueHub()
         self._server_epoch = server_epoch
         self._events: deque[EventEnvelope] = deque(maxlen=retention)
         self._logs: deque[EventEnvelope] = deque(maxlen=log_retention)
         self._subscriber_queue_size = subscriber_queue_size
-        self._subscribers: dict[str, asyncio.Queue[EventEnvelope]] = {}
+        self._subscribers: dict[str, asyncio.Queue[EventEnvelope | None]] = {}
         self._sequence = 0
         self._lock = asyncio.Lock()
 
@@ -65,10 +79,9 @@ class EventJournal:
     async def publish(
         self,
         *,
-        event_type: str,
+        event_type: StudioEventType,
         scope: str,
         payload: F8JsonValue,
-        reliable: bool = True,
     ) -> EventEnvelope:
         async with self._lock:
             self._sequence += 1
@@ -81,8 +94,7 @@ class EventJournal:
                 timestamp=_timestamp(),
                 payload=payload,
             )
-            if reliable:
-                self._events.append(event)
+            self._events.append(event)
             if (
                 event_type == "service.log"
                 or event_type.startswith("deploy.")
@@ -92,18 +104,16 @@ class EventJournal:
                 self._logs.append(event)
             for subscription_id, queue in tuple(self._subscribers.items()):
                 if queue.full():
-                    if not reliable:
-                        continue
-                    self._replace_with_resync_event(subscription_id, queue)
+                    self._overflow(subscription_id, queue)
                     continue
                 queue.put_nowait(event)
             return event
 
     async def recent_logs(self, *, limit: int = 500, before_sequence: int | None = None) -> tuple[EventEnvelope, ...]:
         if limit < 1:
-            raise ValueError("log limit must be positive")
+            raise InvalidRequestError("log limit must be positive")
         if before_sequence is not None and before_sequence < 1:
-            raise ValueError("before_sequence must be positive")
+            raise InvalidRequestError("before_sequence must be positive")
         async with self._lock:
             logs = tuple(self._logs)
             if before_sequence is not None:
@@ -130,7 +140,7 @@ class EventJournal:
                 else ()
             )
             subscription_id = uuid4().hex
-            queue: asyncio.Queue[EventEnvelope] = asyncio.Queue(maxsize=self._subscriber_queue_size)
+            queue: asyncio.Queue[EventEnvelope | None] = asyncio.Queue(maxsize=self._subscriber_queue_size)
             self._subscribers[subscription_id] = queue
             return OpenEventStream(
                 subscription_id=subscription_id,
@@ -145,27 +155,11 @@ class EventJournal:
         async with self._lock:
             self._subscribers.pop(subscription_id, None)
 
-    def _replace_with_resync_event(
-        self,
-        subscription_id: str,
-        queue: asyncio.Queue[EventEnvelope],
-    ) -> None:
+    def _overflow(self, subscription_id: str, queue: asyncio.Queue[EventEnvelope | None]) -> None:
         while not queue.empty():
             queue.get_nowait()
-        queue.put_nowait(
-            EventEnvelope(
-                event_id=uuid4().hex,
-                server_epoch=self._server_epoch,
-                sequence=self._sequence,
-                type="stream.resync_required",
-                scope="server",
-                timestamp=_timestamp(),
-                payload={
-                    "reason": "subscriber_queue_overflow",
-                    "subscriptionId": subscription_id,
-                },
-            )
-        )
+        queue.put_nowait(None)
+        self._subscribers.pop(subscription_id, None)
 
 
 __all__ = ["EventEnvelope", "EventJournal", "OpenEventStream"]

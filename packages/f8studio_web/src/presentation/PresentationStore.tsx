@@ -1,6 +1,9 @@
+import { isJsonObject } from '../api/contracts';
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useState, useSyncExternalStore } from 'react';
 
 import { fetchPresentationSnapshot } from '../api/client';
+import { studioEvents } from '../api/eventStream';
+import { studioLive } from '../api/liveStore';
 import type { JsonValue, PresentationCommand } from '../api/contracts';
 import { extensionRendererForCommand, extensionRendererById } from '../extensions/registry';
 
@@ -45,12 +48,10 @@ export class PresentationStore {
   private readonly outputListeners = new Set<Listener>();
   private readonly nodeListeners = new Map<string, Set<Listener>>();
   private readonly connectionListeners = new Set<Listener>();
-  private socket: WebSocket | null = null;
-  private retryTimer: number | null = null;
-  private retryCount = 0;
-  private started = false;
+  private subscriptions: (() => void)[] = [];
+  private liveNodes = new Map<string, readonly JsonValue[]>();
   private connected = false;
-  private snapshotController: AbortController | null = null;
+  private arrivalSequence = 0;
 
   readonly getOutputsSnapshot = (): ReadonlyMap<string, PresentationOutput> => this.outputsSnapshot;
   readonly getConnectionSnapshot = (): boolean => this.connected;
@@ -81,20 +82,56 @@ export class PresentationStore {
   }
 
   start(): void {
-    if (this.started) return;
-    this.started = true;
-    this.connect();
+    if (this.subscriptions.length > 0) return;
+    const updateLive = () => {
+      const groups = new Map<string, JsonValue[]>();
+      for (const value of studioLive.getPrefix('presentation/').values()) {
+        if (!isJsonObject(value) || typeof value.nodeId !== 'string') continue;
+        const group = groups.get(value.nodeId) ?? [];
+        group.push(value);
+        groups.set(value.nodeId, group);
+      }
+      for (const nodeId of this.liveNodes.keys()) {
+        if (!groups.has(nodeId) && this.outputs.delete(nodeId)) this.publishChanges([nodeId]);
+      }
+      for (const [nodeId, values] of groups) {
+        const previous = this.liveNodes.get(nodeId);
+        if (previous?.length === values.length && previous.every((item, i) => item === values[i])) continue;
+        this.outputs.delete(nodeId);
+        values.sort((a, b) => {
+          const first = a as Record<string, JsonValue>;
+          const second = b as Record<string, JsonValue>;
+          return Number(first.seq) - Number(second.seq);
+        });
+        for (const value of values) {
+          const command = parsePresentationCommand({ type: 'presentation.command', payload: value });
+          if (command !== null) this.applyCommand(command);
+        }
+      }
+      this.liveNodes = groups;
+    };
+    this.subscriptions = [
+      studioLive.subscribe('presentation/', updateLive),
+      studioEvents.subscribe((event) => {
+        const command = parsePresentationCommand(event);
+        if (command !== null) this.applyCommand(command);
+      }, () => {
+        // Extension commands without latest-value semantics retain their REST snapshot.
+        void fetchPresentationSnapshot().then((commands) => {
+          if (this.subscriptions.length === 0) return;
+          for (const command of commands) {
+            if (!['viz.text.', 'viz.wave.', 'viz.track.', 'viz.video.', 'viz.audio.', 'viz.three_d.', 'viz.tcode.'].some((prefix) => command.command.startsWith(prefix))) this.applyCommand(command);
+          }
+        }).catch((error: unknown) => console.error('Failed to restore extension presentation', error));
+      }, (connected) => this.setConnected(connected)),
+    ];
+    updateLive();
   }
 
   stop(): void {
-    this.started = false;
-    if (this.retryTimer !== null) window.clearTimeout(this.retryTimer);
-    this.retryTimer = null;
-    this.snapshotController?.abort();
-    this.snapshotController = null;
-    const socket = this.socket;
-    this.socket = null;
-    socket?.close();
+    for (const unsubscribe of this.subscriptions) unsubscribe();
+    this.subscriptions = [];
+    this.liveNodes.clear();
     this.setConnected(false);
   }
 
@@ -108,8 +145,7 @@ export class PresentationStore {
     }
 
     const prior = this.outputs.get(command.nodeId);
-    const updatedAt = command.tsMs ?? Date.now();
-    if (prior !== undefined && prior.updatedAt > updatedAt) return;
+    const updatedAt = ++this.arrivalSequence;
     const priorPayload = prior?.renderer === renderer ? prior.payload : {};
     const extensionReducer = extensionRendererById(renderer)?.reduce;
     const payload = extensionReducer !== undefined
@@ -144,66 +180,6 @@ export class PresentationStore {
     for (const listener of this.connectionListeners) listener();
   }
 
-  private connect(): void {
-    if (!this.started) return;
-    let socket: WebSocket;
-    try {
-      socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/events`);
-    } catch (error: unknown) {
-      console.error('Failed to open presentation event stream', error);
-      this.scheduleReconnect();
-      return;
-    }
-    this.socket = socket;
-    socket.onopen = () => {
-      if (this.socket !== socket) return;
-      this.retryCount = 0;
-      this.setConnected(true);
-      this.snapshotController?.abort();
-      const controller = new AbortController();
-      this.snapshotController = controller;
-      void fetchPresentationSnapshot(controller.signal).then(
-        (commands) => {
-          if (this.socket !== socket || controller.signal.aborted) return;
-          for (const command of commands) this.applyCommand(command);
-        },
-        (reason: unknown) => {
-          if (!controller.signal.aborted) console.error('Failed to load presentation snapshot', reason);
-        },
-      );
-    };
-    socket.onmessage = (event) => {
-      if (this.socket !== socket) return;
-      let decoded: unknown;
-      try {
-        decoded = JSON.parse(String(event.data));
-      } catch (error: unknown) {
-        console.error('Invalid presentation event JSON', error);
-        return;
-      }
-      const command = parsePresentationCommand(decoded);
-      if (command !== null) this.applyCommand(command);
-    };
-    socket.onerror = () => socket.close();
-    socket.onclose = () => {
-      if (this.socket !== socket) return;
-      this.socket = null;
-      this.snapshotController?.abort();
-      this.snapshotController = null;
-      this.setConnected(false);
-      this.scheduleReconnect();
-    };
-  }
-
-  private scheduleReconnect(): void {
-    if (!this.started || this.retryTimer !== null) return;
-    const delay = Math.min(5_000, 300 * 2 ** this.retryCount);
-    this.retryCount += 1;
-    this.retryTimer = window.setTimeout(() => {
-      this.retryTimer = null;
-      this.connect();
-    }, delay);
-  }
 }
 
 const PresentationStoreContext = createContext<PresentationStore | null>(null);

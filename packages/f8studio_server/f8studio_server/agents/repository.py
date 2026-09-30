@@ -1,29 +1,28 @@
 from __future__ import annotations
 
+from f8studio_server.errors import NotFoundError
+
 import sqlite3
 from pathlib import Path
+from contextlib import AbstractContextManager
+
+from ..database import database_bytes as _bytes
+from ..database import StudioDatabase
 
 import msgspec
 
 from .models import AgentRunStatus, AgentSessionRecord, AgentSessionSummary
 
 
-def _bytes(value: object) -> bytes:
-    if not isinstance(value, bytes):
-        raise TypeError(f"expected database bytes, got {type(value).__name__}")
-    return value
-
 
 class AgentRepository:
-    def __init__(self, database_path: Path) -> None:
-        self._database_path = database_path.resolve()
+    def __init__(self, database_path: Path | StudioDatabase) -> None:
+        self._database = database_path if isinstance(database_path, StudioDatabase) else StudioDatabase(database_path)
+        self._database_path = self._database.path
         self._initialize()
 
-    def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self._database_path, timeout=10.0)
-        connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute("PRAGMA journal_mode = WAL")
-        return connection
+    def _connect(self) -> AbstractContextManager[sqlite3.Connection]:
+        return self._database.connection()
 
     def _initialize(self) -> None:
         with self._connect() as connection:
@@ -73,7 +72,7 @@ class AgentRepository:
         with self._connect() as connection:
             deleted = connection.execute("DELETE FROM agent_sessions WHERE session_id = ?", (session_id,))
             if deleted.rowcount == 0:
-                raise FileNotFoundError(f"agent session not found: {session_id}")
+                raise NotFoundError(f"agent session not found: {session_id}")
 
     def list(self, project_id: str | None = None) -> tuple[AgentSessionSummary, ...]:
         query = "SELECT record FROM agent_sessions"

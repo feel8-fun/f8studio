@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+from f8studio_server.errors import InvalidRequestError, NotFoundError
+
 import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from contextlib import AbstractContextManager
+
+from .database import database_text as _text
+from .database import database_integer as _integer
+from .database import database_bytes as _bytes
+from .database import StudioDatabase
 from typing import cast
 
 from f8studio_core.graph import PatchResult, StudioDocument, decode_document, encode_document
@@ -26,29 +34,15 @@ def utc_now_text() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
-def _text(value: object) -> str:
-    if not isinstance(value, str):
-        raise TypeError(f"expected database text, got {type(value).__name__}")
-    return value
 
-
-def _integer(value: object) -> int:
-    if not isinstance(value, int):
-        raise TypeError(f"expected database integer, got {type(value).__name__}")
-    return value
-
-
-def _bytes(value: object) -> bytes:
-    if not isinstance(value, bytes):
-        raise TypeError(f"expected database bytes, got {type(value).__name__}")
-    return value
 
 
 class ProjectRepository:
-    def __init__(self, database_path: Path, *, request_history_limit: int = 2048) -> None:
+    def __init__(self, database_path: Path | StudioDatabase, *, request_history_limit: int = 2048) -> None:
         if request_history_limit < 1:
-            raise ValueError("request_history_limit must be positive")
-        self._database_path = database_path.resolve()
+            raise InvalidRequestError("request_history_limit must be positive")
+        self._database = database_path if isinstance(database_path, StudioDatabase) else StudioDatabase(database_path)
+        self._database_path = self._database.path
         self._request_history_limit = request_history_limit
         self._database_path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
@@ -57,11 +51,8 @@ class ProjectRepository:
     def database_path(self) -> Path:
         return self._database_path
 
-    def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self._database_path, timeout=10.0)
-        connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute("PRAGMA journal_mode = WAL")
-        return connection
+    def _connect(self) -> AbstractContextManager[sqlite3.Connection]:
+        return self._database.connection()
 
     def _initialize(self) -> None:
         with self._connect() as connection:
@@ -179,27 +170,27 @@ class ProjectRepository:
         with self._connect() as connection:
             row = connection.execute("SELECT document FROM projects WHERE project_id = ?", (project_id,)).fetchone()
         if row is None:
-            raise FileNotFoundError(f"project not found: {project_id}")
+            raise NotFoundError(f"project not found: {project_id}")
         try:
             document: object = json.loads(_bytes(row[0]))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise ValueError(f"cannot inspect service IDs in project {project_id}: {exc}") from exc
+            raise InvalidRequestError(f"cannot inspect service IDs in project {project_id}: {exc}") from exc
         if not isinstance(document, dict):
-            raise ValueError(f"project {project_id} document is not an object")
+            raise InvalidRequestError(f"project {project_id} document is not an object")
         document_fields = cast(dict[str, object], document)
         nodes = document_fields.get("nodes")
         if not isinstance(nodes, list):
-            raise ValueError(f"project {project_id} document has no nodes array")
+            raise InvalidRequestError(f"project {project_id} document has no nodes array")
         service_ids: set[str] = set()
         for node in cast(list[object], nodes):
             if not isinstance(node, dict):
-                raise ValueError(f"project {project_id} document contains an invalid node")
+                raise InvalidRequestError(f"project {project_id} document contains an invalid node")
             node_fields = cast(dict[str, object], node)
             if node_fields.get("kind") != "service":
                 continue
             service_id = node_fields.get("serviceId")
             if not isinstance(service_id, str):
-                raise ValueError(f"project {project_id} service node has no serviceId")
+                raise InvalidRequestError(f"project {project_id} service node has no serviceId")
             service_ids.add(service_id)
         return frozenset(service_ids)
 
@@ -220,7 +211,7 @@ class ProjectRepository:
             description=_text(row[2]),
             created_at=_text(row[3]),
             updated_at=_text(row[4]),
-            document=decode_document(_bytes(row[5])),
+            document=_decode_stored_document(_bytes(row[5])),
         )
 
     def update_metadata(self, project_id: str, *, name: str, description: str) -> ProjectRecord:
@@ -231,10 +222,10 @@ class ProjectRepository:
                 (name, description, timestamp, project_id),
             )
             if cursor.rowcount != 1:
-                raise FileNotFoundError(f"project not found: {project_id}")
+                raise NotFoundError(f"project not found: {project_id}")
         record = self.get_project(project_id)
         if record is None:
-            raise FileNotFoundError(f"project not found after update: {project_id}")
+            raise NotFoundError(f"project not found after update: {project_id}")
         return record
 
     def delete_project(self, project_id: str) -> None:
@@ -242,7 +233,7 @@ class ProjectRepository:
             connection.execute("BEGIN IMMEDIATE")
             cursor = connection.execute("DELETE FROM projects WHERE project_id = ?", (project_id,))
             if cursor.rowcount != 1:
-                raise FileNotFoundError(f"project not found: {project_id}")
+                raise NotFoundError(f"project not found: {project_id}")
             # Older hotkey tables have no foreign key, so remove their bindings explicitly.
             if connection.execute(
                 "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'global_hotkeys'"
@@ -265,10 +256,10 @@ class ProjectRepository:
                 ),
             )
             if cursor.rowcount != 1:
-                raise FileNotFoundError(f"project not found: {project_id}")
+                raise NotFoundError(f"project not found: {project_id}")
         record = self.get_project(project_id)
         if record is None:
-            raise FileNotFoundError(f"project not found after restore: {project_id}")
+            raise NotFoundError(f"project not found after restore: {project_id}")
         return record
 
     def lookup_request(self, project_id: str, request_id: str) -> StoredRequest | None:
@@ -288,7 +279,7 @@ class ProjectRepository:
             fingerprint=_text(row[1]),
             result=PatchResult(
                 request_id=request_id,
-                document=decode_document(_bytes(row[4])),
+                document=_decode_stored_document(_bytes(row[4])),
                 graph_changed=bool(_integer(row[2])),
                 layout_changed=bool(_integer(row[3])),
             ),
@@ -322,7 +313,7 @@ class ProjectRepository:
                 ),
             )
             if cursor.rowcount != 1:
-                raise FileNotFoundError(f"project not found: {project_id}")
+                raise NotFoundError(f"project not found: {project_id}")
             connection.execute(
                 """
                 INSERT INTO processed_requests(
@@ -356,3 +347,10 @@ class ProjectRepository:
 
 
 __all__ = ["ProjectRepository", "StoredRequest", "utc_now_text"]
+
+
+def _decode_stored_document(payload: bytes) -> StudioDocument:
+    try:
+        return decode_document(payload)
+    except ValueError as exc:
+        raise InvalidRequestError(f"Stored project format is incompatible: {exc}") from exc

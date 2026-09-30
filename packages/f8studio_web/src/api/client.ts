@@ -23,6 +23,7 @@ import {
   type PresentationCommand,
   type RuntimeMonitor,
   type RuntimeNodeState,
+  type RuntimeActionResult,
   type AssetKind,
   type AssetRecord,
   type AssetSummary,
@@ -66,20 +67,27 @@ export class ApiError extends Error {
   }
 }
 
-async function requestJson(path: string, init?: RequestInit): Promise<unknown> {
+async function requestJson(path: string, init?: RequestInit, ignoreNotFound = false): Promise<unknown> {
   const response = await fetch(path, init);
-  const body: unknown = await response.json().catch(() => null);
+  if (ignoreNotFound && response.status === 404) return null;
+  if (response.status === 204) return null;
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch (error: unknown) {
+    throw new ApiError(`HTTP ${response.status}: invalid JSON response (${String(error)})`, response.status, 'invalid_response');
+  }
   if (!response.ok) {
     let message = `Request failed with HTTP ${response.status}`;
     let code: string | null = null;
-    if (typeof body === 'object' && body !== null && 'detail' in body) {
-      const detail = (body as { readonly detail: unknown }).detail;
-      if (typeof detail === 'string') message = detail;
-      if (typeof detail === 'object' && detail !== null) {
-        const envelope = detail as Record<string, unknown>;
-        if (typeof envelope.message === 'string') message = envelope.message;
-        if (typeof envelope.code === 'string') code = envelope.code;
-      }
+    const detail = isObject(body) && 'detail' in body ? body.detail : body;
+    if (typeof detail === 'string') message = detail;
+    if (Array.isArray(detail)) {
+      message = detail.map((entry: unknown) => isObject(entry) && typeof entry.msg === 'string'
+        ? `${Array.isArray(entry.loc) ? entry.loc.join('.') + ': ' : ''}${entry.msg}` : JSON.stringify(entry)).join('; ');
+    } else if (isObject(detail)) {
+      if (typeof detail.message === 'string') message = detail.message;
+      if (typeof detail.code === 'string') code = detail.code;
     }
     throw new ApiError(message, response.status, code);
   }
@@ -155,8 +163,7 @@ export async function createAgentConnection(input: CreateAgentConnection): Promi
 }
 
 export async function deleteAgentConnection(providerId: string): Promise<void> {
-  const response = await fetch(`/api/agents/connections/${encodeURIComponent(providerId)}`, { method: 'DELETE' });
-  if (!response.ok) throw new ApiError(`Connection delete failed with HTTP ${response.status}`, response.status);
+  await requestJson(`/api/agents/connections/${encodeURIComponent(providerId)}`, { method: 'DELETE' });
 }
 
 export async function probeAgentConnection(input: {
@@ -217,8 +224,7 @@ export async function selectAgentModel(sessionId: string, providerId: string, mo
 }
 
 export async function deleteAgentSession(sessionId: string): Promise<void> {
-  const response = await fetch(`/api/agents/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
-  if (!response.ok) throw new ApiError(`Agent session delete failed with HTTP ${response.status}`, response.status);
+  await requestJson(`/api/agents/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
 }
 
 export async function startAgentRun(sessionId: string, prompt: string, images: readonly AgentImage[] = [], reasoningEffort?: 'low' | 'medium' | 'high'): Promise<AgentSession> {
@@ -277,8 +283,9 @@ export async function exportProjectGraph(projectId: string): Promise<string> {
   return `${JSON.stringify(body, null, 2)}\n`;
 }
 
-export async function importProjectGraph(projectId: string, content: string): Promise<ProjectRecord> {
-  const body = await requestJson(`/api/projects/${encodeURIComponent(projectId)}/graph/import`, {
+export async function importProjectGraph(projectId: string, content: string, expected: Pick<ProjectRecord['document'], 'graphRevision' | 'layoutRevision'>): Promise<ProjectRecord> {
+  const query = new URLSearchParams({ expected_graph_revision: String(expected.graphRevision), expected_layout_revision: String(expected.layoutRevision) });
+  const body = await requestJson(`/api/projects/${encodeURIComponent(projectId)}/graph/import?${query}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: content,
@@ -449,11 +456,7 @@ export async function fetchPresentationSnapshot(signal?: AbortSignal): Promise<r
 }
 
 export async function fetchHealth(signal?: AbortSignal): Promise<HealthStatus> {
-  const response = await fetch('/api/health', { signal });
-  if (!response.ok) {
-    throw new Error(`Health request failed with HTTP ${response.status}`);
-  }
-  const body: unknown = await response.json();
+  const body = await requestJson('/api/health', { signal });
   if (!isHealthStatus(body)) {
     throw new Error('Health response does not match f8studio-api/1');
   }
@@ -461,9 +464,7 @@ export async function fetchHealth(signal?: AbortSignal): Promise<HealthStatus> {
 }
 
 export async function fetchRtcConfiguration(signal?: AbortSignal): Promise<RtcConfigurationResponse> {
-  const response = await fetch('/api/media/rtc-configuration', { signal });
-  if (!response.ok) throw new Error(`RTC configuration request failed with HTTP ${response.status}`);
-  const body: unknown = await response.json();
+  const body = await requestJson('/api/media/rtc-configuration', { signal });
   if (!isRtcConfigurationResponse(body)) throw new Error('RTC configuration does not match f8studio-api/1');
   return body;
 }
@@ -475,14 +476,12 @@ export async function createMediaSession(
   overlay = false,
   signal?: AbortSignal,
 ): Promise<MediaSessionAnswer> {
-  const response = await fetch('/api/media/sessions', {
+  const body = await requestJson('/api/media/sessions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ source, quality, sdp: description.sdp, type: description.type, overlay }),
     signal,
   });
-  if (!response.ok) throw new Error(`Media negotiation failed with HTTP ${response.status}`);
-  const body: unknown = await response.json();
   if (!isMediaSessionAnswer(body)) throw new Error('Media answer does not match f8studio-api/1');
   return body;
 }
@@ -492,30 +491,22 @@ export async function createAudioSession(
   description: RTCSessionDescriptionInit,
   signal?: AbortSignal,
 ): Promise<AudioSessionAnswer> {
-  const response = await fetch('/api/audio/sessions', {
+  const body = await requestJson('/api/audio/sessions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ source, sdp: description.sdp, type: description.type }),
     signal,
   });
-  if (!response.ok) throw new Error(`Audio negotiation failed with HTTP ${response.status}`);
-  const body: unknown = await response.json();
   if (!isAudioSessionAnswer(body)) throw new Error('Audio answer does not match f8studio-api/1');
   return body;
 }
 
-export async function closeAudioSession(sessionId: string): Promise<void> {
-  const response = await fetch(`/api/audio/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
-  if (!response.ok && response.status !== 404) {
-    throw new Error(`Audio session close failed with HTTP ${response.status}`);
-  }
+export async function closeAudioSession(sessionId: string, keepalive = false): Promise<void> {
+  await requestJson(`/api/audio/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE', keepalive }, true);
 }
 
 export async function closeMediaSession(sessionId: string, keepalive = false): Promise<void> {
-  const response = await fetch(`/api/media/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE', keepalive });
-  if (!response.ok && response.status !== 404) {
-    throw new Error(`Media session close failed with HTTP ${response.status}`);
-  }
+  await requestJson(`/api/media/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE', keepalive }, true);
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -559,8 +550,7 @@ export async function updateAsset(assetId: string, input: {
 }
 
 export async function deleteAsset(assetId: string): Promise<void> {
-  const response = await fetch(`/api/assets/${encodeURIComponent(assetId)}`, { method: 'DELETE' });
-  if (!response.ok) throw new ApiError(`Delete failed with HTTP ${response.status}`, response.status);
+  await requestJson(`/api/assets/${encodeURIComponent(assetId)}`, { method: 'DELETE' });
 }
 
 export async function fetchAssetVersions(assetId: string): Promise<readonly AssetVersion[]> {
@@ -645,8 +635,7 @@ export async function requestEditorSignatureHelp(sessionId: string, line: number
 }
 
 export async function closeEditorSession(sessionId: string): Promise<void> {
-  const response = await fetch(`/api/editor/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
-  if (!response.ok && response.status !== 404) throw new ApiError(`Editor close failed with HTTP ${response.status}`, response.status);
+  await requestJson(`/api/editor/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }, true);
 }
 
 export async function fetchLocalCapabilities(signal?: AbortSignal): Promise<readonly LocalCapability[]> {
@@ -697,20 +686,26 @@ export async function registerHotkey(input: RegisterHotkeyInput): Promise<Hotkey
 }
 
 export async function unregisterHotkey(bindingId: string): Promise<void> {
-  const response = await fetch(`/api/local/hotkeys/${encodeURIComponent(bindingId)}`, { method: 'DELETE' });
-  if (!response.ok) throw new ApiError(`Hotkey delete failed with HTTP ${response.status}`, response.status);
+  await requestJson(`/api/local/hotkeys/${encodeURIComponent(bindingId)}`, { method: 'DELETE' });
 }
 
-export async function invokeRuntimeCommand(serviceId: string, call: string, params: Readonly<Record<string, JsonValue>>): Promise<JsonValue> {
-  return await requestJson(
+export async function invokeRuntimeCommand(serviceId: string, call: string, params: Readonly<Record<string, JsonValue>>): Promise<RuntimeActionResult> {
+  return requireRuntimeAction(await requestJson(
     `/api/runtime/services/${encodeURIComponent(serviceId)}/commands`,
     jsonRequest('POST', { call, params }),
-  ) as JsonValue;
+  ));
 }
 
-export async function setRuntimeState(serviceId: string, nodeId: string, field: string, value: JsonValue): Promise<JsonValue> {
-  return await requestJson(
+export async function setRuntimeState(serviceId: string, nodeId: string, field: string, value: JsonValue): Promise<RuntimeActionResult> {
+  return requireRuntimeAction(await requestJson(
     `/api/runtime/services/${encodeURIComponent(serviceId)}/state`,
     jsonRequest('POST', { nodeId, field, value }),
-  ) as JsonValue;
+  ));
+}
+
+function requireRuntimeAction(value: unknown): RuntimeActionResult {
+  if (!isObject(value) || typeof value.success !== 'boolean' || typeof value.errorMessage !== 'string'
+      || !('result' in value)) throw new ApiError('Invalid runtime action response', 502, 'invalid_response');
+  if (!value.success) throw new ApiError(value.errorMessage || 'Runtime action failed', 422, 'runtime_action_failed');
+  return value as unknown as RuntimeActionResult;
 }

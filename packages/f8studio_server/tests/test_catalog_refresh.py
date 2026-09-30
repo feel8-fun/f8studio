@@ -40,9 +40,10 @@ def test_catalog_refresh_replaces_stale_specs_in_shared_catalog() -> None:
         assert [spec.operatorClass for spec in service.snapshot().operators] == ["test.node_1"]
         updated = service.refresh()
 
-    assert service.sdk_catalog is shared_catalog
+    assert service.sdk_catalog is not shared_catalog
     assert [spec.operatorClass for spec in updated.operators] == ["test.node_2"]
-    assert not shared_catalog.operators.has("test.engine", "test.node_1")
+    assert shared_catalog.operators.has("test.engine", "test.node_1")
+    assert not service.sdk_catalog.operators.has("test.engine", "test.node_1")
 
 
 def test_catalog_refresh_keeps_existing_specs_when_live_description_fails() -> None:
@@ -138,7 +139,7 @@ def test_restart_service_refreshes_catalog_then_redeploys(tmp_path: Path) -> Non
         patch.object(application.runtime, "terminate", new=AsyncMock(side_effect=terminate)),
         patch.object(application.processes, "stop", new=AsyncMock(side_effect=stop)),
         patch.object(application.processes, "start", new=AsyncMock(side_effect=start)),
-        patch.object(application.tools, "deploy", new=AsyncMock(side_effect=deploy)),
+        patch.object(application.jobs, "submit", new=AsyncMock(side_effect=deploy)),
     ):
         asyncio.run(scenario())
 

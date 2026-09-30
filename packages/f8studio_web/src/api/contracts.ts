@@ -1,27 +1,16 @@
-export interface HealthStatus {
-  readonly status: 'ok';
-  readonly service: string;
-  readonly version: string;
-  readonly protocol_version: 'f8studio-api/1';
-  readonly server_epoch: string;
-}
+import type { ProjectSummary, AgentImage, EditorAnalysis, EditorDiagnostic, RuntimeActionResult, RuntimeNodeState, RuntimeStateField, MediaSessionAnswer, AudioSessionAnswer, ServiceDeployResult, DeployJob } from './contracts.gen';
+export type { ProjectSummary, AgentImage, EditorAnalysis, EditorDiagnostic, RuntimeActionResult, RuntimeNodeState, RuntimeStateField, MediaSessionAnswer, AudioSessionAnswer, ServiceDeployResult, DeployJob } from './contracts.gen';
+export type HealthStatus = import('./contracts.gen').HealthStatus;
 
-export interface ServerCapabilities {
-  readonly graph_editing: boolean;
-  readonly runtime_control: boolean;
-  readonly web_assets: boolean;
-  readonly web_rtc_video: boolean;
-  readonly web_rtc_audio: boolean;
-  readonly three_d: boolean;
-  readonly agent_tools: boolean;
-}
+export type ServerCapabilities = import('./contracts.gen').ServerCapabilities;
 
-export interface CapabilitiesResponse {
-  readonly protocol_version: 'f8studio-api/1';
-  readonly capabilities: ServerCapabilities;
-}
+export type CapabilitiesResponse = import('./contracts.gen').CapabilitiesResponse;
 
 export type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue };
+
+export function isJsonObject(value: unknown): value is Readonly<Record<string, JsonValue>> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 export interface StudioLogEvent {
   readonly eventId: string;
@@ -42,9 +31,9 @@ export function isStudioLogEvent(value: unknown): value is StudioLogEvent {
     'payload' in event;
 }
 
-export type AgentRunStatus = 'idle' | 'running' | 'waiting_for_approval' | 'succeeded' | 'failed' | 'cancelled';
-export type AgentToolCallStatus = 'queued' | 'running' | 'waiting_for_approval' | 'succeeded' | 'failed' | 'denied' | 'cancelled';
-export type AgentApprovalStatus = 'pending' | 'approved' | 'denied' | 'expired' | 'invalidated' | 'cancelled';
+export type AgentRunStatus = import('./contracts.gen').AgentRunStatus;
+export type AgentToolCallStatus = import('./contracts.gen').ToolCallStatus;
+export type AgentApprovalStatus = import('./contracts.gen').ApprovalStatus;
 
 export interface AgentProviderSummary {
   readonly providerId: string;
@@ -65,10 +54,7 @@ export interface AgentModelCapabilities {
   readonly thinkingSource?: 'catalog' | 'legacy' | 'manual' | null;
 }
 
-export interface AgentImage {
-  readonly name: string;
-  readonly dataUrl: string;
-}
+
 
 export interface AgentProviderSettings {
   readonly providerId: string;
@@ -384,15 +370,7 @@ export interface StudioDocument {
   readonly layout: readonly NodeLayout[];
 }
 
-export interface ProjectSummary {
-  readonly projectId: string;
-  readonly name: string;
-  readonly description: string;
-  readonly createdAt: string;
-  readonly updatedAt: string;
-  readonly graphRevision: number;
-  readonly layoutRevision: number;
-}
+
 
 export interface ProjectRecord {
   readonly projectId: string;
@@ -426,26 +404,11 @@ export interface PatchResult {
   readonly runtimeErrors: readonly string[];
 }
 
-export type DeployJobStatus = 'queued' | 'running' | 'succeeded' | 'partially_failed' | 'failed' | 'cancelled';
+export type DeployJobStatus = import('./contracts.gen').JobStatus;
 
-export interface ServiceDeployResult {
-  readonly serviceId: string;
-  readonly success: boolean;
-  readonly errorMessage: string;
-}
 
-export interface DeployJob {
-  readonly jobId: string;
-  readonly requestId: string;
-  readonly projectId: string;
-  readonly sourceGraphRevision: number;
-  readonly sourceSemanticRevision: string;
-  readonly status: DeployJobStatus;
-  readonly createdAt: string;
-  readonly updatedAt: string;
-  readonly serviceResults: readonly ServiceDeployResult[];
-  readonly errorMessage: string;
-}
+
+
 
 export interface RuntimeMonitor {
   readonly serviceId: string;
@@ -463,18 +426,9 @@ export interface RuntimeMonitor {
   readonly error?: { readonly currentMessage?: string; readonly lastMessage?: string };
 }
 
-export interface RuntimeStateField {
-  readonly field: string;
-  readonly found: boolean;
-  readonly value: JsonValue;
-  readonly tsMs: number | null;
-}
 
-export interface RuntimeNodeState {
-  readonly serviceId: string;
-  readonly nodeId: string;
-  readonly fields: readonly RuntimeStateField[];
-}
+
+
 
 export function isDeployJob(value: unknown): value is DeployJob {
   if (typeof value !== 'object' || value === null) return false;
@@ -505,27 +459,9 @@ export function isGraphNode(value: unknown): value is GraphNode {
     typeof item.name === 'string' && typeof item.serviceClass === 'string' && Array.isArray(item.ports);
 }
 
-export interface MediaSessionAnswer {
-  readonly sessionId: string;
-  readonly source: string;
-  readonly quality: 'thumbnail' | 'main';
-  readonly sdp: string;
-  readonly type: 'answer';
-  readonly maxWidth: number;
-  readonly maxHeight: number;
-  readonly maxFps: number;
-  readonly overlay: boolean;
-}
 
-export interface AudioSessionAnswer {
-  readonly sessionId: string;
-  readonly source: string;
-  readonly sdp: string;
-  readonly type: 'answer';
-  readonly sampleRate: number;
-  readonly channels: number;
-  readonly transportPolicy: string;
-}
+
+
 
 export interface RtcIceServer {
   readonly urls: readonly string[];
@@ -538,29 +474,13 @@ export interface RtcConfigurationResponse {
   readonly iceTransportPolicy: 'all' | 'relay';
 }
 
-export type AssetKind = 'component' | 'variant' | 'modding_recipe';
+export type AssetKind = import('./contracts.gen').AssetKind;
 
-export interface AssetSummary {
-  readonly assetId: string;
-  readonly kind: AssetKind;
-  readonly name: string;
-  readonly description: string;
-  readonly tags: readonly string[];
-  readonly currentVersion: number;
-  readonly createdAt: string;
-  readonly updatedAt: string;
-}
+export type AssetSummary = import('./contracts.gen').AssetSummary;
 
-export interface AssetRecord extends AssetSummary {
-  readonly content: JsonValue;
-}
+export type AssetRecord = import('./contracts.gen').AssetRecord;
 
-export interface AssetVersion {
-  readonly assetId: string;
-  readonly version: number;
-  readonly createdAt: string;
-  readonly content: JsonValue;
-}
+export type AssetVersion = import('./contracts.gen').AssetVersion;
 
 export interface ProjectVersion {
   readonly versionId: string;
@@ -570,82 +490,23 @@ export interface ProjectVersion {
   readonly document: StudioDocument;
 }
 
-export interface EditorDiagnostic {
-  readonly severity: 'error' | 'warning' | 'information';
-  readonly message: string;
-  readonly source: string;
-  readonly path: string;
-  readonly range: {
-    readonly start: { readonly line: number; readonly column: number };
-    readonly end: { readonly line: number; readonly column: number };
-  };
-  readonly rule?: string | null;
-}
 
-export interface EditorSession {
-  readonly sessionId: string;
-  readonly language: 'python' | 'json';
-  readonly filename: string;
-  readonly version: number;
-  readonly text: string;
-}
 
-export interface EditorAnalysis {
-  readonly sessionId: string;
-  readonly version: number;
-  readonly diagnostics: readonly EditorDiagnostic[];
-  readonly engine: string;
-}
+export type EditorSession = import('./contracts.gen').EditorSessionRecord;
 
-export interface EditorLanguageResult {
-  readonly sessionId: string;
-  readonly version: number;
-  readonly result: JsonValue;
-}
 
-export interface LocalCapability {
-  readonly capability: string;
-  readonly status: 'available' | 'unavailable' | 'unverified';
-  readonly backend: string;
-  readonly reason: string;
-}
 
-export interface SerialPortInfo {
-  readonly device: string;
-  readonly description: string;
-  readonly hardwareId: string;
-}
+export type EditorLanguageResult = import('./contracts.gen').EditorLanguageResult;
 
-export interface UnityInstallPlan {
-  readonly planId: string;
-  readonly targetPath: string;
-  readonly actions: readonly string[];
-  readonly blockingErrors: readonly string[];
-  readonly filesToWrite: readonly string[];
-  readonly filesToPreserve: readonly string[];
-  readonly graphBuildPlan: JsonValue;
-  readonly raw: JsonValue;
-}
+export type LocalCapability = import('./contracts.gen').LocalCapability;
 
-export interface SkeletonUdpVerification {
-  readonly bindAddress: string;
-  readonly port: number;
-  readonly packetCount: number;
-  readonly decodedFrameCount: number;
-  readonly modelNames: readonly string[];
-  readonly decoderErrors: readonly string[];
-  readonly verified: boolean;
-}
+export type SerialPortInfo = import('./contracts.gen').SerialPortInfo;
 
-export interface HotkeyBinding {
-  readonly bindingId: string;
-  readonly accelerator: string;
-  readonly projectId: string;
-  readonly nodeId: string;
-  readonly field: string;
-  readonly status: 'configured' | 'registered' | 'disabled' | 'error';
-  readonly message: string;
-}
+export type UnityInstallPlan = import('./contracts.gen').UnityInstallPlan;
+
+export type SkeletonUdpVerification = import('./contracts.gen').SkeletonUdpVerification;
+
+export type HotkeyBinding = import('./contracts.gen').HotkeyBinding;
 
 export interface RegisterHotkeyInput {
   readonly accelerator: string;

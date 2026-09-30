@@ -34,7 +34,6 @@ import {
   fetchHotkeys,
   fetchProject,
   fetchProjects,
-  fetchRuntimeMonitors,
   importProjectGraph,
   patchProject,
   refreshCatalog,
@@ -43,7 +42,9 @@ import {
   stopProject,
   unregisterHotkey,
 } from '../api/client';
-import { isStudioDocument } from '../api/contracts';
+import { isStudioDocument, isDeployJob } from '../api/contracts';
+import { studioEvents } from '../api/eventStream';
+import { useLivePrefix } from '../api/liveStore';
 import type {
   CatalogSnapshot,
   CommandSpec,
@@ -86,6 +87,7 @@ import { useRuntimeNodeState } from './useRuntimeNodeState';
 import { GraphNodeInteractionContext, StudioNodeView } from './StudioNodeView';
 import { CommandDialog } from './CommandDialog';
 import { SchemaEditor } from './SchemaEditor';
+import { MutationQueue } from './MutationQueue';
 import { NodeCatalog } from './NodeCatalog';
 import { commandResultDetail, runCommand } from './runCommand';
 
@@ -381,16 +383,26 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
   const [refreshingCatalog, setRefreshingCatalog] = useState(false);
   const [stopping, setStopping] = useState(false);
   const stoppingRef = useRef(false);
+  const deploymentAbortRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    stoppingRef.current = false;
+    return () => {
+      stoppingRef.current = true;
+      deploymentAbortRef.current?.abort();
+    };
+  }, []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [deployment, setDeployment] = useState<DeployJob | null>(null);
-  const [monitors, setMonitors] = useState<readonly RuntimeMonitor[]>([]);
+  const monitorValues = useLivePrefix('monitor/');
+  const monitors = useMemo(() => [...monitorValues.values()] as unknown as readonly RuntimeMonitor[], [monitorValues]);
   const [projectedProjectId, setProjectedProjectId] = useState<string | null>(null);
   const projectedProjectIdRef = useRef<string | null>(null);
   const fittedProjectId = useRef<string | null>(null);
   const mutationInFlight = useRef(false);
+  const [mutations] = useState(() => new MutationQueue());
   const connectedStateInputsCache = useRef<ReadonlySet<string>>(new Set());
   const projectedEdgeIds = useRef<{ readonly projectId: string | null; readonly ids: ReadonlySet<string> }>({
     projectId: null,
@@ -452,14 +464,7 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
   useEffect(() => {
     if (projectId === null) return;
     let disposed = false;
-    let socket: WebSocket | null = null;
-    let retry = 0;
-    let retryTimer: number | null = null;
-    const connect = () => {
-      if (disposed) return;
-      socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/events`);
-      socket.onopen = () => {
-        retry = 0;
+    const refresh = () => {
         void fetchProject(projectId).then((record) => {
           const current = projectRef.current;
           if (!disposed && (current === null || documentIsNewer(record.document, current.document))) {
@@ -468,13 +473,8 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
         }, (reason: unknown) => {
           if (!disposed) setError((current) => current ?? errorMessage(reason));
         });
-      };
-      socket.onmessage = (event) => {
-        let decoded: unknown;
-        try { decoded = JSON.parse(String(event.data)); }
-        catch (reason) { console.error('Invalid graph event JSON', reason); return; }
-        if (typeof decoded !== 'object' || decoded === null) return;
-        const envelope = decoded as Record<string, unknown>;
+    };
+    const unsubscribe = studioEvents.subscribe((envelope) => {
         if (envelope.type === 'project.deleted' && envelope.scope === `project:${projectId}`) {
           setProjects((current) => current.filter((item) => item.projectId !== projectId));
           setProject(null);
@@ -504,37 +504,10 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
             !documentIsNewer(document, current.document)) return current;
           return { ...current, document };
         });
-      };
-      socket.onclose = () => {
-        if (!disposed) retryTimer = window.setTimeout(connect, Math.min(5000, 300 * 2 ** retry++));
-      };
-      socket.onerror = () => socket?.close();
-    };
-    connect();
-    return () => {
-      disposed = true;
-      socket?.close();
-      if (retryTimer !== null) window.clearTimeout(retryTimer);
-    };
+    }, refresh);
+    return () => { disposed = true; unsubscribe(); };
   }, [projectId, reloadProject]);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    let timeoutId: number | null = null;
-    const refresh = async () => {
-      try {
-        setMonitors(await fetchRuntimeMonitors(controller.signal));
-      } catch (reason) {
-        if (!controller.signal.aborted) setError((current) => current ?? errorMessage(reason));
-      }
-      if (!controller.signal.aborted) timeoutId = window.setTimeout(() => void refresh(), 2000);
-    };
-    void refresh();
-    return () => {
-      controller.abort();
-      if (timeoutId !== null) window.clearTimeout(timeoutId);
-    };
-  }, []);
 
   useEffect(() => {
     fittedProjectId.current = null;
@@ -586,34 +559,51 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
     void fitView({ padding: 0.2, maxZoom: 1, duration: 0 });
   }, [fitView, nodes.length, nodesInitialized, projectId, projectedProjectId]);
 
-  const commit = useCallback(async (operations: readonly GraphOperation[]) => {
-    if (project === null || busy || mutationInFlight.current || operations.length === 0) return;
+  const mutateProject = useCallback((targetId: string, operation: (current: ProjectRecord) => Promise<ProjectRecord>): Promise<void> => {
     mutationInFlight.current = true;
     setSaving(true);
     setError(null);
-    try {
-      const result = await patchProject(project.projectId, project.document, operations);
-      setProject((current) => {
-        const base = current?.projectId === project.projectId ? current : project;
-        if (documentIsNewer(base.document, result.document)) return base;
-        if (base.document.graphRevision === result.document.graphRevision &&
-          base.document.layoutRevision === result.document.layoutRevision) return base;
-        return { ...base, document: result.document };
-      });
-      if (result.runtimeErrors.length > 0) setError(`Saved to project, but runtime sync failed: ${result.runtimeErrors.join('; ')}`);
-    } catch (reason) {
-      if (reason instanceof ApiError && reason.status === 409) {
-        await reloadProject(project.projectId);
-        setError('The graph changed elsewhere. Reloaded the latest revision.');
-      } else {
-        setError(errorMessage(reason));
-        await reloadProject(project.projectId);
+    const result = mutations.enqueue(async () => {
+      const current = projectRef.current;
+      if (current === null || current.projectId !== targetId) throw new Error('The selected project changed before this edit could be saved.');
+      try {
+        const updated = await operation(current);
+        const latest = projectRef.current;
+        if (latest?.projectId === targetId && !documentIsNewer(latest.document, updated.document)) {
+          projectRef.current = updated;
+          setProject(updated);
+        }
+      } catch (reason) {
+        // Refresh before queued work is released, without switching the selected project.
+        const loaded = await fetchProject(targetId);
+        if (projectRef.current?.projectId === targetId) {
+          projectRef.current = loaded;
+          setProject(loaded);
+        }
+        throw reason;
       }
-    } finally {
-      mutationInFlight.current = false;
-      setSaving(false);
-    }
-  }, [busy, project, reloadProject]);
+    });
+    // Attach an error observer for fire-and-forget UI callbacks. Return the original
+    // promise so editors that await persistence still receive the failure.
+    void result.then(() => {
+      mutationInFlight.current = mutations.pending > 0;
+      setSaving(mutationInFlight.current);
+    }, (reason: unknown) => {
+      mutationInFlight.current = mutations.pending > 0;
+      setSaving(mutationInFlight.current);
+      setError(errorMessage(reason));
+    });
+    return result;
+  }, [mutations]);
+
+  const commit = useCallback((operations: readonly GraphOperation[]): Promise<void> => {
+    if (operations.length === 0) return Promise.resolve();
+    return mutateProject(project?.projectId ?? '', async (current) => {
+      const result = await patchProject(current.projectId, current.document, operations);
+      if (result.runtimeErrors.length > 0) setError(`Saved to project, but runtime sync failed: ${result.runtimeErrors.join('; ')}`);
+      return { ...current, document: result.document };
+    });
+  }, [mutateProject, project?.projectId]);
 
   const restoreProjection = useCallback(() => {
     if (project === null) return;
@@ -849,8 +839,7 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
           layout,
         };
       });
-      const result = await patchProject(project.projectId, project.document, operations);
-      setProject({ ...project, document: result.document });
+      await commit(operations);
       setSelectedNodeId(selectedNode.nodeId);
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 409) await reloadProject(project.projectId);
@@ -858,7 +847,7 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
     } finally {
       setBusy(false);
     }
-  }, [busy, project, reloadProject, screenToFlowPosition, selectedNodeId]);
+  }, [busy, commit, project, reloadProject, screenToFlowPosition, selectedNodeId]);
 
   const connect = useCallback((connection: Connection) => {
     if (project === null || connection.sourceHandle === null || connection.targetHandle === null) return;
@@ -1063,15 +1052,17 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
     setBusy(true);
     setError(null);
     try {
-      const result = await changeHistory(project.projectId, action, project.document);
-      setProject({ ...project, document: result.document });
+      await mutateProject(project.projectId, async (current) => {
+        const result = await changeHistory(current.projectId, action, current.document);
+        return { ...current, document: result.document };
+      });
     } catch (reason) {
       setError(errorMessage(reason));
       await reloadProject(project.projectId);
     } finally {
       setBusy(false);
     }
-  }, [busy, project, reloadProject]);
+  }, [busy, mutateProject, project, reloadProject]);
 
   const downloadGraph = useCallback(async () => {
     if (project === null || busy) return;
@@ -1095,8 +1086,8 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
     setBusy(true);
     setError(null);
     try {
-      const record = await importProjectGraph(project.projectId, await file.text());
-      setProject(record);
+      const content = await file.text();
+      await mutateProject(project.projectId, (current) => importProjectGraph(current.projectId, content, current.document));
       setSelectedNodeId(null);
       setSelectedEdgeId(null);
     } catch (reason) {
@@ -1104,18 +1095,45 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
     } finally {
       setBusy(false);
     }
-  }, [busy, project]);
+  }, [busy, mutateProject, project]);
 
   const followDeployment = useCallback(async (initialJob: DeployJob): Promise<DeployJob> => {
-    let job = initialJob;
-    if (!stoppingRef.current) setDeployment(job);
-    for (let attempt = 0; attempt < 100 && !stoppingRef.current && (job.status === 'queued' || job.status === 'running'); attempt += 1) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 200));
-      if (stoppingRef.current) break;
-      job = await fetchDeployJob(job.jobId);
-      if (!stoppingRef.current) setDeployment(job);
-    }
-    if (job.status === 'queued' || job.status === 'running') throw new Error('Deployment did not finish within 20 seconds');
+    if (stoppingRef.current) throw new DOMException("Deployment observer closed", "AbortError");
+    deploymentAbortRef.current?.abort();
+    const controller = new AbortController();
+    deploymentAbortRef.current = controller;
+    const job = await new Promise<DeployJob>((resolve, reject) => {
+      let finished = false;
+      let unsubscribe: () => void = () => {};
+      const cancel = () => {
+        if (finished) return;
+        finished = true;
+        unsubscribe();
+        reject(new DOMException('Deployment observer closed', 'AbortError'));
+      };
+      controller.signal.addEventListener('abort', cancel, { once: true });
+      const cleanup = () => {
+        unsubscribe();
+        controller.signal.removeEventListener('abort', cancel);
+      };
+      const update = (next: DeployJob) => {
+        if (finished || next.jobId !== initialJob.jobId) return;
+        if (!stoppingRef.current) setDeployment(next);
+        if (next.status !== 'queued' && next.status !== 'running') {
+          finished = true;
+          cleanup();
+          resolve(next);
+        }
+      };
+      unsubscribe = studioEvents.subscribe((event) => {
+        if (event.type.startsWith('deploy.') && isDeployJob(event.payload)) update(event.payload);
+      }, () => {
+        void fetchDeployJob(initialJob.jobId).then(update, (reason: unknown) => {
+          if (!finished) { finished = true; cleanup(); reject(reason); }
+        });
+      });
+      update(initialJob);
+    });
     if (job.status === 'failed' || job.status === 'partially_failed') throw new Error(job.errorMessage || `Deployment ${job.status}`);
     return job;
   }, []);

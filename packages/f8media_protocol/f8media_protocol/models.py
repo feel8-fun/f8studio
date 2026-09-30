@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 import msgspec
 
 from f8pysdk.specs import F8JsonValue
@@ -30,7 +32,7 @@ class MediaSessionAnswer(msgspec.Struct, frozen=True, kw_only=True, rename="came
     source: str
     quality: str
     sdp: str
-    type: str
+    type: Literal["answer"]
     max_width: int
     max_height: int
     max_fps: int
@@ -62,7 +64,7 @@ class AudioSessionAnswer(msgspec.Struct, frozen=True, kw_only=True, rename="came
     session_id: str
     source: str
     sdp: str
-    type: str
+    type: Literal["answer"]
     sample_rate: int
     channels: int
     transport_policy: str
@@ -127,3 +129,7 @@ __all__ = [
     "OverlayDetection",
     "OverlayResult",
 ]
+
+
+class MediaInputError(ValueError):
+    """An explicitly rejected media API input."""

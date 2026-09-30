@@ -4,8 +4,9 @@ import asyncio
 import json
 import socket
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
+import msgspec
 import pytest
 
 from f8pysdk.specs import F8JsonValue, F8RuntimeGraph, F8ServiceSpec
@@ -416,6 +417,86 @@ def test_state_patch_syncs_deployed_runtime_and_reports_rejection(tmp_path: Path
             operations=(SetNodeStateOp(node_id="studio", field="tickMs", value=300),),
         ))
         assert third.runtime_errors == ("studio.tickMs: rejected",)
+        stream = await studio.events.open_stream(client_epoch=studio.server_epoch, after_sequence=0)
+        committed = [event for event in stream.replay if event.type == "graph.committed"]
+        assert len(committed) == 3  # Idempotent retries never duplicate events.
+        wire_payload = msgspec.json.decode(msgspec.json.encode(committed[-1].payload))
+        assert wire_payload["runtimeErrors"] == ["studio.tickMs: rejected"]
+        await studio.events.close_stream(stream.subscription_id)
 
     asyncio.run(run())
     studio.editor.close()
+
+
+def test_editor_preserves_existing_files_and_bounds_idle_sessions(tmp_path: Path) -> None:
+    root = tmp_path / "editor"
+    root.mkdir()
+    sentinel = root / "existing.txt"
+    sentinel.write_text("owned by another session")
+    editor = EditorSessionService(root=root, max_sessions=1, idle_timeout_s=10)
+    request = CreateEditorSessionRequest(language="json", filename="test.json", text="{}")
+    try:
+        first = editor.create(request)
+        assert sentinel.read_text() == "owned by another session"
+        with pytest.raises(ValueError, match="session limit"):
+            editor.create(request)
+        with patch("f8studio_server.editor.monotonic", return_value=float("inf")):
+            editor.reap_idle()
+        with pytest.raises(FileNotFoundError):
+            editor.get(first.session_id)
+        assert not (root / first.session_id).exists()
+        assert editor.create(request).session_id != first.session_id
+    finally:
+        editor.close()
+    assert sentinel.exists()
+
+
+def test_state_sync_cancellation_publishes_committed_document(tmp_path: Path) -> None:
+    runtime = HotkeyRuntimeGateway()
+    studio = StudioApplication(data_dir=tmp_path, runtime=runtime, service_roots=())
+    project = studio.projects.create(CreateProjectRequest(project_id="cancel-sync", name="Cancel"))
+    node = studio.catalog.create_node(
+        CreateCatalogNodeRequest(kind="service", node_id="studio", service_class="f8.pystudio")
+    )
+    document = studio.projects.patch(project.project_id, PatchRequest(
+        request_id="seed", expected_graph_revision=0, expected_layout_revision=0,
+        operations=(CreateNodeOp(node=node),),
+    )).result.document
+
+    async def run() -> None:
+        studio.jobs.latest = AsyncMock(return_value=DeployJob(
+            job_id="deployed", request_id="deploy", project_id=project.project_id,
+            source_graph_revision=document.graph_revision, source_semantic_revision="revision",
+            status=JobStatus.succeeded, created_at="now", updated_at="now",
+            service_results=(ServiceDeployResult(service_id="studio", success=True),),
+        ))
+        entered = asyncio.Event()
+        hold = asyncio.Event()
+
+        async def sync_state(*_args: object, **_kwargs: object) -> RuntimeActionResult:
+            entered.set()
+            await hold.wait()
+            return RuntimeActionResult(success=True)
+
+        runtime.set_state = AsyncMock(side_effect=sync_state)
+        task = asyncio.create_task(studio.tools.apply_patch(project.project_id, PatchRequest(
+            request_id="cancelled-sync", expected_graph_revision=document.graph_revision,
+            expected_layout_revision=document.layout_revision,
+            operations=(SetNodeStateOp(node_id="studio", field="tickMs", value=300),),
+        )))
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        stream = await studio.events.open_stream(client_epoch=studio.server_epoch, after_sequence=0)
+        assert len(stream.replay) == 1
+        event = msgspec.json.decode(msgspec.json.encode(stream.replay[0]))
+        assert event['payload']['document']['graphRevision'] == document.graph_revision + 1
+        assert event['payload']['runtimeErrors'] == ['Runtime state synchronization cancelled']
+        assert studio.projects.document(project.project_id).nodes[0].state_values['tickMs'] == 300
+        await studio.events.close_stream(stream.subscription_id)
+
+    try:
+        asyncio.run(run())
+    finally:
+        studio.editor.close()

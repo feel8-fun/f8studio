@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import unittest
 from pathlib import Path
 
@@ -20,9 +21,16 @@ FORBIDDEN_RUNTIME_TELEMETRY_STATE_FIELDS = {
 }
 
 
+def built_services_root() -> Path:
+    root = os.environ.get("F8_CPP_DESCRIBE_ROOT")
+    if not root:
+        raise unittest.SkipTest("built C++ contract test requires F8_CPP_DESCRIBE_ROOT")
+    return Path(root)
+
+
 class CvkitTrackingDescribeTest(unittest.TestCase):
     def test_tracking_describe_exposes_current_configurable_state_fields(self) -> None:
-        describe_path = Path("services/f8/cvkit/tracking/describe.json")
+        describe_path = (built_services_root() / "f8/cvkit/tracking/describe.json")
         payload = json.loads(describe_path.read_text(encoding="utf-8"))
 
         service = payload["service"]
@@ -45,7 +53,7 @@ class CvkitTrackingDescribeTest(unittest.TestCase):
         self.assertIs(active_field["valueSchema"]["default"], True)
 
     def test_tracking_describe_keeps_process_metrics_off_state_fields(self) -> None:
-        describe_path = Path("services/f8/cvkit/tracking/describe.json")
+        describe_path = (built_services_root() / "f8/cvkit/tracking/describe.json")
         payload = json.loads(describe_path.read_text(encoding="utf-8"))
 
         service = payload["service"]
@@ -57,7 +65,7 @@ class CvkitTrackingDescribeTest(unittest.TestCase):
         self.assertIn("monitor", data_out_port_names)
 
     def test_cvkit_describes_do_not_expose_runtime_telemetry_as_state_fields(self) -> None:
-        describe_paths = sorted(Path("services/f8/cvkit").rglob("describe.json"))
+        describe_paths = sorted((built_services_root() / "f8/cvkit").rglob("describe.json"))
         self.assertTrue(describe_paths)
 
         leaks: dict[str, list[str]] = {}

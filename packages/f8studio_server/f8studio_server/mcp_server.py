@@ -6,6 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from .api_client import StudioApiClient
+from .defaults import DEFAULT_STUDIO_URL
 
 
 def create_mcp_server(
@@ -124,7 +125,7 @@ def create_mcp_server(
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Feel8 Web Studio MCP server")
-    parser.add_argument("--studio-url", default="http://127.0.0.1:8260")
+    parser.add_argument("--studio-url", default=DEFAULT_STUDIO_URL)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--path", default="/mcp")

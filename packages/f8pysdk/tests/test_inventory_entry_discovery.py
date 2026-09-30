@@ -298,3 +298,22 @@ def test_merge_disabled_service_classes_dedupes_policy_explicit_and_env(monkeypa
     )
 
     assert merged == ("f8.policy", "f8.cli", "f8.shared", "f8.env")
+
+
+def test_checkout_describe_requires_matching_source_fingerprint(tmp_path: Path) -> None:
+    from f8pysdk.service_runtime_tools.inventory.describe_freshness import static_is_fresh, write_freshness
+
+    (tmp_path / "pixi.toml").write_text("[workspace]\n")
+    source = tmp_path / "packages" / "example.py"
+    source.parent.mkdir()
+    source.write_text("value = 1\n")
+    service = tmp_path / "services" / "example"
+    service.mkdir(parents=True)
+    assert not static_is_fresh(service)
+    write_freshness(service)
+    assert static_is_fresh(service)
+    source.write_text("value = 2\n")
+    assert not static_is_fresh(service)
+    # Packaged descriptions remain supported without a source checkout.
+    (tmp_path / "pixi.toml").unlink()
+    assert static_is_fresh(service)

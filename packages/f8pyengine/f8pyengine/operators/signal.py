@@ -29,7 +29,7 @@ _TWO_PI = 2.0 * math.pi
 def _float_or(value: Any, default: float) -> float:
     try:
         return float(value)
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return float(default)
 
 class _PhaseAccumulator:

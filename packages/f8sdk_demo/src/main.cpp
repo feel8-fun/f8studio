@@ -20,7 +20,7 @@ void on_signal(int) { g_stop.store(true, std::memory_order_release); }
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int run(int argc, char** argv) {
   cxxopts::Options options("f8sdk_demo_service", "F8 C++ SDK demo service (capabilities + ServiceBus template)");
   options.add_options()("service-id", "Service instance id", cxxopts::value<std::string>()->default_value("demo"))(
       "help", "Show help");
@@ -32,10 +32,7 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-  try {
-    spdlog::set_default_logger(spdlog::stdout_color_mt("console"));
-  } catch (...) {
-  }
+  spdlog::set_default_logger(spdlog::stdout_color_mt("console"));
   spdlog::set_level(spdlog::level::info);
   spdlog::flush_on(spdlog::level::info);
 
@@ -66,4 +63,16 @@ int main(int argc, char** argv) {
 
   svc.stop();
   return 0;
+}
+
+int main(int argc, char** argv) {
+  try {
+    return run(argc, argv);
+  } catch (const cxxopts::exceptions::exception& error) {
+    std::cerr << "Invalid command line: " << error.what() << "\nUse --help for supported options.\n";
+    return 2;
+  } catch (const std::exception& error) {
+    std::cerr << "SDK demo failed: " << error.what() << "\n";
+    return 1;
+  }
 }

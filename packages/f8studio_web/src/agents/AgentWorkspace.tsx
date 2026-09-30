@@ -1,3 +1,5 @@
+import { isJsonObject } from '../api/contracts';
+import { studioEvents } from '../api/eventStream';
 import { Bot, BrainCircuit, Check, ImagePlus, Pencil, Plus, Send, ShieldCheck, Square, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -228,21 +230,12 @@ export function AgentWorkspace({ projectId, initialSessionId }: { readonly proje
         if (!controller.signal.aborted) setError(errorText(reason));
       } finally { refreshing = false; }
     };
-    const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/events`);
-    socket.onopen = () => void refresh();
-    socket.onmessage = (event) => {
-      let payload: unknown;
-      try { payload = JSON.parse(String(event.data)); }
-      catch (reason) { console.error('Invalid agent event JSON', reason); return; }
-      if (typeof payload !== 'object' || payload === null) return;
-      const envelope = payload as Record<string, unknown>;
+    const unsubscribe = studioEvents.subscribe((envelope) => {
       const body = envelope.payload;
-      if (envelope.type !== 'agent.session.updated' || typeof body !== 'object' || body === null) return;
-      if ((body as Record<string, unknown>).sessionId !== sessionId) return;
-      void refresh();
-    };
-    socket.onerror = () => { if (!controller.signal.aborted) setError('Agent event stream disconnected'); };
-    return () => { controller.abort(); socket.close(); };
+      if (envelope.type !== 'agent.session.updated' || !isJsonObject(body)) return;
+      if (body.sessionId === sessionId) void refresh();
+    }, () => void refresh());
+    return () => { controller.abort(); unsubscribe(); };
   }, [updateSession, session?.sessionId]);
 
   const create = async () => {

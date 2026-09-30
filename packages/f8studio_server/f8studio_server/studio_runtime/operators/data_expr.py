@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8studio_server.errors import InvalidRequestError
+
 import logging
 import time
 from collections.abc import Mapping
@@ -135,7 +137,7 @@ class DataExprRuntimeNode(OperatorNode):
 
         try:
             if self._compiled is None:
-                raise ValueError(self._compile_error or "invalid expression")
+                raise InvalidRequestError(self._compile_error or "invalid expression")
             result = safe_eval_compiled(self._compiled, names=self._build_eval_names(inputs))
         except Exception as exc:
             # This is the boundary for arbitrary user-authored expressions.

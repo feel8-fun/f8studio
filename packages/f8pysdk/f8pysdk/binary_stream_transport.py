@@ -55,12 +55,14 @@ class ZenohLatestBinaryStreamTransport:
         log_context: str = "stream",
         min_sample_interval_ms: int = 0,
         max_pending_samples: int = 1,
+        owns_session: bool = True,
     ) -> None:
         key = str(key_expr or "").strip()
         if not key:
             raise ValueError("key_expr must be non-empty")
         self.key_expr = key
         self._session = session
+        self._owns_session = owns_session
         self._subscriber = subscriber
         self._publisher = publisher
         self._log_context = str(log_context or "stream")
@@ -136,6 +138,16 @@ class ZenohLatestBinaryStreamTransport:
         return transport
 
     @classmethod
+    def subscribe_on_session(
+        cls, key_expr: str, session: Any, *, log_context: str = "stream", max_pending_samples: int = 1,
+    ) -> "ZenohLatestBinaryStreamTransport":
+        """Borrow a session; closing this transport only undeclares its subscriber."""
+        transport = cls(key_expr=key_expr, session=session, owns_session=False,
+                        log_context=log_context, max_pending_samples=max_pending_samples)
+        transport._subscriber = session.declare_subscriber(key_expr, transport._on_sample)
+        return transport
+
+    @classmethod
     def open_pubsub(
         cls,
         key_expr: str,
@@ -192,7 +204,7 @@ class ZenohLatestBinaryStreamTransport:
                 log.debug("zenoh stream subscriber undeclare failed key=%s", self.key_expr, exc_info=exc)
         session = self._session
         self._session = None
-        if session is not None:
+        if session is not None and self._owns_session:
             close_zenoh_session_best_effort(
                 session,
                 context=f"{self._log_context}:{self.key_expr}",
@@ -267,6 +279,40 @@ class ZenohLatestBinaryStreamTransport:
                 return
             self._pending_raw.append(raw)
             self._cv.notify_all()
+
+
+class SharedStreamSession:
+    """One lazily opened session for a process's media subscribers.
+
+    Call subscribe/close in worker threads. The owning gateway closes it only
+    after all audio and video consumers have stopped.
+    """
+
+    def __init__(self) -> None:
+        self._session: Any | None = None
+        self._lock = threading.Lock()
+        self._closed = False
+
+    def subscribe(self, key: str, *, log_context: str, max_pending_samples: int = 1) -> ZenohLatestBinaryStreamTransport:
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("shared stream session is closed")
+            if self._session is None:
+                self._session = _open_zenoh_stream_session(
+                    config_path=None, connect=(), listen=(), shm_pool_bytes=256 * 1024 * 1024,
+                    log_context="media-gateway",
+                )
+            return ZenohLatestBinaryStreamTransport.subscribe_on_session(
+                key, self._session, log_context=log_context, max_pending_samples=max_pending_samples,
+            )
+
+    def close(self) -> None:
+        with self._lock:
+            self._closed = True
+            session = self._session
+            self._session = None
+        if session is not None:
+            close_zenoh_session_best_effort(session, context="media-gateway")
 
 
 def _open_zenoh_stream_session(

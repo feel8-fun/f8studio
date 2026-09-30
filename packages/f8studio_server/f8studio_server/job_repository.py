@@ -1,7 +1,15 @@
 from __future__ import annotations
 
+from f8studio_server.errors import NotFoundError
+
 import sqlite3
 from pathlib import Path
+from contextlib import AbstractContextManager
+
+from .database import database_text as _text
+from .database import database_integer as _integer
+from .database import database_bytes as _bytes
+from .database import StudioDatabase
 
 import msgspec
 
@@ -11,34 +19,17 @@ from .models import DeployJob, JobStatus, ServiceDeployResult
 _RESULTS_DECODER = msgspec.json.Decoder(tuple[ServiceDeployResult, ...])
 
 
-def _text(value: object) -> str:
-    if not isinstance(value, str):
-        raise TypeError(f"expected database text, got {type(value).__name__}")
-    return value
 
-
-def _integer(value: object) -> int:
-    if not isinstance(value, int):
-        raise TypeError(f"expected database integer, got {type(value).__name__}")
-    return value
-
-
-def _bytes(value: object) -> bytes:
-    if not isinstance(value, bytes):
-        raise TypeError(f"expected database bytes, got {type(value).__name__}")
-    return value
 
 
 class JobRepository:
-    def __init__(self, database_path: Path) -> None:
-        self._database_path = database_path.resolve()
+    def __init__(self, database_path: Path | StudioDatabase) -> None:
+        self._database = database_path if isinstance(database_path, StudioDatabase) else StudioDatabase(database_path)
+        self._database_path = self._database.path
         self._initialize()
 
-    def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self._database_path, timeout=10.0)
-        connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute("PRAGMA journal_mode = WAL")
-        return connection
+    def _connect(self) -> AbstractContextManager[sqlite3.Connection]:
+        return self._database.connection()
 
     def _initialize(self) -> None:
         with self._connect() as connection:
@@ -107,7 +98,7 @@ class JobRepository:
                 ),
             )
             if cursor.rowcount != 1:
-                raise FileNotFoundError(f"deploy job not found: {job.job_id}")
+                raise NotFoundError(f"deploy job not found: {job.job_id}")
         return job
 
     def get(self, job_id: str) -> DeployJob | None:

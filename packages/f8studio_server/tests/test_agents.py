@@ -240,7 +240,7 @@ def test_deterministic_agent_builds_validates_deploys_and_publishes_graph_event(
 
         with client.websocket_connect("/api/events") as websocket:
             snapshot = websocket.receive_json()
-            assert snapshot["type"] == "stream.snapshot"
+            assert snapshot["type"] == "stream.hello"
             started = client.post(
                 f"/api/agents/sessions/{session_id}/runs",
                 json={"prompt": "Build a controllable value graph and deploy it"},
@@ -309,6 +309,54 @@ def test_agent_session_auto_title_rename_and_delete(tmp_path: Path) -> None:
         assert manual_run.json()["title"] == "Studio agent"
         client.delete(f"/api/agents/sessions/{second_id}/runs/current")
         assert client.delete(f"/api/agents/sessions/{second_id}").status_code == 204
+
+
+def test_denied_approval_finishes_run_without_stuck_waiting(tmp_path: Path) -> None:
+    studio = StudioApplication(data_dir=tmp_path, runtime=AgentRuntimeGateway(), service_roots=(),
+                               media_gateway=InProcessMediaGateway())
+    with TestClient(create_app(web_dist=tmp_path, application=studio)) as client:
+        client.post("/api/projects", json={"projectId": "denied", "name": "Denied"})
+        session_id = _create_session(client, "denied")
+        client.post(f"/api/agents/sessions/{session_id}/runs", json={"prompt": "Build a value graph"})
+        waiting = _wait_for_status(client, session_id, {"waiting_for_approval"})
+        approval = waiting["approval"]
+        assert isinstance(approval, dict)
+        response = client.post(f"/api/agents/sessions/{session_id}/approvals/{approval['approvalId']}",
+                               json={"approved": False, "argumentsHash": approval["argumentsHash"]})
+        assert response.status_code == 200
+        assert response.json()["status"] == "running"
+        finished = _wait_for_status(client, session_id, {"cancelled"})
+        assert finished["approval"]["status"] == "denied"
+        assert all(call["status"] not in {"running", "queued", "waiting_for_approval"} for call in finished["toolCalls"])
+
+
+def test_run_timeout_cleans_pending_approval_and_tool(tmp_path: Path, monkeypatch) -> None:
+    deadlines: list[asyncio.Timeout] = []
+
+    def controlled_timeout(delay: float) -> asyncio.Timeout:
+        assert delay == 300.0
+        deadline = asyncio.timeout(None)
+        deadlines.append(deadline)
+        return deadline
+
+    monkeypatch.setattr("f8studio_server.agents.service.run_timeout", controlled_timeout)
+    studio = StudioApplication(data_dir=tmp_path, runtime=AgentRuntimeGateway(), service_roots=(),
+                               media_gateway=InProcessMediaGateway())
+    with TestClient(create_app(web_dist=tmp_path, application=studio)) as client:
+        client.post("/api/projects", json={"projectId": "timeout", "name": "Timeout"})
+        session_id = _create_session(client, "timeout")
+        client.post(f"/api/agents/sessions/{session_id}/runs", json={"prompt": "Build a value graph"})
+        _wait_for_status(client, session_id, {"waiting_for_approval"})
+        async def expire_run() -> None:
+            assert len(deadlines) == 1
+            deadlines[0].reschedule(asyncio.get_running_loop().time())
+
+        assert client.portal is not None
+        client.portal.call(expire_run)
+        finished = _wait_for_status(client, session_id, {"failed"})
+        assert finished["approval"]["status"] == "expired"
+        assert all(call["status"] not in {"running", "queued", "waiting_for_approval"} for call in finished["toolCalls"])
+        assert not studio.agents._approvals
 
 
 def test_agent_approval_is_invalidated_when_another_client_changes_revision(tmp_path: Path) -> None:
@@ -1009,3 +1057,29 @@ def test_unreal_executable_detection_precedes_generic_exe_detection(tmp_path: Pa
     assert isinstance(result, dict)
     assert result["engine"] == "unreal"
     assert result["supported"] is False
+
+
+def test_agent_approval_is_invalidated_by_layout_only_edit(tmp_path: Path) -> None:
+    studio = StudioApplication(data_dir=tmp_path / "data", runtime=AgentRuntimeGateway(),
+                               service_roots=(), media_gateway=InProcessMediaGateway())
+    with TestClient(create_app(web_dist=tmp_path, application=studio)) as client:
+        client.post('/api/projects', json={'projectId': 'layout-conflict', 'name': 'Layout'})
+        service = client.post('/api/catalog/nodes', json={
+            'kind': 'service', 'nodeId': 'manual_studio', 'serviceClass': 'f8.pystudio',
+        }).json()
+        assert client.post('/api/projects/layout-conflict/patch', json={
+            'requestId': 'seed', 'expectedGraphRevision': 0, 'expectedLayoutRevision': 0,
+            'operations': [{'op': 'createNode', 'node': service}],
+        }).status_code == 200
+        session_id = _create_session(client, 'layout-conflict')
+        client.post(f'/api/agents/sessions/{session_id}/runs', json={'prompt': 'Build a value graph'})
+        waiting = _wait_for_status(client, session_id, {'waiting_for_approval'})
+        approval = waiting['approval']
+        assert client.post('/api/projects/layout-conflict/patch', json={
+            'requestId': 'move', 'expectedGraphRevision': 1, 'expectedLayoutRevision': 0,
+            'operations': [{'op': 'setNodeLayout', 'layout': {'nodeId': 'manual_studio', 'x': 20, 'y': 30}}],
+        }).status_code == 200
+        response = client.post(f"/api/agents/sessions/{session_id}/approvals/{approval['approvalId']}",
+                               json={'approved': True, 'argumentsHash': approval['argumentsHash']})
+        assert response.status_code == 409
+        assert 'layout expected' in response.text

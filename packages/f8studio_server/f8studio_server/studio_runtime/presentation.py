@@ -57,6 +57,17 @@ class EventPresentationOutlet:
                 payload=normalized_payload,
                 ts_ms=ts_ms,
             )
+        prefix = f"presentation/{node_id}/"
+        if command.endswith(".detach"):
+            self._events.live.delete_prefix(prefix)
+        elif command in {"viz.text.update", "viz.wave.set", "viz.track.set", "viz.video.set", "viz.audio.set",
+                          "viz.three_d.set", "viz.three_d.world_up", "viz.tcode.snapshot"}:
+            self._events.live.set(prefix + command, {
+                "nodeId": node_id, "command": command, "payload": normalized_payload,
+                "tsMs": ts_ms, "seq": self._events.live.sequence + 1,
+            })
+            return
+        # Unknown/extension commands may be incremental and must not coalesce.
         task = asyncio.create_task(
             self._events.publish(
                 event_type="presentation.command",
@@ -67,8 +78,7 @@ class EventPresentationOutlet:
                     "payload": normalized_payload,
                     "tsMs": ts_ms,
                 },
-                reliable=False,
-            ),
+                ),
             name=f"presentation:{node_id}:{command}",
         )
         self._tasks.add(task)

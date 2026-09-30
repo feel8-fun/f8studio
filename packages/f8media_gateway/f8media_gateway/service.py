@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import os
+import asyncio
+from functools import partial
+
+from f8pysdk.binary_stream_transport import SharedStreamSession
 from uuid import uuid4
 
 from f8media_protocol.models import (
@@ -16,8 +20,8 @@ from f8media_protocol.models import (
     OverlayResult,
 )
 
-from .audio_media import AudioSessionManager
-from .media import MediaSessionManager
+from .audio_media import AudioSessionManager, create_audio_producer
+from .media import MediaSessionManager, create_frame_producer
 
 
 MEDIA_GATEWAY_VERSION = "0.1.0"
@@ -31,16 +35,22 @@ class InProcessMediaGateway:
         audio: AudioSessionManager | None = None,
         gateway_epoch: str | None = None,
     ) -> None:
-        self.video = video or MediaSessionManager()
-        self.audio = audio or AudioSessionManager()
+        self._stream_session = SharedStreamSession()
+        self.video = video or MediaSessionManager(producer_factory=partial(create_frame_producer, session=self._stream_session))
+        self.audio = audio or AudioSessionManager(producer_factory=partial(create_audio_producer, session=self._stream_session))
         self._gateway_epoch = gateway_epoch or uuid4().hex
 
     async def start(self) -> None:
         return None
 
     async def close(self) -> None:
-        await self.video.close()
-        await self.audio.close()
+        try:
+            await self.video.close()
+        finally:
+            try:
+                await self.audio.close()
+            finally:
+                await asyncio.to_thread(self._stream_session.close)
 
     async def health(self) -> MediaGatewayHealth:
         return MediaGatewayHealth(

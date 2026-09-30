@@ -63,6 +63,7 @@ class VideoFramePacket:
     fmt: int
     frame_id: int
     ts_ms: int
+    stream_epoch: str
     payload: memoryview
     _released: bool = False
 
@@ -97,7 +98,7 @@ class LatestVideoFrameSource:
         self._config = config
         self._zenoh_reader: ZenohLatestVideoFrameTransport | None = None
         self._zenoh_open_key = ""
-        self._last_signature: tuple[str, int, int] | None = None
+        self._last_signature: tuple[str, str, int, int] | None = None
 
     def close(self) -> None:
         self._close_zenoh()
@@ -127,7 +128,7 @@ class LatestVideoFrameSource:
     def _packet_from_zenoh(
         self, *, stream_key: str, frame: LatestVideoFrame, dedupe: bool
     ) -> VideoFramePacket | None:
-        signature = (str(stream_key), int(frame.frame_id), int(frame.ts_ms))
+        signature = (str(stream_key), frame.stream_epoch, int(frame.frame_id), int(frame.ts_ms))
         if dedupe and signature == self._last_signature:
             frame.release()
             return None
@@ -140,6 +141,7 @@ class LatestVideoFrameSource:
             fmt=int(frame.fmt),
             frame_id=int(frame.frame_id),
             ts_ms=int(frame.ts_ms),
+            stream_epoch=frame.stream_epoch,
             payload=frame.payload,
         )
 

@@ -48,6 +48,10 @@ def test_latest_pending_input_replaces_backlog_and_preserves_request_ids() -> No
             await asyncio.wait_for(node.started.wait(), 1)
             for index in range(2, 11):
                 await node.on_exec(index)
+            for index in range(2, 10):
+                assert await asyncio.wait_for(node.completed.get(), 1) == "error"
+                assert await node.compute_output("accepted", ctx_id=index) is False
+                assert await node.compute_output("error", ctx_id=index) == "superseded by a newer trigger"
             node.release.set()
             assert await asyncio.wait_for(node.completed.get(), 1) == "decided"
             assert await asyncio.wait_for(node.completed.get(), 1) == "decided"
@@ -96,7 +100,7 @@ def test_noul_keeps_yes_probability_and_does_not_invent_confidence() -> None:
 
 
 @pytest.mark.parametrize("invalidate", ["pause", "config", "age"])
-def test_obsolete_results_never_trigger_a_branch(invalidate: str) -> None:
+def test_obsolete_results_trigger_only_the_error_branch(invalidate: str) -> None:
     async def scenario() -> None:
         node = ControlledDecision(initial_state={"maxAgeMs": 50})
         try:
@@ -109,7 +113,8 @@ def test_obsolete_results_never_trigger_a_branch(invalidate: str) -> None:
             else:
                 await asyncio.sleep(0.06)
             node.release.set()
-            await asyncio.sleep(0.02)
+            assert await asyncio.wait_for(node.completed.get(), 1) == "error"
+            assert await node.compute_output("accepted", ctx_id=1) is False
             assert node.completed.empty()
         finally:
             await node.close()

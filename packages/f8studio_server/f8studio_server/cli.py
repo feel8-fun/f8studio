@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8studio_server.errors import InvalidRequestError
+
 import argparse
 import json
 import sys
@@ -9,11 +11,12 @@ from typing import cast
 from uuid import uuid4
 
 from .api_client import StudioApiClient, StudioApiError
+from .defaults import DEFAULT_STUDIO_URL
 
 
 def _object(value: object, *, label: str) -> dict[str, object]:
     if not isinstance(value, dict):
-        raise ValueError(f"{label} must be a JSON object")
+        raise InvalidRequestError(f"{label} must be a JSON object")
     return cast(dict[str, object], value)
 
 
@@ -21,7 +24,7 @@ def _load_object(path: str) -> dict[str, object]:
     try:
         payload: object = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError(f"could not read JSON file {path}: {exc}") from exc
+        raise InvalidRequestError(f"could not read JSON file {path}: {exc}") from exc
     return _object(payload, label=path)
 
 
@@ -72,7 +75,7 @@ def _run_agent(client: StudioApiClient, args: argparse.Namespace) -> object:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Feel8 Web Studio headless CLI")
-    parser.add_argument("--url", default="http://127.0.0.1:8260", help="Studio Server base URL")
+    parser.add_argument("--url", default=DEFAULT_STUDIO_URL, help="Studio Server base URL")
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("health")
     subparsers.add_parser("projects")
@@ -130,7 +133,7 @@ def _dispatch(client: StudioApiClient, args: argparse.Namespace) -> object:
         document = _object(project.get("document"), label="project document")
         revision = document.get("graphRevision")
         if not isinstance(revision, int):
-            raise ValueError("project document has no integer graphRevision")
+            raise InvalidRequestError("project document has no integer graphRevision")
         return client.deploy(args.project_id, graph_revision=revision, request_id=f"cli:{uuid4().hex}")
     if args.command == "monitors":
         return client.monitors(args.project_id)
@@ -142,7 +145,7 @@ def _dispatch(client: StudioApiClient, args: argparse.Namespace) -> object:
         return client.agent_session(args.session_id)
     if args.command == "agent-cancel":
         return client.cancel_agent_run(args.session_id)
-    raise ValueError(f"unsupported command: {args.command}")
+    raise InvalidRequestError(f"unsupported command: {args.command}")
 
 
 def main(argv: list[str] | None = None) -> int:

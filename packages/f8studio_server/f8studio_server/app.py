@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8studio_server.errors import InvalidRequestError, NotFoundError
+
 import asyncio
 import logging
 import os
@@ -8,7 +10,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TypeVar, cast
 from urllib.parse import urlparse
-from uuid import uuid4
 
 import msgspec
 import httpx
@@ -33,12 +34,11 @@ from f8studio_core.graph import (
     PatchRequest,
     PatchResult,
     RevisionConflictError,
-    ServiceNode,
     export_graph,
-    import_graph,
 )
 
 from .application import StudioApplication
+from .api_contracts import install_openapi
 from .agents import (
     CreateAgentSessionRequest,
     ResolveAgentApprovalRequest,
@@ -80,7 +80,6 @@ from .models import (
     ValidateDocumentRequest,
 )
 from .runtime import RuntimeConfig, RuntimeGateway
-from .studio_runtime.identifiers import STUDIO_SERVICE_ID
 
 
 logger = logging.getLogger(__name__)
@@ -100,6 +99,14 @@ def default_data_dir() -> Path:
     if configured:
         return Path(configured).expanduser().resolve()
     return (Path.home() / ".local" / "share" / "f8studio-web").resolve()
+
+
+from .access import StudioAccess, StudioAccessMiddleware
+from .errors import ConflictError, ServiceUnavailableError, api_error
+from f8pysdk.f8_naming import TokenValidationError
+from f8media_protocol.models import MediaInputError
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
 DEFAULT_ALLOWED_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "testserver"})
@@ -158,6 +165,7 @@ def create_app(
     application: StudioApplication | None = None,
     media_gateway: MediaGateway | None = None,
     allowed_hosts: tuple[str, ...] | None = None,
+    access: StudioAccess | None = None,
     rtc_configuration: BrowserRtcConfiguration | None = None,
 ) -> FastAPI:
     resolved_web_dist = (web_dist or default_web_dist()).resolve()
@@ -187,40 +195,63 @@ def create_app(
         host.strip().lower() for host in (allowed_hosts or tuple(DEFAULT_ALLOWED_HOSTS)) if host.strip()
     )
     if not resolved_allowed_hosts:
-        raise ValueError("at least one allowed host is required")
+        raise InvalidRequestError("at least one allowed host is required")
     app.add_middleware(LoopbackOriginMiddleware, allowed_hosts=resolved_allowed_hosts)
+    if access is not None:
+        app.add_middleware(StudioAccessMiddleware, access=access)
     app.add_middleware(
         TrustedHostMiddleware,
         allowed_hosts=sorted(resolved_allowed_hosts),
     )
 
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error(_request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        response = api_error(exc.status_code, f"http_{exc.status_code}", str(exc.detail), detail=_json_value(exc.detail))
+        if exc.headers:
+            response.headers.update(exc.headers)
+        return response
+
+    @app.exception_handler(RequestValidationError)
+    async def request_validation_error(_request: Request, exc: RequestValidationError) -> JSONResponse:
+        return api_error(422, "invalid_request", str(exc), detail=_json_value(exc.errors()))
+
     @app.exception_handler(GraphValidationError)
     async def graph_validation_error(_request: Request, exc: GraphValidationError) -> JSONResponse:
-        return JSONResponse(status_code=422, content={"detail": {"code": exc.code, "message": str(exc)}})
+        return api_error(422, exc.code, str(exc), detail={"code": exc.code, "message": str(exc)})
 
     @app.exception_handler(RevisionConflictError)
     async def revision_conflict(_request: Request, exc: RevisionConflictError) -> JSONResponse:
-        return JSONResponse(status_code=409, content={"detail": {"code": exc.code, "message": str(exc)}})
+        return api_error(409, exc.code, str(exc), detail={"code": exc.code, "message": str(exc)})
 
     @app.exception_handler(IdempotencyConflictError)
     async def idempotency_conflict(_request: Request, exc: IdempotencyConflictError) -> JSONResponse:
-        return JSONResponse(status_code=409, content={"detail": {"code": exc.code, "message": str(exc)}})
+        return api_error(409, exc.code, str(exc), detail={"code": exc.code, "message": str(exc)})
 
     @app.exception_handler(OperationTargetError)
     async def operation_target_error(_request: Request, exc: OperationTargetError) -> JSONResponse:
-        return JSONResponse(status_code=422, content={"detail": {"code": exc.code, "message": str(exc)}})
+        return api_error(422, exc.code, str(exc), detail={"code": exc.code, "message": str(exc)})
 
-    @app.exception_handler(FileNotFoundError)
-    async def not_found(_request: Request, exc: FileNotFoundError) -> JSONResponse:
-        return JSONResponse(status_code=404, content={"detail": str(exc)})
+    @app.exception_handler(NotFoundError)
+    async def not_found(_request: Request, exc: NotFoundError) -> JSONResponse:
+        return api_error(404, "not_found", str(exc))
 
     @app.exception_handler(FileExistsError)
     async def already_exists(_request: Request, exc: FileExistsError) -> JSONResponse:
-        return JSONResponse(status_code=409, content={"detail": str(exc)})
+        return api_error(409, "already_exists", str(exc))
 
-    @app.exception_handler(ValueError)
-    async def invalid_value(_request: Request, exc: ValueError) -> JSONResponse:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    @app.exception_handler(TokenValidationError)
+    @app.exception_handler(MediaInputError)
+    @app.exception_handler(InvalidRequestError)
+    async def invalid_value(_request: Request, exc: InvalidRequestError) -> JSONResponse:
+        return api_error(422, "invalid_request", str(exc))
+
+    @app.exception_handler(ConflictError)
+    async def lifecycle_conflict(_request: Request, exc: ConflictError) -> JSONResponse:
+        return api_error(409, "conflict", str(exc))
+
+    @app.exception_handler(ServiceUnavailableError)
+    async def service_unavailable(_request: Request, exc: ServiceUnavailableError) -> JSONResponse:
+        return api_error(503, "service_unavailable", str(exc))
 
     @app.exception_handler(MediaGatewayRequestError)
     async def media_gateway_request_error(_request: Request, exc: MediaGatewayRequestError) -> JSONResponse:
@@ -229,7 +260,7 @@ def create_app(
             scope="server",
             payload={"operation": "Media gateway", "message": str(exc.detail)},
         )
-        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+        return api_error(exc.status_code, "media_error", str(exc.detail), detail=_json_value(exc.detail))
 
     @app.exception_handler(MediaGatewayUnavailable)
     async def media_gateway_unavailable(_request: Request, exc: MediaGatewayUnavailable) -> JSONResponse:
@@ -238,7 +269,7 @@ def create_app(
             scope="server",
             payload={"operation": "Media gateway", "message": str(exc)},
         )
-        return JSONResponse(status_code=503, content={"detail": str(exc)})
+        return api_error(503, "media_unavailable", str(exc))
 
     @app.exception_handler(Exception)
     async def unhandled_error(_request: Request, exc: Exception) -> JSONResponse:
@@ -248,10 +279,8 @@ def create_app(
             scope="server",
             payload={"message": f"{type(exc).__name__}: {exc}"},
         )
-        return JSONResponse(
-            status_code=500,
-            content={"detail": {"code": "internal_error", "message": "An internal server error occurred"}},
-        )
+        return api_error(500, "internal_error", "An internal server error occurred",
+                         detail={"code": "internal_error", "message": "An internal server error occurred"})
 
     @app.get("/api/health")
     async def health() -> F8JsonValue:
@@ -267,9 +296,9 @@ def create_app(
     @app.get("/api/logs")
     async def recent_logs(limit: int = 500, before_sequence: int | None = None) -> F8JsonValue:
         if limit < 1 or limit > 1000:
-            raise ValueError("log limit must be between 1 and 1000")
+            raise InvalidRequestError("log limit must be between 1 and 1000")
         if before_sequence is not None and before_sequence < 1:
-            raise ValueError("before_sequence must be positive")
+            raise InvalidRequestError("before_sequence must be positive")
         return _json_value(await studio.events.recent_logs(limit=limit, before_sequence=before_sequence))
 
     @app.get("/api/capabilities")
@@ -426,20 +455,7 @@ def create_app(
 
     @app.delete("/api/projects/{project_id}", status_code=204)
     async def delete_project(project_id: str) -> Response:
-        await asyncio.to_thread(studio.projects.summary, project_id)
-        if await studio.jobs.has_active_project_job(project_id):
-            raise HTTPException(status_code=409, detail="Cancel the active deployment before deleting this project")
-        sessions = await asyncio.to_thread(studio.agents.list, project_id)
-        if any(session.status.value in {"running", "waiting_for_approval"} for session in sessions):
-            raise HTTPException(status_code=409, detail="Cancel active agent runs before deleting this project")
-        service_ids = await asyncio.to_thread(studio.projects.service_ids, project_id)
-        if any(studio.processes.is_running(service_id) for service_id in service_ids):
-            raise HTTPException(status_code=409, detail="Stop the project's services before deleting it")
-        await asyncio.to_thread(studio.projects.delete, project_id)
-        studio.local.forget_project_hotkeys(project_id)
-        await studio.events.publish(
-            event_type="project.deleted", scope=f"project:{project_id}", payload={"projectId": project_id},
-        )
+        await studio.lifecycle.delete(project_id)
         return Response(status_code=204)
 
     @app.get("/api/projects/{project_id}/graph/export")
@@ -448,17 +464,13 @@ def create_app(
         return Response(content=export_graph(document), media_type="application/json")
 
     @app.post("/api/projects/{project_id}/graph/import")
-    async def import_project_graph(project_id: str, request: Request) -> F8JsonValue:
-        payload = await request.body()
-        document = await asyncio.to_thread(import_graph, payload, project_id=project_id)
-        record = await asyncio.to_thread(studio.projects.restore, project_id, document)
-        await asyncio.to_thread(studio.local.refresh_hotkeys)
-        await studio.events.publish(
-            event_type="graph.committed",
-            scope=f"project:{project_id}",
-            payload={"requestId": "graph-import", "graphChanged": True, "layoutChanged": True, "document": _json_value(record.document)},
-        )
-        return _json_value(record)
+    async def import_project_graph(project_id: str, request: Request,
+                                   expected_graph_revision: int | None = None,
+                                   expected_layout_revision: int | None = None) -> F8JsonValue:
+        return _json_value(await studio.lifecycle.import_graph(
+            project_id, await request.body(), expected_graph_revision=expected_graph_revision,
+            expected_layout_revision=expected_layout_revision,
+        ))
 
     @app.put("/api/projects/{project_id}")
     async def update_project(project_id: str, request: Request) -> F8JsonValue:
@@ -490,15 +502,7 @@ def create_app(
 
     @app.post("/api/projects/{project_id}/versions/{version_id}/restore")
     async def restore_project_version(project_id: str, version_id: str) -> F8JsonValue:
-        version = await asyncio.to_thread(studio.assets.get_project_version, project_id, version_id)
-        record = await asyncio.to_thread(studio.projects.restore, project_id, version.document)
-        await asyncio.to_thread(studio.local.refresh_hotkeys)
-        await studio.events.publish(
-            event_type="graph.committed",
-            scope=f"project:{project_id}",
-            payload={"requestId": f"restore:{version_id}", "graphChanged": True, "layoutChanged": True, "document": _json_value(record.document)},
-        )
-        return _json_value(record)
+        return _json_value(await studio.lifecycle.restore_version(project_id, version_id))
 
     @app.post("/api/editor/sessions", status_code=201)
     async def create_editor_session(request: Request) -> F8JsonValue:
@@ -506,11 +510,11 @@ def create_app(
         target = (payload.project_id, payload.node_id, payload.field_name)
         if any(target):
             if not all(target):
-                raise ValueError("projectId, nodeId, and fieldName are all required for a code field")
+                raise InvalidRequestError("projectId, nodeId, and fieldName are all required for a code field")
             document = await asyncio.to_thread(studio.projects.document, payload.project_id)
             node = next((item for item in document.nodes if item.node_id == payload.node_id), None)
             if node is None:
-                raise FileNotFoundError(f"code editor node not found: {payload.node_id}")
+                raise NotFoundError(f"code editor node not found: {payload.node_id}")
             support_files = editor_support_files(node, payload.field_name)
             payload = msgspec.structs.replace(payload, support_files=support_files)
         return _json_value(await asyncio.to_thread(studio.editor.create, payload))
@@ -594,7 +598,7 @@ def create_app(
     async def validate_project(project_id: str, request: Request) -> F8JsonValue:
         payload = await _decode_body(request, ValidateDocumentRequest)
         if payload.document.project_id != project_id:
-            raise ValueError("document projectId does not match route project id")
+            raise InvalidRequestError("document projectId does not match route project id")
         await asyncio.to_thread(studio.tools.validate_document, payload.document)
         return {
             "valid": True,
@@ -751,54 +755,18 @@ def create_app(
         payload = await _decode_body(request, ServiceStartRequest)
         return _json_value(await studio.processes.start(service_id, service_class=payload.service_class))
 
-    async def stop_service_runtime(service_id: str) -> F8JsonValue:
-        if service_id == STUDIO_SERVICE_ID:
-            return _json_value(await studio.runtime.terminate(service_id))
-        try:
-            await studio.runtime.terminate(service_id)
-        except (TimeoutError, OSError, RuntimeError, ValueError) as exc:
-            logger.info(
-                "runtime terminate unavailable; stopping managed process service_id=%s",
-                service_id,
-                exc_info=exc,
-            )
-        return _json_value(await studio.processes.stop(service_id))
-
     @app.post("/api/projects/{project_id}/stop", status_code=204)
     async def stop_project(project_id: str) -> Response:
-        document = await asyncio.to_thread(studio.projects.document, project_id)
-        await studio.jobs.cancel_project(project_id)
-        service_ids = {node.service_id for node in document.nodes if isinstance(node, ServiceNode)}
-        for service_id in sorted(service_ids, key=lambda item: (item == STUDIO_SERVICE_ID, item)):
-            await stop_service_runtime(service_id)
+        await studio.lifecycle.stop(project_id)
         return Response(status_code=204)
 
     @app.post("/api/runtime/services/{service_id}/stop")
     async def stop_service(service_id: str) -> F8JsonValue:
-        return await stop_service_runtime(service_id)
+        return _json_value(await studio.lifecycle.stop_service(service_id))
 
     @app.post("/api/projects/{project_id}/services/{service_id}/restart", status_code=202)
     async def restart_project_service(project_id: str, service_id: str) -> F8JsonValue:
-        document = await asyncio.to_thread(studio.projects.document, project_id)
-        service = next((node for node in document.nodes if isinstance(node, ServiceNode) and node.service_id == service_id), None)
-        if service is None:
-            raise HTTPException(status_code=404, detail=f"Service {service_id} is not in project {project_id}")
-        if service_id == STUDIO_SERVICE_ID or not studio.processes.can_start(service.service_class):
-            raise HTTPException(status_code=409, detail=f"Service {service_id} cannot be restarted by Studio")
-        if not studio.processes.is_running(service_id):
-            raise HTTPException(status_code=409, detail=f"Service {service_id} is not a running Studio-managed process")
-        await asyncio.to_thread(studio.catalog.refresh, force_dynamic_service_classes=(service.service_class,))
-        if not studio.processes.can_start(service.service_class):
-            raise HTTPException(status_code=409, detail=f"Service {service.service_class} is unavailable after catalog refresh")
-        await studio.jobs.cancel_project(project_id)
-        await stop_service_runtime(service_id)
-        started = await studio.processes.start(service_id, service_class=service.service_class)
-        if not started.running:
-            raise HTTPException(status_code=503, detail=f"Service {service_id} exited during startup")
-        return _json_value(await studio.tools.deploy(
-            project_id,
-            DeployProjectRequest(request_id=uuid4().hex, expected_graph_revision=document.graph_revision),
-        ))
+        return _json_value(await studio.lifecycle.restart_service(project_id, service_id))
 
     @app.get("/api/runtime/services/{service_id}/status")
     async def service_status(service_id: str) -> F8JsonValue:
@@ -865,33 +833,39 @@ def create_app(
         )
         await websocket.accept()
         try:
-            if stream.snapshot_required:
-                projects = await asyncio.to_thread(studio.projects.list)
-                await websocket.send_json(
-                    {
-                        "eventId": "snapshot",
-                        "serverEpoch": studio.server_epoch,
-                        "sequence": stream.current_sequence,
-                        "type": "stream.snapshot",
-                        "scope": "server",
-                        "payload": {
-                            "projects": _json_value(projects),
-                            "oldestSequence": stream.oldest_sequence,
-                        },
-                    }
-                )
+            await websocket.send_json({
+                "type": "stream.hello", "serverEpoch": studio.server_epoch,
+                "sequence": stream.current_sequence, "resumed": not stream.snapshot_required,
+            })
             for event in stream.replay:
                 await websocket.send_json(_json_value(event))
             while True:
                 event = await stream.queue.get()
-                await websocket.send_json(_json_value(event))
-                if event.type == "stream.resync_required":
-                    await websocket.close(code=1013, reason="event stream resynchronization required")
+                if event is None:
+                    await websocket.close(code=1013, reason="event stream overflow; reconnect with the last processed cursor")
                     return
+                await websocket.send_json(_json_value(event))
         except WebSocketDisconnect:
             return
         finally:
             await studio.events.close_stream(stream.subscription_id)
+
+    @app.websocket("/api/live")
+    async def live_values(websocket: WebSocket) -> None:
+        if not _origin_allowed(websocket.headers.get("origin"), resolved_allowed_hosts):
+            await websocket.close(code=1008, reason="websocket origin is not allowed")
+            return
+        await websocket.accept()
+        subscription, snapshot = studio.events.live.subscribe()
+        try:
+            await websocket.send_json({"type": "live.snapshot", "values": snapshot})
+            while True:
+                patch = await subscription.next_patch()
+                await websocket.send_json(patch)
+        except WebSocketDisconnect:
+            return
+        finally:
+            studio.events.live.unsubscribe(subscription)
 
     if has_web_assets:
         assets_path = resolved_web_dist / "assets"
@@ -907,4 +881,5 @@ def create_app(
                 return FileResponse(requested_path)
             return FileResponse(index_path)
 
+    install_openapi(app)
     return app

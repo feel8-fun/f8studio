@@ -18,6 +18,7 @@ from f8pysdk.monitoring import MonitorContractError, validate_describe_monitor_c
 from f8pysdk.specs import F8ServiceDescribe, F8ServiceEntry
 
 from .entry import _read_yaml
+from .describe_freshness import static_is_fresh
 
 
 logger = logging.getLogger(__name__)
@@ -69,6 +70,9 @@ def _read_static_describe_file(service_dir: Path) -> dict[str, Any] | None:
         return None
 
     service_dir = Path(service_dir).resolve()
+    if not static_is_fresh(service_dir):
+        logger.debug("Ignoring stale describe cache path=%s", service_dir)
+        return None
     json_path = service_dir / "describe.json"
     if json_path.is_file():
         try:

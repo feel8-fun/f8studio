@@ -3,6 +3,10 @@ from __future__ import annotations
 import uuid
 
 
+class TokenValidationError(ValueError):
+    """A runtime identifier cannot be represented as one transport path token."""
+
+
 def ensure_token(value: str, *, label: str) -> str:
     """
     Ensure a string is safe to use as a single runtime path token.
@@ -11,9 +15,9 @@ def ensure_token(value: str, *, label: str) -> str:
     """
     value = str(value).strip()
     if not value:
-        raise ValueError(f"{label} must be non-empty")
+        raise TokenValidationError(f"{label} must be non-empty")
     if "." in value or "/" in value:
-        raise ValueError(f'{label} must not contain "." or "/" (got {value!r}).')
+        raise TokenValidationError(f'{label} must not contain "." or "/" (got {value!r}).')
     return value
 
 

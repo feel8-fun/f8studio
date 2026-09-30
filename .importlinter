@@ -1,55 +1,35 @@
 [importlinter]
-root_package = f8pystudio
+root_packages =
+    f8pysdk
+    f8studio_core
+    f8media_protocol
+    f8media_gateway
+    f8studio_server
 
-[importlinter:contract:bridge-service-liveliness-boundary]
-name = bridge.service_liveliness remains a pure runtime identity helper
+[importlinter:contract:core-boundary]
+name = Graph domain does not depend on server or media implementation
 type = forbidden
 source_modules =
-    f8pystudio.bridge.service_liveliness
+    f8studio_core
 forbidden_modules =
-    f8pystudio.assets
-    f8pystudio.nodegraph
-    f8pystudio.ui
-    f8pystudio.operators
-    f8pystudio.render_nodes
-    f8pystudio.app
+    f8studio_server
+    f8media_gateway
 
-[importlinter:contract:bridge-rungraph-deploy-evidence-boundary]
-name = bridge.rungraph_deploy_evidence remains a pure deploy evidence helper
+[importlinter:contract:sdk-boundary]
+name = SDK does not depend on Studio
 type = forbidden
 source_modules =
-    f8pystudio.bridge.rungraph_deploy_evidence
+    f8pysdk
 forbidden_modules =
-    f8pystudio.assets
-    f8pystudio.nodegraph
-    f8pystudio.ui
-    f8pystudio.operators
-    f8pystudio.render_nodes
-    f8pystudio.app
+    f8studio_core
+    f8studio_server
+    f8media_gateway
 
-[importlinter:contract:bridge-service-availability-boundary]
-name = bridge.service_availability remains a pure service availability helper
+[importlinter:contract:media-boundary]
+name = Media protocol and gateway do not depend on Studio server
 type = forbidden
 source_modules =
-    f8pystudio.bridge.service_availability
+    f8media_protocol
+    f8media_gateway
 forbidden_modules =
-    f8pystudio.assets
-    f8pystudio.nodegraph
-    f8pystudio.ui
-    f8pystudio.operators
-    f8pystudio.render_nodes
-    f8pystudio.app
-
-[importlinter:contract:automation-domain-boundary]
-name = automation.domain remains pure transport/domain types
-type = forbidden
-source_modules =
-    f8pystudio.automation.domain
-forbidden_modules =
-    f8pystudio.assets
-    f8pystudio.bridge
-    f8pystudio.nodegraph
-    f8pystudio.ui
-    f8pystudio.operators
-    f8pystudio.render_nodes
-    f8pystudio.app
+    f8studio_server

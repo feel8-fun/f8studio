@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+from f8pysdk.expr_policy import numpy_attribute_allowed
 import math
 from dataclasses import dataclass
 from types import CodeType
@@ -60,10 +61,7 @@ ALLOWED_MATH_FNS: set[str] = {
 
 
 def is_identifier(name: str) -> bool:
-    try:
-        return bool(name) and name.isidentifier()
-    except Exception:
-        return False
+    return isinstance(name, str) and name.isidentifier()
 def normalize_expr_code(value: Any) -> str:
     text = str("" if value is None else value)
     if "\n" not in text and "\r" not in text:
@@ -165,10 +163,7 @@ class ExprValidator(ast.NodeVisitor):
             tree = ast.parse(str(expr or ""), mode="eval")
         except SyntaxError as exc:
             return None, f"syntax error: {exc.msg}"
-        try:
-            self.visit(tree)
-        except Exception as exc:
-            return None, f"validation error: {exc}"
+        self.visit(tree)
         if self._errors:
             return None, "; ".join(self._errors[:3])
         if not isinstance(tree, ast.Expression):
@@ -229,6 +224,9 @@ class ExprValidator(ast.NodeVisitor):
         return super().generic_visit(node)
 
     def visit_Attribute(self, node: ast.Attribute) -> Any:
+        if not numpy_attribute_allowed(node):
+            self.error("numpy member is not allowed in numeric expressions")
+            return None
         if str(node.attr or "").startswith("_"):
             self.error("private/dunder attribute access is not allowed")
             return None
@@ -267,7 +265,7 @@ def compile_expr(expr: str, *, allow_numpy: bool) -> tuple[CodeType | None, str 
         return None, str(err or "invalid expression")
     try:
         return compile(tree, "<f8.py_expr>", "eval"), None
-    except Exception as exc:
+    except (SyntaxError, TypeError, ValueError) as exc:
         return None, str(exc)
 
 

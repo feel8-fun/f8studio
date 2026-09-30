@@ -2,6 +2,8 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 
+import { SkeletonObjects } from './SkeletonObjects';
+
 import type { SkeletonScene } from '../api/contracts';
 import { usePresentationConnected } from '../presentation/PresentationStore';
 
@@ -52,7 +54,7 @@ function frameBounds(camera: THREE.PerspectiveCamera, controls: OrbitControls, b
 export function SkeletonViewport({ scene, compact = false }: { readonly scene: SkeletonScene; readonly compact?: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const worldRootRef = useRef<THREE.Group | null>(null);
-  const skeletonGroupRef = useRef<THREE.Group | null>(null);
+  const skeletonObjectsRef = useRef<SkeletonObjects | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const framedPeopleRef = useRef<number | null>(null);
@@ -92,7 +94,8 @@ export function SkeletonViewport({ scene, compact = false }: { readonly scene: S
     worldRoot.add(grid, skeletonGroup);
     threeScene.add(worldRoot);
     worldRootRef.current = worldRoot;
-    skeletonGroupRef.current = skeletonGroup;
+    const skeletonObjects = new SkeletonObjects(skeletonGroup, makeLabel);
+    skeletonObjectsRef.current = skeletonObjects;
     const resize = () => {
       const width = Math.max(1, host.clientWidth);
       const height = Math.max(1, host.clientHeight);
@@ -120,7 +123,8 @@ export function SkeletonViewport({ scene, compact = false }: { readonly scene: S
       observer.disconnect();
       controls.dispose();
       worldRootRef.current = null;
-      skeletonGroupRef.current = null;
+      skeletonObjects.close();
+      skeletonObjectsRef.current = null;
       cameraRef.current = null;
       controlsRef.current = null;
       framedPeopleRef.current = null;
@@ -135,64 +139,12 @@ export function SkeletonViewport({ scene, compact = false }: { readonly scene: S
 
   useEffect(() => {
     const root = worldRootRef.current;
-    const skeletonGroup = skeletonGroupRef.current;
-    if (root === null || skeletonGroup === null) return;
+    const objects = skeletonObjectsRef.current;
+    if (root === null || objects === null) return;
     const flags = scene.renderFlags;
     const hints = scene.performanceHints;
     fpsCapRef.current = hints?.recommendedFpsCap ?? scene.uiFpsCap ?? 60;
-    const markerScale = Math.min(10, Math.max(0.1, flags?.markerScale ?? 1));
-    const jointMaterial = new THREE.MeshStandardMaterial({ color: '#ffca57', roughness: 0.35, metalness: 0.1 });
-    const lineMaterial = new THREE.LineBasicMaterial({ color: '#79d6bd' });
-    let labelCount = 0;
-    for (const person of scene.people) {
-      if (flags?.showBonePoints !== false) {
-        for (const node of person.nodes) {
-          const joint = new THREE.Mesh(new THREE.SphereGeometry(0.055 * markerScale, 12, 8), jointMaterial);
-          joint.position.set(...node.pos);
-          skeletonGroup.add(joint);
-        }
-      }
-      for (const edge of flags?.showSkeletonLines === false ? [] : person.skeletonEdges ?? []) {
-        const from = person.nodes[edge[0]];
-        const to = person.nodes[edge[1]];
-        if (from === undefined || to === undefined) continue;
-        const geometry = new THREE.BufferGeometry().setFromPoints([
-          new THREE.Vector3(...from.pos),
-          new THREE.Vector3(...to.pos),
-        ]);
-        skeletonGroup.add(new THREE.Line(geometry, lineMaterial));
-      }
-      if (flags?.showPersonBoxes !== false && hints?.suppressPersonBoxes !== true && person.bbox?.length === 6) {
-        const [minX, minY, minZ, maxX, maxY, maxZ] = person.bbox;
-        if ([minX, minY, minZ, maxX, maxY, maxZ].every(Number.isFinite)) {
-          const box = new THREE.Box3(new THREE.Vector3(minX, minY, minZ), new THREE.Vector3(maxX, maxY, maxZ));
-          skeletonGroup.add(new THREE.Box3Helper(box, 0x4e8e74));
-        }
-      }
-      const firstNode = person.nodes[0];
-      if (flags?.showPersonNames === true && firstNode !== undefined) {
-        const label = makeLabel(person.name, '#b6e9d5');
-        label.position.set(...firstNode.pos);
-        label.position.y += 0.22;
-        skeletonGroup.add(label);
-      }
-      for (const node of person.nodes) {
-        if (flags?.showBoneAxes === true && hints?.suppressBoneAxes !== true && node.rot !== null) {
-          const axes = new THREE.AxesHelper(0.18 * markerScale);
-          axes.position.set(...node.pos);
-          axes.quaternion.set(node.rot[1], node.rot[2], node.rot[3], node.rot[0]);
-          skeletonGroup.add(axes);
-        }
-        if (flags?.showBoneNames === true && hints?.suppressBoneNames !== true &&
-          labelCount < (hints?.maxVisibleBoneLabels ?? 256)) {
-          const label = makeLabel(node.name, '#d7dce0');
-          label.position.set(...node.pos);
-          label.position.y += 0.12;
-          skeletonGroup.add(label);
-          labelCount += 1;
-        }
-      }
-    }
+    objects.update(scene);
     root.quaternion.setFromUnitVectors(worldUpVector(scene.worldUp), new THREE.Vector3(0, 1, 0));
     const bounds = new THREE.Box3();
     for (const person of scene.people) {
@@ -206,18 +158,6 @@ export function SkeletonViewport({ scene, compact = false }: { readonly scene: S
       if (camera !== null && controls !== null) frameBounds(camera, controls, boundsRef.current);
     }
     framedPeopleRef.current = scene.people.length;
-    return () => {
-      for (const child of [...skeletonGroup.children]) {
-        if (child instanceof THREE.Mesh || child instanceof THREE.Line || child instanceof THREE.Box3Helper || child instanceof THREE.AxesHelper) child.geometry.dispose();
-        if (child instanceof THREE.Sprite) {
-          child.material.map?.dispose();
-          child.material.dispose();
-        }
-      }
-      skeletonGroup.clear();
-      jointMaterial.dispose();
-      lineMaterial.dispose();
-    };
   }, [scene, compact]);
 
   return (

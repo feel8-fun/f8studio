@@ -123,6 +123,7 @@ class InMemoryTransport:
 
     def __init__(self, *, cluster: InMemoryCluster) -> None:
         self._cluster = cluster
+        self._retained: dict[str, bytes] = {}
 
     async def connect(self) -> None:
         return None
@@ -176,10 +177,11 @@ class InMemoryTransport:
         return _ServeHandle(self._cluster, key_name, handler)
 
     async def retained_put(self, key: str, value: bytes) -> None:
+        self._retained[str(key).strip("/")] = bytes(value)
         await self._cluster.retained_put(str(key), bytes(value))
 
     async def retained_get(self, key: str) -> bytes | None:
-        return await self._cluster.retained_get(str(key))
+        return self._retained.get(str(key).strip("/"))
 
     async def retained_watch(
         self,

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8studio_server.errors import InvalidRequestError
+
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
@@ -41,6 +43,7 @@ from f8pysdk.specs import (
 from f8pysdk.zenoh_transport import ZenohTransport, ZenohTransportConfig
 from f8pysdk.zenoh_naming import zenoh_state_key
 
+from .live import LiveValueHub
 from .models import RuntimeActionResult, RuntimeStateField, ServiceDeployResult, ServiceRuntimeStatus
 from .studio_runtime.identifiers import STUDIO_SERVICE_ID
 
@@ -200,6 +203,8 @@ def _error_message(error: F8CommandError | None | msgspec.UnsetType) -> str:
 @dataclass
 class ZenohRuntimeGateway:
     config: RuntimeConfig = field(default_factory=RuntimeConfig)
+    live: LiveValueHub | None = None
+    studio_service_id: str | None = None
     _transport: RuntimeTransport | None = field(default=None, init=False, repr=False)
     _monitor_subscription: RuntimeSubscription | None = field(default=None, init=False, repr=False)
     _state_subscription: RuntimeSubscription | None = field(default=None, init=False, repr=False)
@@ -212,7 +217,7 @@ class ZenohRuntimeGateway:
 
             return InMemoryTransport(cluster=InMemoryCluster())
         if self.config.bus_backend != "zenoh":
-            raise ValueError("runtime gateway supports only zenoh or mem bus backends")
+            raise InvalidRequestError("runtime gateway supports only zenoh or mem bus backends")
         return ZenohTransport(
             ZenohTransportConfig(
                 service_id=self.config.client_service_id,
@@ -245,6 +250,8 @@ class ZenohRuntimeGateway:
             state_subscription = self._state_subscription
             self._state_subscription = None
             self._state_values.clear()
+            if self.live is not None:
+                self.live.delete_prefix("state/")
         if monitor_subscription is not None:
             await monitor_subscription.unsubscribe()
         if state_subscription is not None:
@@ -270,6 +277,27 @@ class ZenohRuntimeGateway:
 
     async def _ingest_state(self, key: str, payload: bytes) -> None:
         self._state_values[key] = bytes(payload)
+        if self.live is None:
+            return
+        parts = key.split("/", 7)
+        if len(parts) != 8 or parts[:2] != ["f8", "svc"] or parts[3:5] != ["state", "nodes"] or parts[6] != "state":
+            return
+        service_id, node_id, name = parts[2], parts[5], parts[7]
+        if service_id.startswith("studio_"):
+            if service_id != self.studio_service_id:
+                return
+            if node_id == service_id:
+                node_id = "studio"
+            service_id = "studio"
+        elif service_id == "studio" and self.studio_service_id is not None:
+            return
+        decoded = decode_obj(payload)
+        if "value" not in decoded:
+            raise InvalidRequestError(f"invalid retained state envelope key={key}")
+        timestamp = decoded.get("tsMs", decoded.get("ts", decoded.get("ts_ms")))
+        value = RuntimeStateField(field=name, found=True, value=cast(F8JsonValue, decoded["value"]),
+                                 ts_ms=int(timestamp) if isinstance(timestamp, (int, float)) else None)
+        self.live.set(f"state/{service_id}/{node_id}/{name}", msgspec.to_builtins(value))
 
     async def _request(self, key: str, payload: bytes, *, timeout_s: float | None = None) -> bytes:
         transport = await self._connected_transport()
@@ -446,7 +474,7 @@ class ZenohRuntimeGateway:
         service_id = ensure_token(service_id, label="service_id")
         node_id = ensure_token(node_id, label="node_id")
         if not field.strip():
-            raise ValueError("state field must be non-empty")
+            raise InvalidRequestError("state field must be non-empty")
         request = F8SetStateRequest(
             reqId=new_id(),
             args=F8SetStateArgs(nodeId=node_id, field=field, value=value),
@@ -467,14 +495,14 @@ class ZenohRuntimeGateway:
         node_id = ensure_token(node_id, label="node_id")
         normalized_field = field.strip()
         if not normalized_field:
-            raise ValueError("state field must be non-empty")
+            raise InvalidRequestError("state field must be non-empty")
         await self._connected_transport()
         raw = self._state_values.get(zenoh_state_key(service_id, node_id=node_id, field=normalized_field))
         if raw is None:
             return RuntimeStateField(field=normalized_field, found=False)
         decoded = decode_obj(raw)
         if "value" not in decoded:
-            raise ValueError(
+            raise InvalidRequestError(
                 f"invalid retained state envelope service_id={service_id} "
                 f"node_id={node_id} field={normalized_field}"
             )
@@ -496,7 +524,7 @@ class ZenohRuntimeGateway:
     ) -> RuntimeActionResult:
         service_id = ensure_token(service_id, label="service_id")
         if not call.strip():
-            raise ValueError("command call must be non-empty")
+            raise InvalidRequestError("command call must be non-empty")
         request = F8CommandInvokeRequest(
             reqId=new_id(),
             call=call,

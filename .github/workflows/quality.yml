@@ -1,0 +1,41 @@
+name: quality
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: prefix-dev/setup-pixi@v0.9.3
+        with:
+          environments: default web-studio-test
+          cache: true
+      - run: pixi run pytest -q
+      - run: pixi run typecheck
+      - run: pixi run -e web-studio-test studio_python_typecheck
+      - run: pixi run -e web-studio-test python scripts/web_studio/generate_contracts.py --check
+      - run: pixi run lint
+      - run: pixi run lint_imports
+      - run: pixi run quality_exceptions
+  web:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: prefix-dev/setup-pixi@v0.9.3
+        with:
+          environments: web-studio-test
+          cache: true
+      - run: pixi run -e web-studio-test npm --prefix packages/f8studio_web ci
+      - run: pixi run -e web-studio-test studio_web_typecheck
+      - run: pixi run -e web-studio-test studio_web_test

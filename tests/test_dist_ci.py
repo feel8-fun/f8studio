@@ -446,6 +446,39 @@ class DistCiDiscoveryTest(unittest.TestCase):
             detector_service_path.read_text(encoding="utf-8"),
         )
 
+    def test_rewrite_dist_service_entries_maps_web_studio_runtime_to_dist_runtime(self) -> None:
+        engine_service_path = self.root / "services" / "f8" / "engine" / "service.yml"
+        engine_service_path.parent.mkdir(parents=True, exist_ok=True)
+        engine_service_path.write_text(
+            'launch:\n  command: pixi\n  args: ["run", "-e", "web-studio-runtime", "f8pyengine"]\n',
+            encoding="utf-8",
+        )
+
+        self.module._rewrite_dist_service_entries(self.root / "services")
+
+        self.assertIn('"run", "-e", "studio-runtime", "f8pyengine"', engine_service_path.read_text(encoding="utf-8"))
+
+    def test_rewrite_and_validate_block_style_environment(self) -> None:
+        path = self.root / "services" / "service.yml"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("launch:\n  command: pixi\n  args:\n    - run\n    - --environment\n    - web-studio-runtime\n    - f8pyengine\n")
+        self.module._rewrite_dist_service_entries(path.parent)
+        self.module._validate_dist_service_environments(path.parent, ["studio-runtime"])
+        self.assertIn('"studio-runtime"', path.read_text())
+        with self.assertRaises(ValueError):
+            self.module._validate_dist_service_environments(path.parent, ["onnx"])
+
+    def test_validate_dist_service_environments_rejects_unshipped_environment(self) -> None:
+        service_path = self.root / "services" / "f8" / "tool" / "service.yml"
+        service_path.parent.mkdir(parents=True, exist_ok=True)
+        service_path.write_text(
+            'launch:\n  command: pixi\n  args: ["run", "-e", "web-studio", "f8tool"]\n',
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(ValueError, "'web-studio'"):
+            self.module._validate_dist_service_environments(self.root / "services", ["studio-runtime", "onnx"])
+
     def test_copy_dist_config_copies_service_discovery_policy(self) -> None:
         config_root = self.root / "config"
         config_root.mkdir(parents=True, exist_ok=True)

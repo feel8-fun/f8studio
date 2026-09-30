@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from f8studio_server.errors import InvalidRequestError, NotFoundError
+
 import asyncio
+from asyncio import timeout as run_timeout
 import base64
 import binascii
 import hashlib
@@ -75,6 +78,7 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 _TERMINAL_JOBS = {JobStatus.succeeded, JobStatus.partially_failed, JobStatus.failed, JobStatus.cancelled}
 _APPROVAL_TTL = timedelta(minutes=5)
+_RUN_TIMEOUT_S = 300.0
 _MAX_MODEL_TOOL_CALLS = 48
 _MAX_IMAGE_BYTES = 4 * 1024 * 1024
 _MAX_IMAGES = 3
@@ -82,7 +86,7 @@ _MAX_IMAGES = 3
 
 def _validate_images(images: tuple[AgentImage, ...]) -> None:
     if len(images) > _MAX_IMAGES:
-        raise ValueError(f"at most {_MAX_IMAGES} images are allowed per message")
+        raise InvalidRequestError(f"at most {_MAX_IMAGES} images are allowed per message")
     signatures = {
         "image/png": b"\x89PNG\r\n\x1a\n",
         "image/jpeg": b"\xff\xd8\xff",
@@ -91,21 +95,21 @@ def _validate_images(images: tuple[AgentImage, ...]) -> None:
     }
     for image in images:
         if not image.name.strip() or len(image.name) > 200:
-            raise ValueError("image name must be between 1 and 200 characters")
+            raise InvalidRequestError("image name must be between 1 and 200 characters")
         header, separator, encoded = image.data_url.partition(",")
         media_type = header.removeprefix("data:").removesuffix(";base64")
         if not separator or header != f"data:{media_type};base64" or media_type not in signatures:
-            raise ValueError("image must be a base64 PNG, JPEG, WebP, or GIF data URL")
+            raise InvalidRequestError("image must be a base64 PNG, JPEG, WebP, or GIF data URL")
         if len(encoded) > (_MAX_IMAGE_BYTES + 2) * 4 // 3 + 4:
-            raise ValueError("image exceeds the 4 MB limit")
+            raise InvalidRequestError("image exceeds the 4 MB limit")
         try:
             data = base64.b64decode(encoded, validate=True)
         except binascii.Error as exc:
-            raise ValueError("image has invalid base64 data") from exc
+            raise InvalidRequestError("image has invalid base64 data") from exc
         if not data or len(data) > _MAX_IMAGE_BYTES or not data.startswith(signatures[media_type]):
-            raise ValueError("image format does not match its content or exceeds 4 MB")
+            raise InvalidRequestError("image format does not match its content or exceeds 4 MB")
         if media_type == "image/webp" and data[8:12] != b"WEBP":
-            raise ValueError("image format does not match its content")
+            raise InvalidRequestError("image format does not match its content")
 
 
 def _title_from_prompt(prompt: str) -> str:
@@ -122,6 +126,7 @@ class ApprovalDeniedError(RuntimeError):
 class _PendingApproval:
     session_id: str
     future: asyncio.Future[bool]
+    layout_revision: int
 
 
 def _json_value(value: object) -> F8JsonValue:
@@ -156,7 +161,7 @@ def _catalog_index(catalog: CatalogSnapshot) -> F8JsonValue:
 def _catalog_search(catalog: CatalogSnapshot, query: str) -> F8JsonValue:
     needle = query.strip().casefold()
     if len(needle) < 2:
-        raise ValueError("Catalog search needs at least two characters")
+        raise InvalidRequestError("Catalog search needs at least two characters")
     terms = needle.split()
     matches = [spec for spec in catalog.operators if any(term in " ".join((
         str(spec.serviceClass), str(spec.operatorClass), str(spec.label), str(spec.description),
@@ -174,7 +179,7 @@ def _catalog_operator(catalog: CatalogSnapshot, service_class: str, operator_cla
     spec = next((item for item in catalog.operators
                  if str(item.serviceClass) == service_class and str(item.operatorClass) == operator_class), None)
     if spec is None:
-        raise ValueError(f"Unknown operator: {service_class}/{operator_class}")
+        raise InvalidRequestError(f"Unknown operator: {service_class}/{operator_class}")
     return _json_value(spec)
 
 
@@ -252,7 +257,11 @@ class AgentService:
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._approvals: dict[str, _PendingApproval] = {}
         self._lock = asyncio.Lock()
+        self._session_locks: dict[str, asyncio.Lock] = {}
         self._mark_interrupted_sessions()
+
+    def _session_lock(self, session_id: str) -> asyncio.Lock:
+        return self._session_locks.setdefault(session_id, asyncio.Lock())
 
     def providers(self) -> tuple[AgentProviderSummary, ...]:
         return self._providers.summaries()
@@ -263,19 +272,19 @@ class AgentService:
     async def update_provider_settings(self, provider_id: str, request: UpdateProviderSettings) -> ProviderSettingsView:
         async with self._lock:
             if any(not task.done() for task in self._tasks.values()):
-                raise ValueError("Wait for active agent runs to finish or cancel them before changing provider settings")
+                raise InvalidRequestError("Wait for active agent runs to finish or cancel them before changing provider settings")
             return await asyncio.to_thread(self._providers.update_settings, provider_id, request)
 
     async def create_provider_connection(self, request: CreateProviderConnection) -> ProviderSettingsView:
         async with self._lock:
             if any(not task.done() for task in self._tasks.values()):
-                raise ValueError("Wait for active agent runs before changing provider connections")
+                raise InvalidRequestError("Wait for active agent runs before changing provider connections")
             return await asyncio.to_thread(self._providers.create_connection, request)
 
     async def delete_provider_connection(self, provider_id: str) -> None:
         async with self._lock:
             if any(not task.done() for task in self._tasks.values()):
-                raise ValueError("Wait for active agent runs before changing provider connections")
+                raise InvalidRequestError("Wait for active agent runs before changing provider connections")
             await asyncio.to_thread(self._providers.delete_connection, provider_id)
 
     async def probe_provider(self, request: ProbeProviderRequest) -> ProviderProbeResult:
@@ -307,27 +316,27 @@ class AgentService:
     def get(self, session_id: str) -> AgentSessionRecord:
         record = self._repository.get(session_id)
         if record is None:
-            raise FileNotFoundError(f"agent session not found: {session_id}")
+            raise NotFoundError(f"agent session not found: {session_id}")
         return record
 
     async def rename(self, session_id: str, request: RenameAgentSessionRequest) -> AgentSessionRecord:
         title = " ".join(request.title.split())
         if not title or len(title) > 120:
-            raise ValueError("agent session title must be between 1 and 120 characters")
-        async with self._lock:
+            raise InvalidRequestError("agent session title must be between 1 and 120 characters")
+        async with self._session_lock(session_id):
             record = await asyncio.to_thread(self.get, session_id)
             if record.status in {AgentRunStatus.running, AgentRunStatus.waiting_for_approval}:
-                raise ValueError("stop the active agent run before renaming its session")
+                raise InvalidRequestError("stop the active agent run before renaming its session")
             updated = msgspec.structs.replace(record, title=title, auto_title_pending=False, updated_at=utc_now_text())
             await asyncio.to_thread(self._repository.save, updated)
         await self._publish(updated)
         return updated
 
     async def select_model(self, session_id: str, request: SelectAgentModelRequest) -> AgentSessionRecord:
-        async with self._lock:
+        async with self._session_lock(session_id):
             record = await asyncio.to_thread(self.get, session_id)
             if record.status in {AgentRunStatus.running, AgentRunStatus.waiting_for_approval}:
-                raise ValueError("stop the active agent run before changing its model")
+                raise InvalidRequestError("stop the active agent run before changing its model")
             self._providers.validate_selection(request.provider_id, request.model_id)
             updated = msgspec.structs.replace(
                 record, provider_id=request.provider_id, model_id=request.model_id,
@@ -338,10 +347,10 @@ class AgentService:
         return updated
 
     async def delete(self, session_id: str) -> None:
-        async with self._lock:
+        async with self._session_lock(session_id):
             record = await asyncio.to_thread(self.get, session_id)
             if record.status in {AgentRunStatus.running, AgentRunStatus.waiting_for_approval}:
-                raise ValueError("stop the active agent run before deleting its session")
+                raise InvalidRequestError("stop the active agent run before deleting its session")
             await asyncio.to_thread(self._repository.delete, session_id)
         await self._events.publish(
             event_type="agent.session.deleted",
@@ -352,15 +361,18 @@ class AgentService:
     async def start_run(self, session_id: str, request: StartAgentRunRequest) -> AgentSessionRecord:
         prompt = request.prompt.strip()
         if not prompt and not request.images:
-            raise ValueError("agent prompt or image must be provided")
+            raise InvalidRequestError("agent prompt or image must be provided")
         _validate_images(request.images)
-        async with self._lock:
+        async with self._lock, self._session_lock(session_id):
             record = await asyncio.to_thread(self.get, session_id)
-            if record.status in {AgentRunStatus.running, AgentRunStatus.waiting_for_approval}:
-                raise ValueError("agent session already has an active run")
+            previous_task = self._tasks.get(session_id)
+            if record.status in {AgentRunStatus.running, AgentRunStatus.waiting_for_approval} or (
+                previous_task is not None and not previous_task.done()
+            ):
+                raise InvalidRequestError("agent session already has an active run")
             self._providers.validate_selection(record.provider_id, record.model_id)
             if request.images and not self._providers.supports_image(record.provider_id, record.model_id):
-                raise ValueError(f"selected agent model does not support image input: {record.model_id}")
+                raise InvalidRequestError(f"selected agent model does not support image input: {record.model_id}")
             timestamp = utc_now_text()
             started = msgspec.structs.replace(
                 record,
@@ -387,9 +399,15 @@ class AgentService:
             await asyncio.to_thread(self._repository.save, started)
             task = asyncio.create_task(self._run(started.session_id, prompt, request.reasoning_effort), name=f"agent:{started.session_id}")
             self._tasks[started.session_id] = task
-            task.add_done_callback(lambda _task, key=started.session_id: self._tasks.pop(key, None))
+            task.add_done_callback(lambda finished, key=started.session_id: self._run_finished(key, finished))
         await self._publish(started)
         return started
+
+    def _run_finished(self, session_id: str, task: asyncio.Task[None]) -> None:
+        if self._tasks.get(session_id) is task:
+            self._tasks.pop(session_id, None)
+        if not task.cancelled() and task.exception() is not None:
+            logger.error("agent task failed session_id=%s", session_id, exc_info=task.exception())
 
     async def resolve_approval(
         self,
@@ -397,18 +415,18 @@ class AgentService:
         approval_id: str,
         request: ResolveAgentApprovalRequest,
     ) -> AgentSessionRecord:
-        async with self._lock:
+        async with self._session_lock(session_id):
             record = await asyncio.to_thread(self.get, session_id)
             approval = record.approval
             if approval is None or approval.approval_id != approval_id:
-                raise FileNotFoundError(f"pending agent approval not found: {approval_id}")
+                raise NotFoundError(f"pending agent approval not found: {approval_id}")
             if approval.status is not ApprovalStatus.pending:
-                raise ValueError(f"agent approval is already {approval.status.value}")
+                raise InvalidRequestError(f"agent approval is already {approval.status.value}")
             if request.arguments_hash != approval.arguments_hash:
-                raise ValueError("agent approval argumentsHash does not match the pending tool call")
+                raise InvalidRequestError("agent approval argumentsHash does not match the pending tool call")
             pending = self._approvals.get(approval_id)
             if pending is None or pending.session_id != session_id:
-                raise ValueError("agent approval is no longer active")
+                raise InvalidRequestError("agent approval is no longer active")
 
             now = datetime.now(UTC)
             if now >= datetime.fromisoformat(approval.expires_at):
@@ -416,15 +434,17 @@ class AgentService:
                 await asyncio.to_thread(self._repository.save, updated)
                 if not pending.future.done():
                     pending.future.set_exception(TimeoutError("agent approval expired"))
-                raise ValueError("agent approval expired")
+                raise InvalidRequestError("agent approval expired")
 
             current = await asyncio.to_thread(self._tools.document, record.project_id)
-            if current.graph_revision != approval.target_graph_revision:
+            if (current.graph_revision != approval.target_graph_revision
+                    or current.layout_revision != pending.layout_revision):
                 updated = self._resolve_record_approval(record, ApprovalStatus.invalidated)
                 await asyncio.to_thread(self._repository.save, updated)
                 conflict = RevisionConflictError(
                     f"approval revision conflict: expected {approval.target_graph_revision}, "
-                    f"current {current.graph_revision}"
+                    f"current {current.graph_revision}; layout expected {pending.layout_revision}, "
+                    f"current {current.layout_revision}"
                 )
                 if not pending.future.done():
                     pending.future.set_exception(conflict)
@@ -439,7 +459,7 @@ class AgentService:
         return updated
 
     async def cancel(self, session_id: str) -> AgentSessionRecord:
-        async with self._lock:
+        async with self._session_lock(session_id):
             record = await asyncio.to_thread(self.get, session_id)
             if record.status not in {AgentRunStatus.running, AgentRunStatus.waiting_for_approval}:
                 return record
@@ -490,59 +510,10 @@ class AgentService:
 
     async def _run(self, session_id: str, prompt: str, reasoning_effort: Literal["low", "medium", "high"] | None = None) -> None:
         try:
-            record = await asyncio.to_thread(self.get, session_id)
-            if record.provider_id != "deterministic":
-                supports_images = self._providers.supports_image(record.provider_id, record.model_id)
-                images = tuple(image for message in record.messages[-9:] for image in message.images)[-_MAX_IMAGES:] if supports_images else ()
-                provider_input = self._conversation_prompt(record, prompt)
-                if images:
-                    provider_input += "\nAttached images are ordered by their appearance in the conversation."
-                provider_run = self._providers.run_with_tools(
-                    provider_id=record.provider_id, model_id=record.model_id,
-                    prompt=provider_input, tools=self._model_tools(record),
-                    images=images, reasoning_effort=reasoning_effort,
-                )
-                response = await asyncio.wait_for(provider_run, timeout=300)
-            else:
-                catalog = await self._tool(
-                    record,
-                    tool_name="catalog.read",
-                    arguments={},
-                    target_graph_revision=None,
-                    operation=lambda: asyncio.to_thread(self._tools.catalog),
-                    result_encoder=_catalog_evidence,
-                )
-                record = await asyncio.to_thread(self.get, session_id)
-                document = await self._tool(
-                    record,
-                    tool_name="graph.read",
-                    arguments={"projectId": record.project_id},
-                    target_graph_revision=None,
-                    operation=lambda: asyncio.to_thread(self._tools.document, record.project_id),
-                    result_encoder=_document_evidence,
-                )
-                if "diagnos" in prompt.lower() or "诊断" in prompt:
-                    await self._run_diagnostics(record, document)
-                else:
-                    await self._run_graph_build(record, catalog, document)
-                finished = await asyncio.to_thread(self.get, session_id)
-                response = await self._providers.complete(
-                    provider_id=finished.provider_id,
-                    model_id=finished.model_id,
-                    prompt=self._evidence_prompt(finished),
-                )
-            finished = await asyncio.to_thread(self.get, session_id)
-            completed = self._append_message(finished, role="assistant", content=response)
-            completed = msgspec.structs.replace(
-                completed,
-                status=AgentRunStatus.succeeded,
-                updated_at=utc_now_text(),
-                error_message="",
-                traceback_id="",
-            )
-            await asyncio.to_thread(self._repository.save, completed)
-            await self._publish(completed)
+            async with run_timeout(_RUN_TIMEOUT_S):
+                await self._execute_run(session_id, prompt, reasoning_effort)
         except asyncio.CancelledError:
+            await self._finish_stopped(session_id, AgentRunStatus.cancelled, "agent run cancelled")
             raise
         except ApprovalDeniedError as exc:
             await self._finish_stopped(session_id, AgentRunStatus.cancelled, str(exc))
@@ -556,23 +527,79 @@ class AgentService:
                 traceback_id=traceback_id,
             )
 
+    async def _execute_run(self, session_id: str, prompt: str, reasoning_effort: Literal["low", "medium", "high"] | None = None) -> None:
+        record = await asyncio.to_thread(self.get, session_id)
+        if record.provider_id != "deterministic":
+            supports_images = self._providers.supports_image(record.provider_id, record.model_id)
+            images = tuple(image for message in record.messages[-9:] for image in message.images)[-_MAX_IMAGES:] if supports_images else ()
+            provider_input = self._conversation_prompt(record, prompt)
+            if images:
+                provider_input += "\nAttached images are ordered by their appearance in the conversation."
+            provider_run = self._providers.run_with_tools(
+                provider_id=record.provider_id, model_id=record.model_id,
+                prompt=provider_input, tools=self._model_tools(record),
+                images=images, reasoning_effort=reasoning_effort,
+            )
+            response = await provider_run
+        else:
+            catalog = await self._tool(
+                record,
+                tool_name="catalog.read",
+                arguments={},
+                target_graph_revision=None,
+                operation=lambda: asyncio.to_thread(self._tools.catalog),
+                result_encoder=_catalog_evidence,
+            )
+            record = await asyncio.to_thread(self.get, session_id)
+            document = await self._tool(
+                record,
+                tool_name="graph.read",
+                arguments={"projectId": record.project_id},
+                target_graph_revision=None,
+                operation=lambda: asyncio.to_thread(self._tools.document, record.project_id),
+                result_encoder=_document_evidence,
+            )
+            if "diagnos" in prompt.lower() or "诊断" in prompt:
+                await self._run_diagnostics(record, document)
+            else:
+                await self._run_graph_build(record, catalog, document)
+            finished = await asyncio.to_thread(self.get, session_id)
+            response = await self._providers.complete(
+                provider_id=finished.provider_id,
+                model_id=finished.model_id,
+                prompt=self._evidence_prompt(finished),
+            )
+        async with self._session_lock(session_id):
+            finished = await asyncio.to_thread(self.get, session_id)
+            if finished.status not in {AgentRunStatus.running, AgentRunStatus.waiting_for_approval}:
+                return
+            if finished.approval is not None and finished.approval.status is ApprovalStatus.pending:
+                raise RuntimeError("agent provider returned with an unresolved approval")
+            completed = self._append_message(finished, role="assistant", content=response)
+            completed = msgspec.structs.replace(
+                completed, status=AgentRunStatus.succeeded, updated_at=utc_now_text(),
+                error_message="", traceback_id="",
+            )
+            await asyncio.to_thread(self._repository.save, completed)
+            await self._publish(completed)
+
     def _code_target(self, project_id: str, node_id: str) -> tuple[StudioDocument, GraphNode, str]:
         document = self._tools.document(project_id)
         node = next((item for item in document.nodes if item.node_id == node_id), None)
         if node is None:
-            raise FileNotFoundError(f"code node not found: {node_id}")
+            raise NotFoundError(f"code node not found: {node_id}")
         editor_support_files(node, "code")
         state_fields = node.spec.stateFields
         fields = () if isinstance(state_fields, msgspec.UnsetType) else state_fields
         field = next(item for item in fields if item.name == "code")
         control = field.control
         if isinstance(control, msgspec.UnsetType) or control.language != "python":
-            raise ValueError(f"code field is not Python: {node_id}")
+            raise InvalidRequestError(f"code field is not Python: {node_id}")
         if field.access is not F8StateAccess.rw:
-            raise ValueError(f"code field is not writable: {node_id}")
+            raise InvalidRequestError(f"code field is not writable: {node_id}")
         incoming = {port.port_id for port in node.ports if port.kind.value == "state" and port.name == "code"}
         if any(edge.to_node_id == node_id and edge.to_port_id in incoming for edge in document.edges):
-            raise ValueError(f"code field is driven by an incoming state connection: {node_id}")
+            raise InvalidRequestError(f"code field is driven by an incoming state connection: {node_id}")
         value = node.state_values.get("code", "")
         if not isinstance(value, str):
             raise TypeError(f"code field is not text: {node_id}")
@@ -651,10 +678,10 @@ class AgentService:
                 catalog = NodeCatalog(services=snapshot.services, operators=snapshot.operators)
                 document = self._tools.document(project_id)
                 if any(node.node_id == node_id for node in document.nodes):
-                    raise ValueError(f"Node ID already exists: {node_id}")
+                    raise InvalidRequestError(f"Node ID already exists: {node_id}")
                 if not any(node.service_id == service_id and node.service_class == service_class
                            and not isinstance(node, OperatorNode) for node in document.nodes):
-                    raise ValueError(f"Service instance not found: {service_id} ({service_class})")
+                    raise InvalidRequestError(f"Service instance not found: {service_id} ({service_class})")
                 return catalog.create_operator_node(
                     node_id=node_id, service_id=service_id, service_class=service_class,
                     operator_class=operator_class, name=name,
@@ -698,7 +725,7 @@ class AgentService:
                 document = self._tools.document(project_id)
                 node = next((item for item in document.nodes if item.node_id == node_id), None)
                 if node is None:
-                    raise ValueError(f"Node not found: {node_id}")
+                    raise InvalidRequestError(f"Node not found: {node_id}")
                 return node
             result = await self._tool(
                 record, tool_name="graph.node", arguments={"nodeId": node_id}, target_graph_revision=None,
@@ -728,13 +755,14 @@ class AgentService:
             """Apply a previously previewed JSON PatchRequest after human approval."""
             patch = msgspec.json.decode(patch_json, type=PatchRequest)
             if any(isinstance(operation, SetNodeStateOp) and operation.field == "code" for operation in patch.operations):
-                raise ValueError("use code_read, code_analyze, and code_write to edit Python node code")
+                raise InvalidRequestError("use code_read, code_analyze, and code_write to edit Python node code")
             fingerprint = _arguments_hash({"patch": _json_value(patch)})
             if fingerprint not in previewed_patches:
-                raise ValueError("graph patch must be previewed in this run before applying")
+                raise InvalidRequestError("graph patch must be previewed in this run before applying")
             result = await self._approved_tool(
                 record, tool_name="graph.apply_patch", arguments={"projectId": project_id, "patch": _json_value(patch)},
                 target_graph_revision=patch.expected_graph_revision,
+                target_layout_revision=patch.expected_layout_revision,
                 operation=lambda: self._tools.apply_patch(project_id, patch), result_encoder=_patch_evidence,
             )
             previewed_patches.discard(fingerprint)
@@ -787,10 +815,13 @@ class AgentService:
             """
             patch = proposals.get(proposal_id)
             if patch is None:
-                raise ValueError("Unknown proposalId; call graph_propose_changes in this run first")
+                raise InvalidRequestError("Unknown proposalId; call graph_propose_changes in this run first")
+            if any(isinstance(operation, SetNodeStateOp) and operation.field == "code" for operation in patch.operations):
+                raise InvalidRequestError("use code_read, code_analyze, and code_write to edit Python node code")
             result = await self._approved_tool(
                 record, tool_name="graph.apply_patch", arguments={"projectId": project_id, "patch": _json_value(patch)},
                 target_graph_revision=patch.expected_graph_revision,
+                target_layout_revision=patch.expected_layout_revision,
                 operation=lambda: self._tools.apply_patch(project_id, patch), result_encoder=_patch_evidence,
             )
             proposals.pop(proposal_id)
@@ -845,7 +876,8 @@ class AgentService:
                 record, tool_name="code.write",
                 arguments={"nodeId": node_id, "expectedGraphRevision": expected_graph_revision,
                            "expectedCodeSha256": expected_code_sha256, "code": code},
-                target_graph_revision=expected_graph_revision, operation=apply_code, result_encoder=_patch_evidence,
+                target_graph_revision=expected_graph_revision, target_layout_revision=patch.expected_layout_revision,
+                operation=apply_code, result_encoder=_patch_evidence,
             )
             return _tool_text({
                 "graphRevision": result.document.graph_revision,
@@ -888,7 +920,7 @@ class AgentService:
         async def logs_read(limit: int = 50) -> str:
             """Read recent Studio logs for debugging; limit must be between 1 and 100."""
             if not 1 <= limit <= 100:
-                raise ValueError("log limit must be between 1 and 100")
+                raise InvalidRequestError("log limit must be between 1 and 100")
             result = await self._tool(
                 record, tool_name="logs.read", arguments={"limit": limit}, target_graph_revision=None,
                 operation=lambda: self._events.recent_logs(limit=limit),
@@ -924,7 +956,7 @@ class AgentService:
         async def modding_apply_unity_install(plan_id: str) -> str:
             """Install the exact previewed Unity plan after human approval; never use for Unreal."""
             if plan_id not in previewed_unity_plans:
-                raise ValueError("Unity installation plan must be previewed in this run before applying")
+                raise InvalidRequestError("Unity installation plan must be previewed in this run before applying")
             document = await asyncio.to_thread(self._tools.document, project_id)
             result = await self._approved_tool(
                 record, tool_name="modding.apply_unity_install", arguments={"planId": plan_id},
@@ -1036,6 +1068,7 @@ class AgentService:
             tool_name="graph.apply_patch",
             arguments={"projectId": record.project_id, "patch": patch_json},
             target_graph_revision=document.graph_revision,
+            target_layout_revision=patch.expected_layout_revision,
             operation=lambda: self._tools.apply_patch(record.project_id, patch),
             result_encoder=_patch_evidence,
         )
@@ -1199,6 +1232,7 @@ class AgentService:
         tool_name: str,
         arguments: dict[str, F8JsonValue],
         target_graph_revision: int,
+        target_layout_revision: int | None = None,
         operation: Callable[[], Awaitable[T]],
         result_encoder: Callable[[T], F8JsonValue] | None = None,
     ) -> T:
@@ -1225,10 +1259,17 @@ class AgentService:
             status=ApprovalStatus.pending,
         )
         future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
-        async with self._lock:
+        async with self._session_lock(record.session_id):
             latest = await asyncio.to_thread(self.get, record.session_id)
+            if latest.status in {AgentRunStatus.cancelled, AgentRunStatus.failed, AgentRunStatus.succeeded}:
+                raise asyncio.CancelledError("agent run already ended")
+            document = await asyncio.to_thread(self._tools.document, record.project_id)
+            if document.graph_revision != target_graph_revision or (
+                target_layout_revision is not None and document.layout_revision != target_layout_revision
+            ):
+                raise RevisionConflictError("project changed before approval; preview the proposed change again")
             if latest.approval is not None and latest.approval.status is ApprovalStatus.pending:
-                raise ValueError("Another tool is awaiting approval in this session; wait for it to finish")
+                raise InvalidRequestError("Another tool is awaiting approval in this session; wait for it to finish")
             waiting = msgspec.structs.replace(
                 latest,
                 status=AgentRunStatus.waiting_for_approval,
@@ -1237,7 +1278,9 @@ class AgentService:
                 approval=approval,
             )
             await asyncio.to_thread(self._repository.save, waiting)
-            self._approvals[approval.approval_id] = _PendingApproval(session_id=record.session_id, future=future)
+            self._approvals[approval.approval_id] = _PendingApproval(
+                session_id=record.session_id, future=future, layout_revision=document.layout_revision,
+            )
         await self._publish(waiting)
         try:
             approved = await asyncio.wait_for(future, timeout=_APPROVAL_TTL.total_seconds())
@@ -1278,7 +1321,7 @@ class AgentService:
         return result
 
     async def _append_tool_call(self, session_id: str, call: AgentToolCall) -> None:
-        async with self._lock:
+        async with self._session_lock(session_id):
             record = await asyncio.to_thread(self.get, session_id)
             updated = msgspec.structs.replace(
                 record,
@@ -1298,8 +1341,10 @@ class AgentService:
         error_message: str = "",
         traceback_id: str = "",
     ) -> None:
-        async with self._lock:
+        async with self._session_lock(session_id):
             record = await asyncio.to_thread(self.get, session_id)
+            if record.status in {AgentRunStatus.succeeded, AgentRunStatus.failed, AgentRunStatus.cancelled}:
+                return
             calls: list[AgentToolCall] = []
             found = False
             for call in record.tool_calls:
@@ -1318,7 +1363,7 @@ class AgentService:
                     )
                 )
             if not found:
-                raise FileNotFoundError(f"agent tool call not found: {tool_call_id}")
+                raise NotFoundError(f"agent tool call not found: {tool_call_id}")
             updated = msgspec.structs.replace(
                 record,
                 status=AgentRunStatus.running if status is ToolCallStatus.running else record.status,
@@ -1329,7 +1374,7 @@ class AgentService:
             await self._publish(updated)
 
     async def _append_artifact(self, session_id: str, artifact: AgentArtifact) -> None:
-        async with self._lock:
+        async with self._session_lock(session_id):
             record = await asyncio.to_thread(self.get, session_id)
             updated = msgspec.structs.replace(
                 record,
@@ -1340,10 +1385,12 @@ class AgentService:
             await self._publish(updated)
 
     async def _expire_approval(self, session_id: str, approval_id: str, tool_call_id: str) -> None:
-        record = await asyncio.to_thread(self.get, session_id)
-        if record.approval is not None and record.approval.approval_id == approval_id:
-            record = self._resolve_record_approval(record, ApprovalStatus.expired)
-            await asyncio.to_thread(self._repository.save, record)
+        async with self._session_lock(session_id):
+            record = await asyncio.to_thread(self.get, session_id)
+            if (record.approval is not None and record.approval.approval_id == approval_id
+                    and record.approval.status is ApprovalStatus.pending):
+                record = self._resolve_record_approval(record, ApprovalStatus.expired)
+                await asyncio.to_thread(self._repository.save, record)
         await self._update_tool_call(
             session_id,
             tool_call_id,
@@ -1359,16 +1406,33 @@ class AgentService:
         *,
         traceback_id: str = "",
     ) -> None:
-        record = await asyncio.to_thread(self.get, session_id)
-        stopped = msgspec.structs.replace(
-            record,
-            status=status,
-            updated_at=utc_now_text(),
-            error_message=error_message,
-            traceback_id=traceback_id,
-        )
-        await asyncio.to_thread(self._repository.save, stopped)
-        await self._publish(stopped)
+        async with self._session_lock(session_id):
+            record = await asyncio.to_thread(self.get, session_id)
+            if record.status not in {AgentRunStatus.running, AgentRunStatus.waiting_for_approval}:
+                return
+            timestamp = utc_now_text()
+            approval = record.approval
+            if approval is not None and approval.status is ApprovalStatus.pending:
+                pending = self._approvals.pop(approval.approval_id, None)
+                if pending is not None and not pending.future.done():
+                    pending.future.cancel()
+                approval = msgspec.structs.replace(
+                    approval, status=ApprovalStatus.cancelled if status is AgentRunStatus.cancelled else ApprovalStatus.expired,
+                    resolved_at=timestamp,
+                )
+            calls = tuple(
+                msgspec.structs.replace(
+                    call, status=ToolCallStatus.cancelled if status is AgentRunStatus.cancelled else ToolCallStatus.failed,
+                    updated_at=timestamp, error_message=error_message, traceback_id=traceback_id,
+                ) if call.status in {ToolCallStatus.queued, ToolCallStatus.running, ToolCallStatus.waiting_for_approval}
+                else call for call in record.tool_calls
+            )
+            stopped = msgspec.structs.replace(
+                record, status=status, updated_at=timestamp, approval=approval, tool_calls=calls,
+                error_message=error_message, traceback_id=traceback_id,
+            )
+            await asyncio.to_thread(self._repository.save, stopped)
+            await self._publish(stopped)
 
     async def _publish(self, record: AgentSessionRecord) -> None:
         approval_id = record.approval.approval_id if record.approval is not None else None
@@ -1387,10 +1451,10 @@ class AgentService:
     def _resolve_record_approval(record: AgentSessionRecord, status: ApprovalStatus) -> AgentSessionRecord:
         approval = record.approval
         if approval is None:
-            raise ValueError("agent session has no approval to resolve")
+            raise InvalidRequestError("agent session has no approval to resolve")
         return msgspec.structs.replace(
             record,
-            status=AgentRunStatus.running if status is ApprovalStatus.approved else record.status,
+            status=AgentRunStatus.running if record.status is AgentRunStatus.waiting_for_approval else record.status,
             updated_at=utc_now_text(),
             approval=msgspec.structs.replace(approval, status=status, resolved_at=utc_now_text()),
         )

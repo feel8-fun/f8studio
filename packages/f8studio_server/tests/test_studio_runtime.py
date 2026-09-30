@@ -222,33 +222,27 @@ def test_tcode_operator_is_static_and_emits_local_renderer_commands() -> None:
         assert isinstance(node, VizTCodeRuntimeNode)
         await node.on_data("tcode", "L05000 R09999", ts_ms=123)
         assert [command for _, command, _, _ in outlet.commands] == [
-            "viz.tcode.set_model",
-            "viz.tcode.write",
+            "viz.tcode.snapshot",
+            "viz.tcode.snapshot",
         ]
-        assert outlet.commands[-1][2] == {"line": "L05000 R09999\n"}
+        assert outlet.commands[-1][2] == {"line": "L05000 R09999\n", "model": "SR6",
+                                           "channels": {"L0": 5000, "R0": 9999}, "resetVersion": 0}
 
     asyncio.run(scenario())
 
 
-def test_presentation_outlet_publishes_unreliable_scoped_event() -> None:
+def test_presentation_outlet_publishes_coalesced_live_value() -> None:
     async def scenario() -> None:
         events = EventJournal(server_epoch="epoch1")
-        stream = await events.open_stream(client_epoch=None, after_sequence=None)
+        stream, _ = events.live.subscribe()
         outlet = EventPresentationOutlet(events)
-
         outlet.emit("text1", "viz.text.update", {"value": "hello"}, ts_ms=123)
-        event = await asyncio.wait_for(stream.queue.get(), timeout=1.0)
-
-        assert event.type == "presentation.command"
-        assert event.scope == "node:text1"
-        assert event.payload == {
-            "nodeId": "text1",
-            "command": "viz.text.update",
-            "payload": {"value": "hello"},
-            "tsMs": 123,
+        patch = await asyncio.wait_for(stream.next_patch(), timeout=1.0)
+        assert patch["set"]["presentation/text1/viz.text.update"] == {
+            "nodeId": "text1", "command": "viz.text.update", "payload": {"value": "hello"}, "tsMs": 123, "seq": 1,
         }
         await outlet.close()
-        await events.close_stream(stream.subscription_id)
+        events.live.unsubscribe(stream)
 
     asyncio.run(scenario())
 

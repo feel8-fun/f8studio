@@ -48,6 +48,25 @@ def test_remote_client_round_trips_gateway_contract() -> None:
     asyncio.run(scenario())
 
 
+def test_managed_gateways_bind_distinct_ports_and_restart() -> None:
+    async def scenario() -> None:
+        first = RemoteMediaGateway()
+        second = RemoteMediaGateway()
+        try:
+            await asyncio.gather(first.start(), second.start())
+            a, b = await asyncio.gather(first.health(), second.health())
+            assert a.process_id != b.process_id
+            assert first._client is not None and second._client is not None
+            assert first._client.base_url != second._client.base_url
+            await first.close()
+            await first.start()
+            assert (await first.health()).process_id != a.process_id
+        finally:
+            await asyncio.gather(first.close(), second.close())
+
+    asyncio.run(scenario())
+
+
 def test_remote_client_rejects_incompatible_protocol() -> None:
     async def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(

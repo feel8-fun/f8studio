@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from f8studio_server.errors import InvalidRequestError
+
 import msgspec
 
 from f8pysdk.specs import F8JsonValue
@@ -52,13 +54,13 @@ def _port(node: GraphNode, name: str, kind: GraphEdgeKind, direction: PortDirect
     matches = [port for port in node.ports
                if port.name == name and port.kind.value == kind.value and port.direction == direction]
     if len(matches) != 1:
-        raise ValueError(f"Expected one {kind.value} {direction.value} port named {name!r} on {node.node_id}")
+        raise InvalidRequestError(f"Expected one {kind.value} {direction.value} port named {name!r} on {node.node_id}")
     return matches[0].port_id
 
 
 def build_patch(document: StudioDocument, snapshot: CatalogSnapshot, changes: GraphChanges, *, request_id: str) -> PatchRequest:
     if not (changes.nodes or changes.connections or changes.state_updates):
-        raise ValueError("Supply at least one node, connection, or state update")
+        raise InvalidRequestError("Supply at least one node, connection, or state update")
     catalog = NodeCatalog(services=snapshot.services, operators=snapshot.operators)
     nodes = {node.node_id: node for node in document.nodes}
     operations: list[GraphOperation] = []
@@ -72,9 +74,9 @@ def build_patch(document: StudioDocument, snapshot: CatalogSnapshot, changes: Gr
             nodes[node.node_id] = replace_node_spec(node, installed)
     for item in sorted(changes.nodes, key=lambda node: node.operator_class is not None):
         if item.node_id in nodes:
-            raise ValueError(f"Node ID already exists: {item.node_id}; use stateUpdates for existing nodes")
+            raise InvalidRequestError(f"Node ID already exists: {item.node_id}; use stateUpdates for existing nodes")
         if "code" in item.state_values:
-            raise ValueError("Use code_read, code_analyze, and code_write for Python code")
+            raise InvalidRequestError("Use code_read, code_analyze, and code_write for Python code")
         node: GraphNode
         if item.operator_class is None:
             node = catalog.create_service_node(node_id=item.node_id, service_class=item.service_class,
@@ -83,7 +85,7 @@ def build_patch(document: StudioDocument, snapshot: CatalogSnapshot, changes: Gr
             service = next((node for node in nodes.values() if not isinstance(node, OperatorNode)
                             and node.service_id == item.service_id and node.service_class == item.service_class), None)
             if service is None:
-                raise ValueError(f"Service instance not found: {item.service_id} ({item.service_class})")
+                raise InvalidRequestError(f"Service instance not found: {item.service_id} ({item.service_class})")
             node = catalog.create_operator_node(node_id=item.node_id, service_id=service.service_id,
                                                 service_class=item.service_class, operator_class=item.operator_class,
                                                 name=item.name, state_values=item.state_values)
@@ -91,13 +93,13 @@ def build_patch(document: StudioDocument, snapshot: CatalogSnapshot, changes: Gr
         operations.append(CreateNodeOp(node=node, layout=NodeLayout(node_id=node.node_id, x=item.x, y=item.y)))
     for update in changes.state_updates:
         if update.field == "code":
-            raise ValueError("Use code_read, code_analyze, and code_write for Python code")
+            raise InvalidRequestError("Use code_read, code_analyze, and code_write for Python code")
         operations.append(SetNodeStateOp(node_id=update.node_id, field=update.field, value=update.value))
     for index, connection in enumerate(changes.connections):
         source = nodes.get(connection.from_node_id)
         target = nodes.get(connection.to_node_id)
         if source is None or target is None:
-            raise ValueError(f"Connection references unknown node: {connection.from_node_id} -> {connection.to_node_id}")
+            raise InvalidRequestError(f"Connection references unknown node: {connection.from_node_id} -> {connection.to_node_id}")
         operations.append(ConnectEdgeOp(edge=GraphEdge(
             edge_id=f"{request_id}:edge:{index}", kind=connection.kind,
             from_node_id=source.node_id, from_port_id=_port(source, connection.from_port, connection.kind, PortDirection.output),

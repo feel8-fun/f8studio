@@ -492,6 +492,7 @@ class ServiceBusControlHandlers:
                 force_apply=force_apply,
             )
         except Exception as exc:
+            log.exception("set_rungraph failed service_id=%s req_id=%s", self._bus.service_id, req_id)
             await req.respond(
                 encode_obj(
                     F8SetRungraphReply(

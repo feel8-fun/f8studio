@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import colorsys
 import logging
 import math
 import struct
@@ -16,6 +15,7 @@ from uuid import uuid4
 from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
 from aiortc.mediastreams import MediaStreamError
 from av import VideoFrame
+import numpy as np
 
 from f8pysdk.video_transport import (
     VIDEO_FORMAT_BGRA32,
@@ -27,6 +27,7 @@ from f8pysdk.video_transport import (
 from f8pysdk.specs import F8JsonValue
 
 from f8media_protocol.models import (
+    MediaInputError,
     MediaFrameMapping,
     MediaSample,
     MediaSessionAnswer,
@@ -35,6 +36,8 @@ from f8media_protocol.models import (
 )
 from .overlay import OverlayStore, compose_overlay_bgra
 from .peer_lifecycle import PeerCloseQueue
+from .hub_pool import HubPool
+from f8pysdk.binary_stream_transport import SharedStreamSession
 
 
 logger = logging.getLogger(__name__)
@@ -141,8 +144,10 @@ class SyntheticFrameProducer:
 
 
 class ZenohFrameProducer:
-    def __init__(self, source: str) -> None:
-        self._transport = ZenohLatestVideoFrameTransport.open_subscriber(source)
+    def __init__(self, source: str, session: SharedStreamSession | None = None) -> None:
+        self._transport = (ZenohLatestVideoFrameTransport.open_subscriber(source) if session is None else
+                           ZenohLatestVideoFrameTransport(key_expr=source, raw_transport=session.subscribe(
+                               source, log_context="video", max_pending_samples=1)))
         self._closed = False
 
     async def read(self) -> RawVideoFrame | None:
@@ -174,15 +179,15 @@ class ZenohFrameProducer:
         await asyncio.to_thread(self._transport.close)
 
 
-def create_frame_producer(source: str) -> AsyncFrameProducer:
+def create_frame_producer(source: str, session: SharedStreamSession | None = None) -> AsyncFrameProducer:
     normalized = source.strip()
     if normalized == "synthetic://bars":
         return SyntheticFrameProducer()
     if normalized == "synthetic://bars-1080p":
         return SyntheticFrameProducer(width=1920, height=1080, fps=30)
     if not normalized.startswith("f8/") or len(normalized) > 512:
-        raise ValueError("media source must be synthetic://bars, synthetic://bars-1080p, or an f8/ Zenoh key")
-    return ZenohFrameProducer(normalized)
+        raise MediaInputError("media source must be synthetic://bars, synthetic://bars-1080p, or an f8/ Zenoh key")
+    return ZenohFrameProducer(normalized, session)
 
 
 @dataclass
@@ -199,6 +204,10 @@ class LatestFrameHub:
     _stream_epoch: str = field(default_factory=lambda: uuid4().hex, init=False)
     _last_frame_id: int | None = field(default=None, init=False)
     _history: deque[tuple[float, RawVideoFrame]] = field(default_factory=lambda: deque(maxlen=8), init=False)
+
+    @property
+    def closed(self) -> bool:
+        return self._closed
 
     def start(self) -> None:
         if self._task is None:
@@ -319,18 +328,23 @@ def _flow_preview_frame(raw: RawVideoFrame, *, magnitude_scale: float = 20.0) ->
         raise ValueError("invalid FLOW2_F16 frame dimensions or pitch")
     if len(raw.payload) < raw.pitch * raw.height:
         raise ValueError("FLOW2_F16 payload is smaller than pitch * height")
-    output = bytearray(row_bytes * raw.height)
-    for y in range(raw.height):
-        for x in range(raw.width):
-            dx, dy = struct.unpack_from("<ee", raw.payload, y * raw.pitch + x * 4)
-            target = (y * raw.width + x) * 4
-            if not math.isfinite(dx) or not math.isfinite(dy):
-                output[target : target + 4] = bytes((0, 0, 0, 255))
-                continue
-            magnitude = math.hypot(dx, dy)
-            hue = (math.atan2(dy, dx) + math.pi) / (2.0 * math.pi)
-            red, green, blue = colorsys.hsv_to_rgb(hue, 1.0, min(1.0, magnitude / magnitude_scale))
-            output[target : target + 4] = bytes((round(blue * 255), round(green * 255), round(red * 255), 255))
+    if magnitude_scale <= 0 or not math.isfinite(magnitude_scale):
+        raise ValueError("magnitude_scale must be finite and positive")
+    flow = np.ndarray((raw.height, raw.width, 2), dtype="<f2", buffer=raw.payload,
+                      strides=(raw.pitch, 4, 2)).astype(np.float64)
+    finite = np.isfinite(flow).all(axis=2)
+    flow[~finite] = 0
+    dx, dy = flow[:, :, 0], flow[:, :, 1]
+    hue = (np.arctan2(dy, dx) + math.pi) / (2 * math.pi) * 6
+    value = np.minimum(1, np.hypot(dx, dy) / magnitude_scale)
+    # Piecewise-linear HSV channels avoid six full-size selection arrays.
+    red = np.clip(np.abs(hue - 3) - 1, 0, 1) * value
+    green = np.clip(2 - np.abs(hue - 2), 0, 1) * value
+    blue = np.clip(2 - np.abs(hue - 4), 0, 1) * value
+    output = np.empty((raw.height, raw.width, 4), dtype=np.uint8)
+    output[:, :, :3] = np.rint(np.stack((blue, green, red), axis=2) * 255).astype(np.uint8)
+    output[~finite, :3] = 0
+    output[:, :, 3] = 255
     return bgra_frame(
         RawVideoFrame(
             width=raw.width,
@@ -339,17 +353,9 @@ def _flow_preview_frame(raw: RawVideoFrame, *, magnitude_scale: float = 20.0) ->
             format=VIDEO_FORMAT_BGRA32,
             frame_id=raw.frame_id,
             ts_ms=raw.ts_ms,
-            payload=bytes(output),
+            payload=output.tobytes(),
         )
     )
-
-
-def _turbo_rgb(value: float) -> tuple[int, int, int]:
-    normalized = min(1.0, max(0.0, value))
-    red = min(1.0, max(0.0, 1.6 * normalized - 0.2))
-    green = min(1.0, max(0.0, 1.2 - abs(2.0 * normalized - 1.0) * 1.6))
-    blue = min(1.0, max(0.0, 1.2 * (1.0 - normalized) - 0.1))
-    return round(red * 255), round(green * 255), round(blue * 255)
 
 
 def _scalar_preview_frame(raw: RawVideoFrame) -> VideoFrame:
@@ -360,33 +366,28 @@ def _scalar_preview_frame(raw: RawVideoFrame) -> VideoFrame:
         raise ValueError("SCALAR1_F32 payload is smaller than pitch * height")
 
     sample_stride = max(1, math.isqrt(max(1, raw.width * raw.height // 65_536)))
-    sampled: list[float] = []
-    for y in range(0, raw.height, sample_stride):
-        for x in range(0, raw.width, sample_stride):
-            value = struct.unpack_from("<f", raw.payload, y * raw.pitch + x * 4)[0]
-            if math.isfinite(value):
-                sampled.append(value)
-    sampled.sort()
-    if sampled:
-        lower = sampled[round((len(sampled) - 1) * 0.02)]
-        upper = sampled[round((len(sampled) - 1) * 0.98)]
+    values = np.ndarray((raw.height, raw.width), dtype="<f4", buffer=raw.payload,
+                        strides=(raw.pitch, 4)).astype(np.float64)
+    sampled = values[::sample_stride, ::sample_stride]
+    sampled = np.sort(sampled[np.isfinite(sampled)])
+    if sampled.size:
+        lower = sampled[round((sampled.size - 1) * 0.02)]
+        upper = sampled[round((sampled.size - 1) * 0.98)]
         if upper <= lower:
             lower, upper = sampled[0], sampled[-1]
     else:
         lower, upper = 0.0, 0.0
     span = upper - lower
-
-    output = bytearray(row_bytes * raw.height)
-    for y in range(raw.height):
-        for x in range(raw.width):
-            value = struct.unpack_from("<f", raw.payload, y * raw.pitch + x * 4)[0]
-            target = (y * raw.width + x) * 4
-            if not math.isfinite(value):
-                output[target : target + 4] = bytes((0, 0, 0, 255))
-                continue
-            normalized = (value - lower) / span if span > 0 else 0.0
-            red, green, blue = _turbo_rgb(normalized)
-            output[target : target + 4] = bytes((blue, green, red, 255))
+    finite = np.isfinite(values)
+    values[~finite] = lower
+    normalized = np.clip((values - lower) / span, 0, 1) if span > 0 else np.zeros_like(values)
+    red = np.clip(1.6 * normalized - 0.2, 0, 1)
+    green = np.clip(1.2 - np.abs(2 * normalized - 1) * 1.6, 0, 1)
+    blue = np.clip(1.2 * (1 - normalized) - 0.1, 0, 1)
+    output = np.empty((raw.height, raw.width, 4), dtype=np.uint8)
+    output[:, :, :3] = np.rint(np.stack((blue, green, red), axis=2) * 255).astype(np.uint8)
+    output[~finite, :3] = 0
+    output[:, :, 3] = 255
     return bgra_frame(
         RawVideoFrame(
             width=raw.width,
@@ -395,7 +396,7 @@ def _scalar_preview_frame(raw: RawVideoFrame) -> VideoFrame:
             format=VIDEO_FORMAT_BGRA32,
             frame_id=raw.frame_id,
             ts_ms=raw.ts_ms,
-            payload=bytes(output),
+            payload=output.tobytes(),
         )
     )
 
@@ -412,7 +413,7 @@ def preview_frame(raw: RawVideoFrame) -> VideoFrame:
 
 def sample_raw_frame(source: str, raw: RawVideoFrame, *, x: int, y: int) -> MediaSample:
     if x < 0 or y < 0 or x >= raw.width or y >= raw.height:
-        raise ValueError(f"sample coordinate ({x}, {y}) is outside {raw.width}x{raw.height} frame")
+        raise MediaInputError(f"sample coordinate ({x}, {y}) is outside {raw.width}x{raw.height} frame")
     if raw.format == VIDEO_FORMAT_BGRA32:
         bytes_per_pixel = 4
         format_name = "bgra32"
@@ -575,6 +576,7 @@ class LatestFrameVideoTrack(VideoStreamTrack):
 @dataclass
 class MediaSession:
     session_id: str
+    hub: LatestFrameHub
     source: str
     quality: MediaQuality
     peer: RTCPeerConnection
@@ -592,7 +594,7 @@ class MediaSessionManager:
         if disconnected_grace_s < 0:
             raise ValueError("disconnected grace period must be non-negative")
         self._sessions: dict[str, MediaSession] = {}
-        self._hubs: dict[str, tuple[LatestFrameHub, int]] = {}
+        self._hubs: HubPool[LatestFrameHub] = HubPool(self._make_hub)
         self._lock = asyncio.Lock()
         self._janitor: asyncio.Task[None] | None = None
         self._producer_factory = producer_factory
@@ -607,15 +609,15 @@ class MediaSessionManager:
 
     @property
     def source_count(self) -> int:
-        return len(self._hubs)
+        return self._hubs.source_count
 
     async def create(self, offer: MediaSessionOffer) -> MediaSessionAnswer:
         source = offer.source.strip()
         quality = MEDIA_QUALITIES.get(offer.quality)
         if quality is None:
-            raise ValueError("media quality must be thumbnail or main")
+            raise MediaInputError("media quality must be thumbnail or main")
         if offer.type != "offer" or not offer.sdp.strip():
-            raise ValueError("a non-empty WebRTC offer SDP is required")
+            raise MediaInputError("a non-empty WebRTC offer SDP is required")
 
         hub = await self._acquire_hub(source)
         peer = RTCPeerConnection()
@@ -650,14 +652,20 @@ class MediaSessionManager:
             await peer.setRemoteDescription(RTCSessionDescription(sdp=offer.sdp, type=offer.type))
             answer = await peer.createAnswer()
             await peer.setLocalDescription(answer)
+        except asyncio.CancelledError:
+            track.stop()
+            await peer.close()
+            await self._release_hub(hub)
+            raise
         except Exception:
             logger.exception("failed to negotiate media session source=%s quality=%s", source, quality.name)
             track.stop()
             await peer.close()
-            await self._release_hub(source)
+            await self._release_hub(hub)
             raise
 
         session = MediaSession(
+            hub=hub,
             session_id=session_id,
             source=source,
             quality=quality,
@@ -675,7 +683,7 @@ class MediaSessionManager:
             source=source,
             quality=quality.name,
             sdp=local.sdp,
-            type=local.type,
+            type="answer",
             max_width=quality.max_width,
             max_height=quality.max_height,
             max_fps=quality.max_fps,
@@ -699,35 +707,16 @@ class MediaSessionManager:
             _, raw = await asyncio.wait_for(hub.next_frame(0), timeout=timeout_s)
             return sample_raw_frame(normalized_source, raw, x=x, y=y)
         finally:
-            await self._release_hub(normalized_source)
+            await self._release_hub(hub)
+
+    def _make_hub(self, source: str) -> LatestFrameHub:
+        return LatestFrameHub(source=source, producer=self._producer_factory(source))
 
     async def _acquire_hub(self, source: str) -> LatestFrameHub:
-        async with self._lock:
-            existing = self._hubs.get(source)
-            if existing is not None:
-                hub, references = existing
-                self._hubs[source] = (hub, references + 1)
-                return hub
-            producer = self._producer_factory(source)
-            hub = LatestFrameHub(source=source, producer=producer)
-            hub.start()
-            self._hubs[source] = (hub, 1)
-            return hub
+        return await self._hubs.acquire(source)
 
-    async def _release_hub(self, source: str) -> None:
-        hub_to_close: LatestFrameHub | None = None
-        async with self._lock:
-            existing = self._hubs.get(source)
-            if existing is None:
-                return
-            hub, references = existing
-            if references <= 1:
-                del self._hubs[source]
-                hub_to_close = hub
-            else:
-                self._hubs[source] = (hub, references - 1)
-        if hub_to_close is not None:
-            await hub_to_close.close()
+    async def _release_hub(self, hub: LatestFrameHub) -> None:
+        await self._hubs.release(hub)
 
     async def close_session(self, session_id: str) -> bool:
         async with self._lock:
@@ -737,7 +726,7 @@ class MediaSessionManager:
             return False
         session.track.stop()
         await self._peer_closer.close(session.peer, context=f"video:{session_id}")
-        await self._release_hub(session.source)
+        await self._release_hub(session.hub)
         return True
 
     async def _run_janitor(self) -> None:
@@ -749,7 +738,7 @@ class MediaSessionManager:
                     stale: list[str] = []
                     for session_id, session in self._sessions.items():
                         state = session.peer.connectionState
-                        if state in {"failed", "closed"}:
+                        if session.hub.closed or state in {"failed", "closed"}:
                             stale.append(session_id)
                             continue
                         if state == "disconnected":
@@ -773,6 +762,7 @@ class MediaSessionManager:
             session_ids = tuple(self._sessions)
         for session_id in session_ids:
             await self.close_session(session_id)
+        await self._hubs.close()
         await self._peer_closer.shutdown()
 
 

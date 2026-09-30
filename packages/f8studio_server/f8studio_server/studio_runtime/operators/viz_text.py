@@ -78,18 +78,15 @@ class VizTextRuntimeNode(StudioVizRuntimeNodeBase):
         self._task = loop.create_task(self._run(), name=f"pystudio:print:{self.node_id}")
 
     async def close(self) -> None:
-        t = self._task
+        task = self._task
         self._task = None
-        if t is None:
-            return
-        try:
-            t.cancel()
-        except (RuntimeError, TypeError):
-            pass
-        try:
-            await asyncio.gather(t, return_exceptions=True)
-        except (RuntimeError, TypeError):
-            pass
+        if task is not None:
+            task.cancel()
+            results = await asyncio.gather(task, return_exceptions=True)
+            for result in results:
+                if isinstance(result, Exception):
+                    logger.error("viz text background task failed node_id=%s", self.node_id, exc_info=result)
+        self.presentation.emit(self.node_id, "viz.text.detach", {}, ts_ms=int(time.time() * 1000))
 
     async def _run(self) -> None:
         while True:

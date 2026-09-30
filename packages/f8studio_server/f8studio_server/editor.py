@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+from f8studio_server.errors import InvalidRequestError, NotFoundError
+
 import json
+import logging
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from threading import RLock
+from collections.abc import Generator
+from contextlib import contextmanager
+from threading import Condition, Event, RLock, Thread
+from time import monotonic
 from typing import Literal, cast
 from uuid import uuid4
 
@@ -83,7 +89,7 @@ class EditorLanguageResult(msgspec.Struct, frozen=True, kw_only=True, rename="ca
 def _safe_relative_path(value: str) -> Path:
     path = Path(value)
     if path.is_absolute() or ".." in path.parts or not path.name:
-        raise ValueError(f"editor file path must be relative and contained: {value}")
+        raise InvalidRequestError(f"editor file path must be relative and contained: {value}")
     return path
 
 
@@ -92,32 +98,94 @@ class _EditorSession:
         self.record = record
         self.root = root
         self.language_server = language_server
+        self.lock = RLock()
+        self.last_used = monotonic()
+        self.closed = False
 
 
 class EditorSessionService:
-    def __init__(self, *, root: Path | None = None, basedpyright_command: str = "basedpyright") -> None:
+    def __init__(self, *, root: Path | None = None, basedpyright_command: str = "basedpyright",
+                 max_sessions: int = 32, idle_timeout_s: float = 1800.0) -> None:
         self._temporary_root = root is None
         self._root = root or Path(tempfile.mkdtemp(prefix="f8studio-editor-"))
         self._root.mkdir(parents=True, exist_ok=True)
-        for stale in self._root.iterdir():
-            if stale.is_dir():
-                shutil.rmtree(stale)
-            else:
-                stale.unlink()
         self._basedpyright_command = basedpyright_command
         self._sessions: dict[str, _EditorSession] = {}
         self._lock = RLock()
+        self._creation_finished = Condition(self._lock)
+        if max_sessions < 1 or idle_timeout_s <= 0:
+            raise InvalidRequestError("editor session limits must be positive")
+        self._max_sessions = max_sessions
+        self._idle_timeout_s = idle_timeout_s
+        self._creating = 0
+        self._closed = False
+        self._stop = Event()
+        self._reaper: Thread | None = None
+
+    def start(self) -> None:
+        with self._lock:
+            if self._reaper is not None:
+                return
+            self._reaper = Thread(target=self._reap_loop, name="editor-session-reaper", daemon=True)
+            self._reaper.start()
+
+    def _reap_loop(self) -> None:
+        while not self._stop.wait(min(30.0, self._idle_timeout_s)):
+            try:
+                self.reap_idle()
+            except Exception:
+                logging.getLogger(__name__).exception("editor idle session cleanup failed")
+
+    def reap_idle(self) -> None:
+        with self._lock:
+            sessions = tuple(self._sessions.items())
+        for session_id, session in sessions:
+            if not session.lock.acquire(blocking=False):
+                continue
+            try:
+                if not session.closed and monotonic() - session.last_used >= self._idle_timeout_s:
+                    self.close_session(session_id)
+            finally:
+                session.lock.release()
+
+    @contextmanager
+    def _borrow(self, session_id: str) -> Generator[_EditorSession]:
+        with self._lock:
+            session = self._session(session_id)
+        with session.lock:
+            if session.closed:
+                raise NotFoundError(f"editor session not found: {session_id}")
+            try:
+                yield session
+            finally:
+                session.last_used = monotonic()
+
 
     @property
     def python_available(self) -> bool:
         return shutil.which(self._basedpyright_command) is not None
 
     def create(self, request: CreateEditorSessionRequest) -> EditorSessionRecord:
+        self.reap_idle()
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("editor service is closed")
+            if len(self._sessions) + self._creating >= self._max_sessions:
+                raise InvalidRequestError("editor session limit reached; close an existing editor")
+            self._creating += 1
+        try:
+            return self._create(request)
+        finally:
+            with self._lock:
+                self._creating -= 1
+                self._creation_finished.notify_all()
+
+    def _create(self, request: CreateEditorSessionRequest) -> EditorSessionRecord:
         filename = str(_safe_relative_path(request.filename))
         if request.language == "python" and not filename.endswith((".py", ".pyi")):
-            raise ValueError("Python editor filename must end in .py or .pyi")
+            raise InvalidRequestError("Python editor filename must end in .py or .pyi")
         if request.language == "json" and not filename.endswith(".json"):
-            raise ValueError("JSON editor filename must end in .json")
+            raise InvalidRequestError("JSON editor filename must end in .json")
         session_id = uuid4().hex
         root = self._root / session_id
         root.mkdir(parents=True)
@@ -136,7 +204,7 @@ class EditorSessionService:
             for support in request.support_files:
                 support_path = _safe_relative_path(support.path)
                 if support_path in written_paths:
-                    raise ValueError(f"duplicate editor file path: {support.path}")
+                    raise InvalidRequestError(f"duplicate editor file path: {support.path}")
                 self._write(root, support_path, support.content)
                 written_paths.add(support_path)
             if request.language == "python":
@@ -152,15 +220,14 @@ class EditorSessionService:
         return record
 
     def get(self, session_id: str) -> EditorSessionRecord:
-        with self._lock:
-            return self._session(session_id).record
+        with self._borrow(session_id) as session:
+            return session.record
 
     def update(self, session_id: str, request: UpdateEditorDocumentRequest) -> EditorSessionRecord:
-        with self._lock:
-            session = self._session(session_id)
+        with self._borrow(session_id) as session:
             expected = session.record.version + 1
             if request.version != expected:
-                raise ValueError(f"editor document version must be {expected}, got {request.version}")
+                raise InvalidRequestError(f"editor document version must be {expected}, got {request.version}")
             record = EditorSessionRecord(
                 session_id=session.record.session_id,
                 language=session.record.language,
@@ -179,10 +246,9 @@ class EditorSessionService:
             return record
 
     def completion(self, session_id: str, request: EditorPositionRequest) -> EditorLanguageResult:
-        with self._lock:
-            session = self._session(session_id)
+        with self._borrow(session_id) as session:
             if session.language_server is None:
-                raise ValueError("completion is only available for Python editor sessions")
+                raise InvalidRequestError("completion is only available for Python editor sessions")
             result = session.language_server.completion(
                 document_path=session.root / session.record.filename,
                 line=request.line,
@@ -195,10 +261,9 @@ class EditorSessionService:
             )
 
     def hover(self, session_id: str, request: EditorPositionRequest) -> EditorLanguageResult:
-        with self._lock:
-            session = self._session(session_id)
+        with self._borrow(session_id) as session:
             if session.language_server is None:
-                raise ValueError("hover is only available for Python editor sessions")
+                raise InvalidRequestError("hover is only available for Python editor sessions")
             result = session.language_server.hover(
                 document_path=session.root / session.record.filename,
                 line=request.line,
@@ -211,10 +276,9 @@ class EditorSessionService:
             )
 
     def signature_help(self, session_id: str, request: EditorPositionRequest) -> EditorLanguageResult:
-        with self._lock:
-            session = self._session(session_id)
+        with self._borrow(session_id) as session:
             if session.language_server is None:
-                raise ValueError("signature help is only available for Python editor sessions")
+                raise InvalidRequestError("signature help is only available for Python editor sessions")
             result = session.language_server.signature_help(
                 document_path=session.root / session.record.filename,
                 line=request.line,
@@ -227,10 +291,12 @@ class EditorSessionService:
             )
 
     def analyze(self, session_id: str) -> EditorAnalysis:
-        with self._lock:
-            session = self._session(session_id)
-            record = session.record
-            root = session.root
+        with self._borrow(session_id) as session:
+            return self._analyze_session(session_id, session)
+
+    def _analyze_session(self, session_id: str, session: _EditorSession) -> EditorAnalysis:
+        record = session.record
+        root = session.root
         if record.language == "json":
             diagnostics = self._analyze_json(record)
             return EditorAnalysis(
@@ -265,35 +331,46 @@ class EditorSessionService:
 
     def close_session(self, session_id: str) -> None:
         with self._lock:
-            session = self._sessions.pop(session_id, None)
+            session = self._sessions.get(session_id)
         if session is None:
-            raise FileNotFoundError(f"editor session not found: {session_id}")
-        if session.language_server is not None:
-            session.language_server.close()
-        shutil.rmtree(session.root)
+            raise NotFoundError(f"editor session not found: {session_id}")
+        with session.lock:
+            if session.closed:
+                return
+            session.closed = True
+            with self._lock:
+                self._sessions.pop(session_id, None)
+            try:
+                if session.language_server is not None:
+                    session.language_server.close()
+            finally:
+                shutil.rmtree(session.root)
 
     def close(self) -> None:
+        self._stop.set()
+        if self._reaper is not None:
+            self._reaper.join(timeout=30)
         with self._lock:
-            sessions = tuple(self._sessions.values())
-            self._sessions.clear()
-        for session in sessions:
-            if session.language_server is not None:
-                session.language_server.close()
-            shutil.rmtree(session.root, ignore_errors=True)
+            self._closed = True
+            while self._creating:
+                self._creation_finished.wait()
+            session_ids = tuple(self._sessions)
+        for session_id in session_ids:
+            self.close_session(session_id)
         if self._temporary_root:
             shutil.rmtree(self._root, ignore_errors=True)
 
     def _session(self, session_id: str) -> _EditorSession:
         session = self._sessions.get(session_id)
         if session is None:
-            raise FileNotFoundError(f"editor session not found: {session_id}")
+            raise NotFoundError(f"editor session not found: {session_id}")
         return session
 
     @staticmethod
     def _write(root: Path, relative: Path, content: str) -> None:
         destination = (root / relative).resolve()
         if not destination.is_relative_to(root.resolve()):
-            raise ValueError("editor file escapes session workspace")
+            raise InvalidRequestError("editor file escapes session workspace")
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(content, encoding="utf-8")
 

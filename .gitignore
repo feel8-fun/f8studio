@@ -93,3 +93,6 @@ package-lock.json
 !packages/f8studio_web/package-lock.json
 packages/f8studio_web/test-results/
 packages/f8studio_web/playwright-report/
+
+# Source fingerprint accompanying local generated service descriptions.
+services/**/describe.fingerprint

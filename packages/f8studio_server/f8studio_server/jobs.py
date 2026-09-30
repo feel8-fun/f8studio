@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8studio_server.errors import InvalidRequestError, NotFoundError
+
 import asyncio
 import hashlib
 import logging
@@ -14,7 +16,7 @@ from f8studio_core.graph import IdempotencyConflictError, RevisionConflictError
 from f8studio_core.graph.codec import canonical_json_bytes
 from f8pysdk.specs import F8JsonValue, F8RuntimeGraph
 
-from .events import EventJournal
+from .events import EventJournal, StudioEventType
 from .job_repository import JobRepository
 from .models import DeployJob, DeployProjectRequest, JobStatus, ServiceDeployResult
 from .project_repository import utc_now_text
@@ -98,7 +100,7 @@ class DeployCoordinator:
     async def get(self, job_id: str) -> DeployJob:
         job = await asyncio.to_thread(self._repository.get, job_id)
         if job is None:
-            raise FileNotFoundError(f"deploy job not found: {job_id}")
+            raise NotFoundError(f"deploy job not found: {job_id}")
         return job
 
     async def latest(self, project_id: str) -> DeployJob | None:
@@ -238,7 +240,7 @@ class DeployCoordinator:
                 raise RuntimeError("managed service process exited during startup")
             return
         if status.service_class != service_class:
-            raise ValueError(
+            raise InvalidRequestError(
                 f"endpoint serviceClass mismatch: expected {service_class}, got {status.service_class}"
             )
 
@@ -247,13 +249,13 @@ class DeployCoordinator:
         services = () if isinstance(graph.services, msgspec.UnsetType) else graph.services
         service = next((item for item in services if str(item.serviceId) == service_id), None)
         if service is None:
-            raise ValueError(f"compiled runtime graph has no service metadata for {service_id}")
+            raise InvalidRequestError(f"compiled runtime graph has no service metadata for {service_id}")
         service_class = str(service.serviceClass).strip()
         if not service_class:
-            raise ValueError(f"compiled runtime graph has empty serviceClass for {service_id}")
+            raise InvalidRequestError(f"compiled runtime graph has empty serviceClass for {service_id}")
         return service_class
 
-    async def _publish_job(self, event_type: str, job: DeployJob) -> None:
+    async def _publish_job(self, event_type: StudioEventType, job: DeployJob) -> None:
         payload = cast(dict[str, F8JsonValue], msgspec.to_builtins(job, str_keys=True))
         await self._events.publish(
             event_type=event_type,

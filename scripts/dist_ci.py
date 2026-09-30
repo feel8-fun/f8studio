@@ -9,6 +9,8 @@ import shutil
 import subprocess
 import sys
 import tomllib
+
+import yaml
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,7 +30,9 @@ LOCAL_EDITABLE_PATH_PREFIXES = ("packages/", "external/f8unitymods")
 CPP_DEPLOY_ALL_TARGET = "f8_deploy_all_runtime"
 LAUNCHER_ENVIRONMENT_NAME = "launcher"
 LAUNCHER_RUNTIME_FEATURE = "launcher-runtime"
-DEV_RUNTIME_ENVIRONMENT_NAME = "default"
+# Dev service entries may target either the full dev environment or the slim
+# web-studio runtime; both collapse onto the single dist runtime environment.
+DEV_RUNTIME_ENVIRONMENT_NAMES = ("default", "web-studio-runtime")
 DIST_RUNTIME_ENVIRONMENT_NAME = "studio-runtime"
 WEB_BUNDLE_SOURCE = REPO_ROOT / "packages" / "f8studio_web" / "dist"
 WEB_BUNDLE_PACKAGE_DIR = REPO_ROOT / "packages" / "f8studio_server" / "f8studio_server" / "web_dist"
@@ -302,28 +306,89 @@ def _rewrite_service_entry_environment_args(
     source_environment_name: str,
     target_environment_name: str,
 ) -> str:
-    pattern = re.compile(
-        r'(\bargs:\s*\[\s*["\']run["\']\s*,\s*["\']-e["\']\s*,\s*["\'])'
-        + re.escape(source_environment_name)
-        + r'(["\'])'
-    )
-    return pattern.sub(r"\1" + target_environment_name + r"\2", service_text)
+    document = yaml.compose(service_text)
+    if not isinstance(document, yaml.MappingNode):
+        raise ValueError("service entry must be a YAML mapping")
+    for key, launch in document.value:
+        if not isinstance(key, yaml.ScalarNode) or key.value != "launch":
+            continue
+        if not isinstance(launch, yaml.MappingNode):
+            raise ValueError("service launch must be a YAML mapping")
+        fields = {key.value: value for key, value in launch.value if isinstance(key, yaml.ScalarNode)}
+        command = fields.get("command")
+        if not isinstance(command, yaml.ScalarNode) or command.value not in {"pixi", "pixi.exe"}:
+            continue
+        args = fields.get("args")
+        if not isinstance(args, yaml.SequenceNode):
+            raise ValueError("pixi launch args must be a YAML sequence")
+        previous = ""
+        for argument in args.value:
+            if not isinstance(argument, yaml.ScalarNode):
+                raise ValueError("pixi launch args must contain strings")
+            value = argument.value
+            replacement = None
+            if previous in {"-e", "--environment"} and value == source_environment_name:
+                replacement = target_environment_name
+            elif value == f"--environment={source_environment_name}":
+                replacement = f"--environment={target_environment_name}"
+            if replacement is not None:
+                return (service_text[:argument.start_mark.index] + json.dumps(replacement)
+                        + service_text[argument.end_mark.index:])
+            previous = value
+    return service_text
 
 
 def _rewrite_dist_service_entries(services_root: Path) -> list[Path]:
     rewritten_paths: list[Path] = []
     for service_entry_path in sorted(services_root.rglob("service*.yml")):
         original_text = service_entry_path.read_text(encoding="utf-8")
-        rewritten_text = _rewrite_service_entry_environment_args(
-            original_text,
-            source_environment_name=DEV_RUNTIME_ENVIRONMENT_NAME,
-            target_environment_name=DIST_RUNTIME_ENVIRONMENT_NAME,
-        )
+        rewritten_text = original_text
+        for source_environment_name in DEV_RUNTIME_ENVIRONMENT_NAMES:
+            rewritten_text = _rewrite_service_entry_environment_args(
+                rewritten_text,
+                source_environment_name=source_environment_name,
+                target_environment_name=DIST_RUNTIME_ENVIRONMENT_NAME,
+            )
         if rewritten_text == original_text:
             continue
         service_entry_path.write_text(rewritten_text, encoding="utf-8")
         rewritten_paths.append(service_entry_path)
     return rewritten_paths
+
+
+def _validate_dist_service_environments(services_root: Path, runtime_environment_names: list[str]) -> None:
+    allowed = frozenset(runtime_environment_names)
+    problems: list[str] = []
+    for path in sorted(services_root.rglob("service*.yml")):
+        document = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if not isinstance(document, dict):
+            raise ValueError(f"{path}: service entry must be a mapping")
+        launch = document.get("launch", {})
+        if not isinstance(launch, dict):
+            raise ValueError(f"{path}: launch must be a mapping")
+        if launch.get("command") not in {"pixi", "pixi.exe"}:
+            continue
+        args = launch.get("args", [])
+        if not isinstance(args, list) or not all(isinstance(arg, str) for arg in args):
+            raise ValueError(f"{path}: launch args must be strings")
+        environments: list[str] = []
+        for index, argument in enumerate(args):
+            if argument in {"-e", "--environment"}:
+                if index + 1 == len(args):
+                    raise ValueError(f"{path}: missing environment argument")
+                environments.append(args[index + 1])
+            elif argument.startswith("--environment="):
+                environments.append(argument.partition("=")[2])
+        if not environments:
+            problems.append(f"{path}: pixi launch requires an explicit shipped environment")
+        for environment in environments:
+            if environment not in allowed:
+                problems.append(f"{path}: pixi environment '{environment}'")
+    if problems:
+        raise ValueError(
+            "Dist service entries reference environments that are not shipped "
+            f"(shipped: {sorted(allowed)}):\n" + "\n".join(problems)
+        )
 
 
 def _copy_dist_config(dist_dir: Path) -> Path | None:
@@ -723,6 +788,8 @@ def main() -> int:
     (dist_dir / "services").mkdir(parents=True, exist_ok=True)
     shutil.copytree(REPO_ROOT / "services", dist_dir / "services", dirs_exist_ok=True)
     _rewrite_dist_service_entries(dist_dir / "services")
+    runtime_environment_names = _discover_launcher_runtime_environments()
+    _validate_dist_service_environments(dist_dir / "services", runtime_environment_names)
     _copy_dist_config(dist_dir)
     _bundle_unitymods_assets(
         dist_dir,
@@ -730,7 +797,6 @@ def main() -> int:
     )
 
     wheels_dir = dist_dir / "wheels"
-    runtime_environment_names = _discover_launcher_runtime_environments()
     runtime_feature_names = _discover_environment_feature_names(environment_names=runtime_environment_names)
     local_packages = _discover_local_editable_packages(
         allowed_feature_names=set(runtime_feature_names),
