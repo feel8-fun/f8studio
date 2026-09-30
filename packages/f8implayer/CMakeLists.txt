@@ -161,28 +161,28 @@ endif()
 add_custom_command(
   TARGET f8implayer_service
   POST_BUILD
-  COMMAND "${CMAKE_COMMAND}" -E make_directory "${F8_SERVICES_ROOT}/f8/implayer/${_implayer_platform_dir}/font"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${F8_SERVICE_BUNDLES_ROOT}/f8.implayer/0.0.1/${_implayer_platform_dir}/font"
   COMMAND "${CMAKE_COMMAND}" -E copy_directory
           "${CMAKE_CURRENT_SOURCE_DIR}/font"
-          "${F8_SERVICES_ROOT}/f8/implayer/${_implayer_platform_dir}/font"
-  COMMAND "${CMAKE_COMMAND}" -E make_directory "${F8_SERVICES_ROOT}/f8/implayer/${_implayer_platform_dir}/resources"
+          "${F8_SERVICE_BUNDLES_ROOT}/f8.implayer/0.0.1/${_implayer_platform_dir}/font"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${F8_SERVICE_BUNDLES_ROOT}/f8.implayer/0.0.1/${_implayer_platform_dir}/resources"
   COMMAND "${CMAKE_COMMAND}" -E copy_directory
           "${CMAKE_CURRENT_SOURCE_DIR}/resources"
-          "${F8_SERVICES_ROOT}/f8/implayer/${_implayer_platform_dir}/resources"
+          "${F8_SERVICE_BUNDLES_ROOT}/f8.implayer/0.0.1/${_implayer_platform_dir}/resources"
   VERBATIM
-  COMMENT "Copy f8implayer runtime assets to services deploy dir"
+  COMMENT "Copy f8implayer runtime assets to bundle deploy dir"
 )
 
 if(WIN32)
   add_custom_command(
     TARGET f8implayer_service
     POST_BUILD
-    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_implayer_mpv_dll}" "${F8_SERVICES_ROOT}/f8/implayer/${_implayer_platform_dir}/libmpv-2.dll"
-    COMMAND "${CMAKE_COMMAND}" -E rm -f "${F8_SERVICES_ROOT}/f8/implayer/${_implayer_platform_dir}/yt-dlp.exe"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_implayer_mpv_dll}" "${F8_SERVICE_BUNDLES_ROOT}/f8.implayer/0.0.1/${_implayer_platform_dir}/libmpv-2.dll"
+    COMMAND "${CMAKE_COMMAND}" -E rm -f "${F8_SERVICE_BUNDLES_ROOT}/f8.implayer/0.0.1/${_implayer_platform_dir}/yt-dlp.exe"
     VERBATIM
-    COMMENT "Copy libmpv runtime binary to services deploy dir"
+    COMMENT "Copy libmpv runtime binary to bundle deploy dir"
   )
 endif()
 
-# Deploy C++ service artifacts into `services/.../<platform>/` for packaging/runtime use.
-f8_deploy_service_runtime(f8implayer_service "f8/implayer")
+# Deploy C++ service artifacts into `runtime/bundles/<bundle>/<version>/<platform>/` for packaging/runtime use.
+f8_deploy_service_runtime(f8implayer_service "f8.implayer")

@@ -330,7 +330,7 @@ def create_app(
 
     @app.post("/api/catalog/refresh")
     async def refresh_catalog() -> F8JsonValue:
-        return _json_value(await asyncio.to_thread(studio.catalog.refresh, force_dynamic_service_classes=("f8.pyengine",)))
+        return _json_value(await asyncio.to_thread(studio.catalog.refresh))
 
     @app.post("/api/catalog/nodes")
     async def create_catalog_node(request: Request) -> F8JsonValue:

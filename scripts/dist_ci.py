@@ -391,6 +391,11 @@ def _validate_dist_service_environments(services_root: Path, runtime_environment
         )
 
 
+def _copy_dist_services(dist_dir: Path) -> None:
+    # Only installed versioned artifacts are distributable; migration backups are local.
+    shutil.copytree(REPO_ROOT / "runtime" / "bundles", dist_dir / "runtime" / "bundles", dirs_exist_ok=True)
+
+
 def _copy_dist_config(dist_dir: Path) -> Path | None:
     config_root = REPO_ROOT / "config"
     if not config_root.is_dir():
@@ -775,6 +780,7 @@ def main() -> int:
 
     _build_cpp_runtime()
     _stage_web_bundle()
+    _run(["pixi", "run", "--frozen", "install_services", "--refresh"])
 
     platform_tag, platform_dir = _platform_info()
     dist_base_dir = REPO_ROOT / "build" / "dist"
@@ -785,12 +791,13 @@ def main() -> int:
         shutil.rmtree(dist_dir)
     dist_dir.mkdir(parents=True, exist_ok=True)
 
-    (dist_dir / "services").mkdir(parents=True, exist_ok=True)
-    shutil.copytree(REPO_ROOT / "services", dist_dir / "services", dirs_exist_ok=True)
-    _rewrite_dist_service_entries(dist_dir / "services")
-    runtime_environment_names = _discover_launcher_runtime_environments()
-    _validate_dist_service_environments(dist_dir / "services", runtime_environment_names)
+    _copy_dist_services(dist_dir)
     _copy_dist_config(dist_dir)
+    _rewrite_dist_service_entries(dist_dir / "config" / "services")
+    runtime_environment_names = _discover_launcher_runtime_environments()
+    _validate_dist_service_environments(dist_dir / "config" / "services", runtime_environment_names)
+    # Model storage is independent of service bundles and referenced by the index.
+    shutil.copytree(REPO_ROOT / "resources", dist_dir / "resources", dirs_exist_ok=True)
     _bundle_unitymods_assets(
         dist_dir,
         build_assets=not bool(args.reuse_unitymods_assets),
@@ -835,7 +842,10 @@ def main() -> int:
         "# f8 Runtime Dist\n\n"
         "This bundle contains:\n"
         "- pixi.toml + pixi.lock\n"
-        "- services/**\n"
+        "- config/service-index.json (explicit service registrations)\n"
+        "- config/services/** (launch declarations)\n"
+        "- runtime/bundles/** (versioned runtime artifacts)\n"
+        "- resources/models/** (shared model storage)\n"
         "- Python wheels for local non-editable install\n\n"
         "- Web Studio production assets embedded in the f8studio-server wheel\n\n"
         "- Windows Unity modding installer/exporter assets under unitymods/\n\n"
@@ -845,7 +855,7 @@ def main() -> int:
         f"2. Run `{env_install_script_path.name}` in dist root.\n"
         "3. Start Studio via launcher (`./f8studio` on Linux/macOS, `f8studio.exe` on Windows),\n"
         "   or run your service command via `pixi run ...`.\n\n"
-        f"Platform runtime binaries are under `services/**/{platform_dir}`.\n"
+        f"Platform runtime binaries are under `runtime/bundles/**/{platform_dir}`.\n"
     )
     (dist_dir / "README.md").write_text(readme_text, encoding="utf-8")
 

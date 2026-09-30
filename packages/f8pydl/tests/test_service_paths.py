@@ -1,48 +1,25 @@
-import os
-import sys
 from pathlib import Path
 
-PKG_PYDL = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if PKG_PYDL not in sys.path:
-    sys.path.insert(0, PKG_PYDL)
+import pytest
 
-from f8pydl import service_paths  # noqa: E402
+from f8pydl import service_paths
+from f8pysdk.resource_paths import model_root
 
 
-def test_resolve_path_from_cwd_or_repo_prefers_cwd(tmp_path: Path, monkeypatch) -> None:
+def test_explicit_relative_user_path_uses_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
-    local_file = tmp_path / "models" / "local.yaml"
-    local_file.parent.mkdir()
-    local_file.write_text("x", encoding="utf-8")
-
-    resolved = service_paths.resolve_path_from_cwd_or_repo("models/local.yaml")
-
-    assert resolved == local_file.resolve()
+    assert service_paths.resolve_user_path("models/local.yaml") == tmp_path / "models/local.yaml"
 
 
-def test_resolve_path_from_cwd_or_repo_falls_back_to_repo_path(tmp_path: Path, monkeypatch) -> None:
+def test_installed_model_root_is_independent_of_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "installed"
+    monkeypatch.setenv("F8_MODEL_ROOT", str(root))
     monkeypatch.chdir(tmp_path)
-    repo_root = tmp_path / "repo"
-    repo_relative = Path("services") / "f8" / "dl"
-    repo_path = repo_root / repo_relative
-    repo_path.mkdir(parents=True, exist_ok=True)
-    marker = repo_path / "service_paths_test_marker.yaml"
-    marker.write_text("x", encoding="utf-8")
-    monkeypatch.setattr(service_paths, "package_root", lambda: repo_root)
-
-    resolved = service_paths.resolve_path_from_cwd_or_repo(str(repo_relative / marker.name))
-
-    assert resolved == marker.resolve()
+    assert service_paths.default_weights_dir() == root / "onnx"
+    assert service_paths.resolve_user_path("") == root / "onnx"
 
 
-def test_default_weights_dir_uses_extra_candidate_when_base_dirs_missing(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.chdir(tmp_path)
-    repo_root = tmp_path / "repo"
-    extra_relative = Path("services") / "f8" / "detect_tracker" / "weights"
-    extra_dir = repo_root / extra_relative
-    extra_dir.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setattr(service_paths, "package_root", lambda: repo_root)
-
-    resolved = service_paths.default_weights_dir(extra_relative_candidates=(extra_relative.as_posix(),))
-
-    assert resolved == extra_dir.resolve()
+def test_relative_installed_root_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("F8_MODEL_ROOT", "relative/models")
+    with pytest.raises(ValueError, match="absolute"):
+        model_root()

@@ -61,5 +61,5 @@ foreach(_t IN ITEMS f8cvkit_template_match_service f8cvkit_dense_optflow_service
   target_include_directories(${_t} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
   # Deploy all CVKit services into a shared directory so they can share runtime deps.
-  f8_deploy_service_runtime(${_t} "f8/cvkit" NO_CLEAN)
+  f8_deploy_service_runtime(${_t} "f8.cvkit" NO_CLEAN)
 endforeach()

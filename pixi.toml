@@ -50,7 +50,8 @@ f8pysdk = { path = "packages/f8pysdk", editable = true }
 eclipse-zenoh = ">=1.9.0,<1.10"
 
 [feature.sdk.tasks]
-update_describes = "python scripts/update_static_describes.py"
+install_services = "python scripts/install_services.py"
+update_describes = "python scripts/install_services.py --refresh"
 protocol_codegen_py = "pixi run -e ci python scripts/protocol_codegen_msgspec.py --protocol schemas/protocol.yml --output packages/f8pysdk/f8pysdk/generated/__init__.py"
 protocol_codegen_cpp = "python scripts/gen_cpp_protocol_models.py --protocol schemas/protocol.yml --out packages/f8cppsdk/include/f8cppsdk/generated/protocol_models.h"
 protocol_codegen_all = "python scripts/generate_runtime_policy.py && python scripts/generate_runtime_keys.py && python scripts/generate_stream_wire.py && pixi run -e ci python scripts/protocol_codegen_msgspec.py --protocol schemas/protocol.yml --output packages/f8pysdk/f8pysdk/generated/__init__.py && python scripts/gen_cpp_protocol_models.py --protocol schemas/protocol.yml --out packages/f8cppsdk/include/f8cppsdk/generated/protocol_models.h && python scripts/web_studio/generate_contracts.py"

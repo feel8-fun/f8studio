@@ -42,6 +42,23 @@ class DistCiDiscoveryTest(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def test_distribution_only_copies_installed_bundles(self) -> None:
+        paths = (
+            "bundles/f8.cppengine/0.0.1/linux/engine",
+            "bundles/f8.cppengine/0.0.1/describe.json",
+            "migration-backup/legacy-service-tree/imgui.ini",
+        )
+        for relative in paths:
+            path = self.root / "runtime" / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("fixture")
+        dist = self.root / "dist"
+        with mock.patch.object(self.module, "REPO_ROOT", self.root):
+            self.module._copy_dist_services(dist)
+        actual = {path.relative_to(dist / "runtime").as_posix()
+                  for path in (dist / "runtime").rglob("*") if path.is_file()}
+        self.assertEqual(actual, set(paths[:2]))
+
     def test_discover_local_editable_packages_ignores_non_packages_or_non_editable(self) -> None:
         self._write_pyproject("packages/pkg_a", "pkg-a")
         self._write_pyproject("packages/pkg_c", "pkg-c")

@@ -20,7 +20,7 @@ from .describe import (
     read_static_describe_payload,
     set_discovery_timing_lines,
 )
-from .entry import default_discovery_roots, find_service_dirs, load_service_entry
+from .entry import find_service_dirs, load_service_entry
 from .policy import (
     DISABLED_SERVICE_CLASSES_ENV,
     merge_disabled_service_classes,
@@ -47,7 +47,20 @@ def load_discovery_into_catalog(
     _ = overwrite
     clear_discovery_errors()
 
-    resolved_roots = roots if roots is not None else default_discovery_roots()
+    if roots is None:
+        from .index import load_index_into_catalog
+        target = catalog or ServiceCatalog.instance()
+        found = load_index_into_catalog(
+            catalog=target, disabled_service_classes=disabled_service_classes,
+            force_dynamic_service_classes=force_dynamic_service_classes,
+        )
+        for injector in builtin_injectors:
+            service_class = injector(target)
+            if service_class is not None and service_class not in found:
+                found.append(service_class)
+        return found
+
+    resolved_roots = roots
     target_catalog = catalog or ServiceCatalog.instance()
     disabled_service_class_set = set(
         merge_disabled_service_classes(explicit_service_classes=disabled_service_classes)
@@ -157,7 +170,7 @@ def load_discovery_into_catalog(
     else:
         set_discovery_timing_lines([])
 
-    for service_dir, _entry in entries:
+    for service_dir, entry in entries:
         payload = payload_by_dir.get(service_dir)
         if payload is None:
             continue
@@ -170,7 +183,7 @@ def load_discovery_into_catalog(
         try:
             service_spec = target_catalog.register_service(
                 payload["service"],
-                service_entry_path=service_dir,
+                entry=entry,
             )
         except _DISCOVERY_CATALOG_REGISTRATION_ERRORS as exc:
             logger.warning("Failed to register service from %s: %s", service_dir, exc)

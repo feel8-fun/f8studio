@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from f8pysdk.resource_paths import model_root
+
 
 @dataclass(frozen=True)
 class PoseRuntimeConfig:
@@ -39,19 +41,7 @@ def tasks_model_spec_for_complexity(model_complexity: str) -> TasksModelSpec:
 
 
 def _default_pose_model_dir() -> Path:
-    candidates: list[Path] = []
-    try:
-        candidates.append((Path.cwd() / "services" / "f8" / "mp" / "pose" / "models").resolve())
-    except (OSError, RuntimeError, ValueError):
-        pass
-    try:
-        root = Path(__file__).resolve().parents[3]
-        candidates.append((root / "services" / "f8" / "mp" / "pose" / "models").resolve())
-    except (OSError, RuntimeError, ValueError):
-        pass
-    if candidates:
-        return candidates[0]
-    return Path.cwd().resolve()
+    return model_root() / "mediapipe"
 
 
 def _download_model_asset(*, url: str, dst_path: Path, timeout_s: float = 30.0) -> None:

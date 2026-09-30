@@ -57,9 +57,9 @@ enable_testing()
 
 # options
 option(BUILD_TESTS "Enable building of tests" OFF)
-option(F8_DEPLOY_SERVICE_RUNTIME "Deploy service runtime to services/... after build" ON)
+option(F8_DEPLOY_SERVICE_RUNTIME "Deploy service runtime to runtime/bundles/... after build" ON)
 option(F8_DEPLOY_SERVICE_RUNTIME_POST_BUILD "Run deploy as POST_BUILD step" ON)
-option(F8_DEPLOY_SERVICE_CLEAN "Clean services/<svc>/<platform> before deploy" ON)
+option(F8_DEPLOY_SERVICE_CLEAN "Clean runtime/bundles/<bundle>/<version>/<platform> before deploy" ON)
 option(F8_WITH_ZENOH "Enable Zenoh C/C++ runtime backend when zenohcxx/zenohc are available" ON)
 
 if(NOT TARGET f8_deploy_all_runtime)
@@ -86,7 +86,7 @@ set(CMAKE_DEBUG_POSTFIX "_d")
 
 find_package(Threads REQUIRED)
 
-set(F8_SERVICES_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/services")
+set(F8_SERVICE_BUNDLES_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/runtime/bundles")
 
 function(f8_deploy_service_runtime target service_rel_dir)
     if(NOT TARGET ${target})
@@ -127,7 +127,7 @@ function(f8_deploy_service_runtime target service_rel_dir)
         set(_platform_dir "linux")
     endif()
 
-    set(_dest_dir "${F8_SERVICES_ROOT}/${service_rel_dir}/${_platform_dir}")
+    set(_dest_dir "${F8_SERVICE_BUNDLES_ROOT}/${service_rel_dir}/0.0.1/${_platform_dir}")
     set(_bin_dir "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
     set(_lib_dir "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}")
 

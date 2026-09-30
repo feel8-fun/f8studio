@@ -1,0 +1,169 @@
+{
+  "schemaVersion": "f8serviceIndex/1",
+  "modelRoot": "../resources/models",
+  "services": [
+    {
+      "serviceClass": "f8.audiocap",
+      "manifests": {
+        "linux": "services/f8.audiocap/service.linux.yml",
+        "win32": "services/f8.audiocap/service.win.yml"
+      },
+      "describe": "../runtime/bundles/f8.audiocap/0.0.1/describe.json"
+    },
+    {
+      "serviceClass": "f8.audiofeat.core",
+      "manifests": {
+        "any": "services/f8.audiofeat.core/service.yml"
+      },
+      "describe": "../runtime/bundles/f8.audiofeat.core/0.0.1/describe.json"
+    },
+    {
+      "serviceClass": "f8.audiofeat.rhythm",
+      "manifests": {
+        "any": "services/f8.audiofeat.rhythm/service.yml"
+      },
+      "describe": "../runtime/bundles/f8.audiofeat.rhythm/0.0.1/describe.json"
+    },
+    {
+      "serviceClass": "f8.cppengine",
+      "manifests": {
+        "linux": "services/f8.cppengine/service.linux.yml",
+        "win32": "services/f8.cppengine/service.win.yml"
+      },
+      "describe": "../runtime/bundles/f8.cppengine/0.0.1/describe.json"
+    },
+    {
+      "serviceClass": "f8.cvkit.denseoptflow",
+      "manifests": {
+        "linux": "services/f8.cvkit.denseoptflow/service.linux.yml",
+        "win32": "services/f8.cvkit.denseoptflow/service.win.yml"
+      },
+      "describe": "../runtime/bundles/f8.cvkit.denseoptflow/0.0.1/describe.json"
+    },
+    {
+      "serviceClass": "f8.cvkit.flowmetric",
+      "manifests": {
+        "linux": "services/f8.cvkit.flowmetric/service.linux.yml",
+        "win32": "services/f8.cvkit.flowmetric/service.win.yml"
+      },
+      "describe": "../runtime/bundles/f8.cvkit.flowmetric/0.0.1/describe.json"
+    },
+    {
+      "serviceClass": "f8.cvkit.templatematch",
+      "manifests": {
+        "linux": "services/f8.cvkit.templatematch/service.linux.yml",
+        "win32": "services/f8.cvkit.templatematch/service.win.yml"
+      },
+      "describe": "../runtime/bundles/f8.cvkit.templatematch/0.0.1/describe.json"
+    },
+    {
+      "serviceClass": "f8.cvkit.tracking",
+      "manifests": {
+        "linux": "services/f8.cvkit.tracking/service.linux.yml",
+        "win32": "services/f8.cvkit.tracking/service.win.yml"
+      },
+      "describe": "../runtime/bundles/f8.cvkit.tracking/0.0.1/describe.json"
+    },
+    {
+      "serviceClass": "f8.cvkit.videostab",
+      "manifests": {
+        "linux": "services/f8.cvkit.videostab/service.linux.yml",
+        "win32": "services/f8.cvkit.videostab/service.win.yml"
+      },
+      "describe": "../runtime/bundles/f8.cvkit.videostab/0.0.1/describe.json"
+    },
+    {
+      "serviceClass": "f8.dl.classifier",
+      "manifests": {
+        "any": "services/f8.dl.classifier/service.yml"
+      },
+      "describe": "../runtime/bundles/f8.dl.classifier/0.0.1/describe.json"
+    },
+    {
+      "serviceClass": "f8.dl.detector",
+      "manifests": {
+        "any": "services/f8.dl.detector/service.yml"
+      },
+      "describe": "../runtime/bundles/f8.dl.detector/0.0.1/describe.json"
+    },
+    {
+      "serviceClass": "f8.dl.detsorter",
+      "manifests": {
+        "any": "services/f8.dl.detsorter/service.yml"
+      },
+      "describe": "../runtime/bundles/f8.dl.detsorter/0.0.1/describe.json"
+    },
+    {
+      "serviceClass": "f8.dl.humandetector",
+      "manifests": {
+        "any": "services/f8.dl.humandetector/service.yml"
+      },
+      "describe": "../runtime/bundles/f8.dl.humandetector/0.0.1/describe.json"
+    },
+    {
+      "serviceClass": "f8.dl.optflow",
+      "manifests": {
+        "any": "services/f8.dl.optflow/service.yml"
+      },
+      "describe": "../runtime/bundles/f8.dl.optflow/0.0.1/describe.json"
+    },
+    {
+      "serviceClass": "f8.dl.tcnwave",
+      "manifests": {
+        "any": "services/f8.dl.tcnwave/service.yml"
+      },
+      "describe": "../runtime/bundles/f8.dl.tcnwave/0.0.1/describe.json"
+    },
+    {
+      "serviceClass": "f8.pyengine",
+      "manifests": {
+        "any": "services/f8.pyengine/service.yml"
+      },
+      "describe": "../runtime/bundles/f8.pyengine/0.0.1/describe.json"
+    },
+    {
+      "serviceClass": "f8.implayer",
+      "manifests": {
+        "linux": "services/f8.implayer/service.linux.yml",
+        "win32": "services/f8.implayer/service.win.yml"
+      },
+      "describe": "../runtime/bundles/f8.implayer/0.0.1/describe.json"
+    },
+    {
+      "serviceClass": "f8.mp.pose",
+      "manifests": {
+        "any": "services/f8.mp.pose/service.yml"
+      },
+      "describe": "../runtime/bundles/f8.mp.pose/0.0.1/describe.json"
+    },
+    {
+      "serviceClass": "f8.proclauncher",
+      "manifests": {
+        "any": "services/f8.proclauncher/service.yml"
+      },
+      "describe": "../runtime/bundles/f8.proclauncher/0.0.1/describe.json"
+    },
+    {
+      "serviceClass": "f8.pyexpr",
+      "manifests": {
+        "any": "services/f8.pyexpr/service.yml"
+      },
+      "describe": "../runtime/bundles/f8.pyexpr/0.0.1/describe.json"
+    },
+    {
+      "serviceClass": "f8.pyscript",
+      "manifests": {
+        "any": "services/f8.pyscript/service.yml"
+      },
+      "describe": "../runtime/bundles/f8.pyscript/0.0.1/describe.json"
+    },
+    {
+      "serviceClass": "f8.screencap",
+      "manifests": {
+        "linux": "services/f8.screencap/service.linux.yml",
+        "win32": "services/f8.screencap/service.win.yml"
+      },
+      "describe": "../runtime/bundles/f8.screencap/0.0.1/describe.json"
+    }
+  ]
+}

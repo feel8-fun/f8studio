@@ -29,7 +29,7 @@ def _default_roots() -> list[Path]:
 
     try:
         for parent in Path(__file__).resolve().parents:
-            candidate = parent / "services"
+            candidate = parent / "config" / "services"
             if candidate.is_dir():
                 return [candidate.resolve()]
     except _ENTRY_PATH_ERRORS as exc:

@@ -19,7 +19,6 @@ import msgspec
 from ...bus import BusBackend
 from .._internal.error_reporting import ExceptionLogOnce, fingerprint_exception
 from ..inventory.catalog import ServiceCatalog
-from ..inventory.entry import load_service_entry
 
 
 logger = logging.getLogger(__name__)
@@ -336,7 +335,7 @@ class ServiceProcessManager:
             return list(self._procs.keys())
 
     def has_launcher(self, service_class: str) -> bool:
-        return self._current_catalog().service_entry_path(service_class) is not None
+        return self._current_catalog().service_entry(service_class) is not None
 
     def _start_reader(self, *, service_id: str, proc: subprocess.Popen[Any], on_output: Any | None) -> None:
         if on_output is None:
@@ -504,21 +503,9 @@ class ServiceProcessManager:
         if bus_backend not in {"zenoh", "mem"}:
             raise ValueError("Invalid process bus_backend; expected 'zenoh' or 'mem'.")
 
-        entry_path = self._current_catalog().service_entry_path(service_class)
-        if entry_path is None:
-            raise ValueError(f"Missing discovery entry path for serviceClass={service_class!r}")
-        service_dir = Path(entry_path).resolve()
-        try:
-            if service_dir.is_file() and service_dir.name.lower() == "service.yml":
-                service_dir = service_dir.parent.resolve()
-        except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as exc:
-            logger.debug(
-                "Service discovery entry path normalization failed serviceClass=%s path=%s",
-                service_class,
-                entry_path,
-                exc_info=exc,
-            )
-        entry = load_service_entry(service_dir)
+        entry = self._current_catalog().service_entry(service_class)
+        if entry is None:
+            raise ValueError(f"Missing installed launch configuration for serviceClass={service_class!r}")
 
         if self.is_running(service_id):
             return
@@ -589,7 +576,7 @@ class ServiceProcessManager:
         )
         workdir = Path(workdir_raw).expanduser()
         if not workdir.is_absolute():
-            workdir = (service_dir / workdir).resolve()
+            raise ValueError("Installed service launch.workdir must be absolute")
         else:
             workdir = workdir.resolve()
 

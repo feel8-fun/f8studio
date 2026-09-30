@@ -845,7 +845,10 @@ def test_semantic_revision_ignores_collection_and_mapping_insertion_order() -> N
 
 
 def test_compiler_uses_repository_service_catalog_fixture() -> None:
-    describe_path = Path(__file__).parents[3] / "services" / "f8" / "engine" / "describe.json"
+    from f8pysdk.service_runtime_tools.inventory.index import read_service_index
+    index_path = Path(__file__).parents[3] / "config" / "service-index.json"
+    registration = next(item for item in read_service_index(index_path).services if item.serviceClass == "f8.pyengine")
+    describe_path = index_path.parent / registration.describe
     describe = msgspec.convert(normalize_describe_payload_dict(json.loads(describe_path.read_text())), type=F8ServiceDescribe)
     catalog = NodeCatalog(services=[describe.service], operators=describe.operators)
     service = catalog.create_service_node(node_id="engine", service_class="f8.pyengine")

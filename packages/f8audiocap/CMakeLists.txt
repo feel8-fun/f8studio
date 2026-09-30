@@ -39,5 +39,5 @@ if (WIN32)
   target_link_libraries(f8audiocap_service PRIVATE ole32 uuid avrt)
 endif()
 
-# Deploy C++ service artifacts into `services/.../<platform>/` for packaging/runtime use.
-f8_deploy_service_runtime(f8audiocap_service "f8/audiocap")
+# Deploy C++ service artifacts into `runtime/bundles/<bundle>/<version>/<platform>/` for packaging/runtime use.
+f8_deploy_service_runtime(f8audiocap_service "f8.audiocap")

@@ -1,0 +1,13 @@
+schemaVersion: f8serviceEntry/1
+serviceClass: f8.audiofeat.core
+label: Audio Feature Core
+version: 0.0.1
+launch:
+  command: pixi
+  args:
+  - run
+  - -e
+  - default
+  - f8pyaudiofeat_core
+  env: {}
+  workdir: ../../..

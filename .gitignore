@@ -83,10 +83,6 @@ site/
 **/ignore/*
 *.onnx
 
-services/**/linux
-services/**/win
-services/**/macos
-services/**/describe.json
 .codex
 .agents/
 package-lock.json
@@ -94,5 +90,10 @@ package-lock.json
 packages/f8studio_web/test-results/
 packages/f8studio_web/playwright-report/
 
-# Source fingerprint accompanying local generated service descriptions.
-services/**/describe.fingerprint
+
+# Installed model binaries, independent of service bundles.
+resources/models/**/*.task
+resources/models/**/*.onnx
+
+# Generated versioned service bundles and local migration backups.
+/runtime/

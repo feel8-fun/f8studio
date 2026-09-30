@@ -51,7 +51,7 @@ class TrackingService final : public f8::cppsdk::LifecycleNode,
     std::string service_class = "f8.cvkit.tracking";
     f8::cppsdk::RuntimeBackendConfig runtime_backend;
     std::string tracker_kind = "csrt";
-    std::string model_dir = "models";
+    std::string model_dir;
     bool auto_download_models = true;
     double max_tracking_fps = 30.0;
     int stop_tracking_cooldown_ms = 1000;

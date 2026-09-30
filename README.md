@@ -14,7 +14,10 @@ Runtime workspace for Feel8 Studio. The current runtime is Zenoh-first:
 - `packages/f8studio_server` — local Web Studio application service, API, CLI, and MCP.
 - `packages/f8studio_web` — React graph editor and presentation workspaces.
 - `packages/f8media_gateway` — process-isolated Zenoh to WebRTC media gateway.
-- `services` — service manifests, static `describe.json`, and deployed C++ runtime binaries.
+- `config/service-index.json` — explicit service registrations and model storage location.
+- `config/services` — tracked, platform-specific launch declarations.
+- `runtime/bundles/<bundle>/<version>` — generated descriptions, executables, and bundled libraries/resources.
+- `resources/models` — shared model definitions and installed weights.
 - `scripts` — codegen, describe regeneration, benchmarks, and migration tooling.
 
 ## Runtime Backend
@@ -27,11 +30,16 @@ Runtime workspace for Feel8 Studio. The current runtime is Zenoh-first:
 - Start: `pixi run -e web-studio studio_server`
 - Open: `http://127.0.0.1:8210`
 
-## Service discovery (startup speed)
-Studio service discovery can avoid spawning `pixi run ... --describe` by using a static `describe.json` in each service directory (e.g. `services/f8/engine/describe.json`).
+## Service installation and registration
+Studio loads `config/service-index.json` deterministically. Startup does not scan service directories, hash source files, or run `--describe`.
 
-- Regenerate all: `pixi run -e default update_describes`
-- Regenerate one: `pixi run -e default update_describes -- --service-class f8.pyengine`
+- Install missing descriptions: `pixi run install_services`
+- Refresh descriptions after changing service definitions: `pixi run update_describes`
+- Refresh one: `pixi run update_describes --service-class f8.pyengine`
+- Copy and verify existing models: `pixi run install_services --migrate-resources /path/to/old/services --migrate-layout /path/to/old/services`
+- Select another installation: set `F8_SERVICE_INDEX` to its index file.
+
+Registered services receive an absolute `F8_MODEL_ROOT`. Standalone service commands use the platform user data directory unless `F8_MODEL_ROOT` is explicitly set. See [migration notes](docs/development/service-registration-migration.md).
 
 ## DL services
 - Detector: `pixi run -e onnx f8pydl_detector`

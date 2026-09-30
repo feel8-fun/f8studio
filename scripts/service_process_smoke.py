@@ -101,7 +101,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         "--discovery-root",
         action="append",
         default=[],
-        help="Service discovery root. Repeatable. Default: ./services",
+        help="Explicit legacy discovery root. Repeatable. Default: installed service index",
     )
     parser.add_argument("--timeout-s", type=float, default=12.0, help="Per-service smoke timeout.")
     parser.add_argument("--probe-interval-s", type=float, default=0.5)
@@ -145,10 +145,10 @@ def _targets_from_args(args: argparse.Namespace) -> tuple[SmokeTarget, ...]:
     return tuple(_parse_service_arg(item) for item in raw_targets)
 
 
-def _discovery_roots_from_args(args: argparse.Namespace) -> list[Path]:
+def _discovery_roots_from_args(args: argparse.Namespace) -> list[Path] | None:
     raw_roots = list(args.discovery_root or [])
     if not raw_roots:
-        raw_roots = ["services"]
+        return None
     roots: list[Path] = []
     for raw_root in raw_roots:
         root = Path(str(raw_root)).expanduser()
@@ -160,11 +160,11 @@ def _discovery_roots_from_args(args: argparse.Namespace) -> list[Path]:
     return roots
 
 
-def _load_catalog(roots: list[Path]) -> ServiceCatalog:
+def _load_catalog(roots: list[Path] | None) -> ServiceCatalog:
     catalog = ServiceCatalog()
     found = load_discovery_into_catalog(roots=roots, catalog=catalog, builtin_injectors=())
     print(
-        f"[smoke] discovery roots={', '.join(str(root) for root in roots)} services={len(found)}",
+        f"[smoke] discovery roots={', '.join(str(root) for root in roots) if roots is not None else 'installed index'} services={len(found)}",
         flush=True,
     )
     return catalog

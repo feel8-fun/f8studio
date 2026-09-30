@@ -1,9 +1,0 @@
-schemaVersion: f8serviceEntry/1
-serviceClass: f8.cppengine
-label: CppEngine
-version: 0.0.1
-launch:
-  command: "win/f8cppengine_service.exe"
-  args: []
-  env: {}
-  workdir: "./"

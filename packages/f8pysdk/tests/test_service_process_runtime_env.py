@@ -16,9 +16,10 @@ class _Catalog:
     def __init__(self, entry_path: Path) -> None:
         self.entry_path = entry_path
 
-    def service_entry_path(self, service_class: str) -> Path | None:
+    def service_entry(self, service_class: str):
         if service_class == "f8.test":
-            return self.entry_path
+            from f8pysdk.service_runtime_tools.inventory.entry import load_service_entry
+            return load_service_entry(self.entry_path.parent)
         return None
 
 

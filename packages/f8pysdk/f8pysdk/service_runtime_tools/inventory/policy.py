@@ -62,7 +62,7 @@ def merge_disabled_service_classes(
 
 def repo_root_from_path(start_path: Path) -> Path | None:
     for candidate in (Path(start_path).resolve(), *Path(start_path).resolve().parents):
-        if (candidate / "pixi.toml").is_file() and (candidate / "services").is_dir():
+        if (candidate / "pixi.toml").is_file() and (candidate / "config").is_dir():
             return candidate
     return None
 

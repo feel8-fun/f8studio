@@ -59,8 +59,8 @@ def _find_service_dirs(services_root: Path) -> list[Path]:
     return sorted(found)
 
 
-def _load_service_row(service_dir: Path) -> ServiceRow:
-    describe_path = service_dir / "describe.json"
+def _load_service_row(service_dir: Path, *, describe_path: Path | None = None) -> ServiceRow:
+    describe_path = describe_path or service_dir / "describe.json"
     if not describe_path.exists():
         raise ValueError(f"missing describe.json: {service_dir}")
     raw = json.loads(describe_path.read_text(encoding="utf-8"))
@@ -167,7 +167,12 @@ def _render_pyengine_operators(rows: list[ServiceRow]) -> str:
 
 
 def _build_expected(services_root: Path, *, service_nodes_path: Path, pyengine_operators_path: Path) -> dict[Path, str]:
-    rows = [_load_service_row(service_dir) for service_dir in _find_service_dirs(services_root)]
+    if services_root.suffix == ".json":
+        from f8pysdk.service_runtime_tools.inventory.index import service_index_sources
+        rows = [_load_service_row(manifest.parent, describe_path=describe)
+                for manifest, describe in service_index_sources(services_root)]
+    else:
+        rows = [_load_service_row(service_dir) for service_dir in _find_service_dirs(services_root)]
     rows = sorted(rows, key=lambda item: item.service_class)
     return {
         service_nodes_path: _render_service_nodes(rows),
@@ -217,7 +222,7 @@ def build(
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate node-atlas inventory pages")
-    parser.add_argument("--services-root", default="services", help="Root containing service directories")
+    parser.add_argument("--service-index", "--services-root", dest="services_root", default="config/service-index.json", help="Service index (or explicit legacy fixture directory)")
     parser.add_argument("--service-nodes-path", default="docs/node-atlas/service-nodes.md")
     parser.add_argument("--pyengine-operators-path", default="docs/node-atlas/pyengine-operators.md")
     parser.add_argument("--check", action="store_true", help="Validate generated files without writing")

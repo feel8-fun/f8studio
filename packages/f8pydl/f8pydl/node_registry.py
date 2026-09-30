@@ -168,8 +168,8 @@ def _common_state_fields(
         F8StateSpec(
             name="weightsDir",
             label="Weights Dir",
-            description="Directory containing *.yaml + *.onnx model files. Reset to the default relative path when exporting publish JSON.",
-            valueSchema=string_schema(default="services/f8/dl/weights"),
+            description="Directory containing *.yaml + *.onnx model files. Empty uses the installed model directory.",
+            valueSchema=string_schema(default=""),
             access=F8StateAccess.rw,
             valueRequired=True,
             showOnNode=True,
@@ -342,8 +342,8 @@ def _optflow_state_fields() -> list[F8StateSpec]:
         F8StateSpec(
             name="weightsDir",
             label="Weights Dir",
-            description="Directory containing *.yaml + *.onnx model files. Reset to the default relative path when exporting publish JSON.",
-            valueSchema=string_schema(default="services/f8/dl/weights"),
+            description="Directory containing *.yaml + *.onnx model files. Empty uses the installed model directory.",
+            valueSchema=string_schema(default=""),
             access=F8StateAccess.rw,
             valueRequired=True,
             showOnNode=False,

@@ -1,3 +1,5 @@
+#include <cstdlib>
+#include <stdexcept>
 #include "tracking_service.h"
 
 #include <algorithm>
@@ -251,16 +253,32 @@ bool tracker_kind_uses_model_files(TrackerKind kind) {
 }
 
 std::string default_model_dir_state() {
-  return "models";
+  return "";
 }
 
 fs::path default_model_dir_path() {
-  std::error_code ec;
-  const fs::path cwd = fs::current_path(ec);
-  if (ec) {
-    return fs::path(default_model_dir_state());
+  const char* configured = std::getenv("F8_MODEL_ROOT");
+  if (configured != nullptr && configured[0] != '\0') {
+    const fs::path root(configured);
+    if (!root.is_absolute()) {
+      throw std::invalid_argument("F8_MODEL_ROOT must be absolute");
+    }
+    return root / "tracking";
   }
-  return cwd / default_model_dir_state();
+#ifdef _WIN32
+  const char* base = std::getenv("LOCALAPPDATA");
+  if (base != nullptr && base[0] != '\0') return fs::path(base) / "f8studio" / "models" / "tracking";
+#else
+  const char* home = std::getenv("HOME");
+#ifdef __APPLE__
+  if (home != nullptr && home[0] != '\0') return fs::path(home) / "Library" / "Application Support" / "f8studio" / "models" / "tracking";
+#else
+  const char* data = std::getenv("XDG_DATA_HOME");
+  if (data != nullptr && data[0] != '\0') return fs::path(data) / "f8studio" / "models" / "tracking";
+  if (home != nullptr && home[0] != '\0') return fs::path(home) / ".local" / "share" / "f8studio" / "models" / "tracking";
+#endif
+#endif
+  throw std::runtime_error("Cannot resolve model storage; set F8_MODEL_ROOT");
 }
 
 fs::path resolve_model_dir_path(const std::string& raw) {

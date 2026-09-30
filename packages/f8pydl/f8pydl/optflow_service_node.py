@@ -20,7 +20,7 @@ from f8pysdk.zenoh_naming import zenoh_data_key
 
 from .model_config import ModelSpec, ModelTask, build_model_index, build_model_index_with_errors, load_model_spec
 from .onnx_runtime import OnnxNeuFlowRuntime
-from .service_paths import default_weights_dir, resolve_path_from_cwd_or_repo
+from .service_paths import default_weights_dir, resolve_user_path
 from .video_frame_source import (
     LatestVideoFrameSource,
     VideoFrameSourceConfig,
@@ -44,8 +44,8 @@ def _default_weights_dir() -> Path:
     return default_weights_dir()
 
 
-def _resolve_path_from_cwd_or_repo(raw: str) -> Path:
-    return resolve_path_from_cwd_or_repo(raw)
+def _resolve_user_path(raw: str) -> Path:
+    return resolve_user_path(raw)
 
 
 class _RollingWindow:
@@ -292,7 +292,7 @@ class OnnxOptflowServiceNode(ServiceNode):
 
         if name == "weightsDir":
             raw = coerce_str(value, default=str(self._weights_dir))
-            self._weights_dir = _resolve_path_from_cwd_or_repo(raw)
+            self._weights_dir = _resolve_user_path(raw)
             await self._publish_model_index()
             await self._reset_runtime()
             return
@@ -337,7 +337,7 @@ class OnnxOptflowServiceNode(ServiceNode):
             await self.get_state_value("weightsDir"),
             default=str(self._initial_state.get("weightsDir") or _default_weights_dir()),
         )
-        self._weights_dir = _resolve_path_from_cwd_or_repo(raw_weights)
+        self._weights_dir = _resolve_user_path(raw_weights)
         self._model_id = coerce_str(
             await self.get_state_value("modelId"), default=str(self._initial_state.get("modelId") or "")
         )
@@ -543,7 +543,7 @@ class OnnxOptflowServiceNode(ServiceNode):
 
     def _resolve_model_yaml(self) -> Path:
         if self._model_yaml_path:
-            return _resolve_path_from_cwd_or_repo(self._model_yaml_path)
+            return _resolve_user_path(self._model_yaml_path)
         idx = build_model_index(self._weights_dir, allowed_tasks=self._allowed_tasks)
         if self._model_id:
             for item in idx:

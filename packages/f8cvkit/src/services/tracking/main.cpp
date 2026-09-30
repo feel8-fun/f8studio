@@ -30,7 +30,7 @@ int main(int argc, char** argv) {
       "tracker-kind", "Tracker backend (csrt|kcf|mil|nano|vit)",
       cxxopts::value<std::string>()->default_value("csrt"))(
       "model-dir", "Directory for tracker model files used by nano/vit",
-      cxxopts::value<std::string>()->default_value("models"))(
+      cxxopts::value<std::string>()->default_value(""))(
       "auto-download-models", "Auto-download missing tracker model files when needed",
       cxxopts::value<bool>()->default_value("true")->implicit_value("true"))(
       "max-tracking-fps", "Maximum tracker update rate (0 = unlimited)",
@@ -83,6 +83,7 @@ int main(int argc, char** argv) {
   cfg.runtime_backend = runtime_backend;
   cfg.tracker_kind = result["tracker-kind"].as<std::string>();
   cfg.model_dir = result["model-dir"].as<std::string>();
+
   cfg.auto_download_models = result["auto-download-models"].as<bool>();
   cfg.max_tracking_fps = result["max-tracking-fps"].as<double>();
   cfg.stop_tracking_cooldown_ms = result["stop-cooldown-ms"].as<int>();

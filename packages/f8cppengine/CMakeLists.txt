@@ -103,7 +103,7 @@ target_link_libraries(f8cppengine_service
 
 target_compile_definitions(f8cppengine_service PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 
-f8_deploy_service_runtime(f8cppengine_service "f8/cppengine")
+f8_deploy_service_runtime(f8cppengine_service "f8.cppengine")
 
 function(f8cppengine_deploy_cpython_runtime target dest_dir)
   if(NOT WIN32)
@@ -126,7 +126,7 @@ function(f8cppengine_deploy_cpython_runtime target dest_dir)
 endfunction()
 
 f8cppengine_deploy_cpython_runtime(f8cppengine_service "$<TARGET_FILE_DIR:f8cppengine_service>")
-f8cppengine_deploy_cpython_runtime(f8cppengine_service "${F8_SERVICES_ROOT}/f8/cppengine/win")
+f8cppengine_deploy_cpython_runtime(f8cppengine_service "${F8_SERVICE_BUNDLES_ROOT}/f8.cppengine/0.0.1/win")
 
 add_executable(f8cppengine_cpython_script_smoke EXCLUDE_FROM_ALL
   tests/test_cpython_script_operator.cpp

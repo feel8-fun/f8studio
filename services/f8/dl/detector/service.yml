@@ -1,9 +1,0 @@
-schemaVersion: f8serviceEntry/1
-serviceClass: f8.dl.detector
-label: DL Detector
-version: 0.0.1
-launch:
-  command: pixi
-  args: ["run", "-e", "onnx", "f8pydl_detector"]
-  env: {}
-  workdir: "../../../../"

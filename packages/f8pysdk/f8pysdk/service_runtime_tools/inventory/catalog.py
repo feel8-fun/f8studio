@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from f8pysdk.codec import copy_model, validate_as
 from collections.abc import Iterable
-from pathlib import Path
 from typing import ClassVar
 
 import msgspec
 
-from f8pysdk.specs import F8OperatorSchemaVersion, F8OperatorSpec, F8ServiceSchemaVersion, F8ServiceSpec
+from f8pysdk.specs import F8ServiceEntry, F8OperatorSchemaVersion, F8OperatorSpec, F8ServiceSchemaVersion, F8ServiceSpec
 
 
 class ServiceSpecRegistry:
@@ -120,7 +119,7 @@ class OperatorSpecRegistry:
 
 class ServiceCatalog:
     """
-    Unified registry facade for (service spec + operator specs + discovery entry paths).
+    Validated service/operator definitions and resolved launch snapshots.
     """
 
     _instance: ClassVar["ServiceCatalog | None"] = None
@@ -139,18 +138,16 @@ class ServiceCatalog:
     ) -> None:
         self.services = services or ServiceSpecRegistry()
         self.operators = operators or OperatorSpecRegistry()
-        self._service_entry_paths: dict[str, Path] = {}
+        self._entries: dict[str, F8ServiceEntry] = {}
 
-    def service_entry_path(self, service_class: str) -> Path | None:
-        return self._service_entry_paths.get(str(service_class or "").strip())
+    def service_entry(self, service_class: str) -> F8ServiceEntry | None:
+        entry = self._entries.get(service_class)
+        return None if entry is None else copy_model(entry, deep=True)
 
-    def service_entry_paths(self) -> dict[str, Path]:
-        return dict(self._service_entry_paths)
-
-    def register_service(self, spec: F8ServiceSpec, *, service_entry_path: Path | None = None) -> F8ServiceSpec:
+    def register_service(self, spec: F8ServiceSpec, *, entry: F8ServiceEntry | None = None) -> F8ServiceSpec:
         registered = self.services.register(spec)
-        if service_entry_path is not None:
-            self._service_entry_paths[str(registered.serviceClass)] = Path(service_entry_path).resolve()
+        if entry is not None:
+            self._entries[str(registered.serviceClass)] = copy_model(entry, deep=True)
         return registered
 
     def register_services(self, specs: Iterable[F8ServiceSpec]) -> list[F8ServiceSpec]:
@@ -165,4 +162,4 @@ class ServiceCatalog:
     def clear(self) -> None:
         self.services.clear()
         self.operators.clear()
-        self._service_entry_paths.clear()
+        self._entries.clear()

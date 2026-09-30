@@ -18,7 +18,7 @@ from f8pysdk.video_transport import VIDEO_FORMAT_BGRA32
 from .constants import CLASSIFICATION_SCHEMA_VERSION, DETECTION_SCHEMA_VERSION
 from .model_config import ModelSpec, ModelTask, build_model_index, build_model_index_with_errors, load_model_spec
 from .onnx_runtime import OnnxClassifierRuntime, OnnxYoloDetectorRuntime, OnnxYowoTemporalDetectorRuntime
-from .service_paths import default_weights_dir, resolve_path_from_cwd_or_repo
+from .service_paths import default_weights_dir, resolve_user_path
 from .video_frame_source import (
     LatestVideoFrameSource,
     VideoFrameSourceConfig,
@@ -29,11 +29,11 @@ from .weights_downloader import ensure_onnx_file, onnx_file_matches_sha256
 
 
 def _default_weights_dir() -> Path:
-    return default_weights_dir(extra_relative_candidates=("services/f8/detect_tracker/weights",))
+    return default_weights_dir()
 
 
-def _resolve_path_from_cwd_or_repo(raw: str) -> Path:
-    return resolve_path_from_cwd_or_repo(raw)
+def _resolve_user_path(raw: str) -> Path:
+    return resolve_user_path(raw)
 
 
 _DL_MODEL_METADATA_ERRORS = (FileNotFoundError, OSError, RuntimeError, TypeError, ValueError)
@@ -264,7 +264,7 @@ class OnnxVisionServiceNode(ServiceNode):
 
         if name == "weightsDir":
             raw = coerce_str(await self.get_state_value("weightsDir"), default=str(self._weights_dir))
-            self._weights_dir = _resolve_path_from_cwd_or_repo(raw)
+            self._weights_dir = _resolve_user_path(raw)
             await self._publish_model_index(force_publish=True)
             await self._reset_runtime()
             return
@@ -347,7 +347,7 @@ class OnnxVisionServiceNode(ServiceNode):
             await self.get_state_value("weightsDir"),
             default=str(self._initial_state.get("weightsDir") or _default_weights_dir()),
         )
-        self._weights_dir = _resolve_path_from_cwd_or_repo(raw_weights)
+        self._weights_dir = _resolve_user_path(raw_weights)
         self._model_id = coerce_str(
             await self.get_state_value("modelId"), default=str(self._initial_state.get("modelId") or "")
         )
@@ -660,7 +660,7 @@ class OnnxVisionServiceNode(ServiceNode):
 
     def _resolve_model_yaml(self) -> Path:
         if self._model_yaml_path:
-            return _resolve_path_from_cwd_or_repo(self._model_yaml_path)
+            return _resolve_user_path(self._model_yaml_path)
         idx = build_model_index(self._weights_dir, allowed_tasks=self._allowed_tasks)
         if self._model_id:
             for item in idx:
