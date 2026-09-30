@@ -9,11 +9,22 @@ permissions:
   contents: read
 
 concurrency:
-  group: quality-${{ github.ref }}
+  group: quality-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  debounce:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # Configure Settings > Environments > quality-debounce > Wait timer = 720.
+    # GitHub waits before assigning a runner; a new push cancels this entire run.
+    environment: quality-debounce
+    steps:
+      - run: echo "The 12-hour quiet period has elapsed."
   python:
+    needs: debounce
+    if: ${{ !cancelled() && (github.event_name != 'push' || needs.debounce.result == 'success') }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -21,6 +32,8 @@ jobs:
           submodules: recursive
       - uses: prefix-dev/setup-pixi@v0.9.3
         with:
+          # Keep the CLI aligned with the committed v7 lock and local validation.
+          pixi-version: v0.81.0
           environments: default web-studio-test ci
           cache: true
       - run: pixi run pytest -q
@@ -35,6 +48,8 @@ jobs:
       - run: pixi run lint_imports
       - run: pixi run quality_exceptions
   web:
+    needs: debounce
+    if: ${{ !cancelled() && (github.event_name != 'push' || needs.debounce.result == 'success') }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -42,12 +57,16 @@ jobs:
           submodules: recursive
       - uses: prefix-dev/setup-pixi@v0.9.3
         with:
+          # Keep the CLI aligned with the committed v7 lock and local validation.
+          pixi-version: v0.81.0
           environments: web-studio-test
           cache: true
       - name: Validate Web (same command as local)
         run: pixi run --locked -e web-studio-test studio_web_ci
 
   release-wheels:
+    needs: debounce
+    if: ${{ !cancelled() && (github.event_name != 'push' || needs.debounce.result == 'success') }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -55,6 +74,8 @@ jobs:
           submodules: recursive
       - uses: prefix-dev/setup-pixi@v0.9.3
         with:
+          # Keep the CLI aligned with the committed v7 lock and local validation.
+          pixi-version: v0.81.0
           environments: web-studio-test ci
           cache: true
       - run: pixi run --locked -e web-studio-test studio_release_smoke --verify-dist-lock

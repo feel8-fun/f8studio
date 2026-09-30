@@ -60,6 +60,10 @@ bootstrap 主要在首次构建或 Conan 依赖变化后执行。日常修改执
 
 ## 发行流程
 
+CI 的 `setup-pixi` 固定使用 **v0.81.0**，与当前 v7 锁文件及本地版本一致。升级 Pixi 时需一并迁移锁文件并验证各运行平台，不能让 CI 默默追随 latest；新版 Pixi 的 `lock --check` 可能因格式升级而失败，即使依赖安装成功。Linux 使用命名平台 `linux-glibc228` 显式保留 glibc 2.28 基线，替代已弃用的 `[system-requirements]` 配置。
+
+手动运行 `dist-windows` 时，默认构建 GitHub 页面所选的分支或 tag；`git_ref` 留空即可，只有要覆盖检出目标时才填写。工作流会打印实际检出的 commit，非 tag 产物版本使用该 commit 的短 SHA。
+
 当前发行不要求用户克隆仓库。开发者或 CI 执行：
 
 ```sh
@@ -96,3 +100,17 @@ pixi run --locked -e ci python scripts/verify_dist.py build/dist/f8studio-window
 - wheel smoke 的临时 venv 复用测试环境的第三方依赖，但断言项目模块来自已安装 wheel。它不是完全隔离的依赖安装测试。
 - Windows dist CI：构建和原生契约检查后，把压缩包解压到仓库外的临时目录；使用自己的锁文件安装各运行环境，验证本地包安装位置、内嵌页面及实际启动脚本，然后才允许上传。
 - tag `v*` 或手动工作流触发 Windows 发行；发布开关和 release tag 仍由工作流控制。Linux 有打包脚本支持，但没有同等的自动发布工作流。
+
+### Quality 的延迟触发
+
+使用 GitHub 原生 Environment 等待规则和 workflow concurrency，无需额外 Action 或定时扫描脚本：
+
+1. 在仓库 **Settings → Environments** 中创建 `quality-debounce`。
+2. 将 **Wait timer** 设置为 **720 分钟**并保存。不要添加 required reviewers；允许需要检查的分支使用此环境。
+3. push 触发的 `debounce` job 先等待该规则放行，再运行 Python、Web 和 release-wheels 检查。
+
+同一分支的新 push 通过 `cancel-in-progress: true` 取消旧运行，新运行重新等待 12 小时。等待发生在 runner 分配之前，不消耗计费运行时间；等待结束后的实际启动仍受 GitHub 排队影响。PR 和手动运行跳过等待，不会被 push 的并发组取消。环境会产生 GitHub deployment 记录，但这个 job 不部署应用，只作为检查前的等待入口。
+
+**720 分钟是仓库 Environment 设置，不能仅靠 YAML 设置。必须先配置上述环境，否则自动创建的同名环境没有等待规则，检查将立即运行。** 原生方案无需等待工作流合入默认分支才能启动计时。公开仓库可使用 wait timer；私有仓库须确认 GitHub 套餐是否支持。
+
+参考：[原生 concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)、[Environment wait timer](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments#wait-timer)。
