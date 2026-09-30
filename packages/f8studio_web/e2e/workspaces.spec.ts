@@ -1,3 +1,4 @@
+import { mockPresentation } from './presentationFixture';
 import { expect, test } from '@playwright/test';
 
 test('shows service and deployment logs below the compact title bar', async ({ page }, testInfo) => {
@@ -35,10 +36,10 @@ test('shows service and deployment logs below the compact title bar', async ({ p
 });
 
 test('pins and reorders live outputs in a persistent dashboard', async ({ page }) => {
-  await page.route('**/api/presentation', async (route) => route.fulfill({ json: [
-    { nodeId: 'viz-first', command: 'viz.text.show', payload: { value: 'First' }, tsMs: 1 },
-    { nodeId: 'viz-second', command: 'viz.text.show', payload: { value: 'Second' }, tsMs: 1 },
-  ] }));
+  await mockPresentation(page, [
+    { nodeId: 'viz-first', command: 'viz.text.update', payload: { value: 'First' }, tsMs: 1 },
+    { nodeId: 'viz-second', command: 'viz.text.update', payload: { value: 'Second' }, tsMs: 1 },
+  ]);
   await page.goto('/');
   await page.getByRole('complementary', { name: 'Workspace navigation' }).getByRole('button', { name: 'Outputs' }).click();
   await expect(page.locator('.output-panel')).toHaveCount(2);
@@ -54,8 +55,8 @@ test('pins and reorders live outputs in a persistent dashboard', async ({ page }
 });
 
 test('renders a live 3D output in the dashboard', async ({ page }, testInfo) => {
-  await page.route('**/api/presentation', async (route) => route.fulfill({ json: [{
-    nodeId: 'viz-skeleton', command: 'viz.three_d.scene', tsMs: 1,
+  await mockPresentation(page, [{
+    nodeId: 'viz-skeleton', command: 'viz.three_d.set', tsMs: 1,
     payload: {
       tsMs: 1, worldUp: '+y', people: [{ name: 'Test', bbox: null, skeletonProtocol: 'test',
         skeletonEdges: [[0, 1]], nodes: [
@@ -64,11 +65,11 @@ test('renders a live 3D output in the dashboard', async ({ page }, testInfo) => 
         ] },
       ],
     },
-  }] }));
+  }]);
   await page.goto('/?view=outputs');
   const preview = page.getByTestId('three-preview-viz-skeleton');
   await expect(preview.locator('canvas')).toBeVisible();
-  await expect.poll(() => preview.locator('canvas').evaluate((canvas) => {
+  await expect.poll(() => preview.locator('canvas').evaluate((canvas: HTMLCanvasElement) => {
     const context = canvas.getContext('webgl2');
     if (context === null) return 0;
     const pixels = new Uint8Array(canvas.width * canvas.height * 4);
@@ -98,7 +99,7 @@ test('local workspaces operate without Qt', async ({ page }, testInfo) => {
   await expect(page.getByRole('button', { name: new RegExp(assetName) }).first()).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('assets-workspace.png'), fullPage: true });
 
-  await page.keyboard.press('Control+4');
+  await page.keyboard.press('Control+3');
   await expect(page.getByRole('heading', { name: 'Live Outputs' })).toBeVisible();
   await expect(page.getByText('Event stream online')).toBeVisible();
   await page.getByRole('tab', { name: 'Template' }).click();

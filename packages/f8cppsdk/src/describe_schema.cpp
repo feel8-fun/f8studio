@@ -1,6 +1,7 @@
 #include "f8cppsdk/describe_schema.h"
 
 #include <initializer_list>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -197,6 +198,9 @@ json state_field(std::string name, const json& value_schema, std::string access,
     sf["showOnNode"] = true;
   }
   if (!control.is_null()) {
+    if (!control.is_object() || !control.contains("kind") || !control["kind"].is_string()) {
+      throw std::invalid_argument("state field control must be null or an object with a string kind");
+    }
     sf["control"] = std::move(control);
   }
   if (redact_on_publish) {

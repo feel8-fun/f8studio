@@ -1,3 +1,4 @@
+import { mockPresentation } from './presentationFixture';
 import { expect, test, type Page } from '@playwright/test';
 
 async function connectHandles(
@@ -140,7 +141,7 @@ async function sidePanelVisualState(page: Page): Promise<unknown> {
     }));
     return {
       rail: controls('.rail button'),
-      palette: controls('.graph-palette button, .graph-palette input, .graph-palette select'),
+      palette: controls('.graph-palette button:not(.project-control *), .graph-palette input:not(.project-control *), .graph-palette select:not(.project-control *)'),
       inspector: controls('.graph-inspector button, .graph-inspector input, .graph-inspector select, .graph-inspector textarea'),
     };
   });
@@ -212,9 +213,9 @@ test('adds services in the visible viewport and operators to the selected servic
   const canvas = page.locator('.graph-canvas .react-flow');
   const canvasBounds = await canvas.boundingBox();
   if (canvasBounds === null) throw new Error('Graph canvas has no bounds');
-  await page.mouse.move(canvasBounds.x + canvasBounds.width * 0.8, canvasBounds.y + canvasBounds.height * 0.75);
+  await page.mouse.move(canvasBounds.x + canvasBounds.width * 0.8, canvasBounds.y + canvasBounds.height * 0.1);
   await page.mouse.down();
-  await page.mouse.move(canvasBounds.x + canvasBounds.width * 0.25, canvasBounds.y + canvasBounds.height * 0.3, { steps: 8 });
+  await page.mouse.move(canvasBounds.x + canvasBounds.width * 0.25, canvasBounds.y + canvasBounds.height * 0.1, { steps: 8 });
   await page.mouse.up();
   await page.locator('.react-flow__controls-zoomin').click();
   await pyEngine.click();
@@ -251,7 +252,7 @@ test('adds services in the visible viewport and operators to the selected servic
   await bandpass.click();
   await expect(page.locator('.react-flow__node.flow-node-operator')).toHaveCount(2);
   await page.locator('.react-flow__controls-fitview').click();
-  await page.locator(`.react-flow__node.flow-node-service[data-id="${firstId}"]`).locator('.node-drag-handle').click();
+  await page.locator(`.react-flow__node.flow-node-service[data-id="${firstId}"]`).locator('.node-drag-handle').click({ position: { x: 8, y: 8 } });
   await bandpass.click();
   await expect(page.locator('.react-flow__node.flow-node-operator')).toHaveCount(3);
 
@@ -281,8 +282,8 @@ test('shows a live 3D node preview and opens its focused view in the same tab', 
   const nodeId = await operator.getAttribute('data-id');
   if (nodeId === null) throw new Error('3D operator has no node id');
 
-  await page.route('**/api/presentation', async (route) => route.fulfill({ json: [{
-    nodeId, command: 'viz.three_d.scene', tsMs: Date.now(),
+  await mockPresentation(page, [{
+    nodeId, command: 'viz.three_d.set', tsMs: Date.now(),
     payload: {
       tsMs: Date.now(), worldUp: '+y', people: [{
         name: 'Test', bbox: null, skeletonProtocol: 'test', skeletonEdges: [[0, 1]],
@@ -292,13 +293,13 @@ test('shows a live 3D node preview and opens its focused view in the same tab', 
         ],
       }],
     },
-  }] }));
+  }]);
   await page.reload();
   await expect(page.locator('.connection-online')).toBeVisible();
   await page.locator('.react-flow__controls-fitview').click();
   const preview = page.getByTestId(`three-preview-${nodeId}`);
   await expect(preview.locator('canvas')).toBeVisible();
-  await expect.poll(() => preview.locator('canvas').evaluate((canvas) => {
+  await expect.poll(() => preview.locator('canvas').evaluate((canvas: HTMLCanvasElement) => {
     const context = canvas.getContext('webgl2');
     if (context === null) return 0;
     const pixels = new Uint8Array(canvas.width * canvas.height * 4);
@@ -332,23 +333,23 @@ test('keeps one WebRTC session when opening a video node in the focused output v
   const operator = page.locator('.react-flow__node.flow-node-operator');
   const nodeId = await operator.getAttribute('data-id');
   if (nodeId === null) throw new Error('Video operator has no node id');
-  await page.route('**/api/presentation', async (route) => route.fulfill({ json: [{
-    nodeId, command: 'viz.video.show', tsMs: Date.now(),
+  await mockPresentation(page, [{
+    nodeId, command: 'viz.video.set', tsMs: Date.now(),
     payload: { videoStreamKey: 'synthetic://bars', scaleMode: 'fit' },
-  }] }));
+  }]);
   negotiations = 0;
   await page.reload();
   const preview = page.getByTestId(`video-preview-${nodeId}`);
-  await expect.poll(() => preview.locator('video').evaluate((video) => video.readyState)).toBe(4);
-  await preview.locator('video').evaluate((video) => {
+  await expect.poll(() => preview.locator('video').evaluate((video: HTMLVideoElement) => video.readyState)).toBe(4);
+  await preview.locator('video').evaluate((video: HTMLVideoElement) => {
     const observed = window as typeof window & { f8ObservedStream?: MediaStream | null };
     observed.f8ObservedStream = video.srcObject as MediaStream | null;
   });
 
   await operator.getByRole('button', { name: 'Open Video Viz output view' }).click();
   await expect(page).toHaveURL(new RegExp(`view=outputs&node=${nodeId}`));
-  await expect.poll(() => page.locator('.output-panel video').evaluate((video) => video.readyState)).toBe(4);
-  expect(await page.locator('.output-panel video').evaluate((video) => {
+  await expect.poll(() => page.locator('.output-panel video').evaluate((video: HTMLVideoElement) => video.readyState)).toBe(4);
+  expect(await page.locator('.output-panel video').evaluate((video: HTMLVideoElement) => {
     const observed = window as typeof window & { f8ObservedStream?: MediaStream | null };
     return video.srcObject === observed.f8ObservedStream;
   })).toBe(true);
@@ -466,9 +467,29 @@ test('nests operators in compatible services and cascades container deletion', a
     return record.document.nodes.filter((node) => node.kind === 'service').length;
   }, projectId)).toBe(2);
 
+  // Keep the drop target outside the first container after it grows to host an operator.
+  await page.evaluate(async (id) => {
+    const response = await fetch(`/api/projects/${id}`);
+    const { document } = await response.json() as { document: import('../src/api/contracts').StudioDocument };
+    const first = document.layout[0];
+    const second = document.layout[1];
+    if (first === undefined || second === undefined) throw new Error('Expected two service layouts');
+    const patched = await fetch(`/api/projects/${id}/patch`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requestId: crypto.randomUUID(),
+        expectedGraphRevision: document.graphRevision, expectedLayoutRevision: document.layoutRevision,
+        operations: [{ op: 'setNodeLayout', layout: { ...second, x: first.x + 1000, y: first.y } }],
+      }),
+    });
+    if (!patched.ok) throw new Error(`Service layout setup failed: ${patched.status}`);
+  }, projectId);
+  await page.reload();
+  await expect(page.locator('.connection-online')).toBeVisible();
+  const services = page.locator('.react-flow__node.flow-node-service');
+  await services.first().locator('.node-drag-handle').click();
   await page.getByLabel('Search nodes').fill('Bandpass Filter');
   await page.locator('.catalog-list button:not(:disabled)').filter({ hasText: 'Bandpass Filter' }).click();
-  const services = page.locator('.react-flow__node.flow-node-service');
   const operator = page.locator('.react-flow__node.flow-node-operator');
   await expect(operator).toHaveCount(1);
   await expect(services.nth(0).locator('.service-child-count')).toHaveText('1 ops');
@@ -738,23 +759,27 @@ test('edits inline state and configures typed exec and data connections', async 
   const zoomedViewport = await zoomOutViewport(page);
   await observeNodeStability(page, graph.tickId);
   const sidePanelsBeforeSave = await sidePanelVisualState(page);
-  let releasePatch: (() => void) | null = null;
+  const pendingPatch: { release: (() => void) | null } = { release: null };
   await page.route('**/api/projects/*/patch', async (route) => {
     await new Promise<void>((resolve) => {
-      releasePatch = resolve;
+      pendingPatch.release = resolve;
     });
     await route.continue();
   }, { times: 1 });
   await connectHandles(page, graph.tickId, graph.tickExec, graph.printId, graph.printExec);
   await expect(page.locator('.save-state')).toHaveText('Saving...');
-  await expect.poll(() => releasePatch !== null).toBe(true);
+  await expect.poll(() => pendingPatch.release !== null).toBe(true);
   try {
+    await expect(page.locator('#project-select')).toBeDisabled();
+    await expect(page.locator('.project-control').getByRole('button', { name: 'New project' })).toBeDisabled();
     expect(await sidePanelVisualState(page)).toEqual(sidePanelsBeforeSave);
   } finally {
-    releasePatch?.();
+    pendingPatch.release?.();
   }
   await expect(page.locator('.react-flow__edge.graph-edge-exec')).toHaveCount(1);
   await expect(page.locator('.save-state')).toHaveText('Saved');
+  await expect(page.locator('#project-select')).toBeEnabled();
+  await expect(page.locator('.project-control').getByRole('button', { name: 'New project' })).toBeEnabled();
   await expect.poll(() => viewportTransform(page)).toBe(zoomedViewport);
   await connectHandles(page, graph.detrendId, graph.detrendData, graph.printId, graph.printData);
   const dataEdge = page.locator('.react-flow__edge.graph-edge-data');
@@ -767,7 +792,7 @@ test('edits inline state and configures typed exec and data connections', async 
   if ((page.viewportSize()?.width ?? 0) > 560) {
     await dataEdge.click({ force: true });
     await expect(page.locator('.graph-inspector')).toContainText('data');
-    await page.getByLabel('Delivery').selectOption('queue');
+    await page.locator('.graph-inspector').getByLabel('Delivery').selectOption('queue');
     await expect(page.locator('.save-state')).toHaveText('Saved');
     const queueSize = page.getByLabel('Queue size');
     await queueSize.fill('8');

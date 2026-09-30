@@ -356,7 +356,7 @@ def test_run_timeout_cleans_pending_approval_and_tool(tmp_path: Path, monkeypatc
         finished = _wait_for_status(client, session_id, {"failed"})
         assert finished["approval"]["status"] == "expired"
         assert all(call["status"] not in {"running", "queued", "waiting_for_approval"} for call in finished["toolCalls"])
-        assert not studio.agents._approvals
+        assert studio.agents._execution.pending_count == 0
 
 
 def test_agent_approval_is_invalidated_when_another_client_changes_revision(tmp_path: Path) -> None:

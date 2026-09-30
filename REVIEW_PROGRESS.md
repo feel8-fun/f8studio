@@ -2,6 +2,38 @@
 
 The working tree contains the interrupted Claude changes; preserve them and verify each stage before continuing. Original evidence: CC_UNFINISHED.md. Review claims are not assumed to be proven, and unused browser APIs are not automatically removed.
 
+## Current completion audit (2026-09-29)
+
+**Status: the accepted remediation stages and subsequent requested follow-ups are implemented and validated; this does not mean every proposal in `CC_UNFINISHED.md` was implemented.** Sections below are chronological evidence, not a flat checklist. Later follow-ups supersede earlier pending statements and test counts.
+
+| Scope | Current disposition | Evidence |
+| --- | --- | --- |
+| Stages 1–6: confirmed bugs, event/live transport, resources, API boundaries | Implemented; no outstanding failure recorded within this scope | Implementations and regression coverage; latest full Python run: 1065 passed |
+| Comprehensive wire generation | Implemented for the declared wire/API scope | Generated aliases/codecs/keys/policies; contract and generator drift checks |
+| Static checks and remaining generated weak boundaries | Implemented to the stated standard/strict split | SDK standard, Studio/media strict; dynamic user JSON remains intentional |
+| Shared Viz/gateway/RTC logic | Implemented | Shared Viz base/flusher/factory and generic gateway/browser session pools |
+| AgentService and GraphWorkspace responsibility split | Implemented, not committed | Main files verified at 342/234 lines; after final trailing-blank-line cleanup, all extracted production modules total 3218 lines, +183 versus the originals |
+| Six desktop graph failures | Resolved | 12/12 desktop graph cases passed within the 27/27 desktop run |
+| Related graph/media/workspace browser regression | All executable cases verified across the recorded run and targeted rerun | 48 passed + final desktop/mobile nesting 2/2; 49 distinct passing cases, 5 existing mobile exclusions |
+
+### Original structural proposals still not implemented
+
+These are remaining proposals, not newly demonstrated behavioral bugs. They were not made complete merely by finishing the accepted stages:
+
+- `video_latest.py` remains in both PyEngine `operators/script_utils` and PyScript; script error reporters and other deduplication implementations have not all been unified into one SDK facility.
+- Expression policies share the numeric allowlist, but all expression evaluators and graph validation layers have not been merged. The legacy SDK session compiler remains.
+- Studio logical/physical service ID mapping still has separate implementations in `runtime.py` and `monitors.py`; no common `StudioServiceIdentity` was introduced.
+- Decisions still use `SystemOneDecisionClient` owned by `AgentService`; an independent Decision service was not extracted. Agent persistence still encodes/saves the complete session record, even though events now carry compact update metadata.
+- Built-in presentation rendering still has explicit branches; not every renderer uses the extension registry. C++ service entrypoint boilerplate was not consolidated into a universal runner.
+- The compatibility decisions below remain intentional: retain public routes/overlays, standalone GraphStore idempotency, command-state wiring, the offline provider and host-governed MCP approval; no new SQLite migration framework without a schema change. These are not pending confirmed bug fixes.
+
+### Verification limits and this audit
+
+- Rechecked current source/configuration, extracted-module line counts, and the actual prior regression logs. This audit reran API/schema/contract tests (**8 passed**) and Studio/Python protocol/runtime-key/runtime-policy/stream-wire drift checks (all passed). It did not rerun the whole Python/browser suite; the latest full results below are historical execution evidence from the same working session.
+- Browser evidence covers the three named spec files, not the entire Playwright suite. The final 49-case result combines the suite run and the targeted fix verification; there is no claim of a subsequent single all-green 54-case run.
+- Repository-wide strict typing, zero dynamic JSON/Any, net source reduction and universal 1080p/60 FPS were not achieved or promised by these completed stages.
+- Current uncommitted work includes the responsibility split and browser/IM Player follow-up. Implementation completion and committed delivery are distinct.
+
 ## Stages
 
 1. Implemented: frame epoch/default-port/dist fixes; race-free gateway startup; test baseline and CI. Full Python: 1009 passed, 7 explicitly gated C++ artifact checks skipped. Strict Studio types, lint, and three import contracts pass. Compiled artifact checks were subsequently completed; see final validation below.
@@ -60,7 +92,7 @@ The working tree contains the interrupted Claude changes; preserve them and veri
 
 ### Review suggestions deliberately not equated with bug fixes
 
-The review mixes defects with architectural proposals. The following are **not claimed as completed rewrites**:
+Historical disposition at this stage: the review mixes defects with architectural proposals. The generation and Agent/GraphWorkspace/Viz items in the first two bullets were subsequently implemented in the follow-ups below; other compatibility decisions remain in effect.
 
 - OpenAPI now has an explicit request/response/status contract for every HTTP API, generated from the actual Python models. The JSON Schema/TS generator includes these route dependencies, with drift and decoder-alignment tests. Frontend response aliases cover media/runtime/editor/assets/local capabilities and status enums. Flexible graph/spec editor view models remain hand-authored projections; universal Python/C++ wire-code generation is not claimed. Existing compiled contract tests verify real product descriptions.
 - `ProjectLifecycle` now owns delete/stop/restart/import/restore, and `ProjectCommits` shares mutation ordering, hotkey refresh and graph publication across lifecycle and ordinary edits. Audio/video RTC pools now share one implementation with explicit source types and retain their public APIs. Splitting Agent/GraphWorkspace purely by line count, unifying all viz factories/naming modules/C++ entrypoints remains an optional structural proposal, not a verified behavioral defect.
@@ -137,3 +169,36 @@ Validation:
 - Python protocol, Studio contract, stream/key/policy generated-file checks pass. `git diff --check` passes.
 - First full Python run alongside C++ compilation: **1064 passed**, one language-server completion timeout. An isolated final run is recorded below when complete.
 - Final isolated full Python regression with fresh product descriptions: **1065 passed, 0 skipped**, one third-party Scapy/cryptography deprecation warning, **87.35 s** (`/tmp/f8-final-full-tests-clean.log`). The completion timeout did not recur.
+
+## Agent and GraphWorkspace responsibility split (2026-09-29)
+
+The six browser failures recorded in this section are historical; their resolution is documented in the Browser regression follow-up below.
+
+- The reviewed `AgentSessionService` is named `AgentService` in the current tree. Its public facade now owns session/provider operations and run task lifecycle (1536 → 342 lines). `AgentSessions` owns the shared locks, persistence and events; `AgentToolExecution` owns approval futures, revision checks, tool auditing and terminal transitions. Model tool binding, deterministic workflows and pure evidence formatting are separate modules without a reverse dependency on the facade.
+- Ordinary/approved tool invocation now shares one result/error audit implementation. Explicit cancel and failed/timed-out runs share terminal-transition persistence. Both execution strategies use the same approval boundary. Model previews/proposals remain isolated to a single bind/run. Internal workflow inputs and code-analysis results use concrete types.
+- `GraphWorkspace` now composes the view and selection (1499 → 234 lines). Project snapshots/events/edit serialization, React Flow projections/gestures, deployment observation, commands and Inspector forms have explicit owners. Move/resize calculations produce patches as pure functions. Removed the duplicate mutation-in-flight flag; pending edits come from `MutationQueue`. Selection stays in the composing UI, without a project/canvas callback cycle.
+- Added six frontend regressions for queued revision advancement, failed-edit invalidation, stale event rejection/unsubscribe, service/child translation, invalid drop rejection and resize bounds. Existing Agent tests continue to cover approval conflicts, cancellation, restart recovery, parallel tools and graph/code proposals.
+- Source accounting includes every new component: Agent modules **1691** lines versus **1536**; graph modules **1536** versus **1499**. Combined production source grew **192** lines, excluding tests/docs. Main files are smaller and duplicate execution paths were removed, but this is responsibility separation rather than a claim of net source reduction. Largest extracted modules: model tools **457** lines; graph canvas **429** lines.
+
+Validation:
+
+- Agent/provider/decision stage tests: **64 passed**. Final full Python suite: **1065 passed**, no skips, one third-party deprecation warning, **92.59 s** (`/tmp/f8-split-full-tests.log`).
+- Frontend: **105 passed**, TypeScript clean; production bundle build passes.
+- Strict Studio/media Python types, lint, three import contracts, contract generation drift and `git diff --check` pass. Broad exception handlers reduced **109 → 108**, silent handlers remain **0**.
+- Desktop graph Playwright run: **6 passed / 6 failed**. A separate build of the pre-refactor frontend from commit `630d2817` is used to distinguish existing failures from regressions; its final comparison is recorded below.
+- Pre-refactor frontend control run: **the same 6 passed / 6 failed**, with the same failing cases (`/tmp/f8-graph-baseline-e2e.log`). Existing failures concern minimap click interception, absent 3D canvas, video readiness, service-child-count expectation, save-time control appearance, and unavailable IM Player catalog entry. They are not resolved by this responsibility split and are not counted as passing validation. Both browser runs used separate test data/services; the user's running Studio was not restarted.
+
+## Browser regression follow-up (2026-09-29)
+
+- Fixed IM Player's actual describe contract: three sensitive string state fields passed an empty string as control metadata. They now omit the control with `nullptr` while retaining redaction. The C++ SDK rejects non-object controls and missing/non-string kinds; a compiled regression covers this boundary. Product describe validation now decodes all nine built services through the same normalized Python model used by discovery.
+- Rebuilt and deployed IM Player using `f8implayer_service_deploy_runtime`; this checkout disables automatic binary deployment after builds. The deployed executable's describe payload also passes decoding.
+- Migrated all eleven obsolete REST presentation fixtures in graph/media/workspace browser tests to retained live WebSocket snapshots, preserving the real transport and other live values. TCode fixtures use canonical retained snapshots, including previously received channels.
+- Corrected graph test setup: pan from the canvas rather than the minimap, select the intended service explicitly, separate containers before testing cross-container drops, and scope the Delivery selector to the Inspector. Save tests explicitly verify project controls lock and unlock while catalog/Inspector appearance remains stable. Updated the workspace shortcut after retirement of the separate Code workspace. Added concrete DOM types to the three touched browser test files; their standalone strict TypeScript check passes.
+
+Validation:
+
+- Full Python suite with fresh compiled descriptions: **1065 passed**, no skips, one third-party deprecation warning (`/tmp/f8-fix-python.log`).
+- Frontend **105 passed**; production build, strict Studio/media Python types, touched browser-test types, lint, all three import contracts, exception budget (**108 broad / 0 silent**), generated contract drift and whitespace checks pass.
+- CTest **1/1 passed**; all compiled product contract checks **10 passed**. Final browser regression results are recorded below.
+- Desktop graph/media/workspace regression: **27/27 passed**. Across desktop/mobile, the 54-case run finished **48 passed / 5 existing skips / 1 failed**; the remaining mobile nesting failure was a fixed pixel click offset beyond the scaled header. Clicking the header center resolves it: the final targeted desktop/mobile rerun is **2/2 passed**. Thus all **49 executable cases** are verified; the five original mobile exclusions are unchanged. Logs: `/tmp/f8-fix-browser-final.log`, `/tmp/f8-fix-nesting-final.log`.
+- The original six desktop graph failures are resolved. Existing responsibility-split changes remain preserved; no commit was created in this follow-up, and the user's running Studio was not restarted.

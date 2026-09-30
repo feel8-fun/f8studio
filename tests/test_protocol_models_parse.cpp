@@ -5,6 +5,8 @@
 #include <nlohmann/json.hpp>
 
 #include "f8cppsdk/generated/protocol_models.h"
+#include "f8cppsdk/describe_schema.h"
+#include <stdexcept>
 
 namespace {
 
@@ -209,4 +211,13 @@ TEST(RuntimePolicy, SharedFingerprintGolden) {
     EXPECT_NE(endpoint, f8::cppsdk::ControlEndpoint::debug_data);
     EXPECT_FALSE(f8::cppsdk::endpoint_name(endpoint).empty());
   }
+}
+
+TEST(DescribeSchema, StateControlsRequireStructuredMetadata) {
+  using namespace f8::cppsdk::describe;
+  EXPECT_FALSE(state_field("url", schema_string(), "rw").contains("control"));
+  EXPECT_THROW(state_field("url", schema_string(), "rw", "", "", true, ""), std::invalid_argument);
+  EXPECT_THROW(state_field("url", schema_string(), "rw", "", "", true, nlohmann::json::object()), std::invalid_argument);
+  const nlohmann::json control{{"kind", "text"}};
+  EXPECT_EQ(state_field("url", schema_string(), "rw", "", "", true, control)["control"], control);
 }

@@ -6,6 +6,10 @@ import re
 import unittest
 from pathlib import Path
 
+from f8pysdk._specs.builtin_fields import normalize_describe_payload_dict
+from f8pysdk.codec import validate_as
+from f8pysdk.specs import F8ServiceDescribe
+
 
 FORBIDDEN_RUNTIME_TELEMETRY_STATE_FIELDS = {
     "observedFrames",
@@ -55,6 +59,8 @@ class ServiceTelemetryStateContractTest(unittest.TestCase):
         leaks: dict[str, list[str]] = {}
         for describe_path in describe_paths:
             payload = json.loads(describe_path.read_text(encoding="utf-8"))
+            with self.subTest(describe=str(describe_path)):
+                validate_as(F8ServiceDescribe, normalize_describe_payload_dict(payload))
             leaked_names = self._leaked_state_field_names(payload)
             if leaked_names:
                 leaks[str(describe_path)] = leaked_names

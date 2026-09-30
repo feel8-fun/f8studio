@@ -1,3 +1,4 @@
+import { moveNodeOperations, resizeServiceOperations } from './layoutEdits';
 import { expect, test } from 'vitest';
 
 import type { StudioDocument } from '../api/contracts';
@@ -288,4 +289,36 @@ test('duplicates a service with its operators, internal edges, and absolute layo
     nodeId: 'service_copy_1', x: 165, y: 280, width: SERVICE_WIDTH, height: SERVICE_MIN_HEIGHT,
   });
   expect(operation?.layout?.[1]).toMatchObject({ nodeId: 'operator_copy_2', x: 220, y: 390 });
+});
+
+test('moving a service translates its operators in the persisted coordinate space', () => {
+  const nodes = projectDocument(document).nodes;
+  const service = nodes.find((node) => node.id === 'engine');
+  if (service === undefined) throw new Error('Missing fixture service');
+  const operations = moveNodeOperations(document, { ...service, position: { x: 225, y: 260 } }, nodes);
+  expect(operations).toMatchObject([
+    { op: 'setNodeLayout', layout: { nodeId: 'engine', x: 225, y: 260 } },
+    { op: 'setNodeLayout', layout: { nodeId: 'source', x: 280, y: 370 } },
+  ]);
+  expect(document.layout[0]?.x).toBe(125);
+});
+
+test('rejecting a drop outside a compatible service leaves the document unchanged', () => {
+  const nodes = projectDocument(document).nodes;
+  const operator = nodes.find((node) => node.id === 'source');
+  if (operator === undefined) throw new Error('Missing fixture operator');
+  expect(() => moveNodeOperations(document, operator, nodes, { x: -1000, y: -1000 }))
+    .toThrow('Operators must remain inside a compatible service container');
+  expect(document.layout[1]).toMatchObject({ x: 180, y: 350 });
+});
+
+test('service resizing keeps child layout within the new service bounds', () => {
+  const operations = resizeServiceOperations(document, 'engine', { x: 200, y: 300, width: 524, height: 300 });
+  expect(operations[0]).toMatchObject({ op: 'setNodeLayout', layout: { nodeId: 'engine', x: 200, y: 300, width: 524, height: 300 } });
+  const child = operations.find((operation) => operation.op === 'setNodeLayout' && operation.layout.nodeId === 'source');
+  if (child?.op !== 'setNodeLayout') throw new Error('Missing child layout');
+  expect(child.layout.x).toBeGreaterThanOrEqual(200);
+  expect(child.layout.x + 240).toBeLessThanOrEqual(724);
+  expect(child.layout.y).toBeGreaterThanOrEqual(300);
+  expect(child.layout.y + 64).toBeLessThanOrEqual(600);
 });
