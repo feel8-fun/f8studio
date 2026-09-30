@@ -42,18 +42,3 @@ def test_runtime_layout_migration_preserves_executable_and_user_config(tmp_path:
     assert installed.stat().st_mode & 0o111
     assert (tmp_path / "user-config/f8.implayer/imgui.ini").read_text() == "user settings"
     assert executable.exists() and config.exists()
-
-
-def test_document_path_migration_only_changes_known_model_defaults() -> None:
-    from scripts.migrate_service_paths import migrate_document
-    document = {"schemaVersion": "f8studio-document/2", "nodes": [
-        {"serviceClass": "f8.dl.detector", "stateValues": {"weightsDir": "services/f8/dl/weights", "custom": "services/f8/dl/weights"}},
-        {"serviceClass": "f8.dl.detector", "stateValues": {"weightsDir": "/my/models"}},
-        {"serviceClass": "f8.cvkit.tracking", "stateValues": {"modelDir": "models"}},
-        {"serviceClass": "test.external", "stateValues": {"weightsDir": "services/f8/dl/weights"}},
-    ]}
-    assert migrate_document(document) == 2
-    assert document["nodes"][0]["stateValues"] == {"weightsDir": "", "custom": "services/f8/dl/weights"}
-    assert document["nodes"][1]["stateValues"]["weightsDir"] == "/my/models"
-    assert document["nodes"][3]["stateValues"]["weightsDir"] == "services/f8/dl/weights"
-    assert migrate_document(document) == 0

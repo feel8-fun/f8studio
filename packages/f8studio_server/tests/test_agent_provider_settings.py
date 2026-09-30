@@ -189,7 +189,7 @@ def test_model_capability_survives_default_model_edit(tmp_path: Path) -> None:
 
 
 def test_offline_image_flag_migration_preserves_thinking_and_model_scope(tmp_path: Path) -> None:
-    from scripts.migrate_authoring_contracts import migrate_providers
+    from scripts.migrate_provider_settings import migrate_providers
     path = tmp_path / "providers.json"
     saved = {"connection_old": {
         "displayName": "Old host", "protocol": "openai_chat", "endpoint": "https://example.com/v1",

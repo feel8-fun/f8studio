@@ -53,14 +53,6 @@ pixi run update_describes
 
 索引为服务注入绝对 `F8_MODEL_ROOT`。空 `weightsDir` / tracking `modelDir` 使用安装默认目录；用户输入的其他相对路径仍相对于服务工作目录，不再回退搜索源码仓库。独立运行服务时，未设置环境变量会使用平台用户数据目录下的 `f8studio/models`。模型不是可随意删除的临时缓存。
 
-旧导出工程可转换已知模型目录默认值：
-
-```sh
-pixi run python scripts/migrate_service_paths.py old.f8studio.json migrated.f8studio.json
-```
-
-工具只接受 `f8studio-document/2`，写入新文件并保留输入；不修改任意用户状态、自定义绝对路径、SQLite 数据库或 f8graph 交换文件。复杂自定义路径需通过 Inspector 显式更新。
-
 ## 本机迁移与保留内容
 
 旧目录完整保存在 `runtime/migration-backup/legacy-service-tree/`，不参与发现、运行或发行打包。未注册的历史 offline player 也仅保存在迁移备份中。
@@ -74,6 +66,6 @@ pixi run python scripts/migrate_service_paths.py old.f8studio.json migrated.f8st
 - 旧根目录不存在时，22 个服务描述重新生成成功；C++ 全部运行产物构建、部署成功。
 - 真实 Studio → PyEngine 启动与部署通过；C++ 视频服务通过 1920×1080 WebRTC 连续变化帧解码验证。
 - Python lint、SDK/Studio 类型检查和 CTest 通过；全量 Python 回归 **1066 passed、7 skipped、1 warning**。
-- 节点图鉴通过索引生成成功。完整服务文档生成仍受原有缺失手册 `docs/modules/manual/operators/f8-cppengine/f8-data-mux.md` 阻断。
+- 节点图鉴通过索引生成成功。原缺失手册 `docs/modules/manual/operators/f8-cppengine/f8-data-mux.md` 已补齐；完整服务文档生成尚未复验。
 - 本次未构建完整跨平台发行包；发行目录复制与环境改写有定向测试。
 - 稳定模型 ID/内容摘要绑定、下载版本锁定和数据库工程批量迁移仍是后续工作，不影响根目录 `services/` 的移除。
