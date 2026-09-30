@@ -1,3 +1,4 @@
+import type { VideoConfig } from "../api/contracts.gen";
 import { RefreshCw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
@@ -33,7 +34,7 @@ export function PresentationVideo({
   payload,
   compact = false,
 }: {
-  readonly payload: Readonly<Record<string, JsonValue>>;
+  readonly payload: Partial<VideoConfig> & Readonly<Record<string, JsonValue>>;
   readonly compact?: boolean;
 }) {
   const source = typeof payload.videoStreamKey === 'string' ? payload.videoStreamKey.trim() : '';

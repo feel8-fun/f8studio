@@ -8,9 +8,9 @@ afterEach(cleanup);
 
 const node: OperatorNode = {
   kind: 'operator', nodeId: 'script', name: 'Script', serviceId: 'engine', serviceClass: 'f8.pyengine',
-  operatorClass: 'f8.python_script', enabled: true, stateValues: {}, ports: [
-    { portId: 'state:input:code', name: 'code', runtimeName: 'code', kind: 'state', direction: 'input' },
-    { portId: 'state:output:code', name: 'code', runtimeName: 'code', kind: 'state', direction: 'output' },
+  operatorClass: 'f8.python_script', enabled: true, portIds: {}, stateValues: {}, ports: [
+    { dataSpec: null, stateSpec: null,  portId: 'state:input:code', name: 'code', runtimeName: 'code', kind: 'state', direction: 'input' },
+    { dataSpec: null, stateSpec: null,  portId: 'state:output:code', name: 'code', runtimeName: 'code', kind: 'state', direction: 'output' },
   ],
   spec: {
     specKind: 'operator', serviceClass: 'f8.pyengine', operatorClass: 'f8.python_script', label: 'Script',

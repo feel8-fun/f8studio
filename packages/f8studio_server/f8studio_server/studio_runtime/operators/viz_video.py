@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from ...presentation_models import VideoConfig
+
+import msgspec
+
 import asyncio
 import logging
 import time
@@ -297,19 +301,27 @@ class VizVideoRuntimeNode(OperatorNode):
             return
         await self._ensure_config_loaded()
         if f == "throttleMs":
-            self._throttle_ms = await self._get_int_state("throttleMs", default=self._throttle_ms, minimum=0, maximum=60000)
+            self._throttle_ms = await self._get_int_state(
+                "throttleMs", default=self._throttle_ms, minimum=0, maximum=60000
+            )
         elif f == "flowDisplayMode":
             mode = str(await self._get_str_state("flowDisplayMode", default=self._flow_display_mode)).strip().lower()
             self._flow_display_mode = mode if mode in ("off", "hsv", "arrows") else "off"
         elif f == "flowMagScale":
-            self._flow_mag_scale = await self._get_float_state("flowMagScale", default=self._flow_mag_scale, minimum=0.1, maximum=500.0)
+            self._flow_mag_scale = await self._get_float_state(
+                "flowMagScale", default=self._flow_mag_scale, minimum=0.1, maximum=500.0
+            )
         elif f == "flowStride":
-            self._flow_stride = await self._get_int_state("flowStride", default=self._flow_stride, minimum=2, maximum=128)
+            self._flow_stride = await self._get_int_state(
+                "flowStride", default=self._flow_stride, minimum=2, maximum=128
+            )
         elif f == "scaleMode":
             mode = str(await self._get_str_state("scaleMode", default=self._scale_mode)).strip().lower()
             self._scale_mode = mode if mode in ("native", "fit") else "native"
         elif f == "scalarDisplayMode":
-            mode = str(await self._get_str_state("scalarDisplayMode", default=self._scalar_display_mode)).strip().lower()
+            mode = (
+                str(await self._get_str_state("scalarDisplayMode", default=self._scalar_display_mode)).strip().lower()
+            )
             self._scalar_display_mode = self._normalize_scalar_display_mode(mode)
         elif f == "scalarColormap":
             cmap = str(await self._get_str_state("scalarColormap", default=self._scalar_colormap)).strip().lower()
@@ -368,8 +380,12 @@ class VizVideoRuntimeNode(OperatorNode):
         self._scalar_colormap = self._normalize_scalar_colormap(scalar_colormap)
         scalar_range_mode = (await self._get_str_state("scalarRangeMode", default="auto")).strip().lower()
         self._scalar_range_mode = self._normalize_scalar_range_mode(scalar_range_mode)
-        self._scalar_min = await self._get_float_state("scalarMin", default=-1.0, minimum=-1_000_000_000.0, maximum=1_000_000_000.0)
-        self._scalar_max = await self._get_float_state("scalarMax", default=1.0, minimum=-1_000_000_000.0, maximum=1_000_000_000.0)
+        self._scalar_min = await self._get_float_state(
+            "scalarMin", default=-1.0, minimum=-1_000_000_000.0, maximum=1_000_000_000.0
+        )
+        self._scalar_max = await self._get_float_state(
+            "scalarMax", default=1.0, minimum=-1_000_000_000.0, maximum=1_000_000_000.0
+        )
         self._scalar_auto_percentile_lo = await self._get_float_state(
             "scalarAutoPercentileLo",
             default=2.0,
@@ -398,31 +414,35 @@ class VizVideoRuntimeNode(OperatorNode):
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        self._pending_task = loop.create_task(self._push_config_async(now_ms), name=f"pystudio:video:cfg:{self.node_id}")
+        self._pending_task = loop.create_task(
+            self._push_config_async(now_ms), name=f"pystudio:video:cfg:{self.node_id}"
+        )
 
     async def _push_config_async(self, now_ms: int) -> None:
         video_stream_key = str(self.input_zenoh_key("video") or "").strip()
         flow_stream_key = str(self.input_zenoh_key("flow") or "").strip()
         scalar_stream_key = str(self.input_zenoh_key("scalar") or "").strip()
-        payload: dict[str, object] = {
-            "videoStreamKey": video_stream_key,
-            "throttleMs": int(self._throttle_ms),
-            "flowStreamKey": flow_stream_key,
-            "flowDisplayMode": str(self._flow_display_mode or "off"),
-            "flowMagScale": float(self._flow_mag_scale),
-            "flowStride": int(self._flow_stride),
-            "scaleMode": str(self._scale_mode or "native"),
-            "scalarStreamKey": scalar_stream_key,
-            "scalarDisplayMode": self._normalize_scalar_display_mode(self._scalar_display_mode),
-            "scalarColormap": self._normalize_scalar_colormap(self._scalar_colormap),
-            "scalarRangeMode": self._normalize_scalar_range_mode(self._scalar_range_mode),
-            "scalarMin": float(self._scalar_min),
-            "scalarMax": float(self._scalar_max),
-            "scalarAutoPercentileLo": float(self._scalar_auto_percentile_lo),
-            "scalarAutoPercentileHi": float(self._scalar_auto_percentile_hi),
-            "scalarInvert": bool(self._scalar_invert),
-            "scalarNanMode": self._normalize_scalar_nan_mode(self._scalar_nan_mode),
-        }
+        payload: dict[str, object] = msgspec.to_builtins(
+            VideoConfig(
+                videoStreamKey=video_stream_key,
+                throttleMs=int(self._throttle_ms),
+                flowStreamKey=flow_stream_key,
+                flowDisplayMode=str(self._flow_display_mode or "off"),
+                flowMagScale=float(self._flow_mag_scale),
+                flowStride=int(self._flow_stride),
+                scaleMode=str(self._scale_mode or "native"),
+                scalarStreamKey=scalar_stream_key,
+                scalarDisplayMode=self._normalize_scalar_display_mode(self._scalar_display_mode),
+                scalarColormap=self._normalize_scalar_colormap(self._scalar_colormap),
+                scalarRangeMode=self._normalize_scalar_range_mode(self._scalar_range_mode),
+                scalarMin=float(self._scalar_min),
+                scalarMax=float(self._scalar_max),
+                scalarAutoPercentileLo=float(self._scalar_auto_percentile_lo),
+                scalarAutoPercentileHi=float(self._scalar_auto_percentile_hi),
+                scalarInvert=bool(self._scalar_invert),
+                scalarNanMode=self._normalize_scalar_nan_mode(self._scalar_nan_mode),
+            )
+        )
         self.presentation.emit(
             self.node_id,
             "viz.video.set",

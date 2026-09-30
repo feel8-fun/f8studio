@@ -8,18 +8,11 @@
 #include <string>
 #include <vector>
 
+#include "f8cppsdk/generated/stream_wire.h"
 #include "f8cppsdk/runtime_backend.h"
 #include "f8cppsdk/runtime_transport.h"
 
 namespace f8::cppsdk {
-
-constexpr std::uint32_t kVideoFormatBgra32 = 1;
-constexpr std::uint32_t kVideoFormatFlow2F16 = 2;
-constexpr std::uint32_t kVideoFormatScalar1F32 = 3;
-
-inline constexpr std::uint32_t kZenohVideoFrameMagic = 0xF85A1001u;
-inline constexpr std::uint32_t kZenohVideoFrameSchemaVersion = 2u;
-inline constexpr std::uint32_t kZenohVideoFrameHeaderBytes = 64u;
 
 struct VideoFrameView {
   unsigned width = 0;

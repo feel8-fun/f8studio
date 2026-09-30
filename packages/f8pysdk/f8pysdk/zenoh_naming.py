@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .generated import runtime_keys
 from .f8_naming import ensure_token, parse_state_path_node_field
 
 _F8_PREFIX = "f8"
@@ -23,42 +24,42 @@ def zenoh_data_key(service_id: str, *, node_id: str, port_id: str) -> str:
     sid = ensure_token(service_id, label="service_id")
     nid = ensure_token(node_id, label="node_id")
     pid = ensure_token(port_id, label="port_id")
-    return f"{_F8_PREFIX}/svc/{sid}/nodes/{nid}/data/{pid}"
+    return runtime_keys.data(sid, nid, pid)
 
 
 def zenoh_endpoint_key(service_id: str, endpoint: str) -> str:
     sid = ensure_token(service_id, label="service_id")
     ep = ensure_token(endpoint, label="endpoint")
-    return f"{_F8_PREFIX}/svc/{sid}/endpoint/{ep}"
+    return runtime_keys.legacy_endpoint(sid, ep)
 
 
 def zenoh_cmd_key(service_id: str) -> str:
     sid = ensure_token(service_id, label="service_id")
-    return f"{_F8_PREFIX}/svc/{sid}/cmd"
+    return runtime_keys.legacy_command(sid)
 
 
 def zenoh_command_key(service_id: str, command: str) -> str:
     sid = ensure_token(service_id, label="service_id")
     cmd = ensure_token(command, label="command")
-    return f"{_F8_PREFIX}/cmd/svc/{sid}/{cmd}"
+    return runtime_keys.command(sid, cmd)
 
 
 def zenoh_service_liveliness_key(service_id: str, runtime_instance_id: str) -> str:
     sid = ensure_token(service_id, label="service_id")
     rid = ensure_token(runtime_instance_id, label="runtime_instance_id")
-    return f"{_F8_PREFIX}/live/svc/{sid}/instances/{rid}"
+    return runtime_keys.service_liveliness(sid, rid)
 
 
 def zenoh_studio_liveliness_key(studio_service_id: str) -> str:
     sid = ensure_token(studio_service_id, label="studio_service_id")
-    return f"{_F8_PREFIX}/live/studio/{sid}"
+    return runtime_keys.studio_liveliness(sid)
 
 
 def zenoh_state_key(service_id: str, *, node_id: str, field: str) -> str:
     sid = ensure_token(service_id, label="service_id")
     nid = ensure_token(node_id, label="node_id")
     field_path = _field_to_path(field)
-    return f"{_F8_PREFIX}/svc/{sid}/state/nodes/{nid}/state/{field_path}"
+    return runtime_keys.node_state(sid, nid, field_path)
 
 
 def zenoh_state_path_key(service_id: str, path: str) -> str:
@@ -70,7 +71,7 @@ def zenoh_state_path_key(service_id: str, path: str) -> str:
     key_path = "/".join(part for part in str(path or "").strip(".").split(".") if part)
     if not key_path:
         raise ValueError("state path must be non-empty")
-    return f"{_F8_PREFIX}/svc/{sid}/state/{key_path}"
+    return runtime_keys.state(sid, key_path)
 
 
 def zenoh_state_path_pattern(service_id: str, path_pattern: str) -> str:

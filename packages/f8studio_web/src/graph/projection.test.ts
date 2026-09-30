@@ -28,14 +28,14 @@ const document: StudioDocument = {
     serviceId: 'engine',
     serviceClass: 'f8.pyengine',
     spec: { serviceClass: 'f8.pyengine', label: 'Engine', specKind: 'service' },
-    ports: [{
+    ports: [{ dataSpec: null, stateSpec: null,
       portId: 'data:output:value',
       name: 'value',
       runtimeName: 'value',
       kind: 'data',
       direction: 'output',
     }],
-    stateValues: {},
+    portIds: {}, stateValues: {},
     enabled: true,
   }, {
     kind: 'operator',
@@ -50,14 +50,14 @@ const document: StudioDocument = {
       label: 'Source',
       specKind: 'operator',
     },
-    ports: [{
+    ports: [{ dataSpec: null, stateSpec: null,
       portId: 'data:output:value',
       name: 'value',
       runtimeName: 'value',
       kind: 'data',
       direction: 'output',
     }],
-    stateValues: {},
+    portIds: {}, stateValues: {},
     enabled: true,
   }],
   edges: [{
@@ -72,8 +72,8 @@ const document: StudioDocument = {
     timeoutMs: null,
   }],
   layout: [
-    { nodeId: 'engine', x: 125, y: 240, collapsed: false },
-    { nodeId: 'source', x: 180, y: 350, collapsed: false },
+    { width: null, height: null,  nodeId: 'engine', x: 125, y: 240, collapsed: false },
+    { width: null, height: null,  nodeId: 'source', x: 180, y: 350, collapsed: false },
   ],
 };
 
@@ -173,7 +173,7 @@ test('projects Studio operators on the root canvas while retaining their runtime
     layout: [
       ...document.layout,
       { nodeId: 'studio', x: 700, y: 100, width: 850, height: 600, collapsed: false },
-      { nodeId: 'video', x: 30, y: 940, collapsed: false },
+      { width: null, height: null,  nodeId: 'video', x: 30, y: 940, collapsed: false },
     ],
   };
   const projected = projectDocument(studioDocument);
@@ -238,8 +238,8 @@ test('sizes compact operators from their fixed port-row geometry', () => {
     ...operator!,
     ports: [
       ...operator!.ports,
-      { portId: 'state:input:a', name: 'a', runtimeName: 'a', kind: 'state', direction: 'input' },
-      { portId: 'state:input:b', name: 'b', runtimeName: 'b', kind: 'state', direction: 'input' },
+      { dataSpec: null, stateSpec: null,  portId: 'state:input:a', name: 'a', runtimeName: 'a', kind: 'state', direction: 'input' },
+      { dataSpec: null, stateSpec: null,  portId: 'state:input:b', name: 'b', runtimeName: 'b', kind: 'state', direction: 'input' },
     ],
   })).toBe(112);
 
@@ -279,13 +279,13 @@ test('duplicates a service with its operators, internal edges, and absolute layo
     serviceId: 'service_copy_1',
     name: 'Source Copy',
   });
-  expect(operation?.edges[0]).toMatchObject({
+  expect(operation?.edges?.[0]).toMatchObject({
     edgeId: 'edge_copy_3',
     fromNodeId: 'operator_copy_2',
     toNodeId: 'service_copy_1',
   });
-  expect(operation?.layout[0]).toMatchObject({
+  expect(operation?.layout?.[0]).toMatchObject({
     nodeId: 'service_copy_1', x: 165, y: 280, width: SERVICE_WIDTH, height: SERVICE_MIN_HEIGHT,
   });
-  expect(operation?.layout[1]).toMatchObject({ nodeId: 'operator_copy_2', x: 220, y: 390 });
+  expect(operation?.layout?.[1]).toMatchObject({ nodeId: 'operator_copy_2', x: 220, y: 390 });
 });

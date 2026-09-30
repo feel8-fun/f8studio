@@ -32,7 +32,7 @@ function operator(nodeId: string, serviceId: string, ports: readonly GraphPort[]
       serviceClass: 'f8.pyengine', operatorClass: `test.${nodeId}`, label: nodeId, specKind: 'operator',
     },
     ports,
-    stateValues: {},
+    portIds: {}, stateValues: {},
     enabled: true,
   };
 }

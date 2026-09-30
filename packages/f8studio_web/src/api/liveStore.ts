@@ -1,3 +1,4 @@
+import type { LiveSnapshot, LivePatch } from "./contracts.gen";
 import { useCallback, useSyncExternalStore } from 'react';
 import type { JsonValue } from './contracts';
 
@@ -8,6 +9,22 @@ interface Selection {
 }
 function object(value: unknown): value is Record<string, JsonValue> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseLiveMessage(message: unknown): LiveSnapshot | LivePatch {
+  if (!object(message)) throw new Error('Invalid live message');
+  if (message.type === 'live.snapshot' && object(message.values)) {
+    return { type: 'live.snapshot', values: message.values };
+  }
+  if (message.type === 'live.patch' && object(message.set) && Array.isArray(message.delete)) {
+    const deleted: string[] = [];
+    for (const key of message.delete) {
+      if (typeof key !== 'string') throw new Error('Invalid live deletion');
+      deleted.push(key);
+    }
+    return { type: 'live.patch', set: message.set, delete: deleted };
+  }
+  throw new Error('Invalid live message shape');
 }
 
 export class LiveStore {
@@ -49,22 +66,21 @@ export class LiveStore {
     };
   }
 
-  apply(message: unknown): void {
-    if (!object(message)) throw new Error('Invalid live message');
+  apply(raw: unknown): void {
+    const message = parseLiveMessage(raw);
     const previous = this.values;
     let changed: Set<string>;
-    if (message.type === 'live.snapshot' && object(message.values)) {
+    if (message.type === 'live.snapshot') {
       this.values = new Map(Object.entries(message.values));
       changed = new Set([...previous.keys(), ...this.values.keys()]);
-    } else if (message.type === 'live.patch' && object(message.set) && Array.isArray(message.delete)) {
+    } else {
       changed = new Set(Object.keys(message.set));
       for (const key of message.delete) {
-        if (typeof key !== 'string') throw new Error('Invalid live deletion');
         changed.add(key);
         this.values.delete(key);
       }
       for (const [key, value] of Object.entries(message.set)) this.values.set(key, value);
-    } else throw new Error('Invalid live message shape');
+    }
     for (const [prefix, selection] of this.selections) {
       if (![...changed].some((key) => key.startsWith(prefix))) continue;
       selection.snapshot = new Map([...this.values].filter(([key]) => key.startsWith(prefix)));

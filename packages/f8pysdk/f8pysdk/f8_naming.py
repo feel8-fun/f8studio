@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import uuid
 
+from .generated import runtime_keys
+
 
 class TokenValidationError(ValueError):
     """A runtime identifier cannot be represented as one transport path token."""
@@ -56,7 +58,7 @@ def data_key(from_service_id: str, *, from_node_id: str, port_id: str) -> str:
     from_service_id = ensure_token(from_service_id, label="from_service_id")
     from_node_id = ensure_token(from_node_id, label="from_node_id")
     port_id = ensure_token(port_id, label="port_id")
-    return f"f8/svc/{from_service_id}/nodes/{from_node_id}/data/{port_id}"
+    return runtime_keys.data(from_service_id, from_node_id, port_id)
 
 def cmd_channel_key(service_id: str) -> str:
     """
@@ -65,7 +67,7 @@ def cmd_channel_key(service_id: str) -> str:
     The request payload should include a JSON envelope (reqId/call/args/meta).
     """
     service_id = ensure_token(service_id, label="service_id")
-    return f"f8/cmd/svc/{service_id}/cmd"
+    return runtime_keys.command(service_id, "cmd")
 
 
 def svc_endpoint_key(service_id: str, endpoint: str) -> str:
@@ -74,7 +76,7 @@ def svc_endpoint_key(service_id: str, endpoint: str) -> str:
     """
     service_id = ensure_token(service_id, label="service_id")
     endpoint = ensure_token(str(endpoint), label="endpoint")
-    return f"f8/cmd/svc/{service_id}/{endpoint}"
+    return runtime_keys.command(service_id, endpoint)
 
 
 def new_id() -> str:

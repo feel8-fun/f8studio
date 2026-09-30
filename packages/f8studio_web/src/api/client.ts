@@ -1,3 +1,4 @@
+import type * as Wire from './contracts.gen';
 import {
   isAudioSessionAnswer,
   isHealthStatus,
@@ -94,9 +95,9 @@ async function requestJson(path: string, init?: RequestInit, ignoreNotFound = fa
   return body;
 }
 
-function jsonRequest(method: 'POST' | 'PUT', body: unknown, signal?: AbortSignal): RequestInit {
+function jsonRequest<Route extends keyof Wire.ApiRequests>(route: Route, body: Wire.ApiRequests[Route], signal?: AbortSignal): RequestInit {
   return {
-    method,
+    method: route.slice(0, route.indexOf(' ')),
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
     signal,
@@ -151,13 +152,13 @@ export async function fetchAgentProviderSettings(signal?: AbortSignal): Promise<
 }
 
 export async function saveAgentProviderSettings(providerId: string, input: UpdateAgentProviderSettings): Promise<AgentProviderSettings> {
-  const body = await requestJson(`/api/agents/providers/${encodeURIComponent(providerId)}/settings`, jsonRequest('PUT', input));
+  const body = await requestJson(`/api/agents/providers/${encodeURIComponent(providerId)}/settings`, jsonRequest('PUT /api/agents/providers/{provider_id}/settings', input));
   if (!isProviderSettings(body)) throw new Error('Invalid saved agent provider settings');
   return body;
 }
 
 export async function createAgentConnection(input: CreateAgentConnection): Promise<AgentProviderSettings> {
-  const body = await requestJson('/api/agents/connections', jsonRequest('POST', input));
+  const body = await requestJson('/api/agents/connections', jsonRequest('POST /api/agents/connections', input));
   if (!isProviderSettings(body)) throw new Error('Invalid created agent connection');
   return body;
 }
@@ -166,15 +167,8 @@ export async function deleteAgentConnection(providerId: string): Promise<void> {
   await requestJson(`/api/agents/connections/${encodeURIComponent(providerId)}`, { method: 'DELETE' });
 }
 
-export async function probeAgentConnection(input: {
-  readonly providerId?: string;
-  readonly protocol: 'openai_responses' | 'openai_chat' | 'anthropic' | 'systemone';
-  readonly endpoint: string;
-  readonly apiKey: string;
-  readonly model: string;
-  readonly verifyModel: boolean;
-}): Promise<AgentConnectionProbe> {
-  const body = await requestJson('/api/agents/connections/probe', jsonRequest('POST', input));
+export async function probeAgentConnection(input: Wire.ProbeProviderRequestInput): Promise<AgentConnectionProbe> {
+  const body = await requestJson('/api/agents/connections/probe', jsonRequest('POST /api/agents/connections/probe', input));
   if (!isObject(body) || typeof body.connected !== 'boolean' || !Array.isArray(body.models)
       || typeof body.detail !== 'string' || !['catalog', 'model', 'none'].includes(String(body.verified))) {
     throw new Error('Invalid connection probe result');
@@ -199,26 +193,21 @@ export async function fetchAgentSession(sessionId: string, signal?: AbortSignal)
   return body;
 }
 
-export async function createAgentSession(input: {
-  readonly projectId: string;
-  readonly title: string;
-  readonly providerId: string;
-  readonly modelId: string;
-}): Promise<AgentSession> {
-  const body = await requestJson('/api/agents/sessions', jsonRequest('POST', input));
+export async function createAgentSession(input: Wire.CreateAgentSessionRequestInput): Promise<AgentSession> {
+  const body = await requestJson('/api/agents/sessions', jsonRequest('POST /api/agents/sessions', input));
   if (!isAgentSession(body)) throw new Error('Created agent session does not match f8studio-api/1');
   return body;
 }
 
 export async function renameAgentSession(sessionId: string, title: string): Promise<AgentSession> {
-  const body = await requestJson(`/api/agents/sessions/${encodeURIComponent(sessionId)}`, jsonRequest('PUT', { title }));
+  const body = await requestJson(`/api/agents/sessions/${encodeURIComponent(sessionId)}`, jsonRequest('PUT /api/agents/sessions/{session_id}', { title }));
   if (!isAgentSession(body)) throw new Error('Renamed agent session does not match f8studio-api/1');
   return body;
 }
 
 export async function selectAgentModel(sessionId: string, providerId: string, modelId: string): Promise<AgentSession> {
   const body = await requestJson(`/api/agents/sessions/${encodeURIComponent(sessionId)}/model`,
-    jsonRequest('PUT', { providerId, modelId }));
+    jsonRequest('PUT /api/agents/sessions/{session_id}/model', { providerId, modelId }));
   if (!isAgentSession(body)) throw new Error('Updated agent session does not match f8studio-api/1');
   return body;
 }
@@ -227,10 +216,10 @@ export async function deleteAgentSession(sessionId: string): Promise<void> {
   await requestJson(`/api/agents/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
 }
 
-export async function startAgentRun(sessionId: string, prompt: string, images: readonly AgentImage[] = [], reasoningEffort?: 'low' | 'medium' | 'high'): Promise<AgentSession> {
+export async function startAgentRun(sessionId: string, prompt: string, images: readonly AgentImage[] = [], reasoningEffort?: Wire.StartAgentRunRequestInput['reasoningEffort']): Promise<AgentSession> {
   const body = await requestJson(
     `/api/agents/sessions/${encodeURIComponent(sessionId)}/runs`,
-    jsonRequest('POST', { prompt, images, ...(reasoningEffort ? { reasoningEffort } : {}) }),
+    jsonRequest('POST /api/agents/sessions/{session_id}/runs', { prompt, images, ...(reasoningEffort ? { reasoningEffort } : {}) }),
   );
   if (!isAgentSession(body)) throw new Error('Started agent session does not match f8studio-api/1');
   return body;
@@ -244,7 +233,7 @@ export async function resolveAgentApproval(
 ): Promise<AgentSession> {
   const body = await requestJson(
     `/api/agents/sessions/${encodeURIComponent(sessionId)}/approvals/${encodeURIComponent(approvalId)}`,
-    jsonRequest('POST', { approved, argumentsHash }),
+    jsonRequest('POST /api/agents/sessions/{session_id}/approvals/{approval_id}', { approved, argumentsHash }),
   );
   if (!isAgentSession(body)) throw new Error('Resolved agent session does not match f8studio-api/1');
   return body;
@@ -260,7 +249,7 @@ export async function cancelAgentRun(sessionId: string): Promise<AgentSession> {
 }
 
 export async function createProject(name: string, signal?: AbortSignal): Promise<ProjectRecord> {
-  const body = await requestJson('/api/projects', jsonRequest('POST', { name }, signal));
+  const body = await requestJson('/api/projects', jsonRequest('POST /api/projects', { name }, signal));
   if (!isProjectRecord(body)) throw new Error('Created project does not match f8studio-api/1');
   return body;
 }
@@ -314,16 +303,10 @@ export async function refreshCatalog(): Promise<CatalogSnapshot> {
   return body as unknown as CatalogSnapshot;
 }
 
-export interface CreateCatalogNodeInput {
-  readonly kind: 'service' | 'operator';
-  readonly nodeId: string;
-  readonly serviceClass: string;
-  readonly serviceId?: string;
-  readonly operatorClass?: string;
-}
+export type CreateCatalogNodeInput = Wire.CreateCatalogNodeRequestInput;
 
 export async function createCatalogNode(input: CreateCatalogNodeInput): Promise<GraphNode> {
-  const body = await requestJson('/api/catalog/nodes', jsonRequest('POST', input));
+  const body = await requestJson('/api/catalog/nodes', jsonRequest('POST /api/catalog/nodes', input));
   if (!isGraphNode(body)) throw new Error('Catalog node does not match f8studio-api/1');
   return body;
 }
@@ -338,12 +321,12 @@ function isPatchResult(value: unknown): value is PatchResult {
 
 export async function patchProject(
   projectId: string,
-  document: { readonly graphRevision: number; readonly layoutRevision: number },
+  document: Pick<Wire.StudioDocument, 'graphRevision' | 'layoutRevision'>,
   operations: readonly GraphOperation[],
 ): Promise<PatchResult> {
   const body = await requestJson(
     `/api/projects/${encodeURIComponent(projectId)}/patch`,
-    jsonRequest('POST', {
+    jsonRequest('POST /api/projects/{project_id}/patch', {
       requestId: crypto.randomUUID(),
       expectedGraphRevision: document.graphRevision,
       expectedLayoutRevision: document.layoutRevision,
@@ -357,11 +340,11 @@ export async function patchProject(
 export async function changeHistory(
   projectId: string,
   action: 'undo' | 'redo',
-  document: { readonly graphRevision: number; readonly layoutRevision: number },
+  document: Pick<Wire.StudioDocument, 'graphRevision' | 'layoutRevision'>,
 ): Promise<PatchResult> {
   const body = await requestJson(
     `/api/projects/${encodeURIComponent(projectId)}/${action}`,
-    jsonRequest('POST', {
+    jsonRequest(`POST /api/projects/{project_id}/${action}`, {
       requestId: crypto.randomUUID(),
       expectedGraphRevision: document.graphRevision,
       expectedLayoutRevision: document.layoutRevision,
@@ -381,7 +364,7 @@ export async function fetchLatestDeployment(projectId: string, signal?: AbortSig
 export async function deployProject(projectId: string, graphRevision: number): Promise<DeployJob> {
   const body = await requestJson(
     `/api/projects/${encodeURIComponent(projectId)}/deploy`,
-    jsonRequest('POST', { requestId: crypto.randomUUID(), expectedGraphRevision: graphRevision }),
+    jsonRequest('POST /api/projects/{project_id}/deploy', { requestId: crypto.randomUUID(), expectedGraphRevision: graphRevision }),
   );
   if (!isDeployJob(body)) throw new Error('Deployment does not match f8studio-api/1');
   return body;
@@ -429,7 +412,7 @@ export async function fetchRuntimeNodeState(
 ): Promise<RuntimeNodeState> {
   const body = await requestJson(
     `/api/runtime/services/${encodeURIComponent(serviceId)}/nodes/${encodeURIComponent(nodeId)}/state:read`,
-    jsonRequest('POST', { fields }, signal),
+    jsonRequest('POST /api/runtime/services/{service_id}/nodes/{node_id}/state:read', { fields }, signal),
   );
   if (typeof body !== 'object' || body === null || Array.isArray(body)) {
     throw new Error('Runtime node state does not match f8studio-api/1');
@@ -476,12 +459,10 @@ export async function createMediaSession(
   overlay = false,
   signal?: AbortSignal,
 ): Promise<MediaSessionAnswer> {
-  const body = await requestJson('/api/media/sessions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ source, quality, sdp: description.sdp, type: description.type, overlay }),
-    signal,
-  });
+  if (description.type !== 'offer' || typeof description.sdp !== 'string') {
+    throw new Error('WebRTC session creation requires an SDP offer');
+  }
+  const body = await requestJson('/api/media/sessions', jsonRequest('POST /api/media/sessions', { source, quality, sdp: description.sdp, type: description.type, overlay }, signal));
   if (!isMediaSessionAnswer(body)) throw new Error('Media answer does not match f8studio-api/1');
   return body;
 }
@@ -491,12 +472,10 @@ export async function createAudioSession(
   description: RTCSessionDescriptionInit,
   signal?: AbortSignal,
 ): Promise<AudioSessionAnswer> {
-  const body = await requestJson('/api/audio/sessions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ source, sdp: description.sdp, type: description.type }),
-    signal,
-  });
+  if (description.type !== 'offer' || typeof description.sdp !== 'string') {
+    throw new Error('WebRTC session creation requires an SDP offer');
+  }
+  const body = await requestJson('/api/audio/sessions', jsonRequest('POST /api/audio/sessions', { source, sdp: description.sdp, type: description.type }, signal));
   if (!isAudioSessionAnswer(body)) throw new Error('Audio answer does not match f8studio-api/1');
   return body;
 }
@@ -526,25 +505,14 @@ export async function fetchAsset(assetId: string, signal?: AbortSignal): Promise
   return body as unknown as AssetRecord;
 }
 
-export async function createAsset(input: {
-  readonly kind: AssetKind;
-  readonly name: string;
-  readonly description?: string;
-  readonly tags?: readonly string[];
-  readonly content: JsonValue;
-}): Promise<AssetRecord> {
-  const body = await requestJson('/api/assets', jsonRequest('POST', input));
+export async function createAsset(input: Wire.CreateAssetRequestInput): Promise<AssetRecord> {
+  const body = await requestJson('/api/assets', jsonRequest('POST /api/assets', input));
   if (!isObject(body) || typeof body.assetId !== 'string') throw new Error('Created asset does not match f8studio-api/1');
   return body as unknown as AssetRecord;
 }
 
-export async function updateAsset(assetId: string, input: {
-  readonly name: string;
-  readonly description?: string;
-  readonly tags?: readonly string[];
-  readonly content: JsonValue;
-}): Promise<AssetRecord> {
-  const body = await requestJson(`/api/assets/${encodeURIComponent(assetId)}`, jsonRequest('PUT', input));
+export async function updateAsset(assetId: string, input: Wire.UpdateAssetRequestInput): Promise<AssetRecord> {
+  const body = await requestJson(`/api/assets/${encodeURIComponent(assetId)}`, jsonRequest('PUT /api/assets/{asset_id}', input));
   if (!isObject(body) || typeof body.assetId !== 'string') throw new Error('Updated asset does not match f8studio-api/1');
   return body as unknown as AssetRecord;
 }
@@ -560,7 +528,7 @@ export async function fetchAssetVersions(assetId: string): Promise<readonly Asse
 }
 
 export async function createProjectVersion(projectId: string, name: string): Promise<ProjectVersion> {
-  const body = await requestJson(`/api/projects/${encodeURIComponent(projectId)}/versions`, jsonRequest('POST', { name }));
+  const body = await requestJson(`/api/projects/${encodeURIComponent(projectId)}/versions`, jsonRequest('POST /api/projects/{project_id}/versions', { name }));
   if (!isObject(body) || typeof body.versionId !== 'string') throw new Error('Project version does not match f8studio-api/1');
   return body as unknown as ProjectVersion;
 }
@@ -584,9 +552,9 @@ export async function createEditorSession(
   language: 'python' | 'json',
   text: string,
   filename: string,
-  target?: { readonly projectId: string; readonly nodeId: string; readonly fieldName: string },
+  target?: Pick<Wire.CreateEditorSessionRequestInput, 'projectId' | 'nodeId' | 'fieldName'>,
 ): Promise<EditorSession> {
-  const body = await requestJson('/api/editor/sessions', jsonRequest('POST', { language, text, filename, ...target }));
+  const body = await requestJson('/api/editor/sessions', jsonRequest('POST /api/editor/sessions', { language, text, filename, ...target }));
   if (!isObject(body) || typeof body.sessionId !== 'string') throw new Error('Editor session does not match f8studio-api/1');
   return body as unknown as EditorSession;
 }
@@ -594,7 +562,7 @@ export async function createEditorSession(
 export async function updateEditorSession(sessionId: string, version: number, text: string): Promise<EditorSession> {
   const body = await requestJson(
     `/api/editor/sessions/${encodeURIComponent(sessionId)}`,
-    jsonRequest('PUT', { version, text }),
+    jsonRequest('PUT /api/editor/sessions/{session_id}', { version, text }),
   );
   if (!isObject(body) || typeof body.sessionId !== 'string') throw new Error('Editor session does not match f8studio-api/1');
   return body as unknown as EditorSession;
@@ -614,7 +582,7 @@ async function requestEditorLanguage(
 ): Promise<EditorLanguageResult> {
   const body = await requestJson(
     `/api/editor/sessions/${encodeURIComponent(sessionId)}/${operation}`,
-    jsonRequest('POST', { line, column }),
+    jsonRequest(`POST /api/editor/sessions/{session_id}/${operation}`, { line, column }),
   );
   if (!isObject(body) || typeof body.sessionId !== 'string' || !('result' in body)) {
     throw new Error(`Editor ${operation} does not match f8studio-api/1`);
@@ -651,23 +619,23 @@ export async function fetchSerialPorts(): Promise<readonly SerialPortInfo[]> {
 }
 
 export async function detectModdingTarget(targetPath: string): Promise<Readonly<Record<string, JsonValue>>> {
-  const body = await requestJson('/api/local/modding/detect', jsonRequest('POST', { targetPath }));
+  const body = await requestJson('/api/local/modding/detect', jsonRequest('POST /api/local/modding/detect', { targetPath }));
   if (!isObject(body)) throw new Error('Modding detection does not match f8studio-api/1');
   return body as Readonly<Record<string, JsonValue>>;
 }
 
 export async function previewUnityInstall(targetPath: string): Promise<UnityInstallPlan> {
-  const body = await requestJson('/api/local/modding/unity/preview', jsonRequest('POST', { targetPath, offline: true }));
+  const body = await requestJson('/api/local/modding/unity/preview', jsonRequest('POST /api/local/modding/unity/preview', { targetPath, offline: true }));
   if (!isObject(body) || typeof body.planId !== 'string') throw new Error('Unity plan does not match f8studio-api/1');
   return body as unknown as UnityInstallPlan;
 }
 
 export async function applyUnityInstall(planId: string, confirm: boolean): Promise<JsonValue> {
-  return await requestJson('/api/local/modding/unity/apply', jsonRequest('POST', { planId, confirm })) as JsonValue;
+  return await requestJson('/api/local/modding/unity/apply', jsonRequest('POST /api/local/modding/unity/apply', { planId, confirm })) as JsonValue;
 }
 
 export async function verifySkeletonUdp(port: number): Promise<SkeletonUdpVerification> {
-  const body = await requestJson('/api/local/modding/verify-udp', jsonRequest('POST', { port }));
+  const body = await requestJson('/api/local/modding/verify-udp', jsonRequest('POST /api/local/modding/verify-udp', { port }));
   if (!isObject(body) || typeof body.verified !== 'boolean') throw new Error('UDP verification does not match f8studio-api/1');
   return body as unknown as SkeletonUdpVerification;
 }
@@ -680,7 +648,7 @@ export async function fetchHotkeys(projectId?: string): Promise<readonly HotkeyB
 }
 
 export async function registerHotkey(input: RegisterHotkeyInput): Promise<HotkeyBinding> {
-  const body = await requestJson('/api/local/hotkeys', jsonRequest('POST', input));
+  const body = await requestJson('/api/local/hotkeys', jsonRequest('POST /api/local/hotkeys', input));
   if (!isObject(body) || typeof body.bindingId !== 'string') throw new Error('Hotkey does not match f8studio-api/1');
   return body as unknown as HotkeyBinding;
 }
@@ -692,14 +660,14 @@ export async function unregisterHotkey(bindingId: string): Promise<void> {
 export async function invokeRuntimeCommand(serviceId: string, call: string, params: Readonly<Record<string, JsonValue>>): Promise<RuntimeActionResult> {
   return requireRuntimeAction(await requestJson(
     `/api/runtime/services/${encodeURIComponent(serviceId)}/commands`,
-    jsonRequest('POST', { call, params }),
+    jsonRequest('POST /api/runtime/services/{service_id}/commands', { call, params }),
   ));
 }
 
 export async function setRuntimeState(serviceId: string, nodeId: string, field: string, value: JsonValue): Promise<RuntimeActionResult> {
   return requireRuntimeAction(await requestJson(
     `/api/runtime/services/${encodeURIComponent(serviceId)}/state`,
-    jsonRequest('POST', { nodeId, field, value }),
+    jsonRequest('POST /api/runtime/services/{service_id}/state', { nodeId, field, value }),
   ));
 }
 

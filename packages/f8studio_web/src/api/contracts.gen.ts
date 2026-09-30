@@ -5,7 +5,13 @@ export type AcceptedResponse = {
   readonly "accepted": boolean;
 };
 
+export type AcceptedResponseInput = {
+  readonly "accepted": boolean;
+};
+
 export type AccessMode = "object_and_mapping";
+
+export type AccessModeInput = "object_and_mapping";
 
 export type AgentApproval = {
   readonly "approvalId": string;
@@ -15,10 +21,29 @@ export type AgentApproval = {
   readonly "targetGraphRevision": number;
   readonly "expiresAt": string;
   readonly "status": ApprovalStatus;
+  readonly "resolvedAt": string | null;
+};
+
+export type AgentApprovalInput = {
+  readonly "approvalId": string;
+  readonly "toolCallId": string;
+  readonly "toolName": string;
+  readonly "argumentsHash": string;
+  readonly "targetGraphRevision": number;
+  readonly "expiresAt": string;
+  readonly "status": ApprovalStatusInput;
   readonly "resolvedAt"?: string | null;
 };
 
 export type AgentArtifact = {
+  readonly "artifactId": string;
+  readonly "kind": "deployment" | "diagnostics" | "graph_patch" | "monitor" | "text";
+  readonly "title": string;
+  readonly "payload": JsonValue;
+  readonly "createdAt": string;
+};
+
+export type AgentArtifactInput = {
   readonly "artifactId": string;
   readonly "kind": "deployment" | "diagnostics" | "graph_patch" | "monitor" | "text";
   readonly "title": string;
@@ -31,12 +56,27 @@ export type AgentImage = {
   readonly "dataUrl": string;
 };
 
+export type AgentImageInput = {
+  readonly "name": string;
+  readonly "dataUrl": string;
+};
+
 export type AgentMessage = {
   readonly "messageId": string;
   readonly "role": "assistant" | "system" | "user";
   readonly "content": string;
   readonly "createdAt": string;
-  readonly "images"?: ReadonlyArray<AgentImage>;
+  readonly "images": ReadonlyArray<AgentImage>;
+  readonly "providerId": string;
+  readonly "modelId": string;
+};
+
+export type AgentMessageInput = {
+  readonly "messageId": string;
+  readonly "role": "assistant" | "system" | "user";
+  readonly "content": string;
+  readonly "createdAt": string;
+  readonly "images"?: ReadonlyArray<AgentImageInput>;
   readonly "providerId"?: string;
   readonly "modelId"?: string;
 };
@@ -46,12 +86,24 @@ export type AgentProviderSummary = {
   readonly "displayName": string;
   readonly "models": ReadonlyArray<string>;
   readonly "configured": boolean;
+  readonly "deterministic": boolean;
+  readonly "supportsImages": boolean;
+  readonly "modelCapabilities": ReadonlyArray<ModelCapabilities>;
+};
+
+export type AgentProviderSummaryInput = {
+  readonly "providerId": string;
+  readonly "displayName": string;
+  readonly "models": ReadonlyArray<string>;
+  readonly "configured": boolean;
   readonly "deterministic"?: boolean;
   readonly "supportsImages"?: boolean;
-  readonly "modelCapabilities"?: ReadonlyArray<ModelCapabilities>;
+  readonly "modelCapabilities"?: ReadonlyArray<ModelCapabilitiesInput>;
 };
 
 export type AgentRunStatus = "cancelled" | "failed" | "idle" | "running" | "succeeded" | "waiting_for_approval";
+
+export type AgentRunStatusInput = "cancelled" | "failed" | "idle" | "running" | "succeeded" | "waiting_for_approval";
 
 export type AgentSessionRecord = {
   readonly "sessionId": string;
@@ -62,10 +114,28 @@ export type AgentSessionRecord = {
   readonly "status": AgentRunStatus;
   readonly "createdAt": string;
   readonly "updatedAt": string;
-  readonly "messages"?: ReadonlyArray<AgentMessage>;
-  readonly "toolCalls"?: ReadonlyArray<AgentToolCall>;
-  readonly "artifacts"?: ReadonlyArray<AgentArtifact>;
-  readonly "approval"?: null | AgentApproval;
+  readonly "messages": ReadonlyArray<AgentMessage>;
+  readonly "toolCalls": ReadonlyArray<AgentToolCall>;
+  readonly "artifacts": ReadonlyArray<AgentArtifact>;
+  readonly "approval": null | AgentApproval;
+  readonly "errorMessage": string;
+  readonly "tracebackId": string;
+  readonly "autoTitlePending": boolean;
+};
+
+export type AgentSessionRecordInput = {
+  readonly "sessionId": string;
+  readonly "projectId": string;
+  readonly "title": string;
+  readonly "providerId": string;
+  readonly "modelId": string;
+  readonly "status": AgentRunStatusInput;
+  readonly "createdAt": string;
+  readonly "updatedAt": string;
+  readonly "messages"?: ReadonlyArray<AgentMessageInput>;
+  readonly "toolCalls"?: ReadonlyArray<AgentToolCallInput>;
+  readonly "artifacts"?: ReadonlyArray<AgentArtifactInput>;
+  readonly "approval"?: null | AgentApprovalInput;
   readonly "errorMessage"?: string;
   readonly "tracebackId"?: string;
   readonly "autoTitlePending"?: boolean;
@@ -82,6 +152,17 @@ export type AgentSessionSummary = {
   readonly "messageCount": number;
 };
 
+export type AgentSessionSummaryInput = {
+  readonly "sessionId": string;
+  readonly "projectId": string;
+  readonly "title": string;
+  readonly "providerId": string;
+  readonly "modelId": string;
+  readonly "status": AgentRunStatusInput;
+  readonly "updatedAt": string;
+  readonly "messageCount": number;
+};
+
 export type AgentToolCall = {
   readonly "toolCallId": string;
   readonly "toolName": string;
@@ -89,6 +170,20 @@ export type AgentToolCall = {
   readonly "argumentsHash": string;
   readonly "targetGraphRevision": number | null;
   readonly "status": ToolCallStatus;
+  readonly "createdAt": string;
+  readonly "updatedAt": string;
+  readonly "result": JsonValue;
+  readonly "errorMessage": string;
+  readonly "tracebackId": string;
+};
+
+export type AgentToolCallInput = {
+  readonly "toolCallId": string;
+  readonly "toolName": string;
+  readonly "arguments": Readonly<Record<string, JsonValue>>;
+  readonly "argumentsHash": string;
+  readonly "targetGraphRevision": number | null;
+  readonly "status": ToolCallStatusInput;
   readonly "createdAt": string;
   readonly "updatedAt": string;
   readonly "result"?: JsonValue;
@@ -101,7 +196,14 @@ export type ApplyUnityInstallRequest = {
   readonly "confirm": boolean;
 };
 
+export type ApplyUnityInstallRequestInput = {
+  readonly "planId": string;
+  readonly "confirm": boolean;
+};
+
 export type ApprovalStatus = "approved" | "cancelled" | "denied" | "expired" | "invalidated" | "pending";
+
+export type ApprovalStatusInput = "approved" | "cancelled" | "denied" | "expired" | "invalidated" | "pending";
 
 export type AssetExport = {
   readonly "schemaVersion": string;
@@ -109,11 +211,31 @@ export type AssetExport = {
   readonly "versions": ReadonlyArray<AssetVersion>;
 };
 
+export type AssetExportInput = {
+  readonly "schemaVersion": string;
+  readonly "asset": AssetRecordInput;
+  readonly "versions": ReadonlyArray<AssetVersionInput>;
+};
+
 export type AssetKind = "component" | "modding_recipe" | "variant";
+
+export type AssetKindInput = "component" | "modding_recipe" | "variant";
 
 export type AssetRecord = {
   readonly "assetId": string;
   readonly "kind": AssetKind;
+  readonly "name": string;
+  readonly "description": string;
+  readonly "tags": ReadonlyArray<string>;
+  readonly "currentVersion": number;
+  readonly "createdAt": string;
+  readonly "updatedAt": string;
+  readonly "content": JsonValue;
+};
+
+export type AssetRecordInput = {
+  readonly "assetId": string;
+  readonly "kind": AssetKindInput;
   readonly "name": string;
   readonly "description": string;
   readonly "tags": ReadonlyArray<string>;
@@ -134,11 +256,43 @@ export type AssetSummary = {
   readonly "updatedAt": string;
 };
 
+export type AssetSummaryInput = {
+  readonly "assetId": string;
+  readonly "kind": AssetKindInput;
+  readonly "name": string;
+  readonly "description": string;
+  readonly "tags": ReadonlyArray<string>;
+  readonly "currentVersion": number;
+  readonly "createdAt": string;
+  readonly "updatedAt": string;
+};
+
 export type AssetVersion = {
   readonly "assetId": string;
   readonly "version": number;
   readonly "createdAt": string;
   readonly "content": JsonValue;
+};
+
+export type AssetVersionInput = {
+  readonly "assetId": string;
+  readonly "version": number;
+  readonly "createdAt": string;
+  readonly "content": JsonValue;
+};
+
+export type AudioConfig = {
+  readonly "audioStreamKey": string;
+  readonly "throttleMs": number;
+  readonly "historyMs": number;
+  readonly "channel": number;
+};
+
+export type AudioConfigInput = {
+  readonly "audioStreamKey": string;
+  readonly "throttleMs": number;
+  readonly "historyMs": number;
+  readonly "channel": number;
 };
 
 export type AudioSessionAnswer = {
@@ -151,7 +305,23 @@ export type AudioSessionAnswer = {
   readonly "transportPolicy": string;
 };
 
+export type AudioSessionAnswerInput = {
+  readonly "sessionId": string;
+  readonly "source": string;
+  readonly "sdp": string;
+  readonly "type": "answer";
+  readonly "sampleRate": number;
+  readonly "channels": number;
+  readonly "transportPolicy": string;
+};
+
 export type AudioSessionOffer = {
+  readonly "source": string;
+  readonly "sdp": string;
+  readonly "type": string;
+};
+
+export type AudioSessionOfferInput = {
   readonly "source": string;
   readonly "sdp": string;
   readonly "type"?: string;
@@ -163,14 +333,31 @@ export type BindOperatorServiceOp = {
   readonly "serviceId": string;
 };
 
+export type BindOperatorServiceOpInput = {
+  readonly "op": "bindOperatorService";
+  readonly "nodeId": string;
+  readonly "serviceId": string;
+};
+
 export type BrowserIceServer = {
   readonly "urls": ReadonlyArray<string>;
   readonly "username"?: string | null;
   readonly "credential"?: string | null;
 };
 
+export type BrowserIceServerInput = {
+  readonly "urls": ReadonlyArray<string>;
+  readonly "username"?: string | null;
+  readonly "credential"?: string | null;
+};
+
 export type BrowserRtcConfiguration = {
-  readonly "iceServers"?: ReadonlyArray<BrowserIceServer>;
+  readonly "iceServers": ReadonlyArray<BrowserIceServer>;
+  readonly "iceTransportPolicy": "all" | "relay";
+};
+
+export type BrowserRtcConfigurationInput = {
+  readonly "iceServers"?: ReadonlyArray<BrowserIceServerInput>;
   readonly "iceTransportPolicy"?: "all" | "relay";
 };
 
@@ -179,12 +366,29 @@ export type CapabilitiesResponse = {
   readonly "capabilities": ServerCapabilities;
 };
 
+export type CapabilitiesResponseInput = {
+  readonly "protocol_version": "f8studio-api/1";
+  readonly "capabilities": ServerCapabilitiesInput;
+};
+
 export type CatalogSnapshot = {
   readonly "services": ReadonlyArray<F8ServiceSpec>;
   readonly "operators": ReadonlyArray<F8OperatorSpec>;
 };
 
+export type CatalogSnapshotInput = {
+  readonly "services": ReadonlyArray<F8ServiceSpecInput>;
+  readonly "operators": ReadonlyArray<F8OperatorSpecInput>;
+};
+
 export type ChoiceAnswer = {
+  readonly "type": "choice";
+  readonly "choice": string;
+  readonly "probabilities": Readonly<Record<string, number>>;
+  readonly "confidence": number;
+};
+
+export type ChoiceAnswerInput = {
   readonly "type": "choice";
   readonly "choice": string;
   readonly "probabilities": Readonly<Record<string, number>>;
@@ -197,12 +401,42 @@ export type ChoiceQuestion = {
   readonly "criteria": Readonly<Record<string, string | Readonly<Record<string, JsonValue>> | ReadonlyArray<JsonValue> | null>>;
 };
 
+export type ChoiceQuestionInput = {
+  readonly "type": "choice";
+  readonly "instructions": string | Readonly<Record<string, JsonValue>> | ReadonlyArray<JsonValue>;
+  readonly "criteria": Readonly<Record<string, string | Readonly<Record<string, JsonValue>> | ReadonlyArray<JsonValue> | null>>;
+};
+
+export type Code = "CONFLICT" | "FORBIDDEN" | "INTERNAL" | "INVALID_ARGS" | "NOT_FOUND" | "TIMEOUT" | "UNAUTHORIZED" | "UNKNOWN_CALL";
+
+export type CodeInput = "CONFLICT" | "FORBIDDEN" | "INTERNAL" | "INVALID_ARGS" | "NOT_FOUND" | "TIMEOUT" | "UNAUTHORIZED" | "UNKNOWN_CALL";
+
+export type Commands = {
+  readonly "showOnNode"?: boolean;
+};
+
+export type CommandsInput = {
+  readonly "showOnNode"?: boolean;
+};
+
 export type ConnectEdgeOp = {
   readonly "op": "connectEdge";
   readonly "edge": GraphEdge;
 };
 
+export type ConnectEdgeOpInput = {
+  readonly "op": "connectEdge";
+  readonly "edge": GraphEdgeInput;
+};
+
 export type CreateAgentSessionRequest = {
+  readonly "projectId": string;
+  readonly "title": string;
+  readonly "providerId": string;
+  readonly "modelId": string;
+};
+
+export type CreateAgentSessionRequestInput = {
   readonly "projectId": string;
   readonly "title"?: string;
   readonly "providerId"?: string;
@@ -211,6 +445,15 @@ export type CreateAgentSessionRequest = {
 
 export type CreateAssetRequest = {
   readonly "kind": AssetKind;
+  readonly "name": string;
+  readonly "content": JsonValue;
+  readonly "description": string;
+  readonly "tags": ReadonlyArray<string>;
+  readonly "assetId": string | null;
+};
+
+export type CreateAssetRequestInput = {
+  readonly "kind": AssetKindInput;
   readonly "name": string;
   readonly "content": JsonValue;
   readonly "description"?: string;
@@ -222,6 +465,15 @@ export type CreateCatalogNodeRequest = {
   readonly "kind": "operator" | "service";
   readonly "nodeId": string;
   readonly "serviceClass": string;
+  readonly "serviceId": string | null;
+  readonly "operatorClass": string | null;
+  readonly "name": string | null;
+};
+
+export type CreateCatalogNodeRequestInput = {
+  readonly "kind": "operator" | "service";
+  readonly "nodeId": string;
+  readonly "serviceClass": string;
   readonly "serviceId"?: string | null;
   readonly "operatorClass"?: string | null;
   readonly "name"?: string | null;
@@ -230,8 +482,18 @@ export type CreateCatalogNodeRequest = {
 export type CreateEditorSessionRequest = {
   readonly "language": "json" | "python";
   readonly "text": string;
+  readonly "filename": string;
+  readonly "supportFiles": ReadonlyArray<EditorSupportFile>;
+  readonly "projectId": string;
+  readonly "nodeId": string;
+  readonly "fieldName": string;
+};
+
+export type CreateEditorSessionRequestInput = {
+  readonly "language": "json" | "python";
+  readonly "text": string;
   readonly "filename"?: string;
-  readonly "supportFiles"?: ReadonlyArray<EditorSupportFile>;
+  readonly "supportFiles"?: ReadonlyArray<EditorSupportFileInput>;
   readonly "projectId"?: string;
   readonly "nodeId"?: string;
   readonly "fieldName"?: string;
@@ -240,16 +502,32 @@ export type CreateEditorSessionRequest = {
 export type CreateNodeOp = {
   readonly "op": "createNode";
   readonly "node": ServiceNode | OperatorNode;
-  readonly "layout"?: null | NodeLayout;
+  readonly "layout": null | NodeLayout;
+};
+
+export type CreateNodeOpInput = {
+  readonly "op": "createNode";
+  readonly "node": ServiceNodeInput | OperatorNodeInput;
+  readonly "layout"?: null | NodeLayoutInput;
 };
 
 export type CreateProjectRequest = {
+  readonly "name": string;
+  readonly "description": string;
+  readonly "projectId": string | null;
+};
+
+export type CreateProjectRequestInput = {
   readonly "name"?: string;
   readonly "description"?: string;
   readonly "projectId"?: string | null;
 };
 
 export type CreateProjectVersionRequest = {
+  readonly "name": string;
+};
+
+export type CreateProjectVersionRequestInput = {
   readonly "name"?: string;
 };
 
@@ -257,18 +535,48 @@ export type CreateProviderConnection = {
   readonly "displayName": string;
   readonly "protocol": "anthropic" | "openai_chat" | "openai_responses" | "systemone";
   readonly "endpoint": string;
+  readonly "model": string;
+  readonly "models": ReadonlyArray<string>;
+  readonly "apiKey": string;
+  readonly "supportsImage": boolean;
+  readonly "modelCapabilities": ReadonlyArray<ModelCapabilities>;
+};
+
+export type CreateProviderConnectionInput = {
+  readonly "displayName": string;
+  readonly "protocol": "anthropic" | "openai_chat" | "openai_responses" | "systemone";
+  readonly "endpoint": string;
   readonly "model"?: string;
   readonly "models"?: ReadonlyArray<string>;
   readonly "apiKey"?: string;
   readonly "supportsImage"?: boolean;
-  readonly "modelCapabilities"?: ReadonlyArray<ModelCapabilities>;
+  readonly "modelCapabilities"?: ReadonlyArray<ModelCapabilitiesInput>;
 };
 
 export type CurrentSeverity = "" | "critical" | "error" | "info" | "warning";
 
+export type CurrentSeverityInput = "" | "critical" | "error" | "info" | "warning";
+
+export type DataPorts = {
+  readonly "in"?: Readonly<Record<string, In>>;
+  readonly "out"?: Readonly<Record<string, Out>>;
+};
+
+export type DataPortsInput = {
+  readonly "in"?: Readonly<Record<string, InInput>>;
+  readonly "out"?: Readonly<Record<string, OutInput>>;
+};
+
 export type DecisionRequest = {
   readonly "state": string | Readonly<Record<string, JsonValue>> | ReadonlyArray<JsonValue>;
   readonly "questions": Readonly<Record<string, ChoiceQuestion | ScoreQuestion | NoulQuestion>>;
+  readonly "providerId": string;
+  readonly "imageDataUrl": string | null;
+};
+
+export type DecisionRequestInput = {
+  readonly "state": string | Readonly<Record<string, JsonValue>> | ReadonlyArray<JsonValue>;
+  readonly "questions": Readonly<Record<string, ChoiceQuestionInput | ScoreQuestionInput | NoulQuestionInput>>;
   readonly "providerId"?: string;
   readonly "imageDataUrl"?: string | null;
 };
@@ -279,12 +587,28 @@ export type DecisionResult = {
   readonly "usage": DecisionUsage;
 };
 
+export type DecisionResultInput = {
+  readonly "model": string;
+  readonly "answers": Readonly<Record<string, ChoiceAnswerInput | ScoreAnswerInput | NoulAnswerInput>>;
+  readonly "usage": DecisionUsageInput;
+};
+
 export type DecisionUsage = {
   readonly "input_tokens": number;
   readonly "output_tokens": number;
 };
 
+export type DecisionUsageInput = {
+  readonly "input_tokens": number;
+  readonly "output_tokens": number;
+};
+
 export type DeleteNodeOp = {
+  readonly "op": "deleteNode";
+  readonly "nodeId": string;
+};
+
+export type DeleteNodeOpInput = {
   readonly "op": "deleteNode";
   readonly "nodeId": string;
 };
@@ -302,7 +626,26 @@ export type DeployJob = {
   readonly "errorMessage": string;
 };
 
+export type DeployJobInput = {
+  readonly "jobId": string;
+  readonly "requestId": string;
+  readonly "projectId": string;
+  readonly "sourceGraphRevision": number;
+  readonly "sourceSemanticRevision": string;
+  readonly "status": JobStatusInput;
+  readonly "createdAt": string;
+  readonly "updatedAt": string;
+  readonly "serviceResults"?: ReadonlyArray<ServiceDeployResultInput>;
+  readonly "errorMessage"?: string;
+};
+
 export type DeployProjectRequest = {
+  readonly "requestId": string;
+  readonly "expectedGraphRevision": number;
+  readonly "forceApply": boolean;
+};
+
+export type DeployProjectRequestInput = {
   readonly "requestId": string;
   readonly "expectedGraphRevision": number;
   readonly "forceApply"?: boolean;
@@ -312,17 +655,35 @@ export type DetectModdingTargetRequest = {
   readonly "targetPath": string;
 };
 
+export type DetectModdingTargetRequestInput = {
+  readonly "targetPath": string;
+};
+
 export type DisconnectEdgeOp = {
+  readonly "op": "disconnectEdge";
+  readonly "edgeId": string;
+};
+
+export type DisconnectEdgeOpInput = {
   readonly "op": "disconnectEdge";
   readonly "edgeId": string;
 };
 
 export type EdgeStrategy = "latest" | "queue";
 
+export type EdgeStrategyInput = "latest" | "queue";
+
 export type EditorAnalysis = {
   readonly "sessionId": string;
   readonly "version": number;
   readonly "diagnostics": ReadonlyArray<EditorDiagnostic>;
+  readonly "engine": string;
+};
+
+export type EditorAnalysisInput = {
+  readonly "sessionId": string;
+  readonly "version": number;
+  readonly "diagnostics": ReadonlyArray<EditorDiagnosticInput>;
   readonly "engine": string;
 };
 
@@ -335,7 +696,22 @@ export type EditorDiagnostic = {
   readonly "rule": string | null;
 };
 
+export type EditorDiagnosticInput = {
+  readonly "severity": "error" | "information" | "warning";
+  readonly "message": string;
+  readonly "source": string;
+  readonly "path": string;
+  readonly "range": EditorRangeInput;
+  readonly "rule"?: string | null;
+};
+
 export type EditorLanguageResult = {
+  readonly "sessionId": string;
+  readonly "version": number;
+  readonly "result": JsonValue;
+};
+
+export type EditorLanguageResultInput = {
   readonly "sessionId": string;
   readonly "version": number;
   readonly "result": JsonValue;
@@ -346,7 +722,17 @@ export type EditorPosition = {
   readonly "column": number;
 };
 
+export type EditorPositionInput = {
+  readonly "line": number;
+  readonly "column": number;
+};
+
 export type EditorPositionRequest = {
+  readonly "line": number;
+  readonly "column": number;
+};
+
+export type EditorPositionRequestInput = {
   readonly "line": number;
   readonly "column": number;
 };
@@ -356,7 +742,20 @@ export type EditorRange = {
   readonly "end": EditorPosition;
 };
 
+export type EditorRangeInput = {
+  readonly "start": EditorPositionInput;
+  readonly "end": EditorPositionInput;
+};
+
 export type EditorSessionRecord = {
+  readonly "sessionId": string;
+  readonly "language": "json" | "python";
+  readonly "filename": string;
+  readonly "version": number;
+  readonly "text": string;
+};
+
+export type EditorSessionRecordInput = {
   readonly "sessionId": string;
   readonly "language": "json" | "python";
   readonly "filename": string;
@@ -369,6 +768,27 @@ export type EditorSupportFile = {
   readonly "content": string;
 };
 
+export type EditorSupportFileInput = {
+  readonly "path": string;
+  readonly "content": string;
+};
+
+export type Entry = {
+  readonly "record": F8VariantRecord;
+  readonly "localVersionNumber"?: number;
+  readonly "syncBaseRemoteRevision"?: string;
+  readonly "syncBaseRemoteVersionNumber"?: number;
+  readonly "syncBaseLocalVersionNumber"?: number;
+};
+
+export type EntryInput = {
+  readonly "record": F8VariantRecordInput;
+  readonly "localVersionNumber"?: number;
+  readonly "syncBaseRemoteRevision"?: string;
+  readonly "syncBaseRemoteVersionNumber"?: number;
+  readonly "syncBaseLocalVersionNumber"?: number;
+};
+
 export type EventEnvelope = {
   readonly "eventId": string;
   readonly "serverEpoch": string;
@@ -379,9 +799,24 @@ export type EventEnvelope = {
   readonly "payload": JsonValue;
 };
 
+export type EventEnvelopeInput = {
+  readonly "eventId": string;
+  readonly "serverEpoch": string;
+  readonly "sequence": number;
+  readonly "type": "agent.session.deleted" | "agent.session.updated" | "asset.created" | "asset.deleted" | "asset.updated" | "deploy.cancelled" | "deploy.finished" | "deploy.queued" | "deploy.running" | "graph.committed" | "media.error" | "presentation.command" | "project.created" | "project.deleted" | "project.updated" | "runtime.error" | "server.error" | "service.log" | "service.process_started" | "service.process_stopped";
+  readonly "scope": string;
+  readonly "timestamp": string;
+  readonly "payload": JsonValue;
+};
+
 export type ExchangeDefinitions = {
-  readonly "services"?: Readonly<Record<string, F8ServiceSpec>>;
-  readonly "operators"?: Readonly<Record<string, F8OperatorSpec>>;
+  readonly "services": Readonly<Record<string, F8ServiceSpec>>;
+  readonly "operators": Readonly<Record<string, F8OperatorSpec>>;
+};
+
+export type ExchangeDefinitionsInput = {
+  readonly "services"?: Readonly<Record<string, F8ServiceSpecInput>>;
+  readonly "operators"?: Readonly<Record<string, F8OperatorSpecInput>>;
 };
 
 export type ExchangeMetadata = {
@@ -389,7 +824,22 @@ export type ExchangeMetadata = {
   readonly "projectId": string;
 };
 
+export type ExchangeMetadataInput = {
+  readonly "graphId": string;
+  readonly "projectId": string;
+};
+
 export type ExchangeOperator = {
+  readonly "nodeId": string;
+  readonly "name": string;
+  readonly "serviceId": string;
+  readonly "definitionRef": string;
+  readonly "portIds": Readonly<Record<string, string>>;
+  readonly "stateValues": Readonly<Record<string, JsonValue>>;
+  readonly "enabled": boolean;
+};
+
+export type ExchangeOperatorInput = {
   readonly "nodeId": string;
   readonly "name": string;
   readonly "serviceId": string;
@@ -400,11 +850,25 @@ export type ExchangeOperator = {
 };
 
 export type ExchangePresentation = {
-  readonly "layout"?: ReadonlyArray<NodeLayout>;
+  readonly "layout": ReadonlyArray<NodeLayout>;
+  readonly "nodeOrder": ReadonlyArray<string>;
+};
+
+export type ExchangePresentationInput = {
+  readonly "layout"?: ReadonlyArray<NodeLayoutInput>;
   readonly "nodeOrder"?: ReadonlyArray<string>;
 };
 
 export type ExchangeService = {
+  readonly "nodeId": string;
+  readonly "name": string;
+  readonly "definitionRef": string;
+  readonly "portIds": Readonly<Record<string, string>>;
+  readonly "stateValues": Readonly<Record<string, JsonValue>>;
+  readonly "enabled": boolean;
+};
+
+export type ExchangeServiceInput = {
   readonly "nodeId": string;
   readonly "name": string;
   readonly "definitionRef": string;
@@ -413,7 +877,50 @@ export type ExchangeService = {
   readonly "enabled"?: boolean;
 };
 
+export type F8ActivateRequest = {
+  readonly "reqId": string;
+  readonly "args": F8EmptyArgs;
+  readonly "meta"?: Readonly<Record<string, JsonValue>>;
+};
+
+export type F8ActivateRequestInput = {
+  readonly "reqId": string;
+  readonly "args": F8EmptyArgsInput;
+  readonly "meta"?: Readonly<Record<string, JsonValue>>;
+};
+
+export type F8ActiveReply = {
+  readonly "reqId": string;
+  readonly "ok": boolean;
+  readonly "result"?: null | F8ActiveReplyResult;
+  readonly "error"?: null | F8CommandError;
+};
+
+export type F8ActiveReplyInput = {
+  readonly "reqId": string;
+  readonly "ok": boolean;
+  readonly "result"?: null | F8ActiveReplyResultInput;
+  readonly "error"?: null | F8CommandErrorInput;
+};
+
+export type F8ActiveReplyResult = {
+  readonly "active": boolean;
+};
+
+export type F8ActiveReplyResultInput = {
+  readonly "active": boolean;
+};
+
 export type F8AnyTypeSchema = {
+  readonly "type": "any";
+  readonly "title"?: string;
+  readonly "description"?: string;
+  readonly "default"?: JsonValue;
+  readonly "examples"?: ReadonlyArray<JsonValue>;
+  readonly "$comment"?: string;
+};
+
+export type F8AnyTypeSchemaInput = {
   readonly "type": "any";
   readonly "title"?: string;
   readonly "description"?: string;
@@ -432,7 +939,43 @@ export type F8ArrayTypeSchema = {
   readonly "items": F8StringTypeSchema | F8NumberTypeSchema | F8IntegerTypeSchema | F8BooleanTypeSchema | F8NullTypeSchema | F8ComplexObjectTypeSchema | F8ArrayTypeSchema | F8AnyTypeSchema;
 };
 
+export type F8ArrayTypeSchemaInput = {
+  readonly "type": "array";
+  readonly "title"?: string;
+  readonly "description"?: string;
+  readonly "default"?: JsonValue;
+  readonly "examples"?: ReadonlyArray<JsonValue>;
+  readonly "$comment"?: string;
+  readonly "items": F8StringTypeSchemaInput | F8NumberTypeSchemaInput | F8IntegerTypeSchemaInput | F8BooleanTypeSchemaInput | F8NullTypeSchemaInput | F8ComplexObjectTypeSchemaInput | F8ArrayTypeSchemaInput | F8AnyTypeSchemaInput;
+};
+
+export type F8AutoSampleRequest = {
+  readonly "sourceNodeId": string;
+  readonly "sourcePort": string;
+  readonly "intervalMs": number;
+  readonly "deliverLocal"?: boolean;
+  readonly "publishCrossService"?: boolean;
+};
+
+export type F8AutoSampleRequestInput = {
+  readonly "sourceNodeId": string;
+  readonly "sourcePort": string;
+  readonly "intervalMs": number;
+  readonly "deliverLocal"?: boolean;
+  readonly "publishCrossService"?: boolean;
+};
+
 export type F8BooleanTypeSchema = {
+  readonly "type": "boolean";
+  readonly "title"?: string;
+  readonly "description"?: string;
+  readonly "default"?: JsonValue;
+  readonly "examples"?: ReadonlyArray<JsonValue>;
+  readonly "$comment"?: string;
+  readonly "enum"?: ReadonlyArray<JsonValue>;
+};
+
+export type F8BooleanTypeSchemaInput = {
   readonly "type": "boolean";
   readonly "title"?: string;
   readonly "description"?: string;
@@ -448,6 +991,12 @@ export type F8CollectionEditPolicy = {
   readonly "canEditExisting"?: boolean;
 };
 
+export type F8CollectionEditPolicyInput = {
+  readonly "canAdd"?: boolean;
+  readonly "canDelete"?: boolean;
+  readonly "canEditExisting"?: boolean;
+};
+
 export type F8Command = {
   readonly "name": string;
   readonly "description"?: string;
@@ -456,12 +1005,68 @@ export type F8Command = {
   readonly "params"?: ReadonlyArray<F8CommandParam>;
 };
 
+export type F8CommandError = {
+  readonly "code": Code;
+  readonly "message": string;
+  readonly "details"?: Readonly<Record<string, JsonValue>>;
+};
+
+export type F8CommandErrorInput = {
+  readonly "code": CodeInput;
+  readonly "message": string;
+  readonly "details"?: Readonly<Record<string, JsonValue>>;
+};
+
+export type F8CommandInput = {
+  readonly "name": string;
+  readonly "description"?: string;
+  readonly "definitionProtected"?: boolean;
+  readonly "showOnNode"?: boolean;
+  readonly "params"?: ReadonlyArray<F8CommandParamInput>;
+};
+
+export type F8CommandInvokeReply = {
+  readonly "reqId": string;
+  readonly "ok": boolean;
+  readonly "result": JsonValue;
+  readonly "error"?: null | F8CommandError;
+};
+
+export type F8CommandInvokeReplyInput = {
+  readonly "reqId": string;
+  readonly "ok": boolean;
+  readonly "result": JsonValue;
+  readonly "error"?: null | F8CommandErrorInput;
+};
+
+export type F8CommandInvokeRequest = {
+  readonly "reqId": string;
+  readonly "call": string;
+  readonly "args"?: Readonly<Record<string, JsonValue>>;
+  readonly "meta"?: Readonly<Record<string, JsonValue>>;
+};
+
+export type F8CommandInvokeRequestInput = {
+  readonly "reqId": string;
+  readonly "call": string;
+  readonly "args"?: Readonly<Record<string, JsonValue>>;
+  readonly "meta"?: Readonly<Record<string, JsonValue>>;
+};
+
 export type F8CommandParam = {
   readonly "name": string;
   readonly "valueSchema": F8StringTypeSchema | F8NumberTypeSchema | F8IntegerTypeSchema | F8BooleanTypeSchema | F8NullTypeSchema | F8ComplexObjectTypeSchema | F8ArrayTypeSchema | F8AnyTypeSchema;
   readonly "description"?: string;
   readonly "valueRequired"?: boolean;
   readonly "control"?: F8UiControlSpec;
+};
+
+export type F8CommandParamInput = {
+  readonly "name": string;
+  readonly "valueSchema": F8StringTypeSchemaInput | F8NumberTypeSchemaInput | F8IntegerTypeSchemaInput | F8BooleanTypeSchemaInput | F8NullTypeSchemaInput | F8ComplexObjectTypeSchemaInput | F8ArrayTypeSchemaInput | F8AnyTypeSchemaInput;
+  readonly "description"?: string;
+  readonly "valueRequired"?: boolean;
+  readonly "control"?: F8UiControlSpecInput;
 };
 
 export type F8ComplexObjectTypeSchema = {
@@ -476,6 +1081,38 @@ export type F8ComplexObjectTypeSchema = {
   readonly "additionalProperties"?: boolean;
 };
 
+export type F8ComplexObjectTypeSchemaInput = {
+  readonly "type": "object";
+  readonly "title"?: string;
+  readonly "description"?: string;
+  readonly "default"?: JsonValue;
+  readonly "examples"?: ReadonlyArray<JsonValue>;
+  readonly "$comment"?: string;
+  readonly "properties": Readonly<Record<string, F8StringTypeSchemaInput | F8NumberTypeSchemaInput | F8IntegerTypeSchemaInput | F8BooleanTypeSchemaInput | F8NullTypeSchemaInput | F8ComplexObjectTypeSchemaInput | F8ArrayTypeSchemaInput | F8AnyTypeSchemaInput>>;
+  readonly "required"?: ReadonlyArray<string>;
+  readonly "additionalProperties"?: boolean;
+};
+
+export type F8ComponentRecord = {
+  readonly "componentId": string;
+  readonly "name": string;
+  readonly "content": Readonly<Record<string, JsonValue>>;
+  readonly "description"?: string;
+  readonly "tags"?: ReadonlyArray<string>;
+  readonly "createdAt"?: string;
+  readonly "updatedAt"?: string;
+};
+
+export type F8ComponentRecordInput = {
+  readonly "componentId": string;
+  readonly "name": string;
+  readonly "content": Readonly<Record<string, JsonValue>>;
+  readonly "description"?: string;
+  readonly "tags"?: ReadonlyArray<string>;
+  readonly "createdAt"?: string;
+  readonly "updatedAt"?: string;
+};
+
 export type F8DataPayloadSpec = {
   readonly "kind": F8DataPortPayloadKind;
   readonly "valueSchema"?: F8StringTypeSchema | F8NumberTypeSchema | F8IntegerTypeSchema | F8BooleanTypeSchema | F8NullTypeSchema | F8ComplexObjectTypeSchema | F8ArrayTypeSchema | F8AnyTypeSchema;
@@ -484,9 +1121,21 @@ export type F8DataPayloadSpec = {
   readonly "formats"?: ReadonlyArray<string>;
 };
 
+export type F8DataPayloadSpecInput = {
+  readonly "kind": F8DataPortPayloadKindInput;
+  readonly "valueSchema"?: F8StringTypeSchemaInput | F8NumberTypeSchemaInput | F8IntegerTypeSchemaInput | F8BooleanTypeSchemaInput | F8NullTypeSchemaInput | F8ComplexObjectTypeSchemaInput | F8ArrayTypeSchemaInput | F8AnyTypeSchemaInput;
+  readonly "metadataSchema"?: F8StringTypeSchemaInput | F8NumberTypeSchemaInput | F8IntegerTypeSchemaInput | F8BooleanTypeSchemaInput | F8NullTypeSchemaInput | F8ComplexObjectTypeSchemaInput | F8ArrayTypeSchemaInput | F8AnyTypeSchemaInput;
+  readonly "schemaVersion"?: number;
+  readonly "formats"?: ReadonlyArray<string>;
+};
+
 export type F8DataPortDelivery = "fifo" | "latest" | "reliable";
 
+export type F8DataPortDeliveryInput = "fifo" | "latest" | "reliable";
+
 export type F8DataPortPayloadKind = "audio_chunk" | "bytes" | "json" | "video_frame";
+
+export type F8DataPortPayloadKindInput = "audio_chunk" | "bytes" | "json" | "video_frame";
 
 export type F8DataPortSpec = {
   readonly "name": string;
@@ -500,17 +1149,70 @@ export type F8DataPortSpec = {
   readonly "delivery"?: F8DataPortDelivery;
 };
 
+export type F8DataPortSpecInput = {
+  readonly "name": string;
+  readonly "valueSchema": F8StringTypeSchemaInput | F8NumberTypeSchemaInput | F8IntegerTypeSchemaInput | F8BooleanTypeSchemaInput | F8NullTypeSchemaInput | F8ComplexObjectTypeSchemaInput | F8ArrayTypeSchemaInput | F8AnyTypeSchemaInput;
+  readonly "payload"?: F8DataPayloadSpecInput;
+  readonly "stream"?: F8DataStreamSpecInput;
+  readonly "description"?: string;
+  readonly "definitionProtected"?: boolean;
+  readonly "showOnNode"?: boolean;
+  readonly "payloadKind"?: F8DataPortPayloadKindInput;
+  readonly "delivery"?: F8DataPortDeliveryInput;
+};
+
 export type F8DataStreamCongestion = "block" | "drop";
+
+export type F8DataStreamCongestionInput = "block" | "drop";
 
 export type F8DataStreamPriority = "data" | "interactive" | "real_time";
 
+export type F8DataStreamPriorityInput = "data" | "interactive" | "real_time";
+
 export type F8DataStreamReliability = "best_effort" | "reliable";
+
+export type F8DataStreamReliabilityInput = "best_effort" | "reliable";
 
 export type F8DataStreamSpec = {
   readonly "delivery"?: F8DataPortDelivery;
   readonly "reliability"?: F8DataStreamReliability;
   readonly "congestion"?: F8DataStreamCongestion;
   readonly "priority"?: F8DataStreamPriority;
+};
+
+export type F8DataStreamSpecInput = {
+  readonly "delivery"?: F8DataPortDeliveryInput;
+  readonly "reliability"?: F8DataStreamReliabilityInput;
+  readonly "congestion"?: F8DataStreamCongestionInput;
+  readonly "priority"?: F8DataStreamPriorityInput;
+};
+
+export type F8DataTypeSchemaCommonMetadata = {
+  readonly "title"?: string;
+  readonly "description"?: string;
+  readonly "default"?: JsonValue;
+  readonly "examples"?: ReadonlyArray<JsonValue>;
+  readonly "$comment"?: string;
+};
+
+export type F8DataTypeSchemaCommonMetadataInput = {
+  readonly "title"?: string;
+  readonly "description"?: string;
+  readonly "default"?: JsonValue;
+  readonly "examples"?: ReadonlyArray<JsonValue>;
+  readonly "$comment"?: string;
+};
+
+export type F8DeactivateRequest = {
+  readonly "reqId": string;
+  readonly "args": F8EmptyArgs;
+  readonly "meta"?: Readonly<Record<string, JsonValue>>;
+};
+
+export type F8DeactivateRequestInput = {
+  readonly "reqId": string;
+  readonly "args": F8EmptyArgsInput;
+  readonly "meta"?: Readonly<Record<string, JsonValue>>;
 };
 
 export type F8DynamicBindingsInputsSpec = {
@@ -522,6 +1224,15 @@ export type F8DynamicBindingsInputsSpec = {
   readonly "access_mode"?: AccessMode;
 };
 
+export type F8DynamicBindingsInputsSpecInput = {
+  readonly "enabled": boolean;
+  readonly "source": SourceInput;
+  readonly "type_name"?: string;
+  readonly "module_name"?: string;
+  readonly "schema_mode"?: SchemaModeInput;
+  readonly "access_mode"?: AccessModeInput;
+};
+
 export type F8DynamicBindingsOutputsSpec = {
   readonly "enabled": boolean;
   readonly "source": Source2;
@@ -531,10 +1242,25 @@ export type F8DynamicBindingsOutputsSpec = {
   readonly "access_mode"?: AccessMode;
 };
 
+export type F8DynamicBindingsOutputsSpecInput = {
+  readonly "enabled": boolean;
+  readonly "source": Source2Input;
+  readonly "type_name"?: string;
+  readonly "module_name"?: string;
+  readonly "schema_mode"?: SchemaModeInput;
+  readonly "access_mode"?: AccessModeInput;
+};
+
 export type F8DynamicBindingsSpec = {
   readonly "inputs"?: F8DynamicBindingsInputsSpec;
   readonly "states"?: F8DynamicBindingsStatesSpec;
   readonly "outputs"?: F8DynamicBindingsOutputsSpec;
+};
+
+export type F8DynamicBindingsSpecInput = {
+  readonly "inputs"?: F8DynamicBindingsInputsSpecInput;
+  readonly "states"?: F8DynamicBindingsStatesSpecInput;
+  readonly "outputs"?: F8DynamicBindingsOutputsSpecInput;
 };
 
 export type F8DynamicBindingsStatesSpec = {
@@ -546,13 +1272,81 @@ export type F8DynamicBindingsStatesSpec = {
   readonly "access_mode"?: AccessMode;
 };
 
+export type F8DynamicBindingsStatesSpecInput = {
+  readonly "enabled": boolean;
+  readonly "source": Source1Input;
+  readonly "type_name"?: string;
+  readonly "module_name"?: string;
+  readonly "schema_mode"?: SchemaModeInput;
+  readonly "access_mode"?: AccessModeInput;
+};
+
+export type F8Edge = {
+  readonly "edgeId": string;
+  readonly "fromServiceId": string;
+  readonly "fromPort": string;
+  readonly "toServiceId": string;
+  readonly "toPort": string;
+  readonly "kind": F8EdgeKindEnum;
+  readonly "fromOperatorId"?: string;
+  readonly "toOperatorId"?: string;
+  readonly "strategy"?: F8EdgeStrategyEnum;
+  readonly "queueSize"?: number;
+  readonly "timeoutMs"?: number;
+  readonly "direction"?: F8EdgeDirection;
+};
+
+export type F8EdgeDirection = "in" | "out";
+
+export type F8EdgeDirectionInput = "in" | "out";
+
+export type F8EdgeInput = {
+  readonly "edgeId": string;
+  readonly "fromServiceId": string;
+  readonly "fromPort": string;
+  readonly "toServiceId": string;
+  readonly "toPort": string;
+  readonly "kind": F8EdgeKindEnumInput;
+  readonly "fromOperatorId"?: string;
+  readonly "toOperatorId"?: string;
+  readonly "strategy"?: F8EdgeStrategyEnumInput;
+  readonly "queueSize"?: number;
+  readonly "timeoutMs"?: number;
+  readonly "direction"?: F8EdgeDirectionInput;
+};
+
+export type F8EdgeKindEnum = "data" | "exec" | "state";
+
+export type F8EdgeKindEnumInput = "data" | "exec" | "state";
+
+export type F8EdgeStrategyEnum = "latest" | "queue";
+
+export type F8EdgeStrategyEnumInput = "latest" | "queue";
+
 export type F8EditorAssistSpec = {
   readonly "version": number;
   readonly "language": string;
   readonly "python"?: F8PythonEditorAssistSpec;
 };
 
+export type F8EditorAssistSpecInput = {
+  readonly "version": number;
+  readonly "language": string;
+  readonly "python"?: F8PythonEditorAssistSpecInput;
+};
+
+export type F8EmptyArgs = Record<string, never>;
+
+export type F8EmptyArgsInput = Record<string, never>;
+
 export type F8ExecPortSpec = {
+  readonly "name": string;
+  readonly "label"?: string;
+  readonly "description"?: string;
+  readonly "definitionProtected"?: boolean;
+};
+
+export type F8ExecPortSpecInput = {
   readonly "name": string;
   readonly "label"?: string;
   readonly "description"?: string;
@@ -574,7 +1368,27 @@ export type F8IntegerTypeSchema = {
   readonly "multipleOf"?: number;
 };
 
+export type F8IntegerTypeSchemaInput = {
+  readonly "type": "integer";
+  readonly "title"?: string;
+  readonly "description"?: string;
+  readonly "default"?: JsonValue;
+  readonly "examples"?: ReadonlyArray<JsonValue>;
+  readonly "$comment"?: string;
+  readonly "enum"?: ReadonlyArray<JsonValue>;
+  readonly "minimum"?: number;
+  readonly "maximum"?: number;
+  readonly "exclusiveMinimum"?: number;
+  readonly "exclusiveMaximum"?: number;
+  readonly "multipleOf"?: number;
+};
+
 export type F8MonitorCpu = {
+  readonly "processPercent"?: number | null;
+  readonly "systemPercent"?: number | null;
+};
+
+export type F8MonitorCpuInput = {
   readonly "processPercent"?: number | null;
   readonly "systemPercent"?: number | null;
 };
@@ -595,7 +1409,50 @@ export type F8MonitorError = {
   readonly "currentTsMs"?: number | null;
 };
 
+export type F8MonitorErrorInput = {
+  readonly "countWindow"?: number;
+  readonly "lastNodeId"?: string;
+  readonly "lastCode"?: string;
+  readonly "lastMessage"?: string;
+  readonly "lastSeverity"?: LastSeverityInput;
+  readonly "lastFingerprint"?: string;
+  readonly "lastRepeatCount"?: number;
+  readonly "lastTsMs"?: number | null;
+  readonly "currentNodeId"?: string;
+  readonly "currentCode"?: string;
+  readonly "currentMessage"?: string;
+  readonly "currentSeverity"?: CurrentSeverityInput;
+  readonly "currentTsMs"?: number | null;
+};
+
+export type F8MonitorErrorSummary = {
+  readonly "serviceId": string;
+  readonly "count": number;
+  readonly "lastCode": string;
+  readonly "lastMessage": string;
+  readonly "lastTsMs"?: number | null;
+};
+
+export type F8MonitorErrorSummaryInput = {
+  readonly "serviceId": string;
+  readonly "count": number;
+  readonly "lastCode": string;
+  readonly "lastMessage": string;
+  readonly "lastTsMs"?: number | null;
+};
+
 export type F8MonitorFrame = {
+  readonly "observed"?: number;
+  readonly "processed"?: number;
+  readonly "dropped"?: number;
+  readonly "localOnlyEmits"?: number;
+  readonly "routedCrossEmits"?: number;
+  readonly "suppressedCrossPublishes"?: number;
+  readonly "callbackDeliveries"?: number;
+  readonly "bufferPullDeliveries"?: number;
+};
+
+export type F8MonitorFrameInput = {
   readonly "observed"?: number;
   readonly "processed"?: number;
   readonly "dropped"?: number;
@@ -615,13 +1472,89 @@ export type F8MonitorGpu = {
   readonly "available"?: boolean;
 };
 
+export type F8MonitorGpuInput = {
+  readonly "vendor"?: string;
+  readonly "deviceIndex"?: number | null;
+  readonly "utilPercent"?: number | null;
+  readonly "memoryUsedBytes"?: number | null;
+  readonly "memoryTotalBytes"?: number | null;
+  readonly "available"?: boolean;
+};
+
+export type F8MonitorHotspotEntry = {
+  readonly "serviceId": string;
+  readonly "value": number;
+};
+
+export type F8MonitorHotspotEntryInput = {
+  readonly "serviceId": string;
+  readonly "value": number;
+};
+
+export type F8MonitorHotspots = {
+  readonly "cpuTop"?: ReadonlyArray<F8MonitorHotspotEntry>;
+  readonly "gpuTop"?: ReadonlyArray<F8MonitorHotspotEntry>;
+  readonly "waitTop"?: ReadonlyArray<F8MonitorHotspotEntry>;
+};
+
+export type F8MonitorHotspotsInput = {
+  readonly "cpuTop"?: ReadonlyArray<F8MonitorHotspotEntryInput>;
+  readonly "gpuTop"?: ReadonlyArray<F8MonitorHotspotEntryInput>;
+  readonly "waitTop"?: ReadonlyArray<F8MonitorHotspotEntryInput>;
+};
+
 export type F8MonitorMemory = {
+  readonly "rssBytes"?: number;
+  readonly "vmsBytes"?: number;
+};
+
+export type F8MonitorMemoryInput = {
   readonly "rssBytes"?: number;
   readonly "vmsBytes"?: number;
 };
 
 export type F8MonitorQueue = {
   readonly "depth"?: number;
+};
+
+export type F8MonitorQueueInput = {
+  readonly "depth"?: number;
+};
+
+export type F8MonitorReport = {
+  readonly "schemaVersion": SchemaVersion2;
+  readonly "generatedAtMs": number;
+  readonly "windowMs": number;
+  readonly "hotspots": F8MonitorHotspots;
+  readonly "services"?: ReadonlyArray<F8MonitorServiceSummary>;
+  readonly "errors"?: ReadonlyArray<F8MonitorErrorSummary>;
+};
+
+export type F8MonitorReportInput = {
+  readonly "schemaVersion": SchemaVersion2Input;
+  readonly "generatedAtMs": number;
+  readonly "windowMs": number;
+  readonly "hotspots": F8MonitorHotspotsInput;
+  readonly "services"?: ReadonlyArray<F8MonitorServiceSummaryInput>;
+  readonly "errors"?: ReadonlyArray<F8MonitorErrorSummaryInput>;
+};
+
+export type F8MonitorServiceSummary = {
+  readonly "serviceId": string;
+  readonly "serviceClass": string;
+  readonly "alive": boolean;
+  readonly "ready": boolean;
+  readonly "active": boolean;
+  readonly "latest": F8MonitorSnapshot;
+};
+
+export type F8MonitorServiceSummaryInput = {
+  readonly "serviceId": string;
+  readonly "serviceClass": string;
+  readonly "alive": boolean;
+  readonly "ready": boolean;
+  readonly "active": boolean;
+  readonly "latest": F8MonitorSnapshotInput;
 };
 
 export type F8MonitorSnapshot = {
@@ -643,6 +1576,25 @@ export type F8MonitorSnapshot = {
   readonly "error": F8MonitorError;
 };
 
+export type F8MonitorSnapshotInput = {
+  readonly "schemaVersion": SchemaVersion1Input;
+  readonly "serviceId": string;
+  readonly "serviceClass": string;
+  readonly "nodeId": string;
+  readonly "tsMs": number;
+  readonly "alive": boolean;
+  readonly "ready": boolean;
+  readonly "active": boolean;
+  readonly "uptimeMs": number;
+  readonly "cpu": F8MonitorCpuInput;
+  readonly "memory": F8MonitorMemoryInput;
+  readonly "gpu": F8MonitorGpuInput;
+  readonly "frame": F8MonitorFrameInput;
+  readonly "timing": F8MonitorTimingInput;
+  readonly "queue": F8MonitorQueueInput;
+  readonly "error": F8MonitorErrorInput;
+};
+
 export type F8MonitorTiming = {
   readonly "processMsAvg"?: number | null;
   readonly "processMsP95"?: number | null;
@@ -652,7 +1604,62 @@ export type F8MonitorTiming = {
   readonly "latencyMsP95"?: number | null;
 };
 
+export type F8MonitorTimingInput = {
+  readonly "processMsAvg"?: number | null;
+  readonly "processMsP95"?: number | null;
+  readonly "waitMsAvg"?: number | null;
+  readonly "waitMsP95"?: number | null;
+  readonly "latencyMsAvg"?: number | null;
+  readonly "latencyMsP95"?: number | null;
+};
+
+export type F8NodeUiOverridePatch = {
+  readonly "showOnNode"?: boolean;
+  readonly "control"?: F8UiControlSpec;
+  readonly "label"?: string;
+  readonly "description"?: string;
+};
+
+export type F8NodeUiOverridePatchInput = {
+  readonly "showOnNode"?: boolean;
+  readonly "control"?: F8UiControlSpecInput;
+  readonly "label"?: string;
+  readonly "description"?: string;
+};
+
+export type F8NodeUiOverrides = {
+  readonly "stateFields"?: Readonly<Record<string, F8NodeUiOverridePatch>>;
+  readonly "commands"?: Readonly<Record<string, Commands>>;
+  readonly "dataPorts"?: DataPorts;
+};
+
+export type F8NodeUiOverridesInput = {
+  readonly "stateFields"?: Readonly<Record<string, F8NodeUiOverridePatchInput>>;
+  readonly "commands"?: Readonly<Record<string, CommandsInput>>;
+  readonly "dataPorts"?: DataPortsInput;
+};
+
+export type F8NodeUiState = {
+  readonly "stateInlineExpanded"?: Readonly<Record<string, boolean>>;
+  readonly "stateFieldHotkeys"?: Readonly<Record<string, string>>;
+};
+
+export type F8NodeUiStateInput = {
+  readonly "stateInlineExpanded"?: Readonly<Record<string, boolean>>;
+  readonly "stateFieldHotkeys"?: Readonly<Record<string, string>>;
+};
+
 export type F8NullTypeSchema = {
+  readonly "type": "null";
+  readonly "title"?: string;
+  readonly "description"?: string;
+  readonly "default"?: JsonValue;
+  readonly "examples"?: ReadonlyArray<JsonValue>;
+  readonly "$comment"?: string;
+  readonly "enum"?: ReadonlyArray<JsonValue>;
+};
+
+export type F8NullTypeSchemaInput = {
   readonly "type": "null";
   readonly "title"?: string;
   readonly "description"?: string;
@@ -677,7 +1684,24 @@ export type F8NumberTypeSchema = {
   readonly "multipleOf"?: number;
 };
 
+export type F8NumberTypeSchemaInput = {
+  readonly "type": "number";
+  readonly "title"?: string;
+  readonly "description"?: string;
+  readonly "default"?: JsonValue;
+  readonly "examples"?: ReadonlyArray<JsonValue>;
+  readonly "$comment"?: string;
+  readonly "enum"?: ReadonlyArray<JsonValue>;
+  readonly "minimum"?: number;
+  readonly "maximum"?: number;
+  readonly "exclusiveMinimum"?: number;
+  readonly "exclusiveMaximum"?: number;
+  readonly "multipleOf"?: number;
+};
+
 export type F8OperatorSchemaVersion = "f8operator/1";
+
+export type F8OperatorSchemaVersionInput = "f8operator/1";
 
 export type F8OperatorSpec = {
   readonly "operatorClass": string;
@@ -700,13 +1724,160 @@ export type F8OperatorSpec = {
   readonly "dataOutPorts"?: ReadonlyArray<F8DataPortSpec>;
 };
 
+export type F8OperatorSpecInput = {
+  readonly "operatorClass": string;
+  readonly "serviceClass": string;
+  readonly "label": string;
+  readonly "specKind"?: "operator";
+  readonly "schemaVersion"?: F8OperatorSchemaVersionInput;
+  readonly "rendererClass"?: string;
+  readonly "version"?: string;
+  readonly "description"?: string;
+  readonly "tags"?: ReadonlyArray<string>;
+  readonly "paletteCategory"?: string;
+  readonly "hiddenInPalette"?: boolean;
+  readonly "stateFields"?: ReadonlyArray<F8StateSpecInput>;
+  readonly "editPolicy"?: F8SpecEditPolicyInput;
+  readonly "commands"?: ReadonlyArray<F8CommandInput>;
+  readonly "execInPorts"?: ReadonlyArray<F8ExecPortSpecInput>;
+  readonly "execOutPorts"?: ReadonlyArray<F8ExecPortSpecInput>;
+  readonly "dataInPorts"?: ReadonlyArray<F8DataPortSpecInput>;
+  readonly "dataOutPorts"?: ReadonlyArray<F8DataPortSpecInput>;
+};
+
 export type F8PythonEditorAssistSpec = {
   readonly "support_files": Readonly<Record<string, string>>;
   readonly "overlay_prefix": string;
   readonly "dynamic_bindings"?: F8DynamicBindingsSpec;
 };
 
+export type F8PythonEditorAssistSpecInput = {
+  readonly "support_files": Readonly<Record<string, string>>;
+  readonly "overlay_prefix": string;
+  readonly "dynamic_bindings"?: F8DynamicBindingsSpecInput;
+};
+
+export type F8RuntimeGraph = {
+  readonly "graphId": string;
+  readonly "revision": string;
+  readonly "meta"?: F8RuntimeGraphMeta;
+  readonly "services"?: ReadonlyArray<F8RuntimeService>;
+  readonly "nodes"?: ReadonlyArray<F8RuntimeNode>;
+  readonly "edges"?: ReadonlyArray<F8Edge>;
+};
+
+export type F8RuntimeGraphInput = {
+  readonly "graphId": string;
+  readonly "revision": string;
+  readonly "meta"?: F8RuntimeGraphMetaInput;
+  readonly "services"?: ReadonlyArray<F8RuntimeServiceInput>;
+  readonly "nodes"?: ReadonlyArray<F8RuntimeNodeInput>;
+  readonly "edges"?: ReadonlyArray<F8EdgeInput>;
+};
+
+export type F8RuntimeGraphMeta = {
+  readonly "ts"?: number;
+  readonly "source"?: string;
+};
+
+export type F8RuntimeGraphMetaInput = {
+  readonly "ts"?: number;
+  readonly "source"?: string;
+};
+
+export type F8RuntimeNode = {
+  readonly "nodeId": string;
+  readonly "serviceId": string;
+  readonly "serviceClass": string;
+  readonly "operatorClass"?: string;
+  readonly "execInPorts"?: ReadonlyArray<string>;
+  readonly "execOutPorts"?: ReadonlyArray<string>;
+  readonly "dataInPorts"?: ReadonlyArray<F8DataPortSpec>;
+  readonly "dataOutPorts"?: ReadonlyArray<F8DataPortSpec>;
+  readonly "stateFields"?: ReadonlyArray<F8StateSpec>;
+  readonly "stateValues"?: Readonly<Record<string, JsonValue>>;
+};
+
+export type F8RuntimeNodeInput = {
+  readonly "nodeId": string;
+  readonly "serviceId": string;
+  readonly "serviceClass": string;
+  readonly "operatorClass"?: string;
+  readonly "execInPorts"?: ReadonlyArray<string>;
+  readonly "execOutPorts"?: ReadonlyArray<string>;
+  readonly "dataInPorts"?: ReadonlyArray<F8DataPortSpecInput>;
+  readonly "dataOutPorts"?: ReadonlyArray<F8DataPortSpecInput>;
+  readonly "stateFields"?: ReadonlyArray<F8StateSpecInput>;
+  readonly "stateValues"?: Readonly<Record<string, JsonValue>>;
+};
+
+export type F8RuntimeService = {
+  readonly "serviceId": string;
+  readonly "serviceClass": string;
+  readonly "label"?: string;
+  readonly "meta"?: Readonly<Record<string, JsonValue>>;
+  readonly "autoSampleRequests"?: ReadonlyArray<F8AutoSampleRequest>;
+};
+
+export type F8RuntimeServiceInput = {
+  readonly "serviceId": string;
+  readonly "serviceClass": string;
+  readonly "label"?: string;
+  readonly "meta"?: Readonly<Record<string, JsonValue>>;
+  readonly "autoSampleRequests"?: ReadonlyArray<F8AutoSampleRequestInput>;
+};
+
+export type F8ServiceDescribe = {
+  readonly "service": F8ServiceSpec;
+  readonly "operators"?: ReadonlyArray<F8OperatorSpec>;
+};
+
+export type F8ServiceDescribeInput = {
+  readonly "service": F8ServiceSpecInput;
+  readonly "operators"?: ReadonlyArray<F8OperatorSpecInput>;
+};
+
+export type F8ServiceEntry = {
+  readonly "launch": F8ServiceLaunchSpec;
+  readonly "schemaVersion"?: F8ServiceEntrySchemaVersion;
+  readonly "serviceClass"?: string;
+  readonly "label"?: string;
+  readonly "version"?: string;
+  readonly "describeArgs"?: ReadonlyArray<string>;
+  readonly "timeoutMs"?: number;
+};
+
+export type F8ServiceEntryInput = {
+  readonly "launch": F8ServiceLaunchSpecInput;
+  readonly "schemaVersion"?: F8ServiceEntrySchemaVersionInput;
+  readonly "serviceClass"?: string;
+  readonly "label"?: string;
+  readonly "version"?: string;
+  readonly "describeArgs"?: ReadonlyArray<string>;
+  readonly "timeoutMs"?: number;
+};
+
+export type F8ServiceEntrySchemaVersion = "f8serviceEntry/1";
+
+export type F8ServiceEntrySchemaVersionInput = "f8serviceEntry/1";
+
+export type F8ServiceLaunchSpec = {
+  readonly "command": string;
+  readonly "args"?: ReadonlyArray<string>;
+  readonly "env"?: Readonly<Record<string, string>>;
+  readonly "workdir"?: string;
+};
+
+export type F8ServiceLaunchSpecInput = {
+  readonly "command": string;
+  readonly "args"?: ReadonlyArray<string>;
+  readonly "env"?: Readonly<Record<string, string>>;
+  readonly "workdir"?: string;
+};
+
 export type F8ServiceSchemaVersion = "f8service/1";
+
+export type F8ServiceSchemaVersionInput = "f8service/1";
 
 export type F8ServiceSpec = {
   readonly "serviceClass": string;
@@ -726,6 +1897,134 @@ export type F8ServiceSpec = {
   readonly "dataOutPorts"?: ReadonlyArray<F8DataPortSpec>;
 };
 
+export type F8ServiceSpecInput = {
+  readonly "serviceClass": string;
+  readonly "label": string;
+  readonly "specKind"?: "service";
+  readonly "schemaVersion"?: F8ServiceSchemaVersionInput;
+  readonly "rendererClass"?: string;
+  readonly "version"?: string;
+  readonly "description"?: string;
+  readonly "tags"?: ReadonlyArray<string>;
+  readonly "paletteCategory"?: string;
+  readonly "hiddenInPalette"?: boolean;
+  readonly "stateFields"?: ReadonlyArray<F8StateSpecInput>;
+  readonly "editPolicy"?: F8SpecEditPolicyInput;
+  readonly "commands"?: ReadonlyArray<F8CommandInput>;
+  readonly "dataInPorts"?: ReadonlyArray<F8DataPortSpecInput>;
+  readonly "dataOutPorts"?: ReadonlyArray<F8DataPortSpecInput>;
+};
+
+export type F8SetActiveArgs = {
+  readonly "active": boolean;
+};
+
+export type F8SetActiveArgsInput = {
+  readonly "active": boolean;
+};
+
+export type F8SetActiveRequest = {
+  readonly "reqId": string;
+  readonly "args": F8SetActiveArgs;
+  readonly "meta"?: Readonly<Record<string, JsonValue>>;
+};
+
+export type F8SetActiveRequestInput = {
+  readonly "reqId": string;
+  readonly "args": F8SetActiveArgsInput;
+  readonly "meta"?: Readonly<Record<string, JsonValue>>;
+};
+
+export type F8SetRungraphArgs = {
+  readonly "graph": F8RuntimeGraph;
+};
+
+export type F8SetRungraphArgsInput = {
+  readonly "graph": F8RuntimeGraphInput;
+};
+
+export type F8SetRungraphReply = {
+  readonly "reqId": string;
+  readonly "ok": boolean;
+  readonly "result"?: null | F8SetRungraphReplyResult;
+  readonly "error"?: null | F8CommandError;
+};
+
+export type F8SetRungraphReplyInput = {
+  readonly "reqId": string;
+  readonly "ok": boolean;
+  readonly "result"?: null | F8SetRungraphReplyResultInput;
+  readonly "error"?: null | F8CommandErrorInput;
+};
+
+export type F8SetRungraphReplyResult = {
+  readonly "graphId": string;
+};
+
+export type F8SetRungraphReplyResultInput = {
+  readonly "graphId": string;
+};
+
+export type F8SetRungraphRequest = {
+  readonly "reqId": string;
+  readonly "args": F8SetRungraphArgs;
+  readonly "meta"?: Readonly<Record<string, JsonValue>>;
+};
+
+export type F8SetRungraphRequestInput = {
+  readonly "reqId": string;
+  readonly "args": F8SetRungraphArgsInput;
+  readonly "meta"?: Readonly<Record<string, JsonValue>>;
+};
+
+export type F8SetStateArgs = {
+  readonly "nodeId": string;
+  readonly "field": string;
+  readonly "value": JsonValue;
+};
+
+export type F8SetStateArgsInput = {
+  readonly "nodeId": string;
+  readonly "field": string;
+  readonly "value": JsonValue;
+};
+
+export type F8SetStateReply = {
+  readonly "reqId": string;
+  readonly "ok": boolean;
+  readonly "result"?: null | F8SetStateReplyResult;
+  readonly "error"?: null | F8CommandError;
+};
+
+export type F8SetStateReplyInput = {
+  readonly "reqId": string;
+  readonly "ok": boolean;
+  readonly "result"?: null | F8SetStateReplyResultInput;
+  readonly "error"?: null | F8CommandErrorInput;
+};
+
+export type F8SetStateReplyResult = {
+  readonly "nodeId": string;
+  readonly "field": string;
+};
+
+export type F8SetStateReplyResultInput = {
+  readonly "nodeId": string;
+  readonly "field": string;
+};
+
+export type F8SetStateRequest = {
+  readonly "reqId": string;
+  readonly "args": F8SetStateArgs;
+  readonly "meta"?: Readonly<Record<string, JsonValue>>;
+};
+
+export type F8SetStateRequestInput = {
+  readonly "reqId": string;
+  readonly "args": F8SetStateArgsInput;
+  readonly "meta"?: Readonly<Record<string, JsonValue>>;
+};
+
 export type F8SpecEditPolicy = {
   readonly "stateFields"?: F8CollectionEditPolicy;
   readonly "commands"?: F8CollectionEditPolicy;
@@ -735,9 +2034,27 @@ export type F8SpecEditPolicy = {
   readonly "execOutPorts"?: F8CollectionEditPolicy;
 };
 
+export type F8SpecEditPolicyInput = {
+  readonly "stateFields"?: F8CollectionEditPolicyInput;
+  readonly "commands"?: F8CollectionEditPolicyInput;
+  readonly "dataInPorts"?: F8CollectionEditPolicyInput;
+  readonly "dataOutPorts"?: F8CollectionEditPolicyInput;
+  readonly "execInPorts"?: F8CollectionEditPolicyInput;
+  readonly "execOutPorts"?: F8CollectionEditPolicyInput;
+};
+
 export type F8StateAccess = "ro" | "rw" | "wo";
 
+export type F8StateAccessInput = "ro" | "rw" | "wo";
+
 export type F8StateFieldEditPolicy = {
+  readonly "canRename"?: boolean;
+  readonly "canEditAccess"?: boolean;
+  readonly "canEditValueRequired"?: boolean;
+  readonly "canEditValueSchema"?: boolean;
+};
+
+export type F8StateFieldEditPolicyInput = {
   readonly "canRename"?: boolean;
   readonly "canEditAccess"?: boolean;
   readonly "canEditValueRequired"?: boolean;
@@ -758,6 +2075,66 @@ export type F8StateSpec = {
   readonly "editorAssist"?: F8EditorAssistSpec;
 };
 
+export type F8StateSpecInput = {
+  readonly "name": string;
+  readonly "valueSchema": F8StringTypeSchemaInput | F8NumberTypeSchemaInput | F8IntegerTypeSchemaInput | F8BooleanTypeSchemaInput | F8NullTypeSchemaInput | F8ComplexObjectTypeSchemaInput | F8ArrayTypeSchemaInput | F8AnyTypeSchemaInput;
+  readonly "access": F8StateAccessInput;
+  readonly "label"?: string;
+  readonly "description"?: string;
+  readonly "valueRequired"?: boolean;
+  readonly "editPolicy"?: F8StateFieldEditPolicyInput;
+  readonly "control"?: F8UiControlSpecInput;
+  readonly "showOnNode"?: boolean;
+  readonly "redactOnPublish"?: boolean;
+  readonly "editorAssist"?: F8EditorAssistSpecInput;
+};
+
+export type F8StatusReply = {
+  readonly "reqId": string;
+  readonly "ok": boolean;
+  readonly "result"?: null | F8StatusReplyResult;
+  readonly "error"?: null | F8CommandError;
+};
+
+export type F8StatusReplyInput = {
+  readonly "reqId": string;
+  readonly "ok": boolean;
+  readonly "result"?: null | F8StatusReplyResultInput;
+  readonly "error"?: null | F8CommandErrorInput;
+};
+
+export type F8StatusReplyResult = {
+  readonly "serviceId": string;
+  readonly "serviceClass": string;
+  readonly "runtimeInstanceId": string;
+  readonly "active": boolean;
+  readonly "rungraphGraphId"?: string;
+  readonly "rungraphRevision"?: string;
+  readonly "rungraphFingerprint"?: string;
+};
+
+export type F8StatusReplyResultInput = {
+  readonly "serviceId": string;
+  readonly "serviceClass": string;
+  readonly "runtimeInstanceId": string;
+  readonly "active": boolean;
+  readonly "rungraphGraphId"?: string;
+  readonly "rungraphRevision"?: string;
+  readonly "rungraphFingerprint"?: string;
+};
+
+export type F8StatusRequest = {
+  readonly "reqId": string;
+  readonly "args": F8EmptyArgs;
+  readonly "meta"?: Readonly<Record<string, JsonValue>>;
+};
+
+export type F8StatusRequestInput = {
+  readonly "reqId": string;
+  readonly "args": F8EmptyArgsInput;
+  readonly "meta"?: Readonly<Record<string, JsonValue>>;
+};
+
 export type F8StringTypeSchema = {
   readonly "type": "string";
   readonly "title"?: string;
@@ -768,13 +2145,126 @@ export type F8StringTypeSchema = {
   readonly "enum"?: ReadonlyArray<JsonValue>;
 };
 
+export type F8StringTypeSchemaInput = {
+  readonly "type": "string";
+  readonly "title"?: string;
+  readonly "description"?: string;
+  readonly "default"?: JsonValue;
+  readonly "examples"?: ReadonlyArray<JsonValue>;
+  readonly "$comment"?: string;
+  readonly "enum"?: ReadonlyArray<JsonValue>;
+};
+
+export type F8TerminateReply = {
+  readonly "reqId": string;
+  readonly "ok": boolean;
+  readonly "result"?: null | F8TerminateReplyResult;
+  readonly "error"?: null | F8CommandError;
+};
+
+export type F8TerminateReplyInput = {
+  readonly "reqId": string;
+  readonly "ok": boolean;
+  readonly "result"?: null | F8TerminateReplyResultInput;
+  readonly "error"?: null | F8CommandErrorInput;
+};
+
+export type F8TerminateReplyResult = {
+  readonly "terminating": boolean;
+};
+
+export type F8TerminateReplyResultInput = {
+  readonly "terminating": boolean;
+};
+
+export type F8TerminateRequest = {
+  readonly "reqId": string;
+  readonly "args": F8EmptyArgs;
+  readonly "meta"?: Readonly<Record<string, JsonValue>>;
+};
+
+export type F8TerminateRequestInput = {
+  readonly "reqId": string;
+  readonly "args": F8EmptyArgsInput;
+  readonly "meta"?: Readonly<Record<string, JsonValue>>;
+};
+
 export type F8UiControlKind = "auto" | "button" | "code" | "custom" | "dial" | "multiselect" | "select" | "slider" | "text" | "textarea" | "toggle";
+
+export type F8UiControlKindInput = "auto" | "button" | "code" | "custom" | "dial" | "multiselect" | "select" | "slider" | "text" | "textarea" | "toggle";
 
 export type F8UiControlSpec = {
   readonly "kind": F8UiControlKind;
   readonly "optionsFromState"?: string;
   readonly "language"?: string;
   readonly "rendererKey"?: string;
+};
+
+export type F8UiControlSpecInput = {
+  readonly "kind": F8UiControlKindInput;
+  readonly "optionsFromState"?: string;
+  readonly "language"?: string;
+  readonly "rendererKey"?: string;
+};
+
+export type F8VariantKind = "operator" | "service";
+
+export type F8VariantKindInput = "operator" | "service";
+
+export type F8VariantLibrary = {
+  readonly "schemaVersion"?: SchemaVersion;
+  readonly "entries"?: ReadonlyArray<Entry>;
+};
+
+export type F8VariantLibraryInput = {
+  readonly "schemaVersion"?: SchemaVersionInput;
+  readonly "entries"?: ReadonlyArray<EntryInput>;
+};
+
+export type F8VariantRecord = {
+  readonly "variantId": string;
+  readonly "kind": F8VariantKind;
+  readonly "baseNodeType": string;
+  readonly "serviceClass": string;
+  readonly "name": string;
+  readonly "spec": Readonly<Record<string, JsonValue>>;
+  readonly "createdAt": string;
+  readonly "updatedAt": string;
+  readonly "operatorClass"?: string | null;
+  readonly "description"?: string;
+  readonly "tags"?: ReadonlyArray<string>;
+};
+
+export type F8VariantRecordInput = {
+  readonly "variantId": string;
+  readonly "kind": F8VariantKindInput;
+  readonly "baseNodeType": string;
+  readonly "serviceClass": string;
+  readonly "name": string;
+  readonly "spec": Readonly<Record<string, JsonValue>>;
+  readonly "createdAt": string;
+  readonly "updatedAt": string;
+  readonly "operatorClass"?: string | null;
+  readonly "description"?: string;
+  readonly "tags"?: ReadonlyArray<string>;
+};
+
+export type F8VariantRef = {
+  readonly "variantId": string;
+  readonly "kind": F8VariantKind;
+  readonly "baseNodeType": string;
+  readonly "serviceClass": string;
+  readonly "name": string;
+  readonly "operatorClass"?: string | null;
+};
+
+export type F8VariantRefInput = {
+  readonly "variantId": string;
+  readonly "kind": F8VariantKindInput;
+  readonly "baseNodeType": string;
+  readonly "serviceClass": string;
+  readonly "name": string;
+  readonly "operatorClass"?: string | null;
 };
 
 export type GraphEdge = {
@@ -784,12 +2274,26 @@ export type GraphEdge = {
   readonly "toNodeId": string;
   readonly "toPortId": string;
   readonly "kind": GraphEdgeKind;
-  readonly "strategy"?: EdgeStrategy;
+  readonly "strategy": EdgeStrategy;
+  readonly "queueSize": number;
+  readonly "timeoutMs": number | null;
+};
+
+export type GraphEdgeInput = {
+  readonly "edgeId": string;
+  readonly "fromNodeId": string;
+  readonly "fromPortId": string;
+  readonly "toNodeId": string;
+  readonly "toPortId": string;
+  readonly "kind": GraphEdgeKindInput;
+  readonly "strategy"?: EdgeStrategyInput;
   readonly "queueSize"?: number;
   readonly "timeoutMs"?: number | null;
 };
 
 export type GraphEdgeKind = "data" | "exec" | "state";
+
+export type GraphEdgeKindInput = "data" | "exec" | "state";
 
 export type GraphExchange = {
   readonly "format": string;
@@ -799,8 +2303,20 @@ export type GraphExchange = {
   readonly "services": Readonly<Record<string, ExchangeService>>;
   readonly "operators": Readonly<Record<string, ExchangeOperator>>;
   readonly "connections": ReadonlyArray<GraphEdge>;
+  readonly "resources": Readonly<Record<string, JsonValue>>;
+  readonly "presentation": ExchangePresentation;
+};
+
+export type GraphExchangeInput = {
+  readonly "format": string;
+  readonly "formatVersion": number;
+  readonly "metadata": ExchangeMetadataInput;
+  readonly "definitions": ExchangeDefinitionsInput;
+  readonly "services": Readonly<Record<string, ExchangeServiceInput>>;
+  readonly "operators": Readonly<Record<string, ExchangeOperatorInput>>;
+  readonly "connections": ReadonlyArray<GraphEdgeInput>;
   readonly "resources"?: Readonly<Record<string, JsonValue>>;
-  readonly "presentation"?: ExchangePresentation;
+  readonly "presentation"?: ExchangePresentationInput;
 };
 
 export type GraphPort = {
@@ -809,8 +2325,18 @@ export type GraphPort = {
   readonly "runtimeName": string;
   readonly "kind": PortKind;
   readonly "direction": PortDirection;
-  readonly "dataSpec"?: null | F8DataPortSpec;
-  readonly "stateSpec"?: null | F8StateSpec;
+  readonly "dataSpec": null | F8DataPortSpec;
+  readonly "stateSpec": null | F8StateSpec;
+};
+
+export type GraphPortInput = {
+  readonly "portId": string;
+  readonly "name": string;
+  readonly "runtimeName": string;
+  readonly "kind": PortKindInput;
+  readonly "direction": PortDirectionInput;
+  readonly "dataSpec"?: null | F8DataPortSpecInput;
+  readonly "stateSpec"?: null | F8StateSpecInput;
 };
 
 export type HealthStatus = {
@@ -821,7 +2347,21 @@ export type HealthStatus = {
   readonly "server_epoch": string;
 };
 
+export type HealthStatusInput = {
+  readonly "status": "ok";
+  readonly "service": string;
+  readonly "version": string;
+  readonly "protocol_version": string;
+  readonly "server_epoch": string;
+};
+
 export type HistoryRequest = {
+  readonly "requestId": string;
+  readonly "expectedGraphRevision": number;
+  readonly "expectedLayoutRevision": number;
+};
+
+export type HistoryRequestInput = {
   readonly "requestId": string;
   readonly "expectedGraphRevision": number;
   readonly "expectedLayoutRevision": number;
@@ -837,16 +2377,67 @@ export type HotkeyBinding = {
   readonly "message": string;
 };
 
+export type HotkeyBindingInput = {
+  readonly "bindingId": string;
+  readonly "accelerator": string;
+  readonly "projectId": string;
+  readonly "nodeId": string;
+  readonly "field": string;
+  readonly "status"?: "configured" | "disabled" | "error" | "registered";
+  readonly "message"?: string;
+};
+
+export type In = {
+  readonly "showOnNode"?: boolean;
+};
+
+export type InInput = {
+  readonly "showOnNode"?: boolean;
+};
+
 export type InsertFragmentOp = {
   readonly "op": "insertFragment";
   readonly "nodes": ReadonlyArray<ServiceNode | OperatorNode>;
-  readonly "edges"?: ReadonlyArray<GraphEdge>;
-  readonly "layout"?: ReadonlyArray<NodeLayout>;
+  readonly "edges": ReadonlyArray<GraphEdge>;
+  readonly "layout": ReadonlyArray<NodeLayout>;
+};
+
+export type InsertFragmentOpInput = {
+  readonly "op": "insertFragment";
+  readonly "nodes": ReadonlyArray<ServiceNodeInput | OperatorNodeInput>;
+  readonly "edges"?: ReadonlyArray<GraphEdgeInput>;
+  readonly "layout"?: ReadonlyArray<NodeLayoutInput>;
 };
 
 export type JobStatus = "cancelled" | "failed" | "partially_failed" | "queued" | "running" | "succeeded";
 
+export type JobStatusInput = "cancelled" | "failed" | "partially_failed" | "queued" | "running" | "succeeded";
+
 export type LastSeverity = "critical" | "error" | "info" | "warning";
+
+export type LastSeverityInput = "critical" | "error" | "info" | "warning";
+
+export type LivePatch = {
+  readonly "type": "live.patch";
+  readonly "set": Readonly<Record<string, JsonValue>>;
+  readonly "delete": ReadonlyArray<string>;
+};
+
+export type LivePatchInput = {
+  readonly "type": "live.patch";
+  readonly "set": Readonly<Record<string, JsonValue>>;
+  readonly "delete": ReadonlyArray<string>;
+};
+
+export type LiveSnapshot = {
+  readonly "type": "live.snapshot";
+  readonly "values": Readonly<Record<string, JsonValue>>;
+};
+
+export type LiveSnapshotInput = {
+  readonly "type": "live.snapshot";
+  readonly "values": Readonly<Record<string, JsonValue>>;
+};
 
 export type LocalCapability = {
   readonly "capability": string;
@@ -855,12 +2446,35 @@ export type LocalCapability = {
   readonly "reason": string;
 };
 
+export type LocalCapabilityInput = {
+  readonly "capability": string;
+  readonly "status": "available" | "unavailable" | "unverified";
+  readonly "backend": string;
+  readonly "reason"?: string;
+};
+
 export type ManagedProcessResult = {
   readonly "serviceId": string;
   readonly "running": boolean;
 };
 
+export type ManagedProcessResultInput = {
+  readonly "serviceId": string;
+  readonly "running": boolean;
+};
+
 export type MediaFrameMapping = {
+  readonly "sessionId": string;
+  readonly "mediaTimestamp": number;
+  readonly "source": string;
+  readonly "streamId": string;
+  readonly "streamEpoch": string;
+  readonly "frameId": number;
+  readonly "captureTimestampMs": number;
+  readonly "sentTimestampMs": number;
+};
+
+export type MediaFrameMappingInput = {
   readonly "sessionId": string;
   readonly "mediaTimestamp": number;
   readonly "source": string;
@@ -880,7 +2494,28 @@ export type MediaGatewayHealth = {
   readonly "processId": number;
 };
 
+export type MediaGatewayHealthInput = {
+  readonly "status": string;
+  readonly "service": string;
+  readonly "version": string;
+  readonly "protocolVersion": string;
+  readonly "gatewayEpoch": string;
+  readonly "processId": number;
+};
+
 export type MediaMetrics = {
+  readonly "videoSessions": number;
+  readonly "videoSources": number;
+  readonly "audioSessions": number;
+  readonly "audioSources": number;
+  readonly "overlayMatched": number;
+  readonly "overlayWaitTimeouts": number;
+  readonly "overlayExpired": number;
+  readonly "overlayRejected": number;
+  readonly "audioDroppedChunks": number;
+};
+
+export type MediaMetricsInput = {
   readonly "videoSessions": number;
   readonly "videoSources": number;
   readonly "audioSessions": number;
@@ -903,6 +2538,21 @@ export type MediaSample = {
   readonly "y": number;
   readonly "finite": boolean;
   readonly "value": JsonValue;
+  readonly "streamId": string;
+  readonly "streamEpoch": string;
+};
+
+export type MediaSampleInput = {
+  readonly "source": string;
+  readonly "format": string;
+  readonly "frameId": number;
+  readonly "tsMs": number;
+  readonly "width": number;
+  readonly "height": number;
+  readonly "x": number;
+  readonly "y": number;
+  readonly "finite": boolean;
+  readonly "value": JsonValue;
   readonly "streamId"?: string;
   readonly "streamEpoch"?: string;
 };
@@ -910,7 +2560,7 @@ export type MediaSample = {
 export type MediaSessionAnswer = {
   readonly "sessionId": string;
   readonly "source": string;
-  readonly "quality": string;
+  readonly "quality": "main" | "thumbnail";
   readonly "sdp": string;
   readonly "type": "answer";
   readonly "maxWidth": number;
@@ -919,7 +2569,27 @@ export type MediaSessionAnswer = {
   readonly "overlay": boolean;
 };
 
+export type MediaSessionAnswerInput = {
+  readonly "sessionId": string;
+  readonly "source": string;
+  readonly "quality": "main" | "thumbnail";
+  readonly "sdp": string;
+  readonly "type": "answer";
+  readonly "maxWidth": number;
+  readonly "maxHeight": number;
+  readonly "maxFps": number;
+  readonly "overlay"?: boolean;
+};
+
 export type MediaSessionOffer = {
+  readonly "source": string;
+  readonly "quality": string;
+  readonly "sdp": string;
+  readonly "type": string;
+  readonly "overlay": boolean;
+};
+
+export type MediaSessionOfferInput = {
   readonly "source": string;
   readonly "quality": string;
   readonly "sdp": string;
@@ -929,6 +2599,15 @@ export type MediaSessionOffer = {
 
 export type ModelCapabilities = {
   readonly "modelId": string;
+  readonly "imageInput": boolean | null;
+  readonly "thinking": boolean | null;
+  readonly "source": "catalog" | "legacy";
+  readonly "imageSource": "catalog" | "legacy" | "manual" | null;
+  readonly "thinkingSource": "catalog" | "legacy" | "manual" | null;
+};
+
+export type ModelCapabilitiesInput = {
+  readonly "modelId": string;
   readonly "imageInput"?: boolean | null;
   readonly "thinking"?: boolean | null;
   readonly "source"?: "catalog" | "legacy";
@@ -937,6 +2616,15 @@ export type ModelCapabilities = {
 };
 
 export type NodeLayout = {
+  readonly "nodeId": string;
+  readonly "x": number;
+  readonly "y": number;
+  readonly "width": number | null;
+  readonly "height": number | null;
+  readonly "collapsed": boolean;
+};
+
+export type NodeLayoutInput = {
   readonly "nodeId": string;
   readonly "x": number;
   readonly "y": number;
@@ -950,7 +2638,18 @@ export type NoulAnswer = {
   readonly "noul": number;
 };
 
+export type NoulAnswerInput = {
+  readonly "type": "noul";
+  readonly "noul": number;
+};
+
 export type NoulQuestion = {
+  readonly "type": "noul";
+  readonly "instructions": string | Readonly<Record<string, JsonValue>> | ReadonlyArray<JsonValue>;
+  readonly "criteria": Readonly<Record<string, string | Readonly<Record<string, JsonValue>> | ReadonlyArray<JsonValue>>>;
+};
+
+export type NoulQuestionInput = {
   readonly "type": "noul";
   readonly "instructions": string | Readonly<Record<string, JsonValue>> | ReadonlyArray<JsonValue>;
   readonly "criteria"?: Readonly<Record<string, string | Readonly<Record<string, JsonValue>> | ReadonlyArray<JsonValue>>>;
@@ -964,13 +2663,44 @@ export type OperatorNode = {
   readonly "serviceClass": string;
   readonly "operatorClass": string;
   readonly "spec": F8OperatorSpec;
-  readonly "ports"?: ReadonlyArray<GraphPort>;
+  readonly "ports": ReadonlyArray<GraphPort>;
+  readonly "portIds": Readonly<Record<string, string>>;
+  readonly "stateValues": Readonly<Record<string, JsonValue>>;
+  readonly "enabled": boolean;
+};
+
+export type OperatorNodeInput = {
+  readonly "kind": "operator";
+  readonly "nodeId": string;
+  readonly "name": string;
+  readonly "serviceId": string;
+  readonly "serviceClass": string;
+  readonly "operatorClass": string;
+  readonly "spec": F8OperatorSpecInput;
+  readonly "ports"?: ReadonlyArray<GraphPortInput>;
   readonly "portIds"?: Readonly<Record<string, string>>;
   readonly "stateValues"?: Readonly<Record<string, JsonValue>>;
   readonly "enabled"?: boolean;
 };
 
+export type Out = {
+  readonly "showOnNode"?: boolean;
+};
+
+export type OutInput = {
+  readonly "showOnNode"?: boolean;
+};
+
 export type OverlayDetection = {
+  readonly "x": number;
+  readonly "y": number;
+  readonly "width": number;
+  readonly "height": number;
+  readonly "label": string;
+  readonly "score": number | null;
+};
+
+export type OverlayDetectionInput = {
   readonly "x": number;
   readonly "y": number;
   readonly "width": number;
@@ -988,6 +2718,15 @@ export type OverlayResult = {
   readonly "detections": ReadonlyArray<OverlayDetection>;
 };
 
+export type OverlayResultInput = {
+  readonly "source": string;
+  readonly "streamId": string;
+  readonly "streamEpoch": string;
+  readonly "frameId": number;
+  readonly "captureTimestampMs": number;
+  readonly "detections": ReadonlyArray<OverlayDetectionInput>;
+};
+
 export type PatchRequest = {
   readonly "requestId": string;
   readonly "expectedGraphRevision": number;
@@ -995,9 +2734,24 @@ export type PatchRequest = {
   readonly "operations": ReadonlyArray<CreateNodeOp | DeleteNodeOp | ConnectEdgeOp | DisconnectEdgeOp | SetNodeStateOp | RenameNodeOp | SetServiceSpecOp | SetOperatorSpecOp | RefreshInstalledSpecOp | BindOperatorServiceOp | SetNodeEnabledOp | SetNodeLayoutOp | InsertFragmentOp>;
 };
 
+export type PatchRequestInput = {
+  readonly "requestId": string;
+  readonly "expectedGraphRevision": number;
+  readonly "expectedLayoutRevision": number;
+  readonly "operations": ReadonlyArray<CreateNodeOpInput | DeleteNodeOpInput | ConnectEdgeOpInput | DisconnectEdgeOpInput | SetNodeStateOpInput | RenameNodeOpInput | SetServiceSpecOpInput | SetOperatorSpecOpInput | RefreshInstalledSpecOpInput | BindOperatorServiceOpInput | SetNodeEnabledOpInput | SetNodeLayoutOpInput | InsertFragmentOpInput>;
+};
+
 export type PatchResult = {
   readonly "requestId": string;
   readonly "document": StudioDocument;
+  readonly "graphChanged": boolean;
+  readonly "layoutChanged": boolean;
+  readonly "runtimeErrors": ReadonlyArray<string>;
+};
+
+export type PatchResultInput = {
+  readonly "requestId": string;
+  readonly "document": StudioDocumentInput;
   readonly "graphChanged": boolean;
   readonly "layoutChanged": boolean;
   readonly "runtimeErrors"?: ReadonlyArray<string>;
@@ -1005,9 +2759,20 @@ export type PatchResult = {
 
 export type PortDirection = "input" | "output";
 
+export type PortDirectionInput = "input" | "output";
+
 export type PortKind = "command" | "data" | "exec" | "state";
 
+export type PortKindInput = "command" | "data" | "exec" | "state";
+
 export type PresentationCommand = {
+  readonly "nodeId": string;
+  readonly "command": string;
+  readonly "payload": Readonly<Record<string, JsonValue>>;
+  readonly "tsMs": number | null;
+};
+
+export type PresentationCommandInput = {
   readonly "nodeId": string;
   readonly "command": string;
   readonly "payload": Readonly<Record<string, JsonValue>>;
@@ -1015,6 +2780,15 @@ export type PresentationCommand = {
 };
 
 export type PreviewUnityInstallRequest = {
+  readonly "targetPath": string;
+  readonly "exporter": "auto" | "live2d" | "skeleton";
+  readonly "udpPort": number;
+  readonly "offline": boolean;
+  readonly "forceReinstall": boolean;
+  readonly "skipExporter": boolean;
+};
+
+export type PreviewUnityInstallRequestInput = {
   readonly "targetPath": string;
   readonly "exporter"?: "auto" | "live2d" | "skeleton";
   readonly "udpPort"?: number;
@@ -1024,6 +2798,15 @@ export type PreviewUnityInstallRequest = {
 };
 
 export type ProbeProviderRequest = {
+  readonly "protocol": "anthropic" | "openai_chat" | "openai_responses" | "systemone";
+  readonly "endpoint": string;
+  readonly "apiKey": string;
+  readonly "providerId": string;
+  readonly "model": string;
+  readonly "verifyModel": boolean;
+};
+
+export type ProbeProviderRequestInput = {
   readonly "protocol": "anthropic" | "openai_chat" | "openai_responses" | "systemone";
   readonly "endpoint": string;
   readonly "apiKey"?: string;
@@ -1041,7 +2824,26 @@ export type ProjectRecord = {
   readonly "document": StudioDocument;
 };
 
+export type ProjectRecordInput = {
+  readonly "projectId": string;
+  readonly "name": string;
+  readonly "description": string;
+  readonly "createdAt": string;
+  readonly "updatedAt": string;
+  readonly "document": StudioDocumentInput;
+};
+
 export type ProjectSummary = {
+  readonly "projectId": string;
+  readonly "name": string;
+  readonly "description": string;
+  readonly "createdAt": string;
+  readonly "updatedAt": string;
+  readonly "graphRevision": number;
+  readonly "layoutRevision": number;
+};
+
+export type ProjectSummaryInput = {
   readonly "projectId": string;
   readonly "name": string;
   readonly "description": string;
@@ -1059,15 +2861,49 @@ export type ProjectVersion = {
   readonly "document": StudioDocument;
 };
 
+export type ProjectVersionInput = {
+  readonly "versionId": string;
+  readonly "projectId": string;
+  readonly "name": string;
+  readonly "createdAt": string;
+  readonly "document": StudioDocumentInput;
+};
+
 export type ProviderProbeResult = {
   readonly "connected": boolean;
   readonly "models": ReadonlyArray<string>;
   readonly "detail": string;
   readonly "verified": "catalog" | "model" | "none";
-  readonly "modelCapabilities"?: ReadonlyArray<ModelCapabilities>;
+  readonly "modelCapabilities": ReadonlyArray<ModelCapabilities>;
+};
+
+export type ProviderProbeResultInput = {
+  readonly "connected": boolean;
+  readonly "models": ReadonlyArray<string>;
+  readonly "detail": string;
+  readonly "verified": "catalog" | "model" | "none";
+  readonly "modelCapabilities"?: ReadonlyArray<ModelCapabilitiesInput>;
 };
 
 export type ProviderSettingsView = {
+  readonly "providerId": string;
+  readonly "displayName": string;
+  readonly "model": string;
+  readonly "endpoint": string;
+  readonly "apiKeySet": boolean;
+  readonly "requiresApiKey": boolean;
+  readonly "configured": boolean;
+  readonly "source": string;
+  readonly "kind": "agent" | "decision";
+  readonly "inputModalities": ReadonlyArray<"image" | "text">;
+  readonly "supportsImage": boolean;
+  readonly "protocol": "anthropic" | "openai_chat" | "openai_responses" | "systemone" | null;
+  readonly "models": ReadonlyArray<string>;
+  readonly "custom": boolean;
+  readonly "modelCapabilities": ReadonlyArray<ModelCapabilities>;
+};
+
+export type ProviderSettingsViewInput = {
   readonly "providerId": string;
   readonly "displayName": string;
   readonly "model": string;
@@ -1082,7 +2918,7 @@ export type ProviderSettingsView = {
   readonly "protocol"?: "anthropic" | "openai_chat" | "openai_responses" | "systemone" | null;
   readonly "models"?: ReadonlyArray<string>;
   readonly "custom"?: boolean;
-  readonly "modelCapabilities"?: ReadonlyArray<ModelCapabilities>;
+  readonly "modelCapabilities"?: ReadonlyArray<ModelCapabilitiesInput>;
 };
 
 export type RefreshInstalledSpecOp = {
@@ -1090,7 +2926,20 @@ export type RefreshInstalledSpecOp = {
   readonly "nodeId": string;
 };
 
+export type RefreshInstalledSpecOpInput = {
+  readonly "op": "refreshInstalledSpec";
+  readonly "nodeId": string;
+};
+
 export type RegisterHotkeyRequest = {
+  readonly "accelerator": string;
+  readonly "projectId": string;
+  readonly "nodeId": string;
+  readonly "field": string;
+  readonly "bindingId": string | null;
+};
+
+export type RegisterHotkeyRequestInput = {
   readonly "accelerator": string;
   readonly "projectId": string;
   readonly "nodeId": string;
@@ -1102,7 +2951,17 @@ export type RenameAgentSessionRequest = {
   readonly "title": string;
 };
 
+export type RenameAgentSessionRequestInput = {
+  readonly "title": string;
+};
+
 export type RenameNodeOp = {
+  readonly "op": "renameNode";
+  readonly "nodeId": string;
+  readonly "name": string;
+};
+
+export type RenameNodeOpInput = {
   readonly "op": "renameNode";
   readonly "nodeId": string;
   readonly "name": string;
@@ -1113,16 +2972,33 @@ export type ResolveAgentApprovalRequest = {
   readonly "argumentsHash": string;
 };
 
+export type ResolveAgentApprovalRequestInput = {
+  readonly "approved": boolean;
+  readonly "argumentsHash": string;
+};
+
 export type RuntimeActionResult = {
   readonly "success": boolean;
   readonly "result": JsonValue;
   readonly "errorMessage": string;
 };
 
+export type RuntimeActionResultInput = {
+  readonly "success": boolean;
+  readonly "result"?: JsonValue;
+  readonly "errorMessage"?: string;
+};
+
 export type RuntimeNodeState = {
   readonly "serviceId": string;
   readonly "nodeId": string;
   readonly "fields": ReadonlyArray<RuntimeStateField>;
+};
+
+export type RuntimeNodeStateInput = {
+  readonly "serviceId": string;
+  readonly "nodeId": string;
+  readonly "fields": ReadonlyArray<RuntimeStateFieldInput>;
 };
 
 export type RuntimeStateField = {
@@ -1132,15 +3008,46 @@ export type RuntimeStateField = {
   readonly "tsMs": number | null;
 };
 
+export type RuntimeStateFieldInput = {
+  readonly "field": string;
+  readonly "found": boolean;
+  readonly "value"?: JsonValue;
+  readonly "tsMs"?: number | null;
+};
+
 export type RuntimeStateReadRequest = {
+  readonly "fields": ReadonlyArray<string>;
+};
+
+export type RuntimeStateReadRequestInput = {
   readonly "fields": ReadonlyArray<string>;
 };
 
 export type SchemaMode = "basic_recursive";
 
+export type SchemaModeInput = "basic_recursive";
+
+export type SchemaVersion = "f8variantlib/1";
+
 export type SchemaVersion1 = "f8monitor/1";
 
+export type SchemaVersion1Input = "f8monitor/1";
+
+export type SchemaVersion2 = "f8monitorReport/1";
+
+export type SchemaVersion2Input = "f8monitorReport/1";
+
+export type SchemaVersionInput = "f8variantlib/1";
+
 export type ScoreAnswer = {
+  readonly "type": "score";
+  readonly "score": number;
+  readonly "legend": Readonly<Record<string, string | Readonly<Record<string, JsonValue>> | ReadonlyArray<JsonValue>>>;
+  readonly "probabilities": Readonly<Record<string, number>>;
+  readonly "confidence": number;
+};
+
+export type ScoreAnswerInput = {
   readonly "type": "score";
   readonly "score": number;
   readonly "legend": Readonly<Record<string, string | Readonly<Record<string, JsonValue>> | ReadonlyArray<JsonValue>>>;
@@ -1154,12 +3061,29 @@ export type ScoreQuestion = {
   readonly "criteria": ReadonlyArray<string | Readonly<Record<string, JsonValue>> | ReadonlyArray<JsonValue>>;
 };
 
+export type ScoreQuestionInput = {
+  readonly "type": "score";
+  readonly "instructions": string | Readonly<Record<string, JsonValue>> | ReadonlyArray<JsonValue>;
+  readonly "criteria": ReadonlyArray<string | Readonly<Record<string, JsonValue>> | ReadonlyArray<JsonValue>>;
+};
+
 export type SelectAgentModelRequest = {
   readonly "providerId": string;
   readonly "modelId": string;
 };
 
+export type SelectAgentModelRequestInput = {
+  readonly "providerId": string;
+  readonly "modelId": string;
+};
+
 export type SerialPortInfo = {
+  readonly "device": string;
+  readonly "description": string;
+  readonly "hardwareId": string;
+};
+
+export type SerialPortInfoInput = {
   readonly "device": string;
   readonly "description": string;
   readonly "hardwareId": string;
@@ -1175,11 +3099,30 @@ export type ServerCapabilities = {
   readonly "agent_tools": boolean;
 };
 
+export type ServerCapabilitiesInput = {
+  readonly "graph_editing": boolean;
+  readonly "runtime_control": boolean;
+  readonly "web_assets": boolean;
+  readonly "web_rtc_video": boolean;
+  readonly "web_rtc_audio": boolean;
+  readonly "three_d": boolean;
+  readonly "agent_tools": boolean;
+};
+
 export type ServiceActiveRequest = {
   readonly "active": boolean;
 };
 
+export type ServiceActiveRequestInput = {
+  readonly "active": boolean;
+};
+
 export type ServiceCommandRequest = {
+  readonly "call": string;
+  readonly "params": Readonly<Record<string, JsonValue>>;
+};
+
+export type ServiceCommandRequestInput = {
   readonly "call": string;
   readonly "params"?: Readonly<Record<string, JsonValue>>;
 };
@@ -1190,6 +3133,12 @@ export type ServiceDeployResult = {
   readonly "errorMessage": string;
 };
 
+export type ServiceDeployResultInput = {
+  readonly "serviceId": string;
+  readonly "success": boolean;
+  readonly "errorMessage"?: string;
+};
+
 export type ServiceNode = {
   readonly "kind": "service";
   readonly "nodeId": string;
@@ -1197,13 +3146,36 @@ export type ServiceNode = {
   readonly "serviceId": string;
   readonly "serviceClass": string;
   readonly "spec": F8ServiceSpec;
-  readonly "ports"?: ReadonlyArray<GraphPort>;
+  readonly "ports": ReadonlyArray<GraphPort>;
+  readonly "portIds": Readonly<Record<string, string>>;
+  readonly "stateValues": Readonly<Record<string, JsonValue>>;
+  readonly "enabled": boolean;
+};
+
+export type ServiceNodeInput = {
+  readonly "kind": "service";
+  readonly "nodeId": string;
+  readonly "name": string;
+  readonly "serviceId": string;
+  readonly "serviceClass": string;
+  readonly "spec": F8ServiceSpecInput;
+  readonly "ports"?: ReadonlyArray<GraphPortInput>;
   readonly "portIds"?: Readonly<Record<string, string>>;
   readonly "stateValues"?: Readonly<Record<string, JsonValue>>;
   readonly "enabled"?: boolean;
 };
 
 export type ServiceRuntimeStatus = {
+  readonly "serviceId": string;
+  readonly "serviceClass": string;
+  readonly "runtimeInstanceId": string;
+  readonly "active": boolean;
+  readonly "rungraphGraphId": string;
+  readonly "rungraphRevision": string;
+  readonly "rungraphFingerprint": string;
+};
+
+export type ServiceRuntimeStatusInput = {
   readonly "serviceId": string;
   readonly "serviceClass": string;
   readonly "runtimeInstanceId": string;
@@ -1217,7 +3189,17 @@ export type ServiceStartRequest = {
   readonly "serviceClass": string;
 };
 
+export type ServiceStartRequestInput = {
+  readonly "serviceClass": string;
+};
+
 export type ServiceStateRequest = {
+  readonly "nodeId": string;
+  readonly "field": string;
+  readonly "value": JsonValue;
+};
+
+export type ServiceStateRequestInput = {
   readonly "nodeId": string;
   readonly "field": string;
   readonly "value": JsonValue;
@@ -1229,12 +3211,30 @@ export type SetNodeEnabledOp = {
   readonly "enabled": boolean;
 };
 
+export type SetNodeEnabledOpInput = {
+  readonly "op": "setNodeEnabled";
+  readonly "nodeId": string;
+  readonly "enabled": boolean;
+};
+
 export type SetNodeLayoutOp = {
   readonly "op": "setNodeLayout";
   readonly "layout": NodeLayout;
 };
 
+export type SetNodeLayoutOpInput = {
+  readonly "op": "setNodeLayout";
+  readonly "layout": NodeLayoutInput;
+};
+
 export type SetNodeStateOp = {
+  readonly "op": "setNodeState";
+  readonly "nodeId": string;
+  readonly "field": string;
+  readonly "value": JsonValue;
+};
+
+export type SetNodeStateOpInput = {
   readonly "op": "setNodeState";
   readonly "nodeId": string;
   readonly "field": string;
@@ -1245,6 +3245,13 @@ export type SetOperatorSpecOp = {
   readonly "op": "setOperatorSpec";
   readonly "nodeId": string;
   readonly "spec": F8OperatorSpec;
+  readonly "portRenames": Readonly<Record<string, string>>;
+};
+
+export type SetOperatorSpecOpInput = {
+  readonly "op": "setOperatorSpec";
+  readonly "nodeId": string;
+  readonly "spec": F8OperatorSpecInput;
   readonly "portRenames"?: Readonly<Record<string, string>>;
 };
 
@@ -1252,10 +3259,131 @@ export type SetServiceSpecOp = {
   readonly "op": "setServiceSpec";
   readonly "nodeId": string;
   readonly "spec": F8ServiceSpec;
+  readonly "portRenames": Readonly<Record<string, string>>;
+};
+
+export type SetServiceSpecOpInput = {
+  readonly "op": "setServiceSpec";
+  readonly "nodeId": string;
+  readonly "spec": F8ServiceSpecInput;
   readonly "portRenames"?: Readonly<Record<string, string>>;
 };
 
+export type SkeletonLimits = {
+  readonly "maxPeople": number;
+  readonly "maxBonesPerPerson": number;
+};
+
+export type SkeletonLimitsInput = {
+  readonly "maxPeople": number;
+  readonly "maxBonesPerPerson": number;
+};
+
+export type SkeletonNode = {
+  readonly "index": number;
+  readonly "name": string;
+  readonly "pos": readonly [number, number, number];
+  readonly "rot": readonly [number, number, number, number] | null;
+};
+
+export type SkeletonNodeInput = {
+  readonly "index": number;
+  readonly "name": string;
+  readonly "pos": readonly [number, number, number];
+  readonly "rot": readonly [number, number, number, number] | null;
+};
+
+export type SkeletonPerformanceHints = {
+  readonly "totalNodes"?: number;
+  readonly "largeSkeletonMode"?: boolean;
+  readonly "suppressBoneAxes"?: boolean;
+  readonly "suppressBoneNames"?: boolean;
+  readonly "suppressAxisTree"?: boolean;
+  readonly "suppressPersonBoxes"?: boolean;
+  readonly "maxVisibleBoneLabels"?: number | null;
+  readonly "recommendedFpsCap"?: number;
+};
+
+export type SkeletonPerformanceHintsInput = {
+  readonly "totalNodes"?: number;
+  readonly "largeSkeletonMode"?: boolean;
+  readonly "suppressBoneAxes"?: boolean;
+  readonly "suppressBoneNames"?: boolean;
+  readonly "suppressAxisTree"?: boolean;
+  readonly "suppressPersonBoxes"?: boolean;
+  readonly "maxVisibleBoneLabels"?: number | null;
+  readonly "recommendedFpsCap"?: number;
+};
+
+export type SkeletonPerson = {
+  readonly "name": string;
+  readonly "bbox": ReadonlyArray<number> | null;
+  readonly "skeletonProtocol": string;
+  readonly "skeletonEdges": ReadonlyArray<readonly [number, number]> | null;
+  readonly "nodes": ReadonlyArray<SkeletonNode>;
+};
+
+export type SkeletonPersonInput = {
+  readonly "name": string;
+  readonly "bbox": ReadonlyArray<number> | null;
+  readonly "skeletonProtocol": string;
+  readonly "skeletonEdges": ReadonlyArray<readonly [number, number]> | null;
+  readonly "nodes": ReadonlyArray<SkeletonNodeInput>;
+};
+
+export type SkeletonRenderFlags = {
+  readonly "showPersonBoxes"?: boolean;
+  readonly "showPersonNames"?: boolean;
+  readonly "showBonePoints"?: boolean;
+  readonly "showSkeletonLines"?: boolean;
+  readonly "showBoneAxes"?: boolean;
+  readonly "showBoneNames"?: boolean;
+  readonly "autoZoomOnNewPeople"?: boolean;
+  readonly "markerScale"?: number;
+};
+
+export type SkeletonRenderFlagsInput = {
+  readonly "showPersonBoxes"?: boolean;
+  readonly "showPersonNames"?: boolean;
+  readonly "showBonePoints"?: boolean;
+  readonly "showSkeletonLines"?: boolean;
+  readonly "showBoneAxes"?: boolean;
+  readonly "showBoneNames"?: boolean;
+  readonly "autoZoomOnNewPeople"?: boolean;
+  readonly "markerScale"?: number;
+};
+
+export type SkeletonScene = {
+  readonly "tsMs": number;
+  readonly "worldUp": string;
+  readonly "people": ReadonlyArray<SkeletonPerson>;
+  readonly "uiFpsCap"?: number;
+  readonly "renderFlags"?: SkeletonRenderFlags;
+  readonly "limits"?: SkeletonLimits;
+  readonly "performanceHints"?: SkeletonPerformanceHints;
+};
+
+export type SkeletonSceneInput = {
+  readonly "tsMs": number;
+  readonly "worldUp": string;
+  readonly "people": ReadonlyArray<SkeletonPersonInput>;
+  readonly "uiFpsCap"?: number;
+  readonly "renderFlags"?: SkeletonRenderFlagsInput;
+  readonly "limits"?: SkeletonLimitsInput;
+  readonly "performanceHints"?: SkeletonPerformanceHintsInput;
+};
+
 export type SkeletonUdpVerification = {
+  readonly "bindAddress": string;
+  readonly "port": number;
+  readonly "packetCount": number;
+  readonly "decodedFrameCount": number;
+  readonly "modelNames": ReadonlyArray<string>;
+  readonly "decoderErrors": ReadonlyArray<string>;
+  readonly "verified": boolean;
+};
+
+export type SkeletonUdpVerificationInput = {
   readonly "bindAddress": string;
   readonly "port": number;
   readonly "packetCount": number;
@@ -1269,12 +3397,38 @@ export type Source = "data_in_ports";
 
 export type Source1 = "state_fields";
 
+export type Source1Input = "state_fields";
+
 export type Source2 = "data_out_ports";
+
+export type Source2Input = "data_out_ports";
+
+export type SourceInput = "data_in_ports";
 
 export type StartAgentRunRequest = {
   readonly "prompt": string;
-  readonly "images"?: ReadonlyArray<AgentImage>;
+  readonly "images": ReadonlyArray<AgentImage>;
+  readonly "reasoningEffort": "high" | "low" | "medium" | null;
+};
+
+export type StartAgentRunRequestInput = {
+  readonly "prompt": string;
+  readonly "images"?: ReadonlyArray<AgentImageInput>;
   readonly "reasoningEffort"?: "high" | "low" | "medium" | null;
+};
+
+export type StreamHello = {
+  readonly "type": "stream.hello";
+  readonly "serverEpoch": string;
+  readonly "sequence": number;
+  readonly "resumed": boolean;
+};
+
+export type StreamHelloInput = {
+  readonly "type": "stream.hello";
+  readonly "serverEpoch": string;
+  readonly "sequence": number;
+  readonly "resumed": boolean;
 };
 
 export type StudioDocument = {
@@ -1283,14 +3437,140 @@ export type StudioDocument = {
   readonly "graphId": string;
   readonly "graphRevision": number;
   readonly "layoutRevision": number;
-  readonly "nodes"?: ReadonlyArray<ServiceNode | OperatorNode>;
-  readonly "edges"?: ReadonlyArray<GraphEdge>;
-  readonly "layout"?: ReadonlyArray<NodeLayout>;
+  readonly "nodes": ReadonlyArray<ServiceNode | OperatorNode>;
+  readonly "edges": ReadonlyArray<GraphEdge>;
+  readonly "layout": ReadonlyArray<NodeLayout>;
+};
+
+export type StudioDocumentInput = {
+  readonly "schemaVersion": string;
+  readonly "projectId": string;
+  readonly "graphId": string;
+  readonly "graphRevision": number;
+  readonly "layoutRevision": number;
+  readonly "nodes"?: ReadonlyArray<ServiceNodeInput | OperatorNodeInput>;
+  readonly "edges"?: ReadonlyArray<GraphEdgeInput>;
+  readonly "layout"?: ReadonlyArray<NodeLayoutInput>;
+};
+
+export type TCodeSnapshot = {
+  readonly "model": string;
+  readonly "line": string;
+  readonly "channels": Readonly<Record<string, number>>;
+  readonly "resetVersion": number;
+};
+
+export type TCodeSnapshotInput = {
+  readonly "model": string;
+  readonly "line": string;
+  readonly "channels": Readonly<Record<string, number>>;
+  readonly "resetVersion": number;
+};
+
+export type TextUpdate = {
+  readonly "value": JsonValue;
+};
+
+export type TextUpdateInput = {
+  readonly "value": JsonValue;
 };
 
 export type ToolCallStatus = "cancelled" | "denied" | "failed" | "queued" | "running" | "succeeded" | "waiting_for_approval";
 
+export type ToolCallStatusInput = "cancelled" | "denied" | "failed" | "queued" | "running" | "succeeded" | "waiting_for_approval";
+
+export type TrackFlow = {
+  readonly "schemaVersion": string;
+  readonly "tsMs": number;
+  readonly "width": number;
+  readonly "height": number;
+  readonly "vectors": ReadonlyArray<Readonly<Record<string, number>>>;
+};
+
+export type TrackFlowInput = {
+  readonly "schemaVersion": string;
+  readonly "tsMs": number;
+  readonly "width": number;
+  readonly "height": number;
+  readonly "vectors": ReadonlyArray<Readonly<Record<string, number>>>;
+};
+
+export type TrackHistory = {
+  readonly "id": number;
+  readonly "history": ReadonlyArray<TrackHistorySample>;
+};
+
+export type TrackHistoryInput = {
+  readonly "id": number;
+  readonly "history": ReadonlyArray<TrackHistorySampleInput>;
+};
+
+export type TrackHistorySample = {
+  readonly "tsMs": number;
+  readonly "kind": string;
+  readonly "bbox"?: ReadonlyArray<number>;
+  readonly "keypoints"?: ReadonlyArray<Readonly<Record<string, number | null>>>;
+  readonly "skeletonProtocol"?: string;
+};
+
+export type TrackHistorySampleInput = {
+  readonly "tsMs": number;
+  readonly "kind": string;
+  readonly "bbox"?: ReadonlyArray<number>;
+  readonly "keypoints"?: ReadonlyArray<Readonly<Record<string, number | null>>>;
+  readonly "skeletonProtocol"?: string;
+};
+
+export type TrackScene = {
+  readonly "width": number;
+  readonly "height": number;
+  readonly "historyMs": number;
+  readonly "historyFrames": number;
+  readonly "throttleMs": number;
+  readonly "tracks": ReadonlyArray<TrackHistory>;
+  readonly "flow": null | TrackFlow;
+  readonly "flowArrowScale": number;
+  readonly "flowArrowMinMag": number;
+  readonly "flowArrowMaxCount": number;
+  readonly "showDenseFlow": boolean;
+  readonly "showSparseFlow": boolean;
+  readonly "denseFlowMode": string;
+  readonly "flowStreamKey": string;
+  readonly "videoStreamKey": string;
+  readonly "nowMs": number;
+};
+
+export type TrackSceneInput = {
+  readonly "width": number;
+  readonly "height": number;
+  readonly "historyMs": number;
+  readonly "historyFrames": number;
+  readonly "throttleMs": number;
+  readonly "tracks": ReadonlyArray<TrackHistoryInput>;
+  readonly "flow": null | TrackFlowInput;
+  readonly "flowArrowScale": number;
+  readonly "flowArrowMinMag": number;
+  readonly "flowArrowMaxCount": number;
+  readonly "showDenseFlow": boolean;
+  readonly "showSparseFlow": boolean;
+  readonly "denseFlowMode": string;
+  readonly "flowStreamKey": string;
+  readonly "videoStreamKey": string;
+  readonly "nowMs": number;
+};
+
 export type UnityInstallPlan = {
+  readonly "planId": string;
+  readonly "targetPath": string;
+  readonly "actions": ReadonlyArray<string>;
+  readonly "blockingErrors": ReadonlyArray<string>;
+  readonly "filesToWrite": ReadonlyArray<string>;
+  readonly "filesToPreserve": ReadonlyArray<string>;
+  readonly "graphBuildPlan": JsonValue;
+  readonly "raw": JsonValue;
+};
+
+export type UnityInstallPlanInput = {
   readonly "planId": string;
   readonly "targetPath": string;
   readonly "actions": ReadonlyArray<string>;
@@ -1304,6 +3584,13 @@ export type UnityInstallPlan = {
 export type UpdateAssetRequest = {
   readonly "name": string;
   readonly "content": JsonValue;
+  readonly "description": string;
+  readonly "tags": ReadonlyArray<string>;
+};
+
+export type UpdateAssetRequestInput = {
+  readonly "name": string;
+  readonly "content": JsonValue;
   readonly "description"?: string;
   readonly "tags"?: ReadonlyArray<string>;
 };
@@ -1313,12 +3600,33 @@ export type UpdateEditorDocumentRequest = {
   readonly "text": string;
 };
 
+export type UpdateEditorDocumentRequestInput = {
+  readonly "version": number;
+  readonly "text": string;
+};
+
 export type UpdateProjectRequest = {
+  readonly "name": string;
+  readonly "description": string;
+};
+
+export type UpdateProjectRequestInput = {
   readonly "name": string;
   readonly "description"?: string;
 };
 
 export type UpdateProviderSettings = {
+  readonly "model": string;
+  readonly "endpoint": string;
+  readonly "apiKey": string | null;
+  readonly "clearApiKey": boolean;
+  readonly "supportsImage": boolean | null;
+  readonly "displayName": string;
+  readonly "models": ReadonlyArray<string>;
+  readonly "modelCapabilities": ReadonlyArray<ModelCapabilities>;
+};
+
+export type UpdateProviderSettingsInput = {
   readonly "model": string;
   readonly "endpoint"?: string;
   readonly "apiKey"?: string | null;
@@ -1326,11 +3634,15 @@ export type UpdateProviderSettings = {
   readonly "supportsImage"?: boolean | null;
   readonly "displayName"?: string;
   readonly "models"?: ReadonlyArray<string>;
-  readonly "modelCapabilities"?: ReadonlyArray<ModelCapabilities>;
+  readonly "modelCapabilities"?: ReadonlyArray<ModelCapabilitiesInput>;
 };
 
 export type ValidateDocumentRequest = {
   readonly "document": StudioDocument;
+};
+
+export type ValidateDocumentRequestInput = {
+  readonly "document": StudioDocumentInput;
 };
 
 export type ValidationResponse = {
@@ -1339,10 +3651,216 @@ export type ValidationResponse = {
   readonly "layoutRevision": number;
 };
 
+export type ValidationResponseInput = {
+  readonly "valid": boolean;
+  readonly "graphRevision": number;
+  readonly "layoutRevision": number;
+};
+
 export type VerifySkeletonUdpRequest = {
+  readonly "bindAddress": string;
+  readonly "port": number;
+  readonly "timeoutMs": number;
+  readonly "minimumFrames": number;
+};
+
+export type VerifySkeletonUdpRequestInput = {
   readonly "bindAddress"?: string;
   readonly "port"?: number;
   readonly "timeoutMs"?: number;
   readonly "minimumFrames"?: number;
 };
 
+export type VideoConfig = {
+  readonly "videoStreamKey": string;
+  readonly "throttleMs": number;
+  readonly "flowStreamKey": string;
+  readonly "flowDisplayMode": string;
+  readonly "flowMagScale": number;
+  readonly "flowStride": number;
+  readonly "scaleMode": string;
+  readonly "scalarStreamKey": string;
+  readonly "scalarDisplayMode": string;
+  readonly "scalarColormap": string;
+  readonly "scalarRangeMode": string;
+  readonly "scalarMin": number;
+  readonly "scalarMax": number;
+  readonly "scalarAutoPercentileLo": number;
+  readonly "scalarAutoPercentileHi": number;
+  readonly "scalarInvert": boolean;
+  readonly "scalarNanMode": string;
+};
+
+export type VideoConfigInput = {
+  readonly "videoStreamKey": string;
+  readonly "throttleMs": number;
+  readonly "flowStreamKey": string;
+  readonly "flowDisplayMode": string;
+  readonly "flowMagScale": number;
+  readonly "flowStride": number;
+  readonly "scaleMode": string;
+  readonly "scalarStreamKey": string;
+  readonly "scalarDisplayMode": string;
+  readonly "scalarColormap": string;
+  readonly "scalarRangeMode": string;
+  readonly "scalarMin": number;
+  readonly "scalarMax": number;
+  readonly "scalarAutoPercentileLo": number;
+  readonly "scalarAutoPercentileHi": number;
+  readonly "scalarInvert": boolean;
+  readonly "scalarNanMode": string;
+};
+
+export type WaveScene = {
+  readonly "series": Readonly<Record<string, ReadonlyArray<readonly [number, number]>>>;
+  readonly "colors": Readonly<Record<string, ReadonlyArray<number>>>;
+  readonly "windowMs": number;
+  readonly "nowMs": number;
+  readonly "showLegend": boolean;
+  readonly "minVal": number | null;
+  readonly "maxVal": number | null;
+};
+
+export type WaveSceneInput = {
+  readonly "series": Readonly<Record<string, ReadonlyArray<readonly [number, number]>>>;
+  readonly "colors": Readonly<Record<string, ReadonlyArray<number>>>;
+  readonly "windowMs": number;
+  readonly "nowMs": number;
+  readonly "showLegend": boolean;
+  readonly "minVal": number | null;
+  readonly "maxVal": number | null;
+};
+
+export interface ApiRequests {
+  readonly "POST /api/catalog/nodes": CreateCatalogNodeRequestInput;
+  readonly "POST /api/assets": CreateAssetRequestInput;
+  readonly "POST /api/assets/import": AssetExportInput;
+  readonly "PUT /api/assets/{asset_id}": UpdateAssetRequestInput;
+  readonly "POST /api/media/sessions": MediaSessionOfferInput;
+  readonly "POST /api/audio/sessions": AudioSessionOfferInput;
+  readonly "POST /api/media/overlays": OverlayResultInput;
+  readonly "POST /api/projects": CreateProjectRequestInput;
+  readonly "POST /api/projects/{project_id}/graph/import": GraphExchangeInput;
+  readonly "PUT /api/projects/{project_id}": UpdateProjectRequestInput;
+  readonly "POST /api/projects/{project_id}/versions": CreateProjectVersionRequestInput;
+  readonly "POST /api/editor/sessions": CreateEditorSessionRequestInput;
+  readonly "PUT /api/editor/sessions/{session_id}": UpdateEditorDocumentRequestInput;
+  readonly "POST /api/editor/sessions/{session_id}/completion": EditorPositionRequestInput;
+  readonly "POST /api/editor/sessions/{session_id}/hover": EditorPositionRequestInput;
+  readonly "POST /api/editor/sessions/{session_id}/signature-help": EditorPositionRequestInput;
+  readonly "POST /api/local/modding/detect": DetectModdingTargetRequestInput;
+  readonly "POST /api/local/modding/unity/preview": PreviewUnityInstallRequestInput;
+  readonly "POST /api/local/modding/unity/apply": ApplyUnityInstallRequestInput;
+  readonly "POST /api/local/modding/verify-udp": VerifySkeletonUdpRequestInput;
+  readonly "POST /api/local/hotkeys": RegisterHotkeyRequestInput;
+  readonly "POST /api/projects/{project_id}/validate": ValidateDocumentRequestInput;
+  readonly "POST /api/projects/{project_id}/patch": PatchRequestInput;
+  readonly "POST /api/projects/{project_id}/patch:preview": PatchRequestInput;
+  readonly "POST /api/projects/{project_id}/undo": HistoryRequestInput;
+  readonly "POST /api/projects/{project_id}/redo": HistoryRequestInput;
+  readonly "POST /api/projects/{project_id}/deploy": DeployProjectRequestInput;
+  readonly "POST /api/decisions/evaluate": DecisionRequestInput;
+  readonly "PUT /api/agents/providers/{provider_id}/settings": UpdateProviderSettingsInput;
+  readonly "POST /api/agents/connections": CreateProviderConnectionInput;
+  readonly "POST /api/agents/connections/probe": ProbeProviderRequestInput;
+  readonly "POST /api/agents/sessions": CreateAgentSessionRequestInput;
+  readonly "PUT /api/agents/sessions/{session_id}": RenameAgentSessionRequestInput;
+  readonly "PUT /api/agents/sessions/{session_id}/model": SelectAgentModelRequestInput;
+  readonly "POST /api/agents/sessions/{session_id}/runs": StartAgentRunRequestInput;
+  readonly "POST /api/agents/sessions/{session_id}/approvals/{approval_id}": ResolveAgentApprovalRequestInput;
+  readonly "POST /api/runtime/services/{service_id}/start": ServiceStartRequestInput;
+  readonly "POST /api/runtime/services/{service_id}/active": ServiceActiveRequestInput;
+  readonly "POST /api/runtime/services/{service_id}/state": ServiceStateRequestInput;
+  readonly "POST /api/runtime/services/{service_id}/nodes/{node_id}/state:read": RuntimeStateReadRequestInput;
+  readonly "POST /api/runtime/services/{service_id}/commands": ServiceCommandRequestInput;
+}
+
+export interface ApiResponses {
+  readonly "GET /api/health": HealthStatus;
+  readonly "GET /api/logs": ReadonlyArray<EventEnvelope>;
+  readonly "GET /api/capabilities": CapabilitiesResponse;
+  readonly "GET /api/media/rtc-configuration": BrowserRtcConfiguration;
+  readonly "GET /api/catalog": CatalogSnapshot;
+  readonly "POST /api/catalog/refresh": CatalogSnapshot;
+  readonly "POST /api/catalog/nodes": ServiceNode | OperatorNode;
+  readonly "GET /api/assets": ReadonlyArray<AssetSummary>;
+  readonly "POST /api/assets": AssetRecord;
+  readonly "POST /api/assets/import": AssetRecord;
+  readonly "GET /api/assets/{asset_id}": AssetRecord;
+  readonly "PUT /api/assets/{asset_id}": AssetRecord;
+  readonly "DELETE /api/assets/{asset_id}": void;
+  readonly "GET /api/assets/{asset_id}/versions": ReadonlyArray<AssetVersion>;
+  readonly "GET /api/assets/{asset_id}/export": AssetExport;
+  readonly "GET /api/runtime/monitors": ReadonlyArray<F8MonitorSnapshot>;
+  readonly "GET /api/presentation": ReadonlyArray<PresentationCommand>;
+  readonly "POST /api/media/sessions": MediaSessionAnswer;
+  readonly "POST /api/audio/sessions": AudioSessionAnswer;
+  readonly "DELETE /api/audio/sessions/{session_id}": void;
+  readonly "POST /api/media/overlays": AcceptedResponse;
+  readonly "GET /api/media/sessions/{session_id}/media-timestamps/{media_timestamp}": MediaFrameMapping;
+  readonly "GET /api/media/metrics": MediaMetrics;
+  readonly "GET /api/media/gateway": MediaGatewayHealth;
+  readonly "GET /api/media/sample": MediaSample;
+  readonly "DELETE /api/media/sessions/{session_id}": void;
+  readonly "GET /api/projects": ReadonlyArray<ProjectSummary>;
+  readonly "POST /api/projects": ProjectRecord;
+  readonly "GET /api/projects/{project_id}": ProjectRecord;
+  readonly "DELETE /api/projects/{project_id}": void;
+  readonly "GET /api/projects/{project_id}/graph/export": GraphExchange;
+  readonly "POST /api/projects/{project_id}/graph/import": ProjectRecord;
+  readonly "PUT /api/projects/{project_id}": ProjectRecord;
+  readonly "GET /api/projects/{project_id}/versions": ReadonlyArray<ProjectVersion>;
+  readonly "POST /api/projects/{project_id}/versions": ProjectVersion;
+  readonly "POST /api/projects/{project_id}/versions/{version_id}/restore": ProjectRecord;
+  readonly "POST /api/editor/sessions": EditorSessionRecord;
+  readonly "GET /api/editor/sessions/{session_id}": EditorSessionRecord;
+  readonly "PUT /api/editor/sessions/{session_id}": EditorSessionRecord;
+  readonly "POST /api/editor/sessions/{session_id}/analyze": EditorAnalysis;
+  readonly "POST /api/editor/sessions/{session_id}/completion": EditorLanguageResult;
+  readonly "POST /api/editor/sessions/{session_id}/hover": EditorLanguageResult;
+  readonly "POST /api/editor/sessions/{session_id}/signature-help": EditorLanguageResult;
+  readonly "DELETE /api/editor/sessions/{session_id}": void;
+  readonly "GET /api/local/capabilities": ReadonlyArray<LocalCapability>;
+  readonly "GET /api/local/serial-ports": ReadonlyArray<SerialPortInfo>;
+  readonly "POST /api/local/modding/detect": JsonValue;
+  readonly "POST /api/local/modding/unity/preview": UnityInstallPlan;
+  readonly "POST /api/local/modding/unity/apply": JsonValue;
+  readonly "POST /api/local/modding/verify-udp": SkeletonUdpVerification;
+  readonly "GET /api/local/hotkeys": ReadonlyArray<HotkeyBinding>;
+  readonly "POST /api/local/hotkeys": HotkeyBinding;
+  readonly "DELETE /api/local/hotkeys/{binding_id}": void;
+  readonly "POST /api/projects/{project_id}/validate": ValidationResponse;
+  readonly "POST /api/projects/{project_id}/patch": PatchResult;
+  readonly "POST /api/projects/{project_id}/patch:preview": PatchResult;
+  readonly "POST /api/projects/{project_id}/undo": PatchResult;
+  readonly "POST /api/projects/{project_id}/redo": PatchResult;
+  readonly "POST /api/projects/{project_id}/deploy": DeployJob;
+  readonly "GET /api/agents/providers": ReadonlyArray<AgentProviderSummary>;
+  readonly "GET /api/agents/providers/settings": ReadonlyArray<ProviderSettingsView>;
+  readonly "POST /api/decisions/evaluate": DecisionResult;
+  readonly "PUT /api/agents/providers/{provider_id}/settings": ProviderSettingsView;
+  readonly "POST /api/agents/connections": ProviderSettingsView;
+  readonly "DELETE /api/agents/connections/{provider_id}": void;
+  readonly "POST /api/agents/connections/probe": ProviderProbeResult;
+  readonly "GET /api/agents/sessions": ReadonlyArray<AgentSessionSummary>;
+  readonly "POST /api/agents/sessions": AgentSessionRecord;
+  readonly "GET /api/agents/sessions/{session_id}": AgentSessionRecord;
+  readonly "PUT /api/agents/sessions/{session_id}": AgentSessionRecord;
+  readonly "DELETE /api/agents/sessions/{session_id}": void;
+  readonly "PUT /api/agents/sessions/{session_id}/model": AgentSessionRecord;
+  readonly "POST /api/agents/sessions/{session_id}/runs": AgentSessionRecord;
+  readonly "POST /api/agents/sessions/{session_id}/approvals/{approval_id}": AgentSessionRecord;
+  readonly "DELETE /api/agents/sessions/{session_id}/runs/current": AgentSessionRecord;
+  readonly "GET /api/projects/{project_id}/deployments/latest": null | DeployJob;
+  readonly "GET /api/jobs/{job_id}": DeployJob;
+  readonly "DELETE /api/jobs/{job_id}": DeployJob;
+  readonly "POST /api/runtime/services/{service_id}/start": ManagedProcessResult;
+  readonly "POST /api/projects/{project_id}/stop": void;
+  readonly "POST /api/runtime/services/{service_id}/stop": RuntimeActionResult | ManagedProcessResult;
+  readonly "POST /api/projects/{project_id}/services/{service_id}/restart": DeployJob;
+  readonly "GET /api/runtime/services/{service_id}/status": ServiceRuntimeStatus;
+  readonly "POST /api/runtime/services/{service_id}/active": RuntimeActionResult;
+  readonly "POST /api/runtime/services/{service_id}/state": RuntimeActionResult;
+  readonly "POST /api/runtime/services/{service_id}/nodes/{node_id}/state:read": RuntimeNodeState;
+  readonly "POST /api/runtime/services/{service_id}/commands": RuntimeActionResult;
+}

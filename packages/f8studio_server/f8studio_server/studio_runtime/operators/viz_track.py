@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ...presentation_models import TrackScene, TrackHistory, TrackHistorySample, TrackFlow
+
 import asyncio
 import logging
 import time
@@ -124,7 +126,9 @@ class VizTrackRuntimeNode(StudioVizRuntimeNodeBase):
         self._history_frames = coerce_int(state.get("historyFrames"), default=10, minimum=1, maximum=200)
         self._flow_arrow_scale = coerce_float(state.get("flowArrowScale"), default=1.0, minimum=0.1, maximum=20.0)
         self._flow_arrow_min_mag = coerce_float(state.get("flowArrowMinMag"), default=0.0, minimum=0.0, maximum=100.0)
-        self._flow_arrow_max_count = coerce_int(state.get("flowArrowMaxCount"), default=2_000, minimum=100, maximum=20_000)
+        self._flow_arrow_max_count = coerce_int(
+            state.get("flowArrowMaxCount"), default=2_000, minimum=100, maximum=20_000
+        )
         self._show_dense_flow = coerce_flag(state.get("showDenseFlow"), default=True)
         self._show_sparse_flow = coerce_flag(state.get("showSparseFlow"), default=True)
         dense_mode = str(state.get("denseFlowMode") or "hsv").lower()
@@ -132,7 +136,7 @@ class VizTrackRuntimeNode(StudioVizRuntimeNodeBase):
         self._width = 0
         self._height = 0
         self._tracks: dict[int, deque[TrackSample]] = {}
-        self._flow_payload: dict[str, object] | None = None
+        self._flow_payload: TrackFlow | None = None
         self._dirty = False
         self._last_refresh_ms = 0
         self._refresh_task: asyncio.Task[object] | None = None
@@ -158,7 +162,9 @@ class VizTrackRuntimeNode(StudioVizRuntimeNodeBase):
         elif field == "flowArrowMinMag":
             self._flow_arrow_min_mag = coerce_float(value, default=self._flow_arrow_min_mag, minimum=0.0, maximum=100.0)
         elif field == "flowArrowMaxCount":
-            self._flow_arrow_max_count = coerce_int(value, default=self._flow_arrow_max_count, minimum=100, maximum=20_000)
+            self._flow_arrow_max_count = coerce_int(
+                value, default=self._flow_arrow_max_count, minimum=100, maximum=20_000
+            )
         elif field == "showDenseFlow":
             self._show_dense_flow = coerce_flag(value, default=self._show_dense_flow)
         elif field == "showSparseFlow":
@@ -180,7 +186,9 @@ class VizTrackRuntimeNode(StudioVizRuntimeNodeBase):
             signature = f"{port}:{type(value).__name__}:{exc}"
             if signature not in self._warned_inputs:
                 self._warned_inputs.add(signature)
-                logger.warning("track visualization ignored invalid payload node_id=%s port=%s: %s", self.node_id, port, exc)
+                logger.warning(
+                    "track visualization ignored invalid payload node_id=%s port=%s: %s", self.node_id, port, exc
+                )
             return
         now_ms = int(ts_ms) if ts_ms is not None else payload.ts_ms or int(time.time() * 1_000)
         if payload.width is not None:
@@ -207,13 +215,13 @@ class VizTrackRuntimeNode(StudioVizRuntimeNodeBase):
             vectors.append({"x": vector.x, "y": vector.y, "dx": vector.dx, "dy": vector.dy, "mag": vector.mag})
             if len(vectors) >= self._flow_arrow_max_count:
                 break
-        self._flow_payload = {
-            "schemaVersion": "f8visionFlowField/1",
-            "tsMs": payload.ts_ms or now_ms,
-            "width": self._width,
-            "height": self._height,
-            "vectors": vectors,
-        }
+        self._flow_payload = TrackFlow(
+            schemaVersion="f8visionFlowField/1",
+            tsMs=payload.ts_ms or now_ms,
+            width=self._width,
+            height=self._height,
+            vectors=vectors,
+        )
 
     def _ingest_tracks(self, payload: TrackPayloadInput, now_ms: int) -> None:
         raw_items = payload.tracks or payload.detections
@@ -273,7 +281,9 @@ class VizTrackRuntimeNode(StudioVizRuntimeNodeBase):
             return
         if self._refresh_task is not None and not self._refresh_task.done():
             return
-        self._refresh_task = asyncio.create_task(self._flush_after(target_ms - now_ms), name=f"web-studio:track:{self.node_id}")
+        self._refresh_task = asyncio.create_task(
+            self._flush_after(target_ms - now_ms), name=f"web-studio:track:{self.node_id}"
+        )
 
     async def _flush_after(self, delay_ms: int) -> None:
         await asyncio.sleep(max(0, delay_ms) / 1_000)
@@ -281,40 +291,44 @@ class VizTrackRuntimeNode(StudioVizRuntimeNodeBase):
 
     async def _flush(self, now_ms: int) -> None:
         self._prune(now_ms)
-        tracks: list[dict[str, object]] = []
+        tracks: list[TrackHistory] = []
         for track_id, history in sorted(self._tracks.items()):
-            samples: list[dict[str, object]] = []
-            for sample in history:
-                encoded: dict[str, object] = {"tsMs": sample.ts_ms, "kind": sample.kind}
-                if sample.bbox is not None:
-                    encoded["bbox"] = list(sample.bbox)
-                if sample.keypoints is not None:
-                    encoded["keypoints"] = sample.keypoints
-                if sample.skeleton_protocol is not None:
-                    encoded["skeletonProtocol"] = sample.skeleton_protocol
-                samples.append(encoded)
-            tracks.append({"id": track_id, "history": samples})
+            samples = [
+                TrackHistorySample(
+                    tsMs=sample.ts_ms,
+                    kind=sample.kind,
+                    bbox=list(sample.bbox) if sample.bbox is not None else msgspec.UNSET,
+                    keypoints=sample.keypoints if sample.keypoints is not None else msgspec.UNSET,
+                    skeletonProtocol=sample.skeleton_protocol
+                    if sample.skeleton_protocol is not None
+                    else msgspec.UNSET,
+                )
+                for sample in history
+            ]
+            tracks.append(TrackHistory(id=track_id, history=samples))
         self.presentation.emit(
             self.node_id,
             "viz.track.set",
-            {
-                "width": self._width,
-                "height": self._height,
-                "historyMs": self._history_ms,
-                "historyFrames": self._history_frames,
-                "throttleMs": self._throttle_ms,
-                "tracks": tracks,
-                "flow": self._flow_payload,
-                "flowArrowScale": self._flow_arrow_scale,
-                "flowArrowMinMag": self._flow_arrow_min_mag,
-                "flowArrowMaxCount": self._flow_arrow_max_count,
-                "showDenseFlow": self._show_dense_flow,
-                "showSparseFlow": self._show_sparse_flow,
-                "denseFlowMode": self._dense_flow_mode,
-                "flowStreamKey": str(self.input_zenoh_key("flow") or ""),
-                "videoStreamKey": str(self.input_zenoh_key("video") or ""),
-                "nowMs": now_ms,
-            },
+            msgspec.to_builtins(
+                TrackScene(
+                    width=self._width,
+                    height=self._height,
+                    historyMs=self._history_ms,
+                    historyFrames=self._history_frames,
+                    throttleMs=self._throttle_ms,
+                    tracks=tracks,
+                    flow=self._flow_payload,
+                    flowArrowScale=self._flow_arrow_scale,
+                    flowArrowMinMag=self._flow_arrow_min_mag,
+                    flowArrowMaxCount=self._flow_arrow_max_count,
+                    showDenseFlow=self._show_dense_flow,
+                    showSparseFlow=self._show_sparse_flow,
+                    denseFlowMode=self._dense_flow_mode,
+                    flowStreamKey=str(self.input_zenoh_key("flow") or ""),
+                    videoStreamKey=str(self.input_zenoh_key("video") or ""),
+                    nowMs=now_ms,
+                )
+            ),
             ts_ms=now_ms,
         )
         self._last_refresh_ms = now_ms
@@ -349,15 +363,54 @@ VizTrackRuntimeNode.SPEC = F8OperatorSpec(
     dataOutPorts=[],
     rendererClass=RENDERER_CLASS,
     stateFields=[
-        F8StateSpec(name="throttleMs", valueSchema=integer_schema(default=50, minimum=0, maximum=60_000), access=F8StateAccess.rw, valueRequired=True),
-        F8StateSpec(name="historyMs", valueSchema=integer_schema(default=500, minimum=0, maximum=60_000), access=F8StateAccess.rw, valueRequired=True),
-        F8StateSpec(name="historyFrames", valueSchema=integer_schema(default=10, minimum=1, maximum=200), access=F8StateAccess.rw, valueRequired=True),
-        F8StateSpec(name="flowArrowScale", valueSchema=number_schema(default=1.0, minimum=0.1, maximum=20.0), access=F8StateAccess.rw, valueRequired=True),
-        F8StateSpec(name="flowArrowMinMag", valueSchema=number_schema(default=0.0, minimum=0.0, maximum=100.0), access=F8StateAccess.rw, valueRequired=True),
-        F8StateSpec(name="flowArrowMaxCount", valueSchema=integer_schema(default=2_000, minimum=100, maximum=20_000), access=F8StateAccess.rw, valueRequired=True),
-        F8StateSpec(name="showDenseFlow", valueSchema=boolean_schema(default=True), access=F8StateAccess.rw, valueRequired=True),
-        F8StateSpec(name="showSparseFlow", valueSchema=boolean_schema(default=True), access=F8StateAccess.rw, valueRequired=True),
-        F8StateSpec(name="denseFlowMode", valueSchema=string_schema(default="hsv", enum=["hsv", "arrows"]), access=F8StateAccess.rw, valueRequired=True),
+        F8StateSpec(
+            name="throttleMs",
+            valueSchema=integer_schema(default=50, minimum=0, maximum=60_000),
+            access=F8StateAccess.rw,
+            valueRequired=True,
+        ),
+        F8StateSpec(
+            name="historyMs",
+            valueSchema=integer_schema(default=500, minimum=0, maximum=60_000),
+            access=F8StateAccess.rw,
+            valueRequired=True,
+        ),
+        F8StateSpec(
+            name="historyFrames",
+            valueSchema=integer_schema(default=10, minimum=1, maximum=200),
+            access=F8StateAccess.rw,
+            valueRequired=True,
+        ),
+        F8StateSpec(
+            name="flowArrowScale",
+            valueSchema=number_schema(default=1.0, minimum=0.1, maximum=20.0),
+            access=F8StateAccess.rw,
+            valueRequired=True,
+        ),
+        F8StateSpec(
+            name="flowArrowMinMag",
+            valueSchema=number_schema(default=0.0, minimum=0.0, maximum=100.0),
+            access=F8StateAccess.rw,
+            valueRequired=True,
+        ),
+        F8StateSpec(
+            name="flowArrowMaxCount",
+            valueSchema=integer_schema(default=2_000, minimum=100, maximum=20_000),
+            access=F8StateAccess.rw,
+            valueRequired=True,
+        ),
+        F8StateSpec(
+            name="showDenseFlow", valueSchema=boolean_schema(default=True), access=F8StateAccess.rw, valueRequired=True
+        ),
+        F8StateSpec(
+            name="showSparseFlow", valueSchema=boolean_schema(default=True), access=F8StateAccess.rw, valueRequired=True
+        ),
+        F8StateSpec(
+            name="denseFlowMode",
+            valueSchema=string_schema(default="hsv", enum=["hsv", "arrows"]),
+            access=F8StateAccess.rw,
+            valueRequired=True,
+        ),
         *viz_sampling_state_fields(),
     ],
 )

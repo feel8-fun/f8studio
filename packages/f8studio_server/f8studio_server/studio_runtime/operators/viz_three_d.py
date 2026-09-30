@@ -8,6 +8,15 @@ from typing import Any, cast
 
 import msgspec
 
+from ...presentation_models import (
+    SkeletonNode,
+    SkeletonPerson,
+    SkeletonScene,
+    SkeletonRenderFlags,
+    SkeletonLimits,
+    SkeletonPerformanceHints,
+)
+
 from f8pysdk.codec import coerce_flag, coerce_float, coerce_int
 from f8pysdk.f8_naming import ensure_token
 from f8pysdk.registry import Registry
@@ -120,7 +129,12 @@ class VizThreeDRuntimeNode(StudioVizRuntimeNodeBase):
             signature = f"{port_name}:{type(value).__name__}"
             if signature not in self._warned_inputs:
                 self._warned_inputs.add(signature)
-                logger.warning("3D visualization ignored invalid input node_id=%s port=%s type=%s", self.node_id, port_name, type(value).__name__)
+                logger.warning(
+                    "3D visualization ignored invalid input node_id=%s port=%s type=%s",
+                    self.node_id,
+                    port_name,
+                    type(value).__name__,
+                )
             return
         self._people_by_port[port_name] = people
         self._last_input_ts_ms = int(ts_ms) if ts_ms is not None else int(time.time() * 1_000)
@@ -189,7 +203,11 @@ class VizThreeDRuntimeNode(StudioVizRuntimeNodeBase):
         parent_names: list[str] = []
         for bone_index, raw_bone in enumerate(skeleton.bones):
             try:
-                bone = raw_bone if isinstance(raw_bone, BoneInput) else msgspec.convert(raw_bone, type=BoneInput, strict=False)
+                bone = (
+                    raw_bone
+                    if isinstance(raw_bone, BoneInput)
+                    else msgspec.convert(raw_bone, type=BoneInput, strict=False)
+                )
             except (msgspec.ValidationError, TypeError):
                 continue
             if len(bone.pos) < 3:
@@ -210,10 +228,14 @@ class VizThreeDRuntimeNode(StudioVizRuntimeNodeBase):
                 break
         if not nodes:
             return None
-        base_name = skeleton.model_name or skeleton.name or skeleton.character or skeleton.actor or f"Person_{index + 1}"
+        base_name = (
+            skeleton.model_name or skeleton.name or skeleton.character or skeleton.actor or f"Person_{index + 1}"
+        )
         protocol = (skeleton.skeleton_protocol or "none").strip().lower()
         indexes = {node.name: node_index for node_index, node in enumerate(nodes)}
-        parent_edges = [(indexes[parent], node_index) for node_index, parent in enumerate(parent_names) if parent in indexes]
+        parent_edges = [
+            (indexes[parent], node_index) for node_index, parent in enumerate(parent_names) if parent in indexes
+        ]
         return ScenePerson(
             name=f"{port}:{base_name}",
             bbox=self._bbox(nodes),
@@ -245,7 +267,9 @@ class VizThreeDRuntimeNode(StudioVizRuntimeNodeBase):
             await self._flush(now_ms)
             return
         if self._refresh_task is None or self._refresh_task.done():
-            self._refresh_task = asyncio.create_task(self._flush_after(target_ms - now_ms), name=f"web-studio:three-d:{self.node_id}")
+            self._refresh_task = asyncio.create_task(
+                self._flush_after(target_ms - now_ms), name=f"web-studio:three-d:{self.node_id}"
+            )
 
     async def _flush_after(self, delay_ms: int) -> None:
         await asyncio.sleep(max(0, delay_ms) / 1_000)
@@ -253,62 +277,57 @@ class VizThreeDRuntimeNode(StudioVizRuntimeNodeBase):
 
     async def _flush(self, now_ms: int) -> None:
         people = self._aggregate_people()
-        encoded_people: list[dict[str, object]] = []
-        total_nodes = 0
-        for person in people:
-            nodes = [
-                {
-                    "index": node.index,
-                    "name": node.name,
-                    "pos": list(node.pos),
-                    "rot": list(node.rot) if node.rot is not None else None,
-                }
-                for node in person.nodes
-            ]
-            total_nodes += len(nodes)
-            encoded_people.append(
-                {
-                    "name": person.name,
-                    "bbox": list(person.bbox) if person.bbox is not None else None,
-                    "skeletonProtocol": person.skeleton_protocol,
-                    "skeletonEdges": [list(edge) for edge in person.skeleton_edges] if person.skeleton_edges is not None else None,
-                    "nodes": nodes,
-                }
+        encoded_people = [
+            SkeletonPerson(
+                name=person.name,
+                bbox=list(person.bbox) if person.bbox is not None else None,
+                skeleton_protocol=person.skeleton_protocol,
+                skeleton_edges=None
+                if person.skeleton_edges is None
+                else [list(edge) for edge in person.skeleton_edges],
+                nodes=[
+                    SkeletonNode(
+                        index=node.index,
+                        name=node.name,
+                        pos=list(node.pos),
+                        rot=None if node.rot is None else list(node.rot),
+                    )
+                    for node in person.nodes
+                ],
             )
+            for person in people
+        ]
+        total_nodes = sum(len(person.nodes) for person in encoded_people)
         large = total_nodes >= _LARGE_NODE_THRESHOLD
         label_budget = 256 if large else (32 if total_nodes >= 64 else None)
-        self.presentation.emit(
-            self.node_id,
-            "viz.three_d.set",
-            {
-                "tsMs": now_ms or self._last_input_ts_ms,
-                "worldUp": self._world_up,
-                "uiFpsCap": self._ui_fps_cap,
-                "renderFlags": {
-                    "showPersonBoxes": self._show_person_boxes,
-                    "showPersonNames": self._show_person_names,
-                    "showBonePoints": self._show_bone_points,
-                    "showSkeletonLines": self._show_skeleton_lines,
-                    "showBoneAxes": self._show_bone_axes,
-                    "showBoneNames": self._show_bone_names,
-                    "autoZoomOnNewPeople": self._auto_zoom,
-                    "markerScale": self._marker_scale,
-                },
-                "limits": {"maxPeople": self._max_people, "maxBonesPerPerson": self._max_bones},
-                "performanceHints": {
-                    "totalNodes": total_nodes,
-                    "largeSkeletonMode": large,
-                    "suppressBoneAxes": False,
-                    "suppressBoneNames": False,
-                    "suppressAxisTree": False,
-                    "suppressPersonBoxes": total_nodes >= _BOX_SUPPRESSION_THRESHOLD,
-                    "maxVisibleBoneLabels": label_budget,
-                    "recommendedFpsCap": min(self._ui_fps_cap, 30) if large else self._ui_fps_cap,
-                },
-                "people": encoded_people,
-            },
-            ts_ms=now_ms,
+        scene = SkeletonScene(
+            ts_ms=now_ms or self._last_input_ts_ms,
+            world_up=self._world_up,
+            ui_fps_cap=self._ui_fps_cap,
+            people=encoded_people,
+            render_flags=SkeletonRenderFlags(
+                show_person_boxes=self._show_person_boxes,
+                show_person_names=self._show_person_names,
+                show_bone_points=self._show_bone_points,
+                show_skeleton_lines=self._show_skeleton_lines,
+                show_bone_axes=self._show_bone_axes,
+                show_bone_names=self._show_bone_names,
+                auto_zoom_on_new_people=self._auto_zoom,
+                marker_scale=self._marker_scale,
+            ),
+            limits=SkeletonLimits(max_people=self._max_people, max_bones_per_person=self._max_bones),
+            performance_hints=SkeletonPerformanceHints(
+                total_nodes=total_nodes,
+                large_skeleton_mode=large,
+                suppress_bone_axes=False,
+                suppress_bone_names=False,
+                suppress_axis_tree=False,
+                suppress_person_boxes=total_nodes >= _BOX_SUPPRESSION_THRESHOLD,
+                max_visible_bone_labels=label_budget,
+                recommended_fps_cap=min(self._ui_fps_cap, 30) if large else self._ui_fps_cap,
+            ),
         )
+        self.presentation.emit(self.node_id, "viz.three_d.set", msgspec.to_builtins(scene), ts_ms=now_ms)
         self._last_refresh_ms = now_ms
         self._dirty = False
 
@@ -331,24 +350,89 @@ VizThreeDRuntimeNode.SPEC = F8OperatorSpec(
     label="3D Viz",
     description="Publish normalized multi-person skeleton scenes for the Web Studio Three.js renderer.",
     tags=["viz", "3d", "skeleton", "web"],
-    dataInPorts=[F8DataPortSpec(name="skeletons", description="Skeleton, skeleton list, or single bone.", valueSchema=any_schema())],
+    dataInPorts=[
+        F8DataPortSpec(
+            name="skeletons", description="Skeleton, skeleton list, or single bone.", valueSchema=any_schema()
+        )
+    ],
     dataOutPorts=[],
     editPolicy=F8SpecEditPolicy(dataInPorts=editable_collection_edit_policy()),
     rendererClass=RENDERER_CLASS,
     stateFields=[
-        F8StateSpec(name="throttleMs", valueSchema=integer_schema(default=33, minimum=0, maximum=60_000), access=F8StateAccess.rw, valueRequired=True),
-        F8StateSpec(name="worldUp", valueSchema=string_schema(default="+y", enum=["+x", "-x", "+y", "-y", "+z", "-z"]), access=F8StateAccess.rw, valueRequired=True, showOnNode=True),
-        F8StateSpec(name="showPersonBoxes", valueSchema=boolean_schema(default=True), access=F8StateAccess.rw, valueRequired=True),
-        F8StateSpec(name="showPersonNames", valueSchema=boolean_schema(default=False), access=F8StateAccess.rw, valueRequired=True),
-        F8StateSpec(name="showBonePoints", valueSchema=boolean_schema(default=True), access=F8StateAccess.rw, valueRequired=True),
-        F8StateSpec(name="showSkeletonLines", valueSchema=boolean_schema(default=True), access=F8StateAccess.rw, valueRequired=True),
-        F8StateSpec(name="showBoneAxes", valueSchema=boolean_schema(default=False), access=F8StateAccess.rw, valueRequired=True),
-        F8StateSpec(name="showBoneNames", valueSchema=boolean_schema(default=False), access=F8StateAccess.rw, valueRequired=True, showOnNode=True),
-        F8StateSpec(name="maxPeople", valueSchema=integer_schema(default=64, minimum=1, maximum=4_096), access=F8StateAccess.rw, valueRequired=True),
-        F8StateSpec(name="maxBonesPerPerson", valueSchema=integer_schema(default=256, minimum=1, maximum=8_192), access=F8StateAccess.rw, valueRequired=True),
-        F8StateSpec(name="autoZoomOnNewPeople", valueSchema=boolean_schema(default=False), access=F8StateAccess.rw, valueRequired=True),
-        F8StateSpec(name="uiFpsCap", valueSchema=integer_schema(default=60, minimum=1, maximum=120), access=F8StateAccess.rw, valueRequired=True),
-        F8StateSpec(name="markerScale", valueSchema=number_schema(default=1.0, minimum=0.1, maximum=100_000.0), access=F8StateAccess.rw, valueRequired=True),
+        F8StateSpec(
+            name="throttleMs",
+            valueSchema=integer_schema(default=33, minimum=0, maximum=60_000),
+            access=F8StateAccess.rw,
+            valueRequired=True,
+        ),
+        F8StateSpec(
+            name="worldUp",
+            valueSchema=string_schema(default="+y", enum=["+x", "-x", "+y", "-y", "+z", "-z"]),
+            access=F8StateAccess.rw,
+            valueRequired=True,
+            showOnNode=True,
+        ),
+        F8StateSpec(
+            name="showPersonBoxes",
+            valueSchema=boolean_schema(default=True),
+            access=F8StateAccess.rw,
+            valueRequired=True,
+        ),
+        F8StateSpec(
+            name="showPersonNames",
+            valueSchema=boolean_schema(default=False),
+            access=F8StateAccess.rw,
+            valueRequired=True,
+        ),
+        F8StateSpec(
+            name="showBonePoints", valueSchema=boolean_schema(default=True), access=F8StateAccess.rw, valueRequired=True
+        ),
+        F8StateSpec(
+            name="showSkeletonLines",
+            valueSchema=boolean_schema(default=True),
+            access=F8StateAccess.rw,
+            valueRequired=True,
+        ),
+        F8StateSpec(
+            name="showBoneAxes", valueSchema=boolean_schema(default=False), access=F8StateAccess.rw, valueRequired=True
+        ),
+        F8StateSpec(
+            name="showBoneNames",
+            valueSchema=boolean_schema(default=False),
+            access=F8StateAccess.rw,
+            valueRequired=True,
+            showOnNode=True,
+        ),
+        F8StateSpec(
+            name="maxPeople",
+            valueSchema=integer_schema(default=64, minimum=1, maximum=4_096),
+            access=F8StateAccess.rw,
+            valueRequired=True,
+        ),
+        F8StateSpec(
+            name="maxBonesPerPerson",
+            valueSchema=integer_schema(default=256, minimum=1, maximum=8_192),
+            access=F8StateAccess.rw,
+            valueRequired=True,
+        ),
+        F8StateSpec(
+            name="autoZoomOnNewPeople",
+            valueSchema=boolean_schema(default=False),
+            access=F8StateAccess.rw,
+            valueRequired=True,
+        ),
+        F8StateSpec(
+            name="uiFpsCap",
+            valueSchema=integer_schema(default=60, minimum=1, maximum=120),
+            access=F8StateAccess.rw,
+            valueRequired=True,
+        ),
+        F8StateSpec(
+            name="markerScale",
+            valueSchema=number_schema(default=1.0, minimum=0.1, maximum=100_000.0),
+            access=F8StateAccess.rw,
+            valueRequired=True,
+        ),
         *viz_sampling_state_fields(),
     ],
 )

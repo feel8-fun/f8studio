@@ -39,6 +39,7 @@ from f8studio_core.graph import (
 
 from .application import StudioApplication
 from .api_contracts import install_openapi
+from .presentation_models import StreamHello, LiveSnapshot
 from .agents import (
     CreateAgentSessionRequest,
     ResolveAgentApprovalRequest,
@@ -833,10 +834,10 @@ def create_app(
         )
         await websocket.accept()
         try:
-            await websocket.send_json({
-                "type": "stream.hello", "serverEpoch": studio.server_epoch,
-                "sequence": stream.current_sequence, "resumed": not stream.snapshot_required,
-            })
+            await websocket.send_json(_json_value(StreamHello(
+                server_epoch=studio.server_epoch, sequence=stream.current_sequence,
+                resumed=not stream.snapshot_required,
+            )))
             for event in stream.replay:
                 await websocket.send_json(_json_value(event))
             while True:
@@ -858,7 +859,7 @@ def create_app(
         await websocket.accept()
         subscription, snapshot = studio.events.live.subscribe()
         try:
-            await websocket.send_json({"type": "live.snapshot", "values": snapshot})
+            await websocket.send_json(_json_value(LiveSnapshot(values=snapshot)))
             while True:
                 patch = await subscription.next_patch()
                 await websocket.send_json(patch)

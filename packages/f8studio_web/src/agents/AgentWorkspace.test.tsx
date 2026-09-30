@@ -31,6 +31,7 @@ class FakeWebSocket {
 }
 
 const baseSession: AgentSession = {
+  autoTitlePending: false,
   sessionId: 'session1',
   projectId: 'project1',
   title: 'Graph agent',
@@ -84,7 +85,7 @@ test('shows exact tool approval and submits its argument hash', async () => {
   const waiting: AgentSession = {
     ...baseSession,
     status: 'waiting_for_approval',
-    messages: [{ messageId: 'message1', role: 'user', content: 'Build graph', createdAt: '' }],
+    messages: [{ images: [], providerId: 'deterministic', modelId: 'graph-builder-v1', messageId: 'message1', role: 'user', content: 'Build graph', createdAt: '' }],
     toolCalls: [{
       toolCallId: 'tool1', toolName: 'graph.apply_patch', arguments: { patch: { operations: [
         { op: 'createNode', node: { nodeId: 'phase', name: 'Phase 1 Hz' } },
@@ -352,8 +353,8 @@ test('shows tool activity between the request and response with expandable detai
   api.createAgentSession.mockResolvedValue({
     ...baseSession,
     messages: [
-      { messageId: 'request', role: 'user', content: 'Inspect graph', createdAt: '2026-09-23T00:00:01Z' },
-      { messageId: 'reply', role: 'assistant', content: 'Graph inspected', createdAt: '2026-09-23T00:00:03Z' },
+      { images: [], providerId: 'deterministic', modelId: 'graph-builder-v1', messageId: 'request', role: 'user', content: 'Inspect graph', createdAt: '2026-09-23T00:00:01Z' },
+      { images: [], providerId: 'deterministic', modelId: 'graph-builder-v1', messageId: 'reply', role: 'assistant', content: 'Graph inspected', createdAt: '2026-09-23T00:00:03Z' },
     ],
     toolCalls: [{ toolCallId: 'inspect', toolName: 'graph.read', arguments: { projectId: 'project1' }, argumentsHash: '', targetGraphRevision: 0, status: 'succeeded', createdAt: '2026-09-23T00:00:02Z', updatedAt: '', result: { nodeCount: 2 }, errorMessage: '', tracebackId: '' }],
   });
@@ -371,7 +372,7 @@ test('shows tool activity between the request and response with expandable detai
 test('collapses completed tool bursts while keeping their details available', async () => {
   api.createAgentSession.mockResolvedValue({
     ...baseSession,
-    messages: [{ messageId: 'request', role: 'user', content: 'Inspect graph', createdAt: '2026-09-23T00:00:01Z' }],
+    messages: [{ images: [], providerId: 'deterministic', modelId: 'graph-builder-v1', messageId: 'request', role: 'user', content: 'Inspect graph', createdAt: '2026-09-23T00:00:01Z' }],
     toolCalls: ['graph.read', 'catalog.search', 'catalog.operator'].map((toolName, index) => ({
       toolCallId: `tool${index}`, toolName, arguments: {}, argumentsHash: '', targetGraphRevision: 0,
       status: 'succeeded' as const, createdAt: `2026-09-23T00:00:0${index + 2}Z`, updatedAt: '',

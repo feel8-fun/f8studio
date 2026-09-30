@@ -28,7 +28,7 @@ afterEach(cleanup);
 test('shows wave data in the node and holds the last frame when UI updates are paused', () => {
   const node: OperatorNode = {
     kind: 'operator', nodeId: 'wave', name: 'Wave Viz', serviceId: 'studio', serviceClass: 'f8.pystudio',
-    operatorClass: 'f8.viz.wave', enabled: true, stateValues: { uiUpdate: true }, ports: [],
+    operatorClass: 'f8.viz.wave', enabled: true, portIds: {}, stateValues: { uiUpdate: true }, ports: [],
     spec: { serviceClass: 'f8.pystudio', operatorClass: 'f8.viz.wave', label: 'Wave Viz',
       specKind: 'operator', rendererClass: 'viz_wave', stateFields: [] },
   };
@@ -39,7 +39,7 @@ test('shows wave data in the node and holds the last frame when UI updates are p
 
   presentationOutput.mockReturnValue({ renderer: 'wave', payload: { series: { x: [[2, 3]] } } });
   view.rerender(<ReactFlowProvider><StudioNodeView {...props} data={{ ...props.data, graphNode: {
-    ...node, stateValues: { uiUpdate: false },
+    ...node, portIds: {}, stateValues: { uiUpdate: false },
   } }} /></ReactFlowProvider>);
   expect(screen.getByTestId('wave-content')).toHaveTextContent('[[1,2]]');
 });
@@ -47,7 +47,7 @@ test('shows wave data in the node and holds the last frame when UI updates are p
 test('shows a 3D TCode preview and forwards its command to the emulator', async () => {
   const node: OperatorNode = {
     kind: 'operator', nodeId: 'tcode', name: 'TCode Viz', serviceId: 'studio', serviceClass: 'f8.pystudio',
-    operatorClass: 'f8.viz.tcode', enabled: true, stateValues: {}, ports: [],
+    operatorClass: 'f8.viz.tcode', enabled: true, portIds: {}, stateValues: {}, ports: [],
     spec: { serviceClass: 'f8.pystudio', operatorClass: 'f8.viz.tcode', label: 'TCode Viz',
       specKind: 'operator', rendererClass: 'viz_tcode', stateFields: [] },
   };
@@ -62,7 +62,7 @@ test('shows a 3D TCode preview and forwards its command to the emulator', async 
 test('allows switching an undeployed TCode node to channel bars', async () => {
   const node: OperatorNode = {
     kind: 'operator', nodeId: 'tcode-empty-preview', name: 'TCode Viz', serviceId: 'studio', serviceClass: 'f8.pystudio',
-    operatorClass: 'f8.viz.tcode', enabled: true, stateValues: { model: 'SSR1' }, ports: [],
+    operatorClass: 'f8.viz.tcode', enabled: true, portIds: {}, stateValues: { model: 'SSR1' }, ports: [],
     spec: { serviceClass: 'f8.pystudio', operatorClass: 'f8.viz.tcode', label: 'TCode Viz',
       specKind: 'operator', rendererClass: 'viz_tcode', stateFields: [] },
   };
@@ -84,12 +84,12 @@ test('shows a live device selector on a write-only service state port', () => {
   };
   const node: ServiceNode = {
     kind: 'service', nodeId: 'capture', name: 'Audio Capture', serviceId: 'capture',
-    serviceClass: 'f8.audiocap', enabled: true, stateValues: {},
+    serviceClass: 'f8.audiocap', enabled: true, portIds: {}, stateValues: {},
     spec: {
       serviceClass: 'f8.audiocap', label: 'Audio Capture', specKind: 'service',
       stateFields: [selectedDevice],
     },
-    ports: [{
+    ports: [{ dataSpec: null,
       portId: 'state:input:selectedDevice', name: 'selectedDevice', runtimeName: 'selectedDevice',
       kind: 'state', direction: 'input', stateSpec: selectedDevice,
     }],

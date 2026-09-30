@@ -141,7 +141,7 @@ function hotkeyEligible(field: StateSpec): boolean {
   const control = field.control?.kind ?? '';
   if (control === 'button') return field.valueSchema.type === 'integer' || field.valueSchema.type === 'number';
   return ['select', 'dropdown', 'dropbox', 'combo', 'combobox'].includes(control) ||
-    (field.valueSchema.enum?.length ?? 0) > 0;
+    ('enum' in field.valueSchema && (field.valueSchema.enum?.length ?? 0) > 0);
 }
 
 function HotkeyEditor({ projectId, node, field, disabled }: {
@@ -747,7 +747,7 @@ function GraphWorkspaceInner({ onShowOutput }: { readonly onShowOutput: (nodeId:
       const nodeId = newId(spec.specKind === 'service' ? 'service' : 'operator');
       const nodesToCreate: GraphNode[] = [];
       let selectedNode: GraphNode;
-      if (spec.specKind === 'service') {
+      if (!('operatorClass' in spec)) {
         selectedNode = await createCatalogNode({ kind: 'service', nodeId, serviceClass: spec.serviceClass });
         nodesToCreate.push(selectedNode);
       } else {

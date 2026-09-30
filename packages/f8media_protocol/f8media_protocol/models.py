@@ -30,7 +30,7 @@ class MediaSessionOffer(msgspec.Struct, frozen=True, kw_only=True, rename="camel
 class MediaSessionAnswer(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
     session_id: str
     source: str
-    quality: str
+    quality: Literal["main", "thumbnail"]
     sdp: str
     type: Literal["answer"]
     max_width: int

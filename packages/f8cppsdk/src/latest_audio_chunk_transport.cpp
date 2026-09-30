@@ -20,53 +20,6 @@ void set_error(std::string* error_message, std::string value) {
   }
 }
 
-void append_u32_le(RuntimeBytes& out, std::uint32_t value) {
-  out.push_back(static_cast<std::uint8_t>(value & 0xFFu));
-  out.push_back(static_cast<std::uint8_t>((value >> 8u) & 0xFFu));
-  out.push_back(static_cast<std::uint8_t>((value >> 16u) & 0xFFu));
-  out.push_back(static_cast<std::uint8_t>((value >> 24u) & 0xFFu));
-}
-
-void append_u64_le(RuntimeBytes& out, std::uint64_t value) {
-  for (unsigned shift = 0; shift < 64; shift += 8) {
-    out.push_back(static_cast<std::uint8_t>((value >> shift) & 0xFFu));
-  }
-}
-
-void append_i64_le(RuntimeBytes& out, std::int64_t value) {
-  append_u64_le(out, static_cast<std::uint64_t>(value));
-}
-
-bool read_u32_le(const RuntimeBytes& data, std::size_t offset, std::uint32_t& out) {
-  if (offset > data.size() || data.size() - offset < 4) {
-    return false;
-  }
-  out = static_cast<std::uint32_t>(data[offset]) | (static_cast<std::uint32_t>(data[offset + 1]) << 8u) |
-        (static_cast<std::uint32_t>(data[offset + 2]) << 16u) |
-        (static_cast<std::uint32_t>(data[offset + 3]) << 24u);
-  return true;
-}
-
-bool read_u64_le(const RuntimeBytes& data, std::size_t offset, std::uint64_t& out) {
-  if (offset > data.size() || data.size() - offset < 8) {
-    return false;
-  }
-  out = 0;
-  for (unsigned index = 0; index < 8; ++index) {
-    out |= static_cast<std::uint64_t>(data[offset + index]) << (index * 8u);
-  }
-  return true;
-}
-
-bool read_i64_le(const RuntimeBytes& data, std::size_t offset, std::int64_t& out) {
-  std::uint64_t value = 0;
-  if (!read_u64_le(data, offset, value)) {
-    return false;
-  }
-  out = static_cast<std::int64_t>(value);
-  return true;
-}
-
 }  // namespace
 
 bool encode_zenoh_audio_chunk(const AudioChunkView& chunk, RuntimeBytes& out, std::string* error_message) {
@@ -99,18 +52,11 @@ bool encode_zenoh_audio_chunk(const AudioChunkView& chunk, RuntimeBytes& out, st
   }
 
   out.reserve(static_cast<std::size_t>(kZenohAudioChunkHeaderBytes) + expected_payload_bytes);
-  append_u32_le(out, kZenohAudioChunkMagic);
-  append_u32_le(out, kZenohAudioChunkSchemaVersion);
-  append_u32_le(out, kZenohAudioChunkHeaderBytes);
-  append_u32_le(out, chunk.sample_rate);
-  append_u32_le(out, chunk.channels);
-  append_u32_le(out, chunk.format);
-  append_u32_le(out, chunk.frames);
-  append_u32_le(out, chunk.bytes_per_frame);
-  append_u32_le(out, static_cast<std::uint32_t>(expected_payload_bytes));
-  append_u64_le(out, chunk.seq);
-  append_u64_le(out, chunk.frame_index);
-  append_i64_le(out, chunk.ts_ms);
+  out.resize(kZenohAudioChunkHeaderBytes);
+  const AudioChunkHeader header{
+    kZenohAudioChunkMagic, kZenohAudioChunkSchemaVersion, kZenohAudioChunkHeaderBytes, chunk.sample_rate, chunk.channels, chunk.format, chunk.frames, chunk.bytes_per_frame, static_cast<std::uint32_t>(expected_payload_bytes), chunk.seq, chunk.frame_index, chunk.ts_ms
+  };
+  header.encode(out.data());
   const auto* begin = reinterpret_cast<const std::uint8_t*>(chunk.payload);
   out.insert(out.end(), begin, begin + expected_payload_bytes);
   return true;
@@ -123,26 +69,23 @@ bool decode_zenoh_audio_chunk(const RuntimeBytes& raw, LatestAudioChunk& out, st
     return false;
   }
 
-  std::uint32_t magic = 0;
-  std::uint32_t version = 0;
-  std::uint32_t header_bytes = 0;
-  std::uint32_t sample_rate = 0;
-  std::uint32_t channels = 0;
-  std::uint32_t format = 0;
-  std::uint32_t frames = 0;
-  std::uint32_t bytes_per_frame = 0;
-  std::uint32_t payload_bytes = 0;
-  std::uint64_t seq = 0;
-  std::uint64_t frame_index = 0;
-  std::int64_t ts_ms = 0;
-  if (!read_u32_le(raw, 0, magic) || !read_u32_le(raw, 4, version) || !read_u32_le(raw, 8, header_bytes) ||
-      !read_u32_le(raw, 12, sample_rate) || !read_u32_le(raw, 16, channels) ||
-      !read_u32_le(raw, 20, format) || !read_u32_le(raw, 24, frames) ||
-      !read_u32_le(raw, 28, bytes_per_frame) || !read_u32_le(raw, 32, payload_bytes) ||
-      !read_u64_le(raw, 36, seq) || !read_u64_le(raw, 44, frame_index) || !read_i64_le(raw, 52, ts_ms)) {
+  AudioChunkHeader header;
+  if (!AudioChunkHeader::decode(raw.data(), raw.size(), header)) {
     set_error(error_message, "payload header is truncated");
     return false;
   }
+  const auto magic = header.magic;
+  const auto version = header.version;
+  const auto header_bytes = header.header_bytes;
+  const auto sample_rate = header.sample_rate;
+  const auto channels = header.channels;
+  const auto format = header.fmt;
+  const auto frames = header.frames;
+  const auto bytes_per_frame = header.bytes_per_frame;
+  const auto payload_bytes = header.payload_bytes;
+  const auto seq = header.seq;
+  const auto frame_index = header.frame_index;
+  const auto ts_ms = header.ts_ms;
   if (magic != kZenohAudioChunkMagic || version != kZenohAudioChunkSchemaVersion) {
     set_error(error_message, "unsupported zenoh audio chunk schema");
     return false;

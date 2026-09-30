@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import msgspec
+from ...presentation_models import TextUpdate
+
 import asyncio
 import logging
 import time
@@ -121,7 +124,9 @@ class VizTextRuntimeNode(StudioVizRuntimeNodeBase):
                     ts_ms = int(time.time() * 1000)
                     self._last_preview_value = v
                     self._last_preview_ts = ts_ms
-                    self.presentation.emit(self.node_id, "viz.text.update", {"value": v}, ts_ms=ts_ms)
+                    self.presentation.emit(
+                        self.node_id, "viz.text.update", msgspec.to_builtins(TextUpdate(value=v)), ts_ms=ts_ms
+                    )
 
             await asyncio.sleep(max(0.02, float(throttle_ms) / 1000.0))
 

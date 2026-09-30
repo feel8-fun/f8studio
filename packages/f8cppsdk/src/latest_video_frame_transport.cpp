@@ -24,53 +24,6 @@ void set_error(std::string* error_message, std::string value) {
   }
 }
 
-void write_u32_le(std::uint8_t* out, std::size_t offset, std::uint32_t value) {
-  out[offset] = static_cast<std::uint8_t>(value & 0xFFu);
-  out[offset + 1] = static_cast<std::uint8_t>((value >> 8u) & 0xFFu);
-  out[offset + 2] = static_cast<std::uint8_t>((value >> 16u) & 0xFFu);
-  out[offset + 3] = static_cast<std::uint8_t>((value >> 24u) & 0xFFu);
-}
-
-void write_u64_le(std::uint8_t* out, std::size_t offset, std::uint64_t value) {
-  for (unsigned shift = 0; shift < 64; shift += 8) {
-    out[offset + shift / 8] = static_cast<std::uint8_t>((value >> shift) & 0xFFu);
-  }
-}
-
-void write_i64_le(std::uint8_t* out, std::size_t offset, std::int64_t value) {
-  write_u64_le(out, offset, static_cast<std::uint64_t>(value));
-}
-
-bool read_u32_le(const std::uint8_t* data, std::size_t size, std::size_t offset, std::uint32_t& out) {
-  if (data == nullptr || offset > size || size - offset < 4) {
-    return false;
-  }
-  out = static_cast<std::uint32_t>(data[offset]) | (static_cast<std::uint32_t>(data[offset + 1]) << 8u) |
-        (static_cast<std::uint32_t>(data[offset + 2]) << 16u) |
-        (static_cast<std::uint32_t>(data[offset + 3]) << 24u);
-  return true;
-}
-
-bool read_u64_le(const std::uint8_t* data, std::size_t size, std::size_t offset, std::uint64_t& out) {
-  if (data == nullptr || offset > size || size - offset < 8) {
-    return false;
-  }
-  out = 0;
-  for (unsigned index = 0; index < 8; ++index) {
-    out |= static_cast<std::uint64_t>(data[offset + index]) << (index * 8u);
-  }
-  return true;
-}
-
-bool read_i64_le(const std::uint8_t* data, std::size_t size, std::size_t offset, std::int64_t& out) {
-  std::uint64_t value = 0;
-  if (!read_u64_le(data, size, offset, value)) {
-    return false;
-  }
-  out = static_cast<std::int64_t>(value);
-  return true;
-}
-
 bool validate_zenoh_video_frame(const VideoFrameView& frame, std::size_t& frame_bytes, std::string* error_message) {
   frame_bytes = 0;
   if (frame.width == 0 || frame.height == 0 || frame.pitch == 0) {
@@ -102,18 +55,10 @@ bool validate_zenoh_video_frame(const VideoFrameView& frame, std::size_t& frame_
 }
 
 void write_zenoh_video_frame_unchecked(const VideoFrameView& frame, std::size_t frame_bytes, std::uint8_t* out) {
-  write_u32_le(out, 0, kZenohVideoFrameMagic);
-  write_u32_le(out, 4, kZenohVideoFrameSchemaVersion);
-  write_u32_le(out, 8, kZenohVideoFrameHeaderBytes);
-  write_u32_le(out, 12, frame.width);
-  write_u32_le(out, 16, frame.height);
-  write_u32_le(out, 20, frame.pitch);
-  write_u32_le(out, 24, frame.format);
-  write_u32_le(out, 28, static_cast<std::uint32_t>(frame_bytes));
-  write_u64_le(out, 32, frame.frame_id);
-  write_i64_le(out, 40, frame.ts_ms);
-  write_u64_le(out, 48, frame.stream_epoch_high);
-  write_u64_le(out, 56, frame.stream_epoch_low);
+  const VideoFrameHeader header{
+    kZenohVideoFrameMagic, kZenohVideoFrameSchemaVersion, kZenohVideoFrameHeaderBytes, frame.width, frame.height, frame.pitch, frame.format, static_cast<std::uint32_t>(frame_bytes), frame.frame_id, frame.ts_ms, frame.stream_epoch_high, frame.stream_epoch_low
+  };
+  header.encode(out);
   const auto* payload = reinterpret_cast<const std::uint8_t*>(frame.payload);
   std::memcpy(out + kZenohVideoFrameHeaderBytes, payload, frame_bytes);
 }
@@ -126,28 +71,23 @@ bool decode_zenoh_video_frame_from_buffer(const std::uint8_t* raw, std::size_t r
     return false;
   }
 
-  std::uint32_t magic = 0;
-  std::uint32_t version = 0;
-  std::uint32_t header_bytes = 0;
-  std::uint32_t width = 0;
-  std::uint32_t height = 0;
-  std::uint32_t pitch = 0;
-  std::uint32_t format = 0;
-  std::uint32_t payload_bytes = 0;
-  std::uint64_t frame_id = 0;
-  std::int64_t ts_ms = 0;
-  std::uint64_t stream_epoch_high = 0;
-  std::uint64_t stream_epoch_low = 0;
-  if (!read_u32_le(raw, raw_size, 0, magic) || !read_u32_le(raw, raw_size, 4, version) ||
-      !read_u32_le(raw, raw_size, 8, header_bytes) || !read_u32_le(raw, raw_size, 12, width) ||
-      !read_u32_le(raw, raw_size, 16, height) || !read_u32_le(raw, raw_size, 20, pitch) ||
-      !read_u32_le(raw, raw_size, 24, format) || !read_u32_le(raw, raw_size, 28, payload_bytes) ||
-      !read_u64_le(raw, raw_size, 32, frame_id) || !read_i64_le(raw, raw_size, 40, ts_ms) ||
-      !read_u64_le(raw, raw_size, 48, stream_epoch_high) ||
-      !read_u64_le(raw, raw_size, 56, stream_epoch_low)) {
+  VideoFrameHeader header;
+  if (!VideoFrameHeader::decode(raw, raw_size, header)) {
     set_error(error_message, "payload header is truncated");
     return false;
   }
+  const auto magic = header.magic;
+  const auto version = header.version;
+  const auto header_bytes = header.header_bytes;
+  const auto width = header.width;
+  const auto height = header.height;
+  const auto pitch = header.pitch;
+  const auto format = header.fmt;
+  const auto payload_bytes = header.payload_bytes;
+  const auto frame_id = header.frame_id;
+  const auto ts_ms = header.ts_ms;
+  const auto stream_epoch_high = header.epoch_high;
+  const auto stream_epoch_low = header.epoch_low;
   if (magic != kZenohVideoFrameMagic || version != kZenohVideoFrameSchemaVersion) {
     set_error(error_message, "unsupported zenoh video frame schema");
     return false;

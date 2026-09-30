@@ -17,7 +17,7 @@ const node: OperatorNode = {
     serviceClass: 'f8.pyengine', operatorClass: 'test.operator', label: 'Operator', specKind: 'operator',
     stateFields: [enabledField],
   },
-  ports: [], stateValues: {}, enabled: true,
+  ports: [], portIds: {}, stateValues: {}, enabled: true,
 };
 
 test('commits typed boolean values from a schema-driven control', () => {
@@ -58,7 +58,7 @@ test('shows a writable runtime value and preserves an active text edit', () => {
     name: 'mediaUrl', label: 'Media URL', access: 'rw', valueSchema: { type: 'string', default: '' },
   };
   const props = {
-    node: { ...node, spec: { ...node.spec, stateFields: [urlField] }, stateValues: { mediaUrl: 'draft.mp4' } },
+    node: { ...node, spec: { ...node.spec, stateFields: [urlField] }, portIds: {}, stateValues: { mediaUrl: 'draft.mp4' } },
     field: urlField, disabled: false, onCommit: vi.fn(),
   };
   const view = render(<StateFieldControl {...props} runtimeValue={{ field: 'mediaUrl', found: true, value: 'player.mp4', tsMs: 1 }} />);
@@ -128,11 +128,11 @@ test('does not commit an unchanged default value when an editor loses focus', ()
 
 test('commits typed arrays from a dynamic multiselect control', () => {
   const poolField: StateSpec = {
-    name: 'available', access: 'ro', valueSchema: { type: 'array', default: ['left', 'right'] },
+    name: 'available', access: 'ro', valueSchema: { type: 'array', items: { type: 'string' }, default: ['left', 'right'] },
   };
   const selectedField: StateSpec = {
     name: 'selected', label: 'Selected', access: 'rw', control: { kind: 'multiselect', optionsFromState: 'available' },
-    valueSchema: { type: 'array', default: ['left'] },
+    valueSchema: { type: 'array', items: { type: 'string' }, default: ['left'] },
   };
   const commit = vi.fn();
   render(<StateFieldControl
@@ -151,7 +151,7 @@ test('commits typed arrays from a dynamic multiselect control', () => {
 
 test('selects from a live readonly device list and preserves an unavailable selection', () => {
   const devices: StateSpec = {
-    name: 'availableDevices', access: 'ro', valueSchema: { type: 'array' },
+    name: 'availableDevices', access: 'ro', valueSchema: { type: 'array', items: { type: 'string' } },
   };
   const selected: StateSpec = {
     name: 'selectedDevice', label: 'Capture device', access: 'wo',

@@ -19,6 +19,7 @@ from .agents.provider_probe import ProviderProbeResult
 from .catalog import CatalogSnapshot
 from .events import EventEnvelope
 from .processes import ManagedProcessResult
+from .schema_generation import model_schemas
 from .local_integration import ApplyUnityInstallRequest
 from .assets import AssetExport
 from f8media_protocol.models import AudioSessionOffer
@@ -179,21 +180,21 @@ def contract_types() -> tuple[Any, ...]:
 
 def contract_schemas() -> tuple[dict[tuple[str, str], dict[str, Any]], dict[str, Any]]:
     types = contract_types()
-    schemas, components = msgspec.json.schema_components(types, ref_template="#/components/schemas/{name}")
-    cursor = iter(schemas)
-    def schema_for(value: Any) -> dict[str, Any]:
+    inputs, outputs, components = model_schemas(types, ref_template="#/components/schemas/{name}")
+    cursor = iter(zip(inputs, outputs, strict=True))
+    def schema_for(value: Any, *, request: bool) -> dict[str, Any]:
         if isinstance(value, tuple):
-            return {"anyOf": [next(cursor) for _ in cast(tuple[Any, ...], value)]}
-        return next(cursor)
+            return {"anyOf": [next(cursor)[0 if request else 1] for _ in cast(tuple[Any, ...], value)]}
+        return next(cursor)[0 if request else 1]
 
     paths: dict[tuple[str, str], dict[str, Any]] = {}
     for route in ROUTES:
         operation: dict[str, Any] = {}
         if route.request is not None:
-            operation["requestBody"] = {"required": True, "content": {"application/json": {"schema": schema_for(route.request)}}}
+            operation["requestBody"] = {"required": True, "content": {"application/json": {"schema": schema_for(route.request, request=True)}}}
         response: dict[str, Any] = {"description": "Success"}
         if route.response is not None:
-            response["content"] = {"application/json": {"schema": schema_for(route.response)}}
+            response["content"] = {"application/json": {"schema": schema_for(route.response, request=False)}}
         operation["responses"] = {str(route.status): response}
         paths[(route.path, route.method)] = operation
     return paths, components

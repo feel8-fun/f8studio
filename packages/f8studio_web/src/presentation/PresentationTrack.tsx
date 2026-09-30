@@ -1,9 +1,10 @@
+import type { TrackScene } from "../api/contracts.gen";
 import { useEffect, useRef } from 'react';
 
 import type { JsonValue } from '../api/contracts';
 
 export function PresentationTrack({ payload, compact = false }: {
-  readonly payload: Readonly<Record<string, JsonValue>>;
+  readonly payload: Partial<TrackScene> & Readonly<Record<string, JsonValue>>;
   readonly compact?: boolean;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);

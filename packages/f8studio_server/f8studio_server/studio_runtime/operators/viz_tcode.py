@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from ...presentation_models import TCodeSnapshot
+
+import msgspec
+
 import time
 import re
 from typing import Any
@@ -112,10 +116,19 @@ class VizTCodeRuntimeNode(OperatorNode):
         self._model_sent = True
 
     def _emit_snapshot(self, line: str, timestamp: int) -> None:
-        self.presentation.emit(self.node_id, "viz.tcode.snapshot", {
-            "model": self._model, "line": line, "channels": dict(self._channels),
-            "resetVersion": self._reset_version,
-        }, ts_ms=timestamp)
+        self.presentation.emit(
+            self.node_id,
+            "viz.tcode.snapshot",
+            msgspec.to_builtins(
+                TCodeSnapshot(
+                    model=self._model,
+                    line=line,
+                    channels=dict(self._channels),
+                    resetVersion=self._reset_version,
+                )
+            ),
+            ts_ms=timestamp,
+        )
 
     @staticmethod
     def _model_value(value: object) -> str:

@@ -9,11 +9,13 @@ from typing import Any, Protocol
 from .binary_stream_transport import ZenohLatestBinaryStreamTransport
 
 
-SAMPLE_FORMAT_F32LE = 1
-ZENOH_AUDIO_CHUNK_MAGIC = 0xF85A2001
-ZENOH_AUDIO_CHUNK_SCHEMA_VERSION = 1
-
-_ZENOH_AUDIO_CHUNK_HEADER_STRUCT = struct.Struct("<9IQQq")
+from .generated.stream_wire import (
+    SAMPLE_FORMAT_F32LE as SAMPLE_FORMAT_F32LE,
+    ZENOH_AUDIO_CHUNK_MAGIC as ZENOH_AUDIO_CHUNK_MAGIC,
+    ZENOH_AUDIO_CHUNK_SCHEMA_VERSION as ZENOH_AUDIO_CHUNK_SCHEMA_VERSION,
+    ZENOH_AUDIO_CHUNK_HEADER_BYTES as ZENOH_AUDIO_CHUNK_HEADER_BYTES,
+    AudioChunkHeader as AudioChunkHeader,
+)
 
 
 @dataclass
@@ -107,20 +109,20 @@ def encode_zenoh_audio_chunk(
         payload_bytes = frames_i * bytes_per_frame
         if len(payload_view) < payload_bytes:
             raise ValueError("payload is smaller than frames * bytes_per_frame")
-        header = _ZENOH_AUDIO_CHUNK_HEADER_STRUCT.pack(
-            ZENOH_AUDIO_CHUNK_MAGIC,
-            ZENOH_AUDIO_CHUNK_SCHEMA_VERSION,
-            _ZENOH_AUDIO_CHUNK_HEADER_STRUCT.size,
-            sample_rate_i,
-            channels_i,
-            fmt_i,
-            frames_i,
-            bytes_per_frame,
-            payload_bytes,
-            seq_i,
-            frame_index_i,
-            ts_ms_i,
-        )
+        header = AudioChunkHeader(
+            magic=ZENOH_AUDIO_CHUNK_MAGIC,
+            version=ZENOH_AUDIO_CHUNK_SCHEMA_VERSION,
+            header_bytes=ZENOH_AUDIO_CHUNK_HEADER_BYTES,
+            sample_rate=sample_rate_i,
+            channels=channels_i,
+            fmt=fmt_i,
+            frames=frames_i,
+            bytes_per_frame=bytes_per_frame,
+            payload_bytes=payload_bytes,
+            seq=seq_i,
+            frame_index=frame_index_i,
+            ts_ms=ts_ms_i,
+        ).pack()
         return header + bytes(payload_view[:payload_bytes])
     finally:
         payload_view.release()
@@ -129,24 +131,24 @@ def encode_zenoh_audio_chunk(
 def decode_zenoh_audio_chunk(raw: bytes | bytearray | memoryview) -> LatestAudioChunk | None:
     raw_view = memoryview(raw).cast("B")
     try:
-        if len(raw_view) < _ZENOH_AUDIO_CHUNK_HEADER_STRUCT.size:
+        if len(raw_view) < ZENOH_AUDIO_CHUNK_HEADER_BYTES:
             return None
-        fields = _ZENOH_AUDIO_CHUNK_HEADER_STRUCT.unpack_from(raw_view, 0)
-        magic = int(fields[0])
-        version = int(fields[1])
-        header_bytes = int(fields[2])
-        sample_rate = int(fields[3])
-        channels = int(fields[4])
-        fmt = int(fields[5])
-        frames = int(fields[6])
-        bytes_per_frame = int(fields[7])
-        payload_bytes = int(fields[8])
-        seq = int(fields[9])
-        frame_index = int(fields[10])
-        ts_ms = int(fields[11])
+        fields = AudioChunkHeader.unpack_from(raw_view)
+        magic = fields.magic
+        version = fields.version
+        header_bytes = fields.header_bytes
+        sample_rate = fields.sample_rate
+        channels = fields.channels
+        fmt = fields.fmt
+        frames = fields.frames
+        bytes_per_frame = fields.bytes_per_frame
+        payload_bytes = fields.payload_bytes
+        seq = fields.seq
+        frame_index = fields.frame_index
+        ts_ms = fields.ts_ms
         if magic != ZENOH_AUDIO_CHUNK_MAGIC or version != ZENOH_AUDIO_CHUNK_SCHEMA_VERSION:
             return None
-        if header_bytes < _ZENOH_AUDIO_CHUNK_HEADER_STRUCT.size:
+        if header_bytes < ZENOH_AUDIO_CHUNK_HEADER_BYTES:
             return None
         if sample_rate <= 0 or channels <= 0 or fmt <= 0 or frames <= 0 or bytes_per_frame <= 0 or seq <= 0:
             return None

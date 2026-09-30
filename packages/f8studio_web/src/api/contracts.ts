@@ -6,21 +6,13 @@ export type ServerCapabilities = import('./contracts.gen').ServerCapabilities;
 
 export type CapabilitiesResponse = import('./contracts.gen').CapabilitiesResponse;
 
-export type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue };
+export type JsonValue = import('./contracts.gen').JsonValue;
 
 export function isJsonObject(value: unknown): value is Readonly<Record<string, JsonValue>> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-export interface StudioLogEvent {
-  readonly eventId: string;
-  readonly serverEpoch: string;
-  readonly sequence: number;
-  readonly type: string;
-  readonly scope: string;
-  readonly timestamp: string;
-  readonly payload: JsonValue;
-}
+export type StudioLogEvent = import('./contracts.gen').EventEnvelope;
 
 export function isStudioLogEvent(value: unknown): value is StudioLogEvent {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
@@ -35,400 +27,82 @@ export type AgentRunStatus = import('./contracts.gen').AgentRunStatus;
 export type AgentToolCallStatus = import('./contracts.gen').ToolCallStatus;
 export type AgentApprovalStatus = import('./contracts.gen').ApprovalStatus;
 
-export interface AgentProviderSummary {
-  readonly providerId: string;
-  readonly displayName: string;
-  readonly models: readonly string[];
-  readonly configured: boolean;
-  readonly deterministic: boolean;
-  readonly supportsImages?: boolean;
-  readonly modelCapabilities?: readonly AgentModelCapabilities[];
-}
+export type AgentProviderSummary = import('./contracts.gen').AgentProviderSummary;
 
-export interface AgentModelCapabilities {
-  readonly modelId: string;
-  readonly imageInput: boolean | null;
-  readonly thinking: boolean | null;
-  readonly source?: 'catalog' | 'legacy';
-  readonly imageSource?: 'catalog' | 'legacy' | 'manual' | null;
-  readonly thinkingSource?: 'catalog' | 'legacy' | 'manual' | null;
-}
+export type AgentModelCapabilities = import('./contracts.gen').ModelCapabilitiesInput;
 
+export type AgentProviderSettings = import('./contracts.gen').ProviderSettingsView;
 
+export type UpdateAgentProviderSettings = import('./contracts.gen').UpdateProviderSettingsInput;
 
-export interface AgentProviderSettings {
-  readonly providerId: string;
-  readonly displayName: string;
-  readonly model: string;
-  readonly endpoint: string;
-  readonly apiKeySet: boolean;
-  readonly requiresApiKey: boolean;
-  readonly configured: boolean;
-  readonly source: 'saved' | 'environment';
-  readonly kind: 'agent' | 'decision';
-  readonly inputModalities: readonly ('text' | 'image')[];
-  readonly supportsImage: boolean;
-  readonly protocol?: 'openai_responses' | 'openai_chat' | 'anthropic' | 'systemone' | null;
-  readonly models?: readonly string[];
-  readonly custom?: boolean;
-  readonly modelCapabilities?: readonly AgentModelCapabilities[];
-}
+export type CreateAgentConnection = import('./contracts.gen').CreateProviderConnectionInput;
 
-export interface UpdateAgentProviderSettings {
-  readonly model: string;
-  readonly endpoint: string;
-  readonly apiKey?: string;
-  readonly clearApiKey: boolean;
-  readonly supportsImage?: boolean;
-  readonly displayName?: string;
-  readonly models?: readonly string[];
-  readonly modelCapabilities?: readonly AgentModelCapabilities[];
-}
+export type AgentConnectionProbe = import('./contracts.gen').ProviderProbeResult;
 
-export interface CreateAgentConnection {
-  readonly displayName: string;
-  readonly protocol: 'openai_responses' | 'openai_chat' | 'anthropic' | 'systemone';
-  readonly endpoint: string;
-  readonly apiKey: string;
-  readonly model: string;
-  readonly models: readonly string[];
-  readonly supportsImage: boolean;
-  readonly modelCapabilities?: readonly AgentModelCapabilities[];
-}
+export type AgentMessage = import('./contracts.gen').AgentMessage;
 
-export interface AgentConnectionProbe {
-  readonly connected: boolean;
-  readonly models: readonly string[];
-  readonly detail: string;
-  readonly verified: 'catalog' | 'model' | 'none';
-  readonly modelCapabilities?: readonly AgentModelCapabilities[];
-}
+export type AgentToolCall = import('./contracts.gen').AgentToolCall;
 
-export interface AgentMessage {
-  readonly messageId: string;
-  readonly role: 'user' | 'assistant' | 'system';
-  readonly content: string;
-  readonly createdAt: string;
-  readonly images?: readonly AgentImage[];
-  readonly providerId?: string;
-  readonly modelId?: string;
-}
+export type AgentApproval = import('./contracts.gen').AgentApproval;
 
-export interface AgentToolCall {
-  readonly toolCallId: string;
-  readonly toolName: string;
-  readonly arguments: Readonly<Record<string, JsonValue>>;
-  readonly argumentsHash: string;
-  readonly targetGraphRevision: number | null;
-  readonly status: AgentToolCallStatus;
-  readonly createdAt: string;
-  readonly updatedAt: string;
-  readonly result: JsonValue;
-  readonly errorMessage: string;
-  readonly tracebackId: string;
-}
+export type AgentArtifact = import('./contracts.gen').AgentArtifact;
 
-export interface AgentApproval {
-  readonly approvalId: string;
-  readonly toolCallId: string;
-  readonly toolName: string;
-  readonly argumentsHash: string;
-  readonly targetGraphRevision: number;
-  readonly expiresAt: string;
-  readonly status: AgentApprovalStatus;
-  readonly resolvedAt: string | null;
-}
+export type AgentSessionSummary = import('./contracts.gen').AgentSessionSummary;
 
-export interface AgentArtifact {
-  readonly artifactId: string;
-  readonly kind: 'graph_patch' | 'diagnostics' | 'deployment' | 'monitor' | 'text';
-  readonly title: string;
-  readonly payload: JsonValue;
-  readonly createdAt: string;
-}
+export type AgentSession = import('./contracts.gen').AgentSessionRecord;
 
-export interface AgentSessionSummary {
-  readonly sessionId: string;
-  readonly projectId: string;
-  readonly title: string;
-  readonly providerId: string;
-  readonly modelId: string;
-  readonly status: AgentRunStatus;
-  readonly updatedAt: string;
-  readonly messageCount: number;
-}
+export type ValueSchema = StateSpec['valueSchema'];
 
-export interface AgentSession {
-  readonly sessionId: string;
-  readonly projectId: string;
-  readonly title: string;
-  readonly autoTitlePending?: boolean;
-  readonly providerId: string;
-  readonly modelId: string;
-  readonly status: AgentRunStatus;
-  readonly updatedAt: string;
-  readonly createdAt: string;
-  readonly messages: readonly AgentMessage[];
-  readonly toolCalls: readonly AgentToolCall[];
-  readonly artifacts: readonly AgentArtifact[];
-  readonly approval: AgentApproval | null;
-  readonly errorMessage: string;
-  readonly tracebackId: string;
-}
+export type StateSpec = import('./contracts.gen').F8StateSpec;
 
-export interface ValueSchema {
-  readonly type?: string;
-  readonly default?: JsonValue;
-  readonly enum?: readonly JsonValue[];
-  readonly minimum?: number;
-  readonly maximum?: number;
-  readonly exclusiveMinimum?: number;
-  readonly exclusiveMaximum?: number;
-  readonly multipleOf?: number;
-  readonly required?: readonly string[];
-  readonly additionalProperties?: boolean;
-  readonly [key: string]: JsonValue | undefined;
-}
+export type UiControlSpec = import('./contracts.gen').F8UiControlSpec;
 
-export interface StateSpec {
-  readonly name: string;
-  readonly valueSchema: ValueSchema;
-  readonly access: 'rw' | 'ro' | 'wo';
-  readonly label?: string;
-  readonly description?: string;
-  readonly showOnNode?: boolean;
-  readonly valueRequired?: boolean;
-  readonly control?: UiControlSpec;
-  readonly redactOnPublish?: boolean;
-  readonly editPolicy?: { readonly canRename?: boolean; readonly canEditAccess?: boolean; readonly canEditValueRequired?: boolean; readonly canEditValueSchema?: boolean };
-}
+export type CollectionEditPolicy = import('./contracts.gen').F8CollectionEditPolicy;
 
-export interface UiControlSpec {
-  readonly kind: 'auto' | 'text' | 'textarea' | 'code' | 'toggle' | 'slider' | 'select' | 'multiselect' | 'dial' | 'button' | 'custom';
-  readonly optionsFromState?: string;
-  readonly language?: string;
-  readonly rendererKey?: string;
-}
+export type SpecEditPolicy = import('./contracts.gen').F8SpecEditPolicy;
 
-export interface CollectionEditPolicy {
-  readonly canAdd?: boolean;
-  readonly canDelete?: boolean;
-  readonly canEditExisting?: boolean;
-}
+export type DataPortSpec = import('./contracts.gen').F8DataPortSpec;
 
-export interface SpecEditPolicy {
-  readonly stateFields?: CollectionEditPolicy;
-  readonly commands?: CollectionEditPolicy;
-  readonly dataInPorts?: CollectionEditPolicy;
-  readonly dataOutPorts?: CollectionEditPolicy;
-  readonly execInPorts?: CollectionEditPolicy;
-  readonly execOutPorts?: CollectionEditPolicy;
-}
+export type CommandParamSpec = import('./contracts.gen').F8CommandParam;
 
-export interface DataPortSpec {
-  readonly name: string;
-  readonly valueSchema: ValueSchema;
-  readonly payloadKind?: string;
-  readonly delivery?: string;
-  readonly payload?: { readonly kind: string; readonly valueSchema?: ValueSchema; readonly [key: string]: JsonValue | ValueSchema | undefined };
-  readonly showOnNode?: boolean;
-  readonly definitionProtected?: boolean;
-  readonly [key: string]: unknown;
-}
+export type CommandSpec = import('./contracts.gen').F8Command;
 
-export interface CommandParamSpec {
-  readonly name: string;
-  readonly valueSchema: ValueSchema;
-  readonly description?: string;
-  readonly valueRequired?: boolean;
-  readonly control?: UiControlSpec;
-}
+export type ServiceSpec = import('./contracts.gen').F8ServiceSpec;
 
-export interface CommandSpec {
-  readonly name: string;
-  readonly description?: string;
-  readonly showOnNode?: boolean;
-  readonly definitionProtected?: boolean;
-  readonly params?: readonly CommandParamSpec[];
-}
+export type OperatorSpec = import('./contracts.gen').F8OperatorSpec;
 
-export interface ServiceSpec {
-  readonly serviceClass: string;
-  readonly label: string;
-  readonly specKind: 'service';
-  readonly description?: string;
-  readonly tags?: readonly string[];
-  readonly paletteCategory?: string;
-  readonly hiddenInPalette?: boolean;
-  readonly editPolicy?: SpecEditPolicy;
-  readonly stateFields?: readonly StateSpec[];
-  readonly commands?: readonly CommandSpec[];
-  readonly dataInPorts?: readonly DataPortSpec[];
-  readonly dataOutPorts?: readonly DataPortSpec[];
-  readonly [key: string]: JsonValue | SpecEditPolicy | readonly StateSpec[] | readonly CommandSpec[] | readonly DataPortSpec[] | readonly ExecPortSpec[] | undefined;
-}
+export type ExecPortSpec = import('./contracts.gen').F8ExecPortSpec;
 
-export interface OperatorSpec {
-  readonly operatorClass: string;
-  readonly serviceClass: string;
-  readonly label: string;
-  readonly specKind: 'operator';
-  readonly description?: string;
-  readonly tags?: readonly string[];
-  readonly paletteCategory?: string;
-  readonly hiddenInPalette?: boolean;
-  readonly editPolicy?: SpecEditPolicy;
-  readonly stateFields?: readonly StateSpec[];
-  readonly commands?: readonly CommandSpec[];
-  readonly dataInPorts?: readonly DataPortSpec[];
-  readonly dataOutPorts?: readonly DataPortSpec[];
-  readonly execInPorts?: readonly ExecPortSpec[];
-  readonly execOutPorts?: readonly ExecPortSpec[];
-  readonly [key: string]: JsonValue | SpecEditPolicy | readonly StateSpec[] | readonly CommandSpec[] | readonly DataPortSpec[] | readonly ExecPortSpec[] | undefined;
-}
+export type CatalogSnapshot = import('./contracts.gen').CatalogSnapshot;
 
-export interface ExecPortSpec {
-  readonly name: string;
-  readonly label?: string;
-  readonly description?: string;
-  readonly definitionProtected?: boolean;
-}
+export type NodeKind = GraphNode['kind'];
+export type PortKind = import('./contracts.gen').PortKind;
+export type PortDirection = import('./contracts.gen').PortDirection;
+export type GraphEdgeKind = import('./contracts.gen').GraphEdgeKind;
 
-export interface CatalogSnapshot {
-  readonly services: readonly ServiceSpec[];
-  readonly operators: readonly OperatorSpec[];
-}
+export type GraphPort = import('./contracts.gen').GraphPort;
 
-export type NodeKind = 'service' | 'operator';
-export type PortKind = 'data' | 'state' | 'exec' | 'command';
-export type PortDirection = 'input' | 'output';
-export type GraphEdgeKind = 'data' | 'state' | 'exec';
+export type ServiceNode = import('./contracts.gen').ServiceNode;
 
-export interface GraphPort {
-  readonly portId: string;
-  readonly name: string;
-  readonly runtimeName: string;
-  readonly kind: PortKind;
-  readonly direction: PortDirection;
-  readonly dataSpec?: DataPortSpec | null;
-  readonly stateSpec?: StateSpec | null;
-}
-
-interface GraphNodeBase {
-  readonly nodeId: string;
-  readonly name: string;
-  readonly serviceId: string;
-  readonly serviceClass: string;
-  readonly ports: readonly GraphPort[];
-  readonly portIds?: Readonly<Record<string, string>>;
-  readonly stateValues: Readonly<Record<string, JsonValue>>;
-  readonly enabled: boolean;
-}
-
-export interface ServiceNode extends GraphNodeBase {
-  readonly kind: 'service';
-  readonly spec: ServiceSpec;
-}
-
-export interface OperatorNode extends GraphNodeBase {
-  readonly kind: 'operator';
-  readonly operatorClass: string;
-  readonly spec: OperatorSpec;
-}
+export type OperatorNode = import('./contracts.gen').OperatorNode;
 
 export type GraphNode = ServiceNode | OperatorNode;
 
-export interface GraphEdge {
-  readonly edgeId: string;
-  readonly fromNodeId: string;
-  readonly fromPortId: string;
-  readonly toNodeId: string;
-  readonly toPortId: string;
-  readonly kind: GraphEdgeKind;
-  readonly strategy: 'latest' | 'queue';
-  readonly queueSize: number;
-  readonly timeoutMs: number | null;
-}
+export type GraphEdge = import('./contracts.gen').GraphEdge;
 
-export interface NodeLayout {
-  readonly nodeId: string;
-  readonly x: number;
-  readonly y: number;
-  readonly width?: number | null;
-  readonly height?: number | null;
-  readonly collapsed: boolean;
-}
+export type NodeLayout = import('./contracts.gen').NodeLayout;
 
-export interface StudioDocument {
-  readonly schemaVersion: 'f8studio-document/2';
-  readonly projectId: string;
-  readonly graphId: string;
-  readonly graphRevision: number;
-  readonly layoutRevision: number;
-  readonly nodes: readonly GraphNode[];
-  readonly edges: readonly GraphEdge[];
-  readonly layout: readonly NodeLayout[];
-}
+export type StudioDocument = import('./contracts.gen').StudioDocument;
 
+export type ProjectRecord = import('./contracts.gen').ProjectRecord;
 
+export type GraphOperation = import('./contracts.gen').PatchRequestInput['operations'][number];
 
-export interface ProjectRecord {
-  readonly projectId: string;
-  readonly name: string;
-  readonly description: string;
-  readonly createdAt: string;
-  readonly updatedAt: string;
-  readonly document: StudioDocument;
-}
-
-export type GraphOperation =
-  | { readonly op: 'createNode'; readonly node: GraphNode; readonly layout?: NodeLayout | null }
-  | { readonly op: 'deleteNode'; readonly nodeId: string }
-  | { readonly op: 'connectEdge'; readonly edge: GraphEdge }
-  | { readonly op: 'disconnectEdge'; readonly edgeId: string }
-  | { readonly op: 'setNodeLayout'; readonly layout: NodeLayout }
-  | { readonly op: 'renameNode'; readonly nodeId: string; readonly name: string }
-  | { readonly op: 'setServiceSpec'; readonly nodeId: string; readonly spec: ServiceSpec; readonly portRenames?: Readonly<Record<string, string>> }
-  | { readonly op: 'setOperatorSpec'; readonly nodeId: string; readonly spec: OperatorSpec; readonly portRenames?: Readonly<Record<string, string>> }
-  | { readonly op: 'refreshInstalledSpec'; readonly nodeId: string }
-  | { readonly op: 'bindOperatorService'; readonly nodeId: string; readonly serviceId: string }
-  | { readonly op: 'setNodeEnabled'; readonly nodeId: string; readonly enabled: boolean }
-  | { readonly op: 'setNodeState'; readonly nodeId: string; readonly field: string; readonly value: JsonValue }
-  | { readonly op: 'insertFragment'; readonly nodes: readonly GraphNode[]; readonly edges: readonly GraphEdge[]; readonly layout: readonly NodeLayout[] };
-
-export interface PatchResult {
-  readonly requestId: string;
-  readonly graphChanged: boolean;
-  readonly layoutChanged: boolean;
-  readonly document: StudioDocument;
-  readonly runtimeErrors: readonly string[];
-}
+export type PatchResult = import('./contracts.gen').PatchResult;
 
 export type DeployJobStatus = import('./contracts.gen').JobStatus;
 
-
-
-
-
-export interface RuntimeMonitor {
-  readonly serviceId: string;
-  readonly serviceClass: string;
-  readonly nodeId: string;
-  readonly tsMs: number;
-  readonly alive: boolean;
-  readonly ready: boolean;
-  readonly active: boolean;
-  readonly uptimeMs: number;
-  readonly cpu?: { readonly processPercent?: number; readonly systemPercent?: number };
-  readonly memory?: { readonly rssBytes?: number; readonly vmsBytes?: number };
-  readonly queue?: { readonly depth?: number };
-  readonly timing?: { readonly processMsP95?: number; readonly latencyMsP95?: number };
-  readonly error?: { readonly currentMessage?: string; readonly lastMessage?: string };
-}
-
-
-
-
+export type RuntimeMonitor = import('./contracts.gen').F8MonitorSnapshot;
 
 export function isDeployJob(value: unknown): value is DeployJob {
   if (typeof value !== 'object' || value === null) return false;
@@ -459,20 +133,9 @@ export function isGraphNode(value: unknown): value is GraphNode {
     typeof item.name === 'string' && typeof item.serviceClass === 'string' && Array.isArray(item.ports);
 }
 
+export type RtcIceServer = import('./contracts.gen').BrowserIceServer;
 
-
-
-
-export interface RtcIceServer {
-  readonly urls: readonly string[];
-  readonly username?: string;
-  readonly credential?: string;
-}
-
-export interface RtcConfigurationResponse {
-  readonly iceServers: readonly RtcIceServer[];
-  readonly iceTransportPolicy: 'all' | 'relay';
-}
+export type RtcConfigurationResponse = import('./contracts.gen').BrowserRtcConfiguration;
 
 export type AssetKind = import('./contracts.gen').AssetKind;
 
@@ -482,19 +145,9 @@ export type AssetRecord = import('./contracts.gen').AssetRecord;
 
 export type AssetVersion = import('./contracts.gen').AssetVersion;
 
-export interface ProjectVersion {
-  readonly versionId: string;
-  readonly projectId: string;
-  readonly name: string;
-  readonly createdAt: string;
-  readonly document: StudioDocument;
-}
-
-
+export type ProjectVersion = import('./contracts.gen').ProjectVersion;
 
 export type EditorSession = import('./contracts.gen').EditorSessionRecord;
-
-
 
 export type EditorLanguageResult = import('./contracts.gen').EditorLanguageResult;
 
@@ -508,59 +161,13 @@ export type SkeletonUdpVerification = import('./contracts.gen').SkeletonUdpVerif
 
 export type HotkeyBinding = import('./contracts.gen').HotkeyBinding;
 
-export interface RegisterHotkeyInput {
-  readonly accelerator: string;
-  readonly projectId: string;
-  readonly nodeId: string;
-  readonly field: string;
-  readonly bindingId?: string;
-}
+export type RegisterHotkeyInput = import('./contracts.gen').RegisterHotkeyRequestInput;
 
-export interface PresentationCommand {
-  readonly nodeId: string;
-  readonly command: string;
-  readonly payload: Readonly<Record<string, JsonValue>>;
-  readonly tsMs: number | null;
-}
+export type PresentationCommand = import('./contracts.gen').PresentationCommand;
 
-export interface SkeletonNode {
-  readonly index: number;
-  readonly name: string;
-  readonly pos: readonly [number, number, number];
-  readonly rot: readonly [number, number, number, number] | null;
-}
-
-export interface SkeletonPerson {
-  readonly name: string;
-  readonly bbox: readonly number[] | null;
-  readonly skeletonProtocol: string;
-  readonly skeletonEdges: readonly (readonly [number, number])[] | null;
-  readonly nodes: readonly SkeletonNode[];
-}
-
-export interface SkeletonScene {
-  readonly tsMs: number;
-  readonly worldUp: string;
-  readonly people: readonly SkeletonPerson[];
-  readonly uiFpsCap?: number;
-  readonly renderFlags?: {
-    readonly showPersonBoxes?: boolean;
-    readonly showPersonNames?: boolean;
-    readonly showBonePoints?: boolean;
-    readonly showSkeletonLines?: boolean;
-    readonly showBoneAxes?: boolean;
-    readonly showBoneNames?: boolean;
-    readonly autoZoomOnNewPeople?: boolean;
-    readonly markerScale?: number;
-  };
-  readonly performanceHints?: {
-    readonly suppressPersonBoxes?: boolean;
-    readonly suppressBoneNames?: boolean;
-    readonly suppressBoneAxes?: boolean;
-    readonly maxVisibleBoneLabels?: number | null;
-    readonly recommendedFpsCap?: number;
-  };
-}
+export type SkeletonNode = import('./contracts.gen').SkeletonNode;
+export type SkeletonPerson = import('./contracts.gen').SkeletonPerson;
+export type SkeletonScene = import('./contracts.gen').SkeletonScene;
 
 export function isHealthStatus(value: unknown): value is HealthStatus {
   if (typeof value !== 'object' || value === null) return false;

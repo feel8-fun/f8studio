@@ -1,3 +1,4 @@
+import type { AudioConfig } from "../api/contracts.gen";
 import { RefreshCw, Volume2, VolumeX } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
@@ -55,7 +56,7 @@ export function PresentationAudio({
   payload,
   compact = false,
 }: {
-  readonly payload: Readonly<Record<string, JsonValue>>;
+  readonly payload: Partial<AudioConfig> & Readonly<Record<string, JsonValue>>;
   readonly compact?: boolean;
 }) {
   const source = typeof payload.audioStreamKey === 'string' ? payload.audioStreamKey.trim() : '';

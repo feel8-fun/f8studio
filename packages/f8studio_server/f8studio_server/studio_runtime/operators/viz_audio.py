@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from ...presentation_models import AudioConfig
+
+import msgspec
+
 import asyncio
 import logging
 import time
@@ -159,7 +163,9 @@ class VizAudioRuntimeNode(OperatorNode):
             return
         await self._ensure_config_loaded()
         if f == "throttleMs":
-            self._throttle_ms = await self._get_int_state("throttleMs", default=self._throttle_ms, minimum=0, maximum=60000)
+            self._throttle_ms = await self._get_int_state(
+                "throttleMs", default=self._throttle_ms, minimum=0, maximum=60000
+            )
         elif f == "historyMs":
             self._history_ms = await self._get_int_state("historyMs", default=self._history_ms, minimum=20, maximum=680)
         elif f == "channel":
@@ -182,15 +188,19 @@ class VizAudioRuntimeNode(OperatorNode):
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        self._pending_task = loop.create_task(self._push_config_async(now_ms), name=f"pystudio:audio:cfg:{self.node_id}")
+        self._pending_task = loop.create_task(
+            self._push_config_async(now_ms), name=f"pystudio:audio:cfg:{self.node_id}"
+        )
 
     async def _push_config_async(self, now_ms: int) -> None:
-        payload: dict[str, object] = {
-            "audioStreamKey": str(self.input_zenoh_key("audio") or "").strip(),
-            "throttleMs": int(self._throttle_ms),
-            "historyMs": int(self._history_ms),
-            "channel": int(self._channel),
-        }
+        payload: dict[str, object] = msgspec.to_builtins(
+            AudioConfig(
+                audioStreamKey=str(self.input_zenoh_key("audio") or "").strip(),
+                throttleMs=int(self._throttle_ms),
+                historyMs=int(self._history_ms),
+                channel=int(self._channel),
+            )
+        )
         self.presentation.emit(
             self.node_id,
             "viz.audio.set",
@@ -215,6 +225,7 @@ class VizAudioRuntimeNode(OperatorNode):
         if out > maximum:
             out = maximum
         return out
+
 
 def register_operator(registry: Registry) -> Registry:
     registry.register_operator(VizAudioRuntimeNode.SPEC, VizAudioRuntimeNode, overwrite=True)

@@ -94,3 +94,25 @@ The demo never implemented `--describe`: its abort was an uncaught cxxopts unkno
 - Real isolated HTTP/gateway startup, authentication, exact Origin enforcement, project create/delete, event/live WebSockets and shutdown pass. User's existing services were not restarted.
 - The timeout-cleanup regression now reschedules the real asyncio timeout after pending approval is observed, instead of assuming SQLite work finishes within 200 ms. Agent suite: **27 passed**.
 - Final full Python regression with fresh compiled-description artifacts enabled: **1045 passed, 0 skipped**, one third-party Scapy/cryptography deprecation warning, **88.23 s**. Log: `/tmp/f8-review-completion-tests-final.log`.
+
+## Comprehensive wire type generation (2026-09-29)
+
+The inherited workspace was committed first as `c7d400c0` (`fix: complete review remediation and runtime lifecycle hardening`). This followup completes wire type generation; large-file decomposition is a separate task.
+
+- Replaced handwritten browser wire interfaces with generated aliases, including graph/spec/Agent models, recursive value schemas, monitor data, media settings and skeleton scenes. Browser JSON request builders use the generated route-to-body map.
+- Shared schema generation distinguishes accepted `FooInput` values from serialized `Foo` output, preserving ordinary defaults, `UNSET`, `omit_defaults`, recursive references and discriminator mappings. Schema keywords inside user defaults/field names remain data.
+- All 87 HTTP routes participate in generated contracts. TypeScript/JSON Schema include 261 model definitions in each input/output direction, including every shared protocol struct and the built-in presentation models. Event/live publishers and visualization operators use explicit models; browser live parsing and visualization consumers reference generated types.
+- `schemas/stream-wire.json` generates Python/C++ binary header codecs and constants, adopted by both SDK transports. Existing wire sizes, field ordering, signed timestamps and 64-bit identities are preserved.
+- `schemas/runtime-keys.json` generates shared key builders, adopted by public naming APIs and runtime configuration keys. Validation/path normalization remain explicit; legacy command APIs preserve their existing paths.
+- `pixi run protocol_codegen_all` regenerates shared protocol models, stream codecs, key builders and Studio contracts. CI checks all checked-in generated artifacts; CMake generates protocol models and checks stream/key drift.
+- Added compile-only TS rejection tests, serializer schema tests, generated-file drift tests, and a compiled C++/Python historical-byte compatibility fixture. Dynamic extension/user payloads remain JSON by design; UI state/render projections are local types, not wire contracts.
+
+Validation:
+
+- Full Python suite: **1053 passed, 0 skipped** (`/tmp/f8-types-full-tests-final.log`). The final schema-keyword edge case was subsequently verified with the schema/contract/API subset: **8 passed**.
+- Frontend: **99 passed**, TypeScript clean.
+- SDK Python type check and strict Studio Python type check: **0 errors**.
+- C++ SDK and test executable rebuilt; CTest **1/1 passed**. Compiled cross-language codec fixture and public naming compatibility tests pass.
+- Python protocol regeneration matches tracked output (timestamp excluded); protocol/Studio/stream/key drift checks pass.
+- Lint, all 3 import contracts, exception budget (110 broad / 0 silent), and `git diff --check` pass.
+- Generation coverage and commands are documented in `docs/developers/web-studio-architecture.md`.

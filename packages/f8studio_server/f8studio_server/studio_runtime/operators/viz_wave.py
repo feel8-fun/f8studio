@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from ...presentation_models import WaveScene
+
+import msgspec
+
 import asyncio
 import logging
 import time
@@ -184,15 +188,17 @@ class VizWaveRuntimeNode(StudioVizRuntimeNodeBase):
             self.presentation.emit(
                 self.node_id,
                 "viz.wave.set",
-                {
-                    "series": {k: list(v) for k, v in (self._series or {}).items() if v},
-                    "colors": {k: list(rgb) for k, rgb in colors.items()},
-                    "windowMs": int(self._window_ms),
-                    "nowMs": int(now_ms),
-                    "showLegend": bool(self._show_legend),
-                    "minVal": self._y_min,
-                    "maxVal": self._y_max,
-                },
+                msgspec.to_builtins(
+                    WaveScene(
+                        series={k: list(v) for k, v in (self._series or {}).items() if v},
+                        colors={k: list(rgb) for k, rgb in colors.items()},
+                        windowMs=int(self._window_ms),
+                        nowMs=int(now_ms),
+                        showLegend=bool(self._show_legend),
+                        minVal=self._y_min,
+                        maxVal=self._y_max,
+                    )
+                ),
                 ts_ms=int(now_ms),
             )
 
@@ -267,7 +273,6 @@ class VizWaveRuntimeNode(StudioVizRuntimeNodeBase):
 
 
 def register_operator(registry: Registry) -> Registry:
-
     registry.register_operator(
         F8OperatorSpec(
             schemaVersion=F8OperatorSchemaVersion.f8operator_1,

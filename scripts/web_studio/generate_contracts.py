@@ -3,6 +3,7 @@
 Only JSON Schema constructs emitted by msgspec are supported. Unknown constructs
 fail generation rather than silently weakening a contract to `any`.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -10,92 +11,156 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
-import msgspec
 from f8studio_core.graph import HistoryRequest, PatchRequest, PatchResult, StudioDocument
 from f8studio_server import models
-from f8studio_server.api_contracts import contract_types
+from f8studio_server import presentation_models
+from f8pysdk import generated as protocol_models
+import msgspec
+from f8studio_server.api_contracts import ROUTES, contract_types
+from f8studio_server.schema_generation import model_schemas
 from f8studio_server.agents.models import AgentSessionRecord, AgentImage
 from f8studio_server.editor import CreateEditorSessionRequest, EditorAnalysis, EditorLanguageResult, EditorSessionRecord
 from f8studio_server.events import EventEnvelope
 from f8media_protocol.models import MediaSessionOffer, MediaSessionAnswer, AudioSessionOffer, AudioSessionAnswer
 
+
+def struct_roots(module: Any) -> tuple[type[msgspec.Struct], ...]:
+    # Code-generation discovery only; generated application code stays explicit.
+    return tuple(
+        value
+        for _, value in sorted(cast(dict[str, Any], vars(module)).items())
+        if isinstance(value, type) and issubclass(value, msgspec.Struct) and value is not msgspec.Struct
+    )
+
+
 ROOTS = (
-    StudioDocument, PatchRequest, PatchResult, HistoryRequest,
-    models.ProjectRecord, models.ProjectSummary, models.CreateProjectRequest, models.UpdateProjectRequest,
-    models.CreateCatalogNodeRequest, models.DeployProjectRequest, models.DeployJob,
-    models.RuntimeActionResult, models.RuntimeNodeState, models.ServiceRuntimeStatus,
-    models.ServiceStateRequest, models.ServiceCommandRequest, models.BrowserRtcConfiguration,
-    AgentSessionRecord, AgentImage, EventEnvelope, CreateEditorSessionRequest,
-    EditorAnalysis, EditorLanguageResult, EditorSessionRecord,
-    MediaSessionOffer, MediaSessionAnswer, AudioSessionOffer, AudioSessionAnswer,
+    struct_roots(protocol_models)
+    + struct_roots(presentation_models)
+    + (
+        StudioDocument,
+        PatchRequest,
+        PatchResult,
+        HistoryRequest,
+        models.ProjectRecord,
+        models.ProjectSummary,
+        models.CreateProjectRequest,
+        models.UpdateProjectRequest,
+        models.CreateCatalogNodeRequest,
+        models.DeployProjectRequest,
+        models.DeployJob,
+        models.RuntimeActionResult,
+        models.RuntimeNodeState,
+        models.ServiceRuntimeStatus,
+        models.ServiceStateRequest,
+        models.ServiceCommandRequest,
+        models.BrowserRtcConfiguration,
+        AgentSessionRecord,
+        AgentImage,
+        EventEnvelope,
+        CreateEditorSessionRequest,
+        EditorAnalysis,
+        EditorLanguageResult,
+        EditorSessionRecord,
+        MediaSessionOffer,
+        MediaSessionAnswer,
+        AudioSessionOffer,
+        AudioSessionAnswer,
+    )
 )
 REPO = Path(__file__).resolve().parents[2]
 
 
-def ts_type(schema: dict[str, Any]) -> str:
-    if '$ref' in schema:
-        return schema['$ref'].rsplit('/', 1)[-1]
-    if schema.get('description') == 'Any JSON value.':
-        return 'JsonValue'
-    if 'enum' in schema:
-        return ' | '.join(json.dumps(value) for value in schema['enum'])
-    for key in ('anyOf', 'oneOf'):
+def ts_type(schema: dict[str, Any], *, suffix: str = "") -> str:
+    if "$ref" in schema:
+        return schema["$ref"].rsplit("/", 1)[-1] + suffix
+    if schema.get("description") == "Any JSON value.":
+        return "JsonValue"
+    if "enum" in schema:
+        return " | ".join(json.dumps(value) for value in schema["enum"])
+    for key in ("anyOf", "oneOf"):
         if key in schema:
-            return ' | '.join(ts_type(item) for item in schema[key])
-    if 'allOf' in schema:
-        return ' & '.join(ts_type(item) for item in schema['allOf'])
+            return " | ".join(ts_type(item, suffix=suffix) for item in schema[key])
+    if "allOf" in schema:
+        return " & ".join(ts_type(item, suffix=suffix) for item in schema["allOf"])
     if not schema:
-        return 'JsonValue'
-    kind = schema.get('type')
-    if kind in ('string', 'boolean', 'null'):
+        return "JsonValue"
+    kind = schema.get("type")
+    if kind in ("string", "boolean", "null"):
         return kind
-    if kind in ('integer', 'number'):
-        return 'number'
-    if kind == 'array':
-        if 'prefixItems' in schema:
-            return 'readonly [' + ', '.join(ts_type(item) for item in schema['prefixItems']) + ']'
-        return f"ReadonlyArray<{ts_type(schema.get('items', {}))}>"
-    if kind == 'object':
-        properties = schema.get('properties')
+    if kind in ("integer", "number"):
+        return "number"
+    if kind == "array":
+        if "prefixItems" in schema:
+            return "readonly [" + ", ".join(ts_type(item, suffix=suffix) for item in schema["prefixItems"]) + "]"
+        if schema.get("minItems") == schema.get("maxItems") and isinstance(schema.get("minItems"), int):
+            return (
+                "readonly ["
+                + ", ".join(ts_type(schema.get("items", {}), suffix=suffix) for _ in range(schema["minItems"]))
+                + "]"
+            )
+        return f"ReadonlyArray<{ts_type(schema.get('items', {}), suffix=suffix)}>"
+    if kind == "object":
+        properties = schema.get("properties")
         if properties is None:
-            additional = schema.get('additionalProperties', {})
-            return f"Readonly<Record<string, {ts_type(cast(dict[str, Any], additional) if isinstance(additional, dict) else {})}>>"
-        required = schema.get('required', ())
-        fields = [f"readonly {json.dumps(name)}{'' if name in required else '?'}: {ts_type(value)};"
-                  for name, value in properties.items()]
-        return '{\n  ' + '\n  '.join(fields) + '\n}'
-    raise ValueError(f'Unsupported JSON schema: {schema}')
+            additional = schema.get("additionalProperties", {})
+            return f"Readonly<Record<string, {ts_type(cast(dict[str, Any], additional) if isinstance(additional, dict) else {}, suffix=suffix)}>>"
+        required = schema.get("required", ())
+        fields = [
+            f"readonly {json.dumps(name)}{'' if name in required else '?'}: {ts_type(value, suffix=suffix)};"
+            for name, value in properties.items()
+        ]
+        return "{\n  " + "\n  ".join(fields) + "\n}" if fields else "Record<string, never>"
+    raise ValueError(f"Unsupported JSON schema: {schema}")
 
 
 def generate() -> dict[Path, str]:
     route_types = contract_types()
-    roots, components = msgspec.json.schema_components(ROOTS + route_types)
-    schema = {'$schema': 'https://json-schema.org/draft/2020-12/schema',
-              'anyOf': list(roots), '$defs': components}
-    types = '// Generated by scripts/web_studio/generate_contracts.py; do not edit.\n'
-    types += 'export type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue };\n\n'
-    response_types = ('HealthStatus', 'ServerCapabilities', 'CapabilitiesResponse', 'AssetKind', 'AssetSummary', 'AssetRecord', 'AssetVersion', 'EditorSessionRecord', 'EditorLanguageResult', 'LocalCapability', 'SerialPortInfo', 'UnityInstallPlan', 'SkeletonUdpVerification', 'HotkeyBinding', 'AgentRunStatus', 'ToolCallStatus', 'ApprovalStatus', 'JobStatus', 'ProjectSummary', 'AgentImage', 'EditorAnalysis', 'EditorDiagnostic', 'EditorPosition', 'EditorRange', 'RuntimeActionResult', 'RuntimeNodeState', 'RuntimeStateField', 'MediaSessionAnswer', 'AudioSessionAnswer', 'ServiceDeployResult', 'DeployJob')
+    inputs, roots, components = model_schemas(ROOTS + route_types)
+    schema = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": list(roots) + list(inputs),
+        "$defs": components,
+    }
+    types = "// Generated by scripts/web_studio/generate_contracts.py; do not edit.\n"
+    types += "export type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue };\n\n"
     for name, component in sorted(components.items()):
-        if name in response_types and "properties" in component:
-            component = {**component, "required": list(component["properties"])}
-        types += f'export type {name} = {ts_type(component)};\n\n'
+        types += f"export type {name} = {ts_type(component)};\n\n"
+    input_cursor = iter(inputs[len(ROOTS) :])
+    output_cursor = iter(roots[len(ROOTS) :])
+    requests: list[str] = []
+    responses: list[str] = []
+    for route in ROUTES:
+        key = json.dumps(f"{route.method.upper()} {route.path}")
+        for value, is_request in ((route.request, True), (route.response, False)):
+            if value is None:
+                if not is_request:
+                    responses.append(f"  readonly {key}: void;")
+                continue
+            count = len(cast(tuple[Any, ...], value)) if isinstance(value, tuple) else 1
+            incoming = [next(input_cursor) for _ in range(count)]
+            outgoing = [next(output_cursor) for _ in range(count)]
+            schemas = incoming if is_request else outgoing
+            rendered = " | ".join(ts_type(item) for item in schemas)
+            (requests if is_request else responses).append(f"  readonly {key}: {rendered};")
+    types += "export interface ApiRequests {\n" + "\n".join(requests) + "\n}\n\n"
+    types += "export interface ApiResponses {\n" + "\n".join(responses) + "\n}\n"
     return {
-        REPO / 'schemas/studio-api.gen.json': json.dumps(schema, indent=2, sort_keys=True) + '\n',
-        REPO / 'packages/f8studio_web/src/api/contracts.gen.ts': types,
+        REPO / "schemas/studio-api.gen.json": json.dumps(schema, indent=2, sort_keys=True) + "\n",
+        REPO / "packages/f8studio_web/src/api/contracts.gen.ts": types,
     }
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument('--check', action='store_true')
+    parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     for path, content in generate().items():
         if args.check:
             if not path.exists() or path.read_text() != content:
-                raise SystemExit(f'Generated contract is stale: {path}')
+                raise SystemExit(f"Generated contract is stale: {path}")
         else:
             path.write_text(content)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

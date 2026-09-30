@@ -8,15 +8,11 @@
 #include <string>
 #include <vector>
 
+#include "f8cppsdk/generated/stream_wire.h"
 #include "f8cppsdk/runtime_backend.h"
 #include "f8cppsdk/runtime_transport.h"
 
 namespace f8::cppsdk {
-
-inline constexpr std::uint32_t kZenohAudioChunkMagic = 0xF85A2001u;
-inline constexpr std::uint32_t kZenohAudioChunkSchemaVersion = 1u;
-inline constexpr std::uint32_t kZenohAudioChunkHeaderBytes = 60u;
-inline constexpr std::uint32_t kAudioSampleFormatF32Le = 1u;
 
 struct AudioChunkView {
   std::uint32_t sample_rate = 0;

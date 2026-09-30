@@ -1,4 +1,5 @@
 #include "f8cppsdk/f8_naming.h"
+#include "f8cppsdk/generated/runtime_keys.h"
 
 #include <array>
 #include <algorithm>
@@ -125,11 +126,11 @@ std::string ensure_token(std::string value, const char* label) {
 }
 
 std::string rungraph_key(const std::string& service_id) {
-  return "f8/svc/" + ensure_token(service_id, "service_id") + "/config/rungraph";
+  return wire_keys::rungraph(ensure_token(service_id, "service_id"));
 }
 
 std::string rungraph_deploy_status_key(const std::string& service_id) {
-  return "f8/svc/" + ensure_token(service_id, "service_id") + "/status/rungraph";
+  return wire_keys::rungraph_status(ensure_token(service_id, "service_id"));
 }
 
 std::string rungraph_deploy_request_status_key(const std::string& service_id, const std::string& req_id) {
@@ -148,7 +149,7 @@ std::string rungraph_deploy_request_status_key(const std::string& service_id, co
 }
 
 std::string ready_key(const std::string& service_id) {
-  return "f8/svc/" + ensure_token(service_id, "service_id") + "/status/ready";
+  return wire_keys::ready(ensure_token(service_id, "service_id"));
 }
 
 std::string state_path_node_field(const std::string& node_id, const std::string& field) {
@@ -164,16 +165,15 @@ std::string state_path_node_field(const std::string& node_id, const std::string&
 
 std::string data_key(const std::string& from_service_id, const std::string& from_node_id,
                      const std::string& port_id) {
-  return "f8/svc/" + ensure_token(from_service_id, "from_service_id") + "/nodes/" +
-         ensure_token(from_node_id, "from_node_id") + "/data/" + ensure_token(port_id, "port_id");
+  return wire_keys::data(ensure_token(from_service_id, "from_service_id"), ensure_token(from_node_id, "from_node_id"), ensure_token(port_id, "port_id"));
 }
 
 std::string cmd_channel_key(const std::string& service_id) {
-  return "f8/cmd/svc/" + ensure_token(service_id, "service_id") + "/cmd";
+  return wire_keys::command(ensure_token(service_id, "service_id"), "cmd");
 }
 
 std::string svc_endpoint_key(const std::string& service_id, const std::string& endpoint) {
-  return "f8/cmd/svc/" + ensure_token(service_id, "service_id") + "/" + ensure_token(endpoint, "endpoint");
+  return wire_keys::command(ensure_token(service_id, "service_id"), ensure_token(endpoint, "endpoint"));
 }
 
 }  // namespace f8::cppsdk

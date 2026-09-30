@@ -20,14 +20,14 @@ const command: CommandSpec = {
 
 const service: GraphNode = {
   kind: 'service', nodeId: 'svc-1', serviceId: 'svc-1', serviceClass: 'test.service',
-  name: 'Service', enabled: true, ports: [], stateValues: {},
+  name: 'Service', enabled: true, ports: [], portIds: {}, stateValues: {},
   spec: { specKind: 'service', serviceClass: 'test.service', label: 'Service', commands: [command] },
 };
 
 const operator: GraphNode = {
   kind: 'operator', nodeId: 'op-1', serviceId: 'svc-1', serviceClass: 'test.service',
-  operatorClass: 'test.operator', name: 'Operator', enabled: true, stateValues: {},
-  ports: [{ portId: 'command:input:Run', name: 'Run', runtimeName: '__cmd__.run.in', kind: 'command', direction: 'input' }],
+  operatorClass: 'test.operator', name: 'Operator', enabled: true, portIds: {}, stateValues: {},
+  ports: [{ dataSpec: null, stateSpec: null,  portId: 'command:input:Run', name: 'Run', runtimeName: '__cmd__.run.in', kind: 'command', direction: 'input' }],
   spec: { specKind: 'operator', serviceClass: 'test.service', operatorClass: 'test.operator', label: 'Operator', commands: [command] },
 };
 

@@ -22,6 +22,20 @@ import type {
 type Collection = 'stateFields' | 'commands' | 'dataInPorts' | 'dataOutPorts' | 'execInPorts' | 'execOutPorts';
 type Spec = ServiceSpec | OperatorSpec;
 
+function schemaForType(type: string): ValueSchema {
+  switch (type) {
+    case 'any': return { type: 'any' };
+    case 'string': return { type: 'string' };
+    case 'number': return { type: 'number' };
+    case 'integer': return { type: 'integer' };
+    case 'boolean': return { type: 'boolean' };
+    case 'null': return { type: 'null' };
+    case 'array': return { type: 'array', items: { type: 'any' } };
+    case 'object': return { type: 'object', properties: {} };
+    default: throw new Error(`Unsupported schema type: ${type}`);
+  }
+}
+
 function nextName(names: readonly string[], prefix: string): string {
   let index = 1;
   while (names.includes(`${prefix}${index}`)) index += 1;
@@ -189,7 +203,7 @@ export function SchemaEditor({ node, busy, commit }: {
               setStates((draft.stateFields ?? []).map((item, i) => i === index ? { ...item, name: event.target.value } : item));
             }} /> : <span className="schema-item-name">{field.name}</span>}
           {allowsEdit('stateFields') ? <select className="schema-type-select" aria-label={`${field.name} type`} value={valueType(field.valueSchema)} disabled={!canEdit('stateFields') || field.editPolicy?.canEditValueSchema === false}
-            onChange={(event) => setStates((draft.stateFields ?? []).map((item, i) => i === index ? { ...item, valueSchema: { type: event.target.value } } : item))}>
+            onChange={(event) => setStates((draft.stateFields ?? []).map((item, i) => i === index ? { ...item, valueSchema: schemaForType(event.target.value) } : item))}>
             {['any', 'string', 'number', 'integer', 'boolean'].map((type) => <option key={type}>{type}</option>)}
           </select> : <span className="schema-kind">{valueType(field.valueSchema)}</span>}
           {allowsEdit('stateFields') ? <select className="schema-access-select" aria-label={`${field.name} access`} title="State access" value={field.access} disabled={!canEdit('stateFields') || field.editPolicy?.canEditAccess === false}
@@ -209,7 +223,7 @@ export function SchemaEditor({ node, busy, commit }: {
               setStates((draft.stateFields ?? []).map((item, i) => i === index ? { ...item, name: event.target.value } : item));
             }} /> : <output>{field.name}</output>}</label>
           <label className="schema-detail-field">Type{allowsEdit('stateFields') ? <select aria-label={`${field.name} type`} value={valueType(field.valueSchema)} disabled={!canEdit('stateFields') || field.editPolicy?.canEditValueSchema === false}
-            onChange={(event) => setStates((draft.stateFields ?? []).map((item, i) => i === index ? { ...item, valueSchema: { type: event.target.value } } : item))}>
+            onChange={(event) => setStates((draft.stateFields ?? []).map((item, i) => i === index ? { ...item, valueSchema: schemaForType(event.target.value) } : item))}>
             {['any', 'string', 'number', 'integer', 'boolean'].map((type) => <option key={type}>{type}</option>)}
           </select> : <output>{valueType(field.valueSchema)}</output>}</label>
           <label className="schema-detail-field">Access{allowsEdit('stateFields') ? <select aria-label={`${field.name} access`} value={field.access} disabled={!canEdit('stateFields') || field.editPolicy?.canEditAccess === false}
@@ -265,7 +279,7 @@ export function SchemaEditor({ node, busy, commit }: {
             ? <select className="schema-type-select" aria-label={`${port.name} value type`} value={valueType(port.valueSchema)} disabled={!canEdit(key)}
               onChange={(event) => setData(key, (draft[key] ?? []).map((item, i) => {
                 if (i !== index) return item;
-                const valueSchema: ValueSchema = { type: event.target.value };
+                const valueSchema: ValueSchema = schemaForType(event.target.value);
                 return { ...item, valueSchema, ...(item.payload === undefined ? {} : { payload: { ...item.payload, valueSchema } }) };
               }))}>
               {['any', 'string', 'number', 'integer', 'boolean'].map((type) => <option key={type}>{type}</option>)}
@@ -286,7 +300,7 @@ export function SchemaEditor({ node, busy, commit }: {
           <label className="schema-detail-field">Type{allowsEdit(key) && (port.payload?.kind ?? port.payloadKind ?? 'json') === 'json' ? <select aria-label={`${port.name} value type`} value={valueType(port.valueSchema)} disabled={!canEdit(key)}
             onChange={(event) => setData(key, (draft[key] ?? []).map((item, i) => {
               if (i !== index) return item;
-              const valueSchema: ValueSchema = { type: event.target.value };
+              const valueSchema: ValueSchema = schemaForType(event.target.value);
               return { ...item, valueSchema, ...(item.payload === undefined ? {} : { payload: { ...item.payload, valueSchema } }) };
             }))}>
             {['any', 'string', 'number', 'integer', 'boolean'].map((type) => <option key={type}>{type}</option>)}
@@ -367,7 +381,7 @@ export function SchemaEditor({ node, busy, commit }: {
             } : item))} />
           <select className="schema-type-select" aria-label={`${param.name} parameter type`} value={valueType(param.valueSchema)} disabled={!canEdit('commands')}
             onChange={(event) => setCommands((draft.commands ?? []).map((item, i) => i === index ? {
-              ...item, params: (item.params ?? []).map((value, j) => j === paramIndex ? { ...value, valueSchema: { type: event.target.value } } : value),
+              ...item, params: (item.params ?? []).map((value, j) => j === paramIndex ? { ...value, valueSchema: schemaForType(event.target.value) } : value),
             } : item))}>
             {['any', 'string', 'number', 'integer', 'boolean'].map((type) => <option key={type}>{type}</option>)}
           </select>

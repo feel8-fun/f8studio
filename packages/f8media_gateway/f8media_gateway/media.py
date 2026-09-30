@@ -9,7 +9,7 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from fractions import Fraction
-from typing import Protocol
+from typing import Literal, Protocol
 from uuid import uuid4
 
 from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
@@ -46,7 +46,7 @@ VIDEO_TIME_BASE = Fraction(1, 90_000)
 
 @dataclass(frozen=True)
 class MediaQuality:
-    name: str
+    name: Literal["main", "thumbnail"]
     max_width: int
     max_height: int
     max_fps: int

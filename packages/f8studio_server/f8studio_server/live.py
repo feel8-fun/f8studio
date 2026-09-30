@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import msgspec
+from typing import cast
+from .presentation_models import LiveSnapshot, LivePatch
 from dataclasses import dataclass, field
 
 from f8pysdk.specs import F8JsonValue
@@ -20,8 +23,8 @@ class LiveSubscription:
         self.pending, self.deleted = {}, set()
         if self.snapshot:
             self.snapshot = False
-            return {"type": "live.snapshot", "values": updates}
-        return {"type": "live.patch", "set": updates, "delete": sorted(removed)}
+            return cast(dict[str, F8JsonValue], msgspec.to_builtins(LiveSnapshot(values=updates)))
+        return cast(dict[str, F8JsonValue], msgspec.to_builtins(LivePatch(set=updates, delete=sorted(removed))))
 
 
 class LiveValueHub:

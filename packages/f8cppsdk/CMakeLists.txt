@@ -47,6 +47,14 @@ add_custom_command(
 add_custom_target(f8cppsdk_codegen_protocol_models DEPENDS ${F8CPP_PROTOCOL_MODELS_OUT})
 add_dependencies(f8cppsdk f8cppsdk_codegen_protocol_models)
 
+# Checked-in stream codecs are shared with Python; fail on schema drift.
+add_custom_target(f8cppsdk_check_stream_wire
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/generate_stream_wire.py --check
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/generate_runtime_keys.py --check
+  VERBATIM
+)
+add_dependencies(f8cppsdk f8cppsdk_check_stream_wire)
+
 find_package(nlohmann_json REQUIRED)
 find_package(spdlog REQUIRED)
 

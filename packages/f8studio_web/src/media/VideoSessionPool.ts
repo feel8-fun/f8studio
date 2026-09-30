@@ -1,7 +1,7 @@
 import { closeMediaSession, createMediaSession } from '../api/client';
 import { createRtcPeerConnection, waitForIceGatheringComplete } from './rtc';
 
-export type VideoQuality = 'thumbnail' | 'main';
+export type VideoQuality = import('../api/contracts.gen').MediaSessionAnswer['quality'];
 
 import { RtcSessionPool } from './RtcSessionPool';
 export type { RtcSessionSnapshot as VideoSessionSnapshot, RtcSessionLease as VideoSessionLease } from './RtcSessionPool';

@@ -85,7 +85,7 @@ export function CommandDialog({ node, command, onClose, onResult }: {
       {command.description && <p>{command.description}</p>}
       <div className="command-params">{(command.params ?? []).map((param) => <label key={param.name} className="inspector-field">
         <span>{param.name}{param.valueRequired ? ' *' : ''}</span>
-        {param.valueSchema.enum ? <select value={values[param.name] ?? ''} disabled={pending} onChange={(event) => setValues((current) => ({ ...current, [param.name]: event.target.value }))}>
+        {'enum' in param.valueSchema && param.valueSchema.enum ? <select value={values[param.name] ?? ''} disabled={pending} onChange={(event) => setValues((current) => ({ ...current, [param.name]: event.target.value }))}>
           <option value="" disabled={param.valueRequired}>{param.valueRequired ? 'Select a value' : 'Unset'}</option>
           {param.valueSchema.enum.map((value) => <option key={JSON.stringify(value)} value={typeof value === 'string' ? value : JSON.stringify(value)}>{String(value)}</option>)}
         </select> : param.valueSchema.type === 'boolean' ? <select value={values[param.name] ?? ''} disabled={pending} onChange={(event) => setValues((current) => ({ ...current, [param.name]: event.target.value }))}>

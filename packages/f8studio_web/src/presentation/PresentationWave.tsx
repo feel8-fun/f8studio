@@ -1,3 +1,4 @@
+import type { WaveScene } from "../api/contracts.gen";
 import { useEffect, useRef } from 'react';
 
 import type { JsonValue } from '../api/contracts';
@@ -32,7 +33,7 @@ function seriesColor(colors: JsonValue | undefined, name: string, index: number)
 }
 
 export function PresentationWave({ payload, compact = false }: {
-  readonly payload: Readonly<Record<string, JsonValue>>;
+  readonly payload: Partial<WaveScene> & Readonly<Record<string, JsonValue>>;
   readonly compact?: boolean;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);

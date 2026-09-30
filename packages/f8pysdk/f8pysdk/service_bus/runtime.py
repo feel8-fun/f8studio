@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ..generated import runtime_keys
+
 import asyncio
 import logging
 import uuid
@@ -241,9 +243,9 @@ class ServiceBus:
         self._graph: F8RuntimeGraph | None = None
         self._rungraph_fingerprint = ""
 
-        self._rungraph_key = f"f8/svc/{self.service_id}/config/rungraph"
-        self._rungraph_status_key = f"f8/svc/{self.service_id}/status/rungraph"
-        self._ready_key = f"f8/svc/{self.service_id}/status/ready"
+        self._rungraph_key = runtime_keys.rungraph(self.service_id)
+        self._rungraph_status_key = runtime_keys.rungraph_status(self.service_id)
+        self._ready_key = runtime_keys.ready(self.service_id)
         self._control_endpoints: ServiceControlEndpointServer | None = None
         self._component_factory = component_factory if component_factory is not None else DefaultServiceBusComponentFactory()
 

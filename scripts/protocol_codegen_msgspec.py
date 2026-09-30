@@ -4,6 +4,7 @@ import argparse
 import ast
 import importlib.util
 import sys
+import tempfile
 from pathlib import Path
 import re
 from typing import Any, Protocol, cast
@@ -162,11 +163,22 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Generate msgspec models from OpenAPI protocol schema.")
     parser.add_argument("--protocol", required=True, help="Path to protocol OpenAPI YAML")
     parser.add_argument("--output", required=True, help="Path to generated python output file")
+    parser.add_argument("--check", action="store_true", help="Verify generated models without writing them")
     args = parser.parse_args()
 
     protocol_path = Path(str(args.protocol)).resolve()
     output_path = Path(str(args.output)).resolve()
-    _generate(protocol_path=protocol_path, output_path=output_path)
+    if args.check:
+        with tempfile.TemporaryDirectory(prefix="f8-protocol-check-") as directory:
+            generated = Path(directory) / "models.py"
+            _generate(protocol_path=protocol_path, output_path=generated)
+            def without_timestamp(path: Path) -> str:
+                return "\n".join(line for line in path.read_text(encoding="utf-8").splitlines()
+                                 if not line.startswith("#   timestamp:"))
+            if not output_path.exists() or without_timestamp(generated) != without_timestamp(output_path):
+                raise SystemExit(f"Generated protocol models are stale: {output_path}")
+    else:
+        _generate(protocol_path=protocol_path, output_path=output_path)
 
 
 if __name__ == "__main__":

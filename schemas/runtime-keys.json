@@ -1,0 +1,13 @@
+{
+  "data": "f8/svc/{service}/nodes/{node}/data/{port}",
+  "command": "f8/cmd/svc/{service}/{command}",
+  "legacy_endpoint": "f8/svc/{service}/endpoint/{endpoint}",
+  "legacy_command": "f8/svc/{service}/cmd",
+  "service_liveliness": "f8/live/svc/{service}/instances/{instance}",
+  "studio_liveliness": "f8/live/studio/{service}",
+  "state": "f8/svc/{service}/state/{path}",
+  "node_state": "f8/svc/{service}/state/nodes/{node}/state/{field}",
+  "rungraph": "f8/svc/{service}/config/rungraph",
+  "rungraph_status": "f8/svc/{service}/status/rungraph",
+  "ready": "f8/svc/{service}/status/ready"
+}

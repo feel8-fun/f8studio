@@ -10,13 +10,15 @@ from typing import Any, Protocol
 from .binary_stream_transport import ZenohLatestBinaryStreamTransport
 
 
-ZENOH_VIDEO_FRAME_MAGIC = 0xF85A1001
-ZENOH_VIDEO_FRAME_SCHEMA_VERSION = 2
-VIDEO_FORMAT_BGRA32 = 1
-VIDEO_FORMAT_FLOW2_F16 = 2
-VIDEO_FORMAT_SCALAR1_F32 = 3
-
-_ZENOH_VIDEO_FRAME_HEADER_STRUCT = struct.Struct("<8IQqQQ")
+from .generated.stream_wire import (
+    VIDEO_FORMAT_BGRA32 as VIDEO_FORMAT_BGRA32,
+    VIDEO_FORMAT_FLOW2_F16 as VIDEO_FORMAT_FLOW2_F16,
+    VIDEO_FORMAT_SCALAR1_F32 as VIDEO_FORMAT_SCALAR1_F32,
+    ZENOH_VIDEO_FRAME_MAGIC as ZENOH_VIDEO_FRAME_MAGIC,
+    ZENOH_VIDEO_FRAME_SCHEMA_VERSION as ZENOH_VIDEO_FRAME_SCHEMA_VERSION,
+    ZENOH_VIDEO_FRAME_HEADER_BYTES as ZENOH_VIDEO_FRAME_HEADER_BYTES,
+    VideoFrameHeader as VideoFrameHeader,
+)
 
 
 @dataclass
@@ -113,20 +115,20 @@ def encode_zenoh_video_frame(
         frame_bytes = pitch_i * height_i
         if len(payload_view) < frame_bytes:
             raise ValueError("payload is smaller than pitch * height")
-        header = _ZENOH_VIDEO_FRAME_HEADER_STRUCT.pack(
-            ZENOH_VIDEO_FRAME_MAGIC,
-            ZENOH_VIDEO_FRAME_SCHEMA_VERSION,
-            _ZENOH_VIDEO_FRAME_HEADER_STRUCT.size,
-            width_i,
-            height_i,
-            pitch_i,
-            fmt_i,
-            frame_bytes,
-            frame_id_i,
-            ts_ms_i,
-            epoch_high,
-            epoch_low,
-        )
+        header = VideoFrameHeader(
+            magic=ZENOH_VIDEO_FRAME_MAGIC,
+            version=ZENOH_VIDEO_FRAME_SCHEMA_VERSION,
+            header_bytes=ZENOH_VIDEO_FRAME_HEADER_BYTES,
+            width=width_i,
+            height=height_i,
+            pitch=pitch_i,
+            fmt=fmt_i,
+            payload_bytes=frame_bytes,
+            frame_id=frame_id_i,
+            ts_ms=ts_ms_i,
+            epoch_high=epoch_high,
+            epoch_low=epoch_low,
+        ).pack()
         return header + bytes(payload_view[:frame_bytes])
     finally:
         payload_view.release()
@@ -135,24 +137,24 @@ def encode_zenoh_video_frame(
 def decode_zenoh_video_frame(raw: bytes | bytearray | memoryview) -> LatestVideoFrame | None:
     raw_view = memoryview(raw).cast("B")
     try:
-        if len(raw_view) < _ZENOH_VIDEO_FRAME_HEADER_STRUCT.size:
+        if len(raw_view) < ZENOH_VIDEO_FRAME_HEADER_BYTES:
             return None
-        fields = _ZENOH_VIDEO_FRAME_HEADER_STRUCT.unpack_from(raw_view, 0)
-        magic = int(fields[0])
-        version = int(fields[1])
-        header_bytes = int(fields[2])
-        width = int(fields[3])
-        height = int(fields[4])
-        pitch = int(fields[5])
-        fmt = int(fields[6])
-        payload_bytes = int(fields[7])
-        frame_id = int(fields[8])
-        ts_ms = int(fields[9])
-        epoch_high = int(fields[10])
-        epoch_low = int(fields[11])
+        fields = VideoFrameHeader.unpack_from(raw_view)
+        magic = fields.magic
+        version = fields.version
+        header_bytes = fields.header_bytes
+        width = fields.width
+        height = fields.height
+        pitch = fields.pitch
+        fmt = fields.fmt
+        payload_bytes = fields.payload_bytes
+        frame_id = fields.frame_id
+        ts_ms = fields.ts_ms
+        epoch_high = fields.epoch_high
+        epoch_low = fields.epoch_low
         if magic != ZENOH_VIDEO_FRAME_MAGIC or version != ZENOH_VIDEO_FRAME_SCHEMA_VERSION:
             return None
-        if header_bytes < _ZENOH_VIDEO_FRAME_HEADER_STRUCT.size:
+        if header_bytes < ZENOH_VIDEO_FRAME_HEADER_BYTES:
             return None
         if width <= 0 or height <= 0 or pitch <= 0 or fmt <= 0 or frame_id <= 0:
             return None

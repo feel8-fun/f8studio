@@ -12,11 +12,7 @@ export interface RtcSessionLease {
   readonly release: () => void;
 }
 
-export interface RtcSessionAnswer {
-  readonly sessionId: string;
-  readonly type: RTCSdpType;
-  readonly sdp: string;
-}
+export type RtcSessionAnswer = Pick<import('../api/contracts.gen').MediaSessionAnswer, 'sessionId' | 'type' | 'sdp'>;
 
 export interface RtcSessionTransport<Source> {
   readonly createPeer: () => Promise<RTCPeerConnection>;

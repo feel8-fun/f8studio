@@ -7,8 +7,8 @@ export async function createRtcPeerConnection(): Promise<RTCPeerConnection> {
   return new RTCPeerConnection({
     iceServers: configuration.iceServers.map((server) => ({
       urls: [...server.urls],
-      ...(server.username === undefined ? {} : { username: server.username }),
-      ...(server.credential === undefined ? {} : { credential: server.credential }),
+      ...(server.username == null ? {} : { username: server.username }),
+      ...(server.credential == null ? {} : { credential: server.credential }),
     })),
     iceTransportPolicy: configuration.iceTransportPolicy,
   });

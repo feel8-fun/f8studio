@@ -25,7 +25,8 @@ function fieldValue(node: GraphNode, fieldName: string): JsonValue {
 }
 
 function numericBound(node: GraphNode, field: StateSpec, bound: 'minimum' | 'maximum'): number | undefined {
-  const schemaBound = field.valueSchema[bound];
+  const schema = field.valueSchema;
+  const schemaBound = schema.type === 'number' || schema.type === 'integer' ? schema[bound] : undefined;
   if (typeof schemaBound === 'number') return schemaBound;
   const siblingName = bound === 'minimum' ? 'min' : 'max';
   const siblingValue = fieldValue(node, siblingName);
@@ -68,7 +69,7 @@ export function StateFieldControl({
   const controlDisabled = disabled || connected;
   const control = controlName(field);
   const options = useMemo(() => {
-    if (field.valueSchema.enum !== undefined) return field.valueSchema.enum;
+    if ('enum' in field.valueSchema && field.valueSchema.enum !== undefined) return field.valueSchema.enum;
     const pool = stateOptionPoolField(field);
     const livePool = pool === null ? undefined : runtimeValues?.[pool];
     const poolValue = livePool?.found === true ? livePool.value : pool === null ? null : fieldValue(node, pool);

@@ -1,12 +1,6 @@
 import type { EventEnvelope } from './contracts.gen';
 
-export interface StudioEvent {
-  readonly type: EventEnvelope["type"];
-  readonly serverEpoch: string;
-  readonly sequence: number;
-  readonly scope: string;
-  readonly payload: EventEnvelope["payload"];
-}
+export type StudioEvent = EventEnvelope;
 interface Consumer {
   readonly event: (event: StudioEvent) => void;
   readonly resync?: () => void;

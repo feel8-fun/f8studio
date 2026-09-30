@@ -39,3 +39,23 @@ There is no dynamic GUI plugin loader. Repository-owned capabilities register ex
 The production Web bundle is embedded in the `f8studio-server` wheel. The launcher installs the `studio-runtime` Pixi environment, starts the server on loopback, waits for `/api/health`, and opens the browser. Runtime distributions install local wheels without editable source paths.
 
 See [Build from Source](build-from-source.md) for build and verification commands.
+
+## Generated wire contracts
+
+Wire definitions have one source per boundary:
+
+| Boundary | Source | Generated consumers |
+| --- | --- | --- |
+| Shared service/control JSON protocol | `schemas/protocol.yml` | Python msgspec models, C++ protocol models, Studio TypeScript types |
+| Studio HTTP requests/responses | Server/core msgspec models and `api_contracts.ROUTES` | OpenAPI, `schemas/studio-api.gen.json`, TypeScript models and route maps |
+| Event/live messages and built-in visualization payloads | `presentation_models.py` and `events.py` | TypeScript models; publishers construct the same models |
+| Audio/video binary headers and format constants | `schemas/stream-wire.json` | Explicit Python/C++ header codecs |
+| Runtime key templates | `schemas/runtime-keys.json` | Python/C++ key builders used by public naming APIs |
+
+Run `pixi run protocol_codegen_all` after changing shared schemas or server models. CMake also generates its protocol header in the build tree and checks the checked-in stream/key files. CI checks Python protocol generation, Studio contracts, stream headers and key templates for drift.
+
+Generated `FooInput` models describe accepted requests: defaulted fields may be omitted. Generated `Foo` models describe emitted responses: ordinary defaults are present, while `UNSET` and `omit_defaults` preserve optionality. Recursive references and discriminator mappings stay within their input/output direction. `ApiRequests` binds browser JSON body builders to route keys; `contracts.ts` is an alias/validation facade without independent wire interfaces.
+
+Generation does not replace boundary validation. Browser validators and server decoders still validate untrusted input. User-defined state, custom service payloads and extension presentation commands remain JSON values because their schemas are defined at runtime. UI rendering state, leases and normalized display projections remain local types. Key validation, wildcard/path normalization, and transport behavior remain explicit application code around the generated formats. Legacy command paths keep their existing spelling.
+
+Compile-only TypeScript tests check defaults, nullability, recursive schemas, operation tags, request bodies and fixed-size coordinates. Cross-language tests compile a C++ fixture and compare its encoded bytes with the historical Python wire layout, including negative timestamps and large 64-bit identifiers.

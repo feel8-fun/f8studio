@@ -1,4 +1,5 @@
 #include "f8cppsdk/zenoh_naming.h"
+#include "f8cppsdk/generated/runtime_keys.h"
 
 #include "f8cppsdk/f8_naming.h"
 #include "f8cppsdk/runtime_backend.h"
@@ -83,36 +84,31 @@ std::optional<std::pair<std::string, std::string>> parse_state_path_node_field(c
 }  // namespace
 
 std::string zenoh_data_key(const std::string& service_id, const std::string& node_id, const std::string& port_id) {
-  return std::string(kF8Prefix) + "/svc/" + ensure_token(service_id, "service_id") + "/nodes/" +
-         ensure_token(node_id, "node_id") + "/data/" + ensure_token(port_id, "port_id");
+  return wire_keys::data(ensure_token(service_id, "service_id"), ensure_token(node_id, "node_id"), ensure_token(port_id, "port_id"));
 }
 
 std::string zenoh_endpoint_key(const std::string& service_id, const std::string& endpoint) {
-  return std::string(kF8Prefix) + "/svc/" + ensure_token(service_id, "service_id") + "/endpoint/" +
-         ensure_token(endpoint, "endpoint");
+  return wire_keys::legacy_endpoint(ensure_token(service_id, "service_id"), ensure_token(endpoint, "endpoint"));
 }
 
 std::string zenoh_cmd_key(const std::string& service_id) {
-  return std::string(kF8Prefix) + "/svc/" + ensure_token(service_id, "service_id") + "/cmd";
+  return wire_keys::legacy_command(ensure_token(service_id, "service_id"));
 }
 
 std::string zenoh_command_key(const std::string& service_id, const std::string& command) {
-  return std::string(kF8Prefix) + "/cmd/svc/" + ensure_token(service_id, "service_id") + "/" +
-         ensure_token(command, "command");
+  return wire_keys::command(ensure_token(service_id, "service_id"), ensure_token(command, "command"));
 }
 
 std::string zenoh_service_liveliness_key(const std::string& service_id, const std::string& runtime_instance_id) {
-  return std::string(kF8Prefix) + "/live/svc/" + ensure_token(service_id, "service_id") + "/instances/" +
-         ensure_token(runtime_instance_id, "runtime_instance_id");
+  return wire_keys::service_liveliness(ensure_token(service_id, "service_id"), ensure_token(runtime_instance_id, "runtime_instance_id"));
 }
 
 std::string zenoh_studio_liveliness_key(const std::string& studio_service_id) {
-  return std::string(kF8Prefix) + "/live/studio/" + ensure_token(studio_service_id, "studio_service_id");
+  return wire_keys::studio_liveliness(ensure_token(studio_service_id, "studio_service_id"));
 }
 
 std::string zenoh_state_key(const std::string& service_id, const std::string& node_id, const std::string& field) {
-  return std::string(kF8Prefix) + "/svc/" + ensure_token(service_id, "service_id") + "/state/nodes/" +
-         ensure_token(node_id, "node_id") + "/state/" + field_to_path(field);
+  return wire_keys::node_state(ensure_token(service_id, "service_id"), ensure_token(node_id, "node_id"), field_to_path(field));
 }
 
 std::string zenoh_state_path_key(const std::string& service_id, const std::string& key) {
