@@ -155,9 +155,9 @@ class StudioApplication:
         await self.local.start()
 
     async def close(self) -> None:
+        await self.agents.close()
         await self.extension_tools.close()
         await self.extensions.close()
-        await self.agents.close()
         await self.decisions.close()
         await self.local.close()
         await self.jobs.close()

@@ -77,6 +77,7 @@ class ResourceContent(msgspec.Struct, frozen=True, kw_only=True, rename='camel')
 
 class ExtensionTools:
     def __init__(self, manager: ExtensionManager, root: Path) -> None:
+        self._closing = False
         self.manager = manager
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
@@ -140,6 +141,8 @@ class ExtensionTools:
         self._jobs[job.job_id] = job
 
     def submit(self, extension_id: str, tool_id: str, request: ToolRunRequest) -> ToolJob:
+        if self._closing:
+            raise InvalidRequestError('Studio is closing; tool submissions are stopped')
         tool, command, cwd, env = self.manager.tool_launcher(extension_id, tool_id)
         if tool.requires_confirmation and not request.confirm:
             raise InvalidRequestError('Explicit confirmation is required to execute this tool')
@@ -251,5 +254,6 @@ class ExtensionTools:
         return self.get(job_id)
 
     async def close(self) -> None:
+        self._closing = True
         for job_id in tuple(self._tasks):
             await self.cancel(job_id)
