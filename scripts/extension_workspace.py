@@ -159,7 +159,7 @@ gtest = ">=1.17,<2"
         if package == 'f8screencap':
             native += 'xorg-libx11 = ">=1.8,<2"\nxorg-libxrandr = ">=1.5,<2"\nxorg-libxext = ">=1.3,<2"\nxorg-xorgproto = ">=2025.1,<2027"\n'
         if package == 'f8implayer':
-            native += 'mpv = ">=0.39,<1"\nlibgl-devel = ">=1.7,<2"\nlibegl-devel = ">=1.7,<2"\n'
+            native += 'mpv = ">=0.39,<1"\nlibgl-devel = ">=1.7,<2"\nlibegl-devel = ">=1.7,<2"\nexpat = ">=2.6,<3"\nfreetype = ">=2.13,<3"\nharfbuzz = ">=13.2,<15"\nzlib = ">=1.3,<2"\n'
     return f'''[workspace]
 name = "{package}"
 channels = ["conda-forge"]
@@ -231,7 +231,8 @@ jobs:
         run: |
           pixi run conan profile detect --force
           pixi run conan install .sdk -of build/sdk-deps -s build_type=Release -s compiler.cppstd=17 -o with_extensions=False --build=missing --lockfile .sdk/conan.lock --lockfile-partial
-          pixi run conan install . -of build/deps -s build_type=Release -s compiler.cppstd=17 --build=missing --lockfile conan.lock
+          # Pixi supplies OpenGL headers/libraries; Conan's apt-only check cannot see them.
+          pixi run conan install . -of build/deps -s build_type=Release -s compiler.cppstd=17 --build=missing --lockfile conan.lock -c "opengl/*:tools.system.package_manager:mode=report"
       - uses: actions/cache/save@v5
         if: steps.conan-cache.outputs.cache-hit != 'true'
         with:

@@ -23,7 +23,7 @@
 首次 clone 和旧工作区更新：
 
 ```bash
-git clone --recurse-submodules https://github.com/feel8-fun/f8studio.git
+git clone --branch dev --recurse-submodules https://github.com/feel8-fun/f8studio.git
 # 已有工作区在 pull 主仓库之后：
 git submodule sync --recursive
 git submodule update --init --recursive
