@@ -1,3 +1,36 @@
 [submodule "external/f8unitymods"]
 	path = extensions/f8unitymods
 	url = https://github.com/feel8-fun/f8unity_mods.git
+[submodule "extensions/f8screencap"]
+	path = extensions/f8screencap
+	url = https://github.com/feel8-fun/f8screencap.git
+[submodule "extensions/f8audiocap"]
+	path = extensions/f8audiocap
+	url = https://github.com/feel8-fun/f8audiocap.git
+[submodule "extensions/f8cvkit"]
+	path = extensions/f8cvkit
+	url = https://github.com/feel8-fun/f8cvkit.git
+[submodule "extensions/f8implayer"]
+	path = extensions/f8implayer
+	url = https://github.com/feel8-fun/f8implayer.git
+[submodule "extensions/f8cppengine"]
+	path = extensions/f8cppengine
+	url = https://github.com/feel8-fun/f8cppengine.git
+[submodule "extensions/f8pyengine"]
+	path = extensions/f8pyengine
+	url = https://github.com/feel8-fun/f8pyengine.git
+[submodule "extensions/f8pyscript"]
+	path = extensions/f8pyscript
+	url = https://github.com/feel8-fun/f8pyscript.git
+[submodule "extensions/f8pymppose"]
+	path = extensions/f8pymppose
+	url = https://github.com/feel8-fun/f8pymppose.git
+[submodule "extensions/f8pydl"]
+	path = extensions/f8pydl
+	url = https://github.com/feel8-fun/f8pydl.git
+[submodule "extensions/f8pyaudiofeat"]
+	path = extensions/f8pyaudiofeat
+	url = https://github.com/feel8-fun/f8pyaudiofeat.git
+[submodule "extensions/f8proclauncher"]
+	path = extensions/f8proclauncher
+	url = https://github.com/feel8-fun/f8proclauncher.git

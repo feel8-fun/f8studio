@@ -157,7 +157,7 @@ gtest = ">=1.17,<2"
             native += 'yt-dlp = ">=2025.8,<2027"\n'
         native += '\n[target.linux-64.dependencies]\ngxx_linux-64 = ">=11,<12"\n'
         if package == 'f8screencap':
-            native += 'xorg-libx11 = ">=1.8,<2"\nxorg-libxrandr = ">=1.5,<2"\nxorg-libxext = ">=1.3,<2"\n'
+            native += 'xorg-libx11 = ">=1.8,<2"\nxorg-libxrandr = ">=1.5,<2"\nxorg-libxext = ">=1.3,<2"\nxorg-xorgproto = ">=2025.1,<2027"\n'
         if package == 'f8implayer':
             native += 'mpv = ">=0.39,<1"\nlibgl-devel = ">=1.7,<2"\nlibegl-devel = ">=1.7,<2"\n'
     return f'''[workspace]

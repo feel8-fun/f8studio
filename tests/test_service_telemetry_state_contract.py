@@ -48,6 +48,8 @@ SOURCE_SUFFIXES = {
     ".py",
 }
 
+IGNORED_PARTS = frozenset({".git", ".pixi", ".sdk", "__pycache__", "build", "dist", "node_modules"})
+
 
 class ServiceTelemetryStateContractTest(unittest.TestCase):
     def test_service_describes_do_not_expose_runtime_telemetry_as_state_fields(self) -> None:
@@ -114,7 +116,8 @@ class ServiceTelemetryStateContractTest(unittest.TestCase):
             if not root.exists():
                 continue
             for path in root.rglob("*"):
-                if path.is_file() and path.suffix in SOURCE_SUFFIXES:
+                if (path.is_file() and path.suffix in SOURCE_SUFFIXES
+                        and not IGNORED_PARTS.intersection(path.relative_to(root).parts)):
                     paths.append(path)
         return sorted(paths)
 

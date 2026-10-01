@@ -17,7 +17,7 @@ SOURCE_ROOTS = (
     REPO_ROOT / "tests",
     REPO_ROOT / "extensions",
 )
-IGNORED_PARTS = frozenset({".git", ".pixi", "__pycache__", "build", "dist", "node_modules", "site"})
+IGNORED_PARTS = frozenset({".git", ".pixi", ".sdk", "__pycache__", "build", "dist", "node_modules", "site"})
 FORBIDDEN_IMPORT_ROOTS = frozenset({"NodeGraphQt", "PyQt5", "PyQt6", "PySide2", "PySide6", "pyqtgraph", "qtpy"})
 FORBIDDEN_DISTRIBUTIONS = frozenset({"nodegraphqt", "pyqt5", "pyqt6", "pyside2", "pyside6", "pyqtgraph", "qtpy"})
 FORBIDDEN_PACKAGE_PATHS = (

@@ -51,6 +51,11 @@ def test_except_metrics_respects_exclude_globs(tmp_path: Path) -> None:
     excluded.parent.mkdir(parents=True)
     included.write_text("try:\n    risky()\nexcept Exception:\n    pass\n", encoding="utf-8")
     excluded.write_text("try:\n    risky()\nexcept Exception:\n    pass\n", encoding="utf-8")
+    # Independent extension development keeps a checkout of the SDK and its
+    # managed environment beside the sources; neither belongs in this scan.
+    for generated in (tmp_path / "pkg/.sdk/sdk.py", tmp_path / "pkg/.pixi/envs/default/dependency.py"):
+        generated.parent.mkdir(parents=True)
+        generated.write_text("not valid Python source\n", encoding="utf-8")
 
     files = module.iter_py_files(tmp_path, exclude_globs=("**/tests/**",))
 

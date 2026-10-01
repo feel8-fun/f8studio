@@ -6,6 +6,7 @@ import fnmatch
 from collections import Counter
 from pathlib import Path
 
+IGNORED_PARTS = frozenset({".git", ".pixi", ".sdk", "__pycache__", "build", "dist", "node_modules"})
 
 def _matches_exclude(path: Path, *, root: Path, exclude_globs: tuple[str, ...]) -> bool:
     relative_path = path.relative_to(root).as_posix()
@@ -16,7 +17,9 @@ def iter_py_files(root: Path, *, exclude_globs: tuple[str, ...] = ()) -> list[Pa
     return sorted(
         path
         for path in root.rglob("*.py")
-        if path.is_file() and not _matches_exclude(path, root=root, exclude_globs=exclude_globs)
+        if path.is_file()
+        and not IGNORED_PARTS.intersection(path.relative_to(root).parts)
+        and not _matches_exclude(path, root=root, exclude_globs=exclude_globs)
     )
 
 

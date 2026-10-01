@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 from pathlib import Path
+import sys
 from unittest import mock
+import zipfile
 
 import msgspec
 import pytest
 
-from f8pysdk.extension_packaging import _extract_wheel, validate_package
+from f8pysdk.extension_packaging import _extract_wheel, build_extension, validate_package
 from f8pysdk.extension_spec import ExtensionCatalog
 from scripts.extension_workspace import REPO_ROOT, check_workspace, source_packages
 
@@ -56,3 +59,22 @@ def test_wheel_extraction_rejects_paths_outside_package(tmp_path: Path, name: st
     with pytest.raises(ValueError, match='Unsafe wheel path'):
         _extract_wheel(wheel, tmp_path / 'python')
     assert not (tmp_path / 'escape.py').exists()
+
+
+@pytest.mark.skipif(sys.platform != 'linux', reason='POSIX symlink models Windows temp directory aliases')
+def test_native_packaging_accepts_a_temporary_directory_alias(tmp_path: Path) -> None:
+    real_stage = tmp_path / 'real-stage'
+    real_stage.mkdir()
+    alias = tmp_path / 'stage-alias'
+    alias.symlink_to(real_stage, target_is_directory=True)
+    runtime = tmp_path / 'runtime'
+    binary = runtime / 'f8.screencap/0.0.1/linux/f8screencap_service'
+    binary.parent.mkdir(parents=True)
+    binary.write_bytes(b'native payload')
+    output = tmp_path / 'extension.zip'
+    with mock.patch('f8pysdk.extension_packaging.tempfile.TemporaryDirectory', return_value=nullcontext(str(alias))):
+        with mock.patch('f8pysdk.extension_packaging._refresh_describes') as refresh:
+            build_extension(REPO_ROOT / 'extensions/f8screencap', output, runtime_root=runtime)
+            refresh.assert_called_once_with(real_stage, python_package=False)
+    with zipfile.ZipFile(output) as archive:
+        assert archive.read('runtime/bundles/f8.screencap/0.0.1/linux/f8screencap_service') == b'native payload'

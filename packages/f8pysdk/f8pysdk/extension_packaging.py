@@ -80,7 +80,9 @@ def build_extension(source: Path, output: Path, *, wheel: Path | None = None, ru
     if python_package and any(extension.runtime.environment is None for extension in catalog.extensions):
         raise ValueError('Python extensions must declare an official preset environment')
     with tempfile.TemporaryDirectory(prefix='f8-extension-') as temporary:
-        stage = Path(temporary)
+        # Windows temp directories may use an 8.3 alias or a junction. Resolve
+        # the root just as indexed_entry resolves every service workdir.
+        stage = Path(temporary).resolve()
         shutil.copytree(source / 'config', stage / 'config')
         if (source / 'resources').is_dir():
             shutil.copytree(source / 'resources', stage / 'resources')
