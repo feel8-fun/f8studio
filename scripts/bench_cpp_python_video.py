@@ -322,7 +322,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--producer-bin",
         type=Path,
-        default=ROOT / "build" / "Release" / "bin" / "f8cpp_crosslang_video_publisher",
+        required=True,
+        help="Path to the built f8cpp_crosslang_video_publisher executable (.exe on Windows)",
     )
     parser.add_argument("--video-width", type=int, default=1920)
     parser.add_argument("--video-height", type=int, default=1080)
@@ -339,7 +340,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    producer_bin = Path(args.producer_bin)
+    producer_bin = Path(args.producer_bin).resolve()
     if not producer_bin.is_file():
         raise FileNotFoundError(f"missing C++ producer binary: {producer_bin}")
 

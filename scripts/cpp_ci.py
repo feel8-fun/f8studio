@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -33,9 +34,15 @@ def _pixi_cpp_env_path() -> Path:
 
 
 def _cpp_tool(name: str) -> str:
-    tool_path = _pixi_cpp_env_path() / "bin" / name
-    if tool_path.is_file():
-        return str(tool_path)
+    prefix = _pixi_cpp_env_path()
+    if sys.platform == "win32":
+        candidates = [prefix / "Library" / "bin" / f"{name}.exe",
+                      prefix / "Scripts" / f"{name}.exe", prefix / f"{name}.exe"]
+    else:
+        candidates = [prefix / "bin" / name]
+    for tool_path in candidates:
+        if tool_path.is_file():
+            return str(tool_path)
     return name
 
 
@@ -45,7 +52,7 @@ def _run(command: list[str], *, use_pixi_cpp_paths: bool = False, use_host_pkg_c
 
     command_env = os.environ.copy()
     command_env["CCACHE_TEMPDIR"] = str(ccache_tmp_dir)
-    if use_host_pkg_config:
+    if use_host_pkg_config and sys.platform != "win32":
         _prepend_path_list(command_env, "PATH", [Path("/usr/bin"), Path("/usr/local/bin")])
     if use_pixi_cpp_paths:
         _apply_pixi_cpp_env(command_env)
@@ -289,6 +296,15 @@ def _build_target(target: str) -> None:
     )
 
 
+def _run_target(target: str) -> None:
+    _build_target(target)
+    suffix = ".exe" if sys.platform == "win32" else ""
+    executable = _cmake_build_directory() / "bin" / (target + suffix)
+    if not executable.is_file():
+        raise FileNotFoundError(f"Built target executable is missing: {executable}")
+    _run([str(executable)], use_pixi_cpp_paths=True)
+
+
 def _test() -> None:
     _configure_release(build_tests=True)
     _build_target("f8cppsdk_tests")
@@ -331,7 +347,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="C++ CI entrypoint for Conan + CMake.")
     parser.add_argument(
         "command",
-        choices=("bootstrap", "configure", "build", "build-target", "test", "lock-refresh"),
+        choices=("bootstrap", "configure", "build", "build-target", "run-target", "test", "lock-refresh"),
         help="Action to run.",
     )
     parser.add_argument("target", nargs="?", help="CMake target for the build-target command.")
@@ -350,6 +366,10 @@ def main() -> int:
         if not args.target:
             raise SystemExit("Missing target for build-target")
         _build_target(str(args.target))
+    elif args.command == "run-target":
+        if not args.target:
+            raise SystemExit("Missing target for run-target")
+        _run_target(args.target)
     elif args.command == "test":
         _test()
     elif args.command == "lock-refresh":

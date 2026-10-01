@@ -143,7 +143,7 @@ cpp_bootstrap = "python scripts/cpp_ci.py bootstrap"
 cpp_configure_release = "python scripts/cpp_ci.py configure"
 cpp_build_release = "python scripts/cpp_ci.py build"
 cpp_test_release = "python scripts/cpp_ci.py test"
-cpp_bench_latest_video = "python scripts/cpp_ci.py configure && python scripts/cpp_ci.py build-target f8cpp_bench_latest_video_transport && build/Release/bin/f8cpp_bench_latest_video_transport"
+cpp_bench_latest_video = "python scripts/cpp_ci.py configure && python scripts/cpp_ci.py run-target f8cpp_bench_latest_video_transport"
 
 [feature.ci.dependencies]
 hatchling = ">=1.28.0,<2"

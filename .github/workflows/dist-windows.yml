@@ -243,7 +243,7 @@ jobs:
         run: pixi run --frozen -e ci dist_ci --archive --reuse-unitymods-assets
 
       - name: Validate freshly built C++ service contracts
-        run: pixi run --frozen python scripts/quality/check_cpp_contracts.py --bin-dir build/Release/bin
+        run: pixi run --frozen --no-install -e default python scripts/quality/check_cpp_contracts.py --service-index config/service-index.json
 
       - name: Verify relocated release installation
         run: pixi run --frozen -e ci python scripts/verify_dist.py build/dist/f8studio-windows-x86_64.zip

@@ -169,3 +169,47 @@ class CppCiConfigureTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CppToolPathsTest(unittest.TestCase):
+    def test_tools_use_platform_specific_pixi_locations(self) -> None:
+        module = _load_cpp_ci_module()
+        with tempfile.TemporaryDirectory() as directory:
+            prefix = Path(directory)
+            for platform, name, relative in (
+                ('win32', 'cmake', 'Library/bin/cmake.exe'),
+                ('win32', 'conan', 'Scripts/conan.exe'),
+                ('linux', 'cmake', 'bin/cmake'),
+            ):
+                tool = prefix / relative
+                tool.parent.mkdir(parents=True, exist_ok=True)
+                tool.touch()
+                with mock.patch.object(module, '_pixi_cpp_env_path', return_value=prefix), \
+                     mock.patch.object(module.sys, 'platform', platform):
+                    self.assertEqual(module._cpp_tool(name), str(tool))
+
+    def test_windows_bootstrap_does_not_prepend_unix_paths(self) -> None:
+        module = _load_cpp_ci_module()
+        with tempfile.TemporaryDirectory() as directory, \
+             mock.patch.object(module, 'REPO_ROOT', Path(directory)), \
+             mock.patch.object(module.sys, 'platform', 'win32'), \
+             mock.patch.object(module, '_prepend_path_list') as prepend, \
+             mock.patch.object(module.subprocess, 'run'):
+            module._run(['conan', 'profile', 'detect'], use_host_pkg_config=True)
+            prepend.assert_not_called()
+
+    def test_run_target_uses_active_build_directory_and_platform_suffix(self) -> None:
+        module = _load_cpp_ci_module()
+        with tempfile.TemporaryDirectory() as directory:
+            build = Path(directory) / 'custom build'
+            for platform, suffix in (('win32', '.exe'), ('linux', '')):
+                executable = build / 'bin' / ('benchmark' + suffix)
+                executable.parent.mkdir(parents=True, exist_ok=True)
+                executable.touch()
+                with mock.patch.object(module.sys, 'platform', platform), \
+                     mock.patch.object(module, '_cmake_build_directory', return_value=build), \
+                     mock.patch.object(module, '_build_target') as compile_target, \
+                     mock.patch.object(module, '_run') as run:
+                    module._run_target('benchmark')
+                compile_target.assert_called_once_with('benchmark')
+                run.assert_called_once_with([str(executable)], use_pixi_cpp_paths=True)
