@@ -68,17 +68,16 @@ SDK 与扩展必须使用同一平台、工具链和 Linux sysroot。不能把�
 
 两类 ZIP 都包含通用扩展目录和索引，执行真实 `--describe`、服务类及 monitor 契约验证后再落盘，并附带 `.zip.sha256`。C++ 制品携带部署后的运行库。GUI 截图、摄像头、模型推理等硬件测试仍由各仓库按平台补充，描述验证不替代功能测试。
 
-## 导出新扩展仓库
+## 新增和维护扩展仓库
 
-现有仓库直接在 submodule 中维护。新增扩展时，先将源码和元数据纳入 `config/extension-workspace.toml`，再用已发布的完整 SDK 提交 SHA 导出对应包。导出会生成本包自己的 Pixi 锁、Windows/Linux CI，以及初始本地 Git 提交；不会向 GitHub 发布。新输出目录必须不存在，避免覆盖已开始开发的独立仓库。
+现有扩展直接在独立仓库和 submodule 中维护。新增扩展时，在独立仓库维护源码、元数据、SDK 固定提交、依赖锁和 CI；发布提交后，将仓库作为 submodule 添加到 `extensions/<package>`，并在 `config/extension-workspace.toml` 声明归属。
 
 ```bash
+pixi run -e build-check python scripts/extension_workspace.py sync
 pixi run -e build-check python scripts/extension_workspace.py check
-pixi run -e build-check python scripts/extension_workspace.py export \
-  --package <new-package-name> \
-  --sdk-ref <published-sdk-commit-sha> \
-  --output-dir build/extension-repositories-v2 --git
 ```
+
+`extension_workspace.py` 只负责目录同步和归属检查，不创建仓库、生成 CI、配置 Git 身份或提交源码。
 
 `extension.json` 是各包的扩展元数据；`config/extensions.json` 是 superbuild 的合并目录和预装选择。修改包元数据后运行 `extension_workspace.py sync`，检查会拒绝漏配或重复归属。源码包的直接模块声明用于独立制品，主仓库的服务启动声明目前仍是集成环境中的 Pixi 任务入口。
 
@@ -86,6 +85,6 @@ pixi run -e build-check python scripts/extension_workspace.py export \
 
 SDK 自己的 CI 负责 Python/C++ 单元测试、协议生成校验、跨语言通信及安装后 CMake 包验证，上传 wheel 和 CMake SDK 制品。主仓库的默认 quality 检查只负责 Studio 核心及集成测试；需要单独运行 SDK 测试时使用 `pixi run -e build-check pytest_sdk`。共享协议的唯一来源是 `sdk/schemas/`，Studio HTTP/document 合同仍归主仓库所有。原 `packages/f8sdk_demo` 已精简为 SDK 内的 `cpp/examples/minimal_service`，默认不构建、不进入发行包。
 
-初次本地导出是快照；完整历史仍在主仓库。需要保留单包历史时，先提交源目录修改，再执行 `git subtree split --prefix=extensions/<package>`，将导出的 CI/元数据提交叠加到分支上。目录迁移前的历史在旧的 `packages/<package>` 路径下，完整历史迁移需要同时处理旧路径。发布成功后，在 `extensions/<package>` 添加 submodule，并把已发布提交作为 gitlink；不要提交指向仅存在于本机的提交或 `file://` 仓库。
+更新 submodule 前先发布独立仓库提交，再提交主仓库 gitlink；不要提交指向仅存在于本机的提交或 `file://` 仓库。
 
 Pixi 的 editable 开发路径及 CMake superbuild 使用 `extensions/`，转换 submodule 后路径保持一致。主仓库 pytest 默认只运行核心与集成测试；各扩展的单元测试在本包运行。Windows/Linux 的独立 CI 随仓库 push 自动触发；本地 Linux 验证不能代替 Windows 构建。

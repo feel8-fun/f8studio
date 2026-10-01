@@ -23,5 +23,3 @@ Studio 开发环境也可以从主仓库运行 `pixi run -e web-studio npm --pre
 cloud 的版本由自己的 `package.json` 和 `vX.Y.Z` Git 标签管理，管理前端使用同一发行版本。资产内容修订号、`/v1` API 版本与仓库发行版本分别维护。API 兼容性变化需要协调 Studio 消费者，数据库迁移随 cloud 发行。
 
 先在 cloud 仓库提交、验证并推送，再在 Studio 提交新的 gitlink。Studio 只记录集成使用的 SHA，不随 Studio 发行自动部署 cloud。独立 CI 执行后端测试、前端测试和构建；生产部署、远程迁移继续通过 cloud 的明确部署命令执行。
-
-Git 提交和 GitHub 发布使用 `sis92` 身份；不要使用机器默认 SSH 身份代替明确选择的发布身份。
