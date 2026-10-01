@@ -1,6 +1,6 @@
 # 扩展源码仓库与 superbuild
 
-核心源码放在 `packages/`，可选功能源码放在 `extensions/`；`external/` 留给第三方构建依赖。服务扩展的源码边界由 `config/extension-workspace.toml` 声明。核心保留 Web Studio 前端、服务端、图领域、媒体网关、媒体协议和 Python/C++ SDK。业务服务通过 SDK 和进程协议连接核心，核心实现不能直接导入扩展实现；`extensions_check` 检查这条边界。
+核心源码放在 `packages/`，可选功能源码放在 `extensions/`；`external/` 留给第三方构建依赖。`sdk/` 是 [feel8-fun/f8sdk](https://github.com/feel8-fun/f8sdk) 的 submodule，拥有 Python/C++ SDK、共享协议、生成工具和跨语言测试。服务扩展的源码边界由 `config/extension-workspace.toml` 声明。核心保留 Web Studio 前端、服务端、图领域、媒体网关和媒体协议。业务服务通过 SDK 和进程协议连接核心，核心实现不能直接导入扩展实现；`extensions_check` 检查这条边界。
 
 | 源码目录 / 独立仓库 | 拥有的扩展 |
 | --- | --- |
@@ -47,13 +47,11 @@ pixi run python -m f8pysdk.extension_packaging --wheel-dir build/wheels --output
 C++ 包有自己的 CMake 入口和 Conan 配方/锁。它们通过 `find_package(f8cppsdk 0.1 CONFIG REQUIRED)` 使用安装后的 SDK，不引用 Studio 源码树的部署函数。先安装 SDK，再构建具体包：
 
 ```bash
-pixi run -e cpp cpp_bootstrap
-pixi run -e cpp cmake -S . -B build/sdk-only \
-  -DCMAKE_TOOLCHAIN_FILE="$PWD/build/Release/generators/conan_toolchain.cmake" \
-  -DF8_EXTENSION_PACKAGES= -DF8_BUILD_SDK_DEMO=OFF \
-  -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PWD/build/sdk-install"
-pixi run -e cpp cmake --build build/sdk-only --parallel 2
-pixi run -e cpp cmake --install build/sdk-only
+git clone https://github.com/feel8-fun/f8sdk.git .sdk
+git -C .sdk checkout <published-sdk-commit-sha>
+# 使用 SDK CI 中的锁定 Conan 安装、CMake 构建和安装命令。
+# 在扩展环境中构建 SDK 时，额外传入 -DF8SDK_BUILD_TESTS=OFF，
+# 并将 F8_PIXI_CPP_ENV_DIR 指向扩展自己的 Pixi 依赖前缀。
 # 在扩展仓库中，使用自身 Conan toolchain 和 Pixi 依赖前缀：
 pixi run cmake -S . -B build/native \
   -DCMAKE_TOOLCHAIN_FILE="$PWD/build/deps/conan_toolchain.cmake" \
@@ -76,13 +74,15 @@ SDK 与扩展必须使用同一平台、工具链和 Linux sysroot。不能把�
 pixi run -e build-check python scripts/extension_workspace.py check
 pixi run -e build-check python scripts/extension_workspace.py export \
   --package <new-package-name> \
-  --sdk-ref <published-core-commit-sha> \
+  --sdk-ref <published-sdk-commit-sha> \
   --output-dir build/extension-repositories-v2 --git
 ```
 
 `extension.json` 是各包的扩展元数据；`config/extensions.json` 是 superbuild 的合并目录和预装选择。修改包元数据后运行 `extension_workspace.py sync`，检查会拒绝漏配或重复归属。源码包的直接模块声明用于独立制品，主仓库的服务启动声明目前仍是集成环境中的 Pixi 任务入口。
 
-各独立仓库的 CI checkout 固定 SDK 提交到 `.sdk`，只安装自身 Python / C++ 依赖，测试本包并上传扩展 ZIP。C++ SDK 使用 `with_extensions=False` 准备通信层依赖，扩展使用自己的 Conan 锁；依赖准备成功后立即保存 Conan 缓存，避免后续编译失败时丢失缓存。每个仓库维护自己的 Pixi/Conan 锁，升级 SDK 时同时更新固定提交和锁。生成锁时的 SDK 源码须与固定提交一致。
+各独立仓库的 CI checkout `feel8-fun/f8sdk` 的固定提交到 `.sdk`，不再下载 Studio 仓库。Python 依赖路径是 `.sdk/python`。C++ SDK 使用自己的精简 Conan 配方和锁，扩展使用本包的 Conan 锁；依赖准备成功后立即保存 Conan 缓存，避免后续编译失败时丢失缓存。每个仓库维护自己的 Pixi/Conan 锁，升级 SDK 时同时更新固定提交和锁。生成锁时的 SDK 源码须与固定提交一致。
+
+SDK 自己的 CI 负责 Python/C++ 单元测试、协议生成校验、跨语言通信及安装后 CMake 包验证，上传 wheel 和 CMake SDK 制品。主仓库的默认 quality 检查只负责 Studio 核心及集成测试；需要单独运行 SDK 测试时使用 `pixi run -e build-check pytest_sdk`。共享协议的唯一来源是 `sdk/schemas/`，Studio HTTP/document 合同仍归主仓库所有。原 `packages/f8sdk_demo` 已精简为 SDK 内的 `cpp/examples/minimal_service`，默认不构建、不进入发行包。
 
 初次本地导出是快照；完整历史仍在主仓库。需要保留单包历史时，先提交源目录修改，再执行 `git subtree split --prefix=extensions/<package>`，将导出的 CI/元数据提交叠加到分支上。目录迁移前的历史在旧的 `packages/<package>` 路径下，完整历史迁移需要同时处理旧路径。发布成功后，在 `extensions/<package>` 添加 submodule，并把已发布提交作为 gitlink；不要提交指向仅存在于本机的提交或 `file://` 仓库。
 

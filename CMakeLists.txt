@@ -90,9 +90,9 @@ find_package(Threads REQUIRED)
 
 set(F8_SERVICE_BUNDLES_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/runtime/bundles")
 
-include(cmake/F8ServiceRuntime.cmake)
-
-add_subdirectory(packages/f8cppsdk)
+set(F8SDK_BUILD_TESTS ${BUILD_TESTS})
+add_subdirectory(sdk)
+include(sdk/cmake/F8ServiceRuntime.cmake)
 # An empty list builds the SDK only. Each extension also has a standalone entrypoint.
 set(F8_EXTENSION_PACKAGES "f8cvkit;f8implayer;f8audiocap;f8screencap;f8cppengine"
     CACHE STRING "Native extension source packages to integrate")
@@ -105,27 +105,3 @@ foreach(_f8_extension IN LISTS F8_EXTENSION_PACKAGES)
     endif()
     add_subdirectory("extensions/${_f8_extension}")
 endforeach()
-option(F8_BUILD_SDK_DEMO "Build the SDK example service" ON)
-if(F8_BUILD_SDK_DEMO)
-    add_subdirectory(packages/f8sdk_demo)
-endif()
-
-if (BUILD_TESTS)
-    if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
-        add_subdirectory(tests)
-    else()
-        message(WARNING "BUILD_TESTS=ON but ./tests is missing; skipping")
-    endif()
-endif()
-
-# # Packaging
-# include(CPack)
-# set(CPACK_PACKAGE_NAME "${PROJECT_NAME}")
-# set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
-
-# # Install configuration
-# install(EXPORT f8playerTargets
-#     FILE f8playerTargets.cmake
-#     NAMESPACE f8player::
-#     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/f8player
-# )

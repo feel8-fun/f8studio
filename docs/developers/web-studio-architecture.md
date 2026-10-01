@@ -46,13 +46,13 @@ Wire definitions have one source per boundary:
 
 | Boundary | Source | Generated consumers |
 | --- | --- | --- |
-| Shared service/control JSON protocol | `schemas/protocol.yml` | Python msgspec models, C++ protocol models, Studio TypeScript types |
+| Shared service/control JSON protocol | `sdk/schemas/protocol.yml` | Python msgspec models, C++ protocol models, Studio TypeScript types |
 | Studio HTTP requests/responses | Server/core msgspec models and `api_contracts.ROUTES` | OpenAPI, `schemas/studio-api.gen.json`, TypeScript models and route maps |
 | Event/live messages and built-in visualization payloads | `presentation_models.py` and `events.py` | TypeScript models; publishers construct the same models |
-| Audio/video binary headers and format constants | `schemas/stream-wire.json` | Explicit Python/C++ header codecs |
-| Runtime key templates | `schemas/runtime-keys.json` | Python/C++ key builders used by public naming APIs |
-| Runtime control endpoint names | `schemas/runtime-control.json` | Python enum and C++ endpoint constants/registration list |
-| Rungraph fingerprint normalization | `schemas/rungraph-fingerprint.json` | Python/C++ normalization and canonical serialization |
+| Audio/video binary headers and format constants | `sdk/schemas/stream-wire.json` | Explicit Python/C++ header codecs |
+| Runtime key templates | `sdk/schemas/runtime-keys.json` | Python/C++ key builders used by public naming APIs |
+| Runtime control endpoint names | `sdk/schemas/runtime-control.json` | Python enum and C++ endpoint constants/registration list |
+| Rungraph fingerprint normalization | `sdk/schemas/rungraph-fingerprint.json` | Python/C++ normalization and canonical serialization |
 
 Run `pixi run protocol_codegen_all` after changing shared schemas or server models. CMake also generates its protocol header in the build tree and checks the checked-in stream/key/policy files. CI checks Python protocol generation, Studio contracts, stream headers, key templates and runtime policies for drift.
 

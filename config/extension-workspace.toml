@@ -1,5 +1,5 @@
 # Source layout only. Runtime manifests live with each extension package.
-core = ["f8studio_web", "f8studio_server", "f8studio_core", "f8media_gateway", "f8media_protocol", "f8pysdk", "f8cppsdk"]
+core = ["f8studio_web", "f8studio_server", "f8studio_core", "f8media_gateway", "f8media_protocol"]
 
 [[extensions]]
 package = "f8screencap"

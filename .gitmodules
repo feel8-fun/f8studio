@@ -34,3 +34,6 @@
 [submodule "extensions/f8proclauncher"]
 	path = extensions/f8proclauncher
 	url = https://github.com/feel8-fun/f8proclauncher.git
+[submodule "sdk"]
+	path = sdk
+	url = https://github.com/feel8-fun/f8sdk.git

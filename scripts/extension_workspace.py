@@ -91,6 +91,11 @@ def _source_files(root: Path, package: str) -> tuple[tuple[Path, Path], ...]:
 def export_repository(package: SourcePackage, destination: Path, *, sdk_ref: str, root: Path = REPO_ROOT, initialize_git: bool = False) -> None:
     if destination.exists():
         raise FileExistsError(f'Export destination already exists: {destination}')
+    sdk_source = root / 'sdk'
+    pinned = subprocess.check_output(['git', 'rev-parse', f'{sdk_ref}^{{commit}}'], cwd=sdk_source, text=True).strip()
+    current = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=sdk_source, text=True).strip()
+    if pinned != current or subprocess.check_output(['git', 'status', '--porcelain'], cwd=sdk_source).strip():
+        raise ValueError('Export requires a clean SDK checkout at --sdk-ref so the generated lock matches CI')
     source = root / 'extensions' / package.package
     validate_package(source)
     destination.mkdir(parents=True)
@@ -105,7 +110,7 @@ def export_repository(package: SourcePackage, destination: Path, *, sdk_ref: str
     if python_package:
         shutil.copy2(root / 'ruff.toml', destination / 'ruff.toml')
     workflow = destination / '.github/workflows/quality.yml'
-    workflow.parent.mkdir(parents=True)
+    workflow.parent.mkdir(parents=True, exist_ok=True)
     workflow.write_text(_workflow(sdk_ref, python_package=python_package, has_tests=(source / 'tests').is_dir()))
     with (destination / '.gitignore').open('a') as ignore:
         ignore.write('\n.sdk/\n')
@@ -114,7 +119,7 @@ def export_repository(package: SourcePackage, destination: Path, *, sdk_ref: str
 This repository owns its source, tests, `extension.json`, service manifests and model metadata.
 The Studio superbuild can check it out unchanged at `extensions/{package.package}`.
 
-The SDK source revision used by CI is `{sdk_ref}`. Checkout `feel8-fun/f8studio` at that
+The SDK source revision used by CI is `{sdk_ref}`. Checkout `feel8-fun/f8sdk` at that
 revision into `.sdk` before `pixi install`; only the public SDK is a runtime dependency.
 Use the commands in `.github/workflows/quality.yml` for local build/test parity.
 
@@ -129,12 +134,14 @@ use `git subtree split --prefix=extensions/{package.package}` if full package hi
     validate_package(destination)
     # Resolve each repository's own lock against the public SDK, not the entire
     # superbuild dependency set. CI checks out the pinned SDK into the same path.
-    sdk = destination / '.sdk/packages/f8pysdk'
-    shutil.copytree(root / 'packages/f8pysdk', sdk,
-                    ignore=shutil.ignore_patterns('.git', '.pixi', '__pycache__', '*.egg-info', 'build', 'dist'))
+    sdk = destination / '.sdk'
+    subprocess.run(['git', 'clone', '--quiet', '--no-checkout', 'https://github.com/feel8-fun/f8sdk.git', str(sdk)], check=True)
+    subprocess.run(['git', 'checkout', '--quiet', '--detach', sdk_ref], cwd=sdk, check=True)
     subprocess.run(['pixi', 'lock', '--manifest-path', str(destination / 'pixi.toml')], cwd=destination, check=True)
     if initialize_git:
         subprocess.run(['git', 'init', '-q', '-b', 'main', str(destination)], check=True)
+        subprocess.run(['git', 'config', '--local', 'user.name', 'sis92'], cwd=destination, check=True)
+        subprocess.run(['git', 'config', '--local', 'user.email', 'feel8.fun@gmail.com'], cwd=destination, check=True)
         subprocess.run(['git', 'add', '.'], cwd=destination, check=True)
         subprocess.run(['git', 'commit', '-q', '-m', f'Initialize independent {package.package} extension'], cwd=destination, check=True)
 
@@ -172,7 +179,7 @@ pytest = ">=8.4.2,<9"
 {native}
 
 [pypi-dependencies]
-f8pysdk = {{path = ".sdk/packages/f8pysdk", editable = false}}
+f8pysdk = {{path = ".sdk/python", editable = false}}
 hatchling = ">=1.28,<2"
 basedpyright = ">=1.31,<2"
 ruff = ">=0.12,<0.13"
@@ -203,7 +210,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/checkout@v5
         with:
-          repository: feel8-fun/f8studio
+          repository: feel8-fun/f8sdk
           ref: {sdk_ref}
           path: .sdk
       - uses: prefix-dev/setup-pixi@v0.9.3
@@ -225,12 +232,13 @@ jobs:
         with:
           path: build/conan-cache
           key: conan-${{ runner.os }}-${{ hashFiles('conan.lock', '.sdk/conan.lock', 'pixi.lock') }}
+          restore-keys: conan-${{ runner.os }}-
       - name: Prepare locked SDK and extension dependencies
         env:
           CONAN_HOME: ${{ github.workspace }}/build/conan-cache
         run: |
           pixi run conan profile detect --force
-          pixi run conan install .sdk -of build/sdk-deps -s build_type=Release -s compiler.cppstd=17 -o with_extensions=False --build=missing --lockfile .sdk/conan.lock --lockfile-partial
+          pixi run conan install .sdk -of build/sdk-deps -s build_type=Release -s compiler.cppstd=17 --build=missing --lockfile .sdk/conan.lock
           # Pixi supplies OpenGL headers/libraries; Conan's apt-only check cannot see them.
           pixi run conan install . -of build/deps -s build_type=Release -s compiler.cppstd=17 --build=missing --lockfile conan.lock -c "opengl/*:tools.system.package_manager:mode=report"
       - uses: actions/cache/save@v5
@@ -242,7 +250,7 @@ jobs:
         shell: bash
         run: |
           f8_sdk_toolchain=$(pixi run python -c "from pathlib import Path; candidates = list(Path('build/sdk-deps').rglob('conan_toolchain.cmake')); assert len(candidates) == 1, candidates; print(candidates[0].resolve().as_posix())")
-          pixi run cmake -S .sdk -B build/sdk "-DCMAKE_TOOLCHAIN_FILE=$f8_sdk_toolchain" -DF8_EXTENSION_PACKAGES= -DF8_BUILD_SDK_DEMO=OFF "-DF8_PIXI_CPP_ENV_DIR=${{ github.workspace }}/.pixi/envs/default" "-DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/build/sdk-install" -DCMAKE_BUILD_TYPE=Release
+          pixi run cmake -S .sdk -B build/sdk "-DCMAKE_TOOLCHAIN_FILE=$f8_sdk_toolchain" -DF8SDK_BUILD_TESTS=OFF "-DF8_PIXI_CPP_ENV_DIR=${{ github.workspace }}/.pixi/envs/default" "-DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/build/sdk-install" -DCMAKE_BUILD_TYPE=Release
           pixi run cmake --build build/sdk --config Release --parallel 2
           pixi run cmake --install build/sdk --config Release
       - name: Build only this extension

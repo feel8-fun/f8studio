@@ -28,7 +28,7 @@ Runtime graph revision and compiled deployment input exclude node names, layout,
 
 ## Current boundaries
 
-- `schemas/protocol.yml` defines structured `F8UiControlSpec` (`kind`, `optionsFromState`, `language`, `rendererKey`) for states and command parameters. Local generated `describe.json` snapshots with `uiControl` are normalized during discovery; new definitions use `control`.
+- `sdk/schemas/protocol.yml` defines structured `F8UiControlSpec` (`kind`, `optionsFromState`, `language`, `rendererKey`) for states and command parameters. Local generated `describe.json` snapshots with `uiControl` are normalized during discovery; new definitions use `control`.
 - State fields and command parameters use `valueRequired` for value validation. Data ports, commands, and exec ports use `definitionProtected` for authoring permissions. The GUI does not expose unlocking protected entries; the server rejects attempts to change their protection flag before deletion.
 - Operator exec ports use `F8ExecPortSpec` (`name`, optional label/description/protection). Compilers reduce them to the runtime's string port names. `portIds` keeps connected endpoint identity stable across a rename.
 - `F8ServiceSpec` contains no launch policy. Machine-specific launch configuration stays in `F8ServiceEntry.launch` (`service.yml`), while graph instance state values remain in the project document.

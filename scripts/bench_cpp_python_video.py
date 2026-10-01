@@ -15,7 +15,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PKG_SDK = ROOT / "packages" / "f8pysdk"
+PKG_SDK = ROOT / "sdk" / "python"
 if str(PKG_SDK) not in sys.path:
     sys.path.insert(0, str(PKG_SDK))
 

@@ -16,8 +16,8 @@ It focuses on **synchronization and propagation**:
 
 **Key entry points (recommended reading order):**
 
-- Python: `packages/f8pysdk/f8pysdk/service_bus/api/bus.py`
-- C++: `packages/f8cppsdk/src/service_bus.cpp`
+- Python: `sdk/python/f8pysdk/service_bus/api/bus.py`
+- C++: `sdk/cpp/src/service_bus.cpp`
 - Studio: `packages/f8studio_server/f8studio_server/runtime.py`, `packages/f8studio_server/f8studio_server/app.py`
 
 ---
@@ -43,7 +43,7 @@ We split “communication” into three planes, each optimized for a different c
 State propagation stays simple and explainable because the rungraph enforces strong constraints for **state edges**:
 
 - **No cycles** (prevents feedback oscillation)  
-  See: `packages/f8pysdk/f8pysdk/rungraph_validation.py::validate_state_edges_or_raise(... forbid_cycles=True)`
+  See: `sdk/python/f8pysdk/rungraph_validation.py::validate_state_edges_or_raise(... forbid_cycles=True)`
 - **No multi-upstream per state field** (one upstream source per target field)  
   See: `... forbid_multi_upstream=True`
 
@@ -118,8 +118,8 @@ flowchart LR
 
 Cross-language implementations (must stay consistent):
 
-- Python: `packages/f8pysdk/f8pysdk/zenoh_naming.py`
-- C++: `packages/f8cppsdk/include/f8cppsdk/zenoh_naming.h`
+- Python: `sdk/python/f8pysdk/zenoh_naming.py`
+- C++: `sdk/cpp/include/f8cppsdk/zenoh_naming.h`
 
 ## Data Plane (High-Throughput Message Fan-Out)
 
@@ -135,9 +135,9 @@ Data edges represent **streams**, not durable state:
 
 Implementation references:
 
-- Python: `packages/f8pysdk/f8pysdk/service_bus/routing/data_flow.py`  
+- Python: `sdk/python/f8pysdk/service_bus/routing/data_flow.py`
   (`emit_data`, `on_cross_data_msg`, `pull_data`, buffering + strategies)
-- C++: `packages/f8cppsdk/src/data_bus.cpp`, `packages/f8cppsdk/src/rungraph_routes.cpp`
+- C++: `sdk/cpp/src/data_bus.cpp`, `sdk/cpp/src/rungraph_routes.cpp`
 
 ### Why callback is the default
 
@@ -181,7 +181,7 @@ The `kv_*` names are legacy facade names over the retained-state runtime. They d
 
 ### State write pipeline (Python reference implementation)
 
-The `publish_state(...)` pipeline (see `packages/f8pysdk/f8pysdk/service_bus/domain/state_pipeline.py`) is the canonical contract:
+The `publish_state(...)` pipeline (see `sdk/python/f8pysdk/service_bus/domain/state_pipeline.py`) is the canonical contract:
 
 1. **Access control** via `F8StateAccess` (`ro/rw/wo`) and `StateWriteOrigin` (`runtime/rungraph/external/system`)
 2. **Node validation hook** via `node.validate_state(...)` (accept/transform/reject with `StateWriteError`)
@@ -241,7 +241,7 @@ Cross-service state edges are **bindings**, not ordinary data-stream messages:
 
 Python references:
 
-- Build binding tables: `packages/f8pysdk/f8pysdk/service_bus/workflow/cross_state.py::update_cross_state_bindings(...)`
+- Build binding tables: `sdk/python/f8pysdk/service_bus/workflow/cross_state.py::update_cross_state_bindings(...)`
 - Start watches + initial sync: `...::sync_cross_state_watches(...)`
 - Apply remote update: `...::on_remote_state_kv(...)`
 
@@ -404,7 +404,7 @@ We achieve this by combining:
 
 ## Implementation Layers (Python ServiceBus)
 
-The Python implementation follows a layered architecture (see `packages/f8pysdk/f8pysdk/service_bus/ARCHITECTURE.md`):
+The Python implementation follows a layered architecture (see `sdk/python/f8pysdk/service_bus/ARCHITECTURE.md`):
 
 ``` mermaid
 flowchart TB
@@ -433,22 +433,22 @@ flowchart TB
 
 ### Python (`f8pysdk`)
 
-- ServiceBus facade + shared state/data APIs: `packages/f8pysdk/f8pysdk/service_bus/api/bus.py`
-- Data plane (buffering, pull/push delivery): `packages/f8pysdk/f8pysdk/service_bus/routing/data_flow.py`
-- State write pipeline (validate/dedupe/persist/local apply): `packages/f8pysdk/f8pysdk/service_bus/domain/state_pipeline.py`
-- Cross-state (remote state watch + initial sync): `packages/f8pysdk/f8pysdk/service_bus/workflow/cross_state.py`
-- Rungraph apply (validate + rebuild + init sync): `packages/f8pysdk/f8pysdk/service_bus/workflow/rungraph.py`
-- Transport interface: `packages/f8pysdk/f8pysdk/runtime_transport.py`
-- Zenoh transport: `packages/f8pysdk/f8pysdk/zenoh_transport.py`
-- Naming (Zenoh keys): `packages/f8pysdk/f8pysdk/zenoh_naming.py`
-- Control endpoints: `packages/f8pysdk/f8pysdk/service_bus/internal/control_endpoints.py`
+- ServiceBus facade + shared state/data APIs: `sdk/python/f8pysdk/service_bus/api/bus.py`
+- Data plane (buffering, pull/push delivery): `sdk/python/f8pysdk/service_bus/routing/data_flow.py`
+- State write pipeline (validate/dedupe/persist/local apply): `sdk/python/f8pysdk/service_bus/domain/state_pipeline.py`
+- Cross-state (remote state watch + initial sync): `sdk/python/f8pysdk/service_bus/workflow/cross_state.py`
+- Rungraph apply (validate + rebuild + init sync): `sdk/python/f8pysdk/service_bus/workflow/rungraph.py`
+- Transport interface: `sdk/python/f8pysdk/runtime_transport.py`
+- Zenoh transport: `sdk/python/f8pysdk/zenoh_transport.py`
+- Naming (Zenoh keys): `sdk/python/f8pysdk/zenoh_naming.py`
+- Control endpoints: `sdk/python/f8pysdk/service_bus/internal/control_endpoints.py`
 
 ### C++ (`f8cppsdk`)
 
-- Zenoh naming (must match Python): `packages/f8cppsdk/include/f8cppsdk/zenoh_naming.h`
-- Data publish: `packages/f8cppsdk/src/data_bus.cpp`
-- Control plane, state writes, and ready flag: `packages/f8cppsdk/src/service_bus.cpp`
-- Rungraph + cross-state logic: `packages/f8cppsdk/src/service_bus.cpp`
+- Zenoh naming (must match Python): `sdk/cpp/include/f8cppsdk/zenoh_naming.h`
+- Data publish: `sdk/cpp/src/data_bus.cpp`
+- Control plane, state writes, and ready flag: `sdk/cpp/src/service_bus.cpp`
+- Rungraph + cross-state logic: `sdk/cpp/src/service_bus.cpp`
 
 ### Web Studio
 

@@ -1,4 +1,0 @@
-{
-  "shared": ["activate", "deactivate", "set_active", "status", "terminate", "quit", "cmd", "set_state", "set_rungraph"],
-  "python_only": ["debug_data"]
-}

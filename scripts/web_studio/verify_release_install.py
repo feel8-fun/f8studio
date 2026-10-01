@@ -18,7 +18,7 @@ from release_wheels import build_wheels
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WEB_SOURCE_DIR = REPO_ROOT / "build" / "web-studio"
 PACKAGE_DIRS = (
-    REPO_ROOT / "packages" / "f8pysdk",
+    REPO_ROOT / "sdk" / "python",
     REPO_ROOT / "packages" / "f8studio_core",
     REPO_ROOT / "packages" / "f8media_protocol",
     REPO_ROOT / "packages" / "f8media_gateway",

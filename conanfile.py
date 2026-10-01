@@ -107,7 +107,6 @@ class F8Build(ConanFile):
         }
         if not self.options.with_extensions:
             options["F8_EXTENSION_PACKAGES"] = ""
-            options["F8_BUILD_SDK_DEMO"] = "OFF"
         cmake.configure(options)
         cmake.build()
 

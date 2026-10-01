@@ -11,7 +11,7 @@ runtime.
 | Area | Owner | Responsibility |
 | --- | --- | --- |
 | `extensions/f8unitymods` | Git submodule | Unity profiles, backend detection, managed installation, C# exporters, release assets |
-| `packages/f8pysdk/f8pysdk/motion` | F8 Python SDK | Typed skeleton models and binary/JSON decoding |
+| `sdk/python/f8pysdk/motion` | F8 Python SDK | Typed skeleton models and binary/JSON decoding |
 | `extensions/f8pyengine/f8pyengine/operators` | PyEngine | Stable selection, relative pose axes, watchdog, TCode processing |
 | `packages/f8studio_server/f8studio_server/local_integration.py` | Web Studio server | Detect/preview/apply/verify orchestration and local safety boundary |
 | `scripts/unitymods_ci.py` | Root build | Submodule validation, build/package dispatch, SHA-256 bundle manifest |

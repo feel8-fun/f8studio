@@ -31,7 +31,7 @@ CPP_PRESET_CANDIDATES = (
     DEFAULT_CPP_PRESET_PATH,
 )
 CPP_BUILD_PRESET_NAME = "conan-release"
-LOCAL_EDITABLE_PATH_PREFIXES = ("packages/", "extensions/")
+LOCAL_EDITABLE_PATH_PREFIXES = ("packages/", "extensions/", "sdk/")
 # C++ runtime deploy targets are owned by CMake's f8_deploy_all_runtime aggregator.
 CPP_DEPLOY_ALL_TARGET = "f8_deploy_all_runtime"
 LAUNCHER_RUNTIME_FEATURE = "launcher-runtime"

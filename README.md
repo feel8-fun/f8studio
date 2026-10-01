@@ -6,10 +6,11 @@ Runtime workspace for Feel8 Studio. The current runtime is Zenoh-first:
 - local large-payload transfers can use Zenoh shared-memory optimization
 
 ## Layout
-- `schemas` — canonical protocol, runtime keys, and generated Studio API contracts.
+- `schemas` — generated Studio API contracts.
+- `sdk` — [independent SDK repository](https://github.com/feel8-fun/f8sdk), including canonical shared protocols and generators.
 - `docs` — architecture, service/operator manuals, and development guides.
-- `packages/f8pysdk` — Python runtime SDK, Zenoh/mem transports, ServiceApp helpers.
-- `packages/f8cppsdk` — C++ runtime SDK, Zenoh transport and latest video/audio transports.
+- `sdk/python` — Python runtime SDK, Zenoh/mem transports, ServiceApp helpers.
+- `sdk/cpp` — C++ runtime SDK, Zenoh transport and latest video/audio transports.
 - `packages/f8studio_core` — typed graph document, patch, catalog, and compiler contracts.
 - `packages/f8studio_server` — local Web Studio application service, API, CLI, and MCP.
 - `packages/f8studio_web` — React graph editor and presentation workspaces.
@@ -19,7 +20,7 @@ Runtime workspace for Feel8 Studio. The current runtime is Zenoh-first:
 - `config/services` — tracked, platform-specific launch declarations.
 - `runtime/bundles/<bundle>/<version>` — generated descriptions, executables, and bundled libraries/resources.
 - `resources/models` — shared model definitions and installed weights.
-- `scripts` — codegen, describe regeneration, benchmarks, and migration tooling.
+- `scripts` — Studio contract generation, describe regeneration, benchmarks, and integration tooling.
 
 ## Runtime Backend
 - Default: `--bus-backend zenoh`

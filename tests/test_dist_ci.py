@@ -61,8 +61,10 @@ class DistCiDiscoveryTest(unittest.TestCase):
     def test_discover_local_editable_packages_ignores_non_packages_or_non_editable(self) -> None:
         self._write_pyproject("packages/pkg_a", "pkg-a")
         self._write_pyproject("packages/pkg_c", "pkg-c")
+        self._write_pyproject("sdk/python", "f8pysdk")
 
         pixi_toml_path = self.root / "pixi.toml"
+        # The SDK submodule must be built into the offline runtime too.
         pixi_toml_path.write_text(
             "[feature.alpha.pypi-dependencies]\n"
             'pkg-a = { path = "packages/pkg_a", editable = true }\n'
@@ -71,7 +73,9 @@ class DistCiDiscoveryTest(unittest.TestCase):
             'requests = ">=2"\n'
             "\n"
             "[feature.beta.pypi-dependencies]\n"
-            'pkg-c = { path = "packages/pkg_c", editable = true }\n',
+            'pkg-c = { path = "packages/pkg_c", editable = true }\n'
+            '[feature.sdk.pypi-dependencies]\n'
+            'f8pysdk = {path = "sdk/python", editable = true}\n',
             encoding="utf-8",
         )
 
@@ -85,6 +89,7 @@ class DistCiDiscoveryTest(unittest.TestCase):
             {
                 "pkg-a": "packages/pkg_a",
                 "pkg-c": "packages/pkg_c",
+                "f8pysdk": "sdk/python",
             },
         )
 
