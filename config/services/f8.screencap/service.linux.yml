@@ -3,7 +3,7 @@ serviceClass: f8.screencap
 label: Screen Capture
 version: 0.0.1
 launch:
-  command: ./f8screencap_service
+  command: ${F8_BUNDLE_ROOT}/f8screencap_service
   args: []
   env: {}
-  workdir: ../../../runtime/bundles/f8.screencap/0.0.1/linux
+  workdir: ${F8_BUNDLE_ROOT}

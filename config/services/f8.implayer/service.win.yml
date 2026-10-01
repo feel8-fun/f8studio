@@ -3,7 +3,7 @@ serviceClass: f8.implayer
 label: IM Player
 version: 0.0.1
 launch:
-  command: ./f8implayer_service.exe
+  command: ${F8_BUNDLE_ROOT}/f8implayer_service.exe
   args: []
   env: {}
-  workdir: ../../../runtime/bundles/f8.implayer/0.0.1/win
+  workdir: ${F8_BUNDLE_ROOT}

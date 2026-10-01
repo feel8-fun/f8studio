@@ -13,6 +13,8 @@ import urllib.request
 
 import yaml
 
+from f8pysdk.service_paths import ServicePaths
+
 VERSION = '0.7.11'
 DIGESTS = {
     'pixi-pack-x86_64-pc-windows-msvc.exe': '12dde5b363fb7c5fb6215e0747638b0486a0bd3f47ef653b23ce020bc1936263',
@@ -48,12 +50,13 @@ def rewrite_base_services(root: Path, *, windows: bool, preset: str = 'standard'
         tasks.update(manifest['feature'][feature].get('tasks', {}))
     index_path = root / 'config/service-index.json'
     index = json.loads(index_path.read_text())
+    paths = ServicePaths.for_index(index_path)
     catalog_path = root / 'config/extensions.json'
     catalog = json.loads(catalog_path.read_text())
     environments: dict[str, str] = {}
     for item in index['services']:
         for relative in item['manifests'].values():
-            path = root / 'config' / relative
+            path = paths.package_path(relative, relative_to=index_path.parent)
             document = yaml.safe_load(path.read_text())
             launch = document['launch']
             if launch['command'] not in {'pixi', 'pixi.exe'}:
@@ -71,7 +74,7 @@ def rewrite_base_services(root: Path, *, windows: bool, preset: str = 'standard'
                 raise ValueError(f'Base task must be an explicit Python module: {command}')
             launch['command'] = './env/python.exe' if windows else './env/bin/python'
             launch['args'] = ['-I', *command[1:]]
-            launch['workdir'] = os.path.relpath(root, path.parent).replace('\\', '/')
+            launch['workdir'] = '${F8_PACKAGE_ROOT}'
             path.write_text(yaml.safe_dump(document, sort_keys=False), encoding='utf-8')
     preinstalled: list[str] = []
     for extension in catalog['extensions']:

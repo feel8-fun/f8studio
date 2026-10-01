@@ -21,7 +21,7 @@ from f8pysdk.monitoring import validate_describe_monitor_contract
 from f8pysdk.specs import F8ServiceDescribe, F8ServiceEntry
 from f8pysdk.resource_paths import service_config_root
 from f8pysdk.service_runtime_tools.inventory.describe import _extract_last_json_obj
-from f8pysdk.service_runtime_tools.inventory.index import default_service_index, indexed_entry, read_service_index
+from f8pysdk.service_runtime_tools.inventory.index import default_service_index, index_paths, indexed_entry, read_service_index
 
 
 def file_digest(path: Path) -> bytes:
@@ -165,7 +165,7 @@ def install(index_path: Path, *, refresh: bool, service_classes: set[str],
         if entry is None:
             continue
         entry = description_entry(entry, build_check=build_check)
-        target = (index_path.parent / item.describe).resolve()
+        target = index_paths(index_path, index, item).package_path(item.describe, relative_to=index_path.parent)
         environment = pixi_environment(entry)
         if native_only and environment is not None:
             continue
@@ -230,7 +230,7 @@ def main() -> None:
         print(f"Verified {count} runtime/config files; originals preserved")
     if args.migrate_resources is not None:
         index = read_service_index(path)
-        count = migrate_resources(args.migrate_resources, (path.parent / index.modelRoot).resolve())
+        count = migrate_resources(args.migrate_resources, index_paths(path, index).model_root)
         print(f"Verified {count} resource files; originals preserved")
     count = install(path, refresh=args.refresh, service_classes=set(args.service_class),
                     python_only=args.python_only, no_install=args.no_install, build_check=args.build_check, native_only=args.native_only)

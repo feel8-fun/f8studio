@@ -1,3 +1,5 @@
+from f8pysdk.service_paths import ServicePaths
+
 from pathlib import Path
 
 import pytest
@@ -53,7 +55,7 @@ def service_index(tmp_path: Path) -> Path:
     index = json.loads((root / "config/service-index.json").read_text())
     index["services"] = [item for item in index["services"] if item["serviceClass"] in {"f8.pyexpr", "f8.pyscript"}]
     for item in index["services"]:
-        original = root / "config" / item["manifests"]["any"]
+        original = ServicePaths.for_index(root / "config/service-index.json").package_path(item["manifests"]["any"], relative_to=root / "config")
         entry = yaml.safe_load(original.read_text())
         entry["launch"]["workdir"] = str(root)
         manifest = tmp_path / (item["serviceClass"] + ".yml")
@@ -73,7 +75,7 @@ def test_refresh_prepares_shared_environment_once_before_timed_describes(service
 
     root = Path.cwd()
     real_index = json.loads((root / "config/service-index.json").read_text())
-    payloads = {item["serviceClass"]: (root / "config" / item["describe"]).read_text()
+    payloads = {item["serviceClass"]: ServicePaths.for_index(root / "config/service-index.json").package_path(item["describe"], relative_to=root / "config").read_text()
                 for item in real_index["services"] if item["serviceClass"] in {"f8.pyexpr", "f8.pyscript"}}
     calls: list[list[str]] = []
 
@@ -146,7 +148,7 @@ def test_failed_refresh_keeps_all_previous_descriptions(service_index: Path) -> 
     real_index = json.loads(Path("config/service-index.json").read_text())
     first_class = index["services"][0]["serviceClass"]
     first = next(item for item in real_index["services"] if item["serviceClass"] == first_class)
-    payload = (Path("config") / first["describe"]).read_text()
+    payload = ServicePaths.for_index(Path("config/service-index.json")).package_path(first["describe"], relative_to=Path("config")).read_text()
     with patch("scripts.install_services.subprocess.run", side_effect=[
         subprocess.CompletedProcess([], 0, stdout=payload),
         subprocess.CalledProcessError(1, "second service", stderr="import failed"),

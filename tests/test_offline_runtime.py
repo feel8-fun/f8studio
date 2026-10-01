@@ -32,7 +32,7 @@ engine = "python -m f8pyengine.main"
     entry = yaml.safe_load((tmp_path / 'config/services/engine/service.yml').read_text())['launch']
     assert entry['command'] == ('./env/python.exe' if windows else './env/bin/python')
     assert entry['args'] == ['-I', '-m', 'f8pyengine.main']
-    assert entry['workdir'] == '../../..'
+    assert entry['workdir'] == '${F8_PACKAGE_ROOT}'
     assert len(json.loads((tmp_path / 'config/service-index.json').read_text())['services']) == 3
     catalog = json.loads((tmp_path / 'config/extensions.json').read_text())
     assert catalog['preinstalled'] == ['engine']

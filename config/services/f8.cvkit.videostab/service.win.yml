@@ -3,7 +3,7 @@ serviceClass: f8.cvkit.videostab
 label: CVKit Video Stabilizer
 version: 0.0.1
 launch:
-  command: ./f8cvkit_video_stab_service.exe
+  command: ${F8_BUNDLE_ROOT}/f8cvkit_video_stab_service.exe
   args: []
   env: {}
-  workdir: ../../../runtime/bundles/f8.cvkit/0.0.1/win
+  workdir: ${F8_BUNDLE_ROOT}

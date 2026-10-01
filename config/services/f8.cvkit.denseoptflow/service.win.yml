@@ -3,7 +3,7 @@ serviceClass: f8.cvkit.denseoptflow
 label: CVKit Dense Optical Flow
 version: 0.0.1
 launch:
-  command: ./f8cvkit_dense_optflow_service.exe
+  command: ${F8_BUNDLE_ROOT}/f8cvkit_dense_optflow_service.exe
   args: []
   env: {}
-  workdir: ../../../runtime/bundles/f8.cvkit/0.0.1/win
+  workdir: ${F8_BUNDLE_ROOT}

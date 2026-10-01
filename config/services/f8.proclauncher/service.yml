@@ -10,4 +10,4 @@ launch:
   - default
   - f8proclauncher
   env: {}
-  workdir: ../../..
+  workdir: ${F8_PACKAGE_ROOT}

@@ -3,7 +3,7 @@ serviceClass: f8.cppengine
 label: CppEngine
 version: 0.0.1
 launch:
-  command: ./f8cppengine_service
+  command: ${F8_BUNDLE_ROOT}/f8cppengine_service
   args: []
   env: {}
-  workdir: ../../../runtime/bundles/f8.cppengine/0.0.1/linux
+  workdir: ${F8_BUNDLE_ROOT}

@@ -20,9 +20,10 @@ import yaml
 
 from f8pysdk.codec import copy_model, validate_as
 from f8pysdk.monitoring import validate_describe_monitor_contract
+from f8pysdk.resource_paths import model_root as configured_model_root
 from f8pysdk.service_runtime_tools.inventory import ServiceCatalog
 from f8pysdk.service_runtime_tools.inventory.index import (
-    IndexedService, ServiceIndex, default_service_index, indexed_entry,
+    IndexedService, ServiceIndex, default_service_index, index_paths, indexed_entry,
     load_index_into_catalog, read_service_index,
 )
 from f8pysdk.specs import F8ServiceDescribe, F8ServiceEntry
@@ -137,8 +138,9 @@ class ExtensionManager:
         if conflicts or ids & self._manifests.keys():
             raise ConflictError('Extension package conflicts with an existing extension ID or service class')
         for item in index.services:
+            paths = index_paths(index_path, index, item)
             for relative in (*item.manifests.values(), item.describe):
-                path = (index_path.parent / relative).resolve()
+                path = paths.package_path(relative, relative_to=index_path.parent)
                 if not path.is_relative_to(root) or not path.is_file():
                     raise ValueError(f'Missing or unsafe payload path for {item.serviceClass}: {relative}')
         environments = self.environments if root == self._source_root else EnvironmentManager(
@@ -476,9 +478,9 @@ class ExtensionManager:
         destination = self._registration(manifest.extension_id)
         destination.parent.mkdir(parents=True, exist_ok=True)
         services: list[IndexedService] = []
-        model_root = str((payload.index_path.parent / payload.index.modelRoot).resolve())
+        model_root = str(index_paths(payload.index_path, payload.index).model_root)
         if manifest.model_directories:
-            model_root = str((self._data_dir / 'models').resolve())
+            model_root = str(self._model_root())
         plan = payload.environments.plan(manifest)
         if manifest.runtime.kind in {'pixi', 'shared'}:
             if record.environment_id != plan.environment_id or not payload.environments.ready(record.environment_id):
@@ -510,7 +512,7 @@ class ExtensionManager:
             entry = copy_model(entry, update={'launch': copy_model(entry.launch, update={'env': env})})
             entry_path = destination.parent / f'{name}.yml'
             entry_path.write_text(yaml.safe_dump(msgspec.to_builtins(entry), sort_keys=False), encoding='utf-8')
-            describe = (payload.index_path.parent / item.describe).resolve()
+            describe = index_paths(payload.index_path, payload.index, item).package_path(item.describe, relative_to=payload.index_path.parent)
             if not describe.is_relative_to(payload.root):
                 raise ValueError(f'Description for {name} is outside the extension payload')
             services.append(IndexedService(serviceClass=name, manifests={'any': entry_path.name}, describe=str(describe)))
@@ -519,10 +521,15 @@ class ExtensionManager:
         temporary.write_bytes(msgspec.json.encode(index))
         temporary.replace(destination)
 
+    def _model_root(self) -> Path:
+        if os.environ.get('F8_MODEL_ROOT') or os.environ.get('F8_RESOURCE_ROOT'):
+            return configured_model_root().resolve()
+        return (self._data_dir / 'models').resolve()
+
     def _copy_model_metadata(self, manifest: ExtensionManifest) -> None:
         for directory in manifest.model_directories:
             source = self._payloads[manifest.extension_id].root / 'resources' / 'models' / directory
-            destination = self._data_dir / 'models' / directory
+            destination = self._model_root() / directory
             destination.mkdir(parents=True, exist_ok=True)
             for metadata in sorted(source.glob('*.yaml')):
                 if not (destination / metadata.name).exists():

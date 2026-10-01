@@ -3,7 +3,7 @@ serviceClass: f8.cvkit.flowmetric
 label: CVKit Flow Metric
 version: 0.0.1
 launch:
-  command: ./f8cvkit_flow_metric_service
+  command: ${F8_BUNDLE_ROOT}/f8cvkit_flow_metric_service
   args: []
   env: {}
-  workdir: ../../../runtime/bundles/f8.cvkit/0.0.1/linux
+  workdir: ${F8_BUNDLE_ROOT}

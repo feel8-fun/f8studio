@@ -3,7 +3,7 @@ serviceClass: f8.audiocap
 label: Audio Capture
 version: 0.0.1
 launch:
-  command: ./f8audiocap_service.exe
+  command: ${F8_BUNDLE_ROOT}/f8audiocap_service.exe
   args: []
   env: {}
-  workdir: ../../../runtime/bundles/f8.audiocap/0.0.1/win
+  workdir: ${F8_BUNDLE_ROOT}

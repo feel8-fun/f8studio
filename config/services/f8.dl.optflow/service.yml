@@ -10,4 +10,4 @@ launch:
   - onnx
   - f8pydl_optflow
   env: {}
-  workdir: ../../..
+  workdir: ${F8_PACKAGE_ROOT}

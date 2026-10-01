@@ -3,7 +3,7 @@ serviceClass: f8.cvkit.templatematch
 label: CVKit Template Match
 version: 0.0.1
 launch:
-  command: ./f8cvkit_template_match_service
+  command: ${F8_BUNDLE_ROOT}/f8cvkit_template_match_service
   args: []
   env: {}
-  workdir: ../../../runtime/bundles/f8.cvkit/0.0.1/linux
+  workdir: ${F8_BUNDLE_ROOT}

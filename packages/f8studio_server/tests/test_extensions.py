@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from f8pysdk.service_paths import ServicePaths
+
 import asyncio
 import json
 import hashlib
@@ -19,7 +21,7 @@ import pytest
 import yaml
 
 from f8pysdk._specs.builtin_fields import normalize_describe_payload_dict
-from f8pysdk.service_runtime_tools.inventory.index import IndexedService, ServiceIndex, read_service_index
+from f8pysdk.service_runtime_tools.inventory.index import IndexedService, ServiceIndex, indexed_entry, read_service_index
 from f8studio_server.app import create_app
 from f8studio_server.application import StudioApplication
 from f8studio_server.catalog import CatalogService
@@ -85,6 +87,36 @@ async def _finish(manager: ExtensionManager, extension_id: str, catalog: Catalog
     assert manager.status(extension_id).state == 'installed', manager.status(extension_id).detail
 
 
+@pytest.mark.parametrize('variable', ['F8_MODEL_ROOT', 'F8_RESOURCE_ROOT'])
+def test_model_metadata_and_registration_use_configured_writable_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, variable: str,
+) -> None:
+    monkeypatch.delenv('F8_MODEL_ROOT', raising=False)
+    monkeypatch.delenv('F8_RESOURCE_ROOT', raising=False)
+    configured = tmp_path / 'external resources'
+    monkeypatch.setenv(variable, str(configured))
+    _manager, source = _fixture(tmp_path, names=('alpha',))
+    metadata = source / 'resources/models/example/model.yaml'
+    metadata.parent.mkdir(parents=True)
+    metadata.write_text('model: example\n')
+    catalog_path = source / 'config/extensions.json'
+    raw = json.loads(catalog_path.read_text())
+    raw['extensions'][0]['modelDirectories'] = ['example']
+    catalog_path.write_text(json.dumps(raw))
+    manager = ExtensionManager(tmp_path / 'data', base_index=source / 'config/service-index.json')
+    catalog = CatalogService(extension_indexes=manager.active_indexes)
+    asyncio.run(_finish(manager, 'alpha', catalog))
+    models = configured if variable == 'F8_MODEL_ROOT' else configured / 'models'
+    assert (models / 'example/model.yaml').read_text() == metadata.read_text()
+    assert not (tmp_path / 'data/models').exists()
+    registration = manager._registration('alpha')
+    index = read_service_index(registration)
+    entry = indexed_entry(registration, index, index.services[0])
+    assert entry is not None
+    assert entry.launch.env['F8_MODEL_ROOT'] == str(models)
+    assert entry.launch.env['F8_PACKAGE_ROOT'] == str(source)
+
+
 def _runtime_probe() -> RuntimeProbe:
     from f8studio_server import _runtime_probe as probe
     output = subprocess.run([sys.executable, '-I', str(Path(probe.__file__))],
@@ -101,7 +133,7 @@ def test_official_extension_environment_names_match_all_platform_service_launche
         if manifest.runtime.kind == 'workspace':
             for name in manifest.service_classes:
                 for relative in services[name].manifests.values():
-                    launch = yaml.safe_load((config / relative).read_text())['launch']
+                    launch = yaml.safe_load(ServicePaths.for_index(config / "service-index.json").package_path(relative, relative_to=config).read_text())['launch']
                     assert launch['command'] == 'pixi'
                     assert launch['args'][:3] == ['run', '-e', manifest.runtime.environment], name
 

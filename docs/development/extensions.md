@@ -2,6 +2,8 @@
 
 Web Studio 管理服务包的安装状态；一个包可以提供多个服务。核心 Studio 服务始终由服务端提供，其余服务归属于显式扩展。停用移出服务目录，卸载删除安装登记，用户项目与模型数据保持原样。发行版通过 `config/extensions.json` 的 `preinstalled` 选择初始扩展集合。
 
+路径根标识和 bundle 声明见 [显式服务注册与安装布局](service-registration.md)。
+
 ## 清单与制品
 
 `config/service-index.json` 保存服务的启动声明和预先构建的描述，`config/extensions.json` 保存服务归属、扩展版本、环境要求和模型元数据目录。每个服务只能属于一个扩展，索引中的服务必须全部有归属。清单类型定义在 `f8studio_server/extension_models.py`；独立包可使用生成的 `schemas/extensions.gen.json` 验证格式。
@@ -28,7 +30,7 @@ resources/models/<name>/*.yaml
 launch:
   command: pixi
   args: [run, -e, inference, detector]
-  workdir: ../../..
+  workdir: ${F8_PACKAGE_ROOT}
 ```
 
 安装器将其绑定到受管理 workspace，启动时使用 `--frozen --no-install --manifest-path ...`，避免继承 Studio 的活动环境或启动时临时安装。安装前检查环境已经声明，安装后的描述检查将 stderr 日志与 stdout JSON 分开。服务描述不需要下载模型权重。
@@ -56,7 +58,7 @@ ZIP 内提供独立的 `python/` 目录和服务清单，无需提供 `pixi.toml
 launch:
   command: python
   args: [-m, my_tracker.main]
-  workdir: ../../..
+  workdir: ${F8_PACKAGE_ROOT}
 ```
 
 扩展自身的 Python 和依赖要求写在 `pyproject.toml`，构建后从 `.dist-info/METADATA` 的 `Requires-Python` 和 `Requires-Dist` 自动读取，扩展 JSON 无需重复。没有包元数据的脚本扩展可以选填 `requiresPython` 和 `dependencies` 作为检查约束，它们不触发安装。安装前通过官方解释器的独立进程读取实际版本和环境标记，验证这些要求；支持 PEP 508 环境标记、extras 和传递依赖。URL 依赖、缺失或不兼容的包会明确拒绝，并提示发布者使用独立 Pixi 环境。扩展不能携带替换官方包的同名发行物或遮蔽官方/标准库的顶层模块。
