@@ -1,0 +1,6 @@
+find_package(GTest REQUIRED)
+add_executable(f8cvkit_tests test_cvkit_frame_validation.cpp)
+target_compile_features(f8cvkit_tests PRIVATE cxx_std_17)
+target_include_directories(f8cvkit_tests PRIVATE ../src/services/common)
+target_link_libraries(f8cvkit_tests PRIVATE f8cppsdk GTest::gtest GTest::gtest_main)
+add_test(NAME f8cvkit_tests COMMAND f8cvkit_tests)

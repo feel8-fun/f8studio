@@ -1,0 +1,16 @@
+{
+    "version": "0.5",
+    "requires": [
+        "spdlog/1.16.0#942c2c39562ae25ba575d9c8e2bdf3b6%1760375663.769",
+        "sol2/3.5.0#fd3c55a708ff1d23db3fe4e026f3af32%1742996322.952",
+        "pybind11/3.0.1#81ed7e3cc5c945080013ca4c5c3abbbb%1756292333.72",
+        "nlohmann_json/3.12.0#2d634ab0ec8d9f56353e5ccef6d6612c%1744735883.94",
+        "mexce/1.0.1#1182e77f14339003481e0ff54445f74c%1763385195.064",
+        "luajit/2.1.0-beta3#e8ee964ad9fedb6ebd93b83ec3452a62%1724825523.162",
+        "fmt/12.0.0#dc7de7f3968e5d6b377f27b7d0f33916%1758262922.745",
+        "cxxopts/3.3.1#047ef7b8ae49e0d48a1450f4522dc041%1748330656.693"
+    ],
+    "build_requires": [],
+    "python_requires": [],
+    "config_requires": []
+}

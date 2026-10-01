@@ -19,7 +19,7 @@ class NoInference(importlib.abc.MetaPathFinder):
                         'f8pydl.detection_sorter_service_node'}:
             raise AssertionError('Description imported inference code: ' + fullname)
 sys.meta_path.insert(0, NoInference())
-sys.path.insert(0, 'packages/f8pydl')
+sys.path.insert(0, 'extensions/f8pydl')
 module = sys.argv[1]
 sys.argv = [module, '--describe']
 runpy.run_module(module, run_name='__main__')

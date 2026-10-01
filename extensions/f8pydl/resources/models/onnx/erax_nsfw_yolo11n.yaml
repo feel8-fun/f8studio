@@ -1,0 +1,23 @@
+schemaVersion: f8onnxModel/1
+model:
+  id: erax_nsfw_yolo11n
+  displayName: erax nsfw yolo11n
+  provider: ERAX-AI
+  task: yolo_det
+  skeletonProtocol: none
+  onnxPath: erax_nsfw_yolo11n.onnx
+  onnxUrl: https://github.com/feel8-fun/f8studio/releases/download/v0.1.0/erax_nsfw_yolo11n.onnx
+  onnxSHA256: 782110dcbab0aff2870dcb6a952eaffa3d0f1d7d03051b69b6a975c140c74552
+input:
+  width: 640
+  height: 640
+thresholds:
+  conf: 0.25
+  iou: 0.45
+labels:
+  classes:
+    - anus
+    - make_love
+    - nipple
+    - penis
+    - vagina

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "f8extensionCatalog/1",
+  "extensions": [
+    {
+      "extensionId": "cppengine",
+      "name": "C++ Engine",
+      "version": "0.0.1",
+      "description": "Run native processing graphs.",
+      "serviceClasses": [
+        "f8.cppengine"
+      ]
+    }
+  ]
+}

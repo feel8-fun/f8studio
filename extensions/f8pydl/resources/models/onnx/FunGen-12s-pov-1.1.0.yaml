@@ -1,0 +1,28 @@
+schemaVersion: f8onnxModel/1
+model:
+  id: FunGen-12s-pov-1.1.0
+  displayName: FunGen 12s pov 1.1.0
+  provider: FunGen
+  task: yolo_det
+  skeletonProtocol: none
+  onnxPath: FunGen-12s-pov-1.1.0.onnx
+  onnxUrl: https://github.com/feel8-fun/f8studio/releases/download/v0.1.0/FunGen-12s-pov-1.1.0.onnx
+  onnxSHA256: 8edb34100580d85aa99ea48894421aeee45dbf852ad1df0fc3381472f03984da
+input:
+  width: 640
+  height: 640
+thresholds:
+  conf: 0.25
+  iou: 0.45
+labels:
+  classes:
+    - penis
+    - glans
+    - pussy
+    - butt
+    - anus
+    - breast
+    - navel
+    - hand
+    - face
+    - foot

@@ -14,6 +14,7 @@ Runtime workspace for Feel8 Studio. The current runtime is Zenoh-first:
 - `packages/f8studio_server` — local Web Studio application service, API, CLI, and MCP.
 - `packages/f8studio_web` — React graph editor and presentation workspaces.
 - `packages/f8media_gateway` — process-isolated Zenoh to WebRTC media gateway.
+- `extensions/` — optional service implementations and the Unity game integration submodule; see [extension repositories](docs/development/extension-repositories.md).
 - `config/service-index.json` — explicit service registrations and model storage location.
 - `config/services` — tracked, platform-specific launch declarations.
 - `runtime/bundles/<bundle>/<version>` — generated descriptions, executables, and bundled libraries/resources.

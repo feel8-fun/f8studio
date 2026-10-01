@@ -23,6 +23,7 @@ target_include_directories(f8cppsdk
     # Prefer generated headers from the build tree over any source-tree remnants.
     $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/generated>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
 )
 
 target_compile_features(f8cppsdk PUBLIC cxx_std_17)
@@ -113,3 +114,30 @@ add_executable(f8cpp_crosslang_runtime_probe EXCLUDE_FROM_ALL
   bench/crosslang_runtime_probe.cpp
 )
 target_link_libraries(f8cpp_crosslang_runtime_probe PRIVATE f8cppsdk)
+
+# Extensions consume this installed SDK without including the Studio source tree.
+include(CMakePackageConfigHelpers)
+configure_package_config_file(
+  "${PROJECT_SOURCE_DIR}/cmake/f8cppsdkConfig.cmake.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/f8cppsdkConfig.cmake"
+  INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/f8cppsdk"
+)
+write_basic_package_version_file(
+  "${CMAKE_CURRENT_BINARY_DIR}/f8cppsdkConfigVersion.cmake"
+  VERSION 0.1.0 COMPATIBILITY SameMinorVersion
+)
+install(TARGETS f8cppsdk EXPORT f8cppsdkTargets
+  ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+  LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+  RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+)
+install(DIRECTORY include/ DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+install(FILES "${F8CPP_PROTOCOL_MODELS_OUT}"
+  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/f8cppsdk/generated")
+install(EXPORT f8cppsdkTargets NAMESPACE f8:: DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/f8cppsdk")
+install(FILES
+  "${CMAKE_CURRENT_BINARY_DIR}/f8cppsdkConfig.cmake"
+  "${CMAKE_CURRENT_BINARY_DIR}/f8cppsdkConfigVersion.cmake"
+  "${PROJECT_SOURCE_DIR}/cmake/F8ServiceRuntime.cmake"
+  "${PROJECT_SOURCE_DIR}/cmake/deploy_service_runtime.cmake"
+  DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/f8cppsdk")

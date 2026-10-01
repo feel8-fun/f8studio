@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "f8serviceIndex/1",
+  "modelRoot": "../resources/models",
+  "services": [
+    {
+      "serviceClass": "f8.audiofeat.core",
+      "manifests": {
+        "any": "services/f8.audiofeat.core/service.yml"
+      },
+      "describe": "describes/f8.audiofeat.core.json"
+    },
+    {
+      "serviceClass": "f8.audiofeat.rhythm",
+      "manifests": {
+        "any": "services/f8.audiofeat.rhythm/service.yml"
+      },
+      "describe": "describes/f8.audiofeat.rhythm.json"
+    }
+  ]
+}

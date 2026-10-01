@@ -37,6 +37,7 @@ jobs:
           environments: build-check
           cache: true
       - run: pixi run --locked -e build-check pytest -q
+      - run: pixi run --locked -e build-check extensions_check
       - run: pixi run --locked -e build-check typecheck
       - run: pixi run --locked -e build-check studio_python_typecheck
       - run: pixi run --locked -e build-check python scripts/web_studio/generate_contracts.py --check

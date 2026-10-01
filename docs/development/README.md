@@ -4,6 +4,8 @@
 
 - [开发、构建与发行](build-and-release.md)
 - [服务注册与安装布局](service-registration.md)
+- [扩展安装与环境复用](extensions.md)
+- [扩展源码仓库与 superbuild](extension-repositories.md)
 - [图 schema 与可移植格式](graph-schema.md)
 - [Web Studio 远程访问](web-studio-remote-access.md)
 - [Web Studio 后续工作与验收](web-studio-remaining-work.md)

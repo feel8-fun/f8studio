@@ -168,14 +168,14 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/typing_extensions-4.16.0-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-4.1.0-pyhcf101f3_0.conda
-      - pypi: ./external/f8unitymods
+      - pypi: ./extensions/f8unitymods
       - pypi: ./packages/f8media_gateway
       - pypi: ./packages/f8media_protocol
-      - pypi: ./packages/f8proclauncher
-      - pypi: ./packages/f8pyaudiofeat
-      - pypi: ./packages/f8pydl
-      - pypi: ./packages/f8pyengine
-      - pypi: ./packages/f8pyscript
+      - pypi: ./extensions/f8proclauncher
+      - pypi: ./extensions/f8pyaudiofeat
+      - pypi: ./extensions/f8pydl
+      - pypi: ./extensions/f8pyengine
+      - pypi: ./extensions/f8pyscript
       - pypi: ./packages/f8pysdk
       - pypi: ./packages/f8studio_core
       - pypi: ./packages/f8studio_server
@@ -330,14 +330,14 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de7_41.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/yaml-0.2.5-h6a83c73_3.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_7.conda
-      - pypi: ./external/f8unitymods
+      - pypi: ./extensions/f8unitymods
       - pypi: ./packages/f8media_gateway
       - pypi: ./packages/f8media_protocol
-      - pypi: ./packages/f8proclauncher
-      - pypi: ./packages/f8pyaudiofeat
-      - pypi: ./packages/f8pydl
-      - pypi: ./packages/f8pyengine
-      - pypi: ./packages/f8pyscript
+      - pypi: ./extensions/f8proclauncher
+      - pypi: ./extensions/f8pyaudiofeat
+      - pypi: ./extensions/f8pydl
+      - pypi: ./extensions/f8pyengine
+      - pypi: ./extensions/f8pyscript
       - pypi: ./packages/f8pysdk
       - pypi: ./packages/f8studio_core
       - pypi: ./packages/f8studio_server
@@ -952,13 +952,13 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/tomli-2.4.0-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/typing_extensions-4.15.0-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2025c-hc9c84f9_1.conda
-      - pypi: ./external/f8unitymods
+      - pypi: ./extensions/f8unitymods
       - pypi: ./packages/f8media_gateway
       - pypi: ./packages/f8media_protocol
-      - pypi: ./packages/f8proclauncher
-      - pypi: ./packages/f8pyaudiofeat
-      - pypi: ./packages/f8pyengine
-      - pypi: ./packages/f8pyscript
+      - pypi: ./extensions/f8proclauncher
+      - pypi: ./extensions/f8pyaudiofeat
+      - pypi: ./extensions/f8pyengine
+      - pypi: ./extensions/f8pyscript
       - pypi: ./packages/f8pysdk
       - pypi: ./packages/f8studio_core
       - pypi: ./packages/f8studio_server
@@ -1091,13 +1091,13 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/vc14_runtime-14.44.35208-h818238b_34.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.44.35208-h818238b_34.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_6.conda
-      - pypi: ./external/f8unitymods
+      - pypi: ./extensions/f8unitymods
       - pypi: ./packages/f8media_gateway
       - pypi: ./packages/f8media_protocol
-      - pypi: ./packages/f8proclauncher
-      - pypi: ./packages/f8pyaudiofeat
-      - pypi: ./packages/f8pyengine
-      - pypi: ./packages/f8pyscript
+      - pypi: ./extensions/f8proclauncher
+      - pypi: ./extensions/f8pyaudiofeat
+      - pypi: ./extensions/f8pyengine
+      - pypi: ./extensions/f8pyscript
       - pypi: ./packages/f8pysdk
       - pypi: ./packages/f8studio_core
       - pypi: ./packages/f8studio_server
@@ -1326,7 +1326,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/pip-26.0.1-pyh145f28c_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.14-8_cp314.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2025c-hc9c84f9_1.conda
-      - pypi: ./packages/f8pymppose
+      - pypi: ./extensions/f8pymppose
       - pypi: ./packages/f8pysdk
       - pypi: https://files.pythonhosted.org/packages/04/5f/9ff93450ba96b09c7c2b3f81c94de31c89f92292f1380261bd7195bea4ea/contourpy-1.3.3-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/0c/c3/44f3fbbfa403ea2a7c779186dc20772604442dde72947e7d01069cbe98e3/pycparser-3.0-py3-none-any.whl
@@ -1371,7 +1371,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/vc14_runtime-14.44.35208-h818238b_34.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.44.35208-h818238b_34.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_6.conda
-      - pypi: ./packages/f8pymppose
+      - pypi: ./extensions/f8pymppose
       - pypi: ./packages/f8pysdk
       - pypi: https://files.pythonhosted.org/packages/05/cb/eff72a91b2efdd1bc98b3b8759f6a1654aa87612fc86e3d87d6fe4f948c4/numpy-2.4.2-cp314-cp314-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/0c/c3/44f3fbbfa403ea2a7c779186dc20772604442dde72947e7d01069cbe98e3/pycparser-3.0-py3-none-any.whl
@@ -1454,7 +1454,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/pip-26.2.1-pyh145f28c_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.14-8_cp314.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
-      - pypi: ./packages/f8pydl
+      - pypi: ./extensions/f8pydl
       - pypi: ./packages/f8pysdk
       - pypi: https://files.pythonhosted.org/packages/3d/08/feb9a196269ba7809f44f9117d9e4a601c41c313f6144fd0c337293a5488/msgpack-1.2.3-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/45/8f/9beacf79ca7c650688ad0baa80931adb988fe6e6e5d5903c23cc3dbd70eb/numpy-2.5.3-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
@@ -1507,7 +1507,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/vc14_runtime-14.51.36247-habf1de7_41.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de7_41.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_6.conda
-      - pypi: ./packages/f8pydl
+      - pypi: ./extensions/f8pydl
       - pypi: ./packages/f8pysdk
       - pypi: https://files.pythonhosted.org/packages/23/20/bb6982b26a40bb43951265ba29d4c246ef0ff59c9fdcdf0ed04e0687de4d/pyyaml-6.0.3-cp314-cp314-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/23/f9/9172ff3cdb85d160ad06df5e2708a5fce7682982a5eee8d31869b9f69d2e/msgpack-1.2.3-cp314-cp314-win_amd64.whl
@@ -1551,7 +1551,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/pip-26.2.1-pyh145f28c_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.14-8_cp314.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
-      - pypi: ./packages/f8pydl
+      - pypi: ./extensions/f8pydl
       - pypi: ./packages/f8pysdk
       - pypi: https://files.pythonhosted.org/packages/3d/08/feb9a196269ba7809f44f9117d9e4a601c41c313f6144fd0c337293a5488/msgpack-1.2.3-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/45/8f/9beacf79ca7c650688ad0baa80931adb988fe6e6e5d5903c23cc3dbd70eb/numpy-2.5.3-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
@@ -1580,7 +1580,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/vc14_runtime-14.51.36247-habf1de7_41.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de7_41.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_6.conda
-      - pypi: ./packages/f8pydl
+      - pypi: ./extensions/f8pydl
       - pypi: ./packages/f8pysdk
       - pypi: https://files.pythonhosted.org/packages/23/20/bb6982b26a40bb43951265ba29d4c246ef0ff59c9fdcdf0ed04e0687de4d/pyyaml-6.0.3-cp314-cp314-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/23/f9/9172ff3cdb85d160ad06df5e2708a5fce7682982a5eee8d31869b9f69d2e/msgpack-1.2.3-cp314-cp314-win_amd64.whl
@@ -1700,13 +1700,13 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.14-8_cp314.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/typing_extensions-4.15.0-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2025c-hc9c84f9_1.conda
-      - pypi: ./external/f8unitymods
+      - pypi: ./extensions/f8unitymods
       - pypi: ./packages/f8media_gateway
       - pypi: ./packages/f8media_protocol
-      - pypi: ./packages/f8proclauncher
-      - pypi: ./packages/f8pyaudiofeat
-      - pypi: ./packages/f8pyengine
-      - pypi: ./packages/f8pyscript
+      - pypi: ./extensions/f8proclauncher
+      - pypi: ./extensions/f8pyaudiofeat
+      - pypi: ./extensions/f8pyengine
+      - pypi: ./extensions/f8pyscript
       - pypi: ./packages/f8pysdk
       - pypi: ./packages/f8studio_core
       - pypi: ./packages/f8studio_server
@@ -1829,13 +1829,13 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/vc14_runtime-14.44.35208-h818238b_34.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.44.35208-h818238b_34.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_6.conda
-      - pypi: ./external/f8unitymods
+      - pypi: ./extensions/f8unitymods
       - pypi: ./packages/f8media_gateway
       - pypi: ./packages/f8media_protocol
-      - pypi: ./packages/f8proclauncher
-      - pypi: ./packages/f8pyaudiofeat
-      - pypi: ./packages/f8pyengine
-      - pypi: ./packages/f8pyscript
+      - pypi: ./extensions/f8proclauncher
+      - pypi: ./extensions/f8pyaudiofeat
+      - pypi: ./extensions/f8pyengine
+      - pypi: ./extensions/f8pyscript
       - pypi: ./packages/f8pysdk
       - pypi: ./packages/f8studio_core
       - pypi: ./packages/f8studio_server
@@ -2056,7 +2056,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.14-9_cp314.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/typing_extensions-4.16.0-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
-      - pypi: ./external/f8unitymods
+      - pypi: ./extensions/f8unitymods
       - pypi: ./packages/f8media_gateway
       - pypi: ./packages/f8media_protocol
       - pypi: ./packages/f8pysdk
@@ -2158,7 +2158,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/vc14_runtime-14.51.36247-habf1de7_41.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de7_41.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_7.conda
-      - pypi: ./external/f8unitymods
+      - pypi: ./extensions/f8unitymods
       - pypi: ./packages/f8media_gateway
       - pypi: ./packages/f8media_protocol
       - pypi: ./packages/f8pysdk
@@ -2268,9 +2268,9 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.14-9_cp314.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/typing_extensions-4.16.0-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
-      - pypi: ./packages/f8proclauncher
-      - pypi: ./packages/f8pyengine
-      - pypi: ./packages/f8pyscript
+      - pypi: ./extensions/f8proclauncher
+      - pypi: ./extensions/f8pyengine
+      - pypi: ./extensions/f8pyscript
       - pypi: ./packages/f8pysdk
       - pypi: https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/07/bc/587a445451b253b285629263eb51c2d8e9bcea4fc97826266d186f96f558/pyserial-3.5-py2.py3-none-any.whl
@@ -2319,9 +2319,9 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/vc14_runtime-14.51.36247-habf1de7_41.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de7_41.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_7.conda
-      - pypi: ./packages/f8proclauncher
-      - pypi: ./packages/f8pyengine
-      - pypi: ./packages/f8pyscript
+      - pypi: ./extensions/f8proclauncher
+      - pypi: ./extensions/f8pyengine
+      - pypi: ./extensions/f8pyscript
       - pypi: ./packages/f8pysdk
       - pypi: https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/07/bc/587a445451b253b285629263eb51c2d8e9bcea4fc97826266d186f96f558/pyserial-3.5-py2.py3-none-any.whl
@@ -2480,12 +2480,12 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/trove-classifiers-2026.6.1.19-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/typing_extensions-4.16.0-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
-      - pypi: ./external/f8unitymods
+      - pypi: ./extensions/f8unitymods
       - pypi: ./packages/f8media_gateway
       - pypi: ./packages/f8media_protocol
-      - pypi: ./packages/f8proclauncher
-      - pypi: ./packages/f8pyengine
-      - pypi: ./packages/f8pyscript
+      - pypi: ./extensions/f8proclauncher
+      - pypi: ./extensions/f8pyengine
+      - pypi: ./extensions/f8pyscript
       - pypi: ./packages/f8pysdk
       - pypi: ./packages/f8studio_core
       - pypi: ./packages/f8studio_server
@@ -2602,12 +2602,12 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/vc14_runtime-14.51.36247-habf1de7_41.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de7_41.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_7.conda
-      - pypi: ./external/f8unitymods
+      - pypi: ./extensions/f8unitymods
       - pypi: ./packages/f8media_gateway
       - pypi: ./packages/f8media_protocol
-      - pypi: ./packages/f8proclauncher
-      - pypi: ./packages/f8pyengine
-      - pypi: ./packages/f8pyscript
+      - pypi: ./extensions/f8proclauncher
+      - pypi: ./extensions/f8pyengine
+      - pypi: ./extensions/f8pyscript
       - pypi: ./packages/f8pysdk
       - pypi: ./packages/f8studio_core
       - pypi: ./packages/f8studio_server
@@ -9642,7 +9642,7 @@ packages:
     - zstd >=1.5.7,<1.6.0a0
   size: 387535
   timestamp: 1786599623274
-- pypi: ./external/f8unitymods
+- pypi: ./extensions/f8unitymods
   name: f8unitymods-setup
   requires_python: '>=3.13'
 - pypi: ./packages/f8media_gateway
@@ -9663,12 +9663,12 @@ packages:
   - httpx>=0.28,<1
   - msgspec>=0.18.6,<1
   requires_python: '>=3.14,<3.15'
-- pypi: ./packages/f8proclauncher
+- pypi: ./extensions/f8proclauncher
   name: f8proclauncher
   requires_dist:
   - f8pysdk
   requires_python: '>=3.10'
-- pypi: ./packages/f8pyaudiofeat
+- pypi: ./extensions/f8pyaudiofeat
   name: f8pyaudiofeat
   requires_dist:
   - f8pysdk
@@ -9676,7 +9676,7 @@ packages:
   - scipy>=1.14.0
   - librosa>=0.11.0
   requires_python: '>=3.10'
-- pypi: ./packages/f8pydl
+- pypi: ./extensions/f8pydl
   name: f8pydl
   requires_dist:
   - f8pysdk
@@ -9685,9 +9685,10 @@ packages:
   - pyyaml>=6.0.0
   - onnxruntime-gpu>=1.17.0 ; extra == 'gpu'
   requires_python: '>=3.10'
-- pypi: ./packages/f8pyengine
+- pypi: ./extensions/f8pyengine
   name: f8pyengine
   requires_dist:
+  - f8pysdk>=0.1.0,<0.2
   - httpx>=0.28,<1
   - pillow>=11,<13
   - buttplug>=1.0.0
@@ -9695,7 +9696,7 @@ packages:
   - scipy>=1.14.0
   - pyserial>=3.5
   requires_python: '>=3.10'
-- pypi: ./packages/f8pymppose
+- pypi: ./extensions/f8pymppose
   name: f8pymppose
   requires_dist:
   - f8pysdk
@@ -9703,7 +9704,7 @@ packages:
   - opencv-contrib-python-headless>=4.10.0
   - mediapipe>=0.10.14
   requires_python: '>=3.10'
-- pypi: ./packages/f8pyscript
+- pypi: ./extensions/f8pyscript
   name: f8pyscript
   requires_dist:
   - f8pysdk

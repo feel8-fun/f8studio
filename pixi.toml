@@ -32,7 +32,7 @@ onnxruntime-gpu = ">=1.24.2, <2"
 pyyaml = ">=6.0.3, <7"
 
 [feature.pydl.pypi-dependencies]
-f8pydl = { path = "packages/f8pydl", editable = true }
+f8pydl = { path = "extensions/f8pydl", editable = true }
 
 [feature.pydl.tasks]
 f8pydl_detector = "python -m f8pydl.main_detector"
@@ -66,14 +66,15 @@ pytest = "python -m pytest"
 pytest_sdk = "python -m pytest -q packages/f8pysdk/tests"
 # Keep the initial repo-level static guards narrow and green. We can widen the
 # checked surface incrementally as more packages are annotated and cleaned up.
-lint = "ruff check packages/f8proclauncher/f8proclauncher packages/f8pymppose/f8pymppose packages/f8pyscript/f8pyscript packages/f8pyaudiofeat/f8pyaudiofeat packages/f8pydl/f8pydl packages/f8pysdk/f8pysdk packages/f8pyengine/f8pyengine packages/f8studio_core/f8studio_core packages/f8media_protocol/f8media_protocol packages/f8media_gateway/f8media_gateway packages/f8studio_server/f8studio_server"
+lint = "ruff check packages/f8pysdk/f8pysdk packages/f8studio_core/f8studio_core packages/f8media_protocol/f8media_protocol packages/f8media_gateway/f8media_gateway packages/f8studio_server/f8studio_server"
+extensions_check = "python scripts/extension_workspace.py check"
 typecheck = "basedpyright -p pyrightconfig.json"
-quality_exceptions = "python scripts/quality/except_metrics.py packages --exclude-glob '**/tests/**' --max-broad 110 --max-silent 0"
+quality_exceptions = "python scripts/quality/except_metrics.py packages extensions --exclude-glob '**/tests/**' --exclude-glob 'f8unitymods/**' --max-broad 110 --max-silent 0"
 lint_imports = "lint-imports"
 
 [feature.audio.pypi-dependencies]
 librosa = ">=0.11.0, <0.12"
-f8pyaudiofeat = { path = "packages/f8pyaudiofeat", editable = true }
+f8pyaudiofeat = { path = "extensions/f8pyaudiofeat", editable = true }
 
 [feature.audio.tasks]
 f8pyaudiofeat_core = "python -m f8pyaudiofeat.main_core"
@@ -82,9 +83,9 @@ f8pyaudiofeat_rhythm = "python -m f8pyaudiofeat.main_rhythm"
 [feature.engine.pypi-dependencies]
 scipy = ">=1.17.1,<2"
 scikit-learn = ">=1.8.0,<2"
-f8pyengine = { path = "packages/f8pyengine", editable = true }
-f8pyscript = { path = "packages/f8pyscript", editable = true }
-f8proclauncher = { path = "packages/f8proclauncher", editable = true }
+f8pyengine = { path = "extensions/f8pyengine", editable = true }
+f8pyscript = { path = "extensions/f8pyscript", editable = true }
+f8proclauncher = { path = "extensions/f8proclauncher", editable = true }
 
 [feature.engine.tasks]
 f8pyengine = "python -m f8pyengine.main"
@@ -93,7 +94,7 @@ f8pyexpr = "python -m f8pyscript.main_expr"
 f8proclauncher = "python -m f8proclauncher.main"
 
 [feature.mediapipe.pypi-dependencies]
-f8pymppose = { path = "packages/f8pymppose", editable = true }
+f8pymppose = { path = "extensions/f8pymppose", editable = true }
 mediapipe = ">=0.10.32, <0.11"
 
 [feature.mediapipe.tasks]
@@ -166,7 +167,7 @@ f8studio-core = { path = "packages/f8studio_core", editable = true }
 f8media-protocol = { path = "packages/f8media_protocol", editable = true }
 f8media-gateway = { path = "packages/f8media_gateway", editable = true }
 f8studio-server = { path = "packages/f8studio_server", editable = true }
-f8unitymods-setup = { path = "external/f8unitymods", editable = true }
+f8unitymods-setup = { path = "extensions/f8unitymods", editable = true }
 aiortc = ">=1.14,<2"
 basedpyright = ">=1.31,<2"
 pyserial = ">=3.5,<4"

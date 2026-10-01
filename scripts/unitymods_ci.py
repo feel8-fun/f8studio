@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-UNITYMODS_ROOT = REPO_ROOT / "external" / "f8unitymods"
+UNITYMODS_ROOT = REPO_ROOT / "extensions" / "f8unitymods"
 UNITYMODS_MANIFEST = UNITYMODS_ROOT / "pixi.toml"
 
 

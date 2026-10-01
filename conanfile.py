@@ -27,24 +27,25 @@ class F8Build(ConanFile):
         "fPIC": [True, False],
         "with_tests": [True, False],
         "with_examples": [True, False],
-        "with_apps": [True, False]
+        "with_apps": [True, False],
+        "with_extensions": [True, False],
     }
     default_options = {
         "shared": False,
         "fPIC": True,
         "with_tests": False,
         "with_examples": False,
-        "with_apps": False
+        "with_apps": False,
+        "with_extensions": True,
     }
 
     def config_options(self):
         # fPIC is irrelevant on Windows
         if self.settings.os == "Windows":
-            try:
-                del self.options.fPIC
-            except Exception:
-                pass
+            del self.options.fPIC
 
+        if not self.options.with_extensions:
+            return
         self.options["sol2"].with_lua = "luajit"
         # Ensure OpenCV contrib modules are available for CV services.
         # (e.g. opencv_tracking for CSRT/KCF trackers)
@@ -54,11 +55,8 @@ class F8Build(ConanFile):
 
     def configure(self):
         # When building shared libs, fPIC option is not needed
-        if self.options.get_safe("shared"):
-            try:
-                del self.options.fPIC
-            except Exception:
-                pass
+        if self.options.shared and self.settings.os != "Windows":
+            del self.options.fPIC
 
     def build_requirements(self):
         # Ensure a modern CMake is available as a build tool when Conan runs the build
@@ -72,6 +70,10 @@ class F8Build(ConanFile):
         self.requires("openssl/3.6.0")
         self.requires("cxxopts/3.3.1")
         self.requires("spdlog/1.16.0")
+        if not self.options.with_extensions:
+            if self.options.with_tests:
+                self.requires("gtest/1.17.0")
+            return
         # Mathematical expressions plugin
         self.requires("mexce/1.0.1")
         # Python plugin
@@ -103,6 +105,9 @@ class F8Build(ConanFile):
             "BUILD_EXAMPLES": "ON" if self.options.with_examples else "OFF",
             "BUILD_APPS": "ON" if self.options.with_apps else "OFF",
         }
+        if not self.options.with_extensions:
+            options["F8_EXTENSION_PACKAGES"] = ""
+            options["F8_BUILD_SDK_DEMO"] = "OFF"
         cmake.configure(options)
         cmake.build()
 

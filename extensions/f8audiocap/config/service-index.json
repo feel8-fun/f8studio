@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "f8serviceIndex/1",
+  "modelRoot": "../resources/models",
+  "services": [
+    {
+      "serviceClass": "f8.audiocap",
+      "manifests": {
+        "linux": "services/f8.audiocap/service.linux.yml",
+        "win32": "services/f8.audiocap/service.win.yml"
+      },
+      "describe": "describes/f8.audiocap.json"
+    }
+  ]
+}

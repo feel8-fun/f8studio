@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "f8serviceIndex/1",
+  "modelRoot": "../resources/models",
+  "services": [
+    {
+      "serviceClass": "f8.dl.classifier",
+      "manifests": {
+        "any": "services/f8.dl.classifier/service.yml"
+      },
+      "describe": "describes/f8.dl.classifier.json"
+    },
+    {
+      "serviceClass": "f8.dl.detector",
+      "manifests": {
+        "any": "services/f8.dl.detector/service.yml"
+      },
+      "describe": "describes/f8.dl.detector.json"
+    },
+    {
+      "serviceClass": "f8.dl.detsorter",
+      "manifests": {
+        "any": "services/f8.dl.detsorter/service.yml"
+      },
+      "describe": "describes/f8.dl.detsorter.json"
+    },
+    {
+      "serviceClass": "f8.dl.humandetector",
+      "manifests": {
+        "any": "services/f8.dl.humandetector/service.yml"
+      },
+      "describe": "describes/f8.dl.humandetector.json"
+    },
+    {
+      "serviceClass": "f8.dl.optflow",
+      "manifests": {
+        "any": "services/f8.dl.optflow/service.yml"
+      },
+      "describe": "describes/f8.dl.optflow.json"
+    },
+    {
+      "serviceClass": "f8.dl.tcnwave",
+      "manifests": {
+        "any": "services/f8.dl.tcnwave/service.yml"
+      },
+      "describe": "describes/f8.dl.tcnwave.json"
+    }
+  ]
+}

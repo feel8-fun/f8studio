@@ -1,0 +1,14 @@
+{
+  "pythonVersion": "3.14",
+  "include": [
+    "f8proclauncher"
+  ],
+  "exclude": [
+    "**/tests/**",
+    "**/__pycache__",
+    "build",
+    ".pixi"
+  ],
+  "typeCheckingMode": "standard",
+  "reportMissingTypeStubs": "none"
+}

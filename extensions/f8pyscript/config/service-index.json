@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "f8serviceIndex/1",
+  "modelRoot": "../resources/models",
+  "services": [
+    {
+      "serviceClass": "f8.pyexpr",
+      "manifests": {
+        "any": "services/f8.pyexpr/service.yml"
+      },
+      "describe": "describes/f8.pyexpr.json"
+    },
+    {
+      "serviceClass": "f8.pyscript",
+      "manifests": {
+        "any": "services/f8.pyscript/service.yml"
+      },
+      "describe": "describes/f8.pyscript.json"
+    }
+  ]
+}

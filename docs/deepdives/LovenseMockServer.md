@@ -1,7 +1,7 @@
 # Lovense Mock Server (f8) Notes
 
 This repo includes a lightweight Lovense Local API mock server:
-`packages/f8pyengine/f8pyengine/operators/lovense_mock_server.py`.
+`extensions/f8pyengine/f8pyengine/operators/lovense_mock_server.py`.
 
 It is used to **capture** `/command` traffic and to return **spec-shaped** JSON responses for common commands so that
 clients can proceed while you log/analyze requests.

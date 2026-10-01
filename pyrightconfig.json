@@ -2,13 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/microsoft/pyright/main/packages/pyright/schema/pyrightconfig.schema.json",
   "pythonVersion": "3.14",
   "include": [
-    "packages/f8proclauncher/f8proclauncher",
-    "packages/f8pymppose/f8pymppose",
-    "packages/f8pyscript/f8pyscript",
-    "packages/f8pyaudiofeat/f8pyaudiofeat",
-    "packages/f8pydl/f8pydl",
-    "packages/f8pysdk/f8pysdk",
-    "packages/f8pyengine/f8pyengine"
+    "packages/f8pysdk/f8pysdk"
   ],
   "exclude": [
     ".pixi",

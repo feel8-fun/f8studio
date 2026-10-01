@@ -2,11 +2,15 @@
 
 开发环境保留 Python editable 安装；发行环境安装固定的 wheel。修改 Python 实现后无需重新安装，重启对应服务即可生效；只有修改依赖或包元数据时才需要重新同步环境。不要用发行环境调试源码，也不要把 `.pixi` 打包给用户。
 
+功能服务包的独立构建、扩展 ZIP、独立 CI 与 submodule 迁移流程见[扩展源码仓库与 superbuild](extension-repositories.md)。主仓库的默认 pytest 范围为核心与集成测试；各功能包的单元测试由其独立仓库运行。
+
 ## 目录职责
 
 | 目录 | 内容 |
 | --- | --- |
-| `packages/`、`external/` | 源码、包定义、受版本控制的资源 |
+| `packages/` | 核心源码、SDK、包定义和受版本控制的资源 |
+| `extensions/` | 可选服务与游戏集成扩展源码；独立仓库可通过 submodule 接入 |
+| `external/` | 第三方构建依赖 |
 | `.pixi/` | 本机开发环境，Python 包 editable 指向源码 |
 | `build/Release/` | Conan/CMake 配置、对象文件、原生库和可执行文件 |
 | `build/web-studio/` | Vite 生产静态资源 |

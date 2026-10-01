@@ -11,7 +11,7 @@ from pathlib import Path
 from f8pysdk.motion import decode_skeleton_packet
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-UNITYMODS_ROOT = REPO_ROOT / "external" / "f8unitymods"
+UNITYMODS_ROOT = REPO_ROOT / "extensions" / "f8unitymods"
 UNITYMODS_MANIFEST = UNITYMODS_ROOT / "pixi.toml"
 FIXTURE_PATH = REPO_ROOT / "packages" / "f8pysdk" / "tests" / "fixtures" / "unity_skeleton_v2.bin"
 

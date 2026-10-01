@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "f8extensionCatalog/1",
+  "extensions": [
+    {
+      "extensionId": "screencap",
+      "name": "Screen Capture",
+      "version": "0.0.1",
+      "description": "Capture desktop video.",
+      "serviceClasses": [
+        "f8.screencap"
+      ]
+    }
+  ]
+}

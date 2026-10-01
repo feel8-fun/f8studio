@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "f8extensionCatalog/1",
+  "extensions": [
+    {
+      "extensionId": "mediapipe",
+      "name": "MediaPipe Pose",
+      "version": "0.0.1",
+      "description": "Estimate body pose with MediaPipe.",
+      "serviceClasses": [
+        "f8.mp.pose"
+      ],
+      "runtime": {
+        "kind": "workspace",
+        "environment": "mediapipe"
+      },
+      "modelDirectories": [
+        "mediapipe"
+      ]
+    }
+  ]
+}

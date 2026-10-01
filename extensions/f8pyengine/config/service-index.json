@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "f8serviceIndex/1",
+  "modelRoot": "../resources/models",
+  "services": [
+    {
+      "serviceClass": "f8.pyengine",
+      "manifests": {
+        "any": "services/f8.pyengine/service.yml"
+      },
+      "describe": "describes/f8.pyengine.json"
+    }
+  ]
+}

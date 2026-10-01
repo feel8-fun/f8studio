@@ -10,13 +10,13 @@ runtime.
 
 | Area | Owner | Responsibility |
 | --- | --- | --- |
-| `external/f8unitymods` | Git submodule | Unity profiles, backend detection, managed installation, C# exporters, release assets |
+| `extensions/f8unitymods` | Git submodule | Unity profiles, backend detection, managed installation, C# exporters, release assets |
 | `packages/f8pysdk/f8pysdk/motion` | F8 Python SDK | Typed skeleton models and binary/JSON decoding |
-| `packages/f8pyengine/f8pyengine/operators` | PyEngine | Stable selection, relative pose axes, watchdog, TCode processing |
+| `extensions/f8pyengine/f8pyengine/operators` | PyEngine | Stable selection, relative pose axes, watchdog, TCode processing |
 | `packages/f8studio_server/f8studio_server/local_integration.py` | Web Studio server | Detect/preview/apply/verify orchestration and local safety boundary |
 | `scripts/unitymods_ci.py` | Root build | Submodule validation, build/package dispatch, SHA-256 bundle manifest |
 
-`external/f8unitymods` is the only authoritative Unity checkout. Runtime code
+`extensions/f8unitymods` is the only authoritative Unity checkout. Runtime code
 imports the packaged `f8unitymods_setup` API directly; it does not search for a
 sibling repository or mutate `sys.path`.
 
@@ -165,7 +165,7 @@ See [build and release](../development/build-and-release.md) for directory and C
 
 Submodule changes require two commits:
 
-1. Commit exporter/setup changes inside `external/f8unitymods` and publish that
+1. Commit exporter/setup changes inside `extensions/f8unitymods` and publish that
    commit to the submodule remote.
 2. In the root repository, stage the updated submodule gitlink together with
    F8Studio changes and commit them.

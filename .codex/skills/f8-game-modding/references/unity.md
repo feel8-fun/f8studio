@@ -1,6 +1,6 @@
 # Unity
 
-Use the pinned `external/f8unitymods` Git submodule as the authoritative Unity
+Use the pinned `extensions/f8unitymods` Git submodule as the authoritative Unity
 toolchain. Initialize it with `git submodule update --init --recursive`; do not
 fall back to a sibling checkout.
 

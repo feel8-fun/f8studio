@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "f8serviceIndex/1",
+  "modelRoot": "../resources/models",
+  "services": [
+    {
+      "serviceClass": "f8.proclauncher",
+      "manifests": {
+        "any": "services/f8.proclauncher/service.yml"
+      },
+      "describe": "describes/f8.proclauncher.json"
+    }
+  ]
+}

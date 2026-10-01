@@ -80,8 +80,8 @@ class CvkitTrackingDescribeTest(unittest.TestCase):
         self.assertEqual(leaks, {})
 
     def test_cvkit_cpp_sources_do_not_publish_runtime_telemetry_as_state(self) -> None:
-        source_paths = sorted(Path("packages/f8cvkit/src/services").rglob("*.cpp"))
-        source_paths += sorted(Path("packages/f8cvkit/src/services").rglob("*.h"))
+        source_paths = sorted(Path("extensions/f8cvkit/src/services").rglob("*.cpp"))
+        source_paths += sorted(Path("extensions/f8cvkit/src/services").rglob("*.h"))
         self.assertTrue(source_paths)
 
         leaks: dict[str, list[str]] = {}

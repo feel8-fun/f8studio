@@ -61,33 +61,36 @@ def count_metrics(file_path: Path) -> tuple[int, int]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Count broad and silent exception usage in Python files.")
-    parser.add_argument("root", type=Path, help="Root folder to scan")
+    parser.add_argument("roots", nargs="+", type=Path, help="Root folders to scan")
     parser.add_argument("--fail-on-silent", action="store_true", help="Fail when silent broad catches exist")
     parser.add_argument("--exclude-glob", action="append", default=[], help="Relative glob to exclude")
     parser.add_argument("--max-broad", type=int, default=None, help="Maximum broad catch count")
     parser.add_argument("--max-silent", type=int, default=None, help="Maximum silent broad catch count")
     args = parser.parse_args()
 
-    root = args.root.resolve()
-    if not root.exists():
-        raise FileNotFoundError(f"root path does not exist: {root}")
+    roots = [root.resolve() for root in args.roots]
+    for root in roots:
+        if not root.is_dir():
+            raise FileNotFoundError(f"root folder does not exist: {root}")
 
     per_file_total: Counter[str] = Counter()
     per_file_silent: Counter[str] = Counter()
     total_except = 0
     total_silent = 0
     exclude_globs = tuple(str(pattern).replace("\\", "/") for pattern in args.exclude_glob)
-    for py_file in iter_py_files(root, exclude_globs=exclude_globs):
+    files = {path for root in roots for path in iter_py_files(root, exclude_globs=exclude_globs)}
+    for py_file in sorted(files):
         broad_count, silent_count = count_metrics(py_file)
         if broad_count == 0 and silent_count == 0:
             continue
-        relative_path = py_file.relative_to(root).as_posix()
+        root = next(root for root in roots if py_file.is_relative_to(root))
+        relative_path = f"{root.name}/{py_file.relative_to(root).as_posix()}"
         per_file_total[relative_path] = broad_count
         per_file_silent[relative_path] = silent_count
         total_except += broad_count
         total_silent += silent_count
 
-    print(f"[except-metrics] root={root}")
+    print(f"[except-metrics] roots={', '.join(str(root) for root in roots)}")
     print(f"[except-metrics] except Exception count={total_except}")
     print(f"[except-metrics] silent except Exception count={total_silent}")
     if per_file_total:

@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "f8extensionCatalog/1",
+  "extensions": [
+    {
+      "extensionId": "dl",
+      "name": "Deep Learning",
+      "version": "0.0.1",
+      "description": "Run ONNX models for classification, detection and motion analysis.",
+      "serviceClasses": [
+        "f8.dl.classifier",
+        "f8.dl.detector",
+        "f8.dl.detsorter",
+        "f8.dl.humandetector",
+        "f8.dl.optflow",
+        "f8.dl.tcnwave"
+      ],
+      "runtime": {
+        "kind": "workspace",
+        "environment": "onnx"
+      },
+      "modelDirectories": [
+        "onnx"
+      ]
+    }
+  ]
+}

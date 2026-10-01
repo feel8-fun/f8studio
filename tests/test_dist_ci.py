@@ -193,7 +193,7 @@ class DistCiDiscoveryTest(unittest.TestCase):
             allowed_feature_names=set(runtime_feature_names)
         )
 
-        self.assertEqual(dependencies["f8unitymods-setup"], "external/f8unitymods")
+        self.assertEqual(dependencies["f8unitymods-setup"], "extensions/f8unitymods")
 
         rendered = self.module._render_dist_pixi_toml(
             {"f8unitymods-setup": "wheels/f8unitymods_setup-0.2.0-py3-none-any.whl"},
@@ -201,7 +201,7 @@ class DistCiDiscoveryTest(unittest.TestCase):
             runtime_feature_names,
         )
         self.assertNotIn(
-            'f8unitymods-setup = { path = "external/f8unitymods", editable = true }',
+            'f8unitymods-setup = { path = "extensions/f8unitymods", editable = true }',
             rendered,
         )
         self.assertEqual(

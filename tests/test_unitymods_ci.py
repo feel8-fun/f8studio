@@ -26,7 +26,7 @@ class UnityModsCiTest(unittest.TestCase):
         self.module = _load_unitymods_ci_module()
         self.temp_dir = tempfile.TemporaryDirectory()
         self.root = Path(self.temp_dir.name)
-        self.unitymods_root = self.root / "external" / "f8unitymods"
+        self.unitymods_root = self.root / "extensions" / "f8unitymods"
         self.unitymods_root.mkdir(parents=True)
         self.manifest_path = self.unitymods_root / "pixi.toml"
 

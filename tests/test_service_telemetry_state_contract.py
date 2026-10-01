@@ -36,6 +36,7 @@ FORBIDDEN_RUNTIME_TELEMETRY_STATE_FIELDS = {
 
 SOURCE_ROOTS = (
     Path("packages"),
+    Path("extensions"),
     Path("services"),
 )
 

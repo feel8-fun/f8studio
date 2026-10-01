@@ -1,0 +1,24 @@
+schemaVersion: f8onnxModel/1
+model:
+  id: f8_motion_yowov3
+  displayName: F8 Motion ROI YOWOv3
+  provider: Feel8
+  task: yowo_temporal_det
+  skeletonProtocol: none
+  onnxPath: f8_motion_yowov3.onnx
+input:
+  width: 320
+  height: 320
+thresholds:
+  conf: 0.25
+  iou: 0.45
+temporal:
+  clipLength: 16
+  samplingRate: 1
+  maxDet: 8
+  resizeMode: direct_resize
+  normalization: imagenet
+labels:
+  classes:
+    - insertive_actor
+    - receptive_actor

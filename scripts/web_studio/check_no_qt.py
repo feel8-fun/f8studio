@@ -15,7 +15,7 @@ SOURCE_ROOTS = (
     REPO_ROOT / "packages",
     REPO_ROOT / "scripts",
     REPO_ROOT / "tests",
-    REPO_ROOT / "external" / "f8unitymods",
+    REPO_ROOT / "extensions",
 )
 IGNORED_PARTS = frozenset({".git", ".pixi", "__pycache__", "build", "dist", "node_modules", "site"})
 FORBIDDEN_IMPORT_ROOTS = frozenset({"NodeGraphQt", "PyQt5", "PyQt6", "PySide2", "PySide6", "pyqtgraph", "qtpy"})
@@ -28,8 +28,8 @@ FORBIDDEN_PACKAGE_PATHS = (
 MANIFEST_PATHS = (
     REPO_ROOT / "pixi.toml",
     *(path for path in (REPO_ROOT / "packages").glob("*/pyproject.toml")),
-    REPO_ROOT / "external" / "f8unitymods" / "pyproject.toml",
-    REPO_ROOT / "external" / "f8unitymods" / "pixi.toml",
+    *(path for path in (REPO_ROOT / "extensions").glob("*/pyproject.toml")),
+    REPO_ROOT / "extensions" / "f8unitymods" / "pixi.toml",
 )
 DEPENDENCY_TOKEN_RE = re.compile(r"^[A-Za-z0-9_.-]+")
 

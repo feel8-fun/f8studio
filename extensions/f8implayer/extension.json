@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "f8extensionCatalog/1",
+  "extensions": [
+    {
+      "extensionId": "implayer",
+      "name": "Image and Video Player",
+      "version": "0.0.1",
+      "description": "Play image and video sources.",
+      "serviceClasses": [
+        "f8.implayer"
+      ]
+    }
+  ]
+}

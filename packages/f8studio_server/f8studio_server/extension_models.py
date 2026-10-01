@@ -4,36 +4,17 @@ from typing import Literal
 
 import msgspec
 
-
-RuntimeKind = Literal['native', 'bundled', 'workspace', 'pixi', 'shared']
-
-
-class ExtensionRuntime(msgspec.Struct, frozen=True, kw_only=True, rename='camel', forbid_unknown_fields=True):
-    kind: RuntimeKind = 'native'
-    environment: str | None = None
-    requires_python: str | None = None
-    dependencies: tuple[str, ...] = ()
+from f8pysdk.extension_spec import (
+    ExtensionCatalog as ExtensionCatalog,
+    ExtensionManifest as ExtensionManifest,
+    ExtensionRuntime as ExtensionRuntime,
+    RuntimeKind as RuntimeKind,
+)
 
 
 class PresetEnvironmentStatus(msgspec.Struct, frozen=True, kw_only=True, rename='camel'):
     environment: str
     ready: bool
-
-
-class ExtensionManifest(msgspec.Struct, frozen=True, kw_only=True, rename='camel', forbid_unknown_fields=True):
-    extension_id: str
-    name: str
-    version: str
-    description: str
-    service_classes: tuple[str, ...]
-    runtime: ExtensionRuntime = ExtensionRuntime()
-    model_directories: tuple[str, ...] = ()
-
-
-class ExtensionCatalog(msgspec.Struct, frozen=True, kw_only=True, rename='camel', forbid_unknown_fields=True):
-    schema_version: Literal['f8extensionCatalog/1']
-    extensions: tuple[ExtensionManifest, ...]
-    preinstalled: tuple[str, ...] = ()
 
 
 class ExtensionRecord(msgspec.Struct, frozen=True, kw_only=True, rename='camel', forbid_unknown_fields=True):

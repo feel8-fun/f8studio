@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "f8extensionCatalog/1",
+  "extensions": [
+    {
+      "extensionId": "audiofeat",
+      "name": "Audio Features",
+      "version": "0.0.1",
+      "description": "Analyze audio features and rhythm.",
+      "serviceClasses": [
+        "f8.audiofeat.core",
+        "f8.audiofeat.rhythm"
+      ],
+      "runtime": {
+        "kind": "workspace",
+        "environment": "default"
+      }
+    }
+  ]
+}

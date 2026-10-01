@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "f8extensionCatalog/1",
+  "extensions": [
+    {
+      "extensionId": "pyengine",
+      "name": "Python Engine",
+      "version": "0.0.1",
+      "description": "Run Python processing graphs.",
+      "serviceClasses": [
+        "f8.pyengine"
+      ],
+      "runtime": {
+        "kind": "workspace",
+        "environment": "web-studio-runtime"
+      }
+    }
+  ]
+}

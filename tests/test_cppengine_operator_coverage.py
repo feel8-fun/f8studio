@@ -25,7 +25,7 @@ class CppEngineOperatorCoverageTest(unittest.TestCase):
         from f8pyengine.pyengine_service import build_app
 
         python_specs = {op["operatorClass"] for op in build_app().describe_json()["operators"]}
-        sources = Path("packages/f8cppengine/src")
+        sources = Path("extensions/f8cppengine/src")
         declared = set()
         for path in sources.glob("*.cpp"):
             declared.update(re.findall(r'"(f8\.[a-z_]+)"', path.read_text()))

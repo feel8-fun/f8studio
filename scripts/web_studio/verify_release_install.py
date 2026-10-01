@@ -22,7 +22,7 @@ PACKAGE_DIRS = (
     REPO_ROOT / "packages" / "f8studio_core",
     REPO_ROOT / "packages" / "f8media_protocol",
     REPO_ROOT / "packages" / "f8media_gateway",
-    REPO_ROOT / "external" / "f8unitymods",
+    REPO_ROOT / "extensions" / "f8unitymods",
     REPO_ROOT / "packages" / "f8studio_server",
 )
 

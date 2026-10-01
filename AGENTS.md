@@ -16,7 +16,7 @@ This repository should be operated through `pixi` by default.
   - the command is clearly unrelated to the project runtime environment.
 
 ### Examples
-- Good: `pixi run pytest packages/f8pyengine/tests/test_data_expr_node.py -q`
+- Good: `pixi run pytest extensions/f8pyengine/tests/test_data_expr_node.py -q`
 - Good: `pixi run python -m f8pyengine.main --describe`
 - Avoid: `pytest ...`
 - Avoid: `python -m pytest ...`

@@ -1,0 +1,36 @@
+schemaVersion: f8onnxModel/1
+model:
+  id: nudenet-320n
+  displayName: NudeNet-320n
+  provider: notAI-tech
+  task: yolo_det
+  skeletonProtocol: none
+  onnxPath: nudenet-320n.onnx
+  onnxUrl: https://github.com/feel8-fun/f8studio/releases/download/v0.1.0/nudenet-320n.onnx
+  onnxSHA256: c15d8273adad2d0a92f014cc69ab2d6c311a06777a55545f2c4eb46f51911f0f
+input:
+  width: 320
+  height: 320
+thresholds:
+  conf: 0.25
+  iou: 0.45
+labels:
+  classes:
+    - FEMALE_GENITALIA_COVERED
+    - FACE_FEMALE
+    - BUTTOCKS_EXPOSED
+    - FEMALE_BREAST_EXPOSED
+    - FEMALE_GENITALIA_EXPOSED
+    - MALE_BREAST_EXPOSED
+    - ANUS_EXPOSED
+    - FEET_EXPOSED
+    - BELLY_COVERED
+    - FEET_COVERED
+    - ARMPITS_COVERED
+    - ARMPITS_EXPOSED
+    - FACE_MALE
+    - BELLY_EXPOSED
+    - MALE_GENITALIA_EXPOSED
+    - ANUS_COVERED
+    - FEMALE_BREAST_COVERED
+    - BUTTOCKS_COVERED

@@ -1,0 +1,11 @@
+schemaVersion: f8serviceEntry/1
+serviceClass: f8.audiofeat.core
+label: Audio Feature Core
+version: 0.0.1
+launch:
+  command: python
+  args:
+  - -m
+  - f8pyaudiofeat.main_core
+  env: {}
+  workdir: ../../..

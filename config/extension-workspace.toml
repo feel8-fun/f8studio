@@ -1,0 +1,46 @@
+# Source layout only. Runtime manifests live with each extension package.
+core = ["f8studio_web", "f8studio_server", "f8studio_core", "f8media_gateway", "f8media_protocol", "f8pysdk", "f8cppsdk"]
+
+[[extensions]]
+package = "f8screencap"
+extension_ids = ["screencap"]
+
+[[extensions]]
+package = "f8audiocap"
+extension_ids = ["audiocap"]
+
+[[extensions]]
+package = "f8cvkit"
+extension_ids = ["cvkit"]
+
+[[extensions]]
+package = "f8implayer"
+extension_ids = ["implayer"]
+
+[[extensions]]
+package = "f8cppengine"
+extension_ids = ["cppengine"]
+
+[[extensions]]
+package = "f8pyengine"
+extension_ids = ["pyengine"]
+
+[[extensions]]
+package = "f8pyscript"
+extension_ids = ["pyscript", "pyexpr"]
+
+[[extensions]]
+package = "f8pymppose"
+extension_ids = ["mediapipe"]
+
+[[extensions]]
+package = "f8pydl"
+extension_ids = ["dl"]
+
+[[extensions]]
+package = "f8pyaudiofeat"
+extension_ids = ["audiofeat"]
+
+[[extensions]]
+package = "f8proclauncher"
+extension_ids = ["proclauncher"]

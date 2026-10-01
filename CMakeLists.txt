@@ -1,13 +1,15 @@
 cmake_minimum_required(VERSION 3.20)
 project(f8studio VERSION 0.1.0 LANGUAGES CXX)
 
-set(F8_PIXI_CPP_ENV_DIR "${CMAKE_CURRENT_SOURCE_DIR}/.pixi/envs/cpp")
+set(F8_PIXI_CPP_ENV_DIR "${CMAKE_CURRENT_SOURCE_DIR}/.pixi/envs/cpp" CACHE PATH "Pixi C++ dependency prefix")
 if(EXISTS "${F8_PIXI_CPP_ENV_DIR}")
-    list(PREPEND CMAKE_PREFIX_PATH "${F8_PIXI_CPP_ENV_DIR}")
+    # Conan's generated package configs must take precedence over alternate
+    # Pixi configs for the same libraries; their imported target names differ.
+    list(APPEND CMAKE_PREFIX_PATH "${F8_PIXI_CPP_ENV_DIR}")
     list(PREPEND CMAKE_LIBRARY_PATH "${F8_PIXI_CPP_ENV_DIR}/lib")
     list(PREPEND CMAKE_INCLUDE_PATH "${F8_PIXI_CPP_ENV_DIR}/include")
     if(CMAKE_HOST_WIN32 AND EXISTS "${F8_PIXI_CPP_ENV_DIR}/Library")
-        list(PREPEND CMAKE_PREFIX_PATH "${F8_PIXI_CPP_ENV_DIR}/Library")
+        list(APPEND CMAKE_PREFIX_PATH "${F8_PIXI_CPP_ENV_DIR}/Library")
         list(PREPEND CMAKE_LIBRARY_PATH "${F8_PIXI_CPP_ENV_DIR}/Library/lib")
         list(PREPEND CMAKE_INCLUDE_PATH "${F8_PIXI_CPP_ENV_DIR}/Library/include")
     endif()
@@ -88,97 +90,25 @@ find_package(Threads REQUIRED)
 
 set(F8_SERVICE_BUNDLES_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/runtime/bundles")
 
-function(f8_deploy_service_runtime target service_rel_dir)
-    if(NOT TARGET ${target})
-        message(WARNING "f8_deploy_service_runtime: target not found: ${target}")
-        return()
-    endif()
-
-    # Optional args:
-    # - "NO_CLEAN" to allow multiple executables to share one runtime directory.
-    # - "EXTRA_FILES" followed by one or more file paths to copy into deploy dir.
-    set(_extra_files "")
-    set(_clean_dest "$<IF:$<BOOL:${F8_DEPLOY_SERVICE_CLEAN}>,1,0>")
-    set(_arg_index 2)
-    while(_arg_index LESS ARGC)
-        set(_arg "${ARGV${_arg_index}}")
-        if("${_arg}" STREQUAL "NO_CLEAN")
-            set(_clean_dest "0")
-        elseif("${_arg}" STREQUAL "EXTRA_FILES")
-            math(EXPR _arg_index "${_arg_index} + 1")
-            while(_arg_index LESS ARGC)
-                set(_next "${ARGV${_arg_index}}")
-                if("${_next}" STREQUAL "NO_CLEAN" OR "${_next}" STREQUAL "EXTRA_FILES")
-                    math(EXPR _arg_index "${_arg_index} - 1")
-                    break()
-                endif()
-                list(APPEND _extra_files "${_next}")
-                math(EXPR _arg_index "${_arg_index} + 1")
-            endwhile()
-        endif()
-        math(EXPR _arg_index "${_arg_index} + 1")
-    endwhile()
-
-    if(WIN32)
-        set(_platform_dir "win")
-    elseif(APPLE)
-        set(_platform_dir "mac")
-    else()
-        set(_platform_dir "linux")
-    endif()
-
-    set(_dest_dir "${F8_SERVICE_BUNDLES_ROOT}/${service_rel_dir}/0.0.1/${_platform_dir}")
-    set(_bin_dir "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
-    set(_lib_dir "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}")
-
-    set(_deploy_cmd
-        "${CMAKE_COMMAND}"
-        -Dexe="$<TARGET_FILE:${target}>"
-        -Ddest_dir="${_dest_dir}"
-        -Dbin_dir="${_bin_dir}"
-        -Dlib_dir="${_lib_dir}"
-        -Dclean_dest="${_clean_dest}"
-        -P "${PROJECT_SOURCE_DIR}/cmake/deploy_service_runtime.cmake"
-    )
-    if(_extra_files)
-        # Use '|' as transport separator to avoid ';' list splitting in Visual Studio custom commands.
-        list(APPEND _deploy_cmd -Dextra_files="$<JOIN:${_extra_files},|>")
-    endif()
-
-    # Always provide a manual deploy target, so developers can disable POST_BUILD
-    # and run deploy explicitly when needed.
-    set(_deploy_target "${target}_deploy_runtime")
-    if(NOT TARGET ${_deploy_target})
-        add_custom_target(
-            ${_deploy_target}
-            COMMAND ${_deploy_cmd}
-            DEPENDS ${target}
-            VERBATIM
-            COMMENT "Deploy ${target} runtime to ${_dest_dir}"
-        )
-    endif()
-    if(TARGET f8_deploy_all_runtime)
-        add_dependencies(f8_deploy_all_runtime ${_deploy_target})
-    endif()
-
-    if(F8_DEPLOY_SERVICE_RUNTIME AND F8_DEPLOY_SERVICE_RUNTIME_POST_BUILD)
-        add_custom_command(
-            TARGET ${target}
-            POST_BUILD
-            COMMAND ${_deploy_cmd}
-            VERBATIM
-            COMMENT "Deploy ${target} runtime to ${_dest_dir}"
-        )
-    endif()
-endfunction()
+include(cmake/F8ServiceRuntime.cmake)
 
 add_subdirectory(packages/f8cppsdk)
-add_subdirectory(packages/f8cvkit)
-add_subdirectory(packages/f8implayer)
-add_subdirectory(packages/f8audiocap)
-add_subdirectory(packages/f8screencap)
-add_subdirectory(packages/f8sdk_demo)
-add_subdirectory(packages/f8cppengine)
+# An empty list builds the SDK only. Each extension also has a standalone entrypoint.
+set(F8_EXTENSION_PACKAGES "f8cvkit;f8implayer;f8audiocap;f8screencap;f8cppengine"
+    CACHE STRING "Native extension source packages to integrate")
+foreach(_f8_extension IN LISTS F8_EXTENSION_PACKAGES)
+    if(NOT _f8_extension MATCHES "^f8(cvkit|implayer|audiocap|screencap|cppengine)$")
+        message(FATAL_ERROR "Unknown native extension: ${_f8_extension}")
+    endif()
+    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/extensions/${_f8_extension}/CMakeLists.txt")
+        message(FATAL_ERROR "Extension ${_f8_extension} is not checked out. Run git submodule update --init --recursive, or select F8_EXTENSION_PACKAGES explicitly.")
+    endif()
+    add_subdirectory("extensions/${_f8_extension}")
+endforeach()
+option(F8_BUILD_SDK_DEMO "Build the SDK example service" ON)
+if(F8_BUILD_SDK_DEMO)
+    add_subdirectory(packages/f8sdk_demo)
+endif()
 
 if (BUILD_TESTS)
     if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
