@@ -1,0 +1,129 @@
+{
+  "$defs": {
+    "ExtensionCatalog": {
+      "additionalProperties": false,
+      "properties": {
+        "extensions": {
+          "items": {
+            "$ref": "#/$defs/ExtensionManifest"
+          },
+          "type": "array"
+        },
+        "preinstalled": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "schemaVersion": {
+          "enum": [
+            "f8extensionCatalog/1"
+          ]
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "extensions"
+      ],
+      "title": "ExtensionCatalog",
+      "type": "object"
+    },
+    "ExtensionManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "extensionId": {
+          "type": "string"
+        },
+        "modelDirectories": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "runtime": {
+          "$ref": "#/$defs/ExtensionRuntime",
+          "default": {
+            "dependencies": [],
+            "environment": null,
+            "kind": "native",
+            "requiresPython": null
+          }
+        },
+        "serviceClasses": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "extensionId",
+        "name",
+        "version",
+        "description",
+        "serviceClasses"
+      ],
+      "title": "ExtensionManifest",
+      "type": "object"
+    },
+    "ExtensionRuntime": {
+      "additionalProperties": false,
+      "properties": {
+        "dependencies": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "environment": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "default": "native",
+          "enum": [
+            "bundled",
+            "native",
+            "pixi",
+            "shared",
+            "workspace"
+          ]
+        },
+        "requiresPython": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [],
+      "title": "ExtensionRuntime",
+      "type": "object"
+    }
+  },
+  "$ref": "#/$defs/ExtensionCatalog"
+}

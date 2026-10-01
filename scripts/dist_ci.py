@@ -676,6 +676,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Bundle previously built f8unitymods dist assets instead of rebuilding them.",
     )
     parser.add_argument("--reuse-python-describes", action="store_true", help="Reuse Python descriptions checked earlier in CI")
+    parser.add_argument("--preset", choices=("standard", "core"), default="standard",
+                        help="Choose preinstalled service extensions; core starts with only Web Studio")
     return parser
 
 
@@ -706,12 +708,20 @@ def main() -> int:
     # Model storage is independent of service bundles and referenced by the index.
     shutil.copytree(REPO_ROOT / "resources", dist_dir / "resources", dirs_exist_ok=True,
                     ignore=shutil.ignore_patterns("onnx", "mediapipe"))
+    extension_catalog = json.loads((dist_dir / 'config/extensions.json').read_text(encoding='utf-8'))
+    model_directories = {directory for extension in extension_catalog['extensions']
+                         for directory in extension.get('modelDirectories', [])}
+    for directory in sorted(model_directories):
+        metadata = dist_dir / 'resources' / 'models' / directory
+        metadata.mkdir(parents=True, exist_ok=True)
+        for model in (REPO_ROOT / 'resources' / 'models' / directory).glob('*.yaml'):
+            shutil.copy2(model, metadata / model.name)
     _bundle_unitymods_assets(
         dist_dir,
         build_assets=not bool(args.reuse_unitymods_assets),
     )
 
-    bundle_base_runtime(dist_dir, cache=REPO_ROOT / "build" / "offline-cache")
+    bundle_base_runtime(dist_dir, cache=REPO_ROOT / "build" / "offline-cache", preset=args.preset)
     _bundle_studio_launcher(dist_dir)
     env_install_script_path = _write_env_install_script(
         dist_dir,
@@ -723,6 +733,7 @@ def main() -> int:
         "This bundle contains:\n"
         "- pixi.toml + pixi.lock\n"
         "- config/service-index.json (explicit service registrations)\n"
+        "- config/extensions.json (extension ownership and preinstalled preset)\n"
         "- config/services/** (launch declarations)\n"
         "- runtime/bundles/** (versioned runtime artifacts)\n"
         "- resources/models/** (shared model storage)\n"
@@ -734,6 +745,7 @@ def main() -> int:
         "1. Start `./f8studio` on Linux or `f8studio.cmd` on Windows.\n"
         "   The bundled base runtime is unpacked locally once; no network or Pixi is needed.\n"
         "   Later launches reuse the prepared runtime. GPU and MediaPipe services are not enabled in this base package.\n"
+        "   Open Services to install, disable or uninstall service extensions.\n"
         "2. Keep the terminal open while using Studio; Ctrl+C stops the server.\n"
         f"   To prepare the offline runtime before first launch, run `{env_install_script_path.name}`.\n\n"
         f"Platform runtime binaries are under `runtime/bundles/**/{platform_dir}`.\n"

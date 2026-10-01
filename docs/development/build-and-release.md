@@ -92,7 +92,9 @@ pixi run --locked -e build-check dist_ci --archive
 
 用户解压后，双击 `f8studio.cmd`（Windows）或执行 `./f8studio`（Linux）。基础运行时、Python、所有基础第三方包和本地 wheels 已包含在 `offline/base-runtime.tar` 中，官方 `pixi-unpack` 工具也随包提供。第一次启动只做本地解包并写入 `.runtime-location`，不下载 Pixi、不联网安装依赖；后续启动直接复用 `env`。也可提前运行 `install_env.bat` / `install_env.sh` 完成这一步。移动整个发行目录后会使用本地包重新准备环境，修复绝对前缀。
 
-启动器激活包内运行时并直接执行 `python -I -m f8studio_server --open-browser`；基础 Python 服务的启动声明同样直接指向包内解释器。GPU/MediaPipe 的服务注册保存在 `config/optional-service-index.json`，默认未启用，相关模型不随基础包提供；本次没有提供这些组件的独立安装流程。普通 Python、音频、媒体及 C++ 服务保留在基础包中。
+启动器激活包内运行时并直接执行 `python -I -m f8studio_server --open-browser`；基础 Python 服务的启动声明同样直接指向包内解释器。`config/service-index.json` 保留全部服务元数据，`config/extensions.json` 声明服务归属、运行环境和预装清单。默认 `standard` 预装普通 Python、音频和 C++ 扩展，DL 和 MediaPipe 按需安装；`pixi run -e ci dist_ci --preset core` 不预装服务扩展。这个 preset 控制初始安装状态，当前仍携带基础环境及可重装服务的文件，尚未把物理包体裁剪成最小 Web Studio。
+
+Web Studio 的 Services 页面统一管理全部服务扩展，支持安装、取消、启停、卸载和从发布者的 HTTPS ZIP 链接与 SHA-256 导入新包。第三方 Python 扩展以 `shared` 引用官方 `pixi.toml` 的环境名，如 `studio-runtime`、`onnx`、`mediapipe`。开发时复用对应 workspace 环境；发行时基础环境使用包内 `env`，可选环境复用官方扩展已准备的托管目录。安装要求从扩展 wheel 的元数据读取，无需重复写依赖清单；共享模式只检查要求并保存自身代码，不下载环境或修改官方包。依赖不满足时发布者可以提供独立 Pixi 环境。独立模式发现 Pixi 或用官方脚本安装固定的 0.81.0；锁定环境及 wheels 存在用户目录 `runtimes/<environment>-<digest>`，相同配置复用同一环境。安装及服务描述检查通过后才激活；失败保留缓存和已准备的环境，便于重试。共享扩展与官方扩展按同一环境计数，卸载最后一个使用者后才回收托管环境；源码环境和包内基础环境保留。模型元数据与按需权重位于用户目录 `models`，不随服务卸载删除。运行中或正在启动的服务会阻止停用/卸载。完整格式见 [extensions.md](extensions.md)。
 
 Windows CI 产物为一个离线 ZIP，不再同时上传展开目录；ZIP 上传不再次压缩，内部已压缩的运行时包/wheels 也不重复压缩。构建前已检查的 Python 描述通过 `--reuse-python-describes` 复用，原生描述仍在编译后刷新。验证直接解压最终 ZIP，在独立目录内运行两次启动器（第二次必须不重复解包），然后用包内 Python 检查服务描述、Web/health、包安装位置和编辑器工具；不再逐环境联网安装依赖。保留原生契约测试作为语义验证。
 

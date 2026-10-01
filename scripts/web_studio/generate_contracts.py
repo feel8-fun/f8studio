@@ -17,6 +17,7 @@ from f8studio_server import presentation_models
 from f8pysdk import generated as protocol_models
 import msgspec
 from f8studio_server.api_contracts import ROUTES, contract_types
+from f8studio_server.extension_models import ExtensionCatalog
 from f8studio_server.schema_generation import model_schemas
 from f8studio_server.agents.models import AgentSessionRecord, AgentImage
 from f8studio_server.editor import CreateEditorSessionRequest, EditorAnalysis, EditorLanguageResult, EditorSessionRecord
@@ -146,6 +147,7 @@ def generate() -> dict[Path, str]:
     types += "export interface ApiResponses {\n" + "\n".join(responses) + "\n}\n"
     return {
         REPO / "schemas/studio-api.gen.json": json.dumps(schema, indent=2, sort_keys=True) + "\n",
+        REPO / "schemas/extensions.gen.json": json.dumps(msgspec.json.schema(ExtensionCatalog), indent=2, sort_keys=True) + "\n",
         REPO / "packages/f8studio_web/src/api/contracts.gen.ts": types,
     }
 

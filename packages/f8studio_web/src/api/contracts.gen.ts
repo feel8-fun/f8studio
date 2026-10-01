@@ -787,6 +787,20 @@ export type EntryInput = {
   readonly "syncBaseLocalVersionNumber"?: number;
 };
 
+export type EnvironmentStatus = {
+  readonly "environmentId": string;
+  readonly "runtimeKind": "bundled" | "native" | "pixi" | "shared" | "workspace";
+  readonly "extensionIds": ReadonlyArray<string>;
+  readonly "ready": boolean;
+};
+
+export type EnvironmentStatusInput = {
+  readonly "environmentId": string;
+  readonly "runtimeKind": "bundled" | "native" | "pixi" | "shared" | "workspace";
+  readonly "extensionIds": ReadonlyArray<string>;
+  readonly "ready": boolean;
+};
+
 export type EventEnvelope = {
   readonly "eventId": string;
   readonly "serverEpoch": string;
@@ -873,6 +887,66 @@ export type ExchangeServiceInput = {
   readonly "portIds"?: Readonly<Record<string, string>>;
   readonly "stateValues"?: Readonly<Record<string, JsonValue>>;
   readonly "enabled"?: boolean;
+};
+
+export type ExtensionImportRequest = {
+  readonly "url": string;
+  readonly "sha256": string;
+};
+
+export type ExtensionImportRequestInput = {
+  readonly "url": string;
+  readonly "sha256": string;
+};
+
+export type ExtensionInstallPlan = {
+  readonly "extensionId": string;
+  readonly "environmentId": string | null;
+  readonly "runtimeKind": "bundled" | "native" | "pixi" | "shared" | "workspace";
+  readonly "action": "bundled" | "create" | "none" | "reuse" | "shared" | "workspace";
+  readonly "requiresNetwork": boolean;
+};
+
+export type ExtensionInstallPlanInput = {
+  readonly "extensionId": string;
+  readonly "environmentId": string | null;
+  readonly "runtimeKind": "bundled" | "native" | "pixi" | "shared" | "workspace";
+  readonly "action": "bundled" | "create" | "none" | "reuse" | "shared" | "workspace";
+  readonly "requiresNetwork": boolean;
+};
+
+export type ExtensionStatus = {
+  readonly "extensionId": string;
+  readonly "name": string;
+  readonly "version": string;
+  readonly "description": string;
+  readonly "state": "available" | "disabled" | "failed" | "installed" | "installing" | "unavailable";
+  readonly "detail": string;
+  readonly "serviceClasses": ReadonlyArray<string>;
+  readonly "runtimeKind": "bundled" | "native" | "pixi" | "shared" | "workspace";
+  readonly "environmentId": string | null;
+  readonly "preinstalled": boolean;
+};
+
+export type ExtensionStatusInput = {
+  readonly "extensionId": string;
+  readonly "name": string;
+  readonly "version": string;
+  readonly "description": string;
+  readonly "state": "available" | "disabled" | "failed" | "installed" | "installing" | "unavailable";
+  readonly "detail": string;
+  readonly "serviceClasses": ReadonlyArray<string>;
+  readonly "runtimeKind": "bundled" | "native" | "pixi" | "shared" | "workspace";
+  readonly "environmentId": string | null;
+  readonly "preinstalled": boolean;
+};
+
+export type ExtensionToggleRequest = {
+  readonly "enabled": boolean;
+};
+
+export type ExtensionToggleRequestInput = {
+  readonly "enabled": boolean;
 };
 
 export type F8ActivateRequest = {
@@ -2775,6 +2849,16 @@ export type PresentationCommandInput = {
   readonly "tsMs"?: number | null;
 };
 
+export type PresetEnvironmentStatus = {
+  readonly "environment": string;
+  readonly "ready": boolean;
+};
+
+export type PresetEnvironmentStatusInput = {
+  readonly "environment": string;
+  readonly "ready": boolean;
+};
+
 export type PreviewUnityInstallRequest = {
   readonly "targetPath": string;
   readonly "exporter": "auto" | "live2d" | "skeleton";
@@ -3726,6 +3810,8 @@ export type WaveSceneInput = {
 };
 
 export interface ApiRequests {
+  readonly "POST /api/extensions/import": ExtensionImportRequestInput;
+  readonly "PUT /api/extensions/{extension_id}/enabled": ExtensionToggleRequestInput;
   readonly "POST /api/catalog/nodes": CreateCatalogNodeRequestInput;
   readonly "POST /api/assets": CreateAssetRequestInput;
   readonly "POST /api/assets/import": AssetExportInput;
@@ -3776,6 +3862,15 @@ export interface ApiResponses {
   readonly "GET /api/media/rtc-configuration": BrowserRtcConfiguration;
   readonly "GET /api/catalog": CatalogSnapshot;
   readonly "POST /api/catalog/refresh": CatalogSnapshot;
+  readonly "GET /api/extensions": ReadonlyArray<ExtensionStatus>;
+  readonly "POST /api/extensions/import": ReadonlyArray<ExtensionStatus>;
+  readonly "GET /api/extensions/{extension_id}/plan": ExtensionInstallPlan;
+  readonly "GET /api/environments": ReadonlyArray<EnvironmentStatus>;
+  readonly "GET /api/environments/presets": ReadonlyArray<PresetEnvironmentStatus>;
+  readonly "POST /api/extensions/{extension_id}/install": ExtensionStatus;
+  readonly "POST /api/extensions/{extension_id}/cancel": ExtensionStatus;
+  readonly "PUT /api/extensions/{extension_id}/enabled": ExtensionStatus;
+  readonly "DELETE /api/extensions/{extension_id}": ExtensionStatus;
   readonly "POST /api/catalog/nodes": ServiceNode | OperatorNode;
   readonly "GET /api/assets": ReadonlyArray<AssetSummary>;
   readonly "POST /api/assets": AssetRecord;

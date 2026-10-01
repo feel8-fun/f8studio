@@ -74,6 +74,8 @@ export type OperatorSpec = import('./contracts.gen').F8OperatorSpec;
 export type ExecPortSpec = import('./contracts.gen').F8ExecPortSpec;
 
 export type CatalogSnapshot = import('./contracts.gen').CatalogSnapshot;
+export type ExtensionStatus = import('./contracts.gen').ExtensionStatus;
+export type EnvironmentStatus = import('./contracts.gen').EnvironmentStatus;
 
 export type NodeKind = GraphNode['kind'];
 export type PortKind = import('./contracts.gen').PortKind;

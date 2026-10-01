@@ -35,6 +35,7 @@ from .database import StudioDatabase
 from .editor import EditorSessionService
 from .runtime_sync import service_was_deployed
 from .events import EventJournal
+from .extensions import ExtensionManager
 from .job_repository import JobRepository
 from .jobs import DeployCoordinator
 from .monitors import RuntimeMonitorStore
@@ -80,7 +81,9 @@ class StudioApplication:
             ),
             presentation=self.presentation,
         )
-        self.catalog = CatalogService(roots=service_roots, builtins=(self.studio_runtime.describe,))
+        self.extensions = ExtensionManager(self.data_dir)
+        self.catalog = CatalogService(roots=service_roots, builtins=(self.studio_runtime.describe,),
+                                      extension_indexes=self.extensions.active_indexes if self.extensions.has_catalog else None)
         self.database = StudioDatabase(self.data_dir / "studio.sqlite3")
         project_repository = ProjectRepository(self.database)
         self.projects = ProjectService(project_repository, spec_resolver=self.catalog.spec_for_node)
@@ -104,6 +107,7 @@ class StudioApplication:
             catalog=self.catalog,
             runtime_config=config,
             events=self.events,
+            service_enabled=self.extensions.service_enabled,
         )
         self.jobs = DeployCoordinator(
             projects=self.projects,
@@ -148,6 +152,7 @@ class StudioApplication:
         await self.local.start()
 
     async def close(self) -> None:
+        await self.extensions.close()
         await self.agents.close()
         await self.decisions.close()
         await self.local.close()

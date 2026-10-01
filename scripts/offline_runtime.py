@@ -39,16 +39,19 @@ def tool(name: str, cache: Path) -> Path:
     return destination
 
 
-def rewrite_base_services(root: Path, *, windows: bool) -> None:
+def rewrite_base_services(root: Path, *, windows: bool, preset: str = 'standard') -> None:
+    if preset not in {'standard', 'core'}:
+        raise ValueError(f'Unknown distribution preset: {preset}')
     manifest = tomllib.loads((root / 'pixi.toml').read_text())
     tasks: dict[str, str] = {}
     for feature in manifest['environments']['studio-runtime']['features']:
         tasks.update(manifest['feature'][feature].get('tasks', {}))
     index_path = root / 'config/service-index.json'
     index = json.loads(index_path.read_text())
-    active, optional = [], []
+    catalog_path = root / 'config/extensions.json'
+    catalog = json.loads(catalog_path.read_text())
+    environments: dict[str, str] = {}
     for item in index['services']:
-        is_optional = False
         for relative in item['manifests'].values():
             path = root / 'config' / relative
             document = yaml.safe_load(path.read_text())
@@ -58,11 +61,11 @@ def rewrite_base_services(root: Path, *, windows: bool) -> None:
             args = launch['args']
             if len(args) != 4 or args[:2] != ['run', '-e']:
                 raise ValueError(f'Unsupported release launch: {path}: {args}')
-            if args[2] in {'onnx', 'mediapipe'}:
-                is_optional = True
-                continue
+            previous_environment = environments.setdefault(item['serviceClass'], args[2])
+            if previous_environment != args[2]:
+                raise ValueError(f'Platform environments disagree for {item["serviceClass"]}')
             if args[2] != 'studio-runtime':
-                raise ValueError(f'Unexpected base environment: {path}: {args}')
+                continue
             command = shlex.split(tasks[args[3]])
             if command[:2] != ['python', '-m']:
                 raise ValueError(f'Base task must be an explicit Python module: {command}')
@@ -70,13 +73,25 @@ def rewrite_base_services(root: Path, *, windows: bool) -> None:
             launch['args'] = ['-I', *command[1:]]
             launch['workdir'] = os.path.relpath(root, path.parent).replace('\\', '/')
             path.write_text(yaml.safe_dump(document, sort_keys=False), encoding='utf-8')
-        (optional if is_optional else active).append(item)
-    index['services'] = active
-    index_path.write_text(json.dumps(index, indent=2) + '\n')
-    (root / 'config/optional-service-index.json').write_text(json.dumps({**index, 'services': optional}, indent=2) + '\n')
+    preinstalled: list[str] = []
+    for extension in catalog['extensions']:
+        names = {environments[name] for name in extension['serviceClasses'] if name in environments}
+        if len(names) > 1:
+            raise ValueError(f'Extension {extension["extensionId"]} references multiple runtimes')
+        if not names:
+            if extension.get('runtime', {}).get('kind') != 'bundled':
+                extension['runtime'] = {'kind': 'native'}
+        else:
+            environment = names.pop()
+            extension['runtime'] = ({'kind': 'bundled'} if environment == 'studio-runtime'
+                                    else {'kind': 'pixi', 'environment': environment})
+        if extension['runtime']['kind'] != 'pixi' and preset == 'standard':
+            preinstalled.append(extension['extensionId'])
+    catalog['preinstalled'] = preinstalled
+    catalog_path.write_text(json.dumps(catalog, indent=2) + '\n')
 
 
-def bundle_base_runtime(root: Path, *, cache: Path) -> None:
+def bundle_base_runtime(root: Path, *, cache: Path, preset: str = 'standard') -> None:
     pack = tool('pixi-pack', cache / 'tools')
     unpack = tool('pixi-unpack', cache / 'tools')
     destination = root / 'offline'
@@ -85,4 +100,4 @@ def bundle_base_runtime(root: Path, *, cache: Path) -> None:
                     '-o', str(destination / 'base-runtime.tar'), '--use-cache', str(cache / 'packages'),
                     str(root / 'pixi.toml')], check=True)
     shutil.copy2(unpack, destination / ('pixi-unpack.exe' if os.name == 'nt' else 'pixi-unpack'))
-    rewrite_base_services(root, windows=os.name == 'nt')
+    rewrite_base_services(root, windows=os.name == 'nt', preset=preset)

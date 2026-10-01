@@ -18,6 +18,10 @@ from .agents import models as agents, provider_settings as settings
 from .agents.provider_probe import ProviderProbeResult
 from .catalog import CatalogSnapshot
 from .events import EventEnvelope
+from .extension_models import (
+    EnvironmentStatus, ExtensionImportRequest, ExtensionInstallPlan, ExtensionStatus, ExtensionToggleRequest,
+    PresetEnvironmentStatus,
+)
 from .processes import ManagedProcessResult
 from .schema_generation import model_schemas
 from .local_integration import ApplyUnityInstallRequest
@@ -89,6 +93,15 @@ ROUTES = (
     RouteContract("get", "/api/media/rtc-configuration", None, models.BrowserRtcConfiguration, 200),
     RouteContract("get", "/api/catalog", None, CatalogSnapshot, 200),
     RouteContract("post", "/api/catalog/refresh", None, CatalogSnapshot, 200),
+    RouteContract("get", "/api/extensions", None, tuple[ExtensionStatus, ...], 200),
+    RouteContract("post", "/api/extensions/import", ExtensionImportRequest, tuple[ExtensionStatus, ...], 200),
+    RouteContract("get", "/api/extensions/{extension_id}/plan", None, ExtensionInstallPlan, 200),
+    RouteContract("get", "/api/environments", None, tuple[EnvironmentStatus, ...], 200),
+    RouteContract("get", "/api/environments/presets", None, tuple[PresetEnvironmentStatus, ...], 200),
+    RouteContract("post", "/api/extensions/{extension_id}/install", None, ExtensionStatus, 200),
+    RouteContract("post", "/api/extensions/{extension_id}/cancel", None, ExtensionStatus, 200),
+    RouteContract("put", "/api/extensions/{extension_id}/enabled", ExtensionToggleRequest, ExtensionStatus, 200),
+    RouteContract("delete", "/api/extensions/{extension_id}", None, ExtensionStatus, 200),
     RouteContract("post", "/api/catalog/nodes", CreateCatalogNodeRequest, GraphNode, 200),
     RouteContract("get", "/api/assets", None, tuple[assets.AssetSummary, ...], 200),
     RouteContract("post", "/api/assets", CreateAssetRequest, assets.AssetRecord, 201),

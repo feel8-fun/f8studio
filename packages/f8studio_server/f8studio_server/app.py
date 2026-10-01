@@ -61,6 +61,7 @@ from .assets import (
 )
 from .editor import CreateEditorSessionRequest, EditorPositionRequest, UpdateEditorDocumentRequest
 from .editor_context import editor_support_files
+from .extension_models import ExtensionImportRequest, ExtensionToggleRequest
 from .local_integration import (
     ApplyUnityInstallRequest,
     DetectModdingTargetRequest,
@@ -334,6 +335,48 @@ def create_app(
     @app.post("/api/catalog/refresh")
     async def refresh_catalog() -> F8JsonValue:
         return _json_value(await asyncio.to_thread(studio.catalog.refresh))
+
+    @app.get('/api/extensions')
+    async def extensions() -> F8JsonValue:
+        return _json_value(studio.extensions.statuses())
+
+    @app.post('/api/extensions/import')
+    async def import_extension_package(request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, ExtensionImportRequest)
+        return _json_value(await studio.extensions.import_package(payload))
+
+    @app.get('/api/extensions/{extension_id}/plan')
+    async def extension_install_plan(extension_id: str) -> F8JsonValue:
+        return _json_value(await asyncio.to_thread(studio.extensions.install_plan, extension_id))
+
+    @app.get('/api/environments')
+    async def extension_environments() -> F8JsonValue:
+        return _json_value(studio.extensions.environment_statuses())
+
+    @app.get('/api/environments/presets')
+    async def preset_environments() -> F8JsonValue:
+        return _json_value(await asyncio.to_thread(studio.extensions.preset_environments))
+
+    @app.post('/api/extensions/{extension_id}/install')
+    async def install_extension(extension_id: str) -> F8JsonValue:
+        return _json_value(await studio.extensions.install(extension_id, studio.catalog.refresh))
+
+    @app.post('/api/extensions/{extension_id}/cancel')
+    async def cancel_extension_install(extension_id: str) -> F8JsonValue:
+        return _json_value(await studio.extensions.cancel(extension_id))
+
+    @app.put('/api/extensions/{extension_id}/enabled')
+    async def set_extension_enabled(extension_id: str, request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, ExtensionToggleRequest)
+        return _json_value(await studio.extensions.set_enabled(
+            extension_id, payload.enabled, studio.catalog.refresh, studio.processes.is_class_running,
+        ))
+
+    @app.delete('/api/extensions/{extension_id}')
+    async def uninstall_extension(extension_id: str) -> F8JsonValue:
+        return _json_value(await studio.extensions.uninstall(
+            extension_id, studio.catalog.refresh, studio.processes.is_class_running,
+        ))
 
     @app.post("/api/catalog/nodes")
     async def create_catalog_node(request: Request) -> F8JsonValue:

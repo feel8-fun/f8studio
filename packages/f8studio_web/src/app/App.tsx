@@ -1,4 +1,4 @@
-import { Activity, Archive, Boxes, CircleDot, Plug, ScrollText, type LucideIcon } from 'lucide-react';
+import { Activity, Archive, Boxes, CircleDot, PackagePlus, Plug, ScrollText, type LucideIcon } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 
 import { fetchHealth } from '../api/client';
@@ -13,9 +13,10 @@ const AssetsWorkspace = lazy(() => import('../assets/AssetsWorkspace').then((mod
 const CodeStateWorkspace = lazy(() => import('../editor/CodeStateWorkspace').then((module) => ({ default: module.CodeStateWorkspace })));
 const PresentationWorkspace = lazy(() => import('../presentation/PresentationWorkspace').then((module) => ({ default: module.PresentationWorkspace })));
 const LocalWorkspace = lazy(() => import('../local/LocalWorkspace').then((module) => ({ default: module.LocalWorkspace })));
+const ServicesWorkspace = lazy(() => import('../services/ServicesWorkspace').then((module) => ({ default: module.ServicesWorkspace })));
 const AgentWorkspace = lazy(() => import('../agents/AgentWorkspace').then((module) => ({ default: module.AgentWorkspace })));
 
-type WorkspaceView = 'graph' | 'agent' | 'assets' | 'code-state' | 'outputs' | 'local' | 'logs';
+type WorkspaceView = 'graph' | 'agent' | 'assets' | 'code-state' | 'outputs' | 'local' | 'services' | 'logs';
 interface LocationView { readonly view: WorkspaceView; readonly nodeId: string | null; readonly projectId: string | null; readonly sessionId: string | null }
 
 function readLocationView(): LocationView {
@@ -40,6 +41,7 @@ const WORKSPACES: readonly WorkspaceDefinition[] = [
   { view: 'assets', label: 'Assets', title: 'Assets', icon: Archive },
   { view: 'outputs', label: 'Outputs', title: 'Live Outputs', icon: Activity },
   { view: 'local', label: 'Local integrations', title: 'Local Integrations', icon: Plug },
+  { view: 'services', label: 'Services', title: 'Services & Extensions', icon: PackagePlus },
   { view: 'logs', label: 'Logs', title: 'Log Center', icon: ScrollText },
 ];
 
@@ -137,6 +139,7 @@ export function App() {
             {view === 'code-state' && <CodeStateWorkspace />}
             {view === 'outputs' && <PresentationWorkspace nodeId={nodeId} />}
             {view === 'local' && <LocalWorkspace />}
+            {view === 'services' && <ServicesWorkspace />}
             {view === 'logs' && <LogsWorkspace />}
             {view === 'agent' && projectId !== null && <AgentWorkspace projectId={projectId} initialSessionId={sessionId} />}
           </Suspense>

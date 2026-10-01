@@ -10,6 +10,8 @@ import {
   isStudioDocument,
   isStudioLogEvent,
   type CatalogSnapshot,
+  type ExtensionStatus,
+  type EnvironmentStatus,
   type DeployJob,
   type GraphNode,
   type GraphOperation,
@@ -301,6 +303,68 @@ export async function refreshCatalog(): Promise<CatalogSnapshot> {
     throw new Error('Catalog does not match f8studio-api/1');
   }
   return body as unknown as CatalogSnapshot;
+}
+
+function isRuntimeKind(value: unknown): value is ExtensionStatus['runtimeKind'] {
+  return typeof value === 'string' && ['native', 'bundled', 'workspace', 'pixi', 'shared'].includes(value);
+}
+
+function isExtensionStatus(value: unknown): value is ExtensionStatus {
+  return isObject(value) && typeof value.extensionId === 'string' && typeof value.name === 'string' &&
+    typeof value.version === 'string' && typeof value.description === 'string' &&
+    isRuntimeKind(value.runtimeKind) &&
+    (value.environmentId === null || typeof value.environmentId === 'string') && typeof value.preinstalled === 'boolean' &&
+    ['unavailable', 'available', 'installing', 'installed', 'disabled', 'failed'].includes(String(value.state)) &&
+    typeof value.detail === 'string' && Array.isArray(value.serviceClasses) &&
+    value.serviceClasses.every((item) => typeof item === 'string');
+}
+
+export async function fetchExtensions(signal?: AbortSignal): Promise<readonly ExtensionStatus[]> {
+  const body = await requestJson('/api/extensions', { signal });
+  if (!Array.isArray(body) || !body.every(isExtensionStatus)) throw new Error('Invalid extension status');
+  return body;
+}
+
+export async function importExtensionPackage(url: string, sha256: string): Promise<readonly ExtensionStatus[]> {
+  const body = await requestJson('/api/extensions/import', jsonRequest('POST /api/extensions/import', { url, sha256 }));
+  if (!Array.isArray(body) || !body.every(isExtensionStatus)) throw new Error('Invalid extension catalog');
+  return body;
+}
+
+export async function fetchEnvironments(signal?: AbortSignal): Promise<readonly EnvironmentStatus[]> {
+  const body = await requestJson('/api/environments', { signal });
+  if (!Array.isArray(body) || !body.every((item: unknown) => isObject(item) &&
+    typeof item.environmentId === 'string' && typeof item.ready === 'boolean' &&
+    isRuntimeKind(item.runtimeKind) &&
+    Array.isArray(item.extensionIds) && item.extensionIds.every((id: unknown) => typeof id === 'string'))) {
+    throw new Error('Invalid environment status');
+  }
+  return body as readonly EnvironmentStatus[];
+}
+
+export async function installExtension(extensionId: string): Promise<ExtensionStatus> {
+  const body = await requestJson(`/api/extensions/${encodeURIComponent(extensionId)}/install`, { method: 'POST' });
+  if (!isExtensionStatus(body)) throw new Error('Invalid extension status');
+  return body;
+}
+
+export async function cancelExtensionInstall(extensionId: string): Promise<ExtensionStatus> {
+  const body = await requestJson(`/api/extensions/${encodeURIComponent(extensionId)}/cancel`, { method: 'POST' });
+  if (!isExtensionStatus(body)) throw new Error('Invalid extension status');
+  return body;
+}
+
+export async function setExtensionEnabled(extensionId: string, enabled: boolean): Promise<ExtensionStatus> {
+  const body = await requestJson(`/api/extensions/${encodeURIComponent(extensionId)}/enabled`,
+    jsonRequest('PUT /api/extensions/{extension_id}/enabled', { enabled }));
+  if (!isExtensionStatus(body)) throw new Error('Invalid extension status');
+  return body;
+}
+
+export async function uninstallExtension(extensionId: string): Promise<ExtensionStatus> {
+  const body = await requestJson(`/api/extensions/${encodeURIComponent(extensionId)}`, { method: 'DELETE' });
+  if (!isExtensionStatus(body)) throw new Error('Invalid extension status');
+  return body;
 }
 
 export type CreateCatalogNodeInput = Wire.CreateCatalogNodeRequestInput;

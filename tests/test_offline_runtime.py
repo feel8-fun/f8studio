@@ -24,13 +24,23 @@ engine = "python -m f8pyengine.main"
         path.write_text(yaml.safe_dump({'launch': {'command': 'pixi', 'args': ['run', '-e', env, name]}}))
         services.append({'serviceClass': name, 'manifests': {'any': f'services/{name}/service.yml'}})
     (tmp_path / 'config/service-index.json').write_text(json.dumps({'services': services}))
+    (tmp_path / 'config/extensions.json').write_text(json.dumps({
+        'schemaVersion': 'f8extensionCatalog/1', 'preinstalled': ['engine', 'detector', 'pose'],
+        'extensions': [{'extensionId': name, 'serviceClasses': [name]} for name in ('engine', 'detector', 'pose')],
+    }))
     rewrite_base_services(tmp_path, windows=windows)
     entry = yaml.safe_load((tmp_path / 'config/services/engine/service.yml').read_text())['launch']
     assert entry['command'] == ('./env/python.exe' if windows else './env/bin/python')
     assert entry['args'] == ['-I', '-m', 'f8pyengine.main']
     assert entry['workdir'] == '../../..'
-    assert len(json.loads((tmp_path / 'config/service-index.json').read_text())['services']) == 1
-    assert len(json.loads((tmp_path / 'config/optional-service-index.json').read_text())['services']) == 2
+    assert len(json.loads((tmp_path / 'config/service-index.json').read_text())['services']) == 3
+    catalog = json.loads((tmp_path / 'config/extensions.json').read_text())
+    assert catalog['preinstalled'] == ['engine']
+    assert catalog['extensions'][0]['runtime'] == {'kind': 'bundled'}
+    assert catalog['extensions'][1]['runtime'] == {'kind': 'pixi', 'environment': 'onnx'}
+    assert catalog['extensions'][2]['runtime'] == {'kind': 'pixi', 'environment': 'mediapipe'}
+    rewrite_base_services(tmp_path, windows=windows, preset='core')
+    assert json.loads((tmp_path / 'config/extensions.json').read_text())['preinstalled'] == []
 
 
 def test_cached_tool_with_wrong_digest_is_rejected(tmp_path: Path) -> None:

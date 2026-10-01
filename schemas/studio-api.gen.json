@@ -4030,6 +4030,72 @@
       "title": "Entry",
       "type": "object"
     },
+    "EnvironmentStatus": {
+      "properties": {
+        "environmentId": {
+          "type": "string"
+        },
+        "extensionIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "runtimeKind": {
+          "enum": [
+            "bundled",
+            "native",
+            "pixi",
+            "shared",
+            "workspace"
+          ]
+        }
+      },
+      "required": [
+        "environmentId",
+        "extensionIds",
+        "ready",
+        "runtimeKind"
+      ],
+      "title": "EnvironmentStatus",
+      "type": "object"
+    },
+    "EnvironmentStatusInput": {
+      "properties": {
+        "environmentId": {
+          "type": "string"
+        },
+        "extensionIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "runtimeKind": {
+          "enum": [
+            "bundled",
+            "native",
+            "pixi",
+            "shared",
+            "workspace"
+          ]
+        }
+      },
+      "required": [
+        "environmentId",
+        "runtimeKind",
+        "extensionIds",
+        "ready"
+      ],
+      "title": "EnvironmentStatus",
+      "type": "object"
+    },
     "EventEnvelope": {
       "properties": {
         "eventId": {
@@ -4578,6 +4644,302 @@
         "definitionRef"
       ],
       "title": "ExchangeService",
+      "type": "object"
+    },
+    "ExtensionImportRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "sha256": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sha256",
+        "url"
+      ],
+      "title": "ExtensionImportRequest",
+      "type": "object"
+    },
+    "ExtensionImportRequestInput": {
+      "additionalProperties": false,
+      "properties": {
+        "sha256": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "sha256"
+      ],
+      "title": "ExtensionImportRequest",
+      "type": "object"
+    },
+    "ExtensionInstallPlan": {
+      "properties": {
+        "action": {
+          "enum": [
+            "bundled",
+            "create",
+            "none",
+            "reuse",
+            "shared",
+            "workspace"
+          ]
+        },
+        "environmentId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "extensionId": {
+          "type": "string"
+        },
+        "requiresNetwork": {
+          "type": "boolean"
+        },
+        "runtimeKind": {
+          "enum": [
+            "bundled",
+            "native",
+            "pixi",
+            "shared",
+            "workspace"
+          ]
+        }
+      },
+      "required": [
+        "action",
+        "environmentId",
+        "extensionId",
+        "requiresNetwork",
+        "runtimeKind"
+      ],
+      "title": "ExtensionInstallPlan",
+      "type": "object"
+    },
+    "ExtensionInstallPlanInput": {
+      "properties": {
+        "action": {
+          "enum": [
+            "bundled",
+            "create",
+            "none",
+            "reuse",
+            "shared",
+            "workspace"
+          ]
+        },
+        "environmentId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "extensionId": {
+          "type": "string"
+        },
+        "requiresNetwork": {
+          "type": "boolean"
+        },
+        "runtimeKind": {
+          "enum": [
+            "bundled",
+            "native",
+            "pixi",
+            "shared",
+            "workspace"
+          ]
+        }
+      },
+      "required": [
+        "extensionId",
+        "environmentId",
+        "runtimeKind",
+        "action",
+        "requiresNetwork"
+      ],
+      "title": "ExtensionInstallPlan",
+      "type": "object"
+    },
+    "ExtensionStatus": {
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "environmentId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "extensionId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "preinstalled": {
+          "type": "boolean"
+        },
+        "runtimeKind": {
+          "enum": [
+            "bundled",
+            "native",
+            "pixi",
+            "shared",
+            "workspace"
+          ]
+        },
+        "serviceClasses": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "state": {
+          "enum": [
+            "available",
+            "disabled",
+            "failed",
+            "installed",
+            "installing",
+            "unavailable"
+          ]
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "description",
+        "detail",
+        "environmentId",
+        "extensionId",
+        "name",
+        "preinstalled",
+        "runtimeKind",
+        "serviceClasses",
+        "state",
+        "version"
+      ],
+      "title": "ExtensionStatus",
+      "type": "object"
+    },
+    "ExtensionStatusInput": {
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "environmentId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "extensionId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "preinstalled": {
+          "type": "boolean"
+        },
+        "runtimeKind": {
+          "enum": [
+            "bundled",
+            "native",
+            "pixi",
+            "shared",
+            "workspace"
+          ]
+        },
+        "serviceClasses": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "state": {
+          "enum": [
+            "available",
+            "disabled",
+            "failed",
+            "installed",
+            "installing",
+            "unavailable"
+          ]
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "extensionId",
+        "name",
+        "version",
+        "description",
+        "state",
+        "detail",
+        "serviceClasses",
+        "runtimeKind",
+        "environmentId",
+        "preinstalled"
+      ],
+      "title": "ExtensionStatus",
+      "type": "object"
+    },
+    "ExtensionToggleRequest": {
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "title": "ExtensionToggleRequest",
+      "type": "object"
+    },
+    "ExtensionToggleRequestInput": {
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "title": "ExtensionToggleRequest",
       "type": "object"
     },
     "F8ActivateRequest": {
@@ -14234,6 +14596,38 @@
       "title": "PresentationCommand",
       "type": "object"
     },
+    "PresetEnvironmentStatus": {
+      "properties": {
+        "environment": {
+          "type": "string"
+        },
+        "ready": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "environment",
+        "ready"
+      ],
+      "title": "PresetEnvironmentStatus",
+      "type": "object"
+    },
+    "PresetEnvironmentStatusInput": {
+      "properties": {
+        "environment": {
+          "type": "string"
+        },
+        "ready": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "environment",
+        "ready"
+      ],
+      "title": "PresetEnvironmentStatus",
+      "type": "object"
+    },
     "PreviewUnityInstallRequest": {
       "properties": {
         "exporter": {
@@ -19459,6 +19853,51 @@
       "$ref": "#/$defs/CatalogSnapshot"
     },
     {
+      "items": {
+        "$ref": "#/$defs/ExtensionStatus"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/ExtensionImportRequest"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/ExtensionStatus"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/ExtensionInstallPlan"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/EnvironmentStatus"
+      },
+      "type": "array"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/PresetEnvironmentStatus"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/ExtensionStatus"
+    },
+    {
+      "$ref": "#/$defs/ExtensionStatus"
+    },
+    {
+      "$ref": "#/$defs/ExtensionToggleRequest"
+    },
+    {
+      "$ref": "#/$defs/ExtensionStatus"
+    },
+    {
+      "$ref": "#/$defs/ExtensionStatus"
+    },
+    {
       "$ref": "#/$defs/CreateCatalogNodeRequest"
     },
     {
@@ -20319,6 +20758,51 @@
     },
     {
       "$ref": "#/$defs/CatalogSnapshotInput"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/ExtensionStatusInput"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/ExtensionImportRequestInput"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/ExtensionStatusInput"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/ExtensionInstallPlanInput"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/EnvironmentStatusInput"
+      },
+      "type": "array"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/PresetEnvironmentStatusInput"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/ExtensionStatusInput"
+    },
+    {
+      "$ref": "#/$defs/ExtensionStatusInput"
+    },
+    {
+      "$ref": "#/$defs/ExtensionToggleRequestInput"
+    },
+    {
+      "$ref": "#/$defs/ExtensionStatusInput"
+    },
+    {
+      "$ref": "#/$defs/ExtensionStatusInput"
     },
     {
       "$ref": "#/$defs/CreateCatalogNodeRequestInput"

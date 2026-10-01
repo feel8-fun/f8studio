@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from f8studio_server.errors import InvalidRequestError
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from threading import RLock
 
 import msgspec
 
 from f8pysdk.service_runtime_tools.inventory import ServiceCatalog, load_discovery_into_catalog
+from f8pysdk.service_runtime_tools.inventory.index import load_index_into_catalog
 from f8pysdk.specs import F8OperatorSpec, F8ServiceDescribe, F8ServiceSpec
 from f8studio_core.graph import NodeCatalog
 from f8studio_core.graph.models import GraphNode, ServiceNode
@@ -27,21 +28,30 @@ class CatalogService:
         *,
         roots: Sequence[Path] | None = None,
         builtins: Sequence[F8ServiceDescribe] = (),
+        extension_indexes: Callable[[], tuple[Path, ...]] | None = None,
     ) -> None:
         self._catalog = ServiceCatalog()
         self._roots = None if roots is None else tuple(roots)
         self._builtins = tuple(builtins)
+        self._extension_indexes = extension_indexes
         self._lock = RLock()
         self._discovered_service_classes: tuple[str, ...] = ()
         self.refresh()
 
     def refresh(self, *, force_dynamic_service_classes: Sequence[str] = ()) -> CatalogSnapshot:
         updated = ServiceCatalog()
-        discovered = load_discovery_into_catalog(
-            roots=None if self._roots is None else list(self._roots),
-            catalog=updated,
-            force_dynamic_service_classes=force_dynamic_service_classes,
-        )
+        discovered: list[str] = []
+        if self._roots is None and self._extension_indexes is not None:
+            for index in self._extension_indexes():
+                discovered.extend(load_index_into_catalog(
+                    path=index, catalog=updated, force_dynamic_service_classes=force_dynamic_service_classes,
+                ))
+        else:
+            discovered = load_discovery_into_catalog(
+                roots=None if self._roots is None else list(self._roots),
+                catalog=updated,
+                force_dynamic_service_classes=force_dynamic_service_classes,
+            )
         for describe in self._builtins:
             updated.register_service(describe.service)
             operators = () if isinstance(describe.operators, msgspec.UnsetType) else describe.operators

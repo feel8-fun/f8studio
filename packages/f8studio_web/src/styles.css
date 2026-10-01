@@ -416,10 +416,54 @@ button:disabled { cursor: default; }
 .device-list strong { font-size: 11px; }
 .local-status { display: flex; align-items: center; padding: 0 10px; border-top: 1px solid #292e34; color: #9099a5; font-size: 11px; }
 
+.services-workspace { display: grid; grid-template-rows: 44px auto minmax(0, 1fr); width: 100%; height: 100%; min-width: 0; background: #101317; }
+.services-toolbar { display: flex; align-items: center; gap: 12px; padding: 0 14px; border-bottom: 1px solid #2c3239; color: #8f9aa5; font-size: 11px; }
+.services-toolbar > span { margin-left: auto; white-space: nowrap; }
+.services-search { display: flex; align-items: center; gap: 7px; width: min(320px, 55vw); height: 29px; padding: 0 8px; border: 1px solid #3b444d; color: #94a0aa; background: #191e23; }
+.services-search input { width: 100%; min-width: 0; border: 0; outline: 0; color: #e0e5ea; background: transparent; font-size: 11px; }
+.services-error { padding: 8px 14px; border-bottom: 1px solid #78454b; color: #efa4aa; font-size: 11px; }
+.services-body { display: grid; grid-row: 3; grid-template-columns: minmax(0, 1fr) minmax(300px, 360px); min-height: 0; }
+.services-list, .services-extensions { min-width: 0; overflow: auto; }
+.services-list { border-right: 1px solid #2c3239; }
+.services-list header, .services-extensions header { display: flex; align-items: center; justify-content: space-between; height: 40px; padding: 0 14px; border-bottom: 1px solid #2c3239; color: #8d99a5; font-size: 10px; }
+.services-list header h2, .services-extensions header h2 { margin: 0; color: #d5dce3; font-size: 12px; }
+.services-row { display: grid; grid-template-columns: 20px minmax(145px, 1fr) minmax(170px, 1.2fr); gap: 8px; align-items: center; min-height: 39px; padding: 7px 14px; border-bottom: 1px solid #252b31; font-size: 11px; }
+.services-row svg { color: #63c995; }
+.services-row strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
+.services-row code { min-width: 0; overflow: hidden; color: #929da9; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.services-empty { padding: 18px 14px; color: #8d99a5; font-size: 11px; }
+.extension-row { display: grid; gap: 10px; padding: 14px; border-bottom: 1px solid #2c3239; font-size: 11px; }
+.extension-heading { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.extension-heading svg { color: #d1ab67; }
+.extension-heading strong { min-width: 0; flex: 1; font-size: 12px; }
+.extension-state { padding: 3px 6px; border: 1px solid #49525c; color: #aab5bf; font-size: 10px; text-transform: capitalize; }
+.extension-installed { border-color: #39775d; color: #79d4a3; }
+.extension-disabled { border-color: #5d6268; color: #9ca6af; }
+.extension-failed { border-color: #7f4849; color: #ee9397; }
+.extension-installing { border-color: #8a6c3b; color: #e6bd75; }
+.extension-classes, .extension-detail { color: #9ba6b1; }
+.extension-error { display: flex; gap: 6px; align-items: flex-start; color: #ec989b; overflow-wrap: anywhere; }
+.extension-row .command-button { justify-self: start; display: inline-flex; align-items: center; gap: 6px; }
+.extension-toggle { display: inline-flex; align-items: center; gap: 7px; justify-self: start; color: #c8d1d8; }
+.extension-toggle input { accent-color: #63c995; }
+.extension-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.extension-environments { padding: 16px; border-top: 1px solid #303b45; display: grid; gap: 8px; }
+.extension-environments h3 { margin: 0; font-size: 13px; }
+.extension-import { display: grid; gap: 10px; padding: 16px; border-top: 1px solid #303b45; }
+.extension-import h3, .extension-import p { margin: 0; }
+.extension-import h3 { font-size: 13px; }
+.extension-import p { color: #a9b5bf; font-size: 12px; }
+.extension-import label { display: grid; gap: 5px; color: #c8d1d8; font-size: 12px; }
+.extension-import input { min-width: 0; padding: 7px; background: #151c22; border: 1px solid #303b45; border-radius: 4px; color: #d8e1e8; }
+
 @media (max-width: 900px) {
   .assets-workspace { grid-template-columns: 220px minmax(0, 1fr); }
   .local-columns { grid-template-columns: minmax(280px, 1fr); }
   .local-panel { border-right: 0; border-bottom: 1px solid #292e34; }
+  .services-body { grid-template-columns: minmax(0, 1fr); overflow: auto; }
+  .services-list, .services-extensions { overflow: visible; border-right: 0; }
+  .services-list { border-bottom: 1px solid #394049; }
+  .services-extensions { order: -1; border-bottom: 1px solid #394049; }
 }
 
 @media (max-width: 600px) {
