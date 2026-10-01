@@ -273,10 +273,10 @@ class DistCiDiscoveryTest(unittest.TestCase):
     def test_env_install_script_text_installs_only_runtime_environments(self) -> None:
         script_text = self.module._env_install_script_text(["studio-runtime", "onnx"])
 
-        self.assertIn("pixi install --locked -e studio-runtime -e onnx", script_text)
+        self.assertIn("offline", script_text)
+        self.assertIn("pixi-unpack", script_text)
+        self.assertNotIn("pixi install", script_text)
         self.assertNotIn("pixi install -a", script_text)
-        if os.name == "nt":
-            self.assertEqual(script_text.count("if errorlevel 1 exit /b %errorlevel%"), 2)
 
     def test_filter_dist_environments_keeps_only_runtime_environments(self) -> None:
         pixi_text = (
@@ -568,7 +568,7 @@ class DistCiLauncherScriptTest(unittest.TestCase):
                 module._bundle_studio_launcher(output)
             run.assert_not_called()
             launcher = output / module._launcher_script_name()
-            self.assertIn("studio_launch", launcher.read_text())
+            self.assertIn("-m f8studio_server", launcher.read_text())
             if os.name != "nt":
                 self.assertTrue(os.access(launcher, os.X_OK))
 

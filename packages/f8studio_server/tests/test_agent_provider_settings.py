@@ -359,3 +359,30 @@ def test_probe_recognizes_reasoning_effort_parameter() -> None:
         "data": [{"id": "reasoner", "supported_parameters": ["reasoning_effort"]}],
     }))))
     assert result.model_capabilities[0].thinking is True
+
+
+@pytest.mark.parametrize("invalid", [
+    {"model": "a", "supportsImage": True},
+    {"model": "a", "unexpected": True},
+    {"model": "has spaces"},
+])
+def test_invalid_saved_provider_is_skipped_with_warning(tmp_path: Path, caplog: pytest.LogCaptureFixture, invalid: dict) -> None:
+    path = tmp_path / "providers.json"
+    original = json.dumps({"openai": invalid, "anthropic": {"model": "valid-model"}})
+    path.write_text(original)
+    store = ProviderSettingsStore(path)
+    assert store.get("openai").model != invalid["model"]
+    assert store.get("anthropic").model == "valid-model"
+    assert "Skipping invalid provider openai" in caplog.text
+    assert caplog.records[-1].exc_info is not None
+    assert path.read_text() == original
+
+
+@pytest.mark.parametrize("content", ["{broken", "[]"])
+def test_invalid_settings_file_does_not_prevent_startup(tmp_path: Path, caplog: pytest.LogCaptureFixture, content: str) -> None:
+    path = tmp_path / "providers.json"
+    path.write_text(content)
+    store = ProviderSettingsStore(path)
+    assert store.get("openai").model
+    assert "Cannot load provider settings" in caplog.text
+    assert path.read_text() == content

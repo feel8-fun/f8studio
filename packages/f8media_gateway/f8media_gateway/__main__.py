@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-import signal
 import sys
 import threading
 
@@ -28,29 +27,35 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _watch_stdin() -> None:
+def _watch_stdin(server: uvicorn.Server) -> None:
     try:
-        sys.stdin.buffer.read()
+        # Raw descriptor reads never hold BufferedReader locks during interpreter shutdown.
+        while os.read(sys.stdin.fileno(), 4096):
+            continue
     except OSError:
         logger.exception("Media Gateway parent-watch pipe failed")
     logger.info("Media Gateway parent-watch pipe closed; shutting down")
-    os.kill(os.getpid(), signal.SIGTERM)
+    server.should_exit = True
 
 
 def main() -> None:
     args = _parse_args()
     if args.host not in {"127.0.0.1", "localhost", "::1"}:
         raise ValueError("Media Gateway only supports loopback hosts")
+    config = uvicorn.Config(create_app(), host=args.host, port=args.port, log_level="info",
+                            timeout_graceful_shutdown=5)
+    server = uvicorn.Server(config)
     if args.exit_on_stdin_close:
-        threading.Thread(target=_watch_stdin, name="media-gateway-parent-watch", daemon=True).start()
-    config = uvicorn.Config(create_app(), host=args.host, port=args.port, log_level="info")
-    if args.report_bound_port:
-        # Keep the socket bound throughout handoff; the parent never probes or reserves a port.
-        with config.bind_socket() as listener:
-            print(listener.getsockname()[1], flush=True)
-            uvicorn.Server(config).run(sockets=[listener])
-    else:
-        uvicorn.Server(config).run()
+        threading.Thread(target=_watch_stdin, args=(server,), name="media-gateway-parent-watch", daemon=True).start()
+    try:
+        if args.report_bound_port:
+            with config.bind_socket() as listener:
+                print(listener.getsockname()[1], flush=True)
+                server.run(sockets=[listener])
+        else:
+            server.run()
+    except KeyboardInterrupt:
+        logger.info("Media Gateway stopped by user")
 
 
 if __name__ == "__main__":

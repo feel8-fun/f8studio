@@ -68,21 +68,27 @@ jobs:
         id: pixi_cache
         uses: actions/cache/restore@v5
         with:
-          path: .pixi
-          key: pixi-dist-v3-no-gpu-${{ runner.os }}-0.81.0-${{ hashFiles('pixi.lock') }}-${{ github.workspace }}
+          path: |
+            .pixi/envs/build-check
+            .pixi/envs/cpp
+            .pixi/envs/mediapipe
+          key: pixi-dist-v4-merged-${{ runner.os }}-0.81.0-${{ hashFiles('pixi.lock') }}-${{ github.workspace }}
 
       - name: Install locked build and service environments
-        run: pixi run --locked -e ci python scripts/install_ci_environments.py
+        run: pixi install --locked -e build-check -e cpp -e mediapipe
 
       - name: Save Pixi environments
         if: success() && steps.pixi_cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
         with:
-          path: .pixi
+          path: |
+            .pixi/envs/build-check
+            .pixi/envs/cpp
+            .pixi/envs/mediapipe
           key: ${{ steps.pixi_cache.outputs.cache-primary-key }}
 
       - name: Check Python service descriptions before native compilation
-        run: pixi run --frozen --no-install -e studio-runtime install_services --refresh --python-only --no-install
+        run: pixi run --frozen --no-install -e build-check install_services --refresh --python-only --no-install --build-check
 
       - name: Setup MSVC
         shell: pwsh
@@ -164,21 +170,27 @@ jobs:
         id: pixi_cache
         uses: actions/cache/restore@v5
         with:
-          path: .pixi
-          key: pixi-dist-v3-no-gpu-${{ runner.os }}-0.81.0-${{ hashFiles('pixi.lock') }}-${{ github.workspace }}
+          path: |
+            .pixi/envs/build-check
+            .pixi/envs/cpp
+            .pixi/envs/mediapipe
+          key: pixi-dist-v4-merged-${{ runner.os }}-0.81.0-${{ hashFiles('pixi.lock') }}-${{ github.workspace }}
 
       - name: Install locked build and service environments
-        run: pixi run --locked -e ci python scripts/install_ci_environments.py
+        run: pixi install --locked -e build-check -e cpp -e mediapipe
 
       - name: Save Pixi environments
         if: success() && steps.pixi_cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
         with:
-          path: .pixi
+          path: |
+            .pixi/envs/build-check
+            .pixi/envs/cpp
+            .pixi/envs/mediapipe
           key: ${{ steps.pixi_cache.outputs.cache-primary-key }}
 
       - name: Check Python service descriptions before native compilation
-        run: pixi run --frozen --no-install -e studio-runtime install_services --refresh --python-only --no-install
+        run: pixi run --frozen --no-install -e build-check install_services --refresh --python-only --no-install --build-check
 
       - name: Setup MSVC
         shell: pwsh
@@ -228,25 +240,25 @@ jobs:
           key: ${{ steps.conan_cache.outputs.cache-primary-key }}
 
       - name: Validate pinned Unity modding submodule
-        run: pixi run --frozen -e studio-runtime unitymods_validate
+        run: pixi run --frozen -e build-check unitymods_validate
 
       - name: Test Unity modding installer
-        run: pixi run --frozen -e studio-runtime unitymods_test
+        run: pixi run --frozen -e build-check unitymods_test
 
       - name: Verify Unity skeleton protocol contract
-        run: pixi run --frozen -e studio-runtime unitymods_contract
+        run: pixi run --frozen -e build-check unitymods_contract
 
       - name: Build Unity installer and exporter assets
-        run: pixi run --frozen -e studio-runtime unitymods_package
+        run: pixi run --frozen -e build-check unitymods_package
 
       - name: Build runtime distribution
-        run: pixi run --frozen -e ci dist_ci --archive --reuse-unitymods-assets
+        run: pixi run --frozen -e build-check dist_ci --archive --reuse-unitymods-assets --reuse-python-describes
 
       - name: Validate freshly built C++ service contracts
-        run: pixi run --frozen --no-install -e default python scripts/quality/check_cpp_contracts.py --service-index config/service-index.json
+        run: pixi run --frozen --no-install -e build-check python scripts/quality/check_cpp_contracts.py --service-index config/service-index.json
 
-      - name: Verify relocated release installation
-        run: pixi run --frozen -e ci python scripts/verify_dist.py build/dist/f8studio-windows-x86_64.zip --skip-gpu-install
+      - name: Verify offline release (no dependency installation)
+        run: pixi run --frozen -e build-check python scripts/verify_dist.py build/dist/f8studio-windows-x86_64.zip
 
       - name: Resolve release target
         id: release_target
@@ -307,9 +319,8 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: f8studio-windows-${{ steps.version.outputs.value }}
-          path: |
-            build/dist/f8studio-windows-x86_64
-            build/dist/f8studio-windows-x86_64.zip
+          compression-level: 0
+          path: build/dist/f8studio-windows-x86_64.zip
 
       - name: Attach archive to GitHub Release
         if: steps.release_target.outputs.should_upload == 'true'

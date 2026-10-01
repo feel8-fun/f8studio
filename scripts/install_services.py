@@ -114,12 +114,14 @@ def pixi_environment(entry: F8ServiceEntry) -> str | None:
     return environment
 
 
-def description_entry(entry: F8ServiceEntry) -> F8ServiceEntry:
+def description_entry(entry: F8ServiceEntry, *, build_check: bool = False) -> F8ServiceEntry:
     environment = pixi_environment(entry)
-    if environment != "onnx":
+    if environment is None or environment == "mediapipe":
+        return entry
+    if not build_check and environment != "onnx":
         return entry
     args = list(entry.launch.args or [])
-    args[2] = "onnx-describe"
+    args[2] = "build-check" if build_check else "onnx-describe"
     result = copy_model(entry, update={"launch": copy_model(entry.launch, update={"args": args})})
     pixi_environment(result)  # Validate the description task in its alternate environment too.
     return result
@@ -148,7 +150,7 @@ def describe_service(entry: F8ServiceEntry) -> object:
 
 
 def install(index_path: Path, *, refresh: bool, service_classes: set[str],
-            python_only: bool = False, no_install: bool = False) -> int:
+            python_only: bool = False, no_install: bool = False, build_check: bool = False, native_only: bool = False) -> int:
     index_path = index_path.resolve()
     index = read_service_index(index_path)
     known = {item.serviceClass for item in index.services}
@@ -162,9 +164,11 @@ def install(index_path: Path, *, refresh: bool, service_classes: set[str],
         entry = indexed_entry(index_path, index, item)
         if entry is None:
             continue
-        entry = description_entry(entry)
+        entry = description_entry(entry, build_check=build_check)
         target = (index_path.parent / item.describe).resolve()
         environment = pixi_environment(entry)
+        if native_only and environment is not None:
+            continue
         if python_only and environment is None:
             continue
         selected.append((entry, target))
@@ -210,7 +214,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--index", type=Path)
     parser.add_argument("--refresh", action="store_true", help="Regenerate descriptions by running registered services")
+    parser.add_argument("--native-only", action="store_true", help="Refresh native descriptions, reusing checked Python descriptions")
     parser.add_argument("--python-only", action="store_true", help="Check Pixi services before native compilation")
+    parser.add_argument("--build-check", action="store_true", help="Use the consolidated CI environment for descriptions")
     parser.add_argument("--no-install", action="store_true", help="Use environments already prepared by CI")
     parser.add_argument("--service-class", action="append", default=[])
     parser.add_argument("--migrate-resources", type=Path, metavar="OLD_SERVICES_DIR",
@@ -227,7 +233,7 @@ def main() -> None:
         count = migrate_resources(args.migrate_resources, (path.parent / index.modelRoot).resolve())
         print(f"Verified {count} resource files; originals preserved")
     count = install(path, refresh=args.refresh, service_classes=set(args.service_class),
-                    python_only=args.python_only, no_install=args.no_install)
+                    python_only=args.python_only, no_install=args.no_install, build_check=args.build_check, native_only=args.native_only)
     print(f"Installed {count} service descriptions from {path}")
 
 

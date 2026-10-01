@@ -3,7 +3,10 @@ from __future__ import annotations
 from f8studio_server.errors import InvalidRequestError
 
 import argparse
+import logging
 import os
+import sys
+from threading import Thread
 from ipaddress import ip_address
 from pathlib import Path
 
@@ -21,6 +24,8 @@ from .server_instance import StudioServerAlreadyRunningError, single_server_inst
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the local Feel8 Web Studio server.")
+    parser.add_argument("--tray", action=argparse.BooleanOptionalAction, default=False, help="Manage Studio from the desktop tray")
+    parser.add_argument("--exit-on-stdin-close", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument(
         "--allowed-host",
@@ -64,6 +69,12 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = _parse_args()
+    if args.tray:
+        from .tray import run_tray
+        forwarded = [arg for arg in sys.argv[1:] if arg not in {"--tray", "--no-tray"}]
+        browser_host = "127.0.0.1" if args.host == "0.0.0.0" else args.host
+        run_tray(arguments=forwarded, url=f"http://{browser_host}:{args.port}", data_dir=default_data_dir())
+        return
     host = str(args.host).strip().lower()
     if host != "localhost":
         try:
@@ -123,8 +134,21 @@ def main() -> None:
             local_host = "127.0.0.1" if host == "0.0.0.0" else "::1" if host == "::" else host
             url_host = f"[{local_host}]" if ":" in local_host else local_host
             os.environ["F8STUDIO_SERVER_URL"] = f"http://{url_host}:{args.port}"
-            server = uvicorn.Server(uvicorn.Config(app, host=host, port=args.port, log_level="info"))
+            server = uvicorn.Server(uvicorn.Config(
+                app, host=host, port=args.port, log_level="info", timeout_graceful_shutdown=5,
+            ))
+            if args.exit_on_stdin_close:
+                def watch_parent() -> None:
+                    try:
+                        while os.read(sys.stdin.fileno(), 4096):
+                            continue
+                    except OSError:
+                        logging.getLogger(__name__).exception("Studio parent-watch pipe failed")
+                    server.should_exit = True
+                Thread(target=watch_parent, name="studio-parent-watch", daemon=True).start()
             run_server(server, browser_url=os.environ["F8STUDIO_SERVER_URL"] if args.open_browser else None)
+    except KeyboardInterrupt:
+        logging.getLogger(__name__).info("Studio stopped by user")
     except StudioServerAlreadyRunningError as exc:
         raise SystemExit(str(exc)) from exc
 

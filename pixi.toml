@@ -157,6 +157,10 @@ dist_ci = "python scripts/dist_ci.py"
 
 [feature.launcher-runtime]
 
+[feature.web-studio.target.linux-64.dependencies]
+pygobject = ">=3.50,<4"
+gtk3 = ">=3.24,<4"
+
 [feature.web-studio.pypi-dependencies]
 f8studio-core = { path = "packages/f8studio_core", editable = true }
 f8media-protocol = { path = "packages/f8media_protocol", editable = true }
@@ -222,6 +226,7 @@ studio_p3_combined_bench = "python scripts/web_studio/benchmark_p3_combined.py"
 studio_release_smoke = "python scripts/web_studio/verify_release_install.py"
 
 [environments]
+build-check = { features = ["python", "sdk", "engine", "web-studio", "web-studio-dev", "web-studio-test", "vision", "audio", "test", "debug", "ci", "pydl"], solve-group = "build-check" }
 # Pixi tasks are feature-scoped, not environment-scoped. If a task's feature is
 # included by multiple environments (for example both `default` and
 # `studio-runtime`), `pixi run <task>` without `-e` can resolve differently

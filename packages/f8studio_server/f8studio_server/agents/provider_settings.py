@@ -3,6 +3,7 @@ from __future__ import annotations
 from f8studio_server.errors import InvalidRequestError
 
 import os
+import logging
 import tempfile
 from pathlib import Path
 from threading import RLock
@@ -38,6 +39,9 @@ class ProviderConfig(msgspec.Struct, frozen=True, kw_only=True, rename="camel", 
     models: tuple[str, ...] = ()
     model_capabilities: tuple[ModelCapabilities, ...] = ()
     disabled: bool = False
+
+
+logger = logging.getLogger(__name__)
 
 
 class UpdateProviderSettings(msgspec.Struct, frozen=True, kw_only=True, rename="camel", forbid_unknown_fields=True):
@@ -130,9 +134,21 @@ class ProviderSettingsStore:
         }
         self._saved: dict[str, ProviderConfig] = {}
         if path is not None and path.exists():
-            self._saved = msgspec.json.decode(path.read_bytes(), type=dict[str, ProviderConfig])
-            for provider_id, config in self._saved.items():
-                self._validate(provider_id, config)
+            try:
+                entries = msgspec.json.decode(path.read_bytes(), type=dict[str, msgspec.Raw])
+            except (OSError, msgspec.DecodeError):
+                logger.warning("Cannot load provider settings from %s; using defaults. File left unchanged.",
+                               path, exc_info=True)
+            else:
+                for provider_id, raw in entries.items():
+                    try:
+                        config = msgspec.json.decode(raw, type=ProviderConfig)
+                        self._validate(provider_id, config)
+                    except (msgspec.DecodeError, InvalidRequestError):
+                        logger.warning("Skipping invalid provider %s in %s; reconfigure it in Studio. File left unchanged.",
+                                       provider_id, path, exc_info=True)
+                    else:
+                        self._saved[provider_id] = config
 
     def get(self, provider_id: str) -> ProviderConfig:
         with self._lock:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .websocket_lifecycle import send_until_disconnect
+
 from f8studio_server.errors import InvalidRequestError, NotFoundError
 
 import asyncio
@@ -846,12 +848,15 @@ def create_app(
             )))
             for event in stream.replay:
                 await websocket.send_json(_json_value(event))
-            while True:
-                event = await stream.queue.get()
-                if event is None:
-                    await websocket.close(code=1013, reason="event stream overflow; reconnect with the last processed cursor")
-                    return
-                await websocket.send_json(_json_value(event))
+            async def send_events() -> None:
+                while True:
+                    event = await stream.queue.get()
+                    if event is None:
+                        await websocket.close(code=1013, reason="event stream overflow; reconnect with the last processed cursor")
+                        return
+                    await websocket.send_json(_json_value(event))
+
+            await send_until_disconnect(websocket, send_events())
         except WebSocketDisconnect:
             return
         finally:
@@ -866,9 +871,12 @@ def create_app(
         subscription, snapshot = studio.events.live.subscribe()
         try:
             await websocket.send_json(_json_value(LiveSnapshot(values=snapshot)))
-            while True:
-                patch = await subscription.next_patch()
-                await websocket.send_json(patch)
+            async def send_patches() -> None:
+                while True:
+                    patch = await subscription.next_patch()
+                    await websocket.send_json(patch)
+
+            await send_until_disconnect(websocket, send_patches())
         except WebSocketDisconnect:
             return
         finally:

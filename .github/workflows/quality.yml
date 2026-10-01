@@ -34,19 +34,19 @@ jobs:
         with:
           # Keep the CLI aligned with the committed v7 lock and local validation.
           pixi-version: v0.81.0
-          environments: default web-studio-test ci
+          environments: build-check
           cache: true
-      - run: pixi run pytest -q
-      - run: pixi run typecheck
-      - run: pixi run -e web-studio-test studio_python_typecheck
-      - run: pixi run -e web-studio-test python scripts/web_studio/generate_contracts.py --check
-      - run: pixi run -e ci python scripts/protocol_codegen_msgspec.py --protocol schemas/protocol.yml --output packages/f8pysdk/f8pysdk/generated/__init__.py --check
-      - run: pixi run python scripts/generate_runtime_keys.py --check
-      - run: pixi run python scripts/generate_runtime_policy.py --check
-      - run: pixi run python scripts/generate_stream_wire.py --check
-      - run: pixi run lint
-      - run: pixi run lint_imports
-      - run: pixi run quality_exceptions
+      - run: pixi run --locked -e build-check pytest -q
+      - run: pixi run --locked -e build-check typecheck
+      - run: pixi run --locked -e build-check studio_python_typecheck
+      - run: pixi run --locked -e build-check python scripts/web_studio/generate_contracts.py --check
+      - run: pixi run --locked -e build-check python scripts/protocol_codegen_msgspec.py --protocol schemas/protocol.yml --output packages/f8pysdk/f8pysdk/generated/__init__.py --check
+      - run: pixi run --locked -e build-check python scripts/generate_runtime_keys.py --check
+      - run: pixi run --locked -e build-check python scripts/generate_runtime_policy.py --check
+      - run: pixi run --locked -e build-check python scripts/generate_stream_wire.py --check
+      - run: pixi run --locked -e build-check lint
+      - run: pixi run --locked -e build-check lint_imports
+      - run: pixi run --locked -e build-check quality_exceptions
   web:
     needs: debounce
     if: ${{ !cancelled() && (github.event_name != 'push' || needs.debounce.result == 'success') }}
@@ -59,10 +59,10 @@ jobs:
         with:
           # Keep the CLI aligned with the committed v7 lock and local validation.
           pixi-version: v0.81.0
-          environments: web-studio-test
+          environments: build-check
           cache: true
       - name: Validate Web (same command as local)
-        run: pixi run --locked -e web-studio-test studio_web_ci
+        run: pixi run --locked -e build-check studio_web_ci
 
   release-wheels:
     needs: debounce
@@ -76,6 +76,6 @@ jobs:
         with:
           # Keep the CLI aligned with the committed v7 lock and local validation.
           pixi-version: v0.81.0
-          environments: web-studio-test ci
+          environments: build-check
           cache: true
-      - run: pixi run --locked -e web-studio-test studio_release_smoke --verify-dist-lock
+      - run: pixi run --locked -e build-check studio_release_smoke --verify-dist-lock

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import subprocess
 import logging
 import sys
 from dataclasses import dataclass
@@ -83,6 +85,8 @@ class RemoteMediaGateway:
                     arguments.append("--report-bound-port")
                 self._process = await asyncio.create_subprocess_exec(
                     *arguments,
+                    start_new_session=os.name != "nt",
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
                     stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE if base_url is None else None,
                 )
@@ -154,7 +158,8 @@ class RemoteMediaGateway:
             return
         if process.stdin is not None:
             process.stdin.close()
-        process.terminate()
+        else:
+            process.terminate()
         try:
             await asyncio.wait_for(process.wait(), timeout=5.0)
         except TimeoutError:

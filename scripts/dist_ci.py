@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tomllib
+import zipfile
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +18,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from release_wheels import build_wheels
+from offline_runtime import bundle_base_runtime
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -425,8 +427,8 @@ def _bundle_unitymods_assets(dist_dir: Path, *, build_assets: bool = True) -> Pa
 
 
 def _stage_web_bundle() -> Path:
-    _run(["pixi", "run", "--frozen", "-e", "web-studio", "npm", "--prefix", "packages/f8studio_web", "ci"])
-    _run(["pixi", "run", "--frozen", "-e", "web-studio", "studio_web_build"])
+    _run(["pixi", "run", "--frozen", "-e", "build-check", "npm", "--prefix", "packages/f8studio_web", "ci"])
+    _run(["pixi", "run", "--frozen", "-e", "build-check", "studio_web_build"])
     index_path = WEB_BUNDLE_SOURCE / "index.html"
     if not index_path.is_file():
         raise FileNotFoundError(f"Web Studio build did not produce {index_path}")
@@ -598,21 +600,7 @@ def _env_install_script_name() -> str:
 
 
 def _env_install_script_text(runtime_environment_names: list[str]) -> str:
-    install_command = "pixi install --locked" + "".join(
-        f" -e {name}" for name in runtime_environment_names
-    )
-    if os.name == "nt":
-        return (
-            '@echo off\r\nsetlocal\r\ncd /d "%~dp0"\r\n'
-            'if errorlevel 1 exit /b %errorlevel%\r\n'
-            f'{install_command}\r\nif errorlevel 1 exit /b %errorlevel%\r\n'
-        )
-    return (
-        '#!/usr/bin/env sh\nset -eu\n'
-        'SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\n'
-        'cd "$SCRIPT_DIR"\n'
-        f'{install_command}\n'
-    )
+    return (REPO_ROOT / "scripts" / "launchers" / _env_install_script_name()).read_text(encoding="utf-8")
 
 
 def _write_env_install_script(dist_dir: Path, runtime_environment_names: list[str]) -> Path:
@@ -687,6 +675,7 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Bundle previously built f8unitymods dist assets instead of rebuilding them.",
     )
+    parser.add_argument("--reuse-python-describes", action="store_true", help="Reuse Python descriptions checked earlier in CI")
     return parser
 
 
@@ -695,8 +684,10 @@ def main() -> int:
 
     _build_cpp_runtime()
     _stage_web_bundle()
-    # Select explicitly: the parent dist_ci task runs in the ci environment.
-    _run(["pixi", "run", "--frozen", "-e", "studio-runtime", "install_services", "--refresh"])
+    refresh = ["pixi", "run", "--frozen", "-e", "build-check", "install_services", "--refresh", "--build-check"]
+    if args.reuse_python_describes:
+        refresh.append("--native-only")
+    _run(refresh)
 
     platform_tag, platform_dir = _platform_info()
     dist_base_dir = REPO_ROOT / "build" / "dist"
@@ -713,12 +704,14 @@ def main() -> int:
     runtime_environment_names = build_runtime_manifest(dist_dir)
     _validate_dist_service_environments(dist_dir / "config" / "services", runtime_environment_names)
     # Model storage is independent of service bundles and referenced by the index.
-    shutil.copytree(REPO_ROOT / "resources", dist_dir / "resources", dirs_exist_ok=True)
+    shutil.copytree(REPO_ROOT / "resources", dist_dir / "resources", dirs_exist_ok=True,
+                    ignore=shutil.ignore_patterns("onnx", "mediapipe"))
     _bundle_unitymods_assets(
         dist_dir,
         build_assets=not bool(args.reuse_unitymods_assets),
     )
 
+    bundle_base_runtime(dist_dir, cache=REPO_ROOT / "build" / "offline-cache")
     _bundle_studio_launcher(dist_dir)
     env_install_script_path = _write_env_install_script(
         dist_dir,
@@ -739,22 +732,25 @@ def main() -> int:
         "- Studio startup script at dist root\n\n"
         "Bootstrap:\n"
         "1. Start `./f8studio` on Linux or `f8studio.cmd` on Windows.\n"
-        "   Missing Pixi is installed from https://pixi.sh automatically, followed by the locked runtime.\n"
-        "   Linux needs curl or wget; Windows uses PowerShell.\n"
+        "   The bundled base runtime is unpacked locally once; no network or Pixi is needed.\n"
+        "   Later launches reuse the prepared runtime. GPU and MediaPipe services are not enabled in this base package.\n"
         "2. Keep the terminal open while using Studio; Ctrl+C stops the server.\n"
-        f"   To install environments separately with Pixi already available, run `{env_install_script_path.name}`.\n\n"
+        f"   To prepare the offline runtime before first launch, run `{env_install_script_path.name}`.\n\n"
         f"Platform runtime binaries are under `runtime/bundles/**/{platform_dir}`.\n"
     )
     (dist_dir / "README.md").write_text(readme_text, encoding="utf-8")
 
     if args.archive:
-        archive_format = "zip" if os.name == "nt" else "gztar"
-        archive_path = shutil.make_archive(
-            base_name=str(dist_base_dir / dist_name),
-            format=archive_format,
-            root_dir=dist_base_dir,
-            base_dir=dist_name,
-        )
+        if os.name == "nt":
+            archive_path = str(dist_base_dir / (dist_name + ".zip"))
+            with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=1) as archive:
+                for path in sorted(dist_dir.rglob("*")):
+                    if path.is_file():
+                        compression = zipfile.ZIP_STORED if path.suffix in {".tar", ".zip", ".whl"} else zipfile.ZIP_DEFLATED
+                        archive.write(path, path.relative_to(dist_base_dir), compress_type=compression)
+        else:
+            archive_path = shutil.make_archive(str(dist_base_dir / dist_name), "gztar",
+                                               root_dir=dist_base_dir, base_dir=dist_name)
         print(f"dist archive: {archive_path}")
     print(f"dist directory: {dist_dir}")
     return 0

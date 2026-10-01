@@ -1,4 +1,4 @@
-"""Verify an extracted release outside the checkout, using its own Pixi lock."""
+"""Verify the actual offline archive in a relocated directory, without installing dependencies."""
 from __future__ import annotations
 
 import argparse
@@ -7,74 +7,57 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
-import tomllib
+import time
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def verify_distribution(root: Path, *, skip_gpu_install: bool = False) -> None:
-    manifest_path = root / "pixi.toml"
-    manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
-    environments = manifest["environments"]
-    subprocess.run(["pixi", "lock", "--check", "--manifest-path", str(manifest_path)], cwd=root, check=True)
-    for name, environment in environments.items():
-        distributions: list[str] = []
-        for feature_name in environment["features"]:
-            feature = manifest["feature"][feature_name]
-            for distribution, dependency in feature.get("pypi-dependencies", {}).items():
-                if isinstance(dependency, dict) and "path" in dependency:
-                    wheel = dependency["path"]
-                    if dependency.get("editable") or not wheel.startswith("wheels/") or not (root / wheel).is_file():
-                        raise ValueError(f"Invalid release dependency: {distribution}: {dependency}")
-                    distributions.append(distribution)
-        if skip_gpu_install and "onnx" in environment["features"]:
-            print(f"{name}: wheel paths and lock checked; GPU installation/inference not tested", flush=True)
-            continue
-        command = ["pixi", "run", "--locked", "--manifest-path", str(manifest_path), "-e", name]
-        # Run performs the same locked installation as the launcher, in a fresh prefix.
-        code = (
-            "from importlib.metadata import distribution\n"
-            "from pathlib import Path\n"
-            "import sys\n"
-            f"for name in {distributions!r}:\n"
-            "    package = distribution(name)\n"
-            "    assert Path(package.locate_file('')).resolve().is_relative_to(Path(sys.prefix).resolve()), name\n"
-            "    direct = package.read_text('direct_url.json') or ''\n"
-            "    assert '\"editable\": true' not in direct, name\n"
-        )
-        if name == "studio-runtime":
-            code += (
-                "from f8studio_server.app import default_web_dist\n"
-                "bundle = default_web_dist()\n"
-                "assert bundle.is_relative_to(Path(sys.prefix).resolve()), bundle\n"
-                "assert (bundle / 'index.html').is_file(), bundle\n"
-            )
-        subprocess.run([*command, "python", "-P", "-c", code], cwd=root, check=True)
-    if skip_gpu_install:
-        # The interactive launcher installs every shipped environment, including CUDA.
-        subprocess.run(["pixi", "run", "--locked", "--manifest-path", str(manifest_path),
-                        "-e", "studio-runtime", "studio_launch", "--help"], cwd=root, check=True)
-        print("Full launcher installation skipped because it includes GPU dependencies", flush=True)
-        return
-    # Exercise the shipped entrypoint, including its installer and argument forwarding.
-    entrypoint = ["cmd.exe", "/d", "/c", "f8studio.cmd"] if os.name == "nt" else [str(root / "f8studio")]
-    subprocess.run([*entrypoint, "--help"], cwd=root, check=True)
-
+def verify_distribution(root: Path) -> None:
+    root = root.resolve()
+    env = {key: value for key, value in os.environ.items()
+           if key not in {'PYTHONPATH', 'PYTHONHOME', 'CONDA_PREFIX', 'PIXI_ENVIRONMENT_NAME'}}
+    env['F8_SERVICE_INDEX'] = str(root / 'config/service-index.json')
+    env['F8_MODEL_ROOT'] = str(root / 'resources/models')
+    # Eliminate checkout/Pixi tool directories from PATH. Activation supplies bundled DLLs.
+    if os.name == 'nt':
+        system = Path(os.environ['SystemRoot'])
+        env['PATH'] = os.pathsep.join([str(system / 'System32'), str(system)])
+        launcher = ['cmd.exe', '/d', '/c', str(root / 'f8studio.cmd')]
+    else:
+        env['PATH'] = '/usr/bin:/bin'
+        launcher = [str(root / 'f8studio')]
+    started = time.monotonic()
+    subprocess.run([*launcher, '--help'], cwd=root, env=env, check=True, timeout=300)
+    marker = root / '.runtime-location'
+    prepared = marker.stat().st_mtime_ns
+    subprocess.run([*launcher, '--help'], cwd=root, env=env, check=True, timeout=30)
+    if marker.stat().st_mtime_ns != prepared:
+        raise RuntimeError('Second launch unpacked the runtime again')
+    probe = REPO_ROOT / 'scripts/quality/check_offline_runtime.py'
+    if os.name == 'nt':
+        script = root / 'verify-runtime.cmd'
+        script.write_text('@echo off\r\ncall activate.bat\r\nif errorlevel 1 exit /b %errorlevel%\r\n'
+                          f'env\\python.exe -I "{probe}" "%CD%"\r\nexit /b %errorlevel%\r\n')
+        command = ['cmd.exe', '/d', '/c', str(script)]
+    else:
+        command = ['sh', '-c', '. "$1/activate.sh"; exec "$1/env/bin/python" -I "$2" "$1"',
+                   'verify-runtime', str(root), str(probe)]
+    subprocess.run(command, cwd=root, env=env, check=True, timeout=180)
+    print(f'Offline release verification passed in {time.monotonic() - started:.1f}s')
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("archive", type=Path)
-    parser.add_argument("--skip-gpu-install", action="store_true",
-                        help="Check GPU wheel paths/lock without installation; skip full launcher installer")
+    parser.add_argument('archive', type=Path)
     args = parser.parse_args()
-    with tempfile.TemporaryDirectory(prefix="f8-release-install-") as temporary:
+    with tempfile.TemporaryDirectory(prefix='f8 offline release ') as temporary:
         output = Path(temporary)
         shutil.unpack_archive(args.archive.resolve(), output)
-        roots = list(output.glob("*/pixi.toml"))
+        roots = list(output.glob('*/offline/base-runtime.tar'))
         if len(roots) != 1:
-            raise ValueError("Expected exactly one release manifest in archive")
-        verify_distribution(roots[0].parent, skip_gpu_install=args.skip_gpu_install)
-    print("Relocated release installation passed")
+            raise ValueError('Expected exactly one offline base runtime in archive')
+        verify_distribution(roots[0].parent.parent)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

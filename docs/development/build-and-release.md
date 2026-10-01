@@ -67,18 +67,18 @@ CI 的 `setup-pixi` 固定使用 **v0.81.0**，与当前 v7 锁文件及本地�
 Windows 缓存预热只在每周一 UTC 07:00 的定时任务（默认分支）或手动选择 `job_mode=warm-caches` 时运行；普通 `build` 中显示 skipped 是预期行为。预热与普通构建使用相同的依赖准备流程：
 
 1. `setup-pixi` 只安装固定版本的 CLI，禁用它在 job 收尾阶段保存的隐式缓存。
-2. 显式恢复 `.pixi`，运行 `scripts/install_ci_environments.py` 自动安装所有不含 `onnx` GPU feature 的环境，成功后立即保存 Pixi 缓存。新增普通环境会自动纳入；`onnx-describe` 提供无 CUDA/cuDNN/ONNX Runtime 的描述检查环境。缓存键使用新的 `v3-no-gpu` 前缀，不恢复旧的 GPU 大缓存。
+2. 显式恢复并安装三个 CI 环境：`build-check`（Python/Web 构建、测试及普通/ONNX 描述）、`cpp`（原生工具链）、`mediapipe`（独立运行依赖）。安装成功后立即保存这三个环境目录；使用 `v4-merged` 缓存键，不恢复旧环境集合。开发及发行环境仍保留，但 CI 不再逐一安装。
 3. 实际刷新全部 Python 服务描述；此时不允许隐式安装环境，绑定或导入错误会在原生编译之前暴露。
 4. 恢复 Conan 缓存，执行 `cpp_bootstrap` 下载/编译第三方依赖，成功后立即保存 `.conan2`。不缓存项目 C++ 编译产物或发行包。
 
 分支和 tag 构建都保存未命中的缓存，后续打包失败不影响已完成的保存步骤。GitHub 缓存按 workflow 运行的 ref 隔离，检出 `git_ref` 不会改变缓存作用域：分支可读取自身和默认分支的缓存，tag 缓存可供同 tag 重跑复用，但其他 tag 无法读取它。需要跨分支/tag 复用时，应在默认分支运行 `warm-caches`。Pixi 缓存键包含格式版本、OS、CLI 版本、锁文件哈希和工作区绝对路径；新增环境会通过锁文件哈希自动产生新键；安装策略或缓存布局变化时需更新键中的版本。Conan 按配方和锁文件哈希匹配，并允许回退到旧依赖缓存。
 
-`install_services` 会在执行任何服务之前验证所有选中 Pixi 服务的显式环境及任务绑定，再集中执行 `pixi install --locked`。ONNX 服务的描述命令显式映射到 `onnx-describe`，服务启动声明仍指向 `onnx`。描述子进程使用 `--frozen --no-install`，依赖下载不再计入描述超时。CI 提供 `--no-install` 复用已准备环境，`--python-only` 在原生编译前检查 Python 服务；完整发行仍刷新并验证全部服务。失败信息包含服务类名、命令、工作目录及子进程 stdout/stderr，并保留异常链。描述全部验证通过后才写入文件。
+`install_services` 会在执行任何服务之前验证所有选中 Pixi 服务的显式环境及任务绑定，再集中执行 `pixi install --locked`。CI 使用 `--build-check` 将除 MediaPipe 外的 Python 服务描述统一映射到 `build-check` 并校验任务存在；普通开发调用将 ONNX 描述映射到 `onnx-describe`，服务启动声明仍指向 `onnx`。描述子进程使用 `--frozen --no-install`，依赖下载不再计入描述超时。CI 提供 `--no-install` 复用已准备环境，`--python-only` 在原生编译前检查 Python 服务；完整发行仍刷新并验证全部服务。失败信息包含服务类名、命令、工作目录及子进程 stdout/stderr，并保留异常链。描述全部验证通过后才写入文件。
 
 当前发行不要求用户克隆仓库。开发者或 CI 执行：
 
 ```sh
-pixi run --locked -e ci dist_ci --archive
+pixi run --locked -e build-check dist_ci --archive
 ```
 
 流程依次为：
@@ -90,9 +90,13 @@ pixi run --locked -e ci dist_ci --archive
 5. 以根锁文件为种子生成发行锁文件，同时锁定第三方依赖和本地 wheels。
 6. 复制轻量启动脚本、生成安装脚本、输出 zip（Windows）或 tar.gz（Linux）。无需 Nuitka/PyInstaller 编译，不再打包第二套 Python/Tk。
 
-用户解压后，双击 `f8studio.cmd`（Windows）或执行 `./f8studio`（Linux）。启动脚本首先检测 Pixi；缺失时使用官方安装脚本（Linux：`https://pixi.sh/install.sh`，Windows：`https://pixi.sh/install.ps1`），安装后立即继续，无需重开终端。Linux 需要 curl 或 wget，Windows 使用 PowerShell。启动脚本随后调用 `install_env.bat` / `./install_env.sh` 执行 `pixi install --locked`，再通过 `pixi run --locked -e studio-runtime studio_launch` 启动服务器。服务器就绪后打开浏览器。保留终端以查看日志，Ctrl+C 停止；`--no-browser` 禁用自动打开浏览器。不再额外运行 pip 安装本地包，因此首次由启动器创建环境时也能安装全部应用代码。
+用户解压后，双击 `f8studio.cmd`（Windows）或执行 `./f8studio`（Linux）。基础运行时、Python、所有基础第三方包和本地 wheels 已包含在 `offline/base-runtime.tar` 中，官方 `pixi-unpack` 工具也随包提供。第一次启动只做本地解包并写入 `.runtime-location`，不下载 Pixi、不联网安装依赖；后续启动直接复用 `env`。也可提前运行 `install_env.bat` / `install_env.sh` 完成这一步。移动整个发行目录后会使用本地包重新准备环境，修复绝对前缀。
 
-发行包仍要求 Pixi 和首次安装时的依赖下载，不是完全离线包。每个版本应解压到独立目录；不要覆盖一个仍在运行或已有旧 `.pixi` 环境的版本目录。构建与上传是不同步骤，本地打包不会自动发布。
+启动器激活包内运行时并直接执行 `python -I -m f8studio_server --open-browser`；基础 Python 服务的启动声明同样直接指向包内解释器。GPU/MediaPipe 的服务注册保存在 `config/optional-service-index.json`，默认未启用，相关模型不随基础包提供；本次没有提供这些组件的独立安装流程。普通 Python、音频、媒体及 C++ 服务保留在基础包中。
+
+Windows CI 产物为一个离线 ZIP，不再同时上传展开目录；ZIP 上传不再次压缩，内部已压缩的运行时包/wheels 也不重复压缩。构建前已检查的 Python 描述通过 `--reuse-python-describes` 复用，原生描述仍在编译后刷新。验证直接解压最终 ZIP，在独立目录内运行两次启动器（第二次必须不重复解包），然后用包内 Python 检查服务描述、Web/health、包安装位置和编辑器工具；不再逐环境联网安装依赖。保留原生契约测试作为语义验证。
+
+离线打包工具固定为 `pixi-pack` / `pixi-unpack` 0.7.11，构建下载时校验官方发布 SHA-256。工具和包下载缓存位于 `build/offline-cache`。开发依赖与 GPU 推理验证不等于基础包离线验证。
 
 ## 验证与 CI
 
@@ -109,7 +113,7 @@ pixi run --locked -e ci python scripts/verify_dist.py build/dist/f8studio-window
 - Python 单元测试不依赖本机的 `runtime/bundles` 或原生编译产物；需要引擎目录时，从真实 PyEngine 注册代码生成临时描述与启动声明。验证 CI 时应使用未安装服务的干净检出目录，避免本机缓存掩盖缺失依赖。
 - quality CI：Python、Web、协议契约检查；额外构建非 editable wheels，验证内嵌页面、HTTP health/root 和全部运行环境的发行锁文件。
 - wheel smoke 的临时 venv 复用测试环境的第三方依赖，但断言项目模块来自已安装 wheel。它不是完全隔离的依赖安装测试。
-- Windows dist CI：构建和原生契约检查后，把压缩包解压到仓库外的临时目录；使用自己的锁文件安装各运行环境，验证本地包安装位置、内嵌页面及实际启动脚本，然后才允许上传。
+- Windows dist CI：构建和原生契约检查后，将离线压缩包解压到仓库外，验证自带运行时、基础服务及连续两次启动，然后才允许上传。
 - tag `v*` 或手动工作流触发 Windows 发行；发布开关和 release tag 仍由工作流控制。Linux 有打包脚本支持，但没有同等的自动发布工作流。
 
 ### Quality 的延迟触发
@@ -126,4 +130,13 @@ pixi run --locked -e ci python scripts/verify_dist.py build/dist/f8studio-window
 
 参考：[原生 concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)、[Environment wait timer](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments#wait-timer)。
 
-Windows CI 的迁移安装验证使用 `verify_dist.py --skip-gpu-install`：检查全部发行 wheel 路径和锁文件，但不安装 GPU 环境，也不执行会安装全部环境的启动器安装流程；仍验证非 GPU 环境和 Studio 入口。需要完整安装验证时去掉此参数。CI 描述检查不代表 GPU 推理已验证。
+## 桌面托盘与退出
+
+离线启动器默认使用 `--tray`。托盘菜单提供 Open Studio、Open console / logs、Exit；关闭浏览器不会停止服务器。日志追加到用户数据目录的 `studio-console.log`，重复启动不会覆盖之前的退出诊断。Windows 日志窗口使用 PowerShell，Linux 使用系统终端实时追踪日志，没有终端时尝试默认文件查看器。`./f8studio --no-tray` 保留前台运行方式。
+托盘使用 `assets/icon.png`，打包时纳入 f8studio-server wheel，因此离线安装后也能显示相同图标。
+
+托盘通过关闭父进程管道请求 Studio 退出，Studio 关闭 Media Gateway 的父管道后等待其正常结束；超时才强制终止并记录日志。Media Gateway 使用原始文件描述符读取管道，避免 Python 退出时 BufferedReader 锁导致 fatal error。受管理的 Gateway 不直接接收终端 Ctrl+C，避免重复中断。
+
+事件和实时数据 WebSocket 会监听客户端断开并取消发送任务，避免空闲网页连接阻塞退出。HTTP 服务的连接清理最多等待 5 秒。Linux 托盘在 GTK 初始化后恢复 Ctrl+C 处理，退出菜单和终端中断均由同一个清理路径等待服务器结束。`server.lock` 使用操作系统锁；文件留在磁盘上是正常的，不应通过删除文件解除运行中的实例锁。
+
+Linux 托盘使用 GTK StatusIcon，需要桌面提供托盘支持（已在 Cinnamon 实测）；GNOME/Wayland 等没有传统托盘区域的桌面可能需要托盘扩展，不能保证显示。可用 `--no-tray` 运行；后端初始化失败会警告并回退终端模式。Windows 原生托盘仍需 Windows 实机验证。没有使用 PyInstaller 或 Qt。

@@ -195,3 +195,28 @@ def test_gateway_exits_when_parent_watch_pipe_closes() -> None:
                 await process.wait()
 
     asyncio.run(scenario())
+
+
+def test_gateway_shutdown_with_parent_pipe_open_has_no_buffered_stdin_crash() -> None:
+    import os
+    import signal
+    import subprocess
+    if os.name == 'nt':
+        import pytest
+        pytest.skip('POSIX SIGINT; parent-pipe EOF is covered cross-platform')
+    process = subprocess.Popen(
+        [sys.executable, '-m', 'f8media_gateway', '--port', '0', '--report-bound-port', '--exit-on-stdin-close'],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    try:
+        assert process.stdout is not None
+        assert process.stdout.readline().strip().isdigit()
+        process.send_signal(signal.SIGINT)
+        process.wait(timeout=10)  # Keep the parent pipe OPEN throughout interpreter shutdown.
+        _, errors = process.communicate(timeout=10)
+        assert 'Fatal Python error' not in errors
+        assert 'Traceback' not in errors
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.communicate()
