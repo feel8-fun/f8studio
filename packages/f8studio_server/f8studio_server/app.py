@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .extension_tools import ToolRunRequest
 from .websocket_lifecycle import send_until_disconnect
 
 from f8studio_server.errors import InvalidRequestError, NotFoundError
@@ -335,6 +336,40 @@ def create_app(
     @app.post("/api/catalog/refresh")
     async def refresh_catalog() -> F8JsonValue:
         return _json_value(await asyncio.to_thread(studio.catalog.refresh))
+
+    @app.get('/api/extension-tools')
+    async def extension_tools() -> F8JsonValue:
+        return _json_value(studio.extension_tools.list())
+
+    @app.post('/api/extension-tools/{extension_id}/{tool_id}/run', status_code=202)
+    async def run_extension_tool(extension_id: str, tool_id: str, request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, ToolRunRequest)
+        return _json_value(studio.extension_tools.submit(extension_id, tool_id, payload))
+
+    @app.get('/api/tool-jobs')
+    async def tool_jobs() -> F8JsonValue:
+        return _json_value(studio.extension_tools.jobs())
+
+    @app.get('/api/tool-jobs/{job_id}')
+    async def tool_job(job_id: str) -> F8JsonValue:
+        return _json_value(studio.extension_tools.get(job_id))
+
+    @app.post('/api/tool-jobs/{job_id}/cancel')
+    async def cancel_tool_job(job_id: str) -> F8JsonValue:
+        return _json_value(await studio.extension_tools.cancel(job_id))
+
+    @app.get('/api/extension-resources')
+    async def extension_resources() -> F8JsonValue:
+        return _json_value(studio.extension_tools.resources())
+
+    @app.get('/api/extension-resources/{extension_id}/{resource_id}/file')
+    async def download_extension_resource(extension_id: str, resource_id: str) -> FileResponse:
+        path = studio.extension_tools.resource_path(extension_id, resource_id)
+        return FileResponse(path, filename=path.name)
+
+    @app.get('/api/extension-resources/{extension_id}/{resource_id}')
+    async def read_extension_resource(extension_id: str, resource_id: str) -> F8JsonValue:
+        return _json_value(await asyncio.to_thread(studio.extension_tools.read_resource, extension_id, resource_id))
 
     @app.get('/api/extensions')
     async def extensions() -> F8JsonValue:

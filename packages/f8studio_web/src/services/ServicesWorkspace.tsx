@@ -117,7 +117,7 @@ export function ServicesWorkspace() {
         <header><h2>Extensions</h2></header>
         {extensions.map((extension) => <div className="extension-row" key={extension.extensionId}>
           <div className="extension-heading"><PackagePlus size={17} /><strong>{extension.name}</strong><span className={`extension-state extension-${extension.state}`}>{extension.state}</span></div>
-          <div className="extension-classes">v{extension.version} · {extension.serviceClasses.length} services</div>
+          <div className="extension-classes">v{extension.version} · {extension.serviceClasses.length} services · {extension.toolIds?.length ?? 0} tools · {extension.skillIds?.length ?? 0} skills</div>
           <div className="extension-detail">{extension.description}</div>
           {extension.preinstalled && <div className="extension-detail">Included with this distribution.</div>}
           {extension.runtimeKind === 'shared' && <div className="extension-detail">Reuses an installed official environment. No additional environment download.</div>}

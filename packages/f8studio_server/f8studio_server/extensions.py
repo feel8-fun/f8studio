@@ -18,6 +18,10 @@ from packaging.requirements import Requirement
 from packaging.specifiers import SpecifierSet
 import yaml
 
+from f8pysdk.extension_capabilities import validate_capabilities
+from f8pysdk.extension_spec import ExtensionTool
+from f8pysdk.service_paths import ServicePaths
+
 from f8pysdk.codec import copy_model, validate_as
 from f8pysdk.monitoring import validate_describe_monitor_contract
 from f8pysdk.resource_paths import model_root as configured_model_root
@@ -57,6 +61,7 @@ class ExtensionManager:
         self._base_index = (base_index or default_service_index()).resolve()
         self._source_root = self._base_index.parent.parent
         self.environments = EnvironmentManager(data_dir, self._source_root)
+        self._tool_running: Callable[[str], bool] = lambda _extension_id: False
         self._lock = RLock()
         self._actions = asyncio.Lock()
         self._operation: InstallOperation | None = None
@@ -128,9 +133,10 @@ class ExtensionManager:
         root = root.resolve()
         index_path = root / 'config/service-index.json'
         catalog = msgspec.json.decode((root / 'config/extensions.json').read_bytes(), type=ExtensionCatalog)
-        index = read_service_index(index_path)
+        index = (read_service_index(index_path) if index_path.is_file() else
+                 ServiceIndex(schemaVersion='f8serviceIndex/1', services=(), modelRoot='${F8_MODEL_ROOT}'))
         services = {item.serviceClass: item for item in index.services}
-        owners = self._validate_catalog(catalog, services)
+        owners = self._validate_catalog(catalog, services, root=root)
         if not preinstalled and any(manifest.runtime.kind not in {'native', 'pixi', 'shared'} for manifest in catalog.extensions):
             raise ValueError('Published extensions must declare a native, shared, or locked Pixi runtime')
         conflicts = set(services) & self._services.keys()
@@ -156,15 +162,16 @@ class ExtensionManager:
             self._preinstalled.update(catalog.preinstalled)
         return tuple(manifest.extension_id for manifest in catalog.extensions)
 
-    def _validate_catalog(self, catalog: ExtensionCatalog, services: dict[str, IndexedService]) -> dict[str, str]:
+    def _validate_catalog(self, catalog: ExtensionCatalog, services: dict[str, IndexedService], *, root: Path) -> dict[str, str]:
         ids: set[str] = set()
         owners: dict[str, str] = {}
         for manifest in catalog.extensions:
             if not re.fullmatch(r'[a-z0-9][a-z0-9._-]{0,63}', manifest.extension_id):
                 raise ValueError(f'Invalid extension ID: {manifest.extension_id!r}')
-            if manifest.extension_id in ids or not manifest.version or not manifest.service_classes:
+            if manifest.extension_id in ids or not manifest.version or not (manifest.service_classes or manifest.tools or manifest.skills or manifest.resources):
                 raise ValueError(f'Duplicate or invalid extension: {manifest.extension_id}')
             ids.add(manifest.extension_id)
+            validate_capabilities(manifest, ServicePaths.for_index(root / 'config/service-index.json'))
             runtime = manifest.runtime
             if runtime.kind in {'pixi', 'workspace', 'shared'} and not runtime.environment:
                 raise ValueError(f'Missing environment for {manifest.extension_id}')
@@ -203,8 +210,62 @@ class ExtensionManager:
         return manifest
 
     def _supported(self, manifest: ExtensionManifest) -> bool:
+        if any(tool.platforms and sys.platform not in tool.platforms for tool in manifest.tools):
+            return False
+        if manifest.tools and manifest.runtime.kind == 'native':
+            paths = ServicePaths.for_index(self._payloads[manifest.extension_id].index_path)
+            if any(not paths.package_path(tool.command, relative_to=paths.package_path(tool.workdir, relative_to=paths.package_root)).is_file() for tool in manifest.tools):
+                return False
         return all(sys.platform in self._services[name].manifests or 'any' in self._services[name].manifests
                    for name in manifest.service_classes)
+
+    def set_tool_running_probe(self, probe: Callable[[str], bool]) -> None:
+        self._tool_running = probe
+
+    def active_manifests(self) -> tuple[ExtensionManifest, ...]:
+        with self._lock:
+            return tuple(manifest for manifest in self._manifests.values()
+                         if self.status(manifest.extension_id).state == 'installed')
+
+    def active_skill_files(self) -> dict[str, Path]:
+        return {f'{manifest.extension_id}:{skill.skill_id}': self.capability_file(manifest.extension_id, skill.path)
+                for manifest in self.active_manifests() for skill in manifest.skills}
+
+    def capability_file(self, extension_id: str, reference: str) -> Path:
+        if self.status(extension_id).state != 'installed':
+            raise InvalidRequestError('Extension must be installed and enabled')
+        payload = self._payloads[extension_id]
+        return ServicePaths.for_index(payload.index_path).package_path(reference, relative_to=payload.root)
+
+    def tool_launcher(self, extension_id: str, tool_id: str) -> tuple[ExtensionTool, list[str], Path, dict[str, str]]:
+        if self.status(extension_id).state != 'installed':
+            raise InvalidRequestError('Extension must be installed and enabled')
+        manifest = self._manifest(extension_id)
+        tool = next((item for item in manifest.tools if item.tool_id == tool_id), None)
+        if tool is None:
+            raise NotFoundError(f'Unknown extension tool: {extension_id}/{tool_id}')
+        payload = self._payloads[extension_id]
+        paths = ServicePaths.for_index(payload.index_path)
+        cwd = paths.package_path(tool.workdir, relative_to=payload.root)
+        args = [str(paths.resolve(arg, relative_to=cwd)) if '${' in arg else arg for arg in tool.args]
+        if manifest.runtime.kind == 'native':
+            command = [str(paths.package_path(tool.command, relative_to=cwd)), *args]
+        else:
+            if tool.command != 'python':
+                raise InvalidRequestError('Managed tool entrypoints must declare python')
+            plan = payload.environments.plan(manifest)
+            environment = manifest.runtime.environment or ('studio-runtime' if manifest.runtime.kind == 'bundled' else None)
+            if environment is None or not payload.environments.ready(plan.environment_id):
+                raise InvalidRequestError('Tool runtime is unavailable; reinstall the extension')
+            executable, prefix = payload.environments.python_launch(plan, environment)
+            command = [executable, *prefix, *args]
+            if manifest.runtime.kind == 'shared':
+                if len(args) != 2 or args[0] != '-m':
+                    raise InvalidRequestError('Shared tools must launch python -m module')
+                code = self._registration(extension_id).parent / 'python'
+                command = [executable, *prefix, str(Path(__file__).with_name('_shared_entrypoint.py')),
+                           str(code), args[1]]
+        return tool, command, cwd, paths.environment()
 
     def _registration(self, extension_id: str) -> Path:
         return self._root / 'registrations' / extension_id / 'service-index.json'
@@ -274,6 +335,9 @@ class ExtensionManager:
                 service_classes=manifest.service_classes, runtime_kind=manifest.runtime.kind,
                 environment_id=record.environment_id if record is not None and record.installed else None,
                 preinstalled=extension_id in self._preinstalled,
+                tool_ids=tuple(tool.tool_id for tool in manifest.tools),
+                skill_ids=tuple(skill.skill_id for skill in manifest.skills),
+                resource_ids=tuple(resource.resource_id for resource in manifest.resources),
             )
 
     def install_plan(self, extension_id: str) -> ExtensionInstallPlan:
@@ -446,6 +510,8 @@ class ExtensionManager:
                 previous = self._records.get(extension_id)
                 if previous is None or not previous.installed:
                     raise InvalidRequestError('Install the extension before changing its state')
+                if not enabled and self._tool_running(extension_id):
+                    raise ConflictError('An extension tool is running; cancel it before disabling')
                 if not enabled and any(is_running(name) for name in manifest.service_classes):
                     raise ConflictError('Stop running services before disabling the extension')
                 if previous.enabled == enabled:
@@ -462,6 +528,8 @@ class ExtensionManager:
                 previous = self._records.get(extension_id)
                 if previous is None or not previous.installed:
                     return self.status(extension_id)
+                if self._tool_running(extension_id):
+                    raise ConflictError('An extension tool is running; cancel it before uninstalling')
                 if any(is_running(name) for name in manifest.service_classes):
                     raise ConflictError('Stop running services before uninstalling the extension')
             await self._refresh_record(extension_id, ExtensionRecord(version=manifest.version, installed=False, enabled=False),

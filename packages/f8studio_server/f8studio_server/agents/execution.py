@@ -96,7 +96,8 @@ class AgentToolExecution:
                 raise InvalidRequestError("agent approval expired")
 
             current = await asyncio.to_thread(self._tools.document, record.project_id)
-            if (current.graph_revision != approval.target_graph_revision
+            if approval.target_graph_revision is not None and (
+                    current.graph_revision != approval.target_graph_revision
                     or current.layout_revision != pending.layout_revision):
                 updated = self._sessions.resolve_record_approval(record, ApprovalStatus.invalidated)
                 await asyncio.to_thread(self._sessions.repository.save, updated)
@@ -154,7 +155,7 @@ class AgentToolExecution:
         *,
         tool_name: str,
         arguments: dict[str, F8JsonValue],
-        target_graph_revision: int,
+        target_graph_revision: int | None,
         target_layout_revision: int | None = None,
         operation: Callable[[], Awaitable[T]],
         result_encoder: Callable[[T], F8JsonValue] | None = None,
@@ -187,9 +188,9 @@ class AgentToolExecution:
             if latest.status in {AgentRunStatus.cancelled, AgentRunStatus.failed, AgentRunStatus.succeeded}:
                 raise asyncio.CancelledError("agent run already ended")
             document = await asyncio.to_thread(self._tools.document, record.project_id)
-            if document.graph_revision != target_graph_revision or (
+            if target_graph_revision is not None and (document.graph_revision != target_graph_revision or (
                 target_layout_revision is not None and document.layout_revision != target_layout_revision
-            ):
+            )):
                 raise RevisionConflictError("project changed before approval; preview the proposed change again")
             if latest.approval is not None and latest.approval.status is ApprovalStatus.pending:
                 raise InvalidRequestError("Another tool is awaiting approval in this session; wait for it to finish")

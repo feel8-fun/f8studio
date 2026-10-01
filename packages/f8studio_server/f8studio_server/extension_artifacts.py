@@ -81,7 +81,7 @@ def prepare_artifact(request: ExtensionImportRequest, root: Path) -> Path:
                     shutil.copyfileobj(source, destination)
                 if mode & 0o111:
                     target.chmod(0o755)
-        for name in ('config/extensions.json', 'config/service-index.json'):
+        for name in ('config/extensions.json',):
             if not (staging / name).is_file():
                 raise InvalidRequestError(f'Extension archive is missing {name}')
         staging.replace(payload)

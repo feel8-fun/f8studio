@@ -38,7 +38,7 @@ def test_every_http_api_has_a_contract_and_openapi_references_resolve(tmp_path: 
     for route in ROUTES:
         operation = schema['paths'][route.path][route.method]
         response = operation['responses'][str(route.status)]
-        assert ('content' in response) == (route.response is not None)
+        assert ('content' in response) == (route.response is not None or route.response_media_type != 'application/json')
         assert ('requestBody' in operation) == (route.request is not None)
     patch = schema['paths']['/api/projects/{project_id}/patch']['post']
     assert patch['requestBody']['content']['application/json']['schema']['$ref'].endswith('/PatchRequestInput')

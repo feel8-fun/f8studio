@@ -133,6 +133,9 @@ def generate() -> dict[Path, str]:
     for route in ROUTES:
         key = json.dumps(f"{route.method.upper()} {route.path}")
         for value, is_request in ((route.request, True), (route.response, False)):
+            if not is_request and route.response_media_type != "application/json":
+                responses.append(f"  readonly {key}: Blob;")
+                continue
             if value is None:
                 if not is_request:
                     responses.append(f"  readonly {key}: void;")

@@ -36,6 +36,7 @@ from .editor import EditorSessionService
 from .runtime_sync import service_was_deployed
 from .events import EventJournal
 from .extensions import ExtensionManager
+from .extension_tools import ExtensionTools
 from .job_repository import JobRepository
 from .jobs import DeployCoordinator
 from .monitors import RuntimeMonitorStore
@@ -82,6 +83,7 @@ class StudioApplication:
             presentation=self.presentation,
         )
         self.extensions = ExtensionManager(self.data_dir)
+        self.extension_tools = ExtensionTools(self.extensions, self.data_dir / "tool-jobs")
         self.catalog = CatalogService(roots=service_roots, builtins=(self.studio_runtime.describe,),
                                       extension_indexes=self.extensions.active_indexes if self.extensions.has_catalog else None)
         self.database = StudioDatabase(self.data_dir / "studio.sqlite3")
@@ -132,7 +134,8 @@ class StudioApplication:
             tools=self.tools,
             editor=self.editor,
             local=self.local,
-            skills=AgentSkillLibrary(user_root=self.data_dir / "agent-skills"),
+            skills=AgentSkillLibrary(user_root=self.data_dir / "agent-skills", extension_files=self.extensions.active_skill_files),
+            extension_tools=self.extension_tools,
             providers=providers,
             events=self.events,
         )
@@ -152,6 +155,7 @@ class StudioApplication:
         await self.local.start()
 
     async def close(self) -> None:
+        await self.extension_tools.close()
         await self.extensions.close()
         await self.agents.close()
         await self.decisions.close()

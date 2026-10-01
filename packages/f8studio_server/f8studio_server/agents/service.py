@@ -23,6 +23,7 @@ from ..local_integration import (
 from ..project_repository import utc_now_text
 from .evidence import conversation_prompt, evidence_prompt
 from .execution import AgentToolExecution, ApprovalDeniedError
+from ..extension_tools import ExtensionTools
 from .model_tools import AgentModelTools
 from .models import (
     AgentImage,
@@ -96,11 +97,12 @@ class AgentService:
         skills: AgentSkillLibrary,
         events: EventJournal,
         providers: AgentProviderRegistry | None = None,
+        extension_tools: ExtensionTools | None = None,
     ) -> None:
         self._sessions = AgentSessions(database_path, events)
         self._execution = AgentToolExecution(self._sessions, tools)
         self._workflow = DeterministicWorkflow(tools, self._execution, self._sessions)
-        self._model_tool_factory = AgentModelTools(tools=tools, execution=self._execution, sessions=self._sessions, editor=editor, local=local, skills=skills, events=events)
+        self._model_tool_factory = AgentModelTools(tools=tools, execution=self._execution, sessions=self._sessions, editor=editor, local=local, skills=skills, events=events, extension_tools=extension_tools)
         self._tools = tools
         self._events = events
         self._providers = providers or AgentProviderRegistry(database_path.with_name("agent-providers.json"))

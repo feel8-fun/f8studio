@@ -6,6 +6,7 @@ from collections.abc import Awaitable, Callable
 from uuid import uuid4
 
 import msgspec
+from f8pysdk.specs import F8JsonValue
 from f8pysdk.generated import F8StateAccess
 from f8studio_core.graph import (
     GraphNode,
@@ -55,12 +56,14 @@ from .models import (
 )
 from .sessions import AgentSessions
 from .skills import AgentSkillLibrary
+from ..extension_tools import ExtensionTools, ToolRunRequest, ToolJob
 
 
 class AgentModelTools:
     """Bind model tools with preview and proposal state isolated to one run."""
 
-    def __init__(self, *, tools: StudioAutomationTools, execution: AgentToolExecution, sessions: AgentSessions, editor: EditorSessionService, local: LocalIntegrationService, skills: AgentSkillLibrary, events: EventJournal) -> None:
+    def __init__(self, *, tools: StudioAutomationTools, execution: AgentToolExecution, sessions: AgentSessions, editor: EditorSessionService, local: LocalIntegrationService, skills: AgentSkillLibrary, events: EventJournal, extension_tools: ExtensionTools | None = None) -> None:
+        self._extension_tools = extension_tools
         self._tools = tools
         self._execution = execution
         self._sessions = sessions
@@ -68,6 +71,11 @@ class AgentModelTools:
         self._local = local
         self._skills = skills
         self._events = events
+
+    async def _submit_extension_tool(self, extension_id: str, tool_id: str, arguments: dict[str, F8JsonValue]) -> ToolJob:
+        if self._extension_tools is None:
+            raise InvalidRequestError('Extension tools are unavailable')
+        return self._extension_tools.submit(extension_id, tool_id, ToolRunRequest(arguments=arguments, confirm=True))
 
     def _code_target(self, project_id: str, node_id: str) -> tuple[StudioDocument, GraphNode, str]:
         document = self._tools.document(project_id)
@@ -446,7 +454,57 @@ class AgentModelTools:
             )
             return tool_text(result)
 
+        async def extension_tools_list() -> str:
+            """List installed and enabled one-shot extension tools and their input fields."""
+            extension_tools = self._extension_tools
+            if extension_tools is None:
+                return tool_text(())
+            result = await self._execution.run(record, tool_name='extensions.tools_list', arguments={},
+                target_graph_revision=None, operation=lambda: asyncio.to_thread(extension_tools.list))
+            return tool_text(result)
+
+        async def extension_tool_run(extension_id: str, tool_id: str, arguments_json: str) -> str:
+            """Execute an extension tool after human approval. Returns a job ID to inspect."""
+            if self._extension_tools is None:
+                raise InvalidRequestError('Extension tools are unavailable')
+            arguments = msgspec.json.decode(arguments_json.encode(), type=dict[str, F8JsonValue])
+            result = await self._execution.approved(
+                record, tool_name='extensions.tool_run', arguments={'extensionId': extension_id,
+                    'toolId': tool_id, 'arguments': arguments}, target_graph_revision=None,
+                operation=lambda: self._submit_extension_tool(extension_id, tool_id, arguments),
+            )
+            return tool_text(result)
+
+        async def extension_tool_job(job_id: str) -> str:
+            """Read the result, status, and logs of an extension tool task."""
+            extension_tools = self._extension_tools
+            if extension_tools is None:
+                raise InvalidRequestError('Extension tools are unavailable')
+            result = await self._execution.run(record, tool_name='extensions.tool_job', arguments={'jobId': job_id},
+                target_graph_revision=None, operation=lambda: asyncio.to_thread(extension_tools.get, job_id))
+            return tool_text(result)
+
+        async def extension_resources_list() -> str:
+            """List reference material supplied by installed and enabled extensions."""
+            extension_tools = self._extension_tools
+            if extension_tools is None:
+                return tool_text(())
+            result = await self._execution.run(record, tool_name='extensions.resources_list', arguments={},
+                target_graph_revision=None, operation=lambda: asyncio.to_thread(extension_tools.resources))
+            return tool_text(result)
+
+        async def extension_resource_read(extension_id: str, resource_id: str) -> str:
+            """Read declared UTF-8 extension reference material or a game profile."""
+            extension_tools = self._extension_tools
+            if extension_tools is None:
+                raise InvalidRequestError('Extension tools are unavailable')
+            result = await self._execution.run(record, tool_name='extensions.resource_read',
+                arguments={'extensionId': extension_id, 'resourceId': resource_id}, target_graph_revision=None,
+                operation=lambda: asyncio.to_thread(extension_tools.read_resource, extension_id, resource_id))
+            return tool_text(result)
+
         return (
+            extension_tools_list, extension_tool_run, extension_tool_job, extension_resources_list, extension_resource_read,
             skills_list, skill_read, catalog_read, catalog_search, catalog_operator, catalog_create_node,
             graph_read, graph_node, graph_preview_patch, graph_apply_patch,
             graph_propose_changes, graph_apply_proposal,

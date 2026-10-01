@@ -18,7 +18,7 @@ export type AgentApproval = {
   readonly "toolCallId": string;
   readonly "toolName": string;
   readonly "argumentsHash": string;
-  readonly "targetGraphRevision": number;
+  readonly "targetGraphRevision": number | null;
   readonly "expiresAt": string;
   readonly "status": ApprovalStatus;
   readonly "resolvedAt": string | null;
@@ -29,7 +29,7 @@ export type AgentApprovalInput = {
   readonly "toolCallId": string;
   readonly "toolName": string;
   readonly "argumentsHash": string;
-  readonly "targetGraphRevision": number;
+  readonly "targetGraphRevision": number | null;
   readonly "expiresAt": string;
   readonly "status": ApprovalStatusInput;
   readonly "resolvedAt"?: string | null;
@@ -369,6 +369,18 @@ export type CapabilitiesResponse = {
 export type CapabilitiesResponseInput = {
   readonly "protocol_version": "f8studio-api/1";
   readonly "capabilities": ServerCapabilitiesInput;
+};
+
+export type CapabilityResource = {
+  readonly "extensionId": string;
+  readonly "resourceId": string;
+  readonly "description": string;
+};
+
+export type CapabilityResourceInput = {
+  readonly "extensionId": string;
+  readonly "resourceId": string;
+  readonly "description": string;
 };
 
 export type CatalogSnapshot = {
@@ -926,6 +938,9 @@ export type ExtensionStatus = {
   readonly "runtimeKind": "bundled" | "native" | "pixi" | "shared" | "workspace";
   readonly "environmentId": string | null;
   readonly "preinstalled": boolean;
+  readonly "toolIds": ReadonlyArray<string>;
+  readonly "skillIds": ReadonlyArray<string>;
+  readonly "resourceIds": ReadonlyArray<string>;
 };
 
 export type ExtensionStatusInput = {
@@ -939,6 +954,9 @@ export type ExtensionStatusInput = {
   readonly "runtimeKind": "bundled" | "native" | "pixi" | "shared" | "workspace";
   readonly "environmentId": string | null;
   readonly "preinstalled": boolean;
+  readonly "toolIds"?: ReadonlyArray<string>;
+  readonly "skillIds"?: ReadonlyArray<string>;
+  readonly "resourceIds"?: ReadonlyArray<string>;
 };
 
 export type ExtensionToggleRequest = {
@@ -947,6 +965,24 @@ export type ExtensionToggleRequest = {
 
 export type ExtensionToggleRequestInput = {
   readonly "enabled": boolean;
+};
+
+export type ExtensionToolField = {
+  readonly "name": string;
+  readonly "label": string;
+  readonly "kind": "boolean" | "integer" | "number" | "string";
+  readonly "required": boolean;
+  readonly "default": JsonValue;
+  readonly "choices": ReadonlyArray<string>;
+};
+
+export type ExtensionToolFieldInput = {
+  readonly "name": string;
+  readonly "label": string;
+  readonly "kind"?: "boolean" | "integer" | "number" | "string";
+  readonly "required"?: boolean;
+  readonly "default"?: JsonValue;
+  readonly "choices"?: ReadonlyArray<string>;
 };
 
 export type F8ActivateRequest = {
@@ -3057,6 +3093,18 @@ export type ResolveAgentApprovalRequestInput = {
   readonly "argumentsHash": string;
 };
 
+export type ResourceContent = {
+  readonly "extensionId": string;
+  readonly "resourceId": string;
+  readonly "content": string;
+};
+
+export type ResourceContentInput = {
+  readonly "extensionId": string;
+  readonly "resourceId": string;
+  readonly "content": string;
+};
+
 export type RuntimeActionResult = {
   readonly "success": boolean;
   readonly "result": JsonValue;
@@ -3559,6 +3607,76 @@ export type ToolCallStatus = "cancelled" | "denied" | "failed" | "queued" | "run
 
 export type ToolCallStatusInput = "cancelled" | "denied" | "failed" | "queued" | "running" | "succeeded" | "waiting_for_approval";
 
+export type ToolJob = {
+  readonly "jobId": string;
+  readonly "extensionId": string;
+  readonly "extensionVersion": string;
+  readonly "toolId": string;
+  readonly "arguments": Readonly<Record<string, JsonValue>>;
+  readonly "status": "cancelled" | "failed" | "queued" | "running" | "succeeded";
+  readonly "createdAt": string;
+  readonly "updatedAt": string;
+  readonly "result": null | ToolResult;
+  readonly "error": string;
+  readonly "log": string;
+};
+
+export type ToolJobInput = {
+  readonly "jobId": string;
+  readonly "extensionId": string;
+  readonly "extensionVersion": string;
+  readonly "toolId": string;
+  readonly "arguments": Readonly<Record<string, JsonValue>>;
+  readonly "status": "cancelled" | "failed" | "queued" | "running" | "succeeded";
+  readonly "createdAt": string;
+  readonly "updatedAt": string;
+  readonly "result"?: null | ToolResultInput;
+  readonly "error"?: string;
+  readonly "log"?: string;
+};
+
+export type ToolResult = {
+  readonly "schemaVersion": "f8toolResult/1";
+  readonly "success": boolean;
+  readonly "message": string;
+  readonly "data": JsonValue;
+};
+
+export type ToolResultInput = {
+  readonly "schemaVersion": "f8toolResult/1";
+  readonly "success": boolean;
+  readonly "message": string;
+  readonly "data"?: JsonValue;
+};
+
+export type ToolRunRequest = {
+  readonly "arguments": Readonly<Record<string, JsonValue>>;
+  readonly "confirm": boolean;
+};
+
+export type ToolRunRequestInput = {
+  readonly "arguments": Readonly<Record<string, JsonValue>>;
+  readonly "confirm"?: boolean;
+};
+
+export type ToolView = {
+  readonly "extensionId": string;
+  readonly "toolId": string;
+  readonly "name": string;
+  readonly "description": string;
+  readonly "fields": ReadonlyArray<ExtensionToolField>;
+  readonly "requiresConfirmation": boolean;
+};
+
+export type ToolViewInput = {
+  readonly "extensionId": string;
+  readonly "toolId": string;
+  readonly "name": string;
+  readonly "description": string;
+  readonly "fields": ReadonlyArray<ExtensionToolFieldInput>;
+  readonly "requiresConfirmation": boolean;
+};
+
 export type TrackFlow = {
   readonly "schemaVersion": string;
   readonly "tsMs": number;
@@ -3810,6 +3928,7 @@ export type WaveSceneInput = {
 };
 
 export interface ApiRequests {
+  readonly "POST /api/extension-tools/{extension_id}/{tool_id}/run": ToolRunRequestInput;
   readonly "POST /api/extensions/import": ExtensionImportRequestInput;
   readonly "PUT /api/extensions/{extension_id}/enabled": ExtensionToggleRequestInput;
   readonly "POST /api/catalog/nodes": CreateCatalogNodeRequestInput;
@@ -3856,6 +3975,14 @@ export interface ApiRequests {
 }
 
 export interface ApiResponses {
+  readonly "GET /api/extension-tools": ReadonlyArray<ToolView>;
+  readonly "POST /api/extension-tools/{extension_id}/{tool_id}/run": ToolJob;
+  readonly "GET /api/tool-jobs": ReadonlyArray<ToolJob>;
+  readonly "GET /api/tool-jobs/{job_id}": ToolJob;
+  readonly "POST /api/tool-jobs/{job_id}/cancel": ToolJob;
+  readonly "GET /api/extension-resources/{extension_id}/{resource_id}/file": Blob;
+  readonly "GET /api/extension-resources": ReadonlyArray<CapabilityResource>;
+  readonly "GET /api/extension-resources/{extension_id}/{resource_id}": ResourceContent;
   readonly "GET /api/health": HealthStatus;
   readonly "GET /api/logs": ReadonlyArray<EventEnvelope>;
   readonly "GET /api/capabilities": CapabilitiesResponse;

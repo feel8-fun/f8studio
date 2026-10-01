@@ -35,6 +35,9 @@ class ExtensionStatus(msgspec.Struct, frozen=True, kw_only=True, rename='camel')
     runtime_kind: RuntimeKind
     environment_id: str | None
     preinstalled: bool
+    tool_ids: tuple[str, ...] = ()
+    skill_ids: tuple[str, ...] = ()
+    resource_ids: tuple[str, ...] = ()
 
 
 class ExtensionToggleRequest(msgspec.Struct, frozen=True, kw_only=True):

@@ -62,7 +62,14 @@
           "$ref": "#/$defs/ApprovalStatus"
         },
         "targetGraphRevision": {
-          "type": "integer"
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "toolCallId": {
           "type": "string"
@@ -110,7 +117,14 @@
           "$ref": "#/$defs/ApprovalStatusInput"
         },
         "targetGraphRevision": {
-          "type": "integer"
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "toolCallId": {
           "type": "string"
@@ -1747,6 +1761,46 @@
         "capabilities"
       ],
       "title": "CapabilitiesResponse",
+      "type": "object"
+    },
+    "CapabilityResource": {
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "extensionId": {
+          "type": "string"
+        },
+        "resourceId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "description",
+        "extensionId",
+        "resourceId"
+      ],
+      "title": "CapabilityResource",
+      "type": "object"
+    },
+    "CapabilityResourceInput": {
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "extensionId": {
+          "type": "string"
+        },
+        "resourceId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "extensionId",
+        "resourceId",
+        "description"
+      ],
+      "title": "CapabilityResource",
       "type": "object"
     },
     "CatalogSnapshot": {
@@ -4803,6 +4857,13 @@
         "preinstalled": {
           "type": "boolean"
         },
+        "resourceIds": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "runtimeKind": {
           "enum": [
             "bundled",
@@ -4818,6 +4879,13 @@
           },
           "type": "array"
         },
+        "skillIds": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "state": {
           "enum": [
             "available",
@@ -4827,6 +4895,13 @@
             "installing",
             "unavailable"
           ]
+        },
+        "toolIds": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "version": {
           "type": "string"
@@ -4839,9 +4914,12 @@
         "extensionId",
         "name",
         "preinstalled",
+        "resourceIds",
         "runtimeKind",
         "serviceClasses",
+        "skillIds",
         "state",
+        "toolIds",
         "version"
       ],
       "title": "ExtensionStatus",
@@ -4874,6 +4952,13 @@
         "preinstalled": {
           "type": "boolean"
         },
+        "resourceIds": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "runtimeKind": {
           "enum": [
             "bundled",
@@ -4889,6 +4974,13 @@
           },
           "type": "array"
         },
+        "skillIds": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "state": {
           "enum": [
             "available",
@@ -4898,6 +4990,13 @@
             "installing",
             "unavailable"
           ]
+        },
+        "toolIds": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "version": {
           "type": "string"
@@ -4940,6 +5039,138 @@
         "enabled"
       ],
       "title": "ExtensionToggleRequest",
+      "type": "object"
+    },
+    "ExtensionToolField": {
+      "additionalProperties": false,
+      "properties": {
+        "choices": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "default": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "object"
+            },
+            {
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Any JSON value."
+        },
+        "kind": {
+          "default": "string",
+          "enum": [
+            "boolean",
+            "integer",
+            "number",
+            "string"
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "required": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "choices",
+        "default",
+        "kind",
+        "label",
+        "name",
+        "required"
+      ],
+      "title": "ExtensionToolField",
+      "type": "object"
+    },
+    "ExtensionToolFieldInput": {
+      "additionalProperties": false,
+      "properties": {
+        "choices": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "default": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "object"
+            },
+            {
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Any JSON value."
+        },
+        "kind": {
+          "default": "string",
+          "enum": [
+            "boolean",
+            "integer",
+            "number",
+            "string"
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "required": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "label"
+      ],
+      "title": "ExtensionToolField",
       "type": "object"
     },
     "F8ActivateRequest": {
@@ -15462,6 +15693,46 @@
       "title": "ResolveAgentApprovalRequest",
       "type": "object"
     },
+    "ResourceContent": {
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "extensionId": {
+          "type": "string"
+        },
+        "resourceId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "content",
+        "extensionId",
+        "resourceId"
+      ],
+      "title": "ResourceContent",
+      "type": "object"
+    },
+    "ResourceContentInput": {
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "extensionId": {
+          "type": "string"
+        },
+        "resourceId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "extensionId",
+        "resourceId",
+        "content"
+      ],
+      "title": "ResourceContent",
+      "type": "object"
+    },
     "RuntimeActionResult": {
       "properties": {
         "errorMessage": {
@@ -18184,6 +18455,449 @@
       ],
       "title": "ToolCallStatus"
     },
+    "ToolJob": {
+      "properties": {
+        "arguments": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "object"
+              },
+              {
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Any JSON value."
+          },
+          "type": "object"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "error": {
+          "default": "",
+          "type": "string"
+        },
+        "extensionId": {
+          "type": "string"
+        },
+        "extensionVersion": {
+          "type": "string"
+        },
+        "jobId": {
+          "type": "string"
+        },
+        "log": {
+          "default": "",
+          "type": "string"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ToolResult"
+            }
+          ],
+          "default": null
+        },
+        "status": {
+          "enum": [
+            "cancelled",
+            "failed",
+            "queued",
+            "running",
+            "succeeded"
+          ]
+        },
+        "toolId": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "arguments",
+        "createdAt",
+        "error",
+        "extensionId",
+        "extensionVersion",
+        "jobId",
+        "log",
+        "result",
+        "status",
+        "toolId",
+        "updatedAt"
+      ],
+      "title": "ToolJob",
+      "type": "object"
+    },
+    "ToolJobInput": {
+      "properties": {
+        "arguments": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "object"
+              },
+              {
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Any JSON value."
+          },
+          "type": "object"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "error": {
+          "default": "",
+          "type": "string"
+        },
+        "extensionId": {
+          "type": "string"
+        },
+        "extensionVersion": {
+          "type": "string"
+        },
+        "jobId": {
+          "type": "string"
+        },
+        "log": {
+          "default": "",
+          "type": "string"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ToolResultInput"
+            }
+          ],
+          "default": null
+        },
+        "status": {
+          "enum": [
+            "cancelled",
+            "failed",
+            "queued",
+            "running",
+            "succeeded"
+          ]
+        },
+        "toolId": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "jobId",
+        "extensionId",
+        "extensionVersion",
+        "toolId",
+        "arguments",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ],
+      "title": "ToolJob",
+      "type": "object"
+    },
+    "ToolResult": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "object"
+            },
+            {
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Any JSON value."
+        },
+        "message": {
+          "type": "string"
+        },
+        "schemaVersion": {
+          "enum": [
+            "f8toolResult/1"
+          ]
+        },
+        "success": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "data",
+        "message",
+        "schemaVersion",
+        "success"
+      ],
+      "title": "ToolResult",
+      "type": "object"
+    },
+    "ToolResultInput": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "object"
+            },
+            {
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Any JSON value."
+        },
+        "message": {
+          "type": "string"
+        },
+        "schemaVersion": {
+          "enum": [
+            "f8toolResult/1"
+          ]
+        },
+        "success": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "success",
+        "message"
+      ],
+      "title": "ToolResult",
+      "type": "object"
+    },
+    "ToolRunRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "arguments": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "object"
+              },
+              {
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Any JSON value."
+          },
+          "type": "object"
+        },
+        "confirm": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "arguments",
+        "confirm"
+      ],
+      "title": "ToolRunRequest",
+      "type": "object"
+    },
+    "ToolRunRequestInput": {
+      "additionalProperties": false,
+      "properties": {
+        "arguments": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "object"
+              },
+              {
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Any JSON value."
+          },
+          "type": "object"
+        },
+        "confirm": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "arguments"
+      ],
+      "title": "ToolRunRequest",
+      "type": "object"
+    },
+    "ToolView": {
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "extensionId": {
+          "type": "string"
+        },
+        "fields": {
+          "items": {
+            "$ref": "#/$defs/ExtensionToolField"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "requiresConfirmation": {
+          "type": "boolean"
+        },
+        "toolId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "description",
+        "extensionId",
+        "fields",
+        "name",
+        "requiresConfirmation",
+        "toolId"
+      ],
+      "title": "ToolView",
+      "type": "object"
+    },
+    "ToolViewInput": {
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "extensionId": {
+          "type": "string"
+        },
+        "fields": {
+          "items": {
+            "$ref": "#/$defs/ExtensionToolFieldInput"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "requiresConfirmation": {
+          "type": "boolean"
+        },
+        "toolId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "extensionId",
+        "toolId",
+        "name",
+        "description",
+        "fields",
+        "requiresConfirmation"
+      ],
+      "title": "ToolView",
+      "type": "object"
+    },
     "TrackFlow": {
       "properties": {
         "height": {
@@ -19832,6 +20546,39 @@
       "$ref": "#/$defs/AudioSessionAnswer"
     },
     {
+      "items": {
+        "$ref": "#/$defs/ToolView"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/ToolRunRequest"
+    },
+    {
+      "$ref": "#/$defs/ToolJob"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/ToolJob"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/ToolJob"
+    },
+    {
+      "$ref": "#/$defs/ToolJob"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/CapabilityResource"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/ResourceContent"
+    },
+    {
       "$ref": "#/$defs/HealthStatus"
     },
     {
@@ -20737,6 +21484,39 @@
     },
     {
       "$ref": "#/$defs/AudioSessionAnswerInput"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/ToolViewInput"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/ToolRunRequestInput"
+    },
+    {
+      "$ref": "#/$defs/ToolJobInput"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/ToolJobInput"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/ToolJobInput"
+    },
+    {
+      "$ref": "#/$defs/ToolJobInput"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/CapabilityResourceInput"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/ResourceContentInput"
     },
     {
       "$ref": "#/$defs/HealthStatusInput"

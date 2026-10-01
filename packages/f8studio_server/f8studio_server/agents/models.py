@@ -89,7 +89,7 @@ class AgentApproval(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
     tool_call_id: str
     tool_name: str
     arguments_hash: str
-    target_graph_revision: int
+    target_graph_revision: int | None
     expires_at: str
     status: ApprovalStatus
     resolved_at: str | None = None

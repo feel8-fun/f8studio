@@ -48,6 +48,13 @@
         "name": {
           "type": "string"
         },
+        "resources": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExtensionResource"
+          },
+          "type": "array"
+        },
         "runtime": {
           "$ref": "#/$defs/ExtensionRuntime",
           "default": {
@@ -58,8 +65,23 @@
           }
         },
         "serviceClasses": {
+          "default": [],
           "items": {
             "type": "string"
+          },
+          "type": "array"
+        },
+        "skills": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExtensionSkill"
+          },
+          "type": "array"
+        },
+        "tools": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExtensionTool"
           },
           "type": "array"
         },
@@ -71,10 +93,30 @@
         "extensionId",
         "name",
         "version",
-        "description",
-        "serviceClasses"
+        "description"
       ],
       "title": "ExtensionManifest",
+      "type": "object"
+    },
+    "ExtensionResource": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "default": "",
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "resourceId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "resourceId",
+        "path"
+      ],
+      "title": "ExtensionResource",
       "type": "object"
     },
     "ExtensionRuntime": {
@@ -122,6 +164,149 @@
       },
       "required": [],
       "title": "ExtensionRuntime",
+      "type": "object"
+    },
+    "ExtensionSkill": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "skillId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "skillId",
+        "path"
+      ],
+      "title": "ExtensionSkill",
+      "type": "object"
+    },
+    "ExtensionTool": {
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "command": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "fields": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExtensionToolField"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "platforms": {
+          "default": [],
+          "items": {
+            "enum": [
+              "darwin",
+              "linux",
+              "win32"
+            ]
+          },
+          "type": "array"
+        },
+        "requiresConfirmation": {
+          "default": true,
+          "type": "boolean"
+        },
+        "timeoutSeconds": {
+          "default": 300,
+          "type": "integer"
+        },
+        "toolId": {
+          "type": "string"
+        },
+        "workdir": {
+          "default": "${F8_PACKAGE_ROOT}",
+          "type": "string"
+        }
+      },
+      "required": [
+        "toolId",
+        "name",
+        "description",
+        "command"
+      ],
+      "title": "ExtensionTool",
+      "type": "object"
+    },
+    "ExtensionToolField": {
+      "additionalProperties": false,
+      "properties": {
+        "choices": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "default": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "object"
+            },
+            {
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Any JSON value."
+        },
+        "kind": {
+          "default": "string",
+          "enum": [
+            "boolean",
+            "integer",
+            "number",
+            "string"
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "required": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "label"
+      ],
+      "title": "ExtensionToolField",
       "type": "object"
     }
   },

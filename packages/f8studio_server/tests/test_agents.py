@@ -1103,3 +1103,35 @@ def test_agent_approval_is_invalidated_by_layout_only_edit(tmp_path: Path) -> No
                                json={'approved': True, 'argumentsHash': approval['argumentsHash']})
         assert response.status_code == 409
         assert 'layout expected' in response.text
+
+
+def test_extension_tool_approval_is_independent_of_graph_revisions(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        from f8studio_server.agents.models import CreateAgentSessionRequest, ResolveAgentApprovalRequest
+        studio = StudioApplication(data_dir=tmp_path / 'data', runtime=AgentRuntimeGateway(),
+                                   service_roots=(), media_gateway=InProcessMediaGateway())
+        studio.projects.create(CreateProjectRequest(project_id='tool-approval', name='Tool approval'))
+        record = studio.agents.create(CreateAgentSessionRequest(
+            project_id='tool-approval', provider_id='deterministic', model_id='graph-builder-v1',
+        ))
+        async def operation() -> str:
+            return 'tool executed'
+        task = asyncio.create_task(studio.agents._execution.approved(record, tool_name='extensions.tool_run',
+            arguments={'target': 'example'}, target_graph_revision=None, operation=operation))
+        for _ in range(200):
+            latest = studio.agents.get(record.session_id)
+            if latest.approval is not None:
+                break
+            await asyncio.sleep(0.01)
+        approval = latest.approval
+        assert approval is not None and approval.target_graph_revision is None
+        node = studio.catalog.create_node(CreateCatalogNodeRequest(
+            kind='service', node_id='new_studio', service_class='f8.pystudio',
+        ))
+        studio.projects.patch('tool-approval', PatchRequest(request_id='edit-while-approving',
+            expected_graph_revision=0, expected_layout_revision=0, operations=(CreateNodeOp(node=node),)))
+        await studio.agents._execution.resolve_approval(record.session_id, approval.approval_id,
+            ResolveAgentApprovalRequest(approved=True, arguments_hash=approval.arguments_hash))
+        assert await task == 'tool executed'
+        await studio.close()
+    asyncio.run(scenario())

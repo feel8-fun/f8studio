@@ -741,3 +741,53 @@ function requireRuntimeAction(value: unknown): RuntimeActionResult {
   if (!value.success) throw new ApiError(value.errorMessage || 'Runtime action failed', 422, 'runtime_action_failed');
   return value as unknown as RuntimeActionResult;
 }
+
+function isToolRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isToolView(value: unknown): value is Wire.ToolView {
+  if (!isToolRecord(value)) return false;
+  return typeof value.extensionId === 'string' && typeof value.toolId === 'string' &&
+    typeof value.name === 'string' && typeof value.description === 'string' &&
+    typeof value.requiresConfirmation === 'boolean' && Array.isArray(value.fields) &&
+    value.fields.every((field: unknown) => isToolRecord(field) && typeof field.name === 'string' &&
+      typeof field.label === 'string' && typeof field.required === 'boolean' &&
+      (field.kind === 'string' || field.kind === 'integer' || field.kind === 'number' || field.kind === 'boolean') &&
+      Array.isArray(field.choices) && field.choices.every((choice: unknown) => typeof choice === 'string') && 'default' in field);
+}
+
+function isToolJob(value: unknown): value is Wire.ToolJob {
+  if (!isToolRecord(value)) return false;
+  const result = value.result;
+  return typeof value.jobId === 'string' && typeof value.extensionId === 'string' &&
+    typeof value.extensionVersion === 'string' && typeof value.toolId === 'string' && isToolRecord(value.arguments) &&
+    typeof value.createdAt === 'string' && typeof value.updatedAt === 'string' &&
+    typeof value.error === 'string' && typeof value.log === 'string' &&
+    (value.status === 'queued' || value.status === 'running' || value.status === 'succeeded' || value.status === 'failed' || value.status === 'cancelled') &&
+    (result === null || (isToolRecord(result) && result.schemaVersion === 'f8toolResult/1' &&
+      typeof result.success === 'boolean' && typeof result.message === 'string' && 'data' in result));
+}
+
+export async function fetchExtensionTools(signal?: AbortSignal): Promise<readonly Wire.ToolView[]> {
+  const body = await requestJson('/api/extension-tools', { signal });
+  if (!Array.isArray(body) || !body.every(isToolView)) throw new Error('Invalid extension tools');
+  return body;
+}
+export async function fetchToolJobs(signal?: AbortSignal): Promise<readonly Wire.ToolJob[]> {
+  const body = await requestJson('/api/tool-jobs', { signal });
+  if (!Array.isArray(body) || !body.every(isToolJob)) throw new Error('Invalid tool jobs');
+  return body;
+}
+export async function runExtensionTool(extensionId: string, toolId: string, arguments_: Readonly<Record<string, Wire.JsonValue>>, confirm: boolean): Promise<Wire.ToolJob> {
+  const body = await requestJson(`/api/extension-tools/${encodeURIComponent(extensionId)}/${encodeURIComponent(toolId)}/run`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ arguments: arguments_, confirm }),
+  });
+  if (!isToolJob(body)) throw new Error('Invalid tool job');
+  return body;
+}
+export async function cancelToolJob(jobId: string): Promise<Wire.ToolJob> {
+  const body = await requestJson(`/api/tool-jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' });
+  if (!isToolJob(body)) throw new Error('Invalid tool job');
+  return body;
+}

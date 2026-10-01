@@ -29,6 +29,7 @@ from .assets import AssetExport
 from f8media_protocol.models import AudioSessionOffer
 from .agents import CreateAgentSessionRequest
 from .assets import CreateAssetRequest
+from .extension_tools import ToolView, ToolRunRequest, ToolJob, CapabilityResource, ResourceContent
 from .models import CreateCatalogNodeRequest
 from .editor import CreateEditorSessionRequest
 from .models import CreateProjectRequest
@@ -84,9 +85,18 @@ class RouteContract:
     request: Any
     response: Any
     status: int = 200
+    response_media_type: str = "application/json"
 
 
 ROUTES = (
+    RouteContract('get', '/api/extension-tools', None, tuple[ToolView, ...]),
+    RouteContract('post', '/api/extension-tools/{extension_id}/{tool_id}/run', ToolRunRequest, ToolJob, 202),
+    RouteContract('get', '/api/tool-jobs', None, tuple[ToolJob, ...]),
+    RouteContract('get', '/api/tool-jobs/{job_id}', None, ToolJob),
+    RouteContract('post', '/api/tool-jobs/{job_id}/cancel', None, ToolJob),
+    RouteContract('get', '/api/extension-resources/{extension_id}/{resource_id}/file', None, None, 200, 'application/octet-stream'),
+    RouteContract('get', '/api/extension-resources', None, tuple[CapabilityResource, ...]),
+    RouteContract('get', '/api/extension-resources/{extension_id}/{resource_id}', None, ResourceContent),
     RouteContract("get", "/api/health", None, HealthStatus, 200),
     RouteContract("get", "/api/logs", None, tuple[EventEnvelope, ...], 200),
     RouteContract("get", "/api/capabilities", None, CapabilitiesResponse, 200),
@@ -206,6 +216,8 @@ def contract_schemas() -> tuple[dict[tuple[str, str], dict[str, Any]], dict[str,
         if route.request is not None:
             operation["requestBody"] = {"required": True, "content": {"application/json": {"schema": schema_for(route.request, request=True)}}}
         response: dict[str, Any] = {"description": "Success"}
+        if route.response_media_type != "application/json":
+            response["content"] = {route.response_media_type: {"schema": {"type": "string", "format": "binary"}}}
         if route.response is not None:
             response["content"] = {"application/json": {"schema": schema_for(route.response, request=False)}}
         operation["responses"] = {str(route.status): response}

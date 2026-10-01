@@ -1,4 +1,4 @@
-import { Activity, Archive, Boxes, CircleDot, PackagePlus, Plug, ScrollText, type LucideIcon } from 'lucide-react';
+import { Activity, Archive, Boxes, CircleDot, PackagePlus, Plug, ScrollText, Wrench, type LucideIcon } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 
 import { fetchHealth } from '../api/client';
@@ -16,7 +16,9 @@ const LocalWorkspace = lazy(() => import('../local/LocalWorkspace').then((module
 const ServicesWorkspace = lazy(() => import('../services/ServicesWorkspace').then((module) => ({ default: module.ServicesWorkspace })));
 const AgentWorkspace = lazy(() => import('../agents/AgentWorkspace').then((module) => ({ default: module.AgentWorkspace })));
 
-type WorkspaceView = 'graph' | 'agent' | 'assets' | 'code-state' | 'outputs' | 'local' | 'services' | 'logs';
+const ToolsWorkspace = lazy(() => import('../tools/ToolsWorkspace').then((module) => ({ default: module.ToolsWorkspace })));
+
+type WorkspaceView = 'graph' | 'agent' | 'assets' | 'code-state' | 'outputs' | 'local' | 'services' | 'tools' | 'logs';
 interface LocationView { readonly view: WorkspaceView; readonly nodeId: string | null; readonly projectId: string | null; readonly sessionId: string | null }
 
 function readLocationView(): LocationView {
@@ -41,6 +43,7 @@ const WORKSPACES: readonly WorkspaceDefinition[] = [
   { view: 'assets', label: 'Assets', title: 'Assets', icon: Archive },
   { view: 'outputs', label: 'Outputs', title: 'Live Outputs', icon: Activity },
   { view: 'local', label: 'Local integrations', title: 'Local Integrations', icon: Plug },
+  { view: 'tools', label: 'Tools', title: 'Tools', icon: Wrench },
   { view: 'services', label: 'Services', title: 'Services & Extensions', icon: PackagePlus },
   { view: 'logs', label: 'Logs', title: 'Log Center', icon: ScrollText },
 ];
@@ -139,6 +142,7 @@ export function App() {
             {view === 'code-state' && <CodeStateWorkspace />}
             {view === 'outputs' && <PresentationWorkspace nodeId={nodeId} />}
             {view === 'local' && <LocalWorkspace />}
+            {view === 'tools' && <ToolsWorkspace />}
             {view === 'services' && <ServicesWorkspace />}
             {view === 'logs' && <LogsWorkspace />}
             {view === 'agent' && projectId !== null && <AgentWorkspace projectId={projectId} initialSessionId={sessionId} />}

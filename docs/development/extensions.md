@@ -4,6 +4,8 @@ Web Studio 管理服务包的安装状态；一个包可以提供多个服务。
 
 路径根标识和 bundle 声明见 [显式服务注册与安装布局](service-registration.md)。
 
+工具型扩展可以不提供 node，详见 [工具、Skill 与资源扩展](tool-extensions.md)。
+
 ## 清单与制品
 
 `config/service-index.json` 保存服务的启动声明和预先构建的描述，`config/extensions.json` 保存服务归属、扩展版本、环境要求和模型元数据目录。每个服务只能属于一个扩展，索引中的服务必须全部有归属。清单类型定义在 `f8studio_server/extension_models.py`；独立包可使用生成的 `schemas/extensions.gen.json` 验证格式。
