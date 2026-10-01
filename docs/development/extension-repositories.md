@@ -1,6 +1,6 @@
 # 扩展源码仓库与 superbuild
 
-核心源码放在 `packages/`，可选功能源码放在 `extensions/`；`external/` 留给第三方构建依赖。`sdk/` 是 [feel8-fun/f8sdk](https://github.com/feel8-fun/f8sdk) 的 submodule，拥有 Python/C++ SDK、共享协议、生成工具和跨语言测试。服务扩展的源码边界由 `config/extension-workspace.toml` 声明。核心保留 Web Studio 前端、服务端、图领域、媒体网关和媒体协议。业务服务通过 SDK 和进程协议连接核心，核心实现不能直接导入扩展实现；`extensions_check` 检查这条边界。
+核心源码放在 `packages/`，可选功能源码放在 `extensions/`；`external/` 留给第三方构建依赖。`sdk/` 是 [feel8-fun/f8sdk](https://github.com/feel8-fun/f8sdk) 的 submodule，拥有 Python/C++ SDK、共享协议、生成工具和跨语言测试。`cloud/` 是 [feel8-fun/f8assetcloud](https://github.com/feel8-fun/f8assetcloud) 的 submodule，独立拥有云端资产 API、认证、D1 迁移和管理前端。服务扩展的源码边界由 `config/extension-workspace.toml` 声明。核心保留 Web Studio 前端、服务端、图领域、媒体网关和媒体协议。业务服务通过 SDK 和进程协议连接核心，核心实现不能直接导入扩展实现；`extensions_check` 检查这条边界。
 
 | 源码目录 / 独立仓库 | 拥有的扩展 |
 | --- | --- |
@@ -32,6 +32,8 @@ git submodule update --init --recursive
 开发某个扩展时，在其目录创建工作分支，提交并推送到对应独立仓库；随后在主仓库运行 `extensions_check`、提交并推送 gitlink。不要直接在 submodule 的 detached HEAD 上遗留未发布的提交。主仓库 CI 已使用 recursive checkout。
 
 `extensions/f8unitymods` 已是独立仓库的 submodule，提供游戏检测、Unity 插件安装和导出器，属于游戏集成扩展，而非 F8 服务进程。它目前仍通过 `f8unitymods-setup` 被 Studio 直接依赖和预装；仅移动源码目录并不意味着服务扩展管理器已支持安装、禁用或卸载它。其上游仓库、固定提交和 submodule 身份保持不变。
+
+Cloud 的版本、开发和集成流程见 [Cloud 独立仓库](cloud-repository.md)。
 
 ## 独立构建和制品
 

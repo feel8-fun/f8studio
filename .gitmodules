@@ -37,3 +37,6 @@
 [submodule "sdk"]
 	path = sdk
 	url = https://github.com/feel8-fun/f8sdk.git
+[submodule "cloud"]
+	path = cloud
+	url = https://github.com/feel8-fun/f8assetcloud.git

@@ -1,8 +1,0 @@
-.dev.vars*
-!.dev.vars.example
-.env*
-!.env.example
-.wrangler/
-node_modules/
-console_web/dist/
-coverage/
