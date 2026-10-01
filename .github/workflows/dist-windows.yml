@@ -69,10 +69,10 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: .pixi
-          key: pixi-dist-v2-all-${{ runner.os }}-0.81.0-${{ hashFiles('pixi.lock') }}-${{ github.workspace }}
+          key: pixi-dist-v3-no-gpu-${{ runner.os }}-0.81.0-${{ hashFiles('pixi.lock') }}-${{ github.workspace }}
 
       - name: Install locked build and service environments
-        run: pixi install --locked --all
+        run: pixi run --locked -e ci python scripts/install_ci_environments.py
 
       - name: Save Pixi environments
         if: success() && steps.pixi_cache.outputs.cache-hit != 'true'
@@ -165,10 +165,10 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: .pixi
-          key: pixi-dist-v2-all-${{ runner.os }}-0.81.0-${{ hashFiles('pixi.lock') }}-${{ github.workspace }}
+          key: pixi-dist-v3-no-gpu-${{ runner.os }}-0.81.0-${{ hashFiles('pixi.lock') }}-${{ github.workspace }}
 
       - name: Install locked build and service environments
-        run: pixi install --locked --all
+        run: pixi run --locked -e ci python scripts/install_ci_environments.py
 
       - name: Save Pixi environments
         if: success() && steps.pixi_cache.outputs.cache-hit != 'true'
@@ -246,7 +246,7 @@ jobs:
         run: pixi run --frozen --no-install -e default python scripts/quality/check_cpp_contracts.py --service-index config/service-index.json
 
       - name: Verify relocated release installation
-        run: pixi run --frozen -e ci python scripts/verify_dist.py build/dist/f8studio-windows-x86_64.zip
+        run: pixi run --frozen -e ci python scripts/verify_dist.py build/dist/f8studio-windows-x86_64.zip --skip-gpu-install
 
       - name: Resolve release target
         id: release_target

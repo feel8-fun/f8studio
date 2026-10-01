@@ -10,10 +10,11 @@ import tempfile
 import tomllib
 
 
-def verify_distribution(root: Path) -> None:
+def verify_distribution(root: Path, *, skip_gpu_install: bool = False) -> None:
     manifest_path = root / "pixi.toml"
     manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
     environments = manifest["environments"]
+    subprocess.run(["pixi", "lock", "--check", "--manifest-path", str(manifest_path)], cwd=root, check=True)
     for name, environment in environments.items():
         distributions: list[str] = []
         for feature_name in environment["features"]:
@@ -24,6 +25,9 @@ def verify_distribution(root: Path) -> None:
                     if dependency.get("editable") or not wheel.startswith("wheels/") or not (root / wheel).is_file():
                         raise ValueError(f"Invalid release dependency: {distribution}: {dependency}")
                     distributions.append(distribution)
+        if skip_gpu_install and "onnx" in environment["features"]:
+            print(f"{name}: wheel paths and lock checked; GPU installation/inference not tested", flush=True)
+            continue
         command = ["pixi", "run", "--locked", "--manifest-path", str(manifest_path), "-e", name]
         # Run performs the same locked installation as the launcher, in a fresh prefix.
         code = (
@@ -44,6 +48,12 @@ def verify_distribution(root: Path) -> None:
                 "assert (bundle / 'index.html').is_file(), bundle\n"
             )
         subprocess.run([*command, "python", "-P", "-c", code], cwd=root, check=True)
+    if skip_gpu_install:
+        # The interactive launcher installs every shipped environment, including CUDA.
+        subprocess.run(["pixi", "run", "--locked", "--manifest-path", str(manifest_path),
+                        "-e", "studio-runtime", "studio_launch", "--help"], cwd=root, check=True)
+        print("Full launcher installation skipped because it includes GPU dependencies", flush=True)
+        return
     # Exercise the shipped entrypoint, including its installer and argument forwarding.
     entrypoint = ["cmd.exe", "/d", "/c", "f8studio.cmd"] if os.name == "nt" else [str(root / "f8studio")]
     subprocess.run([*entrypoint, "--help"], cwd=root, check=True)
@@ -53,6 +63,8 @@ def verify_distribution(root: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("archive", type=Path)
+    parser.add_argument("--skip-gpu-install", action="store_true",
+                        help="Check GPU wheel paths/lock without installation; skip full launcher installer")
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="f8-release-install-") as temporary:
         output = Path(temporary)
@@ -60,7 +72,7 @@ def main() -> None:
         roots = list(output.glob("*/pixi.toml"))
         if len(roots) != 1:
             raise ValueError("Expected exactly one release manifest in archive")
-        verify_distribution(roots[0].parent)
+        verify_distribution(roots[0].parent, skip_gpu_install=args.skip_gpu_install)
     print("Relocated release installation passed")
 
 

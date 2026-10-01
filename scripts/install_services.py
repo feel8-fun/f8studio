@@ -16,7 +16,7 @@ import tomllib
 import msgspec
 
 from f8pysdk._specs.builtin_fields import normalize_describe_payload_dict
-from f8pysdk.codec import validate_as
+from f8pysdk.codec import copy_model, validate_as
 from f8pysdk.monitoring import validate_describe_monitor_contract
 from f8pysdk.specs import F8ServiceDescribe, F8ServiceEntry
 from f8pysdk.resource_paths import service_config_root
@@ -114,6 +114,17 @@ def pixi_environment(entry: F8ServiceEntry) -> str | None:
     return environment
 
 
+def description_entry(entry: F8ServiceEntry) -> F8ServiceEntry:
+    environment = pixi_environment(entry)
+    if environment != "onnx":
+        return entry
+    args = list(entry.launch.args or [])
+    args[2] = "onnx-describe"
+    result = copy_model(entry, update={"launch": copy_model(entry.launch, update={"args": args})})
+    pixi_environment(result)  # Validate the description task in its alternate environment too.
+    return result
+
+
 def describe_service(entry: F8ServiceEntry) -> object:
     args = list(entry.launch.args or [])
     if entry.launch.command in {"pixi", "pixi.exe"}:
@@ -151,6 +162,7 @@ def install(index_path: Path, *, refresh: bool, service_classes: set[str],
         entry = indexed_entry(index_path, index, item)
         if entry is None:
             continue
+        entry = description_entry(entry)
         target = (index_path.parent / item.describe).resolve()
         environment = pixi_environment(entry)
         if python_only and environment is None:

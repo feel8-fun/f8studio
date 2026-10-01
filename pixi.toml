@@ -28,11 +28,13 @@ cuda-libraries = "12.*"
 cudnn = ">=9,<10"
 
 [feature.onnx.pypi-dependencies]
-f8pydl = { path = "packages/f8pydl", editable = true }
 onnxruntime-gpu = ">=1.24.2, <2"
 pyyaml = ">=6.0.3, <7"
 
-[feature.onnx.tasks]
+[feature.pydl.pypi-dependencies]
+f8pydl = { path = "packages/f8pydl", editable = true }
+
+[feature.pydl.tasks]
 f8pydl_detector = "python -m f8pydl.main_detector"
 f8pydl_humandetector = "python -m f8pydl.main_humandetector"
 f8pydl_classifier = "python -m f8pydl.main_classifier"
@@ -227,7 +229,7 @@ studio_release_smoke = "python scripts/web_studio/verify_release_install.py"
 # explicit with `-e` for shared runtime tasks.
 default = { features = ["python", "sdk", "engine", "web-studio", "web-studio-dev", "vision", "audio", "test", "debug"], solve-group = "default" }
 studio-runtime = { features = ["python", "sdk", "engine", "web-studio", "vision", "audio", "launcher-runtime"], solve-group = "default" }
-onnx = { features = ["python", "sdk", "onnx", "vision", "launcher-runtime"], solve-group = "onnx" }
+onnx = { features = ["python", "sdk", "pydl", "onnx", "vision", "launcher-runtime"], solve-group = "onnx" }
 mediapipe = { features = ["python", "sdk", "vision", "mediapipe", "launcher-runtime"], solve-group = "mediapipe" }
 doc = { features = ["python", "doc"] }
 cpp = { features = ["cpp"], solve-group = "cpp" }
@@ -235,3 +237,8 @@ ci = { features = ["python", "ci"], solve-group = "ci" }
 web-studio = { features = ["python", "sdk", "web-studio", "web-studio-dev"], solve-group = "web-studio" }
 web-studio-test = { features = ["python", "sdk", "engine", "web-studio", "web-studio-dev", "web-studio-test"], solve-group = "web-studio" }
 web-studio-runtime = { features = ["python", "sdk", "engine"], solve-group = "web-studio" }
+
+# Metadata-only checks deliberately exclude the GPU runtime feature.
+[environments.onnx-describe]
+features = ["python", "sdk", "pydl", "vision"]
+solve-group = "onnx"

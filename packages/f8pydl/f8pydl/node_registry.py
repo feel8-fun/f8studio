@@ -25,10 +25,6 @@ from f8pysdk.registry import Registry, RuntimeNodeRegistry, create_runtime_node_
 
 from .constants import CLASSIFIER_SERVICE_CLASS, DETECTOR_SERVICE_CLASS, DETECTION_SORTER_SERVICE_CLASS, HUMAN_DETECTOR_SERVICE_CLASS
 from .constants import OPTFLOW_SERVICE_CLASS, TCNWAVE_SERVICE_CLASS
-from .detection_sorter_service_node import DetectionSorterServiceNode
-from .optflow_service_node import OnnxOptflowServiceNode
-from .service_node import OnnxVisionServiceNode
-from .tcnwave_service_node import OnnxTcnWaveServiceNode
 
 
 def _classification_item_schema():
@@ -473,6 +469,8 @@ def _tcn_wave_state_fields() -> list[F8StateSpec]:
 
 def _register_classifier(registry: Registry) -> None:
     def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
+        from .service_node import OnnxVisionServiceNode
+
         return OnnxVisionServiceNode(
             node_id=node_id,
             node=node,
@@ -514,6 +512,8 @@ def _register_classifier(registry: Registry) -> None:
 
 def _register_detector(registry: Registry) -> None:
     def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
+        from .service_node import OnnxVisionServiceNode
+
         return OnnxVisionServiceNode(
             node_id=node_id,
             node=node,
@@ -555,6 +555,8 @@ def _register_detector(registry: Registry) -> None:
 
 def _register_human_detector(registry: Registry) -> None:
     def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
+        from .service_node import OnnxVisionServiceNode
+
         return OnnxVisionServiceNode(
             node_id=node_id,
             node=node,
@@ -596,6 +598,8 @@ def _register_human_detector(registry: Registry) -> None:
 
 def _register_optflow(registry: Registry) -> None:
     def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
+        from .optflow_service_node import OnnxOptflowServiceNode
+
         return OnnxOptflowServiceNode(
             node_id=node_id,
             node=node,
@@ -630,6 +634,11 @@ def _register_optflow(registry: Registry) -> None:
 
 
 def _register_detection_sorter(registry: Registry) -> None:
+    def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
+        from .detection_sorter_service_node import DetectionSorterServiceNode
+
+        return DetectionSorterServiceNode(node_id=node_id, node=node, initial_state=initial_state)
+
     registry.register_service(
         F8ServiceSpec(
             schemaVersion=F8ServiceSchemaVersion.f8service_1,
@@ -663,12 +672,14 @@ def _register_detection_sorter(registry: Registry) -> None:
                 ),
             ],
         ),
-        DetectionSorterServiceNode,
+        _factory,
         overwrite=True,
     )
 
 def _register_tcn_wave(registry: Registry) -> None:
     def _factory(node_id: str, node: F8RuntimeNode, initial_state: dict[str, Any]) -> RuntimeNode:
+        from .tcnwave_service_node import OnnxTcnWaveServiceNode
+
         return OnnxTcnWaveServiceNode(
             node_id=node_id,
             node=node,

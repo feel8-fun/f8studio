@@ -41,3 +41,9 @@ Weight YAML notes (`f8onnxModel/1`):
   - pose models: `coco17`
   - non-skeleton models: `none`
 - Unknown protocol strings are allowed and passed through; visualization may fall back to points-only.
+
+## Description checks and GPU runtime
+
+`pixi run -e onnx-describe f8pydl_classifier --describe` generates service metadata without CUDA, cuDNN, or ONNX Runtime. Runtime node imports are deferred until a node is created.
+
+Use the `onnx` Pixi environment for inference; it retains the GPU dependencies. For standalone pip installations, install `f8pydl[gpu]` for ONNX Runtime GPU support and provide the required CUDA/cuDNN runtime separately.

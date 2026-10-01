@@ -67,13 +67,13 @@ CI 的 `setup-pixi` 固定使用 **v0.81.0**，与当前 v7 锁文件及本地�
 Windows 缓存预热只在每周一 UTC 07:00 的定时任务（默认分支）或手动选择 `job_mode=warm-caches` 时运行；普通 `build` 中显示 skipped 是预期行为。预热与普通构建使用相同的依赖准备流程：
 
 1. `setup-pixi` 只安装固定版本的 CLI，禁用它在 job 收尾阶段保存的隐式缓存。
-2. 显式恢复 `.pixi`，使用 `pixi install --locked --all` 安装当前平台的全部环境，成功后立即保存 Pixi 缓存。新增环境只需更新 `pixi.toml` 和锁文件，无需维护 CI 环境列表；文档和测试环境也会安装，因此首次安装与缓存体积会相应增加。
+2. 显式恢复 `.pixi`，运行 `scripts/install_ci_environments.py` 自动安装所有不含 `onnx` GPU feature 的环境，成功后立即保存 Pixi 缓存。新增普通环境会自动纳入；`onnx-describe` 提供无 CUDA/cuDNN/ONNX Runtime 的描述检查环境。缓存键使用新的 `v3-no-gpu` 前缀，不恢复旧的 GPU 大缓存。
 3. 实际刷新全部 Python 服务描述；此时不允许隐式安装环境，绑定或导入错误会在原生编译之前暴露。
 4. 恢复 Conan 缓存，执行 `cpp_bootstrap` 下载/编译第三方依赖，成功后立即保存 `.conan2`。不缓存项目 C++ 编译产物或发行包。
 
 分支和 tag 构建都保存未命中的缓存，后续打包失败不影响已完成的保存步骤。GitHub 缓存按 workflow 运行的 ref 隔离，检出 `git_ref` 不会改变缓存作用域：分支可读取自身和默认分支的缓存，tag 缓存可供同 tag 重跑复用，但其他 tag 无法读取它。需要跨分支/tag 复用时，应在默认分支运行 `warm-caches`。Pixi 缓存键包含格式版本、OS、CLI 版本、锁文件哈希和工作区绝对路径；新增环境会通过锁文件哈希自动产生新键；安装策略或缓存布局变化时需更新键中的版本。Conan 按配方和锁文件哈希匹配，并允许回退到旧依赖缓存。
 
-`install_services` 会在执行任何服务之前验证所有选中 Pixi 服务的显式环境及任务绑定，再集中执行 `pixi install --locked`。描述子进程使用 `--frozen --no-install`，依赖下载不再计入描述超时。CI 提供 `--no-install` 复用已准备环境，`--python-only` 在原生编译前检查 Python 服务；完整发行仍刷新并验证全部服务。失败信息包含服务类名、命令、工作目录及子进程 stdout/stderr，并保留异常链。描述全部验证通过后才写入文件。
+`install_services` 会在执行任何服务之前验证所有选中 Pixi 服务的显式环境及任务绑定，再集中执行 `pixi install --locked`。ONNX 服务的描述命令显式映射到 `onnx-describe`，服务启动声明仍指向 `onnx`。描述子进程使用 `--frozen --no-install`，依赖下载不再计入描述超时。CI 提供 `--no-install` 复用已准备环境，`--python-only` 在原生编译前检查 Python 服务；完整发行仍刷新并验证全部服务。失败信息包含服务类名、命令、工作目录及子进程 stdout/stderr，并保留异常链。描述全部验证通过后才写入文件。
 
 当前发行不要求用户克隆仓库。开发者或 CI 执行：
 
@@ -125,3 +125,5 @@ pixi run --locked -e ci python scripts/verify_dist.py build/dist/f8studio-window
 **720 分钟是仓库 Environment 设置，不能仅靠 YAML 设置。必须先配置上述环境，否则自动创建的同名环境没有等待规则，检查将立即运行。** 原生方案无需等待工作流合入默认分支才能启动计时。公开仓库可使用 wait timer；私有仓库须确认 GitHub 套餐是否支持。
 
 参考：[原生 concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)、[Environment wait timer](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments#wait-timer)。
+
+Windows CI 的迁移安装验证使用 `verify_dist.py --skip-gpu-install`：检查全部发行 wheel 路径和锁文件，但不安装 GPU 环境，也不执行会安装全部环境的启动器安装流程；仍验证非 GPU 环境和 Studio 入口。需要完整安装验证时去掉此参数。CI 描述检查不代表 GPU 推理已验证。
