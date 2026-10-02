@@ -376,6 +376,10 @@ def create_app(
         payload = await _decode_body(request, ExtensionImportRequest)
         return _json_value(await studio.extensions.import_package(payload))
 
+    @app.get('/api/extensions/{extension_id}/detail')
+    async def extension_detail(extension_id: str) -> F8JsonValue:
+        return _json_value(await asyncio.to_thread(studio.extensions.detail, extension_id))
+
     @app.get('/api/extensions/{extension_id}/plan')
     async def extension_install_plan(extension_id: str) -> F8JsonValue:
         return _json_value(await asyncio.to_thread(studio.extensions.install_plan, extension_id))

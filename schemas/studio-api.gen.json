@@ -4644,6 +4644,72 @@
       "title": "ExchangeService",
       "type": "object"
     },
+    "ExtensionDetail": {
+      "properties": {
+        "extensionId": {
+          "type": "string"
+        },
+        "services": {
+          "items": {
+            "$ref": "#/$defs/ExtensionServiceDetail"
+          },
+          "type": "array"
+        },
+        "skills": {
+          "items": {
+            "$ref": "#/$defs/ExtensionSkillDetail"
+          },
+          "type": "array"
+        },
+        "tools": {
+          "items": {
+            "$ref": "#/$defs/ExtensionTool"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "extensionId",
+        "services",
+        "skills",
+        "tools"
+      ],
+      "title": "ExtensionDetail",
+      "type": "object"
+    },
+    "ExtensionDetailInput": {
+      "properties": {
+        "extensionId": {
+          "type": "string"
+        },
+        "services": {
+          "items": {
+            "$ref": "#/$defs/ExtensionServiceDetailInput"
+          },
+          "type": "array"
+        },
+        "skills": {
+          "items": {
+            "$ref": "#/$defs/ExtensionSkillDetailInput"
+          },
+          "type": "array"
+        },
+        "tools": {
+          "items": {
+            "$ref": "#/$defs/ExtensionToolInput"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "extensionId",
+        "services",
+        "tools",
+        "skills"
+      ],
+      "title": "ExtensionDetail",
+      "type": "object"
+    },
     "ExtensionImportRequest": {
       "additionalProperties": false,
       "properties": {
@@ -4772,6 +4838,84 @@
         "requiresNetwork"
       ],
       "title": "ExtensionInstallPlan",
+      "type": "object"
+    },
+    "ExtensionServiceDetail": {
+      "properties": {
+        "describe": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/F8ServiceDescribe"
+            }
+          ]
+        },
+        "serviceClass": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "describe",
+        "serviceClass"
+      ],
+      "title": "ExtensionServiceDetail",
+      "type": "object"
+    },
+    "ExtensionServiceDetailInput": {
+      "properties": {
+        "describe": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/F8ServiceDescribeInput"
+            }
+          ]
+        },
+        "serviceClass": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "serviceClass",
+        "describe"
+      ],
+      "title": "ExtensionServiceDetail",
+      "type": "object"
+    },
+    "ExtensionSkillDetail": {
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "skillId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "content",
+        "skillId"
+      ],
+      "title": "ExtensionSkillDetail",
+      "type": "object"
+    },
+    "ExtensionSkillDetailInput": {
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "skillId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "skillId",
+        "content"
+      ],
+      "title": "ExtensionSkillDetail",
       "type": "object"
     },
     "ExtensionStatus": {
@@ -4985,6 +5129,86 @@
       "title": "ExtensionToggleRequest",
       "type": "object"
     },
+    "ExtensionTool": {
+      "additionalProperties": false,
+      "properties": {
+        "allowConcurrent": {
+          "default": false,
+          "type": "boolean"
+        },
+        "args": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "command": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "fields": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExtensionToolField"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "platforms": {
+          "default": [],
+          "items": {
+            "enum": [
+              "darwin",
+              "linux",
+              "win32"
+            ]
+          },
+          "type": "array"
+        },
+        "requiresConfirmation": {
+          "default": true,
+          "type": "boolean"
+        },
+        "timeoutSeconds": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 300
+        },
+        "toolId": {
+          "type": "string"
+        },
+        "workdir": {
+          "default": "${F8_PACKAGE_ROOT}",
+          "type": "string"
+        }
+      },
+      "required": [
+        "allowConcurrent",
+        "args",
+        "command",
+        "description",
+        "fields",
+        "name",
+        "platforms",
+        "requiresConfirmation",
+        "timeoutSeconds",
+        "toolId",
+        "workdir"
+      ],
+      "title": "ExtensionTool",
+      "type": "object"
+    },
     "ExtensionToolField": {
       "additionalProperties": false,
       "properties": {
@@ -5115,6 +5339,79 @@
         "label"
       ],
       "title": "ExtensionToolField",
+      "type": "object"
+    },
+    "ExtensionToolInput": {
+      "additionalProperties": false,
+      "properties": {
+        "allowConcurrent": {
+          "default": false,
+          "type": "boolean"
+        },
+        "args": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "command": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "fields": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExtensionToolFieldInput"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "platforms": {
+          "default": [],
+          "items": {
+            "enum": [
+              "darwin",
+              "linux",
+              "win32"
+            ]
+          },
+          "type": "array"
+        },
+        "requiresConfirmation": {
+          "default": true,
+          "type": "boolean"
+        },
+        "timeoutSeconds": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 300
+        },
+        "toolId": {
+          "type": "string"
+        },
+        "workdir": {
+          "default": "${F8_PACKAGE_ROOT}",
+          "type": "string"
+        }
+      },
+      "required": [
+        "toolId",
+        "name",
+        "description",
+        "command"
+      ],
+      "title": "ExtensionTool",
       "type": "object"
     },
     "F8ActivateRequest": {
@@ -20063,6 +20360,9 @@
       "type": "array"
     },
     {
+      "$ref": "#/$defs/ExtensionDetail"
+    },
+    {
       "$ref": "#/$defs/ExtensionInstallPlan"
     },
     {
@@ -20919,6 +21219,9 @@
         "$ref": "#/$defs/ExtensionStatusInput"
       },
       "type": "array"
+    },
+    {
+      "$ref": "#/$defs/ExtensionDetailInput"
     },
     {
       "$ref": "#/$defs/ExtensionInstallPlanInput"

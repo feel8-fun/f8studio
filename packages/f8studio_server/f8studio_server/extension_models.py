@@ -8,8 +8,28 @@ from f8pysdk.extension_spec import (
     ExtensionCatalog as ExtensionCatalog,
     ExtensionManifest as ExtensionManifest,
     ExtensionRuntime as ExtensionRuntime,
+    ExtensionTool,
     RuntimeKind as RuntimeKind,
 )
+
+from f8pysdk.specs import F8ServiceDescribe
+
+
+class ExtensionServiceDetail(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
+    service_class: str
+    describe: F8ServiceDescribe | None
+
+
+class ExtensionSkillDetail(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
+    skill_id: str
+    content: str
+
+
+class ExtensionDetail(msgspec.Struct, frozen=True, kw_only=True, rename="camel"):
+    extension_id: str
+    services: tuple[ExtensionServiceDetail, ...]
+    tools: tuple[ExtensionTool, ...]
+    skills: tuple[ExtensionSkillDetail, ...]
 
 
 class PresetEnvironmentStatus(msgspec.Struct, frozen=True, kw_only=True, rename='camel'):

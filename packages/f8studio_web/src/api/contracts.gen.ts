@@ -883,6 +883,20 @@ export type ExchangeServiceInput = {
   readonly "enabled"?: boolean;
 };
 
+export type ExtensionDetail = {
+  readonly "extensionId": string;
+  readonly "services": ReadonlyArray<ExtensionServiceDetail>;
+  readonly "tools": ReadonlyArray<ExtensionTool>;
+  readonly "skills": ReadonlyArray<ExtensionSkillDetail>;
+};
+
+export type ExtensionDetailInput = {
+  readonly "extensionId": string;
+  readonly "services": ReadonlyArray<ExtensionServiceDetailInput>;
+  readonly "tools": ReadonlyArray<ExtensionToolInput>;
+  readonly "skills": ReadonlyArray<ExtensionSkillDetailInput>;
+};
+
 export type ExtensionImportRequest = {
   readonly "url": string;
   readonly "sha256": string;
@@ -907,6 +921,26 @@ export type ExtensionInstallPlanInput = {
   readonly "runtimeKind": "bundled" | "native" | "pixi" | "shared" | "workspace";
   readonly "action": "bundled" | "create" | "none" | "reuse" | "shared" | "workspace";
   readonly "requiresNetwork": boolean;
+};
+
+export type ExtensionServiceDetail = {
+  readonly "serviceClass": string;
+  readonly "describe": null | F8ServiceDescribe;
+};
+
+export type ExtensionServiceDetailInput = {
+  readonly "serviceClass": string;
+  readonly "describe": null | F8ServiceDescribeInput;
+};
+
+export type ExtensionSkillDetail = {
+  readonly "skillId": string;
+  readonly "content": string;
+};
+
+export type ExtensionSkillDetailInput = {
+  readonly "skillId": string;
+  readonly "content": string;
 };
 
 export type ExtensionStatus = {
@@ -949,6 +983,20 @@ export type ExtensionToggleRequestInput = {
   readonly "enabled": boolean;
 };
 
+export type ExtensionTool = {
+  readonly "toolId": string;
+  readonly "name": string;
+  readonly "description": string;
+  readonly "command": string;
+  readonly "args": ReadonlyArray<string>;
+  readonly "workdir": string;
+  readonly "fields": ReadonlyArray<ExtensionToolField>;
+  readonly "platforms": ReadonlyArray<"darwin" | "linux" | "win32">;
+  readonly "timeoutSeconds": number | null;
+  readonly "requiresConfirmation": boolean;
+  readonly "allowConcurrent": boolean;
+};
+
 export type ExtensionToolField = {
   readonly "name": string;
   readonly "label": string;
@@ -965,6 +1013,20 @@ export type ExtensionToolFieldInput = {
   readonly "required"?: boolean;
   readonly "default"?: JsonValue;
   readonly "choices"?: ReadonlyArray<string>;
+};
+
+export type ExtensionToolInput = {
+  readonly "toolId": string;
+  readonly "name": string;
+  readonly "description": string;
+  readonly "command": string;
+  readonly "args"?: ReadonlyArray<string>;
+  readonly "workdir"?: string;
+  readonly "fields"?: ReadonlyArray<ExtensionToolFieldInput>;
+  readonly "platforms"?: ReadonlyArray<"darwin" | "linux" | "win32">;
+  readonly "timeoutSeconds"?: number | null;
+  readonly "requiresConfirmation"?: boolean;
+  readonly "allowConcurrent"?: boolean;
 };
 
 export type F8ActivateRequest = {
@@ -3871,6 +3933,7 @@ export interface ApiResponses {
   readonly "POST /api/catalog/refresh": CatalogSnapshot;
   readonly "GET /api/extensions": ReadonlyArray<ExtensionStatus>;
   readonly "POST /api/extensions/import": ReadonlyArray<ExtensionStatus>;
+  readonly "GET /api/extensions/{extension_id}/detail": ExtensionDetail;
   readonly "GET /api/extensions/{extension_id}/plan": ExtensionInstallPlan;
   readonly "GET /api/environments": ReadonlyArray<EnvironmentStatus>;
   readonly "GET /api/environments/presets": ReadonlyArray<PresetEnvironmentStatus>;

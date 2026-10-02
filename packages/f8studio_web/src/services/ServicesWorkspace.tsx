@@ -1,14 +1,29 @@
-import { CheckCircle2, Download, PackagePlus, RefreshCw, Search, Trash2, X, XCircle } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ArrowLeft, ArrowRight, Download, PackagePlus, RefreshCw, Search, Trash2, X, XCircle } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { cancelExtensionInstall, fetchCatalog, fetchEnvironments, fetchExtensions,
+import { cancelExtensionInstall, fetchEnvironments, fetchExtensions,
   importExtensionPackage, installExtension, setExtensionEnabled, uninstallExtension } from '../api/client';
-import type { CatalogSnapshot, EnvironmentStatus, ExtensionStatus } from '../api/contracts';
+import type { EnvironmentStatus, ExtensionStatus } from '../api/contracts';
+
+import { ExtensionDetails, ExtensionLink, extensionHref, readExtensionLocation, type ExtensionLocation } from './ExtensionDetails';
 
 export function ServicesWorkspace() {
-  const [catalog, setCatalog] = useState<CatalogSnapshot | null>(null);
   const [extensions, setExtensions] = useState<readonly ExtensionStatus[]>([]);
   const [environments, setEnvironments] = useState<readonly EnvironmentStatus[]>([]);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [detailRevision, setDetailRevision] = useState(0);
+  const [location, setLocation] = useState(readExtensionLocation);
+  const [loaded, setLoaded] = useState(false);
+  const navigate = useCallback((next: ExtensionLocation | null) => {
+    window.history.pushState(null, '', extensionHref(next));
+    setLocation(next);
+    if (bodyRef.current) bodyRef.current.scrollTop = 0;
+  }, []);
+  useEffect(() => {
+    const onPopState = () => setLocation(readExtensionLocation());
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
   const [query, setQuery] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -17,16 +32,16 @@ export function ServicesWorkspace() {
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
-      const [nextCatalog, nextExtensions, nextEnvironments] = await Promise.all([
-        fetchCatalog(signal), fetchExtensions(signal), fetchEnvironments(signal),
+      const [nextExtensions, nextEnvironments] = await Promise.all([
+        fetchExtensions(signal), fetchEnvironments(signal),
       ]);
       if (signal?.aborted) return;
-      setCatalog(nextCatalog);
       setExtensions(nextExtensions);
+      setLoaded(true);
       setEnvironments(nextEnvironments);
       setError('');
     } catch (reason: unknown) {
-      if (!signal?.aborted) setError(reason instanceof Error ? reason.message : 'Unable to load services');
+      if (!signal?.aborted) setError(reason instanceof Error ? reason.message : 'Unable to load extensions');
     }
   }, []);
 
@@ -80,8 +95,8 @@ export function ServicesWorkspace() {
     return act(() => setExtensionEnabled(extension.extensionId, enabled), true, extension);
   }, [act]);
 
-  const services = useMemo(() => (catalog?.services ?? []).filter((service) =>
-    `${service.label} ${service.serviceClass}`.toLowerCase().includes(query.trim().toLowerCase())), [catalog, query]);
+  const filteredExtensions = useMemo(() => extensions.filter((extension) =>
+    `${extension.name} ${extension.extensionId} ${extension.description}`.toLowerCase().includes(query.trim().toLowerCase())), [extensions, query]);
   const locked = busy || installing;
 
   const importPackage = useCallback(async () => {
@@ -98,38 +113,46 @@ export function ServicesWorkspace() {
     }
   }, [packageUrl, packageHash]);
 
+  const selectedExtension = extensions.find((extension) => extension.extensionId === location?.extensionId);
+  const extensionCard = (extension: ExtensionStatus, showDetailsLink: boolean) => (
+    <div className="extension-row" key={extension.extensionId}>
+      <div className="extension-heading"><PackagePlus size={17} /><strong>{showDetailsLink ? <ExtensionLink location={{ extensionId: extension.extensionId }} onNavigate={navigate}>{extension.name}</ExtensionLink> : extension.name}</strong><span className={`extension-state extension-${extension.state}`}>{extension.state}</span></div>
+      <div className="extension-classes">v{extension.version} · {extension.serviceClasses.length} services · {extension.toolIds?.length ?? 0} tools · {extension.skillIds?.length ?? 0} skills</div>
+      <div className="extension-detail">{extension.description}</div>
+      {extension.preinstalled && <div className="extension-detail">Included with this distribution.</div>}
+      {extension.runtimeKind === 'shared' && <div className="extension-detail">Reuses an installed official environment. No additional environment download.</div>}
+      {(extension.state === 'available' || extension.state === 'failed') && extension.runtimeKind === 'pixi' && <div className="extension-detail">Runtime dependencies may need to be downloaded. Shared runtimes are reused.</div>}
+      {extension.detail && <div className={extension.state === 'failed' ? 'extension-error' : 'extension-detail'} role="status">{extension.state === 'failed' && <XCircle size={14} />}{extension.detail}</div>}
+      {(extension.state === 'available' || extension.state === 'failed') && <button className="command-button primary" type="button" disabled={locked} aria-label={`Install ${extension.name}`} onClick={() => void act(() => installExtension(extension.extensionId), false)}><Download size={15} />{extension.state === 'failed' ? 'Retry install' : 'Install'}</button>}
+      {extension.state === 'installing' && <button className="command-button" type="button" disabled={busy} aria-label={`Cancel ${extension.name} installation`} onClick={() => void act(() => cancelExtensionInstall(extension.extensionId), true)}><X size={15} />Cancel</button>}
+      {(extension.state === 'installed' || extension.state === 'disabled') && <div className="extension-actions">
+        <label className="extension-toggle"><input type="checkbox" aria-label={`Enable ${extension.name}`} checked={extension.state === 'installed'} disabled={locked} onChange={(event) => void toggle(extension, event.target.checked)} />Enabled</label>
+        <button className="command-button" type="button" disabled={locked} aria-label={`Uninstall ${extension.name}`} onClick={() => void act(() => uninstallExtension(extension.extensionId), true)}><Trash2 size={15} />Uninstall</button>
+      </div>}
+      {showDetailsLink && <ExtensionLink className="extension-details-link" location={{ extensionId: extension.extensionId }} onNavigate={navigate}>View details<ArrowRight size={14} /></ExtensionLink>}
+    </div>
+  );
+
   return <div className="services-workspace">
     <div className="services-toolbar">
-      <label className="services-search"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search services" aria-label="Search services" /></label>
-      <span>{catalog?.services.length ?? 0} services</span>
-      <button className="icon-button" type="button" title="Refresh services" aria-label="Refresh services" onClick={() => void load()}><RefreshCw size={16} /></button>
+      {location ? <ExtensionLink className="extension-back" location={null} onNavigate={navigate}><ArrowLeft size={15} />All extensions</ExtensionLink> : <label className="services-search"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search extensions" aria-label="Search extensions" /></label>}
+      <span>{extensions.length} extensions</span>
+      <button className="icon-button" type="button" title="Refresh extensions" aria-label="Refresh extensions" onClick={() => { setDetailRevision((value) => value + 1); void load(); }}><RefreshCw size={16} /></button>
     </div>
     {error && <div className="services-error" role="alert">{error}</div>}
-    <div className="services-body">
-      <section className="services-list" aria-label="Enabled services">
-        <header><h2>Enabled services</h2><span>Class</span></header>
-        {services.map((service) => <div className="services-row" key={service.serviceClass}>
-          <CheckCircle2 size={15} /><strong>{service.label}</strong><code>{service.serviceClass}</code>
-        </div>)}
-        {catalog !== null && services.length === 0 && <div className="services-empty">No matching services</div>}
-      </section>
-      <section className="services-extensions" aria-label="Extensions">
+    <div className="services-body" ref={bodyRef}>
+      {location ? <section className="services-extensions extension-detail-page" aria-label="Extension details">
+        {selectedExtension ? <>
+          {extensionCard(selectedExtension, false)}
+          <p className="extension-lifecycle-note">Installation and enabling apply to the entire extension, including its services, tools and skills.</p>
+          <ExtensionDetails key={`${selectedExtension.extensionId}/${selectedExtension.version}`} location={location} onNavigate={navigate} refreshRevision={detailRevision} />
+        </> : <div className="services-empty">{loaded ? 'Extension not found.' : 'Loading extension…'}</div>}
+      </section> : <section className="services-extensions" aria-label="Extensions">
         <header><h2>Extensions</h2></header>
-        {extensions.map((extension) => <div className="extension-row" key={extension.extensionId}>
-          <div className="extension-heading"><PackagePlus size={17} /><strong>{extension.name}</strong><span className={`extension-state extension-${extension.state}`}>{extension.state}</span></div>
-          <div className="extension-classes">v{extension.version} · {extension.serviceClasses.length} services · {extension.toolIds?.length ?? 0} tools · {extension.skillIds?.length ?? 0} skills</div>
-          <div className="extension-detail">{extension.description}</div>
-          {extension.preinstalled && <div className="extension-detail">Included with this distribution.</div>}
-          {extension.runtimeKind === 'shared' && <div className="extension-detail">Reuses an installed official environment. No additional environment download.</div>}
-          {(extension.state === 'available' || extension.state === 'failed') && extension.runtimeKind === 'pixi' && <div className="extension-detail">Runtime dependencies may need to be downloaded. Shared runtimes are reused.</div>}
-          {extension.detail && <div className={extension.state === 'failed' ? 'extension-error' : 'extension-detail'} role="status">{extension.state === 'failed' && <XCircle size={14} />}{extension.detail}</div>}
-          {(extension.state === 'available' || extension.state === 'failed') && <button className="command-button primary" type="button" disabled={locked} aria-label={`Install ${extension.name}`} onClick={() => void act(() => installExtension(extension.extensionId), false)}><Download size={15} />{extension.state === 'failed' ? 'Retry install' : 'Install'}</button>}
-          {extension.state === 'installing' && <button className="command-button" type="button" disabled={busy} aria-label={`Cancel ${extension.name} installation`} onClick={() => void act(() => cancelExtensionInstall(extension.extensionId), true)}><X size={15} />Cancel</button>}
-          {(extension.state === 'installed' || extension.state === 'disabled') && <div className="extension-actions">
-            <label className="extension-toggle"><input type="checkbox" aria-label={`Enable ${extension.name}`} checked={extension.state === 'installed'} disabled={locked} onChange={(event) => void toggle(extension, event.target.checked)} />Enabled</label>
-            <button className="command-button" type="button" disabled={locked} aria-label={`Uninstall ${extension.name}`} onClick={() => void act(() => uninstallExtension(extension.extensionId), true)}><Trash2 size={15} />Uninstall</button>
-          </div>}
-        </div>)}
+        <div className="extension-grid">
+        {filteredExtensions.map((extension) => extensionCard(extension, true))}
+        </div>
+        {extensions.length > 0 && filteredExtensions.length === 0 && <div className="services-empty">No matching extensions</div>}
         {extensions.length === 0 && <div className="services-empty">No extension catalog is available in this build.</div>}
         <form className="extension-import" onSubmit={(event) => { event.preventDefault(); void importPackage(); }}>
           <h3>Add extension package</h3>
@@ -145,7 +168,7 @@ export function ServicesWorkspace() {
             {' · '}{environment.ready ? 'ready' : 'not ready'}
           </div>)}
         </div>}
-      </section>
+      </section>}
     </div>
   </div>;
 }

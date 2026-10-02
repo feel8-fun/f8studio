@@ -18,6 +18,7 @@ from packaging.requirements import Requirement
 from packaging.specifiers import SpecifierSet
 import yaml
 
+from f8pysdk._specs.builtin_fields import normalize_describe_payload_dict
 from f8pysdk.extension_capabilities import validate_capabilities
 from f8pysdk.extension_spec import ExtensionTool
 from f8pysdk.service_paths import ServicePaths
@@ -36,6 +37,7 @@ from .environments import EnvironmentManager
 from .extension_artifacts import prepare_artifact
 from .errors import ConflictError, InvalidRequestError, NotFoundError
 from .extension_models import (
+    ExtensionDetail, ExtensionServiceDetail, ExtensionSkillDetail,
     EnvironmentStatus, ExtensionCatalog, ExtensionImportRequest, ExtensionInstallPlan, ExtensionManifest,
     ExtensionRecord, ExtensionStatus, PresetEnvironmentStatus,
 )
@@ -208,6 +210,32 @@ class ExtensionManager:
         if manifest is None:
             raise NotFoundError(f'Unknown extension: {extension_id}')
         return manifest
+
+    def detail(self, extension_id: str) -> ExtensionDetail:
+        """Read package metadata without activating or launching its capabilities."""
+        with self._lock:
+            manifest = self._manifest(extension_id)
+            payload = self._payloads[extension_id]
+            services: list[ExtensionServiceDetail] = []
+            for service_class in manifest.service_classes:
+                item = self._services[service_class]
+                path = index_paths(payload.index_path, payload.index, item).resolve(
+                    item.describe, relative_to=payload.index_path.parent,
+                )
+                describe: F8ServiceDescribe | None = None
+                if path.is_file():
+                    raw = msgspec.json.decode(path.read_bytes(), type=dict[str, object])
+                    describe = validate_as(F8ServiceDescribe, normalize_describe_payload_dict(raw))
+                    if describe.service.serviceClass != service_class:
+                        raise InvalidRequestError(f'Service description class mismatch: {service_class}')
+                services.append(ExtensionServiceDetail(service_class=service_class, describe=describe))
+            paths = ServicePaths.for_index(payload.index_path)
+            skills = tuple(ExtensionSkillDetail(
+                skill_id=skill.skill_id,
+                content=paths.package_path(skill.path, relative_to=payload.root).read_text(encoding='utf-8'),
+            ) for skill in manifest.skills)
+            return ExtensionDetail(extension_id=extension_id, services=tuple(services),
+                                   tools=manifest.tools, skills=skills)
 
     def _supported(self, manifest: ExtensionManifest) -> bool:
         if any(tool.platforms and sys.platform not in tool.platforms for tool in manifest.tools):

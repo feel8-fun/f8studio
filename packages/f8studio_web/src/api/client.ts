@@ -321,6 +321,13 @@ export async function fetchExtensions(signal?: AbortSignal): Promise<readonly Ex
   return body;
 }
 
+export async function fetchExtensionDetail(extensionId: string, signal?: AbortSignal): Promise<Wire.ExtensionDetail> {
+  const body = await requestJson(`/api/extensions/${encodeURIComponent(extensionId)}/detail`, { signal });
+  if (!isObject(body) || body.extensionId !== extensionId || !Array.isArray(body.services) ||
+      !Array.isArray(body.tools) || !Array.isArray(body.skills)) throw new Error('Invalid extension detail');
+  return body as unknown as Wire.ExtensionDetail;
+}
+
 export async function importExtensionPackage(url: string, sha256: string): Promise<readonly ExtensionStatus[]> {
   const body = await requestJson('/api/extensions/import', jsonRequest('POST /api/extensions/import', { url, sha256 }));
   if (!Array.isArray(body) || !body.every(isExtensionStatus)) throw new Error('Invalid extension catalog');

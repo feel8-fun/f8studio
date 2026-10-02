@@ -19,7 +19,7 @@ from .agents.provider_probe import ProviderProbeResult
 from .catalog import CatalogSnapshot
 from .events import EventEnvelope
 from .extension_models import (
-    EnvironmentStatus, ExtensionImportRequest, ExtensionInstallPlan, ExtensionStatus, ExtensionToggleRequest,
+    ExtensionDetail, EnvironmentStatus, ExtensionImportRequest, ExtensionInstallPlan, ExtensionStatus, ExtensionToggleRequest,
     PresetEnvironmentStatus,
 )
 from .processes import ManagedProcessResult
@@ -101,6 +101,7 @@ ROUTES = (
     RouteContract("post", "/api/catalog/refresh", None, CatalogSnapshot, 200),
     RouteContract("get", "/api/extensions", None, tuple[ExtensionStatus, ...], 200),
     RouteContract("post", "/api/extensions/import", ExtensionImportRequest, tuple[ExtensionStatus, ...], 200),
+    RouteContract("get", "/api/extensions/{extension_id}/detail", None, ExtensionDetail, 200),
     RouteContract("get", "/api/extensions/{extension_id}/plan", None, ExtensionInstallPlan, 200),
     RouteContract("get", "/api/environments", None, tuple[EnvironmentStatus, ...], 200),
     RouteContract("get", "/api/environments/presets", None, tuple[PresetEnvironmentStatus, ...], 200),

@@ -610,12 +610,16 @@ def test_generic_extension_api_and_plans(tmp_path: Path) -> None:
             assert patched.status_code == 200, patched.text
             saved_project = (await client.get('/api/projects/keep')).json()
             assert (await client.get('/api/extensions/alpha/plan')).json()['action'] == 'none'
+            detail = (await client.get('/api/extensions/alpha/detail')).json()
+            assert detail['extensionId'] == 'alpha'
+            assert detail['services'][0]['describe']['service']['serviceClass'] == 'test.alpha'
             assert (await client.get('/api/environments')).json() == []
             assert (await client.get('/api/environments/presets')).json() == [{'environment': 'shared', 'ready': False}]
             assert (await client.put('/api/extensions/beta/enabled', json={'enabled': False})).json()['state'] == 'disabled'
             assert (await client.delete('/api/extensions/beta')).json()['state'] == 'available'
             assert (await client.get('/api/projects/keep')).json() == saved_project
             assert (await client.get('/api/extensions/missing/plan')).status_code == 404
+            assert (await client.get('/api/extensions/missing/detail')).status_code == 404
             assert (await client.post('/api/extensions/missing/install')).status_code == 404
             assert (await client.put('/api/extensions/alpha/enabled', json={})).status_code == 422
             assert (await client.post('/api/extensions/import', json={'url': 'http://insecure.example/ext.zip', 'sha256': 'a' * 64})).status_code == 422
@@ -837,3 +841,17 @@ def test_wrong_launch_environment_is_rejected_before_expensive_install(tmp_path:
 
     asyncio.run(exercise())
     assert manager.status('alpha').state == 'available'
+
+
+def test_extension_detail_previews_without_installing_and_reports_missing_descriptions(tmp_path: Path) -> None:
+    manager, source = _fixture(tmp_path)
+    detail = manager.detail('alpha')
+    assert detail.services[0].describe is not None
+    assert detail.services[0].describe.service.serviceClass == 'test.alpha'
+    assert manager.status('alpha').state == 'available'
+    assert manager.active_indexes() == ()
+    (source / 'alpha.json').unlink()
+    assert manager.detail('alpha').services[0].describe is None
+    (source / 'alpha.json').write_text('{"service":{"serviceClass":"wrong.class","label":"Wrong"}}')
+    with pytest.raises(InvalidRequestError, match='class mismatch'):
+        manager.detail('alpha')

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { ServicesWorkspace } from './ServicesWorkspace';
 
 const api = vi.hoisted(() => ({
-  cancelExtensionInstall: vi.fn(), fetchCatalog: vi.fn(), fetchExtensions: vi.fn(), fetchEnvironments: vi.fn(),
+  fetchExtensionDetail: vi.fn(), cancelExtensionInstall: vi.fn(), fetchExtensions: vi.fn(), fetchEnvironments: vi.fn(),
   installExtension: vi.fn(), setExtensionEnabled: vi.fn(), uninstallExtension: vi.fn(),
   importExtensionPackage: vi.fn(),
 }));
@@ -18,7 +18,7 @@ const pose = { extensionId: 'mediapipe', name: 'MediaPipe Pose', version: '1.0.0
   environmentId: null, preinstalled: false };
 
 beforeEach(() => {
-  api.fetchCatalog.mockResolvedValue({ services: [{ serviceClass: 'f8.cvkit.tracking', label: 'Tracking' }], operators: [] });
+  window.history.replaceState(null, "", "/?view=services");
   api.fetchEnvironments.mockResolvedValue([]);
   api.fetchExtensions.mockResolvedValue([vision, pose]);
 });
@@ -27,7 +27,7 @@ afterEach(() => { cleanup(); vi.resetAllMocks(); });
 test('installs a generic extension without dropping the other cards', async () => {
   api.installExtension.mockResolvedValue({ ...pose, state: 'installing', detail: 'Preparing pose runtime' });
   render(<ServicesWorkspace />);
-  expect(await screen.findByText('Tracking')).toBeInTheDocument();
+  expect(await screen.findByText('MediaPipe Pose')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Install MediaPipe Pose' }));
   expect(await screen.findByText('Preparing pose runtime')).toBeInTheDocument();
   expect(screen.getByText('Computer Vision')).toBeInTheDocument();
@@ -100,7 +100,7 @@ test('explains shared-runtime installation without an environment download', asy
   expect(api.installExtension).toHaveBeenCalledWith('mediapipe');
 });
 
-test('polls extension progress and refreshes the catalog only after installation finishes', async () => {
+test('polls extension progress and refreshes runtimes only after installation finishes', async () => {
   vi.useFakeTimers();
   try {
     api.fetchExtensions.mockResolvedValueOnce([vision, { ...pose, state: 'installing' }])
@@ -112,13 +112,91 @@ test('polls extension progress and refreshes the catalog only after installation
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     expect(screen.getByText('Checking dependencies')).toBeInTheDocument();
     expect(api.fetchExtensions).toHaveBeenCalledTimes(2);
-    expect(api.fetchCatalog).toHaveBeenCalledTimes(1);
     expect(api.fetchEnvironments).toHaveBeenCalledTimes(1);
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     expect(screen.queryByText('installing')).not.toBeInTheDocument();
-    expect(api.fetchCatalog).toHaveBeenCalledTimes(2);
     expect(api.fetchEnvironments).toHaveBeenCalledTimes(2);
   } finally {
     vi.useRealTimers();
   }
+});
+
+test('searches extensions while keeping package installation available', async () => {
+  render(<ServicesWorkspace />);
+  await screen.findByText('Computer Vision');
+  expect(screen.queryByRole('region', { name: 'Enabled services' })).not.toBeInTheDocument();
+  expect(screen.getByText('2 extensions')).toBeInTheDocument();
+  fireEvent.change(screen.getByRole('textbox', { name: 'Search extensions' }), { target: { value: 'mediapipe' } });
+  expect(screen.getByText('MediaPipe Pose')).toBeInTheDocument();
+  expect(screen.queryByText('Computer Vision')).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Extension package URL')).toBeInTheDocument();
+  fireEvent.change(screen.getByRole('textbox', { name: 'Search extensions' }), { target: { value: 'missing' } });
+  expect(screen.getByText('No matching extensions')).toBeInTheDocument();
+});
+
+const visionDetail = { extensionId: 'cvkit', services: [{ serviceClass: 'f8.cvkit.tracking', describe: {
+  service: { serviceClass: 'f8.cvkit.tracking', label: 'Tracking', description: 'Track image targets.',
+    stateFields: [{ name: 'threshold', valueSchema: { type: 'number' }, access: 'rw', description: 'Detection threshold' }],
+    dataInPorts: [], dataOutPorts: [], commands: [] }, operators: [],
+} }], tools: [{ toolId: 'inspect', name: 'Inspect target', description: 'Inspect a selected target.',
+  timeoutSeconds: null, requiresConfirmation: true, allowConcurrent: true,
+  fields: [{ name: 'target', label: 'Target path', kind: 'string', required: true }] }],
+  skills: [{ skillId: 'workflow', content: '# Workflow\nInspect the target before running the tool.' }] };
+
+test('opens extension contents and service, tool and skill details with package controls', async () => {
+  api.fetchExtensionDetail.mockResolvedValue(visionDetail);
+  render(<ServicesWorkspace />);
+  fireEvent.click(await screen.findByRole('link', { name: 'Computer Vision' }));
+  expect(await screen.findByRole('link', { name: /Tracking/ })).toBeInTheDocument();
+  expect(screen.getByRole('checkbox', { name: 'Enable Computer Vision' })).toBeChecked();
+  expect(window.location.search).toContain('extension=cvkit');
+  fireEvent.click(screen.getByRole('link', { name: /Tracking/ }));
+  const service = await screen.findByRole('article', { name: 'service details' });
+  expect(within(service).getByText('Detection threshold')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Uninstall Computer Vision' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('link', { name: 'Back to extension contents' }));
+  fireEvent.click(screen.getByRole('link', { name: /Inspect target/ }));
+  const tool = await screen.findByRole('article', { name: 'tool details' });
+  expect(within(tool).getByText('Runs until stopped')).toBeInTheDocument();
+  expect(within(tool).getByText('Target path')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('link', { name: 'Back to extension contents' }));
+  fireEvent.click(screen.getByRole('link', { name: /workflow/ }));
+  expect(await screen.findByText(/Inspect the target before/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('link', { name: 'All extensions' }));
+  expect(screen.getByRole('textbox', { name: 'Search extensions' })).toBeInTheDocument();
+  expect(api.fetchExtensionDetail).toHaveBeenCalledTimes(1);
+});
+
+test('supports direct detail URLs and enabling a disabled extension from skill details', async () => {
+  window.history.replaceState(null, '', '/?view=services&extension=cvkit&skill=workflow');
+  api.fetchExtensionDetail.mockResolvedValue(visionDetail);
+  api.fetchExtensions.mockResolvedValueOnce([{ ...vision, state: 'disabled' }, pose]).mockResolvedValue([vision, pose]);
+  api.setExtensionEnabled.mockResolvedValue(vision);
+  render(<ServicesWorkspace />);
+  expect(await screen.findByText(/Inspect the target before/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Enable Computer Vision' }));
+  expect(await screen.findByText('installed')).toBeInTheDocument();
+  expect(api.setExtensionEnabled).toHaveBeenCalledWith('cvkit', true);
+  expect(screen.getByRole('article', { name: 'skill details' })).toBeInTheDocument();
+});
+
+test('previews an available extension and installs it from its detail page', async () => {
+  api.fetchExtensionDetail.mockResolvedValue({ extensionId: 'mediapipe', services: [], tools: [], skills: [] });
+  api.installExtension.mockResolvedValue({ ...pose, state: 'installing' });
+  render(<ServicesWorkspace />);
+  fireEvent.click(await screen.findByRole('link', { name: 'MediaPipe Pose' }));
+  expect(await screen.findByText('No tools declared.')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Install MediaPipe Pose' }));
+  expect(await screen.findByText('installing')).toBeInTheDocument();
+  expect(api.installExtension).toHaveBeenCalledWith('mediapipe');
+});
+
+test('reports detail errors and retries without losing extension actions', async () => {
+  api.fetchExtensionDetail.mockRejectedValueOnce(new Error('Cannot read package metadata')).mockResolvedValue(visionDetail);
+  render(<ServicesWorkspace />);
+  fireEvent.click(await screen.findByRole('link', { name: 'Computer Vision' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Cannot read package metadata');
+  expect(screen.getByRole('checkbox', { name: 'Enable Computer Vision' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry details' }));
+  expect(await screen.findByRole('link', { name: /Tracking/ })).toBeInTheDocument();
 });

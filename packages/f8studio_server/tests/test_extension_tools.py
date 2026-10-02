@@ -160,3 +160,23 @@ def test_imported_skill_package_needs_no_service_index(tmp_path: Path, monkeypat
         assert 'knowledge:howto' not in library.list()
         await tools.close()
     asyncio.run(exercise())
+
+
+def test_extension_detail_includes_tools_and_skill_content_while_inactive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    manager, _tools = fixture(tmp_path, monkeypatch)
+    detail = manager.detail('example')
+    assert manager.status('example').state == 'available'
+    assert detail.services == ()
+    assert detail.tools[0].tool_id == 'inspect'
+    assert detail.tools[0].fields[0].name == 'target'
+    assert detail.skills[0].skill_id == 'workflow'
+    assert detail.skills[0].content == 'Use the example tool and inspect its result.'
+
+    async def exercise() -> None:
+        await install(manager)
+        await manager.set_enabled('example', False, lambda: None, lambda _name: False)
+        assert manager.detail('example') == detail
+        assert manager.active_skill_files() == {}
+        assert _tools.list() == ()
+        await _tools.close()
+    asyncio.run(exercise())
