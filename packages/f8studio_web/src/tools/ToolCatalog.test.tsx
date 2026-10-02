@@ -42,8 +42,8 @@ it('groups tools by extension and selects another tool when the current extensio
   const exportTool = { ...inspect, extensionId: 'export', toolId: 'export', name: 'Export assets' };
   vi.mocked(fetchExtensionTools).mockResolvedValue([inspect, simulate, exportTool]);
   vi.mocked(fetchExtensions).mockResolvedValue([
-    { extensionId: 'debug', name: 'Debugging toolkit', version: '1.0', description: '', state: 'installed', detail: '', serviceClasses: [], runtimeKind: 'workspace', environmentId: null, preinstalled: false, toolIds: ['inspect', 'simulate'], skillIds: [], resourceIds: [] },
-    { extensionId: 'export', name: 'Asset toolkit', version: '1.0', description: '', state: 'installed', detail: '', serviceClasses: [], runtimeKind: 'workspace', environmentId: null, preinstalled: false, toolIds: ['export'], skillIds: [], resourceIds: [] },
+    { extensionId: 'debug', name: 'Debugging toolkit', version: '1.0', description: '', state: 'installed', detail: '', serviceClasses: [], runtimeEnvironment: null, runtimeSelectable: false, runtimeKind: 'workspace', environmentId: null, preinstalled: false, toolIds: ['inspect', 'simulate'], skillIds: [], resourceIds: [] },
+    { extensionId: 'export', name: 'Asset toolkit', version: '1.0', description: '', state: 'installed', detail: '', serviceClasses: [], runtimeEnvironment: null, runtimeSelectable: false, runtimeKind: 'workspace', environmentId: null, preinstalled: false, toolIds: ['export'], skillIds: [], resourceIds: [] },
   ]);
   render(<ToolsWorkspace />);
   const debugging = await screen.findByRole('region', { name: 'Debugging toolkit' });

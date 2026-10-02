@@ -82,7 +82,7 @@ export function ExtensionToolsPanel() {
     <header className="tools-toolbar">
       <span><Wrench size={15} />{tools.length} {tools.length === 1 ? 'tool' : 'tools'} <span className="tools-muted">from {extensionIds.length} {extensionIds.length === 1 ? 'extension' : 'extensions'}</span></span>
       <div className="button-row">
-        <a className="command-button" href="?view=services"><Package size={14} />Manage extensions<ArrowRight size={13} /></a>
+        <a className="command-button" href="?view=extensions"><Package size={14} />Manage extensions<ArrowRight size={13} /></a>
         <button className="icon-button bordered" type="button" onClick={() => void load()} disabled={busy} aria-label="Refresh tools" title="Refresh tools"><RefreshCw size={15} /></button>
       </div>
     </header>
@@ -123,7 +123,7 @@ export function ExtensionToolsPanel() {
               <button className="command-button primary" type="submit" disabled={busy || extensionRunning || (tool.requiresConfirmation && !confirmed)}><Play size={14} />{busy ? 'Starting…' : extensionRunning ? 'Task running' : 'Run tool'}</button>
             </footer>
           </form>
-        </> : <div className="tools-empty"><div className="tool-heading-icon"><Wrench size={28} /></div><h2>{loading ? 'Loading tools…' : 'Your tools will appear here'}</h2><p>{loading ? 'Loading installed extension tools.' : 'No tools are installed and enabled.'}</p>{!loading && <a className="command-button" href="?view=services"><Package size={14} />Manage extensions<ArrowRight size={14} /></a>}</div>}
+        </> : <div className="tools-empty"><div className="tool-heading-icon"><Wrench size={28} /></div><h2>{loading ? 'Loading tools…' : 'Your tools will appear here'}</h2><p>{loading ? 'Loading installed extension tools.' : 'No tools are installed and enabled.'}</p>{!loading && <a className="command-button" href="?view=extensions"><Package size={14} />Manage extensions<ArrowRight size={14} /></a>}</div>}
         {(tool || jobs.length > 0) && <section className="tool-history" aria-label="Task history">
           <header className="tool-section-heading"><h3><Clock3 size={15} />Task history</h3><label className="tool-history-filter"><input type="checkbox" checked={showAllJobs} onChange={(event) => setShowAllJobs(event.target.checked)} />All tools</label></header>
           {visibleJobs.length === 0 && <p className="tool-history-empty">No tasks yet.</p>}

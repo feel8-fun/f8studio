@@ -18,7 +18,7 @@ export function readExtensionLocation(): ExtensionLocation | null {
 }
 
 export function extensionHref(location: ExtensionLocation | null): string {
-  const params = new URLSearchParams({ view: 'services' });
+  const params = new URLSearchParams({ view: 'extensions' });
   if (location) {
     params.set('extension', location.extensionId);
     if (location.kind && location.itemId) params.set(location.kind, location.itemId);

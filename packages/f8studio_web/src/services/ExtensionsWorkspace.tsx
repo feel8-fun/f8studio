@@ -2,12 +2,12 @@ import { ArrowLeft, ArrowRight, Download, PackagePlus, RefreshCw, Search, Trash2
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { cancelExtensionInstall, fetchEnvironments, fetchExtensions,
-  importExtensionPackage, installExtension, setExtensionEnabled, uninstallExtension } from '../api/client';
+  importExtensionPackage, installExtension, selectExtensionRuntime, setExtensionEnabled, uninstallExtension } from '../api/client';
 import type { EnvironmentStatus, ExtensionStatus } from '../api/contracts';
 
 import { ExtensionDetails, ExtensionLink, extensionHref, readExtensionLocation, type ExtensionLocation } from './ExtensionDetails';
 
-export function ServicesWorkspace() {
+export function ExtensionsWorkspace() {
   const [extensions, setExtensions] = useState<readonly ExtensionStatus[]>([]);
   const [environments, setEnvironments] = useState<readonly EnvironmentStatus[]>([]);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -52,14 +52,16 @@ export function ServicesWorkspace() {
   }, [load]);
 
   const installing = extensions.some((extension) => extension.state === 'installing');
+  const preparing = environments.some((environment) => environment.state === 'preparing');
   useEffect(() => {
-    if (!installing) return;
+    if (!installing && !preparing) return;
     const controller = new AbortController();
     let pending = false;
     const poll = async () => {
       if (pending) return;
       pending = true;
       try {
+        if (preparing) { await load(controller.signal); return; }
         const statuses = await fetchExtensions(controller.signal);
         if (controller.signal.aborted) return;
         if (statuses.some((extension) => extension.state === 'installing')) setExtensions(statuses);
@@ -72,7 +74,7 @@ export function ServicesWorkspace() {
     };
     const timer = window.setInterval(() => void poll(), 1000);
     return () => { controller.abort(); window.clearInterval(timer); };
-  }, [installing, load]);
+  }, [installing, preparing, load]);
 
   const act = useCallback(async (action: () => Promise<ExtensionStatus>, refresh: boolean, rollback?: ExtensionStatus) => {
     setBusy(true);
@@ -97,7 +99,7 @@ export function ServicesWorkspace() {
 
   const filteredExtensions = useMemo(() => extensions.filter((extension) =>
     `${extension.name} ${extension.extensionId} ${extension.description}`.toLowerCase().includes(query.trim().toLowerCase())), [extensions, query]);
-  const locked = busy || installing;
+  const locked = busy || installing || preparing;
 
   const importPackage = useCallback(async () => {
     setBusy(true);
@@ -145,6 +147,15 @@ export function ServicesWorkspace() {
         {selectedExtension ? <>
           {extensionCard(selectedExtension, false)}
           <p className="extension-lifecycle-note">Installation and enabling apply to the entire extension, including its services, tools and skills.</p>
+          {selectedExtension.runtimeSelectable && <div className="runtime-binding">
+            <label>Runtime environment<select aria-label="Extension runtime environment" value={environments.some((environment) => environment.environmentId === selectedExtension.runtimeEnvironment) ? selectedExtension.runtimeEnvironment ?? '' : ''}
+              disabled={locked || selectedExtension.state === 'installed' || selectedExtension.state === 'disabled'}
+              onChange={(event) => void act(() => selectExtensionRuntime(selectedExtension.extensionId, event.target.value || null), true)}>
+              <option value="">Publisher default</option>
+              {environments.map((environment) => <option key={environment.environmentId} value={environment.environmentId} disabled={!environment.ready || environment.state === 'changed' || environment.state === 'preparing' || environment.state === 'failed'}>{environment.name || environment.environmentId} · {environment.source} · {environment.revision} · {environment.state}</option>)}
+            </select></label>
+            <p>Shared Python extensions can reuse an explicitly selected environment. Dependencies are checked during installation. Uninstall before changing the runtime.</p>
+          </div>}
           <ExtensionDetails key={`${selectedExtension.extensionId}/${selectedExtension.version}`} location={location} onNavigate={navigate} refreshRevision={detailRevision} />
         </> : <div className="services-empty">{loaded ? 'Extension not found.' : 'Loading extension…'}</div>}
       </section> : <section className="services-extensions" aria-label="Extensions">
@@ -161,13 +172,6 @@ export function ServicesWorkspace() {
           <label>SHA-256<input aria-label="Extension package SHA-256" required pattern="[a-fA-F0-9]{64}" value={packageHash} onChange={(event) => setPackageHash(event.target.value)} /></label>
           <button type="submit" className="command-button" disabled={locked || !packageUrl || !/^[a-fA-F0-9]{64}$/.test(packageHash.trim())}>Add package</button>
         </form>
-        {environments.length > 0 && <div className="extension-environments" aria-label="Shared runtimes">
-          <h3>Shared runtimes</h3>
-          {environments.map((environment) => <div className="extension-detail" key={environment.environmentId}>
-            {environment.extensionIds.map((id) => extensions.find((extension) => extension.extensionId === id)?.name ?? id).join(', ')}
-            {' · '}{environment.ready ? 'ready' : 'not ready'}
-          </div>)}
-        </div>}
       </section>}
     </div>
   </div>;

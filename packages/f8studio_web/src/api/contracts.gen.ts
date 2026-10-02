@@ -781,11 +781,78 @@ export type EntryInput = {
   readonly "syncBaseLocalVersionNumber"?: number;
 };
 
+export type EnvironmentCreateRequest = {
+  readonly "name": string;
+  readonly "baseEnvironmentId": string | null;
+  readonly "policy": "adjust" | "preserve";
+  readonly "python": string;
+  readonly "condaDependencies": ReadonlyArray<string>;
+  readonly "pypiDependencies": ReadonlyArray<string>;
+};
+
+export type EnvironmentCreateRequestInput = {
+  readonly "name": string;
+  readonly "baseEnvironmentId"?: string | null;
+  readonly "policy"?: "adjust" | "preserve";
+  readonly "python"?: string;
+  readonly "condaDependencies"?: ReadonlyArray<string>;
+  readonly "pypiDependencies"?: ReadonlyArray<string>;
+};
+
+export type EnvironmentDetail = {
+  readonly "environmentId": string;
+  readonly "name": string;
+  readonly "revision": string;
+  readonly "manifest": string;
+  readonly "baseEnvironmentId": string | null;
+  readonly "policy": "adjust" | "preserve" | null;
+  readonly "condaDependencies": ReadonlyArray<string>;
+  readonly "pypiDependencies": ReadonlyArray<string>;
+  readonly "storagePath": string;
+  readonly "cachePath": string;
+  readonly "usage": EnvironmentUsage;
+  readonly "pinned": boolean;
+  readonly "changedPackages": ReadonlyArray<string>;
+};
+
+export type EnvironmentDetailInput = {
+  readonly "environmentId": string;
+  readonly "name": string;
+  readonly "revision": string;
+  readonly "manifest": string;
+  readonly "baseEnvironmentId": string | null;
+  readonly "policy": "adjust" | "preserve" | null;
+  readonly "condaDependencies": ReadonlyArray<string>;
+  readonly "pypiDependencies": ReadonlyArray<string>;
+  readonly "storagePath": string;
+  readonly "cachePath": string;
+  readonly "usage": EnvironmentUsageInput;
+  readonly "pinned"?: boolean;
+  readonly "changedPackages"?: ReadonlyArray<string>;
+};
+
+export type EnvironmentRetentionRequest = {
+  readonly "pinned": boolean;
+};
+
+export type EnvironmentRetentionRequestInput = {
+  readonly "pinned": boolean;
+};
+
 export type EnvironmentStatus = {
   readonly "environmentId": string;
   readonly "runtimeKind": "bundled" | "native" | "pixi" | "shared" | "workspace";
   readonly "extensionIds": ReadonlyArray<string>;
   readonly "ready": boolean;
+  readonly "name": string;
+  readonly "source": "developer" | "official" | "package";
+  readonly "revision": string;
+  readonly "state": "changed" | "declared" | "failed" | "missing" | "preparing" | "ready";
+  readonly "detail": string;
+  readonly "serviceClasses": ReadonlyArray<string>;
+  readonly "toolIds": ReadonlyArray<string>;
+  readonly "baseEnvironmentId": string | null;
+  readonly "pinned": boolean;
 };
 
 export type EnvironmentStatusInput = {
@@ -793,6 +860,29 @@ export type EnvironmentStatusInput = {
   readonly "runtimeKind": "bundled" | "native" | "pixi" | "shared" | "workspace";
   readonly "extensionIds": ReadonlyArray<string>;
   readonly "ready": boolean;
+  readonly "name"?: string;
+  readonly "source"?: "developer" | "official" | "package";
+  readonly "revision"?: string;
+  readonly "state"?: "changed" | "declared" | "failed" | "missing" | "preparing" | "ready";
+  readonly "detail"?: string;
+  readonly "serviceClasses"?: ReadonlyArray<string>;
+  readonly "toolIds"?: ReadonlyArray<string>;
+  readonly "baseEnvironmentId"?: string | null;
+  readonly "pinned"?: boolean;
+};
+
+export type EnvironmentUsage = {
+  readonly "logicalBytes": number;
+  readonly "uniqueFileBytes": number;
+  readonly "sharedLinkBytes": number;
+  readonly "exclusiveFileBytes": number;
+};
+
+export type EnvironmentUsageInput = {
+  readonly "logicalBytes"?: number;
+  readonly "uniqueFileBytes"?: number;
+  readonly "sharedLinkBytes"?: number;
+  readonly "exclusiveFileBytes"?: number;
 };
 
 export type EventEnvelope = {
@@ -923,6 +1013,14 @@ export type ExtensionInstallPlanInput = {
   readonly "requiresNetwork": boolean;
 };
 
+export type ExtensionRuntimeRequest = {
+  readonly "environmentId": string | null;
+};
+
+export type ExtensionRuntimeRequestInput = {
+  readonly "environmentId": string | null;
+};
+
 export type ExtensionServiceDetail = {
   readonly "serviceClass": string;
   readonly "describe": null | F8ServiceDescribe;
@@ -957,6 +1055,8 @@ export type ExtensionStatus = {
   readonly "toolIds": ReadonlyArray<string>;
   readonly "skillIds": ReadonlyArray<string>;
   readonly "resourceIds": ReadonlyArray<string>;
+  readonly "runtimeEnvironment": string | null;
+  readonly "runtimeSelectable": boolean;
 };
 
 export type ExtensionStatusInput = {
@@ -973,6 +1073,8 @@ export type ExtensionStatusInput = {
   readonly "toolIds"?: ReadonlyArray<string>;
   readonly "skillIds"?: ReadonlyArray<string>;
   readonly "resourceIds"?: ReadonlyArray<string>;
+  readonly "runtimeEnvironment"?: string | null;
+  readonly "runtimeSelectable"?: boolean;
 };
 
 export type ExtensionToggleRequest = {
@@ -3163,6 +3265,26 @@ export type RuntimeStateReadRequestInput = {
   readonly "fields": ReadonlyArray<string>;
 };
 
+export type RuntimeStorageRequest = {
+  readonly "path": string;
+};
+
+export type RuntimeStorageRequestInput = {
+  readonly "path": string;
+};
+
+export type RuntimeStorageStatus = {
+  readonly "path": string;
+  readonly "cachePath": string;
+  readonly "canChange": boolean;
+};
+
+export type RuntimeStorageStatusInput = {
+  readonly "path": string;
+  readonly "cachePath": string;
+  readonly "canChange": boolean;
+};
+
 export type SchemaMode = "basic_recursive";
 
 export type SchemaModeInput = "basic_recursive";
@@ -3876,6 +3998,10 @@ export type WaveSceneInput = {
 export interface ApiRequests {
   readonly "POST /api/extension-tools/{extension_id}/{tool_id}/run": ToolRunRequestInput;
   readonly "POST /api/extensions/import": ExtensionImportRequestInput;
+  readonly "PUT /api/environments/storage": RuntimeStorageRequestInput;
+  readonly "POST /api/environments": EnvironmentCreateRequestInput;
+  readonly "PUT /api/environments/{environment_id}/retention": EnvironmentRetentionRequestInput;
+  readonly "PUT /api/extensions/{extension_id}/runtime": ExtensionRuntimeRequestInput;
   readonly "PUT /api/extensions/{extension_id}/enabled": ExtensionToggleRequestInput;
   readonly "POST /api/catalog/nodes": CreateCatalogNodeRequestInput;
   readonly "POST /api/assets": CreateAssetRequestInput;
@@ -3937,6 +4063,15 @@ export interface ApiResponses {
   readonly "GET /api/extensions/{extension_id}/plan": ExtensionInstallPlan;
   readonly "GET /api/environments": ReadonlyArray<EnvironmentStatus>;
   readonly "GET /api/environments/presets": ReadonlyArray<PresetEnvironmentStatus>;
+  readonly "GET /api/environments/storage": RuntimeStorageStatus;
+  readonly "PUT /api/environments/storage": RuntimeStorageStatus;
+  readonly "POST /api/environments": EnvironmentStatus;
+  readonly "GET /api/environments/{environment_id}/detail": EnvironmentDetail;
+  readonly "POST /api/environments/{environment_id}/prepare": EnvironmentStatus;
+  readonly "POST /api/environments/{environment_id}/cancel": EnvironmentStatus;
+  readonly "PUT /api/environments/{environment_id}/retention": EnvironmentStatus;
+  readonly "DELETE /api/environments/{environment_id}": void;
+  readonly "PUT /api/extensions/{extension_id}/runtime": ExtensionStatus;
   readonly "POST /api/extensions/{extension_id}/install": ExtensionStatus;
   readonly "POST /api/extensions/{extension_id}/cancel": ExtensionStatus;
   readonly "PUT /api/extensions/{extension_id}/enabled": ExtensionStatus;

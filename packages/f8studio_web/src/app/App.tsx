@@ -1,4 +1,4 @@
-import { Activity, Archive, Boxes, CircleDot, PackagePlus, ScrollText, Wrench, type LucideIcon } from 'lucide-react';
+import { Activity, Archive, Boxes, CircleDot, PackagePlus, Server, ScrollText, Wrench, type LucideIcon } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 
 import { fetchHealth } from '../api/client';
@@ -12,17 +12,18 @@ import { GraphLogDock } from './GraphLogDock';
 const AssetsWorkspace = lazy(() => import('../assets/AssetsWorkspace').then((module) => ({ default: module.AssetsWorkspace })));
 const CodeStateWorkspace = lazy(() => import('../editor/CodeStateWorkspace').then((module) => ({ default: module.CodeStateWorkspace })));
 const PresentationWorkspace = lazy(() => import('../presentation/PresentationWorkspace').then((module) => ({ default: module.PresentationWorkspace })));
-const ServicesWorkspace = lazy(() => import('../services/ServicesWorkspace').then((module) => ({ default: module.ServicesWorkspace })));
+const ExtensionsWorkspace = lazy(() => import('../services/ExtensionsWorkspace').then((module) => ({ default: module.ExtensionsWorkspace })));
+const EnvironmentsWorkspace = lazy(() => import('../services/EnvironmentsWorkspace').then((module) => ({ default: module.EnvironmentsWorkspace })));
 const AgentWorkspace = lazy(() => import('../agents/AgentWorkspace').then((module) => ({ default: module.AgentWorkspace })));
 
 const ToolsWorkspace = lazy(() => import('../tools/ToolsWorkspace').then((module) => ({ default: module.ToolsWorkspace })));
 
-type WorkspaceView = 'graph' | 'agent' | 'assets' | 'code-state' | 'outputs' | 'services' | 'tools' | 'logs';
+type WorkspaceView = 'graph' | 'agent' | 'assets' | 'code-state' | 'outputs' | 'extensions' | 'environments' | 'tools' | 'logs';
 interface LocationView { readonly view: WorkspaceView; readonly nodeId: string | null; readonly projectId: string | null; readonly sessionId: string | null }
 
 function readLocationView(): LocationView {
   const params = new URLSearchParams(window.location.search);
-  const requested = params.get('view') === 'local' ? 'tools' : params.get('view');
+  const requested = params.get('view');
   const projectId = params.get('project');
   const view = requested === 'code-state' || (requested === 'agent' && projectId) ||
     WORKSPACES.some((item) => item.view === requested) ? requested as WorkspaceView : 'graph';
@@ -42,7 +43,8 @@ const WORKSPACES: readonly WorkspaceDefinition[] = [
   { view: 'assets', label: 'Assets', title: 'Assets', icon: Archive },
   { view: 'outputs', label: 'Outputs', title: 'Live Outputs', icon: Activity },
   { view: 'tools', label: 'Tools', title: 'Tools', icon: Wrench },
-  { view: 'services', label: 'Services', title: 'Services & Extensions', icon: PackagePlus },
+  { view: 'extensions', label: 'Extensions', title: 'Extensions', icon: PackagePlus },
+  { view: 'environments', label: 'Runtime Environments', title: 'Runtime Environments', icon: Server },
   { view: 'logs', label: 'Logs', title: 'Log Center', icon: ScrollText },
 ];
 
@@ -58,6 +60,9 @@ export function App() {
   const navigate = useCallback((nextView: WorkspaceView, nextNodeId: string | null = null) => {
     const url = new URL(window.location.href);
     url.searchParams.set('view', nextView);
+    if (nextView !== 'extensions') {
+      for (const key of ['extension', 'service', 'tool', 'skill']) url.searchParams.delete(key);
+    }
     if (nextNodeId === null) url.searchParams.delete('node');
     else url.searchParams.set('node', nextNodeId);
     window.history.pushState(null, '', url);
@@ -140,7 +145,8 @@ export function App() {
             {view === 'code-state' && <CodeStateWorkspace />}
             {view === 'outputs' && <PresentationWorkspace nodeId={nodeId} />}
             {view === 'tools' && <ToolsWorkspace />}
-            {view === 'services' && <ServicesWorkspace />}
+            {view === 'extensions' && <ExtensionsWorkspace />}
+            {view === 'environments' && <EnvironmentsWorkspace />}
             {view === 'logs' && <LogsWorkspace />}
             {view === 'agent' && projectId !== null && <AgentWorkspace projectId={projectId} initialSessionId={sessionId} />}
           </Suspense>

@@ -19,7 +19,8 @@ from .agents.provider_probe import ProviderProbeResult
 from .catalog import CatalogSnapshot
 from .events import EventEnvelope
 from .extension_models import (
-    ExtensionDetail, EnvironmentStatus, ExtensionImportRequest, ExtensionInstallPlan, ExtensionStatus, ExtensionToggleRequest,
+    EnvironmentCreateRequest, EnvironmentDetail, EnvironmentRetentionRequest, RuntimeStorageRequest,
+    RuntimeStorageStatus, ExtensionRuntimeRequest, ExtensionDetail, EnvironmentStatus, ExtensionImportRequest, ExtensionInstallPlan, ExtensionStatus, ExtensionToggleRequest,
     PresetEnvironmentStatus,
 )
 from .processes import ManagedProcessResult
@@ -105,6 +106,15 @@ ROUTES = (
     RouteContract("get", "/api/extensions/{extension_id}/plan", None, ExtensionInstallPlan, 200),
     RouteContract("get", "/api/environments", None, tuple[EnvironmentStatus, ...], 200),
     RouteContract("get", "/api/environments/presets", None, tuple[PresetEnvironmentStatus, ...], 200),
+    RouteContract("get", "/api/environments/storage", None, RuntimeStorageStatus, 200),
+    RouteContract("put", "/api/environments/storage", RuntimeStorageRequest, RuntimeStorageStatus, 200),
+    RouteContract("post", "/api/environments", EnvironmentCreateRequest, EnvironmentStatus, 201),
+    RouteContract("get", "/api/environments/{environment_id}/detail", None, EnvironmentDetail, 200),
+    RouteContract("post", "/api/environments/{environment_id}/prepare", None, EnvironmentStatus, 200),
+    RouteContract("post", "/api/environments/{environment_id}/cancel", None, EnvironmentStatus, 200),
+    RouteContract("put", "/api/environments/{environment_id}/retention", EnvironmentRetentionRequest, EnvironmentStatus, 200),
+    RouteContract("delete", "/api/environments/{environment_id}", None, None, 204),
+    RouteContract("put", "/api/extensions/{extension_id}/runtime", ExtensionRuntimeRequest, ExtensionStatus, 200),
     RouteContract("post", "/api/extensions/{extension_id}/install", None, ExtensionStatus, 200),
     RouteContract("post", "/api/extensions/{extension_id}/cancel", None, ExtensionStatus, 200),
     RouteContract("put", "/api/extensions/{extension_id}/enabled", ExtensionToggleRequest, ExtensionStatus, 200),

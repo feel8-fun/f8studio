@@ -1,29 +1,41 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
-import platform
 import shutil
-import sys
 import tomllib
+import msgspec
 from typing import Literal
 import urllib.request
 
 from .extension_models import ExtensionInstallPlan, ExtensionManifest, PresetEnvironmentStatus
 from .extension_operation import InstallOperation
 from .errors import InvalidRequestError
+from .environment_definitions import environment_identity
+
+
+@dataclass(frozen=True)
+class SharedRuntimeTarget:
+    manager: EnvironmentManager
+    plan: ExtensionInstallPlan
+    environment: str
+    available: bool = True
 
 
 class EnvironmentManager:
     def __init__(self, data_dir: Path, source_root: Path, *, official: EnvironmentManager | None = None) -> None:
-        self.root = data_dir / 'runtimes'
+        storage_file = data_dir / 'runtime-storage.json'
+        storage = msgspec.json.decode(storage_file.read_bytes(), type=dict[str, str]) if storage_file.is_file() else {}
+        self.root = Path(storage.get('path', str(data_dir))).resolve() / 'runtimes'
         self._source_root = source_root
-        self._file_hashes: dict[Path, tuple[int, int, bytes]] = {}
+        self._identity_cache: dict[str, tuple[tuple[tuple[int, int], ...], str]] = {}
         self._definitions: tuple[int, int, dict[str, object]] | None = None
         self._workspace_environments: dict[str, str] = {}
         self.official = official if official is not None else self
+        self.shared_targets: dict[str, SharedRuntimeTarget] = {}
 
     def _environments(self) -> dict[str, object]:
         path = self._source_root / 'pixi.toml'
@@ -40,18 +52,42 @@ class EnvironmentManager:
         return prefix / ('python.exe' if os.name == 'nt' else 'bin/python')
 
     def _identity(self, environment: str) -> str:
-        digest = hashlib.sha256(f'{sys.platform}:{platform.machine()}:{environment}'.encode())
-        for path in (self._source_root / 'pixi.toml', self._source_root / 'pixi.lock',
-                     *sorted((self._source_root / 'wheels').glob('*.whl'))):
-            stat = path.stat()
-            cached = self._file_hashes.get(path)
-            if cached is None or cached[:2] != (stat.st_mtime_ns, stat.st_size):
-                with path.open('rb') as source:
-                    cached = (stat.st_mtime_ns, stat.st_size, hashlib.file_digest(source, 'sha256').digest())
-                self._file_hashes[path] = cached
-            digest.update(path.name.encode())
-            digest.update(cached[2])
-        return digest.hexdigest()
+        files = (self._source_root / 'pixi.toml', self._source_root / 'pixi.lock',
+                 *sorted((self._source_root / 'wheels').glob('*.whl')))
+        signature = tuple((path.stat().st_mtime_ns, path.stat().st_size) for path in files)
+        cached = self._identity_cache.get(environment)
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+        identity = environment_identity(self._source_root, environment)
+        self._identity_cache[environment] = (signature, identity)
+        return identity
+
+    def preset_names(self) -> tuple[str, ...]:
+        return tuple(self._environments())
+
+    def preset_plan(self, environment: str) -> ExtensionInstallPlan:
+        return self._preset_plan("runtime-provider", environment)
+
+    def identity(self, environment: str) -> str:
+        return self._identity(environment)
+
+    def workspace_python_exists(self, environment: str) -> bool:
+        return self._python(self._source_root / ".pixi/envs" / environment).is_file()
+
+    def workspace_plan(self, extension_id: str, environment: str) -> ExtensionInstallPlan:
+        return self._pixi_plan(extension_id, 'workspace', environment)
+
+    def pixi_executable(self, operation: InstallOperation) -> Path:
+        return self._pixi(operation)
+
+    @property
+    def source_root(self) -> Path:
+        return self._source_root
+
+    def install_environment(self) -> dict[str, str]:
+        cache = self.root.parent / 'package-cache'
+        cache.mkdir(parents=True, exist_ok=True)
+        return {**os.environ, 'PIXI_CACHE_DIR': str(cache), 'UV_CACHE_DIR': str(cache / 'uv-cache')}
 
     def _preset_plan(self, extension_id: str, environment: str) -> ExtensionInstallPlan:
         if environment not in self._environments():
@@ -82,10 +118,11 @@ class EnvironmentManager:
         if runtime.kind == 'shared':
             if environment is None:
                 raise ValueError(f'Missing environment for {manifest.extension_id}')
-            plan = self.official._preset_plan(manifest.extension_id, environment)
-            if not self.official.ready(plan.environment_id):
-                raise InvalidRequestError(f'Official environment {environment} is not installed; '
-                                          'prepare it or install its official extension first')
+            target = self.official.shared_targets.get(environment)
+            plan = target.plan if target is not None else self.official._preset_plan(manifest.extension_id, environment)
+            owner = target.manager if target is not None else self.official
+            if (target is not None and not target.available) or not owner.ready(plan.environment_id):
+                raise InvalidRequestError(f'Environment {environment} is not installed or prepared; prepare it first')
             return ExtensionInstallPlan(extension_id=manifest.extension_id,
                                         environment_id=plan.environment_id,
                                         runtime_kind='shared', action='shared', requires_network=False)
@@ -111,6 +148,9 @@ class EnvironmentManager:
                                     requires_network=not ready)
 
     def workspace(self, plan: ExtensionInstallPlan) -> Path:
+        target = self.target_for_plan(plan)
+        if target is not None:
+            return target.manager.workspace(target.plan)
         if plan.runtime_kind == 'shared' and self.official is not self:
             return self.official.workspace(plan)
         if (plan.environment_id or '').startswith(('bundled-base-', 'workspace-')):
@@ -146,13 +186,16 @@ class EnvironmentManager:
         assert environment is not None
         operation.report(f'Installing locked {environment} runtime')
         operation.run([str(pixi), 'install', '--locked', '-e', environment,
-                       '--manifest-path', str(workspace / 'pixi.toml')], cwd=workspace)
+                       '--manifest-path', str(workspace / 'pixi.toml')], cwd=workspace, env=self.install_environment())
         operation.check_cancelled()
         if plan.action == 'create':
             (workspace / '.ready').write_text(json.dumps({'environment': environment}) + '\n', encoding='utf-8')
         return plan
 
     def launch(self, plan: ExtensionInstallPlan, environment: str) -> tuple[str, list[str]]:
+        target = self.target_for_plan(plan)
+        if target is not None:
+            return target.manager.launch(target.plan, target.environment)
         if plan.runtime_kind == 'shared' and self.official is not self:
             return self.official.launch(plan, environment)
         workspace = self.workspace(plan)
@@ -163,14 +206,27 @@ class EnvironmentManager:
                                  str(workspace / 'pixi.toml'), '-e', environment]
 
     def python_launch(self, plan: ExtensionInstallPlan, environment: str) -> tuple[str, list[str]]:
+        target = self.target_for_plan(plan)
+        if target is not None:
+            return target.manager.python_launch(target.plan, target.environment)
         if (plan.environment_id or '').startswith('bundled-base-'):
             return str(self.official._python(self.official._source_root / 'env')), ['-I']
         command, args = self.launch(plan, environment)
         return command, [*args, 'python', '-I']
 
+    def target_for_plan(self, plan: ExtensionInstallPlan) -> SharedRuntimeTarget | None:
+        if plan.runtime_kind != 'shared':
+            return None
+        return next((target for target in self.official.shared_targets.values()
+                     if target.plan.environment_id == plan.environment_id), None)
+
     def ready(self, environment_id: str | None) -> bool:
         if environment_id is None:
             return False
+        target = next((target for target in self.official.shared_targets.values()
+                       if target.plan.environment_id == environment_id and target.manager is not self), None)
+        if target is not None:
+            return target.manager.ready(environment_id)
         if environment_id.startswith('bundled-base-'):
             return (environment_id == self.official._bundled_plan('').environment_id
                     and self.official._python(self.official._source_root / 'env').is_file())

@@ -855,3 +855,44 @@ def test_extension_detail_previews_without_installing_and_reports_missing_descri
     (source / 'alpha.json').write_text('{"service":{"serviceClass":"wrong.class","label":"Wrong"}}')
     with pytest.raises(InvalidRequestError, match='class mismatch'):
         manager.detail('alpha')
+
+
+def test_workspace_inventory_groups_stale_and_current_records_by_environment(tmp_path: Path) -> None:
+    manager, source = _fixture(tmp_path, kind='pixi')
+    path = source / 'config/extensions.json'
+    path.write_text(path.read_text().replace('"pixi"', '"workspace"'))
+    records = {name: {'version': '1.0.0', 'installed': True, 'enabled': True,
+                      'environmentId': 'workspace-legacy-shared-old'} for name in ('alpha', 'beta')}
+    manager._state_path.write_text(json.dumps(records))
+    with patch.object(EnvironmentManager, '_python', return_value=Path(sys.executable)):
+        restored = ExtensionManager(tmp_path / 'data', base_index=source / 'config/service-index.json')
+        inventory = restored.environment_statuses()
+        assert len(inventory) == 1
+        assert inventory[0].name == 'shared'
+        assert inventory[0].state == 'changed'
+        assert inventory[0].ready
+        assert inventory[0].extension_ids == ('alpha', 'beta')
+        assert inventory[0].service_classes == ('test.alpha', 'test.beta')
+
+
+def test_explicit_runtime_selection_survives_restart_and_checks_dependencies(tmp_path: Path) -> None:
+    manager, source, payload = _shared_fixture(tmp_path)
+    archive = _archive({str(path.relative_to(payload)): path.read_bytes() for path in payload.rglob('*') if path.is_file()})
+    request = ExtensionImportRequest(url=DownloadResponse.url, sha256=hashlib.sha256(archive).hexdigest())
+    catalog = CatalogService(extension_indexes=manager.active_indexes)
+    async def exercise() -> None:
+        with patch('f8studio_server.extension_artifacts.urllib.request.urlopen', return_value=DownloadResponse(archive)):
+            await manager.import_package(request)
+        environment = manager.environment_statuses()[0]
+        await manager.select_runtime('player', environment.environment_id)
+        await _finish(manager, 'player', catalog)
+        assert manager.status('player').runtime_selectable
+        with pytest.raises(ConflictError, match='Uninstall'):
+            await manager.select_runtime('player', None)
+        reloaded = ExtensionManager(tmp_path / 'data', base_index=source / 'config/service-index.json')
+        assert reloaded.status('player').state == 'installed'
+        assert reloaded.status('player').runtime_environment == environment.environment_id
+        await reloaded.close()
+        await manager.close()
+    with patch.object(EnvironmentManager, '_python', return_value=Path(sys.executable)):
+        asyncio.run(exercise())

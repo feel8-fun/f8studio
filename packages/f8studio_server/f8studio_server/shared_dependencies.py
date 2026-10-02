@@ -42,7 +42,7 @@ def check_dependencies(requirements: tuple[str, ...], probe: RuntimeProbe) -> No
         distribution = installed.get(name)
         if distribution is None or not requirement.specifier.contains(distribution.version, prereleases=True):
             found = distribution.version if distribution is not None else 'not installed'
-            raise InvalidRequestError(f'Official runtime cannot satisfy {requirement} (found: {found}); '
+            raise InvalidRequestError(f'Selected runtime cannot satisfy {requirement} (found: {found}); '
                                       'publish this extension with an independent Pixi runtime')
         extras = frozenset(canonicalize_name(extra) for extra in requirement.extras)
         missing_extras = extras - {canonicalize_name(extra) for extra in distribution.extras}
@@ -66,19 +66,19 @@ def validate_shared_package(manifest: ExtensionManifest, python_root: Path, prob
     for distribution in metadata.distributions(path=[str(python_root)]):
         name = distribution.metadata.get('Name')
         if name and canonicalize_name(name) in installed_names:
-            raise InvalidRequestError(f'Extension contains {name}, which would replace an official package')
+            raise InvalidRequestError(f'Extension contains {name}, which would replace a runtime package')
         requires_python = distribution.metadata.get('Requires-Python')
         if requires_python:
             python_constraints.append(requires_python)
         dependencies.extend(distribution.requires or [])
     for constraint in python_constraints:
         if not SpecifierSet(constraint).contains(probe.python_version, prereleases=True):
-            raise InvalidRequestError(f'Official Python {probe.python_version} does not satisfy {constraint}; '
+            raise InvalidRequestError(f'Selected Python {probe.python_version} does not satisfy {constraint}; '
                                       'use an independent Pixi runtime')
     base_modules = {module.casefold() for module in probe.modules}
     for path in python_root.iterdir():
         module = path.name.split('.')[0]
         if ((path.is_dir() and '.' not in path.name or path.suffix in {'.py', '.pyd', '.so'})
                 and module.casefold() in base_modules):
-            raise InvalidRequestError(f'Extension module {module} would shadow an official or standard Python module')
+            raise InvalidRequestError(f'Extension module {module} would shadow an runtime or standard Python module')
     check_dependencies(tuple(dependencies), probe)

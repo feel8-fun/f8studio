@@ -62,7 +62,10 @@ from .assets import (
 )
 from .editor import CreateEditorSessionRequest, EditorPositionRequest, UpdateEditorDocumentRequest
 from .editor_context import editor_support_files
-from .extension_models import ExtensionImportRequest, ExtensionToggleRequest
+from .extension_models import (
+    EnvironmentCreateRequest, EnvironmentRetentionRequest, ExtensionImportRequest,
+    ExtensionRuntimeRequest, ExtensionToggleRequest, RuntimeStorageRequest,
+)
 from .local_integration import (
     RegisterHotkeyRequest,
 )
@@ -391,6 +394,49 @@ def create_app(
     @app.get('/api/environments/presets')
     async def preset_environments() -> F8JsonValue:
         return _json_value(await asyncio.to_thread(studio.extensions.preset_environments))
+
+    @app.get('/api/environments/storage')
+    async def runtime_storage() -> F8JsonValue:
+        return _json_value(await asyncio.to_thread(studio.extensions.runtime_registry.storage_status))
+
+    @app.put('/api/environments/storage')
+    async def set_runtime_storage(request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, RuntimeStorageRequest)
+        return _json_value(await asyncio.to_thread(studio.extensions.set_runtime_storage, payload.path))
+
+    @app.post('/api/environments', status_code=201)
+    async def create_environment(request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, EnvironmentCreateRequest)
+        return _json_value(await asyncio.to_thread(studio.extensions.runtime_registry.create, payload))
+
+    @app.get('/api/environments/{environment_id}/detail')
+    async def environment_detail(environment_id: str) -> F8JsonValue:
+        return _json_value(await asyncio.to_thread(studio.extensions.runtime_registry.detail, environment_id))
+
+    @app.post('/api/environments/{environment_id}/prepare')
+    async def prepare_environment(environment_id: str) -> F8JsonValue:
+        return _json_value(await studio.extensions.prepare_environment(
+            environment_id, studio.catalog.refresh, studio.processes.is_class_running,
+        ))
+
+    @app.post('/api/environments/{environment_id}/cancel')
+    async def cancel_environment_preparation(environment_id: str) -> F8JsonValue:
+        return _json_value(await studio.extensions.runtime_registry.cancel(environment_id))
+
+    @app.put('/api/environments/{environment_id}/retention')
+    async def retain_environment(environment_id: str, request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, EnvironmentRetentionRequest)
+        return _json_value(await asyncio.to_thread(studio.extensions.runtime_registry.retain, environment_id, payload.pinned))
+
+    @app.delete('/api/environments/{environment_id}', status_code=204)
+    async def remove_environment(environment_id: str) -> Response:
+        await asyncio.to_thread(studio.extensions.remove_environment, environment_id)
+        return Response(status_code=204)
+
+    @app.put('/api/extensions/{extension_id}/runtime')
+    async def select_extension_runtime(extension_id: str, request: Request) -> F8JsonValue:
+        payload = await _decode_body(request, ExtensionRuntimeRequest)
+        return _json_value(await studio.extensions.select_runtime(extension_id, payload.environment_id))
 
     @app.post('/api/extensions/{extension_id}/install')
     async def install_extension(extension_id: str) -> F8JsonValue:

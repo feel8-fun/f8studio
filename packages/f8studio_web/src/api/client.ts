@@ -334,15 +334,71 @@ export async function importExtensionPackage(url: string, sha256: string): Promi
   return body;
 }
 
+function isEnvironmentStatus(value: unknown): value is EnvironmentStatus {
+  return isObject(value) && typeof value.environmentId === 'string' && typeof value.ready === 'boolean' &&
+    isRuntimeKind(value.runtimeKind) && Array.isArray(value.extensionIds) &&
+    value.extensionIds.every((id: unknown) => typeof id === 'string') &&
+    (value.state === undefined || ['declared', 'preparing', 'ready', 'changed', 'missing', 'failed'].includes(String(value.state)));
+}
+
+function environmentStatusResponse(body: unknown): EnvironmentStatus {
+  if (!isEnvironmentStatus(body)) throw new Error('Invalid environment status');
+  return body;
+}
+
 export async function fetchEnvironments(signal?: AbortSignal): Promise<readonly EnvironmentStatus[]> {
   const body = await requestJson('/api/environments', { signal });
-  if (!Array.isArray(body) || !body.every((item: unknown) => isObject(item) &&
-    typeof item.environmentId === 'string' && typeof item.ready === 'boolean' &&
-    isRuntimeKind(item.runtimeKind) &&
-    Array.isArray(item.extensionIds) && item.extensionIds.every((id: unknown) => typeof id === 'string'))) {
-    throw new Error('Invalid environment status');
-  }
-  return body as readonly EnvironmentStatus[];
+  if (!Array.isArray(body) || !body.every(isEnvironmentStatus)) throw new Error('Invalid environment status');
+  return body;
+}
+
+export async function createEnvironment(input: Wire.EnvironmentCreateRequestInput): Promise<EnvironmentStatus> {
+  return environmentStatusResponse(await requestJson('/api/environments', jsonRequest('POST /api/environments', input)));
+}
+
+export async function prepareEnvironment(environmentId: string): Promise<EnvironmentStatus> {
+  return environmentStatusResponse(await requestJson(`/api/environments/${encodeURIComponent(environmentId)}/prepare`, { method: 'POST' }));
+}
+
+export async function cancelEnvironmentPreparation(environmentId: string): Promise<EnvironmentStatus> {
+  return environmentStatusResponse(await requestJson(`/api/environments/${encodeURIComponent(environmentId)}/cancel`, { method: 'POST' }));
+}
+
+export async function fetchEnvironmentDetail(environmentId: string, signal?: AbortSignal): Promise<Wire.EnvironmentDetail> {
+  const body = await requestJson(`/api/environments/${encodeURIComponent(environmentId)}/detail`, { signal });
+  if (!isObject(body) || typeof body.environmentId !== 'string' || typeof body.name !== 'string' ||
+      typeof body.manifest !== 'string' || typeof body.storagePath !== 'string' || !isObject(body.usage)) throw new Error('Invalid environment detail');
+  return body as Wire.EnvironmentDetail;
+}
+
+export async function retainEnvironment(environmentId: string, pinned: boolean): Promise<EnvironmentStatus> {
+  return environmentStatusResponse(await requestJson(`/api/environments/${encodeURIComponent(environmentId)}/retention`,
+    jsonRequest('PUT /api/environments/{environment_id}/retention', { pinned })));
+}
+
+export async function removeEnvironment(environmentId: string): Promise<void> {
+  await requestJson(`/api/environments/${encodeURIComponent(environmentId)}`, { method: 'DELETE' });
+}
+
+function runtimeStorageResponse(body: unknown): Wire.RuntimeStorageStatus {
+  if (!isObject(body) || typeof body.path !== 'string' || typeof body.cachePath !== 'string' ||
+      typeof body.canChange !== 'boolean') throw new Error('Invalid runtime storage settings');
+  return body as Wire.RuntimeStorageStatus;
+}
+
+export async function fetchRuntimeStorage(signal?: AbortSignal): Promise<Wire.RuntimeStorageStatus> {
+  return runtimeStorageResponse(await requestJson('/api/environments/storage', { signal }));
+}
+
+export async function setRuntimeStorage(path: string): Promise<Wire.RuntimeStorageStatus> {
+  return runtimeStorageResponse(await requestJson('/api/environments/storage', jsonRequest('PUT /api/environments/storage', { path })));
+}
+
+export async function selectExtensionRuntime(extensionId: string, environmentId: string | null): Promise<ExtensionStatus> {
+  const body = await requestJson(`/api/extensions/${encodeURIComponent(extensionId)}/runtime`,
+    jsonRequest('PUT /api/extensions/{extension_id}/runtime', { environmentId }));
+  if (!isExtensionStatus(body)) throw new Error('Invalid extension status');
+  return body;
 }
 
 export async function installExtension(extensionId: string): Promise<ExtensionStatus> {

@@ -34,12 +34,13 @@ from f8pysdk.service_runtime_tools.inventory.index import (
 from f8pysdk.specs import F8ServiceDescribe, F8ServiceEntry
 
 from .environments import EnvironmentManager
+from .runtime_registry import RuntimeRegistry
 from .extension_artifacts import prepare_artifact
 from .errors import ConflictError, InvalidRequestError, NotFoundError
 from .extension_models import (
     ExtensionDetail, ExtensionServiceDetail, ExtensionSkillDetail,
     EnvironmentStatus, ExtensionCatalog, ExtensionImportRequest, ExtensionInstallPlan, ExtensionManifest,
-    ExtensionRecord, ExtensionStatus, PresetEnvironmentStatus,
+    ExtensionRecord, ExtensionStatus, PresetEnvironmentStatus, RuntimeStorageStatus,
 )
 from .extension_operation import ExtensionInstallCancelled, InstallOperation
 from .shared_dependencies import RuntimeProbe, validate_shared_package
@@ -68,6 +69,7 @@ class ExtensionManager:
         self._actions = asyncio.Lock()
         self._operation: InstallOperation | None = None
         self._task: asyncio.Task[None] | None = None
+        self._environment_refresh_task: asyncio.Task[None] | None = None
         self._failures: dict[str, str] = {}
         self._details: dict[str, str] = {}
         self._state_path = self._root / 'state.json'
@@ -75,6 +77,10 @@ class ExtensionManager:
         self._source_digests: list[str] = []
         self._payloads: dict[str, ExtensionPayload] = {}
         self._records: dict[str, ExtensionRecord] = {}
+        self._bindings_path = self._root / 'runtime-bindings.json'
+        self._bindings = (msgspec.json.decode(self._bindings_path.read_bytes(), type=dict[str, str])
+                          if self._bindings_path.is_file() else {})
+        self.runtime_registry = RuntimeRegistry(data_dir, self.environments)
         self._manifests: dict[str, ExtensionManifest] = {}
         self._services: dict[str, IndexedService] = {}
         self._owners: dict[str, str] = {}
@@ -107,7 +113,8 @@ class ExtensionManager:
             unknown = set(self._records) - self._manifests.keys()
             if unknown:
                 logger.warning('Installed extensions absent from this distribution: %s', sorted(unknown))
-        for manifest in self._manifests.values():
+        for declared in self._manifests.values():
+            manifest = self._manifest(declared.extension_id)
             record = self._records.get(manifest.extension_id)
             if record is None and manifest.extension_id in self._preinstalled and self._supported(manifest):
                 plan = self._payloads[manifest.extension_id].environments.plan(manifest)
@@ -158,6 +165,7 @@ class ExtensionManager:
         for manifest in catalog.extensions:
             self._manifests[manifest.extension_id] = manifest
             self._payloads[manifest.extension_id] = payload
+            self.runtime_registry.add_source(environments, manifest, official=preinstalled)
         self._services.update(services)
         self._owners.update(owners)
         if preinstalled:
@@ -209,6 +217,9 @@ class ExtensionManager:
         manifest = self._manifests.get(extension_id)
         if manifest is None:
             raise NotFoundError(f'Unknown extension: {extension_id}')
+        binding = self._bindings.get(extension_id)
+        if binding is not None and manifest.runtime.kind == 'shared':
+            return copy_model(manifest, update={'runtime': copy_model(manifest.runtime, update={'environment': binding})})
         return manifest
 
     def detail(self, extension_id: str) -> ExtensionDetail:
@@ -366,6 +377,7 @@ class ExtensionManager:
                 tool_ids=tuple(tool.tool_id for tool in manifest.tools),
                 skill_ids=tuple(skill.skill_id for skill in manifest.skills),
                 resource_ids=tuple(resource.resource_id for resource in manifest.resources),
+                runtime_environment=manifest.runtime.environment, runtime_selectable=manifest.runtime.kind == 'shared',
             )
 
     def install_plan(self, extension_id: str) -> ExtensionInstallPlan:
@@ -403,17 +415,127 @@ class ExtensionManager:
 
     def environment_statuses(self) -> tuple[EnvironmentStatus, ...]:
         with self._lock:
-            users: dict[str, list[str]] = {}
-            for extension_id, record in self._records.items():
-                if record.installed and record.environment_id is not None and extension_id in self._manifests:
-                    users.setdefault(record.environment_id, []).append(extension_id)
-            return tuple(EnvironmentStatus(
-                environment_id=environment_id, extension_ids=tuple(sorted(extension_ids)),
-                runtime_kind=self._manifests[extension_ids[0]].runtime.kind,
-                ready=self._payloads[extension_ids[0]].environments.ready(environment_id),
-            ) for environment_id, extension_ids in sorted(users.items()))
+            sources = self.runtime_registry.source_snapshot()
+            ids = list(sources)
+            ids.extend(revision.environment_id for revision in self.runtime_registry.revisions() if revision.environment_id not in ids)
+            result: list[EnvironmentStatus] = []
+            for identifier in ids:
+                status = self.runtime_registry.status(identifier)
+                source = sources.get(identifier)
+                users: list[str] = []
+                changed = False
+                for extension_id, original in self._manifests.items():
+                    manifest = self._manifest(extension_id)
+                    record = self._records.get(extension_id)
+                    selected = self._bindings.get(extension_id)
+                    owns = (source is not None and original.runtime.kind not in {'native', 'shared'}
+                            and source.target.manager is self._payloads[extension_id].environments
+                            and source.target.environment == original.runtime.environment)
+                    shared = original.runtime.kind == 'shared' and (selected == identifier or (
+                        selected is None and (manifest.runtime.environment == identifier or (
+                            source is not None and source.source == 'official' and source.name == manifest.runtime.environment))))
+                    if owns or shared:
+                        users.append(extension_id)
+                        if record is not None and record.installed and source is not None:
+                            changed = changed or record.environment_id != source.target.plan.environment_id
+                result.append(copy_model(status, update={
+                    'extension_ids': tuple(sorted(users)),
+                    'service_classes': tuple(name for extension_id in users for name in self._manifests[extension_id].service_classes),
+                    'tool_ids': tuple(f'{extension_id}/{tool.tool_id}' for extension_id in users for tool in self._manifests[extension_id].tools),
+                    'state': 'changed' if changed and status.state == 'ready' else status.state,
+                    'detail': 'Installed extension records refer to an earlier environment definition. Prepare this environment to verify and update them.'
+                    if changed and status.state == 'ready' else status.detail,
+                }))
+            return tuple(result)
+
+    async def prepare_environment(self, identifier: str, refresh: Callable[[], object],
+                                  is_running: Callable[[str], bool]) -> EnvironmentStatus:
+        with self._lock:
+            self._require_idle()
+        environment = next((item for item in self.environment_statuses() if item.environment_id == identifier), None)
+        if environment is None:
+            raise NotFoundError(f'Unknown environment: {identifier}')
+        if any(self._tool_running(extension_id) for extension_id in environment.extension_ids) or any(
+            is_running(service_class) for service_class in environment.service_classes
+        ):
+            raise ConflictError('Stop services and tools using this environment before preparing it')
+        status = await self.runtime_registry.prepare(identifier)
+        task = self.runtime_registry.preparation_task
+        assert task is not None
+        async def reconcile() -> None:
+            await task
+            if self.runtime_registry.status(identifier).state != 'ready':
+                return
+            source = self.runtime_registry.source(identifier)
+            canonical_id = self.runtime_registry.status(identifier).environment_id
+            if canonical_id != identifier:
+                for extension_id, selected in tuple(self._bindings.items()):
+                    if selected == identifier:
+                        self._bindings[extension_id] = canonical_id
+                self._save_bindings()
+            for current in self.environment_statuses():
+                if current.environment_id != canonical_id:
+                    continue
+                for extension_id in current.extension_ids:
+                    record = self._records.get(extension_id)
+                    if record is None or not record.installed:
+                        continue
+                    updated = copy_model(record, update={'environment_id': source.target.plan.environment_id})
+                    self._write_registration(self._manifest(extension_id), updated)
+                    self._commit_record(extension_id, updated)
+            await asyncio.to_thread(refresh)
+        self._environment_refresh_task = asyncio.create_task(reconcile(), name='refresh-runtime-records')
+        self._environment_refresh_task.add_done_callback(self._report_task_failure)
+        return status
+
+    def _save_bindings(self) -> None:
+        self._root.mkdir(parents=True, exist_ok=True)
+        temporary = self._bindings_path.with_suffix('.tmp')
+        temporary.write_bytes(msgspec.json.encode(self._bindings))
+        temporary.replace(self._bindings_path)
+
+    async def select_runtime(self, extension_id: str, environment_id: str | None) -> ExtensionStatus:
+        async with self._actions:
+            self._require_idle()
+            manifest = self._manifest(extension_id)
+            if manifest.runtime.kind != 'shared':
+                raise InvalidRequestError('Runtime selection requires a shared Python extension declaration')
+            record = self._records.get(extension_id)
+            if record is not None and record.installed:
+                raise ConflictError('Uninstall the extension before changing its runtime')
+            if environment_id is not None:
+                selected = next((item for item in self.environment_statuses() if item.environment_id == environment_id), None)
+                if selected is None:
+                    raise NotFoundError(f'Unknown environment: {environment_id}')
+                if selected.state != 'ready':
+                    raise InvalidRequestError('Prepare and verify the selected environment before assigning it to an extension')
+            previous = dict(self._bindings)
+            if environment_id is None:
+                self._bindings.pop(extension_id, None)
+            else:
+                self._bindings[extension_id] = environment_id
+            try:
+                self._save_bindings()
+            except OSError:
+                self._bindings = previous
+                raise
+            return self.status(extension_id)
+
+    def set_runtime_storage(self, path: str) -> RuntimeStorageStatus:
+        self._require_idle()
+        return self.runtime_registry.set_storage(path)
+
+    def remove_environment(self, identifier: str) -> None:
+        self._require_idle()
+        referenced = set(self._bindings.values())
+        referenced.update(item.environment_id for item in self.environment_statuses() if item.extension_ids)
+        self.runtime_registry.remove(identifier, referenced)
 
     def _require_idle(self) -> None:
+        if self._environment_refresh_task is not None and not self._environment_refresh_task.done():
+            raise ConflictError('Environment references are being refreshed; wait for them to finish')
+        if self.runtime_registry.busy:
+            raise ConflictError('An environment is being prepared; wait for it to finish')
         if self._operation is not None:
             raise ConflictError(f'Extension operation is running: {self._operation.extension_id}')
 
@@ -524,6 +646,9 @@ class ExtensionManager:
         return self.status(extension_id)
 
     async def close(self) -> None:
+        await self.runtime_registry.close()
+        if self._environment_refresh_task is not None:
+            await self._environment_refresh_task
         with self._lock:
             operation = self._operation
         if operation is not None:
@@ -564,6 +689,9 @@ class ExtensionManager:
                                        refresh)
             with self._lock:
                 referenced = self._referenced_environments()
+            referenced.update(source.target.plan.environment_id for key, source in self.runtime_registry.sources.items()
+                              if any(revision.request.base_environment_id == key for revision in self.runtime_registry.revisions())
+                              and source.target.plan.environment_id is not None)
             await asyncio.to_thread(self._payloads[extension_id].environments.remove_unused,
                                     previous.environment_id, referenced)
             await asyncio.to_thread(shutil.rmtree, self._registration(extension_id).parent)
@@ -640,7 +768,7 @@ class ExtensionManager:
             assert environment is not None
             plan = payload.environments.plan(manifest)
             command, args = payload.environments.python_launch(plan, environment)
-            operation.report(f'Checking dependencies against official {environment}')
+            operation.report(f'Checking dependencies against selected runtime {environment}')
             output = operation.run([command, *args, str(Path(__file__).with_name('_runtime_probe.py'))],
                                    cwd=payload.environments.workspace(plan), timeout=120)
             validate_shared_package(manifest, payload.root / 'python',

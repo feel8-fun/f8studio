@@ -58,6 +58,8 @@ class ExtensionStatus(msgspec.Struct, frozen=True, kw_only=True, rename='camel')
     tool_ids: tuple[str, ...] = ()
     skill_ids: tuple[str, ...] = ()
     resource_ids: tuple[str, ...] = ()
+    runtime_environment: str | None = None
+    runtime_selectable: bool = False
 
 
 class ExtensionToggleRequest(msgspec.Struct, frozen=True, kw_only=True):
@@ -82,3 +84,72 @@ class EnvironmentStatus(msgspec.Struct, frozen=True, kw_only=True, rename='camel
     runtime_kind: RuntimeKind
     extension_ids: tuple[str, ...]
     ready: bool
+    name: str = ''
+    source: Literal['official', 'package', 'developer'] = 'official'
+    revision: str = ''
+    state: Literal['declared', 'preparing', 'ready', 'changed', 'missing', 'failed'] = 'declared'
+    detail: str = ''
+    service_classes: tuple[str, ...] = ()
+    tool_ids: tuple[str, ...] = ()
+    base_environment_id: str | None = None
+    pinned: bool = False
+
+
+class EnvironmentCreateRequest(msgspec.Struct, frozen=True, kw_only=True, rename='camel', forbid_unknown_fields=True):
+    name: str
+    base_environment_id: str | None = None
+    policy: Literal['preserve', 'adjust'] = 'preserve'
+    python: str = '3.12.*'
+    conda_dependencies: tuple[str, ...] = ()
+    pypi_dependencies: tuple[str, ...] = ()
+
+
+class EnvironmentRevision(msgspec.Struct, frozen=True, kw_only=True, rename='camel'):
+    environment_id: str
+    request: EnvironmentCreateRequest
+    base_revision: str | None = None
+    pinned: bool = False
+    resolved_id: str | None = None
+    state: Literal['declared', 'preparing', 'ready', 'failed'] = 'declared'
+    detail: str = ''
+
+
+class EnvironmentUsage(msgspec.Struct, frozen=True, kw_only=True, rename='camel'):
+    logical_bytes: int = 0
+    unique_file_bytes: int = 0
+    shared_link_bytes: int = 0
+    exclusive_file_bytes: int = 0
+
+
+class EnvironmentDetail(msgspec.Struct, frozen=True, kw_only=True, rename='camel'):
+    environment_id: str
+    name: str
+    revision: str
+    manifest: str
+    base_environment_id: str | None
+    policy: Literal['preserve', 'adjust'] | None
+    conda_dependencies: tuple[str, ...]
+    pypi_dependencies: tuple[str, ...]
+    storage_path: str
+    cache_path: str
+    usage: EnvironmentUsage
+    pinned: bool = False
+    changed_packages: tuple[str, ...] = ()
+
+
+class EnvironmentRetentionRequest(msgspec.Struct, frozen=True, kw_only=True, forbid_unknown_fields=True):
+    pinned: bool
+
+
+class ExtensionRuntimeRequest(msgspec.Struct, frozen=True, kw_only=True, rename='camel', forbid_unknown_fields=True):
+    environment_id: str | None
+
+
+class RuntimeStorageRequest(msgspec.Struct, frozen=True, kw_only=True, rename='camel', forbid_unknown_fields=True):
+    path: str
+
+
+class RuntimeStorageStatus(msgspec.Struct, frozen=True, kw_only=True, rename='camel'):
+    path: str
+    cache_path: str
+    can_change: bool
