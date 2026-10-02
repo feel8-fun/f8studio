@@ -44,3 +44,7 @@ extension_ids = ["audiofeat"]
 [[extensions]]
 package = "f8proclauncher"
 extension_ids = ["proclauncher"]
+
+[[extensions]]
+package = "f8diagnostics"
+extension_ids = ["diagnostics"]

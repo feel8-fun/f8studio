@@ -26,11 +26,7 @@ from ..editor import CreateEditorSessionRequest, EditorAnalysis, EditorSessionSe
 from ..editor_context import editor_support_files
 from ..events import EventJournal
 from ..local_integration import (
-    ApplyUnityInstallRequest,
-    DetectModdingTargetRequest,
     LocalIntegrationService,
-    PreviewUnityInstallRequest,
-    VerifySkeletonUdpRequest,
 )
 from ..models import DeployProjectRequest
 from ..project_repository import utc_now_text
@@ -121,7 +117,6 @@ class AgentModelTools:
         project_id = record.project_id
         previewed_patches: set[str] = set()
         proposals: dict[str, PatchRequest] = {}
-        previewed_unity_plans: set[str] = set()
 
         async def catalog_read() -> str:
             """List installed service and operator IDs/labels. Use catalog_search and catalog_operator to inspect relevant nodes."""
@@ -405,55 +400,6 @@ class AgentModelTools:
             )
             return tool_text(result)
 
-        async def modding_detect_target(target_path: str) -> str:
-            """Detect the game engine and whether Studio has a supported installer for this local target."""
-            result = await self._execution.run(
-                record, tool_name="modding.detect_target", arguments={"targetPath": target_path}, target_graph_revision=None,
-                operation=lambda: asyncio.to_thread(
-                    self._local.detect_modding_target, DetectModdingTargetRequest(target_path=target_path)
-                ),
-            )
-            return tool_text(result)
-
-        async def modding_preview_unity_install(target_path: str) -> str:
-            """Preview exact Unity exporter installation actions and files; does not write to the game."""
-            result = await self._execution.run(
-                record, tool_name="modding.preview_unity_install", arguments={"targetPath": target_path},
-                target_graph_revision=None,
-                operation=lambda: asyncio.to_thread(
-                    self._local.preview_unity_install, PreviewUnityInstallRequest(target_path=target_path)
-                ),
-            )
-            previewed_unity_plans.add(result.plan_id)
-            await self._sessions.append_artifact(record.session_id, AgentArtifact(
-                artifact_id=uuid4().hex, kind="text", title="Unity installation preview",
-                payload=json_value(result), created_at=utc_now_text(),
-            ))
-            return tool_text(result)
-
-        async def modding_apply_unity_install(plan_id: str) -> str:
-            """Install the exact previewed Unity plan after human approval; never use for Unreal."""
-            if plan_id not in previewed_unity_plans:
-                raise InvalidRequestError("Unity installation plan must be previewed in this run before applying")
-            document = await asyncio.to_thread(self._tools.document, project_id)
-            result = await self._execution.approved(
-                record, tool_name="modding.apply_unity_install", arguments={"planId": plan_id},
-                target_graph_revision=document.graph_revision,
-                operation=lambda: asyncio.to_thread(
-                    self._local.apply_unity_install, ApplyUnityInstallRequest(plan_id=plan_id, confirm=True)
-                ),
-            )
-            previewed_unity_plans.discard(plan_id)
-            return tool_text(result)
-
-        async def modding_verify_udp(port: int = 39540) -> str:
-            """Verify a complete decoded skeleton frame from the game exporter on a UDP port."""
-            result = await self._execution.run(
-                record, tool_name="modding.verify_udp", arguments={"port": port}, target_graph_revision=None,
-                operation=lambda: self._local.verify_skeleton_udp(VerifySkeletonUdpRequest(port=port)),
-            )
-            return tool_text(result)
-
         async def extension_tools_list() -> str:
             """List installed and enabled one-shot extension tools and their input fields."""
             extension_tools = self._extension_tools
@@ -509,6 +455,5 @@ class AgentModelTools:
             graph_read, graph_node, graph_preview_patch, graph_apply_patch,
             graph_propose_changes, graph_apply_proposal,
             code_read, code_analyze, code_write, graph_validate, project_deploy,
-            runtime_observe, logs_read, modding_detect_target, modding_preview_unity_install,
-            modding_apply_unity_install, modding_verify_udp,
+            runtime_observe, logs_read,
         )

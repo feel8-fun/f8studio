@@ -153,13 +153,9 @@ export type EditorSession = import('./contracts.gen').EditorSessionRecord;
 
 export type EditorLanguageResult = import('./contracts.gen').EditorLanguageResult;
 
-export type LocalCapability = import('./contracts.gen').LocalCapability;
 
-export type SerialPortInfo = import('./contracts.gen').SerialPortInfo;
 
-export type UnityInstallPlan = import('./contracts.gen').UnityInstallPlan;
 
-export type SkeletonUdpVerification = import('./contracts.gen').SkeletonUdpVerification;
 
 export type HotkeyBinding = import('./contracts.gen').HotkeyBinding;
 

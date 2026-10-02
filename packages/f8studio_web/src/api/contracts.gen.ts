@@ -191,16 +191,6 @@ export type AgentToolCallInput = {
   readonly "tracebackId"?: string;
 };
 
-export type ApplyUnityInstallRequest = {
-  readonly "planId": string;
-  readonly "confirm": boolean;
-};
-
-export type ApplyUnityInstallRequestInput = {
-  readonly "planId": string;
-  readonly "confirm": boolean;
-};
-
 export type ApprovalStatus = "approved" | "cancelled" | "denied" | "expired" | "invalidated" | "pending";
 
 export type ApprovalStatusInput = "approved" | "cancelled" | "denied" | "expired" | "invalidated" | "pending";
@@ -659,14 +649,6 @@ export type DeployProjectRequestInput = {
   readonly "requestId": string;
   readonly "expectedGraphRevision": number;
   readonly "forceApply"?: boolean;
-};
-
-export type DetectModdingTargetRequest = {
-  readonly "targetPath": string;
-};
-
-export type DetectModdingTargetRequestInput = {
-  readonly "targetPath": string;
 };
 
 export type DisconnectEdgeOp = {
@@ -2545,20 +2527,6 @@ export type LiveSnapshotInput = {
   readonly "values": Readonly<Record<string, JsonValue>>;
 };
 
-export type LocalCapability = {
-  readonly "capability": string;
-  readonly "status": "available" | "unavailable" | "unverified";
-  readonly "backend": string;
-  readonly "reason": string;
-};
-
-export type LocalCapabilityInput = {
-  readonly "capability": string;
-  readonly "status": "available" | "unavailable" | "unverified";
-  readonly "backend": string;
-  readonly "reason"?: string;
-};
-
 export type ManagedProcessResult = {
   readonly "serviceId": string;
   readonly "running": boolean;
@@ -2895,24 +2863,6 @@ export type PresetEnvironmentStatusInput = {
   readonly "ready": boolean;
 };
 
-export type PreviewUnityInstallRequest = {
-  readonly "targetPath": string;
-  readonly "exporter": "auto" | "live2d" | "skeleton";
-  readonly "udpPort": number;
-  readonly "offline": boolean;
-  readonly "forceReinstall": boolean;
-  readonly "skipExporter": boolean;
-};
-
-export type PreviewUnityInstallRequestInput = {
-  readonly "targetPath": string;
-  readonly "exporter"?: "auto" | "live2d" | "skeleton";
-  readonly "udpPort"?: number;
-  readonly "offline"?: boolean;
-  readonly "forceReinstall"?: boolean;
-  readonly "skipExporter"?: boolean;
-};
-
 export type ProbeProviderRequest = {
   readonly "protocol": "anthropic" | "openai_chat" | "openai_responses" | "systemone";
   readonly "endpoint": string;
@@ -3205,18 +3155,6 @@ export type SelectAgentModelRequestInput = {
   readonly "modelId": string;
 };
 
-export type SerialPortInfo = {
-  readonly "device": string;
-  readonly "description": string;
-  readonly "hardwareId": string;
-};
-
-export type SerialPortInfoInput = {
-  readonly "device": string;
-  readonly "description": string;
-  readonly "hardwareId": string;
-};
-
 export type ServerCapabilities = {
   readonly "graph_editing": boolean;
   readonly "runtime_control": boolean;
@@ -3501,26 +3439,6 @@ export type SkeletonSceneInput = {
   readonly "performanceHints"?: SkeletonPerformanceHintsInput;
 };
 
-export type SkeletonUdpVerification = {
-  readonly "bindAddress": string;
-  readonly "port": number;
-  readonly "packetCount": number;
-  readonly "decodedFrameCount": number;
-  readonly "modelNames": ReadonlyArray<string>;
-  readonly "decoderErrors": ReadonlyArray<string>;
-  readonly "verified": boolean;
-};
-
-export type SkeletonUdpVerificationInput = {
-  readonly "bindAddress": string;
-  readonly "port": number;
-  readonly "packetCount": number;
-  readonly "decodedFrameCount": number;
-  readonly "modelNames": ReadonlyArray<string>;
-  readonly "decoderErrors": ReadonlyArray<string>;
-  readonly "verified": boolean;
-};
-
 export type Source = "data_in_ports";
 
 export type Source1 = "state_fields";
@@ -3666,6 +3584,7 @@ export type ToolView = {
   readonly "description": string;
   readonly "fields": ReadonlyArray<ExtensionToolField>;
   readonly "requiresConfirmation": boolean;
+  readonly "allowConcurrent": boolean;
 };
 
 export type ToolViewInput = {
@@ -3675,6 +3594,7 @@ export type ToolViewInput = {
   readonly "description": string;
   readonly "fields": ReadonlyArray<ExtensionToolFieldInput>;
   readonly "requiresConfirmation": boolean;
+  readonly "allowConcurrent"?: boolean;
 };
 
 export type TrackFlow = {
@@ -3757,28 +3677,6 @@ export type TrackSceneInput = {
   readonly "nowMs": number;
 };
 
-export type UnityInstallPlan = {
-  readonly "planId": string;
-  readonly "targetPath": string;
-  readonly "actions": ReadonlyArray<string>;
-  readonly "blockingErrors": ReadonlyArray<string>;
-  readonly "filesToWrite": ReadonlyArray<string>;
-  readonly "filesToPreserve": ReadonlyArray<string>;
-  readonly "graphBuildPlan": JsonValue;
-  readonly "raw": JsonValue;
-};
-
-export type UnityInstallPlanInput = {
-  readonly "planId": string;
-  readonly "targetPath": string;
-  readonly "actions": ReadonlyArray<string>;
-  readonly "blockingErrors": ReadonlyArray<string>;
-  readonly "filesToWrite": ReadonlyArray<string>;
-  readonly "filesToPreserve": ReadonlyArray<string>;
-  readonly "graphBuildPlan": JsonValue;
-  readonly "raw": JsonValue;
-};
-
 export type UpdateAssetRequest = {
   readonly "name": string;
   readonly "content": JsonValue;
@@ -3851,20 +3749,6 @@ export type ValidationResponseInput = {
   readonly "valid": boolean;
   readonly "graphRevision": number;
   readonly "layoutRevision": number;
-};
-
-export type VerifySkeletonUdpRequest = {
-  readonly "bindAddress": string;
-  readonly "port": number;
-  readonly "timeoutMs": number;
-  readonly "minimumFrames": number;
-};
-
-export type VerifySkeletonUdpRequestInput = {
-  readonly "bindAddress"?: string;
-  readonly "port"?: number;
-  readonly "timeoutMs"?: number;
-  readonly "minimumFrames"?: number;
 };
 
 export type VideoConfig = {
@@ -3947,10 +3831,6 @@ export interface ApiRequests {
   readonly "POST /api/editor/sessions/{session_id}/completion": EditorPositionRequestInput;
   readonly "POST /api/editor/sessions/{session_id}/hover": EditorPositionRequestInput;
   readonly "POST /api/editor/sessions/{session_id}/signature-help": EditorPositionRequestInput;
-  readonly "POST /api/local/modding/detect": DetectModdingTargetRequestInput;
-  readonly "POST /api/local/modding/unity/preview": PreviewUnityInstallRequestInput;
-  readonly "POST /api/local/modding/unity/apply": ApplyUnityInstallRequestInput;
-  readonly "POST /api/local/modding/verify-udp": VerifySkeletonUdpRequestInput;
   readonly "POST /api/local/hotkeys": RegisterHotkeyRequestInput;
   readonly "POST /api/projects/{project_id}/validate": ValidateDocumentRequestInput;
   readonly "POST /api/projects/{project_id}/patch": PatchRequestInput;
@@ -4036,12 +3916,6 @@ export interface ApiResponses {
   readonly "POST /api/editor/sessions/{session_id}/hover": EditorLanguageResult;
   readonly "POST /api/editor/sessions/{session_id}/signature-help": EditorLanguageResult;
   readonly "DELETE /api/editor/sessions/{session_id}": void;
-  readonly "GET /api/local/capabilities": ReadonlyArray<LocalCapability>;
-  readonly "GET /api/local/serial-ports": ReadonlyArray<SerialPortInfo>;
-  readonly "POST /api/local/modding/detect": JsonValue;
-  readonly "POST /api/local/modding/unity/preview": UnityInstallPlan;
-  readonly "POST /api/local/modding/unity/apply": JsonValue;
-  readonly "POST /api/local/modding/verify-udp": SkeletonUdpVerification;
   readonly "GET /api/local/hotkeys": ReadonlyArray<HotkeyBinding>;
   readonly "POST /api/local/hotkeys": HotkeyBinding;
   readonly "DELETE /api/local/hotkeys/{binding_id}": void;

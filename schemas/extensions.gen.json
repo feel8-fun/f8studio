@@ -186,6 +186,10 @@
     "ExtensionTool": {
       "additionalProperties": false,
       "properties": {
+        "allowConcurrent": {
+          "default": false,
+          "type": "boolean"
+        },
         "args": {
           "default": [],
           "items": {
@@ -225,8 +229,15 @@
           "type": "boolean"
         },
         "timeoutSeconds": {
-          "default": 300,
-          "type": "integer"
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 300
         },
         "toolId": {
           "type": "string"

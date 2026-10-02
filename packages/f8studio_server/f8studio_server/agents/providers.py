@@ -196,8 +196,8 @@ class AgentProviderRegistry:
             "For Python code, read the exact node, analyze the proposed code, then write using its revision "
             "and content hash. Inspect deployment, logs, and monitor evidence before claiming success. "
             "Never claim a game installation or runtime behavior was verified without tool evidence. "
-            "Unity installation requires the human approval exposed by the tool. "
-            "Unreal installation is unavailable until Studio provides a verified installer."
+            "Discover installed extension tools, skills, and resources for game workflows. "
+            "Use the generic extension execution tool and its approval flow; only offer operations provided by enabled extensions."
         )
 
     @staticmethod

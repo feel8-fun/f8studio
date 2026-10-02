@@ -1,9 +1,6 @@
 # Unity Game Modding
 
-Web Studio can install the managed F8 skeleton exporter into a supported local
-Unity game, verify its UDP stream, and create a guarded skeleton-to-OSR graph.
-The workflow never installs from detection alone: you preview exact writes and
-confirm them before the game directory changes.
+Game detection and installation belong to extensions. Studio currently provides the generic extension tool framework; the concrete Unity extension tool migration is pending. There is no built-in Unity, Unreal, or VaM installer page. The installation and graph workflows below describe the intended extension behavior, rather than currently available Studio controls.
 
 ## Before You Start
 
@@ -14,7 +11,7 @@ confirm them before the game directory changes.
 
 ## Detect And Install
 
-1. Open the `Local` workspace in Web Studio.
+1. Once the extension provides these tools, open `Tools` and select its declared installation tool.
 2. Select the game executable or game root and run detection.
 3. Review the detected Unity backend, game profile, loader, exporter, and every
    proposed destination path.

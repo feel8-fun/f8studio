@@ -64,11 +64,7 @@ from .editor import CreateEditorSessionRequest, EditorPositionRequest, UpdateEdi
 from .editor_context import editor_support_files
 from .extension_models import ExtensionImportRequest, ExtensionToggleRequest
 from .local_integration import (
-    ApplyUnityInstallRequest,
-    DetectModdingTargetRequest,
-    PreviewUnityInstallRequest,
     RegisterHotkeyRequest,
-    VerifySkeletonUdpRequest,
 )
 from .models import (
     BrowserRtcConfiguration,
@@ -638,34 +634,6 @@ def create_app(
     async def close_editor_session(session_id: str) -> Response:
         await asyncio.to_thread(studio.editor.close_session, session_id)
         return Response(status_code=204)
-
-    @app.get("/api/local/capabilities")
-    async def local_capabilities() -> F8JsonValue:
-        return _json_value(studio.local.capabilities())
-
-    @app.get("/api/local/serial-ports")
-    async def serial_ports() -> F8JsonValue:
-        return _json_value(await asyncio.to_thread(studio.local.serial_ports))
-
-    @app.post("/api/local/modding/detect")
-    async def detect_modding_target(request: Request) -> F8JsonValue:
-        payload = await _decode_body(request, DetectModdingTargetRequest)
-        return _json_value(await asyncio.to_thread(studio.local.detect_modding_target, payload))
-
-    @app.post("/api/local/modding/unity/preview")
-    async def preview_unity_install(request: Request) -> F8JsonValue:
-        payload = await _decode_body(request, PreviewUnityInstallRequest)
-        return _json_value(await asyncio.to_thread(studio.local.preview_unity_install, payload))
-
-    @app.post("/api/local/modding/unity/apply")
-    async def apply_unity_install(request: Request) -> F8JsonValue:
-        payload = await _decode_body(request, ApplyUnityInstallRequest)
-        return _json_value(await asyncio.to_thread(studio.local.apply_unity_install, payload))
-
-    @app.post("/api/local/modding/verify-udp")
-    async def verify_skeleton_udp(request: Request) -> F8JsonValue:
-        payload = await _decode_body(request, VerifySkeletonUdpRequest)
-        return _json_value(await studio.local.verify_skeleton_udp(payload))
 
     @app.get("/api/local/hotkeys")
     async def list_hotkeys(project_id: str | None = None) -> F8JsonValue:

@@ -7,7 +7,7 @@ from typing import Any, Literal, cast
 import msgspec
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
-from f8pysdk.specs import F8JsonValue, F8MonitorSnapshot
+from f8pysdk.specs import F8MonitorSnapshot
 from f8pysdk.decision import DecisionResult
 from f8studio_core import HealthStatus, ServerCapabilities
 from f8studio_core.graph import GraphNode, PatchResult
@@ -24,7 +24,6 @@ from .extension_models import (
 )
 from .processes import ManagedProcessResult
 from .schema_generation import model_schemas
-from .local_integration import ApplyUnityInstallRequest
 from .assets import AssetExport
 from f8media_protocol.models import AudioSessionOffer
 from .agents import CreateAgentSessionRequest
@@ -37,13 +36,11 @@ from .assets import CreateProjectVersionRequest
 from .agents.provider_settings import CreateProviderConnection
 from f8pysdk.decision import DecisionRequest
 from .models import DeployProjectRequest
-from .local_integration import DetectModdingTargetRequest
 from .editor import EditorPositionRequest
 from f8studio_core.graph import HistoryRequest
 from f8media_protocol.models import MediaSessionOffer
 from f8media_protocol.models import OverlayResult
 from f8studio_core.graph import PatchRequest
-from .local_integration import PreviewUnityInstallRequest
 from .agents.provider_probe import ProbeProviderRequest
 from .local_integration import RegisterHotkeyRequest
 from .agents import RenameAgentSessionRequest
@@ -60,7 +57,6 @@ from .editor import UpdateEditorDocumentRequest
 from .models import UpdateProjectRequest
 from .agents.provider_settings import UpdateProviderSettings
 from .models import ValidateDocumentRequest
-from .local_integration import VerifySkeletonUdpRequest
 
 
 class CapabilitiesResponse(msgspec.Struct, frozen=True):
@@ -150,12 +146,6 @@ ROUTES = (
     RouteContract("post", "/api/editor/sessions/{session_id}/hover", EditorPositionRequest, editor.EditorLanguageResult, 200),
     RouteContract("post", "/api/editor/sessions/{session_id}/signature-help", EditorPositionRequest, editor.EditorLanguageResult, 200),
     RouteContract("delete", "/api/editor/sessions/{session_id}", None, None, 204),
-    RouteContract("get", "/api/local/capabilities", None, tuple[local.LocalCapability, ...], 200),
-    RouteContract("get", "/api/local/serial-ports", None, tuple[local.SerialPortInfo, ...], 200),
-    RouteContract("post", "/api/local/modding/detect", DetectModdingTargetRequest, F8JsonValue, 200),
-    RouteContract("post", "/api/local/modding/unity/preview", PreviewUnityInstallRequest, local.UnityInstallPlan, 200),
-    RouteContract("post", "/api/local/modding/unity/apply", ApplyUnityInstallRequest, F8JsonValue, 200),
-    RouteContract("post", "/api/local/modding/verify-udp", VerifySkeletonUdpRequest, local.SkeletonUdpVerification, 200),
     RouteContract("get", "/api/local/hotkeys", None, tuple[local.HotkeyBinding, ...], 200),
     RouteContract("post", "/api/local/hotkeys", RegisterHotkeyRequest, local.HotkeyBinding, 201),
     RouteContract("delete", "/api/local/hotkeys/{binding_id}", None, None, 204),

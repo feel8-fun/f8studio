@@ -15,7 +15,7 @@ beforeEach(() => {
     'fetch',
     vi.fn().mockImplementation((input: string | URL | Request) => {
       const path = typeof input === 'string' ? input : input instanceof URL ? input.pathname : new URL(input.url).pathname;
-      if (path === '/api/projects' || path === '/api/presentation') return Promise.resolve(new Response('[]', { status: 200 }));
+      if (path === '/api/projects' || path === '/api/presentation' || path === '/api/extension-tools' || path === '/api/tool-jobs' || path === '/api/extensions') return Promise.resolve(new Response('[]', { status: 200 }));
       if (path === '/api/catalog') return Promise.resolve(new Response('{"services":[],"operators":[]}', { status: 200 }));
       return Promise.resolve(new Response(
         JSON.stringify({
@@ -51,4 +51,14 @@ test.each(['video', 'audio', 'three'])('retired %s workspace falls back to Graph
     expect(navigation.queryByRole('button', { name: label })).not.toBeInTheDocument();
   }
   expect(screen.queryByRole('tablist', { name: 'Media view' })).not.toBeInTheDocument();
+});
+
+test('old local URL opens unified Tools and removes the separate Local navigation', async () => {
+  window.history.replaceState(null, '', '/?view=local');
+  render(<App />);
+  expect(await screen.findByRole('navigation', { name: 'Tool catalog' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Tools' })).toBeInTheDocument();
+  const navigation = within(screen.getByRole('complementary', { name: 'Workspace navigation' }));
+  expect(navigation.getByRole('button', { name: 'Tools' })).toBeInTheDocument();
+  expect(navigation.queryByRole('button', { name: 'Local integrations' })).not.toBeInTheDocument();
 });

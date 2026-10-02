@@ -44,12 +44,8 @@ import {
   type EditorLanguageResult,
   type HotkeyBinding,
   type JsonValue,
-  type LocalCapability,
   type ProjectVersion,
   type RegisterHotkeyInput,
-  type SerialPortInfo,
-  type SkeletonUdpVerification,
-  type UnityInstallPlan,
 } from './contracts';
 
 function isAgentSession(value: unknown): value is AgentSession {
@@ -670,40 +666,6 @@ export async function closeEditorSession(sessionId: string): Promise<void> {
   await requestJson(`/api/editor/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }, true);
 }
 
-export async function fetchLocalCapabilities(signal?: AbortSignal): Promise<readonly LocalCapability[]> {
-  const body = await requestJson('/api/local/capabilities', { signal });
-  if (!Array.isArray(body)) throw new Error('Local capabilities do not match f8studio-api/1');
-  return body as readonly LocalCapability[];
-}
-
-export async function fetchSerialPorts(): Promise<readonly SerialPortInfo[]> {
-  const body = await requestJson('/api/local/serial-ports');
-  if (!Array.isArray(body)) throw new Error('Serial ports do not match f8studio-api/1');
-  return body as readonly SerialPortInfo[];
-}
-
-export async function detectModdingTarget(targetPath: string): Promise<Readonly<Record<string, JsonValue>>> {
-  const body = await requestJson('/api/local/modding/detect', jsonRequest('POST /api/local/modding/detect', { targetPath }));
-  if (!isObject(body)) throw new Error('Modding detection does not match f8studio-api/1');
-  return body as Readonly<Record<string, JsonValue>>;
-}
-
-export async function previewUnityInstall(targetPath: string): Promise<UnityInstallPlan> {
-  const body = await requestJson('/api/local/modding/unity/preview', jsonRequest('POST /api/local/modding/unity/preview', { targetPath, offline: true }));
-  if (!isObject(body) || typeof body.planId !== 'string') throw new Error('Unity plan does not match f8studio-api/1');
-  return body as unknown as UnityInstallPlan;
-}
-
-export async function applyUnityInstall(planId: string, confirm: boolean): Promise<JsonValue> {
-  return await requestJson('/api/local/modding/unity/apply', jsonRequest('POST /api/local/modding/unity/apply', { planId, confirm })) as JsonValue;
-}
-
-export async function verifySkeletonUdp(port: number): Promise<SkeletonUdpVerification> {
-  const body = await requestJson('/api/local/modding/verify-udp', jsonRequest('POST /api/local/modding/verify-udp', { port }));
-  if (!isObject(body) || typeof body.verified !== 'boolean') throw new Error('UDP verification does not match f8studio-api/1');
-  return body as unknown as SkeletonUdpVerification;
-}
-
 export async function fetchHotkeys(projectId?: string): Promise<readonly HotkeyBinding[]> {
   const query = projectId === undefined ? '' : `?project_id=${encodeURIComponent(projectId)}`;
   const body = await requestJson(`/api/local/hotkeys${query}`);
@@ -750,7 +712,7 @@ function isToolView(value: unknown): value is Wire.ToolView {
   if (!isToolRecord(value)) return false;
   return typeof value.extensionId === 'string' && typeof value.toolId === 'string' &&
     typeof value.name === 'string' && typeof value.description === 'string' &&
-    typeof value.requiresConfirmation === 'boolean' && Array.isArray(value.fields) &&
+    typeof value.requiresConfirmation === 'boolean' && typeof value.allowConcurrent === 'boolean' && Array.isArray(value.fields) &&
     value.fields.every((field: unknown) => isToolRecord(field) && typeof field.name === 'string' &&
       typeof field.label === 'string' && typeof field.required === 'boolean' &&
       (field.kind === 'string' || field.kind === 'integer' || field.kind === 'number' || field.kind === 'boolean') &&

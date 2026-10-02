@@ -963,38 +963,6 @@
       "title": "AgentToolCall",
       "type": "object"
     },
-    "ApplyUnityInstallRequest": {
-      "properties": {
-        "confirm": {
-          "type": "boolean"
-        },
-        "planId": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "confirm",
-        "planId"
-      ],
-      "title": "ApplyUnityInstallRequest",
-      "type": "object"
-    },
-    "ApplyUnityInstallRequestInput": {
-      "properties": {
-        "confirm": {
-          "type": "boolean"
-        },
-        "planId": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "planId",
-        "confirm"
-      ],
-      "title": "ApplyUnityInstallRequest",
-      "type": "object"
-    },
     "ApprovalStatus": {
       "enum": [
         "approved",
@@ -3543,30 +3511,6 @@
         "expectedGraphRevision"
       ],
       "title": "DeployProjectRequest",
-      "type": "object"
-    },
-    "DetectModdingTargetRequest": {
-      "properties": {
-        "targetPath": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "targetPath"
-      ],
-      "title": "DetectModdingTargetRequest",
-      "type": "object"
-    },
-    "DetectModdingTargetRequestInput": {
-      "properties": {
-        "targetPath": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "targetPath"
-      ],
-      "title": "DetectModdingTargetRequest",
       "type": "object"
     },
     "DisconnectEdgeOp": {
@@ -12880,63 +12824,6 @@
       "title": "LiveSnapshot",
       "type": "object"
     },
-    "LocalCapability": {
-      "properties": {
-        "backend": {
-          "type": "string"
-        },
-        "capability": {
-          "type": "string"
-        },
-        "reason": {
-          "default": "",
-          "type": "string"
-        },
-        "status": {
-          "enum": [
-            "available",
-            "unavailable",
-            "unverified"
-          ]
-        }
-      },
-      "required": [
-        "backend",
-        "capability",
-        "reason",
-        "status"
-      ],
-      "title": "LocalCapability",
-      "type": "object"
-    },
-    "LocalCapabilityInput": {
-      "properties": {
-        "backend": {
-          "type": "string"
-        },
-        "capability": {
-          "type": "string"
-        },
-        "reason": {
-          "default": "",
-          "type": "string"
-        },
-        "status": {
-          "enum": [
-            "available",
-            "unavailable",
-            "unverified"
-          ]
-        }
-      },
-      "required": [
-        "capability",
-        "status",
-        "backend"
-      ],
-      "title": "LocalCapability",
-      "type": "object"
-    },
     "ManagedProcessResult": {
       "properties": {
         "running": {
@@ -14859,83 +14746,6 @@
       "title": "PresetEnvironmentStatus",
       "type": "object"
     },
-    "PreviewUnityInstallRequest": {
-      "properties": {
-        "exporter": {
-          "default": "auto",
-          "enum": [
-            "auto",
-            "live2d",
-            "skeleton"
-          ]
-        },
-        "forceReinstall": {
-          "default": false,
-          "type": "boolean"
-        },
-        "offline": {
-          "default": true,
-          "type": "boolean"
-        },
-        "skipExporter": {
-          "default": false,
-          "type": "boolean"
-        },
-        "targetPath": {
-          "type": "string"
-        },
-        "udpPort": {
-          "default": 39540,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "exporter",
-        "forceReinstall",
-        "offline",
-        "skipExporter",
-        "targetPath",
-        "udpPort"
-      ],
-      "title": "PreviewUnityInstallRequest",
-      "type": "object"
-    },
-    "PreviewUnityInstallRequestInput": {
-      "properties": {
-        "exporter": {
-          "default": "auto",
-          "enum": [
-            "auto",
-            "live2d",
-            "skeleton"
-          ]
-        },
-        "forceReinstall": {
-          "default": false,
-          "type": "boolean"
-        },
-        "offline": {
-          "default": true,
-          "type": "boolean"
-        },
-        "skipExporter": {
-          "default": false,
-          "type": "boolean"
-        },
-        "targetPath": {
-          "type": "string"
-        },
-        "udpPort": {
-          "default": 39540,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "targetPath"
-      ],
-      "title": "PreviewUnityInstallRequest",
-      "type": "object"
-    },
     "ProbeProviderRequest": {
       "additionalProperties": false,
       "properties": {
@@ -16591,46 +16401,6 @@
       "title": "SelectAgentModelRequest",
       "type": "object"
     },
-    "SerialPortInfo": {
-      "properties": {
-        "description": {
-          "type": "string"
-        },
-        "device": {
-          "type": "string"
-        },
-        "hardwareId": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "description",
-        "device",
-        "hardwareId"
-      ],
-      "title": "SerialPortInfo",
-      "type": "object"
-    },
-    "SerialPortInfoInput": {
-      "properties": {
-        "description": {
-          "type": "string"
-        },
-        "device": {
-          "type": "string"
-        },
-        "hardwareId": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "device",
-        "description",
-        "hardwareId"
-      ],
-      "title": "SerialPortInfo",
-      "type": "object"
-    },
     "ServerCapabilities": {
       "properties": {
         "agent_tools": {
@@ -17936,90 +17706,6 @@
       "title": "SkeletonScene",
       "type": "object"
     },
-    "SkeletonUdpVerification": {
-      "properties": {
-        "bindAddress": {
-          "type": "string"
-        },
-        "decodedFrameCount": {
-          "type": "integer"
-        },
-        "decoderErrors": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "modelNames": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "packetCount": {
-          "type": "integer"
-        },
-        "port": {
-          "type": "integer"
-        },
-        "verified": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "bindAddress",
-        "decodedFrameCount",
-        "decoderErrors",
-        "modelNames",
-        "packetCount",
-        "port",
-        "verified"
-      ],
-      "title": "SkeletonUdpVerification",
-      "type": "object"
-    },
-    "SkeletonUdpVerificationInput": {
-      "properties": {
-        "bindAddress": {
-          "type": "string"
-        },
-        "decodedFrameCount": {
-          "type": "integer"
-        },
-        "decoderErrors": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "modelNames": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "packetCount": {
-          "type": "integer"
-        },
-        "port": {
-          "type": "integer"
-        },
-        "verified": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "bindAddress",
-        "port",
-        "packetCount",
-        "decodedFrameCount",
-        "modelNames",
-        "decoderErrors",
-        "verified"
-      ],
-      "title": "SkeletonUdpVerification",
-      "type": "object"
-    },
     "Source": {
       "enum": [
         "data_in_ports"
@@ -18830,6 +18516,10 @@
     },
     "ToolView": {
       "properties": {
+        "allowConcurrent": {
+          "default": false,
+          "type": "boolean"
+        },
         "description": {
           "type": "string"
         },
@@ -18853,6 +18543,7 @@
         }
       },
       "required": [
+        "allowConcurrent",
         "description",
         "extensionId",
         "fields",
@@ -18865,6 +18556,10 @@
     },
     "ToolViewInput": {
       "properties": {
+        "allowConcurrent": {
+          "default": false,
+          "type": "boolean"
+        },
         "description": {
           "type": "string"
         },
@@ -19250,202 +18945,6 @@
       "title": "TrackScene",
       "type": "object"
     },
-    "UnityInstallPlan": {
-      "properties": {
-        "actions": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "blockingErrors": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "filesToPreserve": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "filesToWrite": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "graphBuildPlan": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "integer"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "object"
-            },
-            {
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Any JSON value."
-        },
-        "planId": {
-          "type": "string"
-        },
-        "raw": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "integer"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "object"
-            },
-            {
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Any JSON value."
-        },
-        "targetPath": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "actions",
-        "blockingErrors",
-        "filesToPreserve",
-        "filesToWrite",
-        "graphBuildPlan",
-        "planId",
-        "raw",
-        "targetPath"
-      ],
-      "title": "UnityInstallPlan",
-      "type": "object"
-    },
-    "UnityInstallPlanInput": {
-      "properties": {
-        "actions": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "blockingErrors": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "filesToPreserve": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "filesToWrite": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "graphBuildPlan": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "integer"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "object"
-            },
-            {
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Any JSON value."
-        },
-        "planId": {
-          "type": "string"
-        },
-        "raw": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "integer"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "object"
-            },
-            {
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Any JSON value."
-        },
-        "targetPath": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "planId",
-        "targetPath",
-        "actions",
-        "blockingErrors",
-        "filesToWrite",
-        "filesToPreserve",
-        "graphBuildPlan",
-        "raw"
-      ],
-      "title": "UnityInstallPlan",
-      "type": "object"
-    },
     "UpdateAssetRequest": {
       "properties": {
         "content": {
@@ -19795,57 +19294,6 @@
         "layoutRevision"
       ],
       "title": "ValidationResponse",
-      "type": "object"
-    },
-    "VerifySkeletonUdpRequest": {
-      "properties": {
-        "bindAddress": {
-          "default": "127.0.0.1",
-          "type": "string"
-        },
-        "minimumFrames": {
-          "default": 1,
-          "type": "integer"
-        },
-        "port": {
-          "default": 39540,
-          "type": "integer"
-        },
-        "timeoutMs": {
-          "default": 2000,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "bindAddress",
-        "minimumFrames",
-        "port",
-        "timeoutMs"
-      ],
-      "title": "VerifySkeletonUdpRequest",
-      "type": "object"
-    },
-    "VerifySkeletonUdpRequestInput": {
-      "properties": {
-        "bindAddress": {
-          "default": "127.0.0.1",
-          "type": "string"
-        },
-        "minimumFrames": {
-          "default": 1,
-          "type": "integer"
-        },
-        "port": {
-          "default": 39540,
-          "type": "integer"
-        },
-        "timeoutMs": {
-          "default": 2000,
-          "type": "integer"
-        }
-      },
-      "required": [],
-      "title": "VerifySkeletonUdpRequest",
       "type": "object"
     },
     "VideoConfig": {
@@ -20825,88 +20273,6 @@
     },
     {
       "items": {
-        "$ref": "#/$defs/LocalCapability"
-      },
-      "type": "array"
-    },
-    {
-      "items": {
-        "$ref": "#/$defs/SerialPortInfo"
-      },
-      "type": "array"
-    },
-    {
-      "$ref": "#/$defs/DetectModdingTargetRequest"
-    },
-    {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "number"
-        },
-        {
-          "type": "integer"
-        },
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "object"
-        },
-        {
-          "type": "array"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "description": "Any JSON value."
-    },
-    {
-      "$ref": "#/$defs/PreviewUnityInstallRequest"
-    },
-    {
-      "$ref": "#/$defs/UnityInstallPlan"
-    },
-    {
-      "$ref": "#/$defs/ApplyUnityInstallRequest"
-    },
-    {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "number"
-        },
-        {
-          "type": "integer"
-        },
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "object"
-        },
-        {
-          "type": "array"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "description": "Any JSON value."
-    },
-    {
-      "$ref": "#/$defs/VerifySkeletonUdpRequest"
-    },
-    {
-      "$ref": "#/$defs/SkeletonUdpVerification"
-    },
-    {
-      "items": {
         "$ref": "#/$defs/HotkeyBinding"
       },
       "type": "array"
@@ -21762,88 +21128,6 @@
     },
     {
       "$ref": "#/$defs/EditorLanguageResultInput"
-    },
-    {
-      "items": {
-        "$ref": "#/$defs/LocalCapabilityInput"
-      },
-      "type": "array"
-    },
-    {
-      "items": {
-        "$ref": "#/$defs/SerialPortInfoInput"
-      },
-      "type": "array"
-    },
-    {
-      "$ref": "#/$defs/DetectModdingTargetRequestInput"
-    },
-    {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "number"
-        },
-        {
-          "type": "integer"
-        },
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "object"
-        },
-        {
-          "type": "array"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "description": "Any JSON value."
-    },
-    {
-      "$ref": "#/$defs/PreviewUnityInstallRequestInput"
-    },
-    {
-      "$ref": "#/$defs/UnityInstallPlanInput"
-    },
-    {
-      "$ref": "#/$defs/ApplyUnityInstallRequestInput"
-    },
-    {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "number"
-        },
-        {
-          "type": "integer"
-        },
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "object"
-        },
-        {
-          "type": "array"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "description": "Any JSON value."
-    },
-    {
-      "$ref": "#/$defs/VerifySkeletonUdpRequestInput"
-    },
-    {
-      "$ref": "#/$defs/SkeletonUdpVerificationInput"
     },
     {
       "items": {

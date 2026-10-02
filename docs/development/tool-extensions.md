@@ -73,3 +73,13 @@ Tools 工作区列出已安装且启用的工具，提供表单、执行确认�
 扩展 skill 使用 `<extensionId>:<skillId>` 名称，避免与用户/内置 skills 冲突。只有已安装且启用的扩展提供 tools、skills 和 resources；停用后立即撤出。skill 可以指导 Agent 通过 resource ID 获取 profiles 和参考资料。资源必须在清单中声明，解析后不能越过包边界；文本读取限制 1 MiB，skill 限制 64 KiB。插件二进制等素材使用文件下载接口。
 
 扩展包执行在独立进程中，避免导入 Studio 核心；这不提供不可信代码沙箱。游戏检测、安装幂等性、修改预览和经验记录由具体工具实现。本阶段没有新增 Unity、Spine 或 Live2D 功能，也没有把工具扩展自动暴露为 MCP 工具；当前 Agent 的模型工具接口已接入。
+
+## Studio 与具体工具的边界
+
+Tools 仅展示已安装、启用的扩展声明的工具，不包含 Studio 内置诊断条目。全局快捷键在 Graph Inspector 中配置，服务进程在项目部署和 Services 中管理，不作为 Tools 条目。Unity、Unreal、VaM 等游戏工具不属于 Studio 内置能力；只有扩展安装、启用并声明工具后才会出现。名称、描述、输入字段、默认值、确认要求由扩展清单决定，执行结果由扩展返回；Studio 不按游戏引擎或 extension ID 添加特殊页面、安装 API 或 agent skill。具体游戏工具的实现继续在独立扩展仓库演化。
+
+原有 Studio 专用游戏检测和 Unity preview/apply API、内置 Unity skill 已移除。Studio 专用串口枚举、Skeleton UDP 验证 API 和 `skeleton_verify_udp` agent 入口也已移除。`extensions/f8diagnostics` 是可选调试工具集，声明 `skeleton-verify` 和 `skeleton-simulate`，使用相同的通用 extension tool 执行、确认、取消和结果接口。它不默认安装，不包含串口扫描，也不依赖 Studio 或 PyEngine。
+
+Tools 页面按已有 `extensionId` 分组，分组名称来自 extension 名称，每个工具是该分组下的独立列表项。清单不新增 category 字段。安装、停用后的工具目录由通用 API 决定；选中的工具撤出时，页面自动切换到仍可用的工具。
+
+调试扩展的显示名称为 Diagnostics，独立源包为 `f8diagnostics`。持续工具声明 `timeoutSeconds: null`，默认工具仍在 300 秒后超时。`allowConcurrent: true` 允许同包内不同工具并行，前提是所有正在执行的工具均声明该选项；同一工具仍只能运行一个实例。停用和卸载仍等待整个扩展没有活动任务。发送默认持续到 Stop，切换页面不取消任务，Studio 关闭时停止子进程。

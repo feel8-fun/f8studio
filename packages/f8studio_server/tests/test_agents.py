@@ -26,7 +26,6 @@ from f8studio_server.agents.decisions import SystemOneDecisionClient
 from f8studio_server.agents.graph_edits import GraphChanges, build_patch
 from f8studio_server.agents.skills import AgentSkillLibrary
 from f8studio_server.application import StudioApplication
-from f8studio_server.local_integration import DetectModdingTargetRequest, LocalIntegrationService
 from f8studio_server.models import CreateCatalogNodeRequest, CreateProjectRequest
 from f8studio_server.project_repository import ProjectRepository
 from f8studio_server.models import (
@@ -876,13 +875,13 @@ def test_model_tool_loop_edits_graph_and_python_node_code(tmp_path: Path, engine
     }
     with pytest.raises(ValueError, match="use code_read"):
         asyncio.run(functions["graph_apply_patch"](json.dumps(bypass)))
-    with pytest.raises(ValueError, match="previewed in this run"):
-        asyncio.run(functions["modding_apply_unity_install"]("unseen-plan"))
+    assert not any("modding" in name for name in functions)
 
 
 def test_agent_skill_library_loads_local_skills_without_path_traversal(tmp_path: Path) -> None:
     library = AgentSkillLibrary(user_root=tmp_path / "skills")
-    assert {"graph_python", "unity_modding"} <= set(library.list())
+    assert "graph_python" in library.list()
+    assert "unity_modding" not in library.list()
     custom = tmp_path / "skills" / "specific_game"
     custom.mkdir()
     (custom / "SKILL.md").write_text("# Specific Game\n", encoding="utf-8")
@@ -1067,18 +1066,6 @@ def test_compact_proposal_refreshes_stale_installed_specs_before_graph_edit(tmp_
     assert any(port.name == "elapsedSec" for port in next(node for node in applied.nodes if node.node_id == "tick").ports)
 
 
-def test_unreal_executable_detection_precedes_generic_exe_detection(tmp_path: Path) -> None:
-    executable = tmp_path / "MyGame" / "Binaries" / "Win64" / "MyGame.exe"
-    executable.parent.mkdir(parents=True)
-    executable.touch()
-    result = LocalIntegrationService().detect_modding_target(
-        DetectModdingTargetRequest(target_path=str(executable))
-    )
-    assert isinstance(result, dict)
-    assert result["engine"] == "unreal"
-    assert result["supported"] is False
-
-
 def test_agent_approval_is_invalidated_by_layout_only_edit(tmp_path: Path) -> None:
     studio = StudioApplication(data_dir=tmp_path / "data", runtime=AgentRuntimeGateway(),
                                service_roots=(), media_gateway=InProcessMediaGateway())
@@ -1135,3 +1122,13 @@ def test_extension_tool_approval_is_independent_of_graph_revisions(tmp_path: Pat
         assert await task == 'tool executed'
         await studio.close()
     asyncio.run(scenario())
+
+
+def test_game_tools_are_not_built_in_studio_capabilities() -> None:
+    from f8studio_server.api_contracts import ROUTES
+    assert not any("/modding/" in route.path for route in ROUTES)
+
+
+def test_diagnostics_are_extension_tools_only() -> None:
+    from f8studio_server.api_contracts import ROUTES
+    assert not any(route.path in {"/api/local/capabilities", "/api/local/serial-ports", "/api/local/skeleton/verify-udp"} for route in ROUTES)

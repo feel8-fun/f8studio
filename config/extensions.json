@@ -1,18 +1,385 @@
 {
   "schemaVersion": "f8extensionCatalog/1",
-  "preinstalled": ["audiocap", "audiofeat", "cppengine", "cvkit", "dl", "implayer", "mediapipe", "pyengine", "proclauncher", "pyexpr", "pyscript", "screencap"],
   "extensions": [
-    {"extensionId": "audiocap", "name": "Audio Capture", "version": "0.0.1", "description": "Capture system and microphone audio.", "serviceClasses": ["f8.audiocap"]},
-    {"extensionId": "audiofeat", "name": "Audio Features", "version": "0.0.1", "description": "Analyze audio features and rhythm.", "serviceClasses": ["f8.audiofeat.core", "f8.audiofeat.rhythm"], "runtime": {"kind": "workspace", "environment": "default"}},
-    {"extensionId": "cppengine", "name": "C++ Engine", "version": "0.0.1", "description": "Run native processing graphs.", "serviceClasses": ["f8.cppengine"]},
-    {"extensionId": "cvkit", "name": "Computer Vision", "version": "0.0.1", "description": "Track objects, match templates, stabilize video and analyze optical flow.", "serviceClasses": ["f8.cvkit.denseoptflow", "f8.cvkit.flowmetric", "f8.cvkit.templatematch", "f8.cvkit.tracking", "f8.cvkit.videostab"]},
-    {"extensionId": "dl", "name": "Deep Learning", "version": "0.0.1", "description": "Run ONNX models for classification, detection and motion analysis.", "serviceClasses": ["f8.dl.classifier", "f8.dl.detector", "f8.dl.detsorter", "f8.dl.humandetector", "f8.dl.optflow", "f8.dl.tcnwave"], "runtime": {"kind": "workspace", "environment": "onnx"}, "modelDirectories": ["onnx"]},
-    {"extensionId": "implayer", "name": "Image and Video Player", "version": "0.0.1", "description": "Play image and video sources.", "serviceClasses": ["f8.implayer"]},
-    {"extensionId": "mediapipe", "name": "MediaPipe Pose", "version": "0.0.1", "description": "Estimate body pose with MediaPipe.", "serviceClasses": ["f8.mp.pose"], "runtime": {"kind": "workspace", "environment": "mediapipe"}, "modelDirectories": ["mediapipe"]},
-    {"extensionId": "pyengine", "name": "Python Engine", "version": "0.0.1", "description": "Run Python processing graphs.", "serviceClasses": ["f8.pyengine"], "runtime": {"kind": "workspace", "environment": "web-studio-runtime"}},
-    {"extensionId": "proclauncher", "name": "Process Launcher", "version": "0.0.1", "description": "Launch external processes from a graph.", "serviceClasses": ["f8.proclauncher"], "runtime": {"kind": "workspace", "environment": "default"}},
-    {"extensionId": "pyexpr", "name": "Python Expressions", "version": "0.0.1", "description": "Evaluate Python expressions.", "serviceClasses": ["f8.pyexpr"], "runtime": {"kind": "workspace", "environment": "default"}},
-    {"extensionId": "pyscript", "name": "Python Scripts", "version": "0.0.1", "description": "Run custom Python scripts.", "serviceClasses": ["f8.pyscript"], "runtime": {"kind": "workspace", "environment": "default"}},
-    {"extensionId": "screencap", "name": "Screen Capture", "version": "0.0.1", "description": "Capture desktop video.", "serviceClasses": ["f8.screencap"]}
+    {
+      "extensionId": "audiocap",
+      "name": "Audio Capture",
+      "version": "0.0.1",
+      "description": "Capture system and microphone audio.",
+      "serviceClasses": [
+        "f8.audiocap"
+      ],
+      "tools": [],
+      "skills": [],
+      "resources": [],
+      "runtime": {
+        "kind": "native",
+        "environment": null,
+        "requiresPython": null,
+        "dependencies": []
+      },
+      "modelDirectories": []
+    },
+    {
+      "extensionId": "audiofeat",
+      "name": "Audio Features",
+      "version": "0.0.1",
+      "description": "Analyze audio features and rhythm.",
+      "serviceClasses": [
+        "f8.audiofeat.core",
+        "f8.audiofeat.rhythm"
+      ],
+      "tools": [],
+      "skills": [],
+      "resources": [],
+      "runtime": {
+        "kind": "workspace",
+        "environment": "default",
+        "requiresPython": null,
+        "dependencies": []
+      },
+      "modelDirectories": []
+    },
+    {
+      "extensionId": "cppengine",
+      "name": "C++ Engine",
+      "version": "0.0.1",
+      "description": "Run native processing graphs.",
+      "serviceClasses": [
+        "f8.cppengine"
+      ],
+      "tools": [],
+      "skills": [],
+      "resources": [],
+      "runtime": {
+        "kind": "native",
+        "environment": null,
+        "requiresPython": null,
+        "dependencies": []
+      },
+      "modelDirectories": []
+    },
+    {
+      "extensionId": "cvkit",
+      "name": "Computer Vision",
+      "version": "0.0.1",
+      "description": "Track objects, match templates, stabilize video and analyze optical flow.",
+      "serviceClasses": [
+        "f8.cvkit.denseoptflow",
+        "f8.cvkit.flowmetric",
+        "f8.cvkit.templatematch",
+        "f8.cvkit.tracking",
+        "f8.cvkit.videostab"
+      ],
+      "tools": [],
+      "skills": [],
+      "resources": [],
+      "runtime": {
+        "kind": "native",
+        "environment": null,
+        "requiresPython": null,
+        "dependencies": []
+      },
+      "modelDirectories": []
+    },
+    {
+      "extensionId": "dl",
+      "name": "Deep Learning",
+      "version": "0.0.1",
+      "description": "Run ONNX models for classification, detection and motion analysis.",
+      "serviceClasses": [
+        "f8.dl.classifier",
+        "f8.dl.detector",
+        "f8.dl.detsorter",
+        "f8.dl.humandetector",
+        "f8.dl.optflow",
+        "f8.dl.tcnwave"
+      ],
+      "tools": [],
+      "skills": [],
+      "resources": [],
+      "runtime": {
+        "kind": "workspace",
+        "environment": "onnx",
+        "requiresPython": null,
+        "dependencies": []
+      },
+      "modelDirectories": [
+        "onnx"
+      ]
+    },
+    {
+      "extensionId": "implayer",
+      "name": "Image and Video Player",
+      "version": "0.0.1",
+      "description": "Play image and video sources.",
+      "serviceClasses": [
+        "f8.implayer"
+      ],
+      "tools": [],
+      "skills": [],
+      "resources": [],
+      "runtime": {
+        "kind": "native",
+        "environment": null,
+        "requiresPython": null,
+        "dependencies": []
+      },
+      "modelDirectories": []
+    },
+    {
+      "extensionId": "mediapipe",
+      "name": "MediaPipe Pose",
+      "version": "0.0.1",
+      "description": "Estimate body pose with MediaPipe.",
+      "serviceClasses": [
+        "f8.mp.pose"
+      ],
+      "tools": [],
+      "skills": [],
+      "resources": [],
+      "runtime": {
+        "kind": "workspace",
+        "environment": "mediapipe",
+        "requiresPython": null,
+        "dependencies": []
+      },
+      "modelDirectories": [
+        "mediapipe"
+      ]
+    },
+    {
+      "extensionId": "pyengine",
+      "name": "Python Engine",
+      "version": "0.0.1",
+      "description": "Run Python processing graphs.",
+      "serviceClasses": [
+        "f8.pyengine"
+      ],
+      "tools": [],
+      "skills": [],
+      "resources": [],
+      "runtime": {
+        "kind": "workspace",
+        "environment": "web-studio-runtime",
+        "requiresPython": null,
+        "dependencies": []
+      },
+      "modelDirectories": []
+    },
+    {
+      "extensionId": "proclauncher",
+      "name": "Process Launcher",
+      "version": "0.0.1",
+      "description": "Launch external processes from a graph.",
+      "serviceClasses": [
+        "f8.proclauncher"
+      ],
+      "tools": [],
+      "skills": [],
+      "resources": [],
+      "runtime": {
+        "kind": "workspace",
+        "environment": "default",
+        "requiresPython": null,
+        "dependencies": []
+      },
+      "modelDirectories": []
+    },
+    {
+      "extensionId": "pyexpr",
+      "name": "Python Expressions",
+      "version": "0.0.1",
+      "description": "Evaluate Python expressions.",
+      "serviceClasses": [
+        "f8.pyexpr"
+      ],
+      "tools": [],
+      "skills": [],
+      "resources": [],
+      "runtime": {
+        "kind": "workspace",
+        "environment": "default",
+        "requiresPython": null,
+        "dependencies": []
+      },
+      "modelDirectories": []
+    },
+    {
+      "extensionId": "pyscript",
+      "name": "Python Scripts",
+      "version": "0.0.1",
+      "description": "Run custom Python scripts.",
+      "serviceClasses": [
+        "f8.pyscript"
+      ],
+      "tools": [],
+      "skills": [],
+      "resources": [],
+      "runtime": {
+        "kind": "workspace",
+        "environment": "default",
+        "requiresPython": null,
+        "dependencies": []
+      },
+      "modelDirectories": []
+    },
+    {
+      "extensionId": "screencap",
+      "name": "Screen Capture",
+      "version": "0.0.1",
+      "description": "Capture desktop video.",
+      "serviceClasses": [
+        "f8.screencap"
+      ],
+      "tools": [],
+      "skills": [],
+      "resources": [],
+      "runtime": {
+        "kind": "native",
+        "environment": null,
+        "requiresPython": null,
+        "dependencies": []
+      },
+      "modelDirectories": []
+    },
+    {
+      "extensionId": "diagnostics",
+      "name": "Diagnostics",
+      "version": "0.2.0",
+      "description": "Optional debugging tools for streams, protocols, and runtime integrations.",
+      "serviceClasses": [],
+      "tools": [
+        {
+          "toolId": "skeleton-verify",
+          "name": "Verify skeleton UDP stream",
+          "description": "Listen for complete decoded skeleton frames; report malformed packets and incomplete chunks.",
+          "command": "python",
+          "args": [
+            "-m",
+            "f8diagnostics.verify"
+          ],
+          "workdir": "${F8_PACKAGE_ROOT}",
+          "fields": [
+            {
+              "name": "bindAddress",
+              "label": "Listen address",
+              "kind": "string",
+              "required": true,
+              "default": "127.0.0.1",
+              "choices": []
+            },
+            {
+              "name": "port",
+              "label": "Listen port",
+              "kind": "integer",
+              "required": true,
+              "default": 39540,
+              "choices": []
+            },
+            {
+              "name": "timeoutMs",
+              "label": "Listen timeout (ms)",
+              "kind": "integer",
+              "required": true,
+              "default": 2000,
+              "choices": []
+            },
+            {
+              "name": "minimumFrames",
+              "label": "Minimum complete frames",
+              "kind": "integer",
+              "required": true,
+              "default": 1,
+              "choices": []
+            }
+          ],
+          "platforms": [],
+          "timeoutSeconds": 35,
+          "requiresConfirmation": false,
+          "allowConcurrent": true
+        },
+        {
+          "toolId": "skeleton-simulate",
+          "name": "Send simulated skeleton stream",
+          "description": "Continuously send a two-bone animated JSON skeleton stream until stopped. Verify the stream or inspect a graph while it runs.",
+          "command": "python",
+          "args": [
+            "-m",
+            "f8diagnostics.simulate"
+          ],
+          "workdir": "${F8_PACKAGE_ROOT}",
+          "fields": [
+            {
+              "name": "destination",
+              "label": "Destination address",
+              "kind": "string",
+              "required": true,
+              "default": "127.0.0.1",
+              "choices": []
+            },
+            {
+              "name": "port",
+              "label": "Destination port",
+              "kind": "integer",
+              "required": true,
+              "default": 39540,
+              "choices": []
+            },
+            {
+              "name": "durationSeconds",
+              "label": "Duration (seconds; blank = until stopped)",
+              "kind": "number",
+              "required": false,
+              "default": null,
+              "choices": []
+            },
+            {
+              "name": "fps",
+              "label": "Frames per second (max 120)",
+              "kind": "integer",
+              "required": true,
+              "default": 30,
+              "choices": []
+            },
+            {
+              "name": "modelName",
+              "label": "Model name",
+              "kind": "string",
+              "required": true,
+              "default": "F8 diagnostic skeleton",
+              "choices": []
+            }
+          ],
+          "platforms": [],
+          "timeoutSeconds": null,
+          "requiresConfirmation": true,
+          "allowConcurrent": true
+        }
+      ],
+      "skills": [],
+      "resources": [],
+      "runtime": {
+        "kind": "workspace",
+        "environment": "web-studio-runtime",
+        "requiresPython": null,
+        "dependencies": []
+      },
+      "modelDirectories": []
+    }
+  ],
+  "preinstalled": [
+    "audiocap",
+    "audiofeat",
+    "cppengine",
+    "cvkit",
+    "dl",
+    "implayer",
+    "mediapipe",
+    "pyengine",
+    "proclauncher",
+    "pyexpr",
+    "pyscript",
+    "screencap"
   ]
 }

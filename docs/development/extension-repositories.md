@@ -31,7 +31,7 @@ git submodule update --init --recursive
 
 开发某个扩展时，在其目录创建工作分支，提交并推送到对应独立仓库；随后在主仓库运行 `extensions_check`、提交并推送 gitlink。不要直接在 submodule 的 detached HEAD 上遗留未发布的提交。主仓库 CI 已使用 recursive checkout。
 
-`extensions/f8unitymods` 已是独立仓库的 submodule，提供游戏检测、Unity 插件安装和导出器，属于游戏集成扩展，而非 F8 服务进程。它目前仍通过 `f8unitymods-setup` 被 Studio 直接依赖和预装；仅移动源码目录并不意味着服务扩展管理器已支持安装、禁用或卸载它。其上游仓库、固定提交和 submodule 身份保持不变。
+`extensions/f8unitymods` 已是独立仓库的 submodule，提供游戏检测、Unity 插件安装和导出器，属于游戏集成扩展，而非 F8 服务进程。Studio 已移除对 `f8unitymods-setup` 的直接依赖和专用检测、安装入口；游戏工具需要由扩展声明 tools、skills 和 resources 后，通过通用扩展管理和执行接口提供。具体 Unity 工具迁移尚待扩展仓库实现。其上游仓库、固定提交和 submodule 身份保持不变。
 
 Cloud 的版本、开发和集成流程见 [Cloud 独立仓库](cloud-repository.md)。
 
@@ -88,3 +88,5 @@ SDK 自己的 CI 负责 Python/C++ 单元测试、协议生成校验、跨语言
 更新 submodule 前先发布独立仓库提交，再提交主仓库 gitlink；不要提交指向仅存在于本机的提交或 `file://` 仓库。
 
 Pixi 的 editable 开发路径及 CMake superbuild 使用 `extensions/`，转换 submodule 后路径保持一致。主仓库 pytest 默认只运行核心与集成测试；各扩展的单元测试在本包运行。Windows/Linux 的独立 CI 随仓库 push 自动触发；本地 Linux 验证不能代替 Windows 构建。
+
+`extensions/f8diagnostics` 是 `feel8-fun/f8diagnostics` 的 Git submodule，作为通用诊断工具集独立版本管理，当前为 0.2.0。它没有 node/service，工具声明来自自己的 `extension.json`；Studio 通过通用工具任务接口执行，发送和验证可并行，持续发送由 Stop 或 Studio 关闭结束。

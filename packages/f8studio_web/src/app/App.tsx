@@ -1,4 +1,4 @@
-import { Activity, Archive, Boxes, CircleDot, PackagePlus, Plug, ScrollText, Wrench, type LucideIcon } from 'lucide-react';
+import { Activity, Archive, Boxes, CircleDot, PackagePlus, ScrollText, Wrench, type LucideIcon } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 
 import { fetchHealth } from '../api/client';
@@ -12,18 +12,17 @@ import { GraphLogDock } from './GraphLogDock';
 const AssetsWorkspace = lazy(() => import('../assets/AssetsWorkspace').then((module) => ({ default: module.AssetsWorkspace })));
 const CodeStateWorkspace = lazy(() => import('../editor/CodeStateWorkspace').then((module) => ({ default: module.CodeStateWorkspace })));
 const PresentationWorkspace = lazy(() => import('../presentation/PresentationWorkspace').then((module) => ({ default: module.PresentationWorkspace })));
-const LocalWorkspace = lazy(() => import('../local/LocalWorkspace').then((module) => ({ default: module.LocalWorkspace })));
 const ServicesWorkspace = lazy(() => import('../services/ServicesWorkspace').then((module) => ({ default: module.ServicesWorkspace })));
 const AgentWorkspace = lazy(() => import('../agents/AgentWorkspace').then((module) => ({ default: module.AgentWorkspace })));
 
 const ToolsWorkspace = lazy(() => import('../tools/ToolsWorkspace').then((module) => ({ default: module.ToolsWorkspace })));
 
-type WorkspaceView = 'graph' | 'agent' | 'assets' | 'code-state' | 'outputs' | 'local' | 'services' | 'tools' | 'logs';
+type WorkspaceView = 'graph' | 'agent' | 'assets' | 'code-state' | 'outputs' | 'services' | 'tools' | 'logs';
 interface LocationView { readonly view: WorkspaceView; readonly nodeId: string | null; readonly projectId: string | null; readonly sessionId: string | null }
 
 function readLocationView(): LocationView {
   const params = new URLSearchParams(window.location.search);
-  const requested = params.get('view');
+  const requested = params.get('view') === 'local' ? 'tools' : params.get('view');
   const projectId = params.get('project');
   const view = requested === 'code-state' || (requested === 'agent' && projectId) ||
     WORKSPACES.some((item) => item.view === requested) ? requested as WorkspaceView : 'graph';
@@ -42,7 +41,6 @@ const WORKSPACES: readonly WorkspaceDefinition[] = [
   { view: 'graph', label: 'Graph', title: 'Graph Editor', icon: Boxes },
   { view: 'assets', label: 'Assets', title: 'Assets', icon: Archive },
   { view: 'outputs', label: 'Outputs', title: 'Live Outputs', icon: Activity },
-  { view: 'local', label: 'Local integrations', title: 'Local Integrations', icon: Plug },
   { view: 'tools', label: 'Tools', title: 'Tools', icon: Wrench },
   { view: 'services', label: 'Services', title: 'Services & Extensions', icon: PackagePlus },
   { view: 'logs', label: 'Logs', title: 'Log Center', icon: ScrollText },
@@ -141,7 +139,6 @@ export function App() {
             {view === 'assets' && <AssetsWorkspace />}
             {view === 'code-state' && <CodeStateWorkspace />}
             {view === 'outputs' && <PresentationWorkspace nodeId={nodeId} />}
-            {view === 'local' && <LocalWorkspace />}
             {view === 'tools' && <ToolsWorkspace />}
             {view === 'services' && <ServicesWorkspace />}
             {view === 'logs' && <LogsWorkspace />}

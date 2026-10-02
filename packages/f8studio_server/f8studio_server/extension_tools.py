@@ -35,6 +35,7 @@ class ToolView(msgspec.Struct, frozen=True, kw_only=True, rename='camel'):
     description: str
     fields: tuple[ExtensionToolField, ...]
     requires_confirmation: bool
+    allow_concurrent: bool = False
 
 
 class ToolRunRequest(msgspec.Struct, frozen=True, kw_only=True, rename='camel', forbid_unknown_fields=True):
@@ -96,7 +97,8 @@ class ExtensionTools:
 
     def list(self) -> tuple[ToolView, ...]:
         return tuple(ToolView(extension_id=manifest.extension_id, tool_id=tool.tool_id, name=tool.name,
-                              description=tool.description, fields=tool.fields, requires_confirmation=tool.requires_confirmation)
+                              description=tool.description, fields=tool.fields, requires_confirmation=tool.requires_confirmation,
+                              allow_concurrent=tool.allow_concurrent)
                      for manifest in self.manager.active_manifests() for tool in manifest.tools)
 
     def resources(self) -> tuple[CapabilityResource, ...]:
@@ -146,8 +148,14 @@ class ExtensionTools:
         tool, command, cwd, env = self.manager.tool_launcher(extension_id, tool_id)
         if tool.requires_confirmation and not request.confirm:
             raise InvalidRequestError('Explicit confirmation is required to execute this tool')
-        if self.running(extension_id):
-            raise ConflictError('This extension already has a running tool')
+        active = [job for job in self._jobs.values() if job.extension_id == extension_id and
+                  (job.status in {'queued', 'running'} or
+                   (job.job_id in self._tasks and not self._tasks[job.job_id].done()))]
+        declarations = {item.tool_id: item for manifest in self.manager.active_manifests()
+                        if manifest.extension_id == extension_id for item in manifest.tools}
+        if any(job.tool_id == tool_id or not tool.allow_concurrent or
+               not declarations[job.tool_id].allow_concurrent for job in active):
+            raise ConflictError('This extension has a conflicting running tool')
         fields = {field.name: field for field in tool.fields}
         if set(request.arguments) - fields.keys():
             raise InvalidRequestError('Unknown tool arguments')
@@ -199,7 +207,7 @@ class ExtensionTools:
                 raise ValueError('Tool output exceeds the size limit')
         return bytes(result)
 
-    async def _run(self, job: ToolJob, command: list[str], cwd: Path, env: dict[str, str], timeout: int) -> None:
+    async def _run(self, job: ToolJob, command: list[str], cwd: Path, env: dict[str, str], timeout: int | None) -> None:
         process: asyncio.subprocess.Process | None = None
         io_tasks: list[asyncio.Task[bytes]] = []
         try:

@@ -81,6 +81,7 @@ f8pyaudiofeat_core = "python -m f8pyaudiofeat.main_core"
 f8pyaudiofeat_rhythm = "python -m f8pyaudiofeat.main_rhythm"
 
 [feature.engine.pypi-dependencies]
+f8diagnostics = { path = "extensions/f8diagnostics", editable = true }
 scipy = ">=1.17.1,<2"
 scikit-learn = ">=1.8.0,<2"
 f8pyengine = { path = "extensions/f8pyengine", editable = true }
@@ -169,7 +170,6 @@ f8studio-server = { path = "packages/f8studio_server", editable = true }
 f8unitymods-setup = { path = "extensions/f8unitymods", editable = true }
 aiortc = ">=1.14,<2"
 basedpyright = ">=1.31,<2"
-pyserial = ">=3.5,<4"
 python-xlib = ">=0.33,<1"
 httpx = ">=0.28,<1"
 agent-framework-core = ">=1.7,<2"

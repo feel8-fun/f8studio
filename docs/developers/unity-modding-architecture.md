@@ -1,7 +1,7 @@
 # Unity Modding Architecture
 
 Unity support is split across a pinned exporter toolchain, shared typed protocol
-code, PyEngine motion operators, and the Web Studio guided workflow. The split is
+code, PyEngine motion operators, and the generic Studio extension tool framework. The split is
 intentional: game-specific discovery and C# builds stay in the submodule, while
 packet interpretation and graph behavior remain part of the F8Studio public
 runtime.
@@ -13,12 +13,10 @@ runtime.
 | `extensions/f8unitymods` | Git submodule | Unity profiles, backend detection, managed installation, C# exporters, release assets |
 | `sdk/python/f8pysdk/motion` | F8 Python SDK | Typed skeleton models and binary/JSON decoding |
 | `extensions/f8pyengine/f8pyengine/operators` | PyEngine | Stable selection, relative pose axes, watchdog, TCode processing |
-| `packages/f8studio_server/f8studio_server/local_integration.py` | Web Studio server | Detect/preview/apply/verify orchestration and local safety boundary |
+| `packages/f8studio_server/f8studio_server/local_integration.py` | Web Studio server | Generic skeleton UDP verification; game detection and installation belong to extensions |
 | `scripts/unitymods_ci.py` | Root build | Submodule validation, build/package dispatch, SHA-256 bundle manifest |
 
-`extensions/f8unitymods` is the only authoritative Unity checkout. Runtime code
-imports the packaged `f8unitymods_setup` API directly; it does not search for a
-sibling repository or mutate `sys.path`.
+`extensions/f8unitymods` is the only authoritative Unity checkout. Studio does not import `f8unitymods_setup` or expose engine-specific install APIs. Game tools must declare their fields, commands, skills, and resources through the extension manifest. The concrete Unity tool migration remains pending in the extension repository.
 
 Initialize and validate it with:
 

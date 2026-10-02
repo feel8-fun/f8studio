@@ -14,7 +14,7 @@ The deterministic provider remains available as a fixed graph-building example. 
 
 System-One connections are for [Decision nodes in graphs](decision-models.md), not chat sessions. They evaluate Choice, Score, and Noul questions and return typed probabilities. This protocol uses Studio's HTTP client and does not require an Agent Framework package upgrade.
 
-The agent can list and read workflow skills. Studio includes `graph_python` and `unity_modding`. Add a game-specific skill at `<Studio data directory>/agent-skills/<skill-id>/SKILL.md`; the skill ID may contain lowercase letters, digits, underscores, and hyphens. A local skill with the same ID overrides a bundled skill. Skills provide workflow context; game-directory changes still go through Studio's typed preview and approval tools.
+The agent can list and read workflow skills. Studio includes `graph_python`; game workflows are supplied by installed and enabled extensions. Add a game-specific skill at `<Studio data directory>/agent-skills/<skill-id>/SKILL.md`; the skill ID may contain lowercase letters, digits, underscores, and hyphens. A local skill with the same ID overrides a bundled skill. Skills provide workflow context; extension execution goes through the generic tool approval flow.
 
 Unity targets can be detected, previewed, installed through the managed setup tool, and checked for decoded UDP skeleton frames. Unreal detection is available, but Studio does not yet provide a verified UE4SS installer. The agent cannot install an Unreal patch through Studio until that tool exists.
 

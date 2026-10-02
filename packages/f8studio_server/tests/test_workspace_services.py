@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import socket
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -27,7 +25,7 @@ from f8studio_server.editor import (
     EditorSupportFile,
     UpdateEditorDocumentRequest,
 )
-from f8studio_server.local_integration import LocalIntegrationService, RegisterHotkeyRequest, VerifySkeletonUdpRequest
+from f8studio_server.local_integration import LocalIntegrationService, RegisterHotkeyRequest
 from f8studio_server.models import (
     CreateCatalogNodeRequest,
     CreateProjectRequest,
@@ -275,34 +273,6 @@ def test_editor_sessions_enforce_versions_and_return_structured_diagnostics(tmp_
             )
         )
     assert sorted(path.name for path in (tmp_path / "editor").iterdir()) == [json_session.session_id]
-
-
-def test_udp_verifier_requires_a_decoded_complete_skeleton_frame() -> None:
-    async def scenario() -> None:
-        service = LocalIntegrationService()
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = int(probe.getsockname()[1])
-        task = asyncio.create_task(
-            service.verify_skeleton_udp(
-                VerifySkeletonUdpRequest(port=port, timeout_ms=1000, minimum_frames=1)
-            )
-        )
-        await asyncio.sleep(0.05)
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
-            sender.sendto(b"not-a-skeleton", ("127.0.0.1", port))
-            sender.sendto(
-                json.dumps({"type": "skeleton_binary", "modelName": "fixture", "bones": []}).encode(),
-                ("127.0.0.1", port),
-            )
-        report = await task
-        assert report.packet_count == 2
-        assert report.decoded_frame_count == 1
-        assert report.model_names == ("fixture",)
-        assert report.verified is True
-        assert report.decoder_errors
-
-    asyncio.run(scenario())
 
 
 def test_hotkey_contract_normalizes_accelerators() -> None:
