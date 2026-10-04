@@ -1,5 +1,191 @@
 {
   "$defs": {
+    "ApplicationDependency": {
+      "additionalProperties": false,
+      "properties": {
+        "extensionId": {
+          "type": "string"
+        },
+        "protocolId": {
+          "type": "string"
+        },
+        "versions": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "extensionId",
+        "protocolId",
+        "versions"
+      ],
+      "title": "ApplicationDependency",
+      "type": "object"
+    },
+    "ApplicationEndpoint": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "url"
+      ],
+      "title": "ApplicationEndpoint",
+      "type": "object"
+    },
+    "ApplicationHealth": {
+      "additionalProperties": false,
+      "properties": {
+        "bootstrapPath": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "protocolVersion": {
+          "type": "string"
+        },
+        "service": {
+          "type": "string"
+        },
+        "timeoutSeconds": {
+          "default": 30.0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "endpoint",
+        "path",
+        "service",
+        "protocolVersion"
+      ],
+      "title": "ApplicationHealth",
+      "type": "object"
+    },
+    "ApplicationLaunch": {
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "distribution": {
+          "type": "string"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "environment": {
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "environment",
+        "module",
+        "distribution"
+      ],
+      "title": "ApplicationLaunch",
+      "type": "object"
+    },
+    "ApplicationProtocol": {
+      "additionalProperties": false,
+      "properties": {
+        "protocolId": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolId",
+        "version"
+      ],
+      "title": "ApplicationProtocol",
+      "type": "object"
+    },
+    "ApplicationSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "endpoints": {
+          "items": {
+            "$ref": "#/$defs/ApplicationEndpoint"
+          },
+          "type": "array"
+        },
+        "health": {
+          "$ref": "#/$defs/ApplicationHealth"
+        },
+        "launch": {
+          "$ref": "#/$defs/ApplicationLaunch"
+        },
+        "provides": {
+          "items": {
+            "$ref": "#/$defs/ApplicationProtocol"
+          },
+          "type": "array"
+        },
+        "releaseRole": {
+          "default": "application",
+          "enum": [
+            "application",
+            "webstudio"
+          ]
+        },
+        "requires": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ApplicationDependency"
+          },
+          "type": "array"
+        },
+        "webAssets": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "launch",
+        "provides",
+        "endpoints",
+        "health"
+      ],
+      "title": "ApplicationSpec",
+      "type": "object"
+    },
     "ExtensionCatalog": {
       "additionalProperties": false,
       "properties": {
@@ -32,6 +218,17 @@
     "ExtensionManifest": {
       "additionalProperties": false,
       "properties": {
+        "application": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ApplicationSpec"
+            }
+          ],
+          "default": null
+        },
         "description": {
           "type": "string"
         },

@@ -62,8 +62,13 @@ def check_workspace(root: Path = REPO_ROOT) -> None:
         raise ValueError('Extension catalog is stale; run extension_workspace.py sync')
     workspace = tomllib.loads((root / 'config/extension-workspace.toml').read_text())
     extension_modules = {module for item in source_packages(root) for module in item.python_modules}
-    for package in workspace['core']:
-        for source in (root / 'packages' / package / package).rglob('*.py'):
+    roots = [root / 'packages' / package for package in workspace['core']]
+    roots.extend(root / 'extensions' / package for package in workspace.get('applications', []))
+    roots.append(root / 'launcher')
+    for source_root in roots:
+        for source in source_root.rglob('*.py'):
+            if any(part in {'node_modules', '.pixi', '.git', '__pycache__', 'tests', '.sdk', '.platform', '.media-dependency', 'build'} for part in source.parts):
+                continue
             tree = ast.parse(source.read_text(encoding='utf-8'), filename=str(source))
             for node in ast.walk(tree):
                 names: list[str] = []

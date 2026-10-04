@@ -1,5 +1,6 @@
 [importlinter]
 root_packages =
+    f8platform
     f8pysdk
     f8studio_core
     f8media_protocol
@@ -33,3 +34,14 @@ source_modules =
     f8media_gateway
 forbidden_modules =
     f8studio_server
+
+[importlinter:contract:platform-boundary]
+name = Platform manages components without importing applications
+type = forbidden
+source_modules =
+    f8platform
+forbidden_modules =
+    f8studio_server
+    f8studio_core
+    f8media_gateway
+    f8media_protocol

@@ -28,12 +28,11 @@ runpy.run_module(module, run_name='__main__')
                    cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, check=True)
 
 
-def test_describe_environment_excludes_gpu_packages_but_runtime_keeps_them() -> None:
+def test_workspace_describe_environment_excludes_gpu_dependencies() -> None:
     import yaml
     lock = yaml.safe_load(Path('pixi.lock').read_text())
-    environments = lock['environments']
-    for platform in environments['onnx-describe']['packages']:
-        light = str(environments['onnx-describe']['packages'][platform]).lower()
-        assert 'cudnn' not in light and 'cuda-' not in light and 'onnxruntime' not in light
-        full = str(environments['onnx']['packages'][platform]).lower()
-        assert 'cudnn' in full and 'onnxruntime_gpu' in full
+    light = str(lock['environments']['build-check']['packages']).lower()
+    assert 'cudnn' not in light and 'cuda-' not in light and 'onnxruntime' not in light
+    extension = yaml.safe_load(Path('extensions/f8pydl/pixi.lock').read_text())
+    full = str(extension['environments']['dl']['packages']).lower()
+    assert 'cudnn' in full and 'onnxruntime_gpu' in full

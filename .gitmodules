@@ -40,3 +40,12 @@
 [submodule "extensions/f8diagnostics"]
 	path = extensions/f8diagnostics
 	url = https://github.com/feel8-fun/f8diagnostics.git
+[submodule "launcher"]
+	path = launcher
+	url = https://github.com/feel8-fun/f8platform.git
+[submodule "extensions/f8webstudio"]
+	path = extensions/f8webstudio
+	url = https://github.com/feel8-fun/f8webstudio.git
+[submodule "extensions/f8mediagateway"]
+	path = extensions/f8mediagateway
+	url = https://github.com/feel8-fun/f8mediagateway.git

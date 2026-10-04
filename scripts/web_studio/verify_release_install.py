@@ -16,14 +16,14 @@ from release_wheels import build_wheels
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-WEB_SOURCE_DIR = REPO_ROOT / "build" / "web-studio"
+WEB_SOURCE_DIR = REPO_ROOT / "extensions/f8webstudio/build/web-studio"
 PACKAGE_DIRS = (
+    REPO_ROOT / "launcher",
     REPO_ROOT / "sdk" / "python",
-    REPO_ROOT / "packages" / "f8studio_core",
-    REPO_ROOT / "packages" / "f8media_protocol",
-    REPO_ROOT / "packages" / "f8media_gateway",
+    REPO_ROOT / "extensions" / "f8webstudio" / "f8studio_core",
+    REPO_ROOT / "extensions" / "f8mediagateway",
     REPO_ROOT / "extensions" / "f8unitymods",
-    REPO_ROOT / "packages" / "f8studio_server",
+    REPO_ROOT / "extensions" / "f8webstudio" / "f8studio_server",
 )
 
 
@@ -33,8 +33,8 @@ def _run(command: list[str], *, cwd: Path = REPO_ROOT) -> None:
 
 def _stage_web_bundle() -> None:
     npm_command = "npm.cmd" if os.name == "nt" else "npm"
-    _run([npm_command, "--prefix", "packages/f8studio_web", "ci"])
-    _run([npm_command, "--prefix", "packages/f8studio_web", "run", "build"])
+    _run([npm_command, "--prefix", "extensions/f8webstudio/f8studio_web", "ci"])
+    _run([npm_command, "--prefix", "extensions/f8webstudio/f8studio_web", "run", "build"])
     if not (WEB_SOURCE_DIR / "index.html").is_file():
         raise FileNotFoundError(f"Web build did not produce {WEB_SOURCE_DIR / 'index.html'}")
 
@@ -90,6 +90,7 @@ def _verify_installed_runtime(venv_dir: Path, wheels: tuple[Path, ...], work_dir
     smoke_code = """
 from importlib import metadata
 from pathlib import Path
+import os
 import sys
 import tempfile
 
@@ -101,6 +102,7 @@ import f8studio_core
 import f8studio_server
 import f8unitymods_setup
 from f8media_gateway.service import InProcessMediaGateway
+from f8platform.applications import ApplicationManager
 from f8studio_server.app import create_app, default_web_dist
 
 prefix = Path(sys.prefix).resolve()
@@ -119,6 +121,8 @@ web_dist = default_web_dist()
 if not web_dist.is_relative_to(prefix) or not (web_dist / 'index.html').is_file():
     raise RuntimeError(f'embedded Web bundle is unavailable: {web_dist}')
 with tempfile.TemporaryDirectory(prefix='f8studio-wheel-smoke-') as data_dir:
+    manager = ApplicationManager(Path(data_dir) / 'platform')
+    os.environ['F8_SERVICE_INDEX'] = str(manager.data_dir / 'distribution/config/service-index.json')
     app = create_app(data_dir=Path(data_dir), service_roots=(), media_gateway=InProcessMediaGateway())
     with TestClient(app) as client:
         health = client.get('/api/health')
@@ -133,7 +137,7 @@ print(f'non-editable release smoke passed: {web_dist}')
 
 
 def _verify_dist_lock(work_dir: Path) -> None:
-    from dist_ci import build_runtime_manifest
+    from workspace_ci import build_runtime_manifest
 
     build_runtime_manifest(work_dir / "runtime-manifest")
 

@@ -3,13 +3,19 @@
   "pythonVersion": "3.14",
   "typeCheckingMode": "strict",
   "include": [
-    "packages/f8studio_core/f8studio_core",
-    "packages/f8media_protocol/f8media_protocol",
-    "packages/f8media_gateway/f8media_gateway",
-    "packages/f8studio_server/f8studio_server",
+    "launcher/f8platform",
+    "extensions/f8webstudio/f8studio_core/f8studio_core",
+    "sdk/python/f8media_protocol",
+    "extensions/f8mediagateway/f8media_gateway",
+    "extensions/f8webstudio/f8studio_server/f8studio_server",
     "scripts/web_studio",
-    "scripts/assemble_release.py",
-    "scripts/publish_runtime.py",
+    "scripts/workspace_inputs.py",
+    "sdk/python/f8pysdk/runtime_packaging.py",
+    "sdk/python/f8pysdk/application_spec.py",
+    "sdk/python/f8pysdk/platform_spec.py",
+    "sdk/python/f8pysdk/platform_api.py",
+    "sdk/python/f8pysdk/application_package.py",
+    "sdk/python/f8pysdk/application_packaging.py",
     "sdk/python/f8pysdk/release_spec.py",
     "sdk/python/f8pysdk/runtime_package.py",
     "sdk/python/f8pysdk/extension_packaging.py",
@@ -27,7 +33,7 @@
       "extraPaths": [
         "scripts",
         "sdk/python",
-        "packages/f8studio_server"
+        "launcher"
       ]
     },
     {

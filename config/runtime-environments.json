@@ -2,8 +2,16 @@
   "schemaVersion": "f8runtimeCatalog/1",
   "runtimes": [
     {
-      "runtimeId": "studio-runtime",
-      "manifest": "${F8_PACKAGE_ROOT}/config/studio-runtime/pixi.toml"
+      "runtimeId": "platform-runtime",
+      "manifest": "${F8_PACKAGE_ROOT}/launcher/pixi.toml"
+    },
+    {
+      "runtimeId": "webstudio",
+      "manifest": "${F8_PACKAGE_ROOT}/extensions/f8webstudio/pixi.toml"
+    },
+    {
+      "runtimeId": "media",
+      "manifest": "${F8_PACKAGE_ROOT}/extensions/f8mediagateway/pixi.toml"
     },
     {
       "runtimeId": "diagnostics",

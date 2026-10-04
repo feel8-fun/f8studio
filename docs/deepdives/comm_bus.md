@@ -18,7 +18,7 @@ It focuses on **synchronization and propagation**:
 
 - Python: `sdk/python/f8pysdk/service_bus/api/bus.py`
 - C++: `sdk/cpp/src/service_bus.cpp`
-- Studio: `packages/f8studio_server/f8studio_server/runtime.py`, `packages/f8studio_server/f8studio_server/app.py`
+- Studio: `extensions/f8webstudio/f8studio_server/f8studio_server/runtime.py`, `extensions/f8webstudio/f8studio_server/f8studio_server/app.py`
 
 ---
 
@@ -278,7 +278,7 @@ sequenceDiagram
 
 A key invariant: **the `rungraph` KV snapshot represents a successfully applied graph** (not “just requested”).
 
-Studio deploys via the `set_rungraph` endpoint and receives an explicit accept/reject response through `packages/f8studio_server/f8studio_server/runtime.py`.
+Studio deploys via the `set_rungraph` endpoint and receives an explicit accept/reject response through `extensions/f8webstudio/f8studio_server/f8studio_server/runtime.py`.
 
 ### Deploy/apply sequence (simplified)
 
@@ -452,9 +452,9 @@ flowchart TB
 
 ### Web Studio
 
-- Watch and read remote service state: `packages/f8studio_server/f8studio_server/runtime.py`
-- Browser state and deployment endpoints: `packages/f8studio_server/f8studio_server/app.py`
-- Deployment job lifecycle: `packages/f8studio_server/f8studio_server/jobs.py`
+- Watch and read remote service state: `extensions/f8webstudio/f8studio_server/f8studio_server/runtime.py`
+- Browser state and deployment endpoints: `extensions/f8webstudio/f8studio_server/f8studio_server/app.py`
+- Deployment job lifecycle: `extensions/f8webstudio/f8studio_server/f8studio_server/jobs.py`
 
 ---
 

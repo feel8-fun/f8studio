@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Iterable
 
 try:
-    from scapy.all import IP, UDP, Ether, Raw, rdpcap, send
+    from scapy.all import IP, UDP, Raw, rdpcap, send
     from scapy.packet import Packet
 except ImportError as exc:
     raise SystemExit(
@@ -157,8 +157,9 @@ def _select_udp_packets(raw_packets: Iterable[Packet], options: ReplayOptions) -
 
         # Some loopback captures are stored with a synthetic Ethernet header.
         # We replay at the IP layer, so Ether is intentionally discarded.
-        packet = raw_packet[Ether].payload if Ether in raw_packet else raw_packet
-        replay_packet = _normalize_udp_packet(packet, options)
+        # Keep the capture timestamp on the outer packet. Normalization copies
+        # the IP layer and discards Ethernet without losing timestamp metadata.
+        replay_packet = _normalize_udp_packet(raw_packet, options)
         if replay_packet is None:
             continue
 

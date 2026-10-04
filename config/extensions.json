@@ -21,7 +21,8 @@
         "providerVersion": null,
         "abi": null
       },
-      "modelDirectories": []
+      "modelDirectories": [],
+      "application": null
     },
     {
       "extensionId": "audiofeat",
@@ -44,7 +45,8 @@
         "providerVersion": null,
         "abi": null
       },
-      "modelDirectories": []
+      "modelDirectories": [],
+      "application": null
     },
     {
       "extensionId": "cppengine",
@@ -66,7 +68,8 @@
         "providerVersion": null,
         "abi": null
       },
-      "modelDirectories": []
+      "modelDirectories": [],
+      "application": null
     },
     {
       "extensionId": "cvkit",
@@ -92,7 +95,8 @@
         "providerVersion": null,
         "abi": null
       },
-      "modelDirectories": []
+      "modelDirectories": [],
+      "application": null
     },
     {
       "extensionId": "dl",
@@ -121,7 +125,8 @@
       },
       "modelDirectories": [
         "onnx"
-      ]
+      ],
+      "application": null
     },
     {
       "extensionId": "implayer",
@@ -143,7 +148,8 @@
         "providerVersion": null,
         "abi": null
       },
-      "modelDirectories": []
+      "modelDirectories": [],
+      "application": null
     },
     {
       "extensionId": "mediapipe",
@@ -167,7 +173,8 @@
       },
       "modelDirectories": [
         "mediapipe"
-      ]
+      ],
+      "application": null
     },
     {
       "extensionId": "pyengine",
@@ -191,7 +198,8 @@
         "providerVersion": null,
         "abi": null
       },
-      "modelDirectories": []
+      "modelDirectories": [],
+      "application": null
     },
     {
       "extensionId": "proclauncher",
@@ -213,7 +221,8 @@
         "providerVersion": null,
         "abi": null
       },
-      "modelDirectories": []
+      "modelDirectories": [],
+      "application": null
     },
     {
       "extensionId": "screencap",
@@ -235,7 +244,8 @@
         "providerVersion": null,
         "abi": null
       },
-      "modelDirectories": []
+      "modelDirectories": [],
+      "application": null
     },
     {
       "extensionId": "diagnostics",
@@ -362,7 +372,137 @@
         "providerVersion": null,
         "abi": null
       },
-      "modelDirectories": []
+      "modelDirectories": [],
+      "application": null
+    },
+    {
+      "extensionId": "media-gateway",
+      "name": "Media Gateway",
+      "version": "0.1.0",
+      "description": "Media Gateway application extension",
+      "serviceClasses": [],
+      "tools": [],
+      "skills": [],
+      "resources": [],
+      "runtime": {
+        "kind": "workspace",
+        "environment": "media",
+        "requiresPython": null,
+        "dependencies": [],
+        "providerId": null,
+        "providerVersion": null,
+        "abi": null
+      },
+      "modelDirectories": [],
+      "application": {
+        "launch": {
+          "environment": "media",
+          "module": "f8media_gateway",
+          "distribution": "f8media-gateway",
+          "args": [
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "${F8_PORT:media-gateway.http}",
+            "--exit-on-stdin-close"
+          ],
+          "env": {}
+        },
+        "provides": [
+          {
+            "protocolId": "f8media-api",
+            "version": "1.0"
+          }
+        ],
+        "endpoints": [
+          {
+            "name": "http",
+            "url": "http://127.0.0.1:8211"
+          }
+        ],
+        "health": {
+          "endpoint": "http",
+          "path": "/api/health",
+          "service": "f8media-gateway",
+          "protocolVersion": "f8media-api/1",
+          "timeoutSeconds": 30.0,
+          "bootstrapPath": null
+        },
+        "requires": [],
+        "webAssets": null,
+        "releaseRole": "application"
+      }
+    },
+    {
+      "extensionId": "webstudio",
+      "name": "WebStudio",
+      "version": "0.1.0",
+      "description": "WebStudio application extension",
+      "serviceClasses": [],
+      "tools": [],
+      "skills": [],
+      "resources": [],
+      "runtime": {
+        "kind": "workspace",
+        "environment": "webstudio",
+        "requiresPython": null,
+        "dependencies": [],
+        "providerId": null,
+        "providerVersion": null,
+        "abi": null
+      },
+      "modelDirectories": [],
+      "application": {
+        "launch": {
+          "environment": "webstudio",
+          "module": "f8studio_server",
+          "distribution": "f8studio-server",
+          "args": [
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "${F8_PORT:webstudio.http}",
+            "--web-dist",
+            "${F8_PACKAGE_ROOT}/web",
+            "--external-media-gateway",
+            "--media-gateway-url",
+            "${F8_ENDPOINT:media-gateway.http}",
+            "--exit-on-stdin-close"
+          ],
+          "env": {
+            "F8STUDIO_DATA_DIR": "${F8_DATA_ROOT}/studio"
+          }
+        },
+        "provides": [
+          {
+            "protocolId": "f8studio-api",
+            "version": "1.0"
+          }
+        ],
+        "endpoints": [
+          {
+            "name": "http",
+            "url": "http://127.0.0.1:8210"
+          }
+        ],
+        "health": {
+          "endpoint": "http",
+          "path": "/api/health",
+          "service": "f8studio-server",
+          "protocolVersion": "f8studio-api/1",
+          "timeoutSeconds": 30.0,
+          "bootstrapPath": "/"
+        },
+        "requires": [
+          {
+            "extensionId": "media-gateway",
+            "protocolId": "f8media-api",
+            "versions": ">=1,<2"
+          }
+        ],
+        "webAssets": "${F8_PACKAGE_ROOT}/web",
+        "releaseRole": "webstudio"
+      }
     }
   ],
   "preinstalled": [

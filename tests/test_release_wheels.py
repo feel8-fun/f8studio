@@ -10,7 +10,7 @@ from scripts.release_wheels import build_wheels
 
 
 def test_build_stages_web_assets_without_modifying_editable_source(tmp_path: Path) -> None:
-    source = tmp_path / "packages" / "f8studio_server"
+    source = tmp_path / "extensions" / "f8webstudio" / "f8studio_server"
     package = source / "f8studio_server"
     old_bundle = package / "web_dist"
     old_bundle.mkdir(parents=True)

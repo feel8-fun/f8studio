@@ -1,20 +1,24 @@
 # f8studio
 
-Runtime workspace for Feel8 Studio. The current runtime is Zenoh-first:
+Development workspace for Feel8 Studio. This repository combines independently
+versioned SDK, launcher and extension source checkouts for joint debugging and
+integration tests. Official artifact assembly lives in the separate
+`f8distribution` repository. The current runtime is Zenoh-first:
 - control plane, service discovery, pub/sub, and service-owned state use Zenoh by default
 - video/audio data defaults to Zenoh latest-frame/latest-chunk transports
 - local large-payload transfers can use Zenoh shared-memory optimization
 
 ## Layout
+- `launcher/` — independent `f8platform` bootstrap and lifecycle manager, not an extension.
 - `schemas` — generated Studio API contracts.
 - `sdk` — [independent SDK repository](https://github.com/feel8-fun/f8sdk), including canonical shared protocols and generators.
 - `docs` — architecture, service/operator manuals, and development guides.
 - `sdk/python` — Python runtime SDK, Zenoh/mem transports, ServiceApp helpers.
 - `sdk/cpp` — C++ runtime SDK, Zenoh transport and latest video/audio transports.
-- `packages/f8studio_core` — typed graph document, patch, catalog, and compiler contracts.
-- `packages/f8studio_server` — local Web Studio application service, API, CLI, and MCP.
-- `packages/f8studio_web` — React graph editor and presentation workspaces.
-- `packages/f8media_gateway` — process-isolated Zenoh to WebRTC media gateway.
+- `extensions/f8webstudio/f8studio_core` — typed graph document, patch, catalog, and compiler contracts.
+- `extensions/f8webstudio/f8studio_server` — local Web Studio application service, API, CLI, and MCP.
+- `extensions/f8webstudio/f8studio_web` — React graph editor and presentation workspaces.
+- `extensions/f8mediagateway` — process-isolated Zenoh to WebRTC media gateway.
 - `extensions/` — optional service implementations and the Unity game integration submodule; see [extension repositories](docs/development/extension-repositories.md).
 - `config/service-index.json` — explicit service registrations and model storage location.
 - `config/services` — tracked, platform-specific launch declarations.

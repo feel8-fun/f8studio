@@ -18,7 +18,7 @@ from scripts.extension_workspace import REPO_ROOT, check_workspace, source_packa
 def test_all_services_are_owned_by_independent_extension_packages() -> None:
     check_workspace()
     packages = source_packages()
-    assert len(packages) == 11
+    assert len(packages) == 13
     assert {item.extension_ids for item in packages if item.package == 'f8pyengine'} == {('pyengine',)}
     engine = validate_package(REPO_ROOT / 'extensions/f8pyengine').extensions[0]
     assert engine.service_classes == ('f8.pyengine', 'f8.pyexpr', 'f8.pyscript')
@@ -35,13 +35,13 @@ def test_all_services_are_owned_by_independent_extension_packages() -> None:
 
 @pytest.mark.parametrize('module', ['f8pyengine', 'f8pyscript'])
 def test_core_imports_cannot_reintroduce_service_implementation_dependencies(tmp_path: Path, module: str) -> None:
-    source = tmp_path / 'packages/f8studio_core/f8studio_core'
+    source = tmp_path / 'extensions/f8webstudio/f8studio_core/f8studio_core'
     source.mkdir(parents=True)
     (source / 'bad.py').write_text(f'from {module}.main import main\n')
     config = tmp_path / 'config'
     config.mkdir()
     (config / 'extensions.json').write_bytes((REPO_ROOT / 'config/extensions.json').read_bytes())
-    (config / 'extension-workspace.toml').write_bytes((REPO_ROOT / 'config/extension-workspace.toml').read_bytes())
+    (config / 'extension-workspace.toml').write_text((REPO_ROOT / 'config/extension-workspace.toml').read_text().replace('core = []', 'core = [\"f8studio_core\"]'))
     catalog = msgspec.json.decode((config / 'extensions.json').read_bytes(), type=ExtensionCatalog)
     with mock.patch('scripts.extension_workspace.compose_catalog', return_value=catalog):
         with pytest.raises(ValueError, match='Core must not import an extension implementation'):
@@ -49,7 +49,7 @@ def test_core_imports_cannot_reintroduce_service_implementation_dependencies(tmp
 
 
 def test_extension_manifest_schema_is_public_sdk_api() -> None:
-    from f8studio_server.extension_models import ExtensionCatalog as ServerCatalog
+    from f8platform.extension_models import ExtensionCatalog as ServerCatalog
 
     assert ServerCatalog is ExtensionCatalog
 

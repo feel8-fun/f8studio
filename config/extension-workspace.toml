@@ -1,5 +1,6 @@
 # Source layout only. Runtime manifests live with each extension package.
-core = ["f8studio_web", "f8studio_server", "f8studio_core", "f8media_gateway", "f8media_protocol"]
+core = []
+applications = ["f8webstudio", "f8mediagateway"]
 
 [[extensions]]
 package = "f8screencap"
@@ -45,3 +46,13 @@ extension_ids = ["proclauncher"]
 [[extensions]]
 package = "f8diagnostics"
 extension_ids = ["diagnostics"]
+
+[[extensions]]
+package = "f8webstudio"
+extension_ids = ["webstudio"]
+python_modules = []
+
+[[extensions]]
+package = "f8mediagateway"
+extension_ids = ["media-gateway"]
+python_modules = []

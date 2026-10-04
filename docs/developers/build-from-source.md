@@ -6,7 +6,7 @@ Clone the repository with its Unity exporter submodule and use Pixi for every ma
 git clone --recurse-submodules <your-repo-url>
 cd f8studio
 pixi install -e web-studio-test
-pixi run -e web-studio npm --prefix packages/f8studio_web ci
+pixi run -e web-studio npm --prefix extensions/f8webstudio/f8studio_web ci
 ```
 
 For an existing checkout:
@@ -83,35 +83,25 @@ pixi run -e web-studio-test studio_p3_combined_bench
 pixi run -e web-studio-test studio_graph_bench
 ```
 
-## Distribution
+## Independent publication and distribution
 
-Build the native runtime, non-editable Python wheels, and embedded Web bundle:
-
-```bash
-pixi run -e build-check dist_ci --build-workspace
-pixi run -e build-check dist_ci --build-workspace --archive
-```
-
-Output is written under `build/dist/f8studio-<platform-tag>`. The generated install script uses `pixi install --locked` for both third-party dependencies and local wheels. The `f8studio-server` wheel contains the production Web bundle, so it does not depend on a source checkout at runtime.
-
-Startup uses `f8studio.cmd` (Windows) or `./f8studio` (Linux). These small scripts are copied into the release; there is no launcher compilation or separate Python/Tk bundle. If Pixi is missing, the script downloads and runs the official installer (`https://pixi.sh/install.sh` on Linux using curl or wget, `https://pixi.sh/install.ps1` on Windows using PowerShell), then continues without restarting the terminal. The script installs the locked runtime and runs `studio_launch`, which opens the browser after the server has bound its sockets. Keep the terminal open while using Studio; Ctrl+C stops the server.
-
-For the same browser-opening behavior during development:
+Prepare development library checkouts with `pixi run -e build-check python scripts/workspace_inputs.py prepare`.
+Each repository builds and publishes its own artifact:
 
 ```bash
-pixi run studio_launch
+pixi run --locked --manifest-path launcher/.ci/pixi.toml publish
+pixi run --locked --manifest-path extensions/f8mediagateway/.ci/pixi.toml publish
+pixi run --locked --manifest-path extensions/f8webstudio/.ci/pixi.toml publish
 ```
 
-Windows and Linux release verification must run on their respective operating systems. Linux mocks do not satisfy the Windows gate.
+WebStudio frontend and backend always have one version and one extension archive.
+The shared media protocol belongs to the SDK, rather than a gateway source dependency.
 
-## Unity Exporter
+Official releases are assembled in the separate `f8distribution` repository from
+hash-pinned runtime and extension archives. That repository has no application
+source checkout, compiler or frontend build. See [build and release](../development/build-and-release.md).
+A workspace snapshot is only a local integration helper:
 
 ```bash
-pixi run -e web-studio unitymods_validate
-pixi run -e web-studio unitymods_contract
-pixi run -e web-studio unitymods_build
-pixi run -e web-studio unitymods_test
-pixi run -e web-studio unitymods_package
+pixi run -e build-check workspace_snapshot --output build/workspace-snapshot
 ```
-
-Web Studio owns the interactive detect, preview, and confirmed-install flow. The submodule exposes a typed headless setup core and C# exporter artifacts.

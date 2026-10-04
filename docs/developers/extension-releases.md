@@ -1,12 +1,12 @@
 # Independently published extensions and runtimes
 
-Extension repositories own their build dependencies, tests, native deployment or Python wheels, and extension ZIPs. Each extension publisher owns its workspace and locks; Studio owns only its application runtime. Studio builds its own application and assembles verified releases from those artifacts. Updating an extension does not require compiling other extensions or changing Studio's source.
+Extension repositories own their build dependencies, tests, native deployment or Python wheels, and extension ZIPs. Each extension publisher owns its workspace and locks; The platform owns the bootstrap runtime; application extensions own independent runtimes. WebStudio publishes its frontend and backend together. The separate f8distribution repository assembles verified releases from published artifacts. Updating an extension does not require compiling other extensions or changing Studio's source.
 
 ## Runtime ownership and compatibility
 
 Build dependencies stay in the publisher's build environment. Released runtime definitions contain runtime dependencies and built wheels. They must not contain editable projects, source-directory package references, or installation-time build tasks.
 
-A runtime release identifies its provider, release version, and ABI contract. Its `runtimeId` is the launch environment's name. Use distinct runtime IDs for baselines that need to coexist, such as `python-services-v1` and `python-services-v2`. `studio-runtime` is the base application's reserved environment. Its publisher assembles Studio's own wheels with the application dependencies; extension modules need not be part of that base.
+A runtime release identifies its provider, release version, and ABI contract. Its `runtimeId` is the launch environment's name. Use distinct runtime IDs for baselines that need to coexist, such as `python-services-v1` and `python-services-v2`. `platform-runtime` is the official bootstrap environment. WebStudio and Media Gateway are application extensions; neither is installed into its interpreter.
 
 ```json
 {
@@ -56,13 +56,8 @@ For native extensions, supply their independently deployed executable directory 
 A runtime publisher first builds or downloads all required wheels and locks a standard Pixi workspace against them. The publishing command snapshots those inputs, checks that they are portable wheels, and verifies the existing lock with `pixi lock --check`. It does not run a dependency solver or compile packages:
 
 ```sh
-pixi run --locked --manifest-path config/release-tools/pixi.toml python scripts/publish_runtime.py \
-  --source build/runtime-provider \
-  --inputs-root build \
-  --runtime-id python-services-v1 \
-  --provider-id feel8.python-services --version 1.2.0 \
-  --abi cpython314-numpy2 --platform linux-x86_64 \
-  --output build/artifacts/python-services-v1-1.2.0.zip
+# Run in the independent f8distribution repository
+pixi run --locked assemble releases/<release>.json
 ```
 
 A `studio-runtime` provider must include the Studio server wheel with embedded built Web assets, SDK/core/media wheels and application runtime dependencies. This remains an application release responsibility. Other runtime providers do not need Studio or its source packages.
@@ -75,13 +70,14 @@ The release lock pins artifact IDs, versions, platform and SHA-256. `location` a
 
 ```json
 {
-  "schemaVersion": "f8studioRelease/1",
+  "schemaVersion": "f8platformRelease/1",
   "platform": "linux-x86_64",
-  "baseRuntime": "studio-runtime",
+  "baseRuntime": "platform-runtime",
+  "startup": [],
   "artifacts": [
     {
-      "artifactId": "studio-runtime", "version": "1.0.0", "kind": "runtime",
-      "location": "artifacts/studio-runtime-1.0.0.zip",
+      "artifactId": "platform-runtime", "version": "1.0.0", "kind": "runtime",
+      "location": "artifacts/platform-runtime-1.0.0.zip",
       "sha256": "REPLACE_WITH_THE_PUBLISHED_64_CHARACTER_SHA256"
     },
     {
@@ -96,8 +92,8 @@ The release lock pins artifact IDs, versions, platform and SHA-256. `location` a
 Assemble with the small, separately locked tooling environment. It installs only Python and metadata libraries, and does not install/build extension projects:
 
 ```sh
-pixi run --locked --manifest-path config/release-tools/pixi.toml python scripts/dist_ci.py \
-  --release-lock config/releases/linux.json --archive
+# In the separate f8distribution repository
+pixi run --locked assemble releases/<release>.json
 ```
 
 The assembler verifies digests, safely extracts archives, checks identities/platforms and ownership, loads all extension declarations, and verifies the providers' existing locks. The base launcher references exactly the base provider's locked inputs. `pixi-pack` produces the offline application runtime from that lock. No CMake, extension wheel build, description regeneration, frontend build or dependency solve runs in this path.
@@ -119,7 +115,7 @@ and portable.
 Independent prefixes share the F8 package cache, rather than a mutable
 interpreter. Existing shared-provider declarations remain an explicit legacy
 integration path; new extensions should carry their own locked runtime inputs.
-Studio has its own application runtime at `config/studio-runtime/`.
+WebStudio has its own application runtime at `extensions/f8webstudio/pixi.toml`; the platform bootstrap lives in `launcher/pixi.toml`.
 
 The `pyengine` extension contains `f8.pyengine`, `f8.pyexpr`, and `f8.pyscript`.
 Its source workspace and lock are owned by `extensions/f8pyengine`; both Python
@@ -136,12 +132,37 @@ Dependency declarations, cached package files and installed interpreters have di
 ## Source development
 
 The root Pixi workspace contains development and CI tools. Studio's application
-workspace is `config/studio-runtime/`. Python extension workspaces and locks
+workspace is `extensions/f8webstudio/pixi.toml`. Python extension workspaces and locks
 are owned by their corresponding repositories under `extensions/`.
 There is no central feature/profile generator or extension dependency baseline.
 Update a package's own manifest and lock when its dependencies change.
 
-The explicit `--build-workspace` distribution path builds each source package
-and writes separate portable runtime workspaces. It does not put Python
-extension wheels in the offline Studio base interpreter. Production artifact
-assembly continues to consume already built, versioned publisher artifacts.
+The `workspace_snapshot` task is a local integration helper, not an official
+publisher. Production assembly is owned by the separate `f8distribution` repository.
+
+## Application extensions and launcher
+
+Applications use the ordinary extension catalog with an `application` capability.
+The release lock uses `f8platformRelease/1` with runtime and extension artifacts.
+`baseRuntime` selects the bootstrap; `startup` lists application extension IDs.
+There is no separate component manifest or artifact kind.
+
+An application declares launch module/distribution/environment, explicit args and
+variables, named endpoints, provided/required protocols, and a readiness probe.
+`${F8_PACKAGE_ROOT}`, `${F8_DATA_ROOT}`, `${F8_ENDPOINT:extension.endpoint}` and
+`${F8_PORT:extension.endpoint}` are expanded without shell interpretation.
+Endpoint overrides live in platform user data and change while affected processes
+are stopped.
+
+`launcher/`, `extensions/f8webstudio/` and `extensions/f8mediagateway/` have independent
+publisher workflows. WebStudio frontend/backend versions must match and its archive
+must contain both. The SDK owns `f8media_protocol`, shared by Gateway and Studio.
+
+The authenticated loopback platform API and CLI offer `import`, `prepare`, `select`,
+`start`, `stop`, `configure`, `update` and `uninstall`. Updates prepare the candidate,
+validate selected consumers and restore the old version if readiness fails.
+User data and caches live outside immutable payloads.
+
+The offline archive contains the bootstrap interpreter. Application environments
+use their published locks and the shared package cache; a fully offline application
+installation requires separately prepopulating that cache.

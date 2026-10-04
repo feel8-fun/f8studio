@@ -1,9 +1,0 @@
-#!/usr/bin/env sh
-set -eu
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-cd "$SCRIPT_DIR"
-./install_env.sh
-. ./activate.sh
-export F8_SERVICE_INDEX="$SCRIPT_DIR/config/service-index.json"
-export F8_MODEL_ROOT="$SCRIPT_DIR/resources/models"
-exec "$SCRIPT_DIR/env/bin/python" -I -m f8studio_server --tray --open-browser "$@"

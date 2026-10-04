@@ -146,15 +146,15 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/typing_extensions-4.16.0-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
       - pypi: ./extensions/f8diagnostics
+      - pypi: ./extensions/f8mediagateway
       - pypi: ./extensions/f8proclauncher
       - pypi: ./extensions/f8pyaudiofeat
       - pypi: ./extensions/f8pydl
       - pypi: ./extensions/f8pyengine
       - pypi: ./extensions/f8unitymods
-      - pypi: ./packages/f8media_gateway
-      - pypi: ./packages/f8media_protocol
-      - pypi: ./packages/f8studio_core
-      - pypi: ./packages/f8studio_server
+      - pypi: ./extensions/f8webstudio/f8studio_core
+      - pypi: ./extensions/f8webstudio/f8studio_server
+      - pypi: ./launcher
       - pypi: ./sdk/python
       - pypi: https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/05/7f/798705f5296a58ca505d600456748d1be48078eac8a7050d8a98bc9edb89/decorator-5.3.1-py3-none-any.whl
@@ -292,15 +292,15 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de7_41.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_7.conda
       - pypi: ./extensions/f8diagnostics
+      - pypi: ./extensions/f8mediagateway
       - pypi: ./extensions/f8proclauncher
       - pypi: ./extensions/f8pyaudiofeat
       - pypi: ./extensions/f8pydl
       - pypi: ./extensions/f8pyengine
       - pypi: ./extensions/f8unitymods
-      - pypi: ./packages/f8media_gateway
-      - pypi: ./packages/f8media_protocol
-      - pypi: ./packages/f8studio_core
-      - pypi: ./packages/f8studio_server
+      - pypi: ./extensions/f8webstudio/f8studio_core
+      - pypi: ./extensions/f8webstudio/f8studio_server
+      - pypi: ./launcher
       - pypi: ./sdk/python
       - pypi: https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/05/7f/798705f5296a58ca505d600456748d1be48078eac8a7050d8a98bc9edb89/decorator-5.3.1-py3-none-any.whl
@@ -872,14 +872,14 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/typing_extensions-4.15.0-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2025c-hc9c84f9_1.conda
       - pypi: ./extensions/f8diagnostics
+      - pypi: ./extensions/f8mediagateway
       - pypi: ./extensions/f8proclauncher
       - pypi: ./extensions/f8pyaudiofeat
       - pypi: ./extensions/f8pyengine
       - pypi: ./extensions/f8unitymods
-      - pypi: ./packages/f8media_gateway
-      - pypi: ./packages/f8media_protocol
-      - pypi: ./packages/f8studio_core
-      - pypi: ./packages/f8studio_server
+      - pypi: ./extensions/f8webstudio/f8studio_core
+      - pypi: ./extensions/f8webstudio/f8studio_server
+      - pypi: ./launcher
       - pypi: ./sdk/python
       - pypi: https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/05/7f/798705f5296a58ca505d600456748d1be48078eac8a7050d8a98bc9edb89/decorator-5.3.1-py3-none-any.whl
@@ -1011,14 +1011,14 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.44.35208-h818238b_34.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_6.conda
       - pypi: ./extensions/f8diagnostics
+      - pypi: ./extensions/f8mediagateway
       - pypi: ./extensions/f8proclauncher
       - pypi: ./extensions/f8pyaudiofeat
       - pypi: ./extensions/f8pyengine
       - pypi: ./extensions/f8unitymods
-      - pypi: ./packages/f8media_gateway
-      - pypi: ./packages/f8media_protocol
-      - pypi: ./packages/f8studio_core
-      - pypi: ./packages/f8studio_server
+      - pypi: ./extensions/f8webstudio/f8studio_core
+      - pypi: ./extensions/f8webstudio/f8studio_server
+      - pypi: ./launcher
       - pypi: ./sdk/python
       - pypi: https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/05/7f/798705f5296a58ca505d600456748d1be48078eac8a7050d8a98bc9edb89/decorator-5.3.1-py3-none-any.whl
@@ -1335,11 +1335,11 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.14-9_cp314.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/typing_extensions-4.16.0-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
+      - pypi: ./extensions/f8mediagateway
       - pypi: ./extensions/f8unitymods
-      - pypi: ./packages/f8media_gateway
-      - pypi: ./packages/f8media_protocol
-      - pypi: ./packages/f8studio_core
-      - pypi: ./packages/f8studio_server
+      - pypi: ./extensions/f8webstudio/f8studio_core
+      - pypi: ./extensions/f8webstudio/f8studio_server
+      - pypi: ./launcher
       - pypi: ./sdk/python
       - pypi: https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/09/ba/a4568248771ce81957bfb7cc600264a40fbcda092391ee1c415c50be4bea/httpcore2-2.13.1-py3-none-any.whl
@@ -1436,11 +1436,11 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/vc14_runtime-14.51.36247-habf1de7_41.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de7_41.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_7.conda
+      - pypi: ./extensions/f8mediagateway
       - pypi: ./extensions/f8unitymods
-      - pypi: ./packages/f8media_gateway
-      - pypi: ./packages/f8media_protocol
-      - pypi: ./packages/f8studio_core
-      - pypi: ./packages/f8studio_server
+      - pypi: ./extensions/f8webstudio/f8studio_core
+      - pypi: ./extensions/f8webstudio/f8studio_server
+      - pypi: ./launcher
       - pypi: ./sdk/python
       - pypi: https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/08/a5/7b059810934a09fb3ccb657e0843813c1fee1183d3bc2c8041800374aa2c/google_crc32c-1.8.0-cp314-cp314-win_amd64.whl
@@ -1645,13 +1645,13 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/typing_extensions-4.16.0-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
       - pypi: ./extensions/f8diagnostics
+      - pypi: ./extensions/f8mediagateway
       - pypi: ./extensions/f8proclauncher
       - pypi: ./extensions/f8pyengine
       - pypi: ./extensions/f8unitymods
-      - pypi: ./packages/f8media_gateway
-      - pypi: ./packages/f8media_protocol
-      - pypi: ./packages/f8studio_core
-      - pypi: ./packages/f8studio_server
+      - pypi: ./extensions/f8webstudio/f8studio_core
+      - pypi: ./extensions/f8webstudio/f8studio_server
+      - pypi: ./launcher
       - pypi: ./sdk/python
       - pypi: https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/07/bc/587a445451b253b285629263eb51c2d8e9bcea4fc97826266d186f96f558/pyserial-3.5-py2.py3-none-any.whl
@@ -1767,13 +1767,13 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de7_41.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_7.conda
       - pypi: ./extensions/f8diagnostics
+      - pypi: ./extensions/f8mediagateway
       - pypi: ./extensions/f8proclauncher
       - pypi: ./extensions/f8pyengine
       - pypi: ./extensions/f8unitymods
-      - pypi: ./packages/f8media_gateway
-      - pypi: ./packages/f8media_protocol
-      - pypi: ./packages/f8studio_core
-      - pypi: ./packages/f8studio_server
+      - pypi: ./extensions/f8webstudio/f8studio_core
+      - pypi: ./extensions/f8webstudio/f8studio_server
+      - pypi: ./launcher
       - pypi: ./sdk/python
       - pypi: https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/07/bc/587a445451b253b285629263eb51c2d8e9bcea4fc97826266d186f96f558/pyserial-3.5-py2.py3-none-any.whl
@@ -7666,6 +7666,16 @@ packages:
   - f8pysdk>=0.1.0,<0.2
   - msgspec>=0.18.6,<1
   requires_python: '>=3.10'
+- pypi: ./extensions/f8mediagateway
+  name: f8media-gateway
+  requires_dist:
+  - f8pysdk[media]
+  - numpy>=2.4,<3
+  - aiortc>=1.14,<2
+  - fastapi>=0.120,<1
+  - msgspec>=0.18.6,<1
+  - uvicorn>=0.35,<1
+  requires_python: '>=3.14,<3.15'
 - pypi: ./extensions/f8proclauncher
   name: f8proclauncher
   requires_dist:
@@ -7702,37 +7712,20 @@ packages:
 - pypi: ./extensions/f8unitymods
   name: f8unitymods-setup
   requires_python: '>=3.13'
-- pypi: ./packages/f8media_gateway
-  name: f8media-gateway
-  requires_dist:
-  - f8pysdk
-  - f8media-protocol
-  - numpy>=2.4,<3
-  - aiortc>=1.14,<2
-  - fastapi>=0.120,<1
-  - msgspec>=0.18.6,<1
-  - uvicorn>=0.35,<1
-  requires_python: '>=3.14,<3.15'
-- pypi: ./packages/f8media_protocol
-  name: f8media-protocol
-  requires_dist:
-  - f8pysdk
-  - httpx>=0.28,<1
-  - msgspec>=0.18.6,<1
-  requires_python: '>=3.14,<3.15'
-- pypi: ./packages/f8studio_core
+- pypi: ./extensions/f8webstudio/f8studio_core
   name: f8studio-core
   requires_dist:
   - f8pysdk
   requires_python: '>=3.14,<3.15'
-- pypi: ./packages/f8studio_server
+- pypi: ./extensions/f8webstudio/f8studio_server
   name: f8studio-server
   requires_dist:
+  - f8platform
   - packaging>=25,<27
   - pystray>=0.19.5,<0.20
   - pillow>=11,<13
   - f8studio-core
-  - f8media-protocol
+  - f8pysdk[media]
   - fastapi>=0.120,<1
   - uvicorn>=0.35,<1
   - websockets>=16,<17
@@ -7745,6 +7738,17 @@ packages:
   - mcp[cli]>=1.24,<2
   - f8media-gateway ; extra == 'embedded-media'
   requires_python: '>=3.14,<3.15'
+- pypi: ./launcher
+  name: f8platform
+  requires_dist:
+  - f8pysdk[platform-api]
+  - msgspec>=0.18.6,<1
+  - pyyaml>=6,<7
+  - packaging>=25,<27
+  - fastapi>=0.120,<1
+  - uvicorn>=0.35,<1
+  - httpx>=0.28,<1
+  requires_python: '>=3.14,<3.15'
 - pypi: ./sdk/python
   name: f8pysdk
   requires_dist:
@@ -7753,6 +7757,8 @@ packages:
   - eclipse-zenoh>=1.9.0,<1.10
   - msgpack>=1.0
   - pyyaml>=6.0.3,<7
+  - httpx>=0.28,<1 ; extra == 'media'
+  - pydantic>=2.11,<3 ; extra == 'platform-api'
   requires_python: '>=3.10'
 - pypi: https://files.pythonhosted.org/packages/04/11/432f32f8097b03e3cd5fe57e88efb685d964e2e5178a48ed61e841f7fdce/pyyaml_env_tag-1.1-py3-none-any.whl
   name: pyyaml-env-tag

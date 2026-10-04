@@ -13,4 +13,4 @@ On the graph canvas, Studio runtime operators can be placed anywhere outside ano
 
 Video previews appear inside graph nodes and may also be inspected in the Presentation workspace. 3D and Monaco assets are part of the local production bundle; they do not load code from a CDN.
 
-Studio runtime operators are explicitly registered under `packages/f8studio_server/f8studio_server/studio_runtime`. Presentation renderers are explicitly mapped under `packages/f8studio_web/src/presentation`. There is no runtime plugin discovery path.
+Studio runtime operators are explicitly registered under `extensions/f8webstudio/f8studio_server/f8studio_server/studio_runtime`. Presentation renderers are explicitly mapped under `extensions/f8webstudio/f8studio_web/src/presentation`. There is no runtime plugin discovery path.

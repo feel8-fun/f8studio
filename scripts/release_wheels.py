@@ -21,7 +21,7 @@ def build_wheels(
         shutil.copytree(
             package_dir, staged,
             ignore=shutil.ignore_patterns(
-                ".git", ".pixi", "__pycache__", "*.pyc", "*.egg-info",
+                ".git", ".pixi", ".sdk", ".platform", ".media-dependency", "__pycache__", "*.pyc", "*.egg-info",
                 ".pytest_cache", ".mypy_cache", "node_modules", "build", "dist", "web_dist",
             ),
         )

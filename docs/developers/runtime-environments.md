@@ -4,9 +4,12 @@ Studio manages extension installation separately from Python runtime definitions
 
 ## Workspace ownership
 
-Studio owns only its application workspace at `config/studio-runtime/`, with
-its own `pixi.toml` and `pixi.lock`. It includes SDK, core, server and media
-components; optional extension modules are not installed in the base interpreter.
+The distribution bootstrap owns only `f8platform`. Its source workspace lives
+at `launcher/pixi.toml`; it contains no Studio or Media Gateway modules.
+WebStudio owns `extensions/f8webstudio/pixi.toml` and Media Gateway owns
+`extensions/f8mediagateway/pixi.toml`. Each carries its own runtime lock and publisher.
+WebStudio frontend/backend are always one release unit. The previous
+`config/studio-runtime/` aggregate workspace has been removed.
 
 Each Python extension owns its workspace and lock in its own repository.
 `config/runtime-environments.json` references these source workspaces for
@@ -28,7 +31,9 @@ For example, prepare a source extension or Studio itself with:
 
 ```sh
 pixi install --locked --manifest-path extensions/f8pydl/pixi.toml -e dl
-pixi install --locked --manifest-path config/studio-runtime/pixi.toml -e studio-runtime
+pixi install --locked --manifest-path launcher/pixi.toml -e platform-runtime
+pixi install --locked --manifest-path extensions/f8webstudio/pixi.toml -e webstudio
+pixi install --locked --manifest-path extensions/f8mediagateway/pixi.toml -e media
 ```
 
 ## Inspect and prepare

@@ -57,7 +57,7 @@ def service_index(tmp_path: Path) -> Path:
     for item in index["services"]:
         original = ServicePaths.for_index(root / "config/service-index.json").package_path(item["manifests"]["any"], relative_to=root / "config")
         entry = yaml.safe_load(original.read_text())
-        entry["launch"]["workdir"] = str(root)
+        entry["launch"]["workdir"] = str(root / "extensions/f8pyengine")
         manifest = tmp_path / (item["serviceClass"] + ".yml")
         manifest.write_text(yaml.safe_dump(entry))
         item["manifests"] = {"any": str(manifest)}

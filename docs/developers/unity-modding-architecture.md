@@ -13,7 +13,7 @@ runtime.
 | `extensions/f8unitymods` | Git submodule | Unity profiles, backend detection, managed installation, C# exporters, release assets |
 | `sdk/python/f8pysdk/motion` | F8 Python SDK | Typed skeleton models and binary/JSON decoding |
 | `extensions/f8pyengine/f8pyengine/operators` | PyEngine | Stable selection, relative pose axes, watchdog, TCode processing |
-| `packages/f8studio_server/f8studio_server/local_integration.py` | Web Studio server | Generic skeleton UDP verification; game detection and installation belong to extensions |
+| `extensions/f8webstudio/f8studio_server/f8studio_server/local_integration.py` | Web Studio server | Generic skeleton UDP verification; game detection and installation belong to extensions |
 | `scripts/unitymods_ci.py` | Root build | Submodule validation, build/package dispatch, SHA-256 bundle manifest |
 
 `extensions/f8unitymods` is the only authoritative Unity checkout. Studio does not import `f8unitymods_setup` or expose engine-specific install APIs. Game tools must declare their fields, commands, skills, and resources through the extension manifest. The concrete Unity tool migration remains pending in the extension repository.

@@ -1,6 +1,6 @@
 # 扩展源码仓库与 superbuild
 
-核心源码放在 `packages/`，可选功能源码放在 `extensions/`；`external/` 留给第三方构建依赖。`sdk/` 是 [feel8-fun/f8sdk](https://github.com/feel8-fun/f8sdk) 的 submodule，拥有 Python/C++ SDK、共享协议、生成工具和跨语言测试。`cloud/` 是 [feel8-fun/f8assetcloud](https://github.com/feel8-fun/f8assetcloud) 的 submodule，独立拥有云端资产 API、认证、D1 迁移和管理前端。服务扩展的源码边界由 `config/extension-workspace.toml` 声明。核心保留 Web Studio 前端、服务端、图领域、媒体网关和媒体协议。业务服务通过 SDK 和进程协议连接核心，核心实现不能直接导入扩展实现；`extensions_check` 检查这条边界。
+当前仓库是开发工作区：launcher 源码放在 `launcher/`，应用和服务源码放在 `extensions/`；`external/` 留给第三方构建依赖。`sdk/` 是 [feel8-fun/f8sdk](https://github.com/feel8-fun/f8sdk) 的 submodule，拥有 Python/C++ SDK、共享协议、生成工具和跨语言测试。`cloud/` 是 [feel8-fun/f8assetcloud](https://github.com/feel8-fun/f8assetcloud) 的 submodule，独立拥有云端资产 API、认证、D1 迁移和管理前端。服务扩展的源码边界由 `config/extension-workspace.toml` 声明。WebStudio 和媒体网关是独立应用扩展；WebStudio 前后端一起发布。媒体协议属于 SDK。launcher 不导入应用实现，应用通过 SDK 和进程协议连接；`extensions_check` 检查这条边界。
 
 | 源码目录 / 独立仓库 | 拥有的扩展 |
 | --- | --- |
@@ -82,7 +82,7 @@ pixi run -e build-check python scripts/extension_workspace.py check
 
 各独立仓库的 CI checkout `feel8-fun/f8sdk` 的固定提交到 `.sdk`，不再下载 Studio 仓库。Python 依赖路径是 `.sdk/python`。C++ SDK 使用自己的精简 Conan 配方和锁，扩展使用本包的 Conan 锁；依赖准备成功后立即保存 Conan 缓存，避免后续编译失败时丢失缓存。每个仓库维护自己的 Pixi/Conan 锁，升级 SDK 时同时更新固定提交和锁。生成锁时的 SDK 源码须与固定提交一致。
 
-SDK 自己的 CI 负责 Python/C++ 单元测试、协议生成校验、跨语言通信及安装后 CMake 包验证，上传 wheel 和 CMake SDK 制品。主仓库的默认 quality 检查只负责 Studio 核心及集成测试；需要单独运行 SDK 测试时使用 `pixi run -e build-check pytest_sdk`。共享协议的唯一来源是 `sdk/schemas/`，Studio HTTP/document 合同仍归主仓库所有。原 `packages/f8sdk_demo` 已精简为 SDK 内的 `cpp/examples/minimal_service`，默认不构建、不进入发行包。
+SDK 自己的 CI 负责 Python/C++ 单元测试、协议生成校验、跨语言通信及安装后 CMake 包验证，上传 wheel 和 CMake SDK 制品。主仓库的默认 quality 检查只负责 Studio 核心及集成测试；需要单独运行 SDK 测试时使用 `pixi run -e build-check pytest_sdk`。共享协议的唯一来源是 `sdk/schemas/`，Studio 私有 HTTP/document 合同归 WebStudio 子仓库所有。原 `packages/f8sdk_demo` 已精简为 SDK 内的 `cpp/examples/minimal_service`，默认不构建、不进入发行包。
 
 更新 submodule 前先发布独立仓库提交，再提交主仓库 gitlink；不要提交指向仅存在于本机的提交或 `file://` 仓库。
 
