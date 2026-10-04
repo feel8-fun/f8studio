@@ -10,4 +10,4 @@ launch:
   - mediapipe
   - f8pymppose
   env: {}
-  workdir: ${F8_PACKAGE_ROOT}
+  workdir: ${F8_PACKAGE_ROOT}/extensions/f8pymppose

@@ -31,10 +31,10 @@ Sort detection payloads by a score-map metric.
 ### How to Run
 
 ```bash
-pixi run -e onnx f8pydl_detsorter
+pixi run -e dl f8pydl_detsorter
 ```
 
-- Workdir: `../../../../`
+- Workdir: `${F8_PACKAGE_ROOT}/extensions/f8pydl`
 - Environment overrides: none
 
 ### Typical Inputs / Outputs

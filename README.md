@@ -44,11 +44,11 @@ Studio loads `config/service-index.json` deterministically. Startup does not sca
 Registered services receive an absolute `F8_MODEL_ROOT`. Standalone service commands use the platform user data directory unless `F8_MODEL_ROOT` is explicitly set. See [service registration](docs/development/service-registration.md).
 
 ## DL services
-- Detector: `pixi run -e onnx f8pydl_detector`
-- Human detector: `pixi run -e onnx f8pydl_humandetector`
-- Classifier: `pixi run -e onnx f8pydl_classifier`
-- MediaPipe pose: `pixi run -e mediapipe f8pymppose`
-- Baseline benchmark: `pixi run -e onnx f8pydl_bench -- --model-yaml <yaml> --video <video>`
+- Detector: `pixi run --manifest-path extensions/f8pydl/pixi.toml -e dl f8pydl_detector`
+- Human detector: `pixi run --manifest-path extensions/f8pydl/pixi.toml -e dl f8pydl_humandetector`
+- Classifier: `pixi run --manifest-path extensions/f8pydl/pixi.toml -e dl f8pydl_classifier`
+- MediaPipe pose: `pixi run --manifest-path extensions/f8pymppose/pixi.toml -e mediapipe f8pymppose`
+- Baseline benchmark (developer tooling): `pixi run -e build-check f8pydl_bench -- --model-yaml <yaml> --video <video>`
 
 ## Audio capture
 - List recording devices: `build/bin/f8audiocap_service.exe --list-devices`
@@ -64,3 +64,8 @@ Registered services receive an absolute `F8_MODEL_ROOT`. Standalone service comm
 - Validate markdown links: `pixi run python scripts/check_docs_links.py`
 - Build static site: `zensical build`
 - Local preview: `zensical serve`
+
+The independent SDK (`sdk/`) uses Apache-2.0. Extension authors may choose
+their own licenses, including proprietary licenses, subject to their SDK and
+other dependency license obligations. Studio and official extensions retain
+their respective licenses.

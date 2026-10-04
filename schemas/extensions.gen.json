@@ -58,9 +58,12 @@
         "runtime": {
           "$ref": "#/$defs/ExtensionRuntime",
           "default": {
+            "abi": null,
             "dependencies": [],
             "environment": null,
             "kind": "native",
+            "providerId": null,
+            "providerVersion": null,
             "requiresPython": null
           }
         },
@@ -122,6 +125,17 @@
     "ExtensionRuntime": {
       "additionalProperties": false,
       "properties": {
+        "abi": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "dependencies": {
           "default": [],
           "items": {
@@ -149,6 +163,28 @@
             "shared",
             "workspace"
           ]
+        },
+        "providerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "providerVersion": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "requiresPython": {
           "anyOf": [

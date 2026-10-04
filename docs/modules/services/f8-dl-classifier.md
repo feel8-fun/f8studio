@@ -31,10 +31,10 @@ ONNXRuntime image classifier service (no tracking).
 ### How to Run
 
 ```bash
-pixi run -e onnx f8pydl_classifier
+pixi run -e dl f8pydl_classifier
 ```
 
-- Workdir: `../../../../`
+- Workdir: `${F8_PACKAGE_ROOT}/extensions/f8pydl`
 - Environment overrides: none
 
 ### Typical Inputs / Outputs

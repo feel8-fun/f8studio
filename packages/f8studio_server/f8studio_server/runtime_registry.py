@@ -22,9 +22,12 @@ from f8pysdk.codec import copy_model
 from f8pysdk.specs import F8JsonValue
 from .environment_definitions import (
     JsonObject, object_value, relocate_dependencies, selected_lock,
-    selected_manifest, write_manifest,
+    selected_manifest, toml_text, write_manifest,
 )
 from .environments import EnvironmentManager, SharedRuntimeTarget
+from f8pysdk.release_spec import RuntimeDefinition
+from packaging.specifiers import SpecifierSet
+
 from .errors import ConflictError, InvalidRequestError, NotFoundError
 from .extension_models import (
     EnvironmentCreateRequest, EnvironmentDetail, EnvironmentRevision, EnvironmentStatus,
@@ -41,6 +44,14 @@ class RuntimeSource:
     source: Literal['official', 'package', 'developer']
     target: SharedRuntimeTarget
     manifest: ExtensionManifest | None = None
+    release: RuntimeDefinition | None = None
+
+
+@dataclass(frozen=True)
+class RuntimeSourcesSnapshot:
+    sources: dict[str, RuntimeSource]
+    aliases: dict[str, str]
+    shared_targets: dict[str, SharedRuntimeTarget]
 
 
 def directory_usage(root: Path) -> EnvironmentUsage:
@@ -74,6 +85,9 @@ class RuntimeRegistry:
         self.storage = official.root.parent
         self.definitions = data_dir / 'runtime-definitions'
         self.state_file = self.definitions / 'revisions.json'
+        self._source_history_file = self.definitions / 'official-sources.json'
+        self._source_history = (msgspec.json.decode(self._source_history_file.read_bytes(), type=dict[str, str])
+                                if self._source_history_file.is_file() else {})
         self._lock = RLock()
         self.sources: dict[str, RuntimeSource] = {}
         self._aliases: dict[str, str] = {}
@@ -89,6 +103,9 @@ class RuntimeRegistry:
                     'state': 'failed', 'detail': 'Preparation was interrupted by Studio shutdown. Retry preparation.',
                 })
             self._register_revision(identifier)
+        if official.has_runtime_catalog:
+            for name in official.preset_names():
+                self.add_preset(name)
 
     @property
     def preparation_task(self) -> asyncio.Task[None] | None:
@@ -104,6 +121,15 @@ class RuntimeRegistry:
         temporary.write_bytes(msgspec.json.encode(self._revisions))
         temporary.replace(self.state_file)
 
+    def snapshot_sources(self) -> RuntimeSourcesSnapshot:
+        return RuntimeSourcesSnapshot(sources=dict(self.sources), aliases=dict(self._aliases),
+                                      shared_targets=dict(self.official.shared_targets))
+
+    def restore_sources(self, snapshot: RuntimeSourcesSnapshot) -> None:
+        self.sources = snapshot.sources
+        self._aliases = snapshot.aliases
+        self.official.shared_targets = snapshot.shared_targets
+
     def add_source(self, manager: EnvironmentManager, manifest: ExtensionManifest, *, official: bool) -> None:
         environment = manifest.runtime.environment
         if manifest.runtime.kind == 'shared':
@@ -112,24 +138,95 @@ class RuntimeRegistry:
             return
         if environment is None or manifest.runtime.kind == 'native':
             return
-        plan = manager.plan(manifest)
-        assert plan.environment_id is not None
-        key = plan.environment_id
-        source = RuntimeSource(name=environment, source='official' if official else 'package',
-                               target=SharedRuntimeTarget(manager, plan, environment), manifest=manifest)
-        self.sources[key] = source
-        self.official.shared_targets[key] = source.target
+        owners = (tuple(manager.for_environment(name) for name in manager.preset_names())
+                  if not official and manager.has_runtime_catalog
+                  else (manager.for_environment(environment),))
+        seen: set[tuple[Path, str]] = set()
+        for owner in owners:
+            names = (environment,) if official and not manager.has_runtime_catalog else owner.preset_names()
+            for name in names:
+                key = (owner.source_root, name)
+                if key in seen:
+                    continue
+                seen.add(key)
+                selected = copy_model(manifest, update={
+                    'runtime': copy_model(manifest.runtime, update={'environment': name}),
+                })
+                plan = owner.plan(selected)
+                assert plan.environment_id is not None
+                release = manager.runtime_releases.get(name)
+                source = RuntimeSource(name=name, source='official' if official else 'package',
+                                       target=SharedRuntimeTarget(owner, plan, name), manifest=selected, release=release)
+                self.sources[plan.environment_id] = source
+                self.official.shared_targets[plan.environment_id] = source.target
+                self._register_source_alias(source)
 
     def add_preset(self, environment: str) -> None:
         if environment not in self.official.preset_names():
             return
-        plan = self.official.preset_plan(environment)
+        manager = self.official.for_environment(environment)
+        plan = manager.preset_plan(environment)
         assert plan.environment_id is not None
         manifest = ExtensionManifest(extension_id='runtime-provider', name=environment, version='1', description='',
                                      runtime=ExtensionRuntime(kind=plan.runtime_kind, environment=environment))
-        target = SharedRuntimeTarget(self.official, plan, environment)
-        self.sources[plan.environment_id] = RuntimeSource(name=environment, source='official', target=target, manifest=manifest)
+        target = SharedRuntimeTarget(manager, plan, environment)
+        self.sources[plan.environment_id] = RuntimeSource(name=environment, source='official', target=target, manifest=manifest,
+            release=self.official.runtime_releases.get(environment))
         self.official.shared_targets[plan.environment_id] = target
+        self._register_source_alias(self.sources[plan.environment_id])
+
+    def _register_source_alias(self, source: RuntimeSource) -> None:
+        previous = source.target.manager.legacy_environment_id(source.target.environment)
+        identifier = source.target.plan.environment_id
+        if identifier is None:
+            return
+        if previous is not None:
+            self._aliases[previous] = identifier
+            self.official.shared_targets[previous] = source.target
+        if (source.source == 'official' and self.official.has_runtime_catalog
+                and self.official.runtime_releases[source.name].version is None
+                and source.target.manager is self.official.for_environment(source.name)):
+            for old_id, name in self._source_history.items():
+                if name == source.name and old_id != identifier:
+                    self._aliases[old_id] = identifier
+                    self.official.shared_targets[old_id] = source.target
+            if identifier not in self._source_history:
+                self._source_history[identifier] = source.name
+                self.definitions.mkdir(parents=True, exist_ok=True)
+                temporary = self._source_history_file.with_suffix('.tmp')
+                temporary.write_bytes(msgspec.json.encode(self._source_history))
+                temporary.replace(self._source_history_file)
+
+    def release_definition(self, identifier: str) -> RuntimeDefinition | None:
+        identifier = self.canonical_id(identifier)
+        revision = self._revisions.get(identifier)
+        if revision is not None:
+            base = revision.request.base_environment_id
+            definition = self.release_definition(base) if base is not None else None
+            if definition is not None and revision.request.policy == 'adjust':
+                return copy_model(definition, update={'abi': None})
+            return definition
+        source = self.sources.get(identifier)
+        name = source.name if source is not None else identifier
+        return source.release if source is not None else self.official.runtime_releases.get(name)
+
+    def validate_compatibility(self, manifest: ExtensionManifest, identifier: str | None = None) -> None:
+        runtime = manifest.runtime
+        if runtime.provider_id is None and runtime.provider_version is None and runtime.abi is None:
+            return
+        definition = self.release_definition(identifier or runtime.environment or '')
+        if definition is None:
+            raise InvalidRequestError('Selected runtime has no publisher identity; choose a versioned runtime')
+        if runtime.provider_id is not None and definition.provider_id != runtime.provider_id:
+            raise InvalidRequestError(f'Extension requires runtime provider {runtime.provider_id}')
+        if runtime.provider_version is not None and (definition.version is None or not
+                SpecifierSet(runtime.provider_version).contains(definition.version, prereleases=True)):
+            raise InvalidRequestError(f'Runtime version {definition.version} does not satisfy {runtime.provider_version}')
+        if runtime.abi is not None and runtime.abi != definition.abi:
+            raise InvalidRequestError(f'Extension requires runtime ABI {runtime.abi}; selected ABI is {definition.abi}')
+
+    def canonical_id(self, identifier: str) -> str:
+        return self._aliases.get(identifier, identifier)
 
     def _revision_workspace(self, revision: EnvironmentRevision) -> Path:
         if revision.resolved_id is not None:
@@ -178,7 +275,8 @@ class RuntimeRegistry:
                                      pinned=revision.pinned)
         source = self.source(identifier)
         ready = source.target.manager.ready(source.target.plan.environment_id)
-        prefix_exists = source.target.manager.workspace_python_exists(source.target.environment)
+        prefix_exists = (source.target.manager.workspace_python_exists(source.target.environment)
+                         or source.target.manager.development_python_exists(source.target.environment))
         state = 'ready' if ready else 'changed' if source.target.plan.runtime_kind == 'workspace' and prefix_exists else 'missing'
         return EnvironmentStatus(environment_id=identifier, runtime_kind=source.target.plan.runtime_kind,
                                  extension_ids=(), ready=ready, name=source.name, source=source.source,
@@ -249,7 +347,8 @@ class RuntimeRegistry:
                 if base is not None:
                     baseline = selected_lock(base.target.manager.source_root, base.target.environment)
                     (workspace / 'base-lock.json').write_bytes(msgspec.json.encode(baseline))
-                    relocate_dependencies(manifest, base.target.manager.source_root, workspace)
+                    relocate_dependencies(manifest, base.target.manager.source_root, workspace,
+                                          allowed_root=base.target.manager.dependency_root)
                 write_manifest(workspace / 'pixi.toml', manifest)
                 self._revisions[identifier] = EnvironmentRevision(environment_id=identifier, request=request,
                                                                   base_revision=base_revision)
@@ -382,6 +481,7 @@ class RuntimeRegistry:
                     self.official.shared_targets[identifier] = target
                     self.official.shared_targets[current_plan.environment_id] = target
                     self._aliases[identifier] = current_plan.environment_id
+                    self._register_source_alias(self.sources[current_plan.environment_id])
                     self._progress[current_plan.environment_id] = 'Environment prepared successfully'
         except ExtensionInstallCancelled:
             self._progress[identifier] = 'Preparation cancelled'
@@ -467,7 +567,7 @@ class RuntimeRegistry:
                 raise InvalidRequestError('Official and package environments are managed by their extensions')
             if revision.pinned:
                 raise ConflictError('Unpin the environment revision before removing it')
-            if any(item.request.base_environment_id == identifier for item in self._revisions.values()):
+            if any(self.canonical_id(item.request.base_environment_id or '') == identifier for item in self._revisions.values()):
                 raise ConflictError('Other revisions still reference this environment as their base')
             remaining = {key: value for key, value in self._revisions.items() if key != identifier}
             self._revisions = remaining
@@ -489,13 +589,19 @@ class RuntimeRegistry:
         installed_root = root if revision is not None else self.source(identifier).target.manager.workspace(self.source(identifier).target.plan)
         prefix = (installed_root / 'env' if source is not None and source.target.plan.runtime_kind == 'bundled'
                   else installed_root / '.pixi/envs' / ('runtime' if revision is not None else self.source(identifier).target.environment))
+        release = self.release_definition(identifier)
         return EnvironmentDetail(environment_id=identifier, name=revision.request.name if revision else self.source(identifier).name,
-                                 revision=identifier.rsplit('-', 1)[-1][:12], manifest=(root / 'pixi.toml').read_text(encoding='utf-8'),
+                                 revision=identifier.rsplit('-', 1)[-1][:12], manifest=toml_text(selected_manifest(root, 'runtime' if revision else self.source(identifier).target.environment)),
                                  base_environment_id=revision.request.base_environment_id if revision else None,
                                  policy=revision.request.policy if revision else None,
                                  conda_dependencies=revision.request.conda_dependencies if revision else (),
                                  pypi_dependencies=revision.request.pypi_dependencies if revision else (),
                                  storage_path=str(prefix), cache_path=str(self.storage / 'package-cache'),
+                                 definition_path=str(root / 'pixi.toml'),
+                                 source_environment='runtime' if revision else self.source(identifier).target.environment,
+                                 provider_id=release.provider_id if release else None,
+                                 provider_version=release.version if release else None,
+                                 abi=release.abi if release else None,
                                  usage=directory_usage(prefix), pinned=revision.pinned if revision else False,
                                  changed_packages=self._changes(root) if revision else ())
 
@@ -547,7 +653,7 @@ class RuntimeRegistry:
         temporary.write_bytes(msgspec.json.encode({'path': str(destination)}))
         temporary.replace(self.data_dir / 'runtime-storage.json')
         self.storage = destination
-        self.official.root = destination / 'runtimes'
+        self.official.set_runtime_storage(destination)
         for source in self.sources.values():
             source.target.manager.root = destination / 'runtimes'
         return self.storage_status()

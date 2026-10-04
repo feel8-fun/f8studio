@@ -71,11 +71,10 @@ jobs:
           path: |
             .pixi/envs/build-check
             .pixi/envs/cpp
-            .pixi/envs/mediapipe
-          key: pixi-dist-v4-merged-${{ runner.os }}-0.81.0-${{ hashFiles('pixi.lock') }}-${{ github.workspace }}
+          key: pixi-dist-v5-owned-${{ runner.os }}-0.81.0-${{ hashFiles('pixi.lock') }}-${{ github.workspace }}
 
       - name: Install locked build and service environments
-        run: pixi install --locked -e build-check -e cpp -e mediapipe
+        run: pixi install --locked -e build-check -e cpp
 
       - name: Save Pixi environments
         if: success() && steps.pixi_cache.outputs.cache-hit != 'true'
@@ -84,7 +83,6 @@ jobs:
           path: |
             .pixi/envs/build-check
             .pixi/envs/cpp
-            .pixi/envs/mediapipe
           key: ${{ steps.pixi_cache.outputs.cache-primary-key }}
 
       - name: Check Python service descriptions before native compilation
@@ -173,11 +171,10 @@ jobs:
           path: |
             .pixi/envs/build-check
             .pixi/envs/cpp
-            .pixi/envs/mediapipe
-          key: pixi-dist-v4-merged-${{ runner.os }}-0.81.0-${{ hashFiles('pixi.lock') }}-${{ github.workspace }}
+          key: pixi-dist-v5-owned-${{ runner.os }}-0.81.0-${{ hashFiles('pixi.lock') }}-${{ github.workspace }}
 
       - name: Install locked build and service environments
-        run: pixi install --locked -e build-check -e cpp -e mediapipe
+        run: pixi install --locked -e build-check -e cpp
 
       - name: Save Pixi environments
         if: success() && steps.pixi_cache.outputs.cache-hit != 'true'
@@ -186,7 +183,6 @@ jobs:
           path: |
             .pixi/envs/build-check
             .pixi/envs/cpp
-            .pixi/envs/mediapipe
           key: ${{ steps.pixi_cache.outputs.cache-primary-key }}
 
       - name: Check Python service descriptions before native compilation
@@ -252,7 +248,7 @@ jobs:
         run: pixi run --frozen -e build-check unitymods_package
 
       - name: Build runtime distribution
-        run: pixi run --frozen -e build-check dist_ci --archive --reuse-unitymods-assets --reuse-python-describes
+        run: pixi run --frozen -e build-check dist_ci --build-workspace --archive --reuse-unitymods-assets --reuse-python-describes
 
       - name: Validate freshly built C++ service contracts
         run: pixi run --frozen --no-install -e build-check python scripts/quality/check_cpp_contracts.py --service-index config/service-index.json

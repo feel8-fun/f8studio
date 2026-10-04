@@ -1,9 +1,15 @@
 # Commercial Licensing
 
-This project is available under a dual-licensing model:
+Feel8 Studio is available under a dual-licensing model:
 
 - Open-source license: `GNU Affero General Public License v3.0 only` (`AGPL-3.0-only`)
 - Commercial license: Available from the copyright holder under separate terms
+
+The independently licensed SDK in `sdk/` is Apache-2.0 and is excluded from
+this Studio dual-license summary. Authors may license their extensions,
+including proprietary extensions, independently when using the SDK or
+implementing the public service protocol. The licenses of any other code
+and dependencies included in an extension still apply.
 
 ## When you need a commercial license
 
@@ -27,4 +33,4 @@ Legal entity details are provided in commercial agreements.
 ## Important notice
 
 This document is a licensing summary only and is not a complete license grant.
-Commercial use is permitted only under a fully executed written commercial agreement.
+A separate commercial license is granted only through a fully executed written commercial agreement.

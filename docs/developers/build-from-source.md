@@ -16,6 +16,11 @@ git submodule update --init --recursive
 pixi lock
 ```
 
+Python extensions own their source workspaces. Before running an extension from
+source, prepare the SDK checkout it declares (usually `.sdk`) as documented in
+that repository’s `DEVELOPMENT.md`. Published extension artifacts contain wheels
+and locked runtime inputs and do not need SDK source checkouts.
+
 ## Start Studio
 
 Build the production Web assets and start the combined local server:
@@ -83,8 +88,8 @@ pixi run -e web-studio-test studio_graph_bench
 Build the native runtime, non-editable Python wheels, and embedded Web bundle:
 
 ```bash
-pixi run -e ci dist_ci
-pixi run -e ci dist_ci --archive
+pixi run -e build-check dist_ci --build-workspace
+pixi run -e build-check dist_ci --build-workspace --archive
 ```
 
 Output is written under `build/dist/f8studio-<platform-tag>`. The generated install script uses `pixi install --locked` for both third-party dependencies and local wheels. The `f8studio-server` wheel contains the production Web bundle, so it does not depend on a source checkout at runtime.

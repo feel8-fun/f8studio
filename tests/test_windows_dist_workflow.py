@@ -17,7 +17,7 @@ def test_cache_checkpoints_and_service_environment_coverage(job_name: str) -> No
     install = steps[positions["Install locked build and service environments"]]
     args = shlex.split(install["run"])
     environments = {args[i + 1] for i, arg in enumerate(args) if arg == "-e"}
-    assert environments == {"build-check", "cpp", "mediapipe"}
+    assert environments == {"build-check", "cpp"}
     index_path = Path("config/service-index.json").resolve()
     index = read_service_index(index_path)
     for item in index.services:
@@ -48,17 +48,17 @@ def test_quality_jobs_use_one_environment() -> None:
                 assert '-e build-check ' in step['run']
 
 
-def test_dist_caches_only_the_three_prepared_environments() -> None:
+def test_dist_caches_only_the_two_prepared_build_environments() -> None:
     workflow = yaml.safe_load(Path('.github/workflows/dist-windows.yml').read_text())
     for job in workflow['jobs'].values():
         for step in job['steps']:
             if step.get('name') in {'Restore Pixi environments', 'Save Pixi environments'}:
                 assert set(step['with']['path'].splitlines()) == {
-                    '.pixi/envs/build-check', '.pixi/envs/cpp', '.pixi/envs/mediapipe',
+                    '.pixi/envs/build-check', '.pixi/envs/cpp',
                 }
             if step.get('run', '').startswith('pixi run '):
                 args = shlex.split(step['run'])
-                assert args[args.index('-e') + 1] in {'build-check', 'cpp', 'mediapipe'}
+                assert args[args.index('-e') + 1] in {'build-check', 'cpp'}
 
 
 def test_dist_reuses_descriptions_and_uploads_only_offline_archive() -> None:

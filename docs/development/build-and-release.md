@@ -71,18 +71,18 @@ CI 的 `setup-pixi` 固定使用 **v0.81.0**，与当前 v7 锁文件及本地�
 Windows 缓存预热只在每周一 UTC 07:00 的定时任务（默认分支）或手动选择 `job_mode=warm-caches` 时运行；普通 `build` 中显示 skipped 是预期行为。预热与普通构建使用相同的依赖准备流程：
 
 1. `setup-pixi` 只安装固定版本的 CLI，禁用它在 job 收尾阶段保存的隐式缓存。
-2. 显式恢复并安装三个 CI 环境：`build-check`（Python/Web 构建、测试及普通/ONNX 描述）、`cpp`（原生工具链）、`mediapipe`（独立运行依赖）。安装成功后立即保存这三个环境目录；使用 `v4-merged` 缓存键，不恢复旧环境集合。开发及发行环境仍保留，但 CI 不再逐一安装。
+2. 显式恢复并安装两个 CI 环境：`build-check`（Python/Web 构建、测试和服务描述）、`cpp`（原生工具链）。安装成功后立即保存这两个环境目录，使用 `v5-owned` 缓存键。扩展运行环境由各扩展自己的 workspace 声明，描述检查不需要安装 GPU 等完整运行依赖。
 3. 实际刷新全部 Python 服务描述；此时不允许隐式安装环境，绑定或导入错误会在原生编译之前暴露。
 4. 恢复 Conan 缓存，执行 `cpp_bootstrap` 下载/编译第三方依赖，成功后立即保存 `.conan2`。不缓存项目 C++ 编译产物或发行包。
 
 分支和 tag 构建都保存未命中的缓存，后续打包失败不影响已完成的保存步骤。GitHub 缓存按 workflow 运行的 ref 隔离，检出 `git_ref` 不会改变缓存作用域：分支可读取自身和默认分支的缓存，tag 缓存可供同 tag 重跑复用，但其他 tag 无法读取它。需要跨分支/tag 复用时，应在默认分支运行 `warm-caches`。Pixi 缓存键包含格式版本、OS、CLI 版本、锁文件哈希和工作区绝对路径；新增环境会通过锁文件哈希自动产生新键；安装策略或缓存布局变化时需更新键中的版本。Conan 按配方和锁文件哈希匹配，并允许回退到旧依赖缓存。
 
-`install_services` 会在执行任何服务之前验证所有选中 Pixi 服务的显式环境及任务绑定，再集中执行 `pixi install --locked`。CI 使用 `--build-check` 将除 MediaPipe 外的 Python 服务描述统一映射到 `build-check` 并校验任务存在；普通开发调用将 ONNX 描述映射到 `onnx-describe`，服务启动声明仍指向 `onnx`。描述子进程使用 `--frozen --no-install`，依赖下载不再计入描述超时。CI 提供 `--no-install` 复用已准备环境，`--python-only` 在原生编译前检查 Python 服务；完整发行仍刷新并验证全部服务。失败信息包含服务类名、命令、工作目录及子进程 stdout/stderr，并保留异常链。描述全部验证通过后才写入文件。
+`install_services` 在执行服务之前验证扩展 workspace 中的环境和任务绑定。普通开发调用从对应扩展自己的 lock 安装依赖；CI 显式使用 `--build-check`，读取服务任务的 `python -m` 入口，使用当前构建解释器和扩展源码路径生成描述，避免为描述安装完整的 GPU 或模型运行环境。此路径不会改变真实服务的启动声明。`--no-install` 复用已准备的构建环境，`--python-only` 在原生编译前检查 Python 服务；失败包含服务类名、命令、工作目录、stdout/stderr 和异常链。全部验证通过后才写入描述。
 
 当前发行不要求用户克隆仓库。开发者或 CI 执行：
 
 ```sh
-pixi run --locked -e build-check dist_ci --archive
+pixi run --locked -e build-check dist_ci --build-workspace --archive
 ```
 
 流程依次为：
@@ -96,9 +96,9 @@ pixi run --locked -e build-check dist_ci --archive
 
 用户解压后，双击 `f8studio.cmd`（Windows）或执行 `./f8studio`（Linux）。基础运行时、Python、所有基础第三方包和本地 wheels 已包含在 `offline/base-runtime.tar` 中，官方 `pixi-unpack` 工具也随包提供。第一次启动只做本地解包并写入 `.runtime-location`，不下载 Pixi、不联网安装依赖；后续启动直接复用 `env`。也可提前运行 `install_env.bat` / `install_env.sh` 完成这一步。移动整个发行目录后会使用本地包重新准备环境，修复绝对前缀。
 
-启动器激活包内运行时并直接执行 `python -I -m f8studio_server --open-browser`；基础 Python 服务的启动声明同样直接指向包内解释器。`config/service-index.json` 保留全部服务元数据，`config/extensions.json` 声明服务归属、运行环境和预装清单。默认 `standard` 预装普通 Python、音频和 C++ 扩展，DL 和 MediaPipe 按需安装；`pixi run -e ci dist_ci --preset core` 不预装服务扩展。这个 preset 控制初始安装状态，当前仍携带基础环境及可重装服务的文件，尚未把物理包体裁剪成最小 Web Studio。
+启动器激活包内运行时并直接执行 `python -I -m f8studio_server --open-browser`；基础 Python 服务的启动声明同样直接指向包内解释器。`config/service-index.json` 保留全部服务元数据，`config/extensions.json` 声明服务归属、运行环境和预装清单。默认 `standard` 预装普通 Python、音频和 C++ 扩展，DL 和 MediaPipe 按需安装；`pixi run -e build-check dist_ci --build-workspace --preset core` 不预装服务扩展。这个 preset 控制初始安装状态，当前仍携带基础环境及可重装服务的文件，尚未把物理包体裁剪成最小 Web Studio。
 
-Web Studio 的 Services 页面统一管理全部服务扩展，支持安装、取消、启停、卸载和从发布者的 HTTPS ZIP 链接与 SHA-256 导入新包。第三方 Python 扩展以 `shared` 引用官方 `pixi.toml` 的环境名，如 `studio-runtime`、`onnx`、`mediapipe`。开发时复用对应 workspace 环境；发行时基础环境使用包内 `env`，可选环境复用官方扩展已准备的托管目录。安装要求从扩展 wheel 的元数据读取，无需重复写依赖清单；共享模式只检查要求并保存自身代码，不下载环境或修改官方包。依赖不满足时发布者可以提供独立 Pixi 环境。独立模式发现 Pixi 或用官方脚本安装固定的 0.81.0；锁定环境及 wheels 存在用户目录 `runtimes/<environment>-<digest>`，相同配置复用同一环境。安装及服务描述检查通过后才激活；失败保留缓存和已准备的环境，便于重试。共享扩展与官方扩展按同一环境计数，卸载最后一个使用者后才回收托管环境；源码环境和包内基础环境保留。模型元数据与按需权重位于用户目录 `models`，不随服务卸载删除。运行中或正在启动的服务会阻止停用/卸载。完整格式见 [extensions.md](extensions.md)。
+Web Studio 的 Extensions 页面管理服务和工具扩展，支持安装、取消、启停、卸载和导入发布者的 HTTPS ZIP 与 SHA-256。Python 扩展拥有自己的 Pixi workspace、lock 和预构建 wheels，环境名称与数量由发布者决定。Studio 的基础环境位于 `config/studio-runtime/`，只包含自身组件。不同扩展分别安装到受管理目录，共享 F8 的包缓存；安装和服务描述检查通过后才激活，运行中或正在启动的入口会阻止停用、卸载。模型、配置与资源使用独立的可写目录。生产发行使用发布锁组装已构建制品；`--build-workspace` 是显式的源码构建路径，产出的扩展环境也与基础解释器分离。完整格式见 [extensions.md](extensions.md)。
 
 Windows CI 产物为一个离线 ZIP，不再同时上传展开目录；ZIP 上传不再次压缩，内部已压缩的运行时包/wheels 也不重复压缩。构建前已检查的 Python 描述通过 `--reuse-python-describes` 复用，原生描述仍在编译后刷新。验证直接解压最终 ZIP，在独立目录内运行两次启动器（第二次必须不重复解包），然后用包内 Python 检查服务描述、Web/health、包安装位置和编辑器工具；不再逐环境联网安装依赖。保留原生契约测试作为语义验证。
 

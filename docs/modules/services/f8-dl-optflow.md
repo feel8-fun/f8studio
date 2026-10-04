@@ -31,10 +31,10 @@ ONNXRuntime NeuFlowV2 dense optical flow service (Zenoh latest-frame flow output
 ### How to Run
 
 ```bash
-pixi run -e onnx f8pydl_optflow
+pixi run -e dl f8pydl_optflow
 ```
 
-- Workdir: `../../../../`
+- Workdir: `${F8_PACKAGE_ROOT}/extensions/f8pydl`
 - Environment overrides: none
 
 ### Typical Inputs / Outputs

@@ -7,12 +7,31 @@
     "packages/f8media_protocol/f8media_protocol",
     "packages/f8media_gateway/f8media_gateway",
     "packages/f8studio_server/f8studio_server",
-    "scripts/web_studio"
+    "scripts/web_studio",
+    "scripts/assemble_release.py",
+    "scripts/publish_runtime.py",
+    "sdk/python/f8pysdk/release_spec.py",
+    "sdk/python/f8pysdk/runtime_package.py",
+    "sdk/python/f8pysdk/extension_packaging.py",
+    "sdk/python/f8pysdk/extension_runtime_build.py"
   ],
   "exclude": [
     ".pixi",
     "build",
     "**/__pycache__"
   ],
-  "reportMissingTypeStubs": "none"
+  "reportMissingTypeStubs": "none",
+  "executionEnvironments": [
+    {
+      "root": "scripts",
+      "extraPaths": [
+        "scripts",
+        "sdk/python",
+        "packages/f8studio_server"
+      ]
+    },
+    {
+      "root": "."
+    }
+  ]
 }

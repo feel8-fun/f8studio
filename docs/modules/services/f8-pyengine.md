@@ -31,10 +31,10 @@ Python-based execution engine for Feel8 operators.
 ### How to Run
 
 ```bash
-pixi run -e web-studio-runtime f8pyengine
+pixi run -e pyengine f8pyengine
 ```
 
-- Workdir: `../../../`
+- Workdir: `${F8_PACKAGE_ROOT}/extensions/f8pyengine`
 - Environment overrides: none
 
 ### Typical Inputs / Outputs

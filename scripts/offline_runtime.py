@@ -82,7 +82,16 @@ def rewrite_base_services(root: Path, *, windows: bool, preset: str = 'standard'
         if len(names) > 1:
             raise ValueError(f'Extension {extension["extensionId"]} references multiple runtimes')
         if not names:
-            if extension.get('runtime', {}).get('kind') != 'bundled':
+            declared = extension.get('runtime', {})
+            kind = declared.get('kind')
+            environment = declared.get('environment')
+            if kind in {'pixi', 'workspace', 'shared'} and environment:
+                if kind == 'shared':
+                    extension['runtime'] = {**declared, 'environment': environment}
+                else:
+                    extension['runtime'] = ({'kind': 'bundled'} if environment == 'studio-runtime'
+                                            else {'kind': 'pixi', 'environment': environment})
+            elif kind != 'bundled':
                 extension['runtime'] = {'kind': 'native'}
         else:
             environment = names.pop()

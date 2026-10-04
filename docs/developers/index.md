@@ -34,3 +34,5 @@ This path is for advanced users who want to build F8Studio from source or extend
 - You are comfortable with source trees, Python environments, and build tooling
 - You may need Pixi, Python packaging, and possibly C++ toolchains
 - You are not looking for the simplest "try the app" path; use the Windows prebuilt package for that
+
+- [Extension Releases](extension-releases.md)

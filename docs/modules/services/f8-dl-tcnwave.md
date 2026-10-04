@@ -31,10 +31,10 @@ ONNXRuntime temporal convolution wave inference service (port output).
 ### How to Run
 
 ```bash
-pixi run -e onnx f8pydl_tcnwave
+pixi run -e dl f8pydl_tcnwave
 ```
 
-- Workdir: `../../../../`
+- Workdir: `${F8_PACKAGE_ROOT}/extensions/f8pydl`
 - Environment overrides: none
 
 ### Typical Inputs / Outputs

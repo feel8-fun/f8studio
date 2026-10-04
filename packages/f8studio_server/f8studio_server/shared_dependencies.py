@@ -6,6 +6,7 @@ from pathlib import Path
 
 import msgspec
 from packaging.requirements import Requirement
+from packaging.tags import parse_tag
 from packaging.specifiers import SpecifierSet
 from packaging.utils import canonicalize_name
 
@@ -24,6 +25,7 @@ class RuntimeProbe(msgspec.Struct, frozen=True, rename='camel'):
     markers: dict[str, str]
     distributions: dict[str, InstalledDistribution]
     modules: tuple[str, ...]
+    wheel_tags: tuple[str, ...] = ()
 
 
 def check_dependencies(requirements: tuple[str, ...], probe: RuntimeProbe) -> None:
@@ -64,6 +66,12 @@ def validate_shared_package(manifest: ExtensionManifest, python_root: Path, prob
     dependencies = list(manifest.runtime.dependencies)
     installed_names = {canonicalize_name(name) for name in probe.distributions}
     for distribution in metadata.distributions(path=[str(python_root)]):
+        wheel_metadata = distribution.read_text('WHEEL')
+        if wheel_metadata is not None:
+            tags = {str(tag) for line in wheel_metadata.splitlines() if line.startswith('Tag: ')
+                    for tag in parse_tag(line.removeprefix('Tag: '))}
+            if not tags or not tags.intersection(probe.wheel_tags):
+                raise InvalidRequestError('Extension wheel is incompatible with the selected interpreter/ABI/platform')
         name = distribution.metadata.get('Name')
         if name and canonicalize_name(name) in installed_names:
             raise InvalidRequestError(f'Extension contains {name}, which would replace a runtime package')

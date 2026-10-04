@@ -8,7 +8,9 @@ import argparse
 import hashlib
 import os
 from pathlib import Path
+import shlex
 import shutil
+import sys
 import subprocess
 import tempfile
 import tomllib
@@ -22,6 +24,9 @@ from f8pysdk.specs import F8ServiceDescribe, F8ServiceEntry
 from f8pysdk.resource_paths import service_config_root
 from f8pysdk.service_runtime_tools.inventory.describe import _extract_last_json_obj
 from f8pysdk.service_runtime_tools.inventory.index import default_service_index, index_paths, indexed_entry, read_service_index
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def file_digest(path: Path) -> bytes:
@@ -116,15 +121,30 @@ def pixi_environment(entry: F8ServiceEntry) -> str | None:
 
 def description_entry(entry: F8ServiceEntry, *, build_check: bool = False) -> F8ServiceEntry:
     environment = pixi_environment(entry)
-    if environment is None or environment == "mediapipe":
+    if environment is None or not build_check:
         return entry
-    if not build_check and environment != "onnx":
-        return entry
-    args = list(entry.launch.args or [])
-    args[2] = "build-check" if build_check else "onnx-describe"
-    result = copy_model(entry, update={"launch": copy_model(entry.launch, update={"args": args})})
-    pixi_environment(result)  # Validate the description task in its alternate environment too.
-    return result
+    workspace = Path(entry.launch.workdir or '.').resolve()
+    manifest = tomllib.loads((workspace / 'pixi.toml').read_text(encoding='utf-8'))
+    tasks = dict(manifest.get('tasks', {}))
+    definition = manifest['environments'][environment]
+    features = definition if isinstance(definition, list) else definition.get('features', [])
+    for feature in features:
+        tasks.update(manifest.get('feature', {}).get(feature, {}).get('tasks', {}))
+    task = tasks[(entry.launch.args or [])[-1]]
+    command = task.get('cmd') if isinstance(task, dict) else task
+    if not isinstance(command, str):
+        raise ValueError(f'{entry.serviceClass}: description task requires an explicit command')
+    args = shlex.split(command)
+    if len(args) < 3 or args[:2] != ['python', '-m']:
+        raise ValueError(f'{entry.serviceClass}: build-check descriptions require a python -m entrypoint')
+    env = dict(entry.launch.env or {})
+    previous_path = env.get('PYTHONPATH', os.environ.get('PYTHONPATH', ''))
+    env['PYTHONPATH'] = str(workspace) + (os.pathsep + previous_path if previous_path else '')
+    # Only the explicit CI/source-description path uses this interpreter.
+    # Normal installation and execution retain the extension's own workspace.
+    return copy_model(entry, update={'launch': copy_model(entry.launch, update={
+        'command': sys.executable, 'args': args[1:], 'workdir': str(REPO_ROOT), 'env': env,
+    })})
 
 
 def describe_service(entry: F8ServiceEntry) -> object:
@@ -164,12 +184,14 @@ def install(index_path: Path, *, refresh: bool, service_classes: set[str],
         entry = indexed_entry(index_path, index, item)
         if entry is None:
             continue
+        python_service = (pixi_environment(entry) is not None
+                          or entry.launch.command in {'python', 'python.exe', sys.executable})
         entry = description_entry(entry, build_check=build_check)
         target = index_paths(index_path, index, item).package_path(item.describe, relative_to=index_path.parent)
         environment = pixi_environment(entry)
-        if native_only and environment is not None:
+        if native_only and python_service:
             continue
-        if python_only and environment is None:
+        if python_only and not python_service:
             continue
         selected.append((entry, target))
         if environment is not None and (refresh or not target.is_file()):

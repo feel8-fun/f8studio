@@ -31,10 +31,10 @@ Launches an external OS process (optionally detached).
 ### How to Run
 
 ```bash
-pixi run -e default f8proclauncher
+pixi run -e proclauncher f8proclauncher
 ```
 
-- Workdir: `../../../`
+- Workdir: `${F8_PACKAGE_ROOT}/extensions/f8proclauncher`
 - Environment overrides: none
 
 ### Typical Inputs / Outputs

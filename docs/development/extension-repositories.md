@@ -9,16 +9,15 @@
 | [`extensions/f8cvkit`](https://github.com/feel8-fun/f8cvkit) | Tracking、Template Match、Video Stabilization、Dense Optical Flow、Flow Metric |
 | [`extensions/f8implayer`](https://github.com/feel8-fun/f8implayer) | Image / Video Player |
 | [`extensions/f8cppengine`](https://github.com/feel8-fun/f8cppengine) | C++ Engine |
-| [`extensions/f8pyengine`](https://github.com/feel8-fun/f8pyengine) | Python Engine |
-| [`extensions/f8pyscript`](https://github.com/feel8-fun/f8pyscript) | Python Script、Python Expression |
+| [`extensions/f8pyengine`](https://github.com/feel8-fun/f8pyengine) | Python Engine、Python Script、Python Expression |
 | [`extensions/f8pymppose`](https://github.com/feel8-fun/f8pymppose) | MediaPipe Pose |
 | [`extensions/f8pydl`](https://github.com/feel8-fun/f8pydl) | ONNX / DL 六个服务 |
 | [`extensions/f8pyaudiofeat`](https://github.com/feel8-fun/f8pyaudiofeat) | Audio Features、Rhythm |
 | [`extensions/f8proclauncher`](https://github.com/feel8-fun/f8proclauncher) | Process Launcher |
 
-一个仓库可以包含多个服务；不为 cvkit 的每个入口创建一套相同依赖环境。各目录拥有 `extension.json`、服务索引、服务启动声明、源码、专属测试、模型元数据和依赖声明。描述 JSON 从构建后的真实入口生成，不在源码仓库复制描述缓存或模型权重。
+一个扩展包对应一个环境，可以包含多个服务和工具；不为 cvkit 的每个入口创建一套相同依赖环境。各目录拥有 `extension.json`、服务索引、服务启动声明、源码、专属测试、模型元数据和依赖声明。描述 JSON 从构建后的真实入口生成，不在源码仓库复制描述缓存或模型权重。
 
-这 11 个服务仓库已发布到 `https://github.com/feel8-fun/<目录名>`，各目录通过 HTTPS submodule 固定到已发布的提交。CI 使用各仓库工作流中固定的已发布 SDK 完整提交 SHA，独立维护 Pixi 锁、Conan 锁和 Windows/Linux 构建。主仓库提交记录集成使用的 gitlink，更新扩展时需先推送扩展提交，再提交新的 gitlink。
+独立服务仓库发布到 `https://github.com/feel8-fun/<目录名>`，各目录通过 HTTPS submodule 固定到已发布的提交。CI 使用各仓库工作流中固定的已发布 SDK 完整提交 SHA，独立维护 Pixi 锁、Conan 锁和 Windows/Linux 构建。主仓库提交记录集成使用的 gitlink，更新扩展时需先推送扩展提交，再提交新的 gitlink。
 
 首次 clone 和旧工作区更新：
 

@@ -19,9 +19,6 @@
 [submodule "extensions/f8pyengine"]
 	path = extensions/f8pyengine
 	url = https://github.com/feel8-fun/f8pyengine.git
-[submodule "extensions/f8pyscript"]
-	path = extensions/f8pyscript
-	url = https://github.com/feel8-fun/f8pyscript.git
 [submodule "extensions/f8pymppose"]
 	path = extensions/f8pymppose
 	url = https://github.com/feel8-fun/f8pymppose.git

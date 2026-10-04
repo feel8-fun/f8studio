@@ -22,15 +22,6 @@ scapy = ">=2.6.1,<3"
 [feature.debug.tasks]
 udp_pcap_replay = "python scripts/udp_pcap_replay.py"
 
-[feature.onnx.dependencies]
-cuda-version = "12.*"
-cuda-libraries = "12.*"
-cudnn = ">=9,<10"
-
-[feature.onnx.pypi-dependencies]
-onnxruntime-gpu = ">=1.24.2, <2"
-pyyaml = ">=6.0.3, <7"
-
 [feature.pydl.pypi-dependencies]
 f8pydl = { path = "extensions/f8pydl", editable = true }
 
@@ -85,7 +76,6 @@ f8diagnostics = { path = "extensions/f8diagnostics", editable = true }
 scipy = ">=1.17.1,<2"
 scikit-learn = ">=1.8.0,<2"
 f8pyengine = { path = "extensions/f8pyengine", editable = true }
-f8pyscript = { path = "extensions/f8pyscript", editable = true }
 f8proclauncher = { path = "extensions/f8proclauncher", editable = true }
 
 [feature.engine.tasks]
@@ -93,13 +83,6 @@ f8pyengine = "python -m f8pyengine.main"
 f8pyscript = "python -m f8pyscript.main_script"
 f8pyexpr = "python -m f8pyscript.main_expr"
 f8proclauncher = "python -m f8proclauncher.main"
-
-[feature.mediapipe.pypi-dependencies]
-f8pymppose = { path = "extensions/f8pymppose", editable = true }
-mediapipe = ">=0.10.32, <0.11"
-
-[feature.mediapipe.tasks]
-f8pymppose = "python -m f8pymppose.main_pose"
 
 [feature.doc.pypi-dependencies]
 zensical = ">=0.0.23,<0.1.0"
@@ -155,8 +138,6 @@ msgspec = ">=0.18.6,<1"
 
 [feature.ci.tasks]
 dist_ci = "python scripts/dist_ci.py"
-
-[feature.launcher-runtime]
 
 [feature.web-studio.target.linux-64.dependencies]
 pygobject = ">=3.50,<4"
@@ -225,25 +206,18 @@ studio_stream_restart_probe = "python scripts/web_studio/probe_stream_restart.py
 studio_p3_combined_bench = "python scripts/web_studio/benchmark_p3_combined.py"
 studio_release_smoke = "python scripts/web_studio/verify_release_install.py"
 
+# Developer and CI workspaces only. Studio uses config/studio-runtime;
+# extensions own their runtime definitions and locks.
 [environments]
 build-check = { features = ["python", "sdk", "engine", "web-studio", "web-studio-dev", "web-studio-test", "vision", "audio", "test", "debug", "ci", "pydl"], solve-group = "build-check" }
 # Pixi tasks are feature-scoped, not environment-scoped. If a task's feature is
-# included by multiple environments (for example both `default` and
-# `studio-runtime`), `pixi run <task>` without `-e` can resolve differently
+# included by multiple development environments, `pixi run <task>` without
+# `-e` can resolve differently
 # depending on the active Pixi environment. Keep `service.yml` launch entries
 # explicit with `-e` for shared runtime tasks.
 default = { features = ["python", "sdk", "engine", "web-studio", "web-studio-dev", "vision", "audio", "test", "debug"], solve-group = "default" }
-studio-runtime = { features = ["python", "sdk", "engine", "web-studio", "vision", "audio", "launcher-runtime"], solve-group = "default" }
-onnx = { features = ["python", "sdk", "pydl", "onnx", "vision", "launcher-runtime"], solve-group = "onnx" }
-mediapipe = { features = ["python", "sdk", "vision", "mediapipe", "launcher-runtime"], solve-group = "mediapipe" }
 doc = { features = ["python", "doc"] }
 cpp = { features = ["cpp"], solve-group = "cpp" }
 ci = { features = ["python", "ci"], solve-group = "ci" }
 web-studio = { features = ["python", "sdk", "web-studio", "web-studio-dev"], solve-group = "web-studio" }
 web-studio-test = { features = ["python", "sdk", "engine", "web-studio", "web-studio-dev", "web-studio-test"], solve-group = "web-studio" }
-web-studio-runtime = { features = ["python", "sdk", "engine"], solve-group = "web-studio" }
-
-# Metadata-only checks deliberately exclude the GPU runtime feature.
-[environments.onnx-describe]
-features = ["python", "sdk", "pydl", "vision"]
-solve-group = "onnx"

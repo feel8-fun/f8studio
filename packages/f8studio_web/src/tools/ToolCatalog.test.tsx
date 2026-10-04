@@ -51,7 +51,7 @@ it('groups tools by extension and selects another tool when the current extensio
   expect(within(debugging).getByRole('button', { name: 'Simulate stream' })).toBeInTheDocument();
   expect(within(debugging).queryByRole('button', { name: 'Export assets' })).not.toBeInTheDocument();
   expect(within(screen.getByRole('region', { name: 'Asset toolkit' })).getByRole('button', { name: 'Export assets' })).toBeInTheDocument();
-  expect(screen.getByLabelText('Port')).toHaveValue(39540);
+  expect(await screen.findByLabelText('Port')).toHaveValue(39540);
   fireEvent.change(screen.getByLabelText('Port'), { target: { value: '40000' } });
   fireEvent.click(screen.getByRole('button', { name: 'Simulate stream' }));
   expect(screen.getByLabelText('Port')).toHaveValue(39540);

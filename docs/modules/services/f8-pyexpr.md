@@ -31,10 +31,10 @@ Standalone expression runtime service for simplified data-flow transforms.
 ### How to Run
 
 ```bash
-pixi run -e default f8pyexpr
+pixi run -e pyengine f8pyexpr
 ```
 
-- Workdir: `../../../`
+- Workdir: `${F8_PACKAGE_ROOT}/extensions/f8pyengine`
 - Environment overrides: none
 
 ### Typical Inputs / Outputs

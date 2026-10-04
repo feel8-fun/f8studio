@@ -7,7 +7,7 @@ launch:
   args:
   - run
   - -e
-  - default
+  - proclauncher
   - f8proclauncher
   env: {}
-  workdir: ${F8_PACKAGE_ROOT}
+  workdir: ${F8_PACKAGE_ROOT}/extensions/f8proclauncher

@@ -31,10 +31,10 @@ Standalone python script runtime service with lifecycle/tick/command hooks.
 ### How to Run
 
 ```bash
-pixi run -e default f8pyscript
+pixi run -e pyengine f8pyscript
 ```
 
-- Workdir: `../../../`
+- Workdir: `${F8_PACKAGE_ROOT}/extensions/f8pyengine`
 - Environment overrides: none
 
 ### Typical Inputs / Outputs

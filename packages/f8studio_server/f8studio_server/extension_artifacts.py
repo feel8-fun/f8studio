@@ -52,7 +52,13 @@ def prepare_artifact(request: ExtensionImportRequest, root: Path) -> Path:
         with archive.open('rb') as source:
             if hashlib.file_digest(source, 'sha256').hexdigest() != request.sha256:
                 raise InvalidRequestError('Cached extension archive SHA-256 does not match')
-    staging = payload.with_name(f'{request.sha256}.staging')
+    extract_archive(archive, payload, required=('config/extensions.json',))
+    return payload
+
+
+def extract_archive(archive: Path, payload: Path, *, required: tuple[str, ...]) -> None:
+    """Extract a verified ZIP with the same containment and size limits for every publisher."""
+    staging = payload.with_name(f'{payload.name}.staging')
     staging.mkdir(parents=True, exist_ok=True)
     staging_root = staging.resolve()
     try:
@@ -81,11 +87,10 @@ def prepare_artifact(request: ExtensionImportRequest, root: Path) -> Path:
                     shutil.copyfileobj(source, destination)
                 if mode & 0o111:
                     target.chmod(0o755)
-        for name in ('config/extensions.json',):
+        for name in required:
             if not (staging / name).is_file():
                 raise InvalidRequestError(f'Extension archive is missing {name}')
         staging.replace(payload)
     finally:
         if staging.is_dir():
             shutil.rmtree(staging)
-    return payload

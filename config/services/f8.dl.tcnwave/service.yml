@@ -7,7 +7,7 @@ launch:
   args:
   - run
   - -e
-  - onnx
+  - dl
   - f8pydl_tcnwave
   env: {}
-  workdir: ${F8_PACKAGE_ROOT}
+  workdir: ${F8_PACKAGE_ROOT}/extensions/f8pydl

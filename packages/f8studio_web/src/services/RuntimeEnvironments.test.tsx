@@ -15,7 +15,7 @@ const developer: EnvironmentStatus = { ...environment, environmentId: 'dev-id', 
 
 beforeEach(() => {
   api.fetchRuntimeStorage.mockResolvedValue({ path: '/data/runtime-storage', cachePath: '/data/runtime-storage/package-cache', canChange: true });
-  api.fetchEnvironmentDetail.mockResolvedValue({ environmentId: 'dev-id', name: 'my-tools', revision: 'abcd', manifest: '[workspace]', baseEnvironmentId: null, policy: 'preserve', condaDependencies: [], pypiDependencies: [], storagePath: '/data/envs/my-tools', cachePath: '/data/package-cache', usage: { logicalBytes: 1024, sharedLinkBytes: 512, exclusiveFileBytes: 512 }, pinned: false, changedPackages: [] });
+  api.fetchEnvironmentDetail.mockResolvedValue({ environmentId: 'dev-id', name: 'my-tools', revision: 'abcd', manifest: '[workspace]', definitionPath: '/data/definitions/my-tools/pixi.toml', sourceEnvironment: 'runtime', baseEnvironmentId: null, policy: 'preserve', condaDependencies: [], pypiDependencies: [], storagePath: '/data/envs/my-tools', cachePath: '/data/package-cache', usage: { logicalBytes: 1024, sharedLinkBytes: 512, exclusiveFileBytes: 512 }, pinned: false, changedPackages: [] });
 });
 afterEach(() => { cleanup(); vi.resetAllMocks(); refresh.mockResolvedValue(undefined); });
 
@@ -43,6 +43,8 @@ test('creates a lazy derived revision with explicit requirements and adjustment 
   expect(await screen.findByRole('heading', { name: 'my-tools' })).toBeInTheDocument();
   expect(api.createEnvironment).toHaveBeenCalledWith({ name: 'my-tools', baseEnvironmentId: 'base-id', policy: 'adjust', python: '3.12.*', condaDependencies: ['numpy >=2,<3', 'ffmpeg >=7'], pypiDependencies: ['requests>=2,<3'] });
   expect(api.prepareEnvironment).not.toHaveBeenCalled();
+  expect(screen.getByText('/data/definitions/my-tools/pixi.toml')).toBeInTheDocument();
+  expect(screen.getByText('runtime', { exact: true })).toBeInTheDocument();
 });
 
 test('prevents removing referenced or kept revisions', async () => {

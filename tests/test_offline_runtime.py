@@ -63,3 +63,24 @@ def test_verifier_does_not_install_dependencies_and_checks_second_launch(tmp_pat
     assert commands[0] == commands[1]
     assert all('pixi' not in command and 'install' not in command for command in commands)
     assert all('PYTHONPATH' not in call.kwargs['env'] for call in run.call_args_list)
+
+
+@pytest.mark.parametrize('declared_environment,expected', [
+    ('web-studio-runtime', {'kind': 'pixi', 'environment': 'web-studio-runtime'}),
+    ('default', {'kind': 'pixi', 'environment': 'default'}),
+    ('onnx', {'kind': 'pixi', 'environment': 'onnx'}),
+])
+def test_tool_only_extensions_keep_their_python_runtime_in_distribution(
+    tmp_path: Path, declared_environment: str, expected: dict[str, str],
+) -> None:
+    (tmp_path / 'pixi.toml').write_text('[environments.studio-runtime]\nfeatures=[]\n')
+    (tmp_path / 'config').mkdir()
+    (tmp_path / 'config/service-index.json').write_text(json.dumps({'services': []}))
+    (tmp_path / 'config/extensions.json').write_text(json.dumps({'extensions': [{
+        'extensionId': 'diagnostics', 'serviceClasses': [], 'tools': [{'toolId': 'verify', 'command': 'python'}],
+        'runtime': {'kind': 'workspace', 'environment': declared_environment},
+    }]}))
+    rewrite_base_services(tmp_path, windows=False)
+    catalog = json.loads((tmp_path / 'config/extensions.json').read_text())
+    assert catalog['extensions'][0]['runtime'] == expected
+    assert catalog['preinstalled'] == ([] if expected['kind'] == 'pixi' else ['diagnostics'])

@@ -19,11 +19,14 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 class SourcePackage:
     package: str
     extension_ids: tuple[str, ...]
+    python_modules: tuple[str, ...]
 
 
 def source_packages(root: Path = REPO_ROOT) -> tuple[SourcePackage, ...]:
     workspace = tomllib.loads((root / 'config/extension-workspace.toml').read_text())
-    packages = tuple(SourcePackage(item['package'], tuple(item['extension_ids'])) for item in workspace['extensions'])
+    packages = tuple(SourcePackage(item['package'], tuple(item['extension_ids']),
+                                   tuple(item.get('python_modules', [item['package']])))
+                     for item in workspace['extensions'])
     names = [item.package for item in packages]
     ids = [extension for item in packages for extension in item.extension_ids]
     if len(names) != len(set(names)) or len(ids) != len(set(ids)) or set(names) & set(workspace['core']):
@@ -58,7 +61,7 @@ def check_workspace(root: Path = REPO_ROOT) -> None:
     if expected != actual:
         raise ValueError('Extension catalog is stale; run extension_workspace.py sync')
     workspace = tomllib.loads((root / 'config/extension-workspace.toml').read_text())
-    extension_modules = {item.package for item in source_packages(root)}
+    extension_modules = {module for item in source_packages(root) for module in item.python_modules}
     for package in workspace['core']:
         for source in (root / 'packages' / package / package).rglob('*.py'):
             tree = ast.parse(source.read_text(encoding='utf-8'), filename=str(source))

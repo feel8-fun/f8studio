@@ -135,6 +135,11 @@ class EnvironmentDetail(msgspec.Struct, frozen=True, kw_only=True, rename='camel
     usage: EnvironmentUsage
     pinned: bool = False
     changed_packages: tuple[str, ...] = ()
+    definition_path: str = ''
+    source_environment: str = ''
+    provider_id: str | None = None
+    provider_version: str | None = None
+    abi: str | None = None
 
 
 class EnvironmentRetentionRequest(msgspec.Struct, frozen=True, kw_only=True, forbid_unknown_fields=True):

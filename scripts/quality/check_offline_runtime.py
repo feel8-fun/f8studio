@@ -14,7 +14,8 @@ def main() -> None:
     root = Path(sys.argv[1]).resolve()
     prefix = Path(sys.prefix).resolve()
     assert prefix == root / 'env', prefix
-    for name in ('f8pysdk', 'f8pyengine', 'f8studio-server', 'f8media-gateway'):
+    required = ['f8pysdk', 'f8studio-server', 'f8media-gateway']
+    for name in required:
         distribution = metadata.distribution(name)
         assert Path(distribution.locate_file('')).resolve().is_relative_to(prefix), name
         direct = json.loads(distribution.read_text('direct_url.json') or '{}')

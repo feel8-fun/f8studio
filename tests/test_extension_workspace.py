@@ -19,7 +19,11 @@ def test_all_services_are_owned_by_independent_extension_packages() -> None:
     check_workspace()
     packages = source_packages()
     assert len(packages) == 11
-    assert {item.extension_ids for item in packages if item.package == 'f8pyscript'} == {('pyscript', 'pyexpr')}
+    assert {item.extension_ids for item in packages if item.package == 'f8pyengine'} == {('pyengine',)}
+    engine = validate_package(REPO_ROOT / 'extensions/f8pyengine').extensions[0]
+    assert engine.service_classes == ('f8.pyengine', 'f8.pyexpr', 'f8.pyscript')
+    assert engine.runtime.environment == 'pyengine'
+    assert not any(item.package == 'f8pyscript' for item in packages)
     classes: list[str] = []
     for package in packages:
         catalog = validate_package(REPO_ROOT / 'extensions' / package.package)
@@ -29,10 +33,11 @@ def test_all_services_are_owned_by_independent_extension_packages() -> None:
     assert set(classes) == {item['serviceClass'] for item in root_index['services']}
 
 
-def test_core_imports_cannot_reintroduce_service_implementation_dependencies(tmp_path: Path) -> None:
+@pytest.mark.parametrize('module', ['f8pyengine', 'f8pyscript'])
+def test_core_imports_cannot_reintroduce_service_implementation_dependencies(tmp_path: Path, module: str) -> None:
     source = tmp_path / 'packages/f8studio_core/f8studio_core'
     source.mkdir(parents=True)
-    (source / 'bad.py').write_text('from f8pyengine.main import main\n')
+    (source / 'bad.py').write_text(f'from {module}.main import main\n')
     config = tmp_path / 'config'
     config.mkdir()
     (config / 'extensions.json').write_bytes((REPO_ROOT / 'config/extensions.json').read_bytes())

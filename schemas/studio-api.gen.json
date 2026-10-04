@@ -4133,6 +4133,17 @@
     },
     "EnvironmentDetail": {
       "properties": {
+        "abi": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "baseEnvironmentId": {
           "anyOf": [
             {
@@ -4158,6 +4169,10 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "definitionPath": {
+          "default": "",
+          "type": "string"
         },
         "environmentId": {
           "type": "string"
@@ -4185,6 +4200,28 @@
             }
           ]
         },
+        "providerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "providerVersion": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "pypiDependencies": {
           "items": {
             "type": "string"
@@ -4192,6 +4229,10 @@
           "type": "array"
         },
         "revision": {
+          "type": "string"
+        },
+        "sourceEnvironment": {
+          "default": "",
           "type": "string"
         },
         "storagePath": {
@@ -4202,17 +4243,22 @@
         }
       },
       "required": [
+        "abi",
         "baseEnvironmentId",
         "cachePath",
         "changedPackages",
         "condaDependencies",
+        "definitionPath",
         "environmentId",
         "manifest",
         "name",
         "pinned",
         "policy",
+        "providerId",
+        "providerVersion",
         "pypiDependencies",
         "revision",
+        "sourceEnvironment",
         "storagePath",
         "usage"
       ],
@@ -4221,6 +4267,17 @@
     },
     "EnvironmentDetailInput": {
       "properties": {
+        "abi": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "baseEnvironmentId": {
           "anyOf": [
             {
@@ -4246,6 +4303,10 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "definitionPath": {
+          "default": "",
+          "type": "string"
         },
         "environmentId": {
           "type": "string"
@@ -4273,6 +4334,28 @@
             }
           ]
         },
+        "providerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "providerVersion": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "pypiDependencies": {
           "items": {
             "type": "string"
@@ -4280,6 +4363,10 @@
           "type": "array"
         },
         "revision": {
+          "type": "string"
+        },
+        "sourceEnvironment": {
+          "default": "",
           "type": "string"
         },
         "storagePath": {

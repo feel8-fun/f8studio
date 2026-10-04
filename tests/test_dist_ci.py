@@ -189,31 +189,10 @@ class DistCiDiscoveryTest(unittest.TestCase):
 
         self.assertEqual(discovered_wheel, wheel_path)
 
-    def test_root_manifest_discovers_and_rewrites_unitymods_package(self) -> None:
-        runtime_environment_names = self.module._discover_launcher_runtime_environments()
-        runtime_feature_names = self.module._discover_environment_feature_names(
-            environment_names=runtime_environment_names
-        )
-        dependencies = self.module._discover_local_editable_package_dirs(
-            allowed_feature_names=set(runtime_feature_names)
-        )
+    def test_developer_workspace_does_not_define_installable_runtime_profiles(self) -> None:
+        manifest = tomllib.loads(self.module.PIXI_TOML_PATH.read_text())
+        assert not {'studio-runtime', 'web-studio-runtime', 'onnx', 'mediapipe'} & manifest['environments'].keys()
 
-        self.assertEqual(dependencies["f8unitymods-setup"], "extensions/f8unitymods")
-
-        rendered = self.module._render_dist_pixi_toml(
-            {"f8unitymods-setup": "wheels/f8unitymods_setup-0.2.0-py3-none-any.whl"},
-            runtime_environment_names,
-            runtime_feature_names,
-        )
-        self.assertNotIn(
-            'f8unitymods-setup = { path = "extensions/f8unitymods", editable = true }',
-            rendered,
-        )
-        self.assertEqual(
-            tomllib.loads(rendered)["feature"]["web-studio"]["pypi-dependencies"]["f8unitymods-setup"],
-            {"path": "wheels/f8unitymods_setup-0.2.0-py3-none-any.whl"},
-        )
-        self.assertNotIn("scripts/", rendered)
 
     def test_ci_environment_reuses_the_runtime_python_feature(self) -> None:
         with Path("pixi.toml").open("rb") as pixi_file:
@@ -639,3 +618,46 @@ class DistCiUnityModsBundleTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_distribution_reads_independent_runtime_sources_and_writes_portable_references(tmp_path: Path) -> None:
+    import json
+    import yaml
+    module = _load_dist_ci_module()
+    root = tmp_path / 'repo'
+    (root / 'config').mkdir(parents=True)
+    (root / 'package').mkdir()
+    (root / 'package/pyproject.toml').write_text('[project]\nname="local-package"\nversion="1.0"\n')
+    # A conflicting development workspace must not supply release dependencies.
+    (root / 'pixi.toml').write_text('[workspace]\nname="development"\n[environments]\nwrong=[]\n')
+    catalog = []
+    for name in ('studio-runtime', 'onnx'):
+        source = root / 'runtimes' / name
+        source.mkdir(parents=True)
+        (source / 'pixi.toml').write_text(
+            '[workspace]\nname="official"\nchannels=["conda-forge"]\nplatforms=["linux-64"]\n'
+            '[feature.launcher-runtime]\n[feature.python.dependencies]\npython="3.12.*"\n'
+            '[feature.library.pypi-dependencies]\nlocal-package={path="../../package",editable=true}\n'
+            f'[environments]\n{name}={{features=["python","library","launcher-runtime"]}}\n')
+        (source / 'pixi.lock').write_text(yaml.safe_dump({'version': 6,
+            'environments': {name: {'packages': {'linux-64': [{'pypi': '../../package'}]}}},
+            'packages': [{'pypi': '../../package', 'name': 'local-package'}]}))
+        catalog.append({'runtimeId': name, 'manifest': '${F8_PACKAGE_ROOT}/runtimes/' + name + '/pixi.toml'})
+    (root / 'config/runtime-environments.json').write_text(json.dumps({'schemaVersion': 'f8runtimeCatalog/1', 'runtimes': catalog}))
+    output = tmp_path / 'release'
+    output.mkdir()
+    with mock.patch.object(module, 'REPO_ROOT', root), mock.patch.object(module, '_run') as run, mock.patch.object(
+        module, '_build_python_wheels', return_value={'local-package': 'wheels/local_package-1.0.whl'},
+    ) as build:
+        names = module.build_runtime_manifest(output)
+    assert names == ['studio-runtime', 'onnx']
+    build.assert_called_once_with(output / 'wheels', {'local-package': 'package'})
+    runtime = tomllib.loads((output / 'environment-definitions/onnx/pixi.toml').read_text())
+    assert set(runtime['environments']) == {'onnx'}
+    assert runtime['feature']['library']['pypi-dependencies']['local-package'] == {'path': '../../wheels/local_package-1.0.whl'}
+    base = tomllib.loads((output / 'pixi.toml').read_text())
+    assert set(base['environments']) == {'studio-runtime'}
+    assert base['feature']['library']['pypi-dependencies']['local-package'] == {'path': 'wheels/local_package-1.0.whl'}
+    references = json.loads((output / 'config/runtime-environments.json').read_text())
+    assert all('developmentEnvironment' not in item for item in references['runtimes'])
+    assert run.call_count == 5

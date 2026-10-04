@@ -17,8 +17,13 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'sdk/python'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'packages/f8studio_server'))
+from assemble_release import assemble_release
 from release_wheels import build_wheels
 from offline_runtime import bundle_base_runtime
+from f8studio_server.environment_definitions import read_manifest, selected_lock, write_manifest
+from f8studio_server.runtime_sources import read_runtime_sources
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -574,8 +579,94 @@ def _write_dist_lock(dist_dir: Path, runtime_environment_names: list[str]) -> No
     _run(["pixi", "lock", "--manifest-path", manifest, "--check"])
 
 
+def _build_independent_runtime_manifests(dist_dir: Path) -> list[str]:
+    sources = read_runtime_sources(REPO_ROOT)
+    manifests = {name: read_manifest(root) for name, (root, _) in sources.items()}
+    runtime_names = list(sources)
+    if DIST_RUNTIME_ENVIRONMENT_NAME not in runtime_names:
+        raise ValueError('The runtime catalog must declare studio-runtime for offline packaging')
+    packages: dict[str, str] = {}
+    for name in runtime_names:
+        root = sources[name][0]
+        # Extension workspaces use base dependencies; Studio uses features.
+        tables = [manifests[name], *manifests[name].get('feature', {}).values()]
+        for table in tables:
+            for dependency, specification in table.get('pypi-dependencies', {}).items():
+                if not isinstance(specification, dict) or 'path' not in specification:
+                    continue
+                # The explicit superbuild path uses its canonical SDK checkout.
+                # Standalone extension publishers continue to own their SDK input.
+                source = (REPO_ROOT / 'sdk/python' if dependency == 'f8pysdk'
+                          else (root / specification['path']).resolve())
+                if not source.is_relative_to(REPO_ROOT.resolve()) or not (source / 'pyproject.toml').is_file():
+                    raise ValueError(f'Invalid local runtime package {dependency}: {source}')
+                relative = source.relative_to(REPO_ROOT).as_posix()
+                if dependency in packages and packages[dependency] != relative:
+                    raise ValueError(f'Runtime workspaces disagree on source package {dependency}')
+                packages[dependency] = relative
+    wheels = _build_python_wheels(dist_dir / 'wheels', packages)
+    for name in runtime_names:
+        root = sources[name][0]
+        output = dist_dir / 'environment-definitions' / name
+        output.mkdir(parents=True, exist_ok=True)
+        manifest = manifests[name]
+        for table in [manifest, *manifest.get('feature', {}).values()]:
+            for dependency, specification in table.get('pypi-dependencies', {}).items():
+                if isinstance(specification, dict) and 'path' in specification:
+                    table['pypi-dependencies'][dependency] = {'path': '../../' + wheels[dependency]}
+        write_manifest(output / 'pixi.toml', manifest)
+        seed = selected_lock(root, name)
+        if seed is None:
+            raise ValueError(f'Official runtime {name} has no structured lock')
+        (output / 'pixi.lock').write_text(yaml.safe_dump(seed, sort_keys=False), encoding='utf-8')
+        _run(['pixi', 'lock', '--manifest-path', str(output / 'pixi.toml')])
+        _run(['pixi', 'lock', '--manifest-path', str(output / 'pixi.toml'), '--check'])
+    # Only the offline base launcher uses a top-level manifest. Optional
+    # runtimes are installed from the independent references in the catalog.
+    base = read_manifest(dist_dir / 'environment-definitions' / DIST_RUNTIME_ENVIRONMENT_NAME)
+    for feature in base['feature'].values():
+        for specification in feature.get('pypi-dependencies', {}).values():
+            if isinstance(specification, dict) and 'path' in specification:
+                specification['path'] = specification['path'].removeprefix('../../')
+    write_manifest(dist_dir / 'pixi.toml', base)
+    seed = yaml.safe_load((dist_dir / 'environment-definitions' / DIST_RUNTIME_ENVIRONMENT_NAME / 'pixi.lock').read_text())
+
+    def retarget_wheels(value: object) -> None:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key == 'pypi' and isinstance(item, str) and item.startswith('../../wheels/'):
+                    value[key] = item.removeprefix('../../')
+                else:
+                    retarget_wheels(item)
+        elif isinstance(value, list):
+            for item in value:
+                retarget_wheels(item)
+
+    retarget_wheels(seed)
+    (dist_dir / 'pixi.lock').write_text(yaml.safe_dump(seed, sort_keys=False), encoding='utf-8')
+    _run(['pixi', 'lock', '--manifest-path', str(dist_dir / 'pixi.toml'), '--check'])
+    config = dist_dir / 'config'
+    config.mkdir(exist_ok=True)
+    (config / 'runtime-environments.json').write_text(json.dumps({
+        'schemaVersion': 'f8runtimeCatalog/1',
+        'runtimes': [{'runtimeId': name, 'manifest': '${F8_PACKAGE_ROOT}/environment-definitions/' + name + '/pixi.toml'}
+                     for name in runtime_names],
+    }, indent=2) + '\n', encoding='utf-8')
+    # Source distribution service entries launch their own shipped workspaces.
+    for path in (dist_dir / 'config/services').rglob('*.yml'):
+        entry = yaml.safe_load(path.read_text(encoding='utf-8'))
+        launch = entry.get('launch', {})
+        args = launch.get('args', [])
+        if launch.get('command') in {'pixi', 'pixi.exe'} and len(args) == 4 and args[2] in runtime_names:
+            launch['workdir'] = '${F8_PACKAGE_ROOT}/environment-definitions/' + args[2]
+            path.write_text(yaml.safe_dump(entry, sort_keys=False), encoding='utf-8')
+    return runtime_names
+
+
 def build_runtime_manifest(dist_dir: Path) -> list[str]:
-    """Build local runtime wheels and their portable, locked Pixi workspace."""
+    """Build local runtime wheels and portable, independently locked workspaces."""
+    if (REPO_ROOT / 'config/runtime-environments.json').is_file():
+        return _build_independent_runtime_manifests(dist_dir)
     environments = _discover_launcher_runtime_environments()
     features = _discover_environment_feature_names(environment_names=environments)
     packages = _discover_local_editable_package_dirs(allowed_feature_names=set(features))
@@ -665,6 +756,9 @@ def _build_cpp_runtime() -> None:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build full runtime distribution bundle (CI packaging path).")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument('--release-lock', type=Path, help='Assemble independently published artifacts from a pinned release lock')
+    mode.add_argument('--build-workspace', action='store_true', help='Build all workspace services locally (development migration path)')
     parser.add_argument(
         "--archive",
         action="store_true",
@@ -677,49 +771,55 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--reuse-python-describes", action="store_true", help="Reuse Python descriptions checked earlier in CI")
     parser.add_argument("--preset", choices=("standard", "core"), default="standard",
-                        help="Choose preinstalled service extensions; core starts with only Web Studio")
+                        help="Workspace builds: choose preinstalled services; artifact packages are installed through Extensions")
     return parser
 
 
 def main() -> int:
     args = _build_parser().parse_args()
 
-    _build_cpp_runtime()
-    _stage_web_bundle()
-    refresh = ["pixi", "run", "--frozen", "-e", "build-check", "install_services", "--refresh", "--build-check"]
-    if args.reuse_python_describes:
-        refresh.append("--native-only")
-    _run(refresh)
-
     platform_tag, platform_dir = _platform_info()
     dist_base_dir = REPO_ROOT / "build" / "dist"
     dist_name = f"f8studio-{platform_tag}"
-    dist_dir = dist_base_dir / dist_name
+    final_dist_dir = dist_base_dir / dist_name
+    dist_dir = dist_base_dir / (dist_name + '.staging') if args.release_lock is not None else final_dist_dir
 
     if dist_dir.exists():
         shutil.rmtree(dist_dir)
     dist_dir.mkdir(parents=True, exist_ok=True)
 
-    _copy_dist_services(dist_dir)
-    _copy_dist_config(dist_dir)
-    _rewrite_dist_service_entries(dist_dir / "config" / "services")
-    runtime_environment_names = build_runtime_manifest(dist_dir)
-    _validate_dist_service_environments(dist_dir / "config" / "services", runtime_environment_names)
-    # Model storage is independent of service bundles and referenced by the index.
-    shutil.copytree(REPO_ROOT / "resources", dist_dir / "resources", dirs_exist_ok=True,
-                    ignore=shutil.ignore_patterns("onnx", "mediapipe"))
-    extension_catalog = json.loads((dist_dir / 'config/extensions.json').read_text(encoding='utf-8'))
-    model_directories = {directory for extension in extension_catalog['extensions']
-                         for directory in extension.get('modelDirectories', [])}
-    for directory in sorted(model_directories):
-        metadata = dist_dir / 'resources' / 'models' / directory
-        metadata.mkdir(parents=True, exist_ok=True)
-        for model in (REPO_ROOT / 'resources' / 'models' / directory).glob('*.yaml'):
-            shutil.copy2(model, metadata / model.name)
-    _bundle_unitymods_assets(
-        dist_dir,
-        build_assets=not bool(args.reuse_unitymods_assets),
-    )
+    if args.release_lock is not None:
+        runtime_environment_names = list(assemble_release(args.release_lock.resolve(), dist_dir,
+            cache=REPO_ROOT / 'build' / 'release-cache', platform=platform_tag))
+        for root, _development in read_runtime_sources(dist_dir).values():
+            _run(['pixi', 'lock', '--manifest-path', str(root / 'pixi.toml'), '--check'])
+        _run(['pixi', 'lock', '--manifest-path', str(dist_dir / 'pixi.toml'), '--check'])
+    else:
+        _build_cpp_runtime()
+        _stage_web_bundle()
+        refresh = ['pixi', 'run', '--frozen', '-e', 'build-check', 'install_services', '--refresh', '--build-check']
+        if args.reuse_python_describes:
+            refresh.append('--native-only')
+        _run(refresh)
+        _copy_dist_services(dist_dir)
+        _copy_dist_config(dist_dir)
+        runtime_environment_names = build_runtime_manifest(dist_dir)
+        _validate_dist_service_environments(dist_dir / "config" / "services", runtime_environment_names)
+        # Model storage is independent of service bundles and referenced by the index.
+        shutil.copytree(REPO_ROOT / "resources", dist_dir / "resources", dirs_exist_ok=True,
+                        ignore=shutil.ignore_patterns("onnx", "mediapipe"))
+        extension_catalog = json.loads((dist_dir / 'config/extensions.json').read_text(encoding='utf-8'))
+        model_directories = {directory for extension in extension_catalog['extensions']
+                             for directory in extension.get('modelDirectories', [])}
+        for directory in sorted(model_directories):
+            metadata = dist_dir / 'resources' / 'models' / directory
+            metadata.mkdir(parents=True, exist_ok=True)
+            for model in (REPO_ROOT / 'resources' / 'models' / directory).glob('*.yaml'):
+                shutil.copy2(model, metadata / model.name)
+        _bundle_unitymods_assets(
+            dist_dir,
+            build_assets=not bool(args.reuse_unitymods_assets),
+        )
 
     bundle_base_runtime(dist_dir, cache=REPO_ROOT / "build" / "offline-cache", preset=args.preset)
     _bundle_studio_launcher(dist_dir)
@@ -728,29 +828,43 @@ def main() -> int:
         runtime_environment_names,
     )
 
+    contents = (
+        "- Pinned runtime providers and independent extension payloads\n"
+        "- config/release-lock.json (publisher versions and checksums)\n"
+        "- config/extension-packages.json (available extension packages)\n"
+        if args.release_lock is not None else
+        "- config/service-index.json and config/services/** (service metadata)\n"
+        "- runtime/bundles/** (deployed native services)\n"
+        "- resources/models/** (shared model metadata)\n"
+        "- unitymods/ (installer and exporter assets)\n"
+    )
     readme_text = (
         "# f8 Runtime Dist\n\n"
-        "This bundle contains:\n"
-        "- pixi.toml + pixi.lock\n"
-        "- config/service-index.json (explicit service registrations)\n"
-        "- config/extensions.json (extension ownership and preinstalled preset)\n"
-        "- config/services/** (launch declarations)\n"
-        "- runtime/bundles/** (versioned runtime artifacts)\n"
-        "- resources/models/** (shared model storage)\n"
-        "- Python wheels for local non-editable install\n\n"
-        "- Web Studio production assets embedded in the f8studio-server wheel\n\n"
-        "- Windows Unity modding installer/exporter assets under unitymods/\n\n"
-        "- Studio startup script at dist root\n\n"
+        "This bundle contains an offline Studio runtime, built Web assets and startup scripts.\n"
+        + contents + "\n"
         "Bootstrap:\n"
         "1. Start `./f8studio` on Linux or `f8studio.cmd` on Windows.\n"
         "   The bundled base runtime is unpacked locally once; no network or Pixi is needed.\n"
-        "   Later launches reuse the prepared runtime. GPU and MediaPipe services are not enabled in this base package.\n"
-        "   Open Services to install, disable or uninstall service extensions.\n"
+        "   Later launches reuse the prepared runtime.\n"
+        "   Open Extensions to install, disable or uninstall extensions.\n"
         "2. Keep the terminal open while using Studio; Ctrl+C stops the server.\n"
-        f"   To prepare the offline runtime before first launch, run `{env_install_script_path.name}`.\n\n"
-        f"Platform runtime binaries are under `runtime/bundles/**/{platform_dir}`.\n"
+        f"   To prepare the offline runtime before first launch, run `{env_install_script_path.name}`.\n"
     )
     (dist_dir / "README.md").write_text(readme_text, encoding="utf-8")
+
+    if args.release_lock is not None:
+        previous = dist_base_dir / (dist_name + '.previous')
+        if previous.exists():
+            shutil.rmtree(previous)
+        if final_dist_dir.exists():
+            final_dist_dir.replace(previous)
+        try:
+            dist_dir.replace(final_dist_dir)
+        except OSError:
+            if previous.exists():
+                previous.replace(final_dist_dir)
+            raise
+        dist_dir = final_dist_dir
 
     if args.archive:
         if os.name == "nt":

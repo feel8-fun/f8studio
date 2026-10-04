@@ -7,7 +7,7 @@ launch:
   args:
   - run
   - -e
-  - default
+  - audiofeat
   - f8pyaudiofeat_rhythm
   env: {}
-  workdir: ${F8_PACKAGE_ROOT}
+  workdir: ${F8_PACKAGE_ROOT}/extensions/f8pyaudiofeat

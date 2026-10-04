@@ -813,6 +813,11 @@ export type EnvironmentDetail = {
   readonly "usage": EnvironmentUsage;
   readonly "pinned": boolean;
   readonly "changedPackages": ReadonlyArray<string>;
+  readonly "definitionPath": string;
+  readonly "sourceEnvironment": string;
+  readonly "providerId": string | null;
+  readonly "providerVersion": string | null;
+  readonly "abi": string | null;
 };
 
 export type EnvironmentDetailInput = {
@@ -829,6 +834,11 @@ export type EnvironmentDetailInput = {
   readonly "usage": EnvironmentUsageInput;
   readonly "pinned"?: boolean;
   readonly "changedPackages"?: ReadonlyArray<string>;
+  readonly "definitionPath"?: string;
+  readonly "sourceEnvironment"?: string;
+  readonly "providerId"?: string | null;
+  readonly "providerVersion"?: string | null;
+  readonly "abi"?: string | null;
 };
 
 export type EnvironmentRetentionRequest = {

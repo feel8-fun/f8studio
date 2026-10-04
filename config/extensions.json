@@ -16,7 +16,10 @@
         "kind": "native",
         "environment": null,
         "requiresPython": null,
-        "dependencies": []
+        "dependencies": [],
+        "providerId": null,
+        "providerVersion": null,
+        "abi": null
       },
       "modelDirectories": []
     },
@@ -34,9 +37,12 @@
       "resources": [],
       "runtime": {
         "kind": "workspace",
-        "environment": "default",
+        "environment": "audiofeat",
         "requiresPython": null,
-        "dependencies": []
+        "dependencies": [],
+        "providerId": null,
+        "providerVersion": null,
+        "abi": null
       },
       "modelDirectories": []
     },
@@ -55,7 +61,10 @@
         "kind": "native",
         "environment": null,
         "requiresPython": null,
-        "dependencies": []
+        "dependencies": [],
+        "providerId": null,
+        "providerVersion": null,
+        "abi": null
       },
       "modelDirectories": []
     },
@@ -78,7 +87,10 @@
         "kind": "native",
         "environment": null,
         "requiresPython": null,
-        "dependencies": []
+        "dependencies": [],
+        "providerId": null,
+        "providerVersion": null,
+        "abi": null
       },
       "modelDirectories": []
     },
@@ -100,9 +112,12 @@
       "resources": [],
       "runtime": {
         "kind": "workspace",
-        "environment": "onnx",
+        "environment": "dl",
         "requiresPython": null,
-        "dependencies": []
+        "dependencies": [],
+        "providerId": null,
+        "providerVersion": null,
+        "abi": null
       },
       "modelDirectories": [
         "onnx"
@@ -123,7 +138,10 @@
         "kind": "native",
         "environment": null,
         "requiresPython": null,
-        "dependencies": []
+        "dependencies": [],
+        "providerId": null,
+        "providerVersion": null,
+        "abi": null
       },
       "modelDirectories": []
     },
@@ -142,7 +160,10 @@
         "kind": "workspace",
         "environment": "mediapipe",
         "requiresPython": null,
-        "dependencies": []
+        "dependencies": [],
+        "providerId": null,
+        "providerVersion": null,
+        "abi": null
       },
       "modelDirectories": [
         "mediapipe"
@@ -152,18 +173,23 @@
       "extensionId": "pyengine",
       "name": "Python Engine",
       "version": "0.0.1",
-      "description": "Run Python processing graphs.",
+      "description": "Run Python processing graphs, expressions and custom scripts.",
       "serviceClasses": [
-        "f8.pyengine"
+        "f8.pyengine",
+        "f8.pyexpr",
+        "f8.pyscript"
       ],
       "tools": [],
       "skills": [],
       "resources": [],
       "runtime": {
         "kind": "workspace",
-        "environment": "web-studio-runtime",
+        "environment": "pyengine",
         "requiresPython": null,
-        "dependencies": []
+        "dependencies": [],
+        "providerId": null,
+        "providerVersion": null,
+        "abi": null
       },
       "modelDirectories": []
     },
@@ -180,47 +206,12 @@
       "resources": [],
       "runtime": {
         "kind": "workspace",
-        "environment": "default",
+        "environment": "proclauncher",
         "requiresPython": null,
-        "dependencies": []
-      },
-      "modelDirectories": []
-    },
-    {
-      "extensionId": "pyexpr",
-      "name": "Python Expressions",
-      "version": "0.0.1",
-      "description": "Evaluate Python expressions.",
-      "serviceClasses": [
-        "f8.pyexpr"
-      ],
-      "tools": [],
-      "skills": [],
-      "resources": [],
-      "runtime": {
-        "kind": "workspace",
-        "environment": "default",
-        "requiresPython": null,
-        "dependencies": []
-      },
-      "modelDirectories": []
-    },
-    {
-      "extensionId": "pyscript",
-      "name": "Python Scripts",
-      "version": "0.0.1",
-      "description": "Run custom Python scripts.",
-      "serviceClasses": [
-        "f8.pyscript"
-      ],
-      "tools": [],
-      "skills": [],
-      "resources": [],
-      "runtime": {
-        "kind": "workspace",
-        "environment": "default",
-        "requiresPython": null,
-        "dependencies": []
+        "dependencies": [],
+        "providerId": null,
+        "providerVersion": null,
+        "abi": null
       },
       "modelDirectories": []
     },
@@ -239,7 +230,10 @@
         "kind": "native",
         "environment": null,
         "requiresPython": null,
-        "dependencies": []
+        "dependencies": [],
+        "providerId": null,
+        "providerVersion": null,
+        "abi": null
       },
       "modelDirectories": []
     },
@@ -361,9 +355,12 @@
       "resources": [],
       "runtime": {
         "kind": "workspace",
-        "environment": "web-studio-runtime",
+        "environment": "diagnostics",
         "requiresPython": null,
-        "dependencies": []
+        "dependencies": [],
+        "providerId": null,
+        "providerVersion": null,
+        "abi": null
       },
       "modelDirectories": []
     }
@@ -378,8 +375,6 @@
     "mediapipe",
     "pyengine",
     "proclauncher",
-    "pyexpr",
-    "pyscript",
     "screencap"
   ]
 }

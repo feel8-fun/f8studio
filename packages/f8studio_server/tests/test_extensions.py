@@ -352,7 +352,7 @@ def test_shared_onnx_environment_is_reused_and_kept_until_last_user_uninstalls(t
     def run(operation: InstallOperation, command: list[str], **_kwargs: object) -> str:
         if command[1] == 'install':
             return 'installed'
-        if Path(command[-1]).name == '_runtime_probe.py':
+        if any(Path(argument).name == '_runtime_probe.py' for argument in command):
             return probe_output
         return (source / 'alpha.json' if operation.extension_id == 'alpha' else payload / 'player.json').read_text()
 
@@ -896,3 +896,137 @@ def test_explicit_runtime_selection_survives_restart_and_checks_dependencies(tmp
         await manager.close()
     with patch.object(EnvironmentManager, '_python', return_value=Path(sys.executable)):
         asyncio.run(exercise())
+
+
+def test_independent_runtime_migrates_matching_records_and_reconciles_changed_definition(tmp_path: Path) -> None:
+    from f8studio_server.environment_definitions import selected_manifest, write_manifest
+    _unused, root = _fixture(tmp_path, kind='pixi', names=('alpha',))
+    (root / 'pixi.lock').write_text(yaml.safe_dump({'version': 6,
+        'environments': {'shared': {'packages': {'linux-64': []}}}, 'packages': []}))
+    catalog_path = root / 'config/extensions.json'
+    catalog = json.loads(catalog_path.read_text())
+    catalog['extensions'][0]['runtime']['kind'] = 'workspace'
+    catalog['preinstalled'] = ['alpha']
+    catalog_path.write_text(json.dumps(catalog))
+    python = root / '.pixi/envs/shared' / ('python.exe' if os.name == 'nt' else 'bin/python')
+    python.parent.mkdir(parents=True)
+    python.write_bytes(b'fixture')
+    data = tmp_path / 'data'
+    old = ExtensionManager(data, base_index=root / 'config/service-index.json')
+    old_identifier = old.status('alpha').environment_id
+    definition = root / 'runtimes/shared'
+    definition.mkdir(parents=True)
+    write_manifest(definition / 'pixi.toml', selected_manifest(root, 'shared'))
+    lock_bytes = (root / 'pixi.lock').read_bytes()
+    (definition / 'pixi.lock').write_bytes(lock_bytes)
+    (root / 'config/runtime-environments.json').write_text(json.dumps({'schemaVersion': 'f8runtimeCatalog/1',
+        'runtimes': [{'runtimeId': 'shared', 'manifest': '${F8_PACKAGE_ROOT}/runtimes/shared/pixi.toml', 'developmentEnvironment': 'shared'}]}))
+    migrated = ExtensionManager(data, base_index=root / 'config/service-index.json')
+    identifier = migrated.status('alpha').environment_id
+    assert identifier != old_identifier
+    assert migrated.status('alpha').state == 'installed'
+    assert migrated.environment_statuses()[0].extension_ids == ('alpha',)
+    assert migrated.environment_statuses()[0].ready
+    registration = migrated._registration('alpha')
+    previous = registration.read_bytes()
+    (definition / 'pixi.toml').write_text((definition / 'pixi.toml').read_text() + '\n[dependencies]\npython="3.12.*"\n')
+    changed = ExtensionManager(data, base_index=root / 'config/service-index.json')
+    assert changed.status('alpha').state == 'installed'
+    assert changed.status('alpha').environment_id == identifier
+    assert registration.read_bytes() == previous
+    status = changed.environment_statuses()[0]
+    assert status.state == 'changed'
+    assert status.extension_ids == ('alpha',)
+
+    def run(_operation: InstallOperation, command: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> str:
+        assert Path(command[command.index('--manifest-path') + 1]) == definition / 'pixi.toml'
+        assert cwd == definition
+        installed_python = definition / '.pixi/envs/shared' / ('python.exe' if os.name == 'nt' else 'bin/python')
+        installed_python.parent.mkdir(parents=True)
+        installed_python.write_bytes(b'prepared')
+        return ''
+
+    async def prepare() -> None:
+        await changed.prepare_environment(status.environment_id, lambda: None, lambda _name: False)
+        assert changed._environment_refresh_task is not None
+        await changed._environment_refresh_task
+        assert changed.status('alpha').state == 'installed'
+        assert changed.status('alpha').environment_id == status.environment_id
+        assert changed.environment_statuses()[0].state == 'ready'
+        assert str(definition) in registration.with_name('test.alpha.yml').read_text()
+
+    with patch.object(EnvironmentManager, '_pixi', return_value=Path('/fixture/pixi')), patch.object(InstallOperation, 'run', autospec=True, side_effect=run):
+        asyncio.run(prepare())
+
+
+def test_independent_bundled_runtime_keeps_offline_prefix_and_lists_consumers(tmp_path: Path) -> None:
+    from f8studio_server.environment_definitions import selected_manifest, write_manifest
+    _unused, root = _fixture(tmp_path, names=('alpha',))
+    (root / 'pixi.toml').write_text('[workspace]\nname="offline"\n[pypi-dependencies]\nfixture={path="wheels/fixture.whl"}\n[environments]\nstudio-runtime={features=[]}\n')
+    locked = {'version': 6, 'environments': {'studio-runtime': {'packages': {'linux-64': [{'pypi': 'wheels/fixture.whl'}]}}},
+              'packages': [{'pypi': 'wheels/fixture.whl', 'name': 'fixture'}]}
+    (root / 'pixi.lock').write_text(yaml.safe_dump(locked))
+    python = root / 'env' / ('python.exe' if os.name == 'nt' else 'bin/python')
+    python.parent.mkdir(parents=True)
+    python.write_bytes(b'offline interpreter')
+    catalog_path = root / 'config/extensions.json'
+    catalog = json.loads(catalog_path.read_text())
+    catalog['extensions'][0]['runtime'] = {'kind': 'bundled'}
+    catalog['preinstalled'] = ['alpha']
+    catalog_path.write_text(json.dumps(catalog))
+    data = tmp_path / 'data'
+    old = ExtensionManager(data, base_index=root / 'config/service-index.json')
+    previous = old.status('alpha').environment_id
+    independent = root / 'runtimes/studio-runtime'
+    independent.mkdir(parents=True)
+    definition = selected_manifest(root, 'studio-runtime')
+    definition['pypi-dependencies']['fixture']['path'] = '../../wheels/fixture.whl'
+    write_manifest(independent / 'pixi.toml', definition)
+    locked['environments']['studio-runtime']['packages']['linux-64'][0]['pypi'] = '../../wheels/fixture.whl'
+    locked['packages'][0]['pypi'] = '../../wheels/fixture.whl'
+    (independent / 'pixi.lock').write_text(yaml.safe_dump(locked))
+    (root / 'config/runtime-environments.json').write_text(json.dumps({'schemaVersion': 'f8runtimeCatalog/1',
+        'runtimes': [{'runtimeId': 'studio-runtime', 'manifest': '${F8_PACKAGE_ROOT}/runtimes/studio-runtime/pixi.toml'}]}))
+    manager = ExtensionManager(data, base_index=root / 'config/service-index.json')
+    current = manager.status('alpha')
+    assert current.state == 'installed'
+    assert current.environment_id != previous
+    environment = manager.environment_statuses()[0]
+    assert environment.runtime_kind == 'bundled'
+    assert environment.state == 'ready'
+    assert environment.extension_ids == ('alpha',)
+    detail = manager.runtime_registry.detail(environment.environment_id)
+    assert detail.storage_path == str(root / 'env')
+    assert detail.definition_path == str(independent / 'pixi.toml')
+
+
+def test_imported_pixi_extension_can_declare_multiple_environments(tmp_path: Path) -> None:
+    manager, _source = _fixture(tmp_path)
+    _publisher, payload = _fixture(tmp_path / 'publisher', kind='pixi', names=('player',))
+    catalog_path = payload / 'config/extensions.json'
+    catalog_path.write_text(catalog_path.read_text().replace('shared', 'player'))
+    manifest_path = payload / 'pixi.toml'
+    manifest_path.write_text(manifest_path.read_text().replace('shared', 'player'))
+    with manifest_path.open('a') as destination:
+        destination.write('second = { features = [] }\n')
+    manager._add_catalog(payload, preinstalled=False)
+    assert 'player' in {item.extension_id for item in manager.statuses()}
+    assert manager._payloads['player'].environments.preset_names() == ('player', 'second')
+    assert {source.name for source in manager.runtime_registry.sources.values()
+            if source.source == 'package'} == {'player', 'second'}
+
+
+def test_identically_named_package_environments_keep_independent_prefixes_and_share_cache(tmp_path: Path) -> None:
+    manager, _source = _fixture(tmp_path)
+    _first, first = _fixture(tmp_path / 'first', kind='pixi', names=('one',))
+    _second, second = _fixture(tmp_path / 'second', kind='pixi', names=('two',))
+    manager._add_catalog(first, preinstalled=False)
+    manager._add_catalog(second, preinstalled=False)
+    first_plan = manager.install_plan('one')
+    second_plan = manager.install_plan('two')
+    assert first_plan.environment_id != second_plan.environment_id
+    first_manager = manager._payloads['one'].environments
+    second_manager = manager._payloads['two'].environments
+    assert first_manager.workspace(first_plan) != second_manager.workspace(second_plan)
+    assert first_manager.install_environment()['PIXI_CACHE_DIR'] == second_manager.install_environment()['PIXI_CACHE_DIR']
+    assert first_manager.install_environment()['UV_CACHE_DIR'] == second_manager.install_environment()['UV_CACHE_DIR']

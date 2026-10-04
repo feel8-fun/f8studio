@@ -26,6 +26,7 @@ nav:
       - Build from Source: developers/build-from-source.md
       - Unity Modding Architecture: developers/unity-modding-architecture.md
       - Runtime Environments: developers/runtime-environments.md
+      - Extension Releases: developers/extension-releases.md
       - Service Development: developers/service-development.md
       - Output Node Development: developers/output-node-development.md
       - Component Authoring: developers/component-authoring.md

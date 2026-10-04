@@ -9,11 +9,14 @@ from pathlib import Path
 import re
 import shutil
 import sys
+import tempfile
+import tomllib
 from threading import RLock
 from typing import Literal
 import zipfile
 
 import msgspec
+import packaging
 from packaging.requirements import Requirement
 from packaging.specifiers import SpecifierSet
 import yaml
@@ -34,7 +37,8 @@ from f8pysdk.service_runtime_tools.inventory.index import (
 from f8pysdk.specs import F8ServiceDescribe, F8ServiceEntry
 
 from .environments import EnvironmentManager
-from .runtime_registry import RuntimeRegistry
+from .runtime_sources import read_runtime_catalog
+from .runtime_registry import RuntimeRegistry, RuntimeSourcesSnapshot
 from .extension_artifacts import prepare_artifact
 from .errors import ConflictError, InvalidRequestError, NotFoundError
 from .extension_models import (
@@ -43,6 +47,8 @@ from .extension_models import (
     ExtensionRecord, ExtensionStatus, PresetEnvironmentStatus, RuntimeStorageStatus,
 )
 from .extension_operation import ExtensionInstallCancelled, InstallOperation
+from f8pysdk.release_spec import BundledExtensionCatalog, PublishedArtifact
+
 from .shared_dependencies import RuntimeProbe, validate_shared_package
 
 
@@ -55,6 +61,35 @@ class ExtensionPayload:
     index_path: Path
     index: ServiceIndex
     environments: EnvironmentManager
+
+
+@dataclass(frozen=True)
+class ExtensionSourcesSnapshot:
+    manifests: dict[str, ExtensionManifest]
+    payloads: dict[str, ExtensionPayload]
+    services: dict[str, IndexedService]
+    owners: dict[str, str]
+    preinstalled: set[str]
+    failures: dict[str, str]
+    details: dict[str, str]
+    runtimes: RuntimeSourcesSnapshot
+
+
+def bundled_extension_paths(root: Path) -> tuple[Path, ...]:
+    path = root / 'config/extension-packages.json'
+    if not path.is_file():
+        return ()
+    catalog = msgspec.json.decode(path.read_bytes(), type=BundledExtensionCatalog)
+    paths: list[Path] = []
+    for item in catalog.packages:
+        prefix = '${F8_PACKAGE_ROOT}/'
+        if not re.fullmatch(r'[0-9a-f]{64}', item.sha256) or not item.path.startswith(prefix):
+            raise ValueError('Invalid bundled extension package reference')
+        source = (root / item.path.removeprefix(prefix)).resolve()
+        if not source.is_relative_to(root.resolve()) or source.name != item.sha256:
+            raise ValueError('Bundled extension package must use a contained content-addressed path')
+        paths.append(source)
+    return tuple(paths)
 
 
 class ExtensionManager:
@@ -90,6 +125,8 @@ class ExtensionManager:
         if not self.has_catalog:
             return
         self._add_catalog(self._source_root, preinstalled=True)
+        for root in bundled_extension_paths(self._source_root):
+            self._add_catalog(root, preinstalled=False)
         if self._sources_path.is_file():
             try:
                 self._source_digests = msgspec.json.decode(self._sources_path.read_bytes(), type=list[str])
@@ -99,10 +136,17 @@ class ExtensionManager:
                 if not re.fullmatch(r'[0-9a-f]{64}', digest):
                     logger.warning('Ignoring invalid extension source digest: %r', digest)
                     continue
+                snapshot = self._snapshot_sources()
                 try:
-                    self._add_catalog(self._root / 'payloads' / digest, preinstalled=False)
+                    self._add_catalog(self._root / 'payloads' / digest, preinstalled=False, replace_existing=True, restoring=True)
                 except (OSError, ValueError, msgspec.DecodeError, ConflictError):
+                    self._restore_sources(snapshot)
                     logger.exception('Cannot load imported extension source %s', digest)
+        migrated_bindings = {extension_id: self.runtime_registry.canonical_id(identifier)
+                             for extension_id, identifier in self._bindings.items()}
+        if migrated_bindings != self._bindings:
+            self._bindings = migrated_bindings
+            self._save_bindings()
         state_readable = True
         if self._state_path.is_file():
             try:
@@ -122,12 +166,32 @@ class ExtensionManager:
                                          environment_id=plan.environment_id)
                 self._records[manifest.extension_id] = record
             if record is not None and record.installed:
+                original_id = record.environment_id or ''
+                canonical_id = self.runtime_registry.canonical_id(original_id)
+                source = self.runtime_registry.sources.get(canonical_id)
+                if (source is not None and original_id == source.target.manager.legacy_environment_id(source.target.environment)
+                        and source.target.manager.can_reuse_development_environment(source.target.environment)):
+                    record = copy_model(record, update={'environment_id': canonical_id})
+                    self._records[manifest.extension_id] = record
                 if record.version != manifest.version:
                     logger.warning('Extension %s changed from %s to %s; explicit reinstall is required',
                                    manifest.extension_id, record.version, manifest.version)
                     self._records[manifest.extension_id] = copy_model(record, update={'installed': False, 'enabled': False})
                     continue
                 try:
+                    payload = self._payloads[manifest.extension_id]
+                    if manifest.runtime.kind == 'shared' and self._registration(manifest.extension_id).is_file():
+                        environment = manifest.runtime.environment
+                        assert environment is not None
+                        target = self.environments.shared_targets.get(environment)
+                        expected = target.plan if target is not None else self.environments.preset_plan(environment)
+                        if record.environment_id != expected.environment_id or not payload.environments.ready(expected.environment_id):
+                            continue
+                    plan = payload.environments.plan(manifest)
+                    if record.environment_id != plan.environment_id and self._registration(manifest.extension_id).is_file():
+                        # Keep the verified existing registration until explicit
+                        # preparation reconciles it with the new definition.
+                        continue
                     self._copy_model_metadata(manifest)
                     self._write_registration(manifest, record)
                     load_index_into_catalog(path=self._registration(manifest.extension_id), catalog=ServiceCatalog())
@@ -138,7 +202,7 @@ class ExtensionManager:
         if state_readable:
             self._save_records()
 
-    def _add_catalog(self, root: Path, *, preinstalled: bool) -> tuple[str, ...]:
+    def _add_catalog(self, root: Path, *, preinstalled: bool, replace_existing: bool = False, restoring: bool = False) -> tuple[str, ...]:
         root = root.resolve()
         index_path = root / 'config/service-index.json'
         catalog = msgspec.json.decode((root / 'config/extensions.json').read_bytes(), type=ExtensionCatalog)
@@ -146,12 +210,52 @@ class ExtensionManager:
                  ServiceIndex(schemaVersion='f8serviceIndex/1', services=(), modelRoot='${F8_MODEL_ROOT}'))
         services = {item.serviceClass: item for item in index.services}
         owners = self._validate_catalog(catalog, services, root=root)
+        descriptor_path = root / 'config/artifact.json'
+        if descriptor_path.is_file():
+            descriptor = msgspec.json.decode(descriptor_path.read_bytes(), type=PublishedArtifact)
+            if descriptor.kind != 'extension' or len(catalog.extensions) != 1:
+                raise ValueError('Published extension artifact must own exactly one extension')
+            manifest = catalog.extensions[0]
+            if (descriptor.artifact_id, descriptor.version) != (manifest.extension_id, manifest.version):
+                raise ValueError('Extension artifact identity disagrees with catalog')
+            platform = 'windows-x86_64' if sys.platform == 'win32' else 'linux-x86_64'
+            if descriptor.platform not in {'any', platform}:
+                raise ValueError('Extension artifact is incompatible with this platform')
         if not preinstalled and any(manifest.runtime.kind not in {'native', 'pixi', 'shared'} for manifest in catalog.extensions):
             raise ValueError('Published extensions must declare a native, shared, or locked Pixi runtime')
+        if not preinstalled and not catalog.extensions:
+            raise ValueError('Published extension catalog must not be empty')
+        if not preinstalled and len(catalog.extensions) != 1:
+            raise ValueError('An extension package must own exactly one extension')
+        runtime_catalog = read_runtime_catalog(root)
+        if not preinstalled and runtime_catalog.runtimes:
+            manifest = catalog.extensions[0]
+            if (manifest.runtime.kind != 'pixi'
+                    or manifest.runtime.environment not in {item.runtime_id for item in runtime_catalog.runtimes}):
+                raise ValueError('Extension default environment must be declared in its workspace')
+        elif not preinstalled and catalog.extensions[0].runtime.kind == 'pixi':
+            manifest = catalog.extensions[0]
+            definition = tomllib.loads((root / 'pixi.toml').read_text(encoding='utf-8'))
+            declared = definition.get('environments', {})
+            if manifest.runtime.environment not in declared:
+                raise ValueError('Extension default environment must be declared in its workspace')
         conflicts = set(services) & self._services.keys()
         ids = {manifest.extension_id for manifest in catalog.extensions}
-        if conflicts or ids & self._manifests.keys():
+        replaced = ids & self._manifests.keys()
+        if conflicts and any(self._owners[name] not in ids for name in conflicts):
+            raise ConflictError('Extension package conflicts with another extension service class')
+        if replaced and not replace_existing:
             raise ConflictError('Extension package conflicts with an existing extension ID or service class')
+        if replaced and all(self._payloads[identifier].root == root for identifier in ids if identifier in self._payloads) and ids == replaced:
+            return tuple(manifest.extension_id for manifest in catalog.extensions)
+        for manifest in catalog.extensions:
+            if manifest.extension_id not in replaced:
+                continue
+            record = self._records.get(manifest.extension_id)
+            if record is not None and record.installed:
+                raise ConflictError('Uninstall the current extension before importing another version')
+            if not restoring and self._manifests[manifest.extension_id].version == manifest.version:
+                raise ConflictError('Different extension contents must use a new version')
         for item in index.services:
             paths = index_paths(index_path, index, item)
             for relative in (*item.manifests.values(), item.describe):
@@ -162,6 +266,16 @@ class ExtensionManager:
             self._data_dir, root, official=self.environments.official,
         )
         payload = ExtensionPayload(root=root, index_path=index_path, index=index, environments=environments)
+        # Keep old runtime sources: other installed extensions may still bind to
+        # their immutable environment IDs, and replay reconstructs those bindings.
+        for identifier in replaced:
+            old = self._manifests[identifier]
+            for name in old.service_classes:
+                self._services.pop(name)
+                self._owners.pop(name)
+            self._preinstalled.discard(identifier)
+            self._failures.pop(identifier, None)
+            self._details.pop(identifier, None)
         for manifest in catalog.extensions:
             self._manifests[manifest.extension_id] = manifest
             self._payloads[manifest.extension_id] = payload
@@ -186,13 +300,18 @@ class ExtensionManager:
             if runtime.kind in {'pixi', 'workspace', 'shared'} and not runtime.environment:
                 raise ValueError(f'Missing environment for {manifest.extension_id}')
             if runtime.kind == 'shared':
+                if runtime.provider_version is not None:
+                    SpecifierSet(runtime.provider_version)
+                if runtime.provider_version is not None and runtime.provider_id is None:
+                    raise ValueError('Runtime providerVersion requires providerId')
                 if runtime.requires_python is not None:
                     SpecifierSet(runtime.requires_python)
                 for dependency in runtime.dependencies:
                     requirement = Requirement(dependency)
                     if requirement.url is not None:
                         raise ValueError(f'Shared extensions cannot declare URL dependencies: {dependency}')
-            elif runtime.requires_python is not None or runtime.dependencies:
+            elif (runtime.requires_python is not None or runtime.dependencies or runtime.provider_id is not None
+                  or runtime.provider_version is not None or runtime.abi is not None):
                 raise ValueError(f'Only shared extensions can declare official runtime requirements: {manifest.extension_id}')
             if runtime.environment is not None and not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_-]*', runtime.environment):
                 raise ValueError(f'Invalid environment name for {manifest.extension_id}')
@@ -397,7 +516,10 @@ class ExtensionManager:
         if entry is None:
             raise InvalidRequestError(f'Missing launcher for {service_class}')
         args = entry.launch.args or []
-        if manifest.runtime.kind in {'pixi', 'workspace'}:
+        if manifest.runtime.kind == 'pixi' and entry.launch.command in {'python', 'python.exe'}:
+            if len(args) != 2 or args[0] != '-m' or not re.fullmatch(r'[a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)*', args[1]):
+                raise InvalidRequestError('Independent Python services must launch python -m module')
+        elif manifest.runtime.kind in {'pixi', 'workspace'}:
             if (Path(entry.launch.command).name not in {'pixi', 'pixi.exe'} or len(args) != 4
                     or args[:3] != ['run', '-e', manifest.runtime.environment]):
                 raise InvalidRequestError(f'Service {service_class} must explicitly use the declared extension environment')
@@ -429,8 +551,8 @@ class ExtensionManager:
                     record = self._records.get(extension_id)
                     selected = self._bindings.get(extension_id)
                     owns = (source is not None and original.runtime.kind not in {'native', 'shared'}
-                            and source.target.manager is self._payloads[extension_id].environments
-                            and source.target.environment == original.runtime.environment)
+                            and source.target.manager is self._payloads[extension_id].environments.for_environment(original.runtime.environment or 'studio-runtime')
+                            and source.target.environment == (original.runtime.environment or ('studio-runtime' if original.runtime.kind == 'bundled' else None)))
                     shared = original.runtime.kind == 'shared' and (selected == identifier or (
                         selected is None and (manifest.runtime.environment == identifier or (
                             source is not None and source.source == 'official' and source.name == manifest.runtime.environment))))
@@ -442,9 +564,9 @@ class ExtensionManager:
                     'extension_ids': tuple(sorted(users)),
                     'service_classes': tuple(name for extension_id in users for name in self._manifests[extension_id].service_classes),
                     'tool_ids': tuple(f'{extension_id}/{tool.tool_id}' for extension_id in users for tool in self._manifests[extension_id].tools),
-                    'state': 'changed' if changed and status.state == 'ready' else status.state,
+                    'state': 'changed' if changed and status.state not in {'preparing', 'failed'} else status.state,
                     'detail': 'Installed extension records refer to an earlier environment definition. Prepare this environment to verify and update them.'
-                    if changed and status.state == 'ready' else status.detail,
+                    if changed and status.state not in {'preparing', 'failed'} else status.detail,
                 }))
             return tuple(result)
 
@@ -509,6 +631,7 @@ class ExtensionManager:
                     raise NotFoundError(f'Unknown environment: {environment_id}')
                 if selected.state != 'ready':
                     raise InvalidRequestError('Prepare and verify the selected environment before assigning it to an extension')
+            self.runtime_registry.validate_compatibility(manifest, environment_id or self._manifests[extension_id].runtime.environment)
             previous = dict(self._bindings)
             if environment_id is None:
                 self._bindings.pop(extension_id, None)
@@ -547,30 +670,45 @@ class ExtensionManager:
             record = self._records.get(owner)
             return record is not None and record.installed and record.enabled and owner not in self._failures
 
+    def _snapshot_sources(self) -> ExtensionSourcesSnapshot:
+        return ExtensionSourcesSnapshot(manifests=dict(self._manifests), payloads=dict(self._payloads),
+            services=dict(self._services), owners=dict(self._owners), preinstalled=set(self._preinstalled),
+            failures=dict(self._failures), details=dict(self._details), runtimes=self.runtime_registry.snapshot_sources())
+
+    def _restore_sources(self, snapshot: ExtensionSourcesSnapshot) -> None:
+        self._manifests = snapshot.manifests
+        self._payloads = snapshot.payloads
+        self._services = snapshot.services
+        self._owners = snapshot.owners
+        self._preinstalled = snapshot.preinstalled
+        self._failures = snapshot.failures
+        self._details = snapshot.details
+        self.runtime_registry.restore_sources(snapshot.runtimes)
+
     async def import_package(self, request: ExtensionImportRequest) -> tuple[ExtensionStatus, ...]:
         async with self._actions:
             with self._lock:
                 self._require_idle()
-                if request.sha256 in self._source_digests:
-                    return self.statuses()
             try:
                 payload = await asyncio.to_thread(prepare_artifact, request, self._root)
                 with self._lock:
-                    added = self._add_catalog(payload, preinstalled=False)
-                    sources = [*self._source_digests, request.sha256]
-                    temporary = self._sources_path.with_suffix('.tmp')
+                    self._require_idle()
+                    snapshot = self._snapshot_sources()
+                    committed = False
                     try:
+                        added = self._add_catalog(payload, preinstalled=False, replace_existing=True)
+                        if all(snapshot.payloads.get(identifier) is self._payloads[identifier] for identifier in added):
+                            committed = True
+                            return self.statuses()
+                        sources = [*self._source_digests, request.sha256]
+                        temporary = self._sources_path.with_suffix('.tmp')
                         temporary.write_bytes(msgspec.json.encode(sources))
                         temporary.replace(self._sources_path)
-                    except OSError:
-                        for extension_id in added:
-                            manifest = self._manifests.pop(extension_id)
-                            self._payloads.pop(extension_id)
-                            for name in manifest.service_classes:
-                                self._services.pop(name)
-                                self._owners.pop(name)
-                        raise
-                    self._source_digests = sources
+                        self._source_digests = sources
+                        committed = True
+                    finally:
+                        if not committed:
+                            self._restore_sources(snapshot)
             except (OSError, ValueError, msgspec.DecodeError, zipfile.BadZipFile) as exc:
                 logger.exception('Cannot import extension package from %s', request.url)
                 raise InvalidRequestError(f'Cannot import extension package: {exc}') from exc
@@ -713,7 +851,14 @@ class ExtensionManager:
             item = self._services[name]
             entry = self._entry(manifest, name)
             environment = manifest.runtime.environment
-            if manifest.runtime.kind == 'pixi':
+            if manifest.runtime.kind == 'pixi' and entry.launch.command in {'python', 'python.exe'}:
+                assert environment is not None
+                command, args = payload.environments.python_launch(plan, environment)
+                entry = copy_model(entry, update={'launch': copy_model(entry.launch, update={
+                    'command': command, 'args': [*args, *(entry.launch.args or [])],
+                    'workdir': str(payload.environments.workspace(plan)),
+                })})
+            elif manifest.runtime.kind in {'pixi', 'workspace'}:
                 assert environment is not None
                 command, args = payload.environments.launch(plan, environment)
                 entry = copy_model(entry, update={'launch': copy_model(entry.launch, update={
@@ -763,14 +908,21 @@ class ExtensionManager:
                          operation: InstallOperation) -> None:
         operation.check_cancelled()
         if manifest.runtime.kind == 'shared':
+            self.runtime_registry.validate_compatibility(manifest)
             payload = self._payloads[manifest.extension_id]
             environment = manifest.runtime.environment
             assert environment is not None
             plan = payload.environments.plan(manifest)
             command, args = payload.environments.python_launch(plan, environment)
             operation.report(f'Checking dependencies against selected runtime {environment}')
-            output = operation.run([command, *args, str(Path(__file__).with_name('_runtime_probe.py'))],
-                                   cwd=payload.environments.workspace(plan), timeout=120)
+            # Probe tooling is copied without dist-info so even a bare interpreter
+            # can report wheel tags, while dependency discovery remains target-only.
+            with tempfile.TemporaryDirectory(prefix='f8-runtime-probe-') as temporary:
+                probe_root = Path(temporary)
+                shutil.copytree(Path(packaging.__file__).parent, probe_root / 'packaging',
+                                ignore=shutil.ignore_patterns('__pycache__'))
+                output = operation.run([command, *args, str(Path(__file__).with_name('_runtime_probe.py')), str(probe_root)],
+                                       cwd=payload.environments.workspace(plan), timeout=120)
             validate_shared_package(manifest, payload.root / 'python',
                                     msgspec.json.decode(output.encode(), type=RuntimeProbe))
             operation.check_cancelled()

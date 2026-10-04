@@ -31,10 +31,10 @@ ONNXRuntime human detection/pose service (no tracking).
 ### How to Run
 
 ```bash
-pixi run -e onnx f8pydl_humandetector
+pixi run -e dl f8pydl_humandetector
 ```
 
-- Workdir: `../../../../`
+- Workdir: `${F8_PACKAGE_ROOT}/extensions/f8pydl`
 - Environment overrides: none
 
 ### Typical Inputs / Outputs

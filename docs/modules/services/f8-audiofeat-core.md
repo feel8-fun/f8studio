@@ -31,10 +31,10 @@ Zenoh latest-audio core feature extraction service (rms, onset, centroid).
 ### How to Run
 
 ```bash
-pixi run -e default f8pyaudiofeat_core
+pixi run -e audiofeat f8pyaudiofeat_core
 ```
 
-- Workdir: `../../../../`
+- Workdir: `${F8_PACKAGE_ROOT}/extensions/f8pyaudiofeat`
 - Environment overrides: none
 
 ### Typical Inputs / Outputs

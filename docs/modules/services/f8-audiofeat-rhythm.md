@@ -31,10 +31,10 @@ Rhythm analysis service consuming core features (tempo + pulse clarity).
 ### How to Run
 
 ```bash
-pixi run -e default f8pyaudiofeat_rhythm
+pixi run -e audiofeat f8pyaudiofeat_rhythm
 ```
 
-- Workdir: `../../../../`
+- Workdir: `${F8_PACKAGE_ROOT}/extensions/f8pyaudiofeat`
 - Environment overrides: none
 
 ### Typical Inputs / Outputs

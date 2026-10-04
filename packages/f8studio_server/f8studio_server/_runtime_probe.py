@@ -1,4 +1,4 @@
-"""Inspect an interpreter without importing extension code or third-party modules."""
+"""Inspect interpreter metadata and wheel compatibility without importing extension code."""
 from __future__ import annotations
 
 from importlib import metadata
@@ -6,9 +6,13 @@ import json
 import os
 import platform
 import sys
+from pathlib import Path
 
 
-def main() -> None:
+def main(library_root: Path | None = None) -> None:
+    if library_root is not None:
+        sys.path.insert(0, str(library_root))
+    from packaging.tags import sys_tags
     distributions: dict[str, object] = {}
     for distribution in metadata.distributions():
         name = distribution.metadata.get('Name')
@@ -24,6 +28,7 @@ def main() -> None:
         implementation_version += f'{implementation.releaselevel[0]}{implementation.serial}'
     print(json.dumps({
         'pythonVersion': platform.python_version(),
+        'wheelTags': [str(tag) for tag in sys_tags()],
         'markers': {
             'implementation_name': sys.implementation.name,
             'implementation_version': implementation_version,
@@ -43,4 +48,4 @@ def main() -> None:
 
 
 if __name__ == '__main__':
-    main()
+    main(Path(sys.argv[1]) if len(sys.argv) == 2 else None)

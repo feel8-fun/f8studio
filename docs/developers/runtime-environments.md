@@ -2,6 +2,35 @@
 
 Studio manages extension installation separately from Python runtime definitions. Services and tools belonging to a shared Python extension use its selected runtime; skills and resources are capabilities of the extension, not packages installed into that interpreter.
 
+## Workspace ownership
+
+Studio owns only its application workspace at `config/studio-runtime/`, with
+its own `pixi.toml` and `pixi.lock`. It includes SDK, core, server and media
+components; optional extension modules are not installed in the base interpreter.
+
+Each Python extension owns its workspace and lock in its own repository.
+`config/runtime-environments.json` references these source workspaces for
+integrated development. Installed extension artifacts carry their own runtime
+inputs. The previous top-level `runtimes/` profiles and feature generator have
+been removed. The root `pixi.toml` is a developer/CI workspace.
+
+Environment names and counts are chosen by the extension author. The
+extension's `runtime.environment` selects its default launch environment;
+other environments can coexist in the same workspace. Identical names in
+different extension workspaces are valid. Managed prefix identity includes
+workspace ownership and locked inputs; shared caches reuse package files
+without merging independent interpreters.
+
+The Python Engine extension contains `f8.pyengine`, `f8.pyexpr`, and
+`f8.pyscript`, all defaulting to its `pyengine` environment.
+
+For example, prepare a source extension or Studio itself with:
+
+```sh
+pixi install --locked --manifest-path extensions/f8pydl/pixi.toml -e dl
+pixi install --locked --manifest-path config/studio-runtime/pixi.toml -e studio-runtime
+```
+
 ## Inspect and prepare
 
 The **Runtime Environments** page (`?view=environments`) shows environments with a name, source, revision, status, and the extensions/services/tools referencing it. References include declared consumers, including extensions that have not yet been installed. Extension installation, enabling, and capability details are managed separately on **Extensions** (`?view=extensions`).
@@ -60,3 +89,7 @@ Windows NTFS supports hardlinks on the same volume. Cross-volume caches cannot p
 Environment details report logical file bytes, unique file data bytes deduplicated by file identity, bytes belonging to files with multiple hardlinks, and bytes belonging to files with a single hardlink. These are not physical disk allocation or guaranteed reclaimable space; copy-on-write savings are not measured.
 
 **Keep revision** protects a developer revision from removal. **Remove unused** removes its definition and, when no other revision uses it, its managed installation. Extension runtime selections and child revision base references block removal. Reset a selection or remove dependent revisions first. Removing a revision retains the shared package cache and does not remove models or resources.
+
+## Publisher releases
+
+Runtime providers can publish immutable baselines with `providerId`, `version`, and `abi`. The environment inspector displays these values. Shared extensions can constrain provider versions and ABI, while installation still checks actual interpreter/dependency/wheel compatibility. See [Extension Releases](extension-releases.md) for publisher commands, pinned Studio assembly, update policy, and common feature generation.

@@ -34,7 +34,7 @@ MediaPipe single-person pose extraction service (33 landmarks).
 pixi run -e mediapipe f8pymppose
 ```
 
-- Workdir: `../../../../`
+- Workdir: `${F8_PACKAGE_ROOT}/extensions/f8pymppose`
 - Environment overrides: none
 
 ### Typical Inputs / Outputs

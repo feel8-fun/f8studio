@@ -24,10 +24,7 @@ extension_ids = ["cppengine"]
 [[extensions]]
 package = "f8pyengine"
 extension_ids = ["pyengine"]
-
-[[extensions]]
-package = "f8pyscript"
-extension_ids = ["pyscript", "pyexpr"]
+python_modules = ["f8pyengine", "f8pyscript"]
 
 [[extensions]]
 package = "f8pymppose"
