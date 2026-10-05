@@ -1,10 +1,19 @@
 from f8pysdk.service_paths import ServicePaths
+from f8pysdk._specs.builtin_fields import normalize_describe_payload_dict
 
 from pathlib import Path
+import json
 
 import pytest
 
 from scripts.install_services import copy_verified, migrate_resources
+
+
+def _describe_payload(service_class: str) -> str:
+    return json.dumps(normalize_describe_payload_dict({
+        'service': {'schemaVersion': 'f8service/1', 'serviceClass': service_class, 'label': service_class},
+        'operators': [],
+    }))
 
 
 def test_model_migration_preserves_sources_and_is_idempotent(tmp_path: Path) -> None:
@@ -68,15 +77,11 @@ def service_index(tmp_path: Path) -> Path:
 
 
 def test_refresh_prepares_shared_environment_once_before_timed_describes(service_index: Path) -> None:
-    import json
     import subprocess
     from unittest.mock import patch
     from scripts.install_services import install
 
-    root = Path.cwd()
-    real_index = json.loads((root / "config/service-index.json").read_text())
-    payloads = {item["serviceClass"]: ServicePaths.for_index(root / "config/service-index.json").package_path(item["describe"], relative_to=root / "config").read_text()
-                for item in real_index["services"] if item["serviceClass"] in {"f8.pyexpr", "f8.pyscript"}}
+    payloads = {name: _describe_payload(name) for name in ('f8.pyexpr', 'f8.pyscript')}
     calls: list[list[str]] = []
 
     def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -145,10 +150,8 @@ def test_failed_refresh_keeps_all_previous_descriptions(service_index: Path) -> 
     index = json.loads(service_index.read_text())
     for item in index["services"]:
         Path(item["describe"]).write_text("previous description")
-    real_index = json.loads(Path("config/service-index.json").read_text())
     first_class = index["services"][0]["serviceClass"]
-    first = next(item for item in real_index["services"] if item["serviceClass"] == first_class)
-    payload = ServicePaths.for_index(Path("config/service-index.json")).package_path(first["describe"], relative_to=Path("config")).read_text()
+    payload = _describe_payload(first_class)
     with patch("scripts.install_services.subprocess.run", side_effect=[
         subprocess.CompletedProcess([], 0, stdout=payload),
         subprocess.CalledProcessError(1, "second service", stderr="import failed"),
