@@ -13,13 +13,59 @@ For an existing checkout:
 
 ```bash
 git submodule update --init --recursive
-pixi lock
+pixi install --locked -e build-check -e cpp
 ```
 
 Python extensions own their source workspaces. Before running an extension from
 source, prepare the SDK checkout it declares (usually `.sdk`) as documented in
 that repository’s `DEVELOPMENT.md`. Published extension artifacts contain wheels
 and locked runtime inputs and do not need SDK source checkouts.
+
+## Clean and rebuild the development workspace
+
+Build and test output is disposable. The cleanup command checks Git tracking in
+each repository before removing anything, preserves source checkouts and model
+data, and skips dependency checkout inputs such as `.sdk` and `.platform`.
+
+```bash
+pixi run -e build-check workspace_clean --dry-run
+pixi run -e build-check workspace_clean
+```
+
+For a build with fresh local environments, run cleanup using host Python because
+the interpreter must remain outside the environments being removed:
+
+```bash
+python scripts/workspace_clean.py --environments
+pixi install --locked -e build-check -e cpp
+pixi run --locked -e build-check workspace_prepare
+pixi run --locked -e build-check python scripts/install_services.py --python-only --build-check --no-install --refresh
+pixi run --locked -e build-check studio_web_ci
+pixi run --locked -e build-check studio_web_build
+pixi run --locked -e cpp cpp_bootstrap
+pixi run --locked -e cpp cpp_configure_release
+pixi run --locked -e cpp cpp_build_release
+pixi run --locked -e build-check python scripts/install_services.py --native-only --no-install --refresh
+pixi run --locked -e build-check pytest -q
+pixi run --locked -e build-check typecheck
+pixi run --locked -e build-check lint
+pixi run --locked -e build-check lint_imports
+```
+
+The native build is a development integration build of the checked-out SDK and
+extensions. Official artifacts still come from their independent publishers.
+Conan and CMake use the activated Pixi `cpp` toolchain, including its Linux
+sysroot. Native builds reject compiler paths outside that environment. Conan
+stores packages under `build/cache/conan/<pixi-lock-id>/`, without modifying the
+user's global Conan profile or reusing its binaries. The lock identity is also
+part of Conan binary package IDs, so packages built with different toolchains
+cannot be mistaken for compatible binaries. The first build may compile native
+dependencies; subsequent builds with the same lock reuse them.
+
+Pixi and npm download caches outside the checkout are reused. Model weights under
+`resources/models/` are inputs and are not removed. Legacy runtime migration
+backups, old release smoke workspaces and generated documentation are removed.
+Pytest, Ruff, import checks and compiler temporary files write into `build/cache/`.
 
 ## Start Studio
 

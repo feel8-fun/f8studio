@@ -31,17 +31,75 @@ class CppCiBootstrapTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
 
+    def test_conan_isolated_from_global_cache_and_host_path(self) -> None:
+        module = self.module
+        prefix = self.root / ".pixi/envs/cpp"
+        (prefix / "bin").mkdir(parents=True)
+        (self.root / "pixi.lock").write_text("locked toolchain", encoding="utf-8")
+        with (
+            mock.patch.object(module, "REPO_ROOT", self.root),
+            mock.patch.dict(module.os.environ, {"CONAN_HOME": "/global/conan", "PATH": "/usr/bin"}),
+            mock.patch.object(module.subprocess, "run") as run,
+        ):
+            module._run(["conan", "profile", "detect"])
+            expected_home = module._conan_home()
+        env = run.call_args.kwargs["env"]
+        self.assertEqual(env["CONAN_HOME"], str(expected_home))
+        self.assertEqual(env["PATH"].split(module.os.pathsep)[0], str(prefix / "bin"))
+        self.assertEqual(env["CCACHE_TEMPDIR"], str(self.root / "build/cache/ccache-tmp"))
+
+    def test_host_compiler_is_rejected(self) -> None:
+        module = self.module
+        (self.root / "pixi.lock").write_text("locked toolchain", encoding="utf-8")
+        with (
+            mock.patch.object(module, "REPO_ROOT", self.root),
+            mock.patch.object(module, "_cpp_tool", side_effect=lambda name: name),
+            mock.patch.object(module.sys, "platform", "linux"),
+            mock.patch.dict(module.os.environ, {"CC": "/usr/bin/gcc", "CXX": "/usr/bin/g++"}),
+        ):
+            with self.assertRaisesRegex(ValueError, "Compiler must belong"):
+                module._conan_toolchain_args()
+
+    def test_pixi_profile_pins_compilers_sysroot_and_binary_identity(self) -> None:
+        module = self.module
+        prefix = self.root / ".pixi/envs/cpp"
+        (self.root / "pixi.lock").write_text("locked toolchain", encoding="utf-8")
+        with (
+            mock.patch.object(module, "REPO_ROOT", self.root),
+            mock.patch.object(module, "_cpp_tool", side_effect=lambda name: name),
+            mock.patch.dict(module.os.environ, {
+                "CC": str(prefix / "bin/cc"), "CXX": str(prefix / "bin/c++"),
+                "CONDA_BUILD_SYSROOT": str(prefix / "sysroot"),
+            }),
+        ):
+            args = module._conan_toolchain_args()
+            self.assertIn(f"user.f8:toolchain={module._toolchain_id()}", args)
+        self.assertIn(f"tools.build:sysroot={prefix / 'sysroot'}", args)
+        self.assertTrue(any(str(prefix / "bin/c++") in arg for arg in args))
+        self.assertIn('tools.info.package_id:confs=["user.f8:toolchain"]', args)
+
+    def test_host_sysroot_is_rejected_with_pixi_compilers(self) -> None:
+        module = self.module
+        prefix = self.root / ".pixi/envs/cpp"
+        (self.root / "pixi.lock").write_text("locked toolchain", encoding="utf-8")
+        with (
+            mock.patch.object(module, "REPO_ROOT", self.root),
+            mock.patch.object(module, "_cpp_tool", side_effect=lambda name: name),
+            mock.patch.object(module.sys, "platform", "linux"),
+            mock.patch.dict(module.os.environ, {
+                "CC": str(prefix / "bin/cc"), "CXX": str(prefix / "bin/c++"),
+                "CONDA_BUILD_SYSROOT": "/usr",
+            }),
+        ):
+            with self.assertRaisesRegex(ValueError, "CONDA_BUILD_SYSROOT"):
+                module._conan_toolchain_args()
+
     def test_bootstrap_accepts_conan_user_preset_include_path(self) -> None:
         generated_preset_path = self.root / "build" / "generators" / "CMakePresets.json"
 
         def _fake_run(
             command: list[str],
-            *,
-            use_pixi_cpp_paths: bool = False,
-            use_host_pkg_config: bool = False,
         ) -> None:
-            self.assertFalse(use_pixi_cpp_paths)
-            self.assertTrue(use_host_pkg_config)
             if command[:2] != ["conan", "install"]:
                 return
             generated_preset_path.parent.mkdir(parents=True, exist_ok=True)
@@ -65,7 +123,9 @@ class CppCiBootstrapTest(unittest.TestCase):
             mock.patch.object(self.module, "REPO_ROOT", self.root),
             mock.patch.object(self.module, "LOCKFILE_PATH", self.lockfile_path),
             mock.patch.object(self.module, "USER_PRESETS_PATH", self.user_presets_path),
+            mock.patch.object(self.module, "_cpp_tool", side_effect=lambda name: name),
             mock.patch.object(self.module, "_run", side_effect=_fake_run),
+            mock.patch.object(self.module, "_conan_toolchain_args", return_value=[]),
         ):
             self.module._bootstrap()
             presets = self.module._load_generated_presets()
@@ -105,17 +165,13 @@ class CppCiConfigureTest(unittest.TestCase):
 
         def _record_run(
             command: list[str],
-            *,
-            use_pixi_cpp_paths: bool = False,
-            use_host_pkg_config: bool = False,
         ) -> None:
-            self.assertTrue(use_pixi_cpp_paths)
-            self.assertFalse(use_host_pkg_config)
             recorded_commands.append(command)
 
         with (
             mock.patch.object(self.module, "REPO_ROOT", self.root),
             mock.patch.object(self.module, "USER_PRESETS_PATH", self.user_presets_path),
+            mock.patch.object(self.module, "_cpp_tool", side_effect=lambda name: name),
             mock.patch.object(self.module, "_run", side_effect=_record_run),
         ):
             self.module._configure()
@@ -139,17 +195,13 @@ class CppCiConfigureTest(unittest.TestCase):
 
         def _record_run(
             command: list[str],
-            *,
-            use_pixi_cpp_paths: bool = False,
-            use_host_pkg_config: bool = False,
         ) -> None:
-            self.assertTrue(use_pixi_cpp_paths)
-            self.assertFalse(use_host_pkg_config)
             recorded_commands.append(command)
 
         with (
             mock.patch.object(self.module, "REPO_ROOT", self.root),
             mock.patch.object(self.module, "USER_PRESETS_PATH", self.user_presets_path),
+            mock.patch.object(self.module, "_cpp_tool", side_effect=lambda name: name),
             mock.patch.object(self.module, "_run", side_effect=_record_run),
         ):
             self.module._test()
@@ -172,6 +224,13 @@ if __name__ == "__main__":
 
 
 class CppToolPathsTest(unittest.TestCase):
+    def test_missing_pixi_tool_does_not_fall_back_to_host(self) -> None:
+        module = _load_cpp_ci_module()
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch.object(module, "_pixi_cpp_env_path", return_value=Path(directory)):
+                with self.assertRaisesRegex(FileNotFoundError, "Missing Pixi cpp tool"):
+                    module._cpp_tool("cmake")
+
     def test_tools_use_platform_specific_pixi_locations(self) -> None:
         module = _load_cpp_ci_module()
         with tempfile.TemporaryDirectory() as directory:
@@ -188,16 +247,6 @@ class CppToolPathsTest(unittest.TestCase):
                      mock.patch.object(module.sys, 'platform', platform):
                     self.assertEqual(module._cpp_tool(name), str(tool))
 
-    def test_windows_bootstrap_does_not_prepend_unix_paths(self) -> None:
-        module = _load_cpp_ci_module()
-        with tempfile.TemporaryDirectory() as directory, \
-             mock.patch.object(module, 'REPO_ROOT', Path(directory)), \
-             mock.patch.object(module.sys, 'platform', 'win32'), \
-             mock.patch.object(module, '_prepend_path_list') as prepend, \
-             mock.patch.object(module.subprocess, 'run'):
-            module._run(['conan', 'profile', 'detect'], use_host_pkg_config=True)
-            prepend.assert_not_called()
-
     def test_run_target_uses_active_build_directory_and_platform_suffix(self) -> None:
         module = _load_cpp_ci_module()
         with tempfile.TemporaryDirectory() as directory:
@@ -212,4 +261,4 @@ class CppToolPathsTest(unittest.TestCase):
                      mock.patch.object(module, '_run') as run:
                     module._run_target('benchmark')
                 compile_target.assert_called_once_with('benchmark')
-                run.assert_called_once_with([str(executable)], use_pixi_cpp_paths=True)
+                run.assert_called_once_with([str(executable)])

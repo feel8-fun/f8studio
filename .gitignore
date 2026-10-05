@@ -23,6 +23,11 @@ node_modules/
 *.tmp
 tmp/
 benchmark_results/
+.cache/
+.tmp/
+.pytest_cache/
+.ruff_cache/
+.import_linter_cache/
 .ccache-tmp/
 .uv-cache/
 .uv/
@@ -86,9 +91,9 @@ site/
 .codex
 .agents/
 package-lock.json
-!packages/f8studio_web/package-lock.json
-packages/f8studio_web/test-results/
-packages/f8studio_web/playwright-report/
+!extensions/f8webstudio/f8studio_web/package-lock.json
+extensions/f8webstudio/f8studio_web/test-results/
+extensions/f8webstudio/f8studio_web/playwright-report/
 
 
 # Installed model binaries, independent of service bundles.

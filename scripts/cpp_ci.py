@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -43,21 +44,55 @@ def _cpp_tool(name: str) -> str:
     for tool_path in candidates:
         if tool_path.is_file():
             return str(tool_path)
-    return name
+    raise FileNotFoundError(f"Missing Pixi cpp tool: {name}. Run `pixi install --locked -e cpp` first.")
 
 
-def _run(command: list[str], *, use_pixi_cpp_paths: bool = False, use_host_pkg_config: bool = False) -> None:
-    ccache_tmp_dir = REPO_ROOT / ".ccache-tmp"
+def _toolchain_id() -> str:
+    # A lock change can replace the compiler, sysroot or native dependency ABI.
+    return hashlib.sha256((REPO_ROOT / "pixi.lock").read_bytes()).hexdigest()[:16]
+
+
+def _conan_home() -> Path:
+    return REPO_ROOT / "build" / "cache" / "conan" / _toolchain_id()
+
+
+def _run(command: list[str]) -> None:
+    ccache_tmp_dir = REPO_ROOT / "build" / "cache" / "ccache-tmp"
     ccache_tmp_dir.mkdir(parents=True, exist_ok=True)
 
     command_env = os.environ.copy()
     command_env["CCACHE_TEMPDIR"] = str(ccache_tmp_dir)
-    if use_host_pkg_config and sys.platform != "win32":
-        _prepend_path_list(command_env, "PATH", [Path("/usr/bin"), Path("/usr/local/bin")])
-    if use_pixi_cpp_paths:
-        _apply_pixi_cpp_env(command_env)
-
+    command_env["CONAN_HOME"] = str(_conan_home())
+    _apply_pixi_cpp_env(command_env)
     subprocess.run(command, check=True, cwd=REPO_ROOT, env=command_env)
+
+
+def _conan_toolchain_args() -> list[str]:
+    compiler_cc = os.environ.get("CC")
+    compiler_cxx = os.environ.get("CXX")
+    if sys.platform != "win32" and (not compiler_cc or not compiler_cxx):
+        raise ValueError("Run native builds through `pixi run --locked -e cpp` to activate CC/CXX")
+    args = [
+        "-c:a", 'tools.info.package_id:confs=["user.f8:toolchain"]',
+        "-c:a", f"user.f8:toolchain={_toolchain_id()}",
+        "-c:a", "tools.build:jobs=4",
+        "-c:a", f"tools.gnu:pkg_config={_cpp_tool('pkg-config')}",
+        "-c:a", f"tools.cmake:cmake_program={_cpp_tool('cmake')}",
+    ]
+    if compiler_cc and compiler_cxx:
+        prefix = _pixi_cpp_env_path().resolve()
+        for compiler in (compiler_cc, compiler_cxx):
+            if not Path(compiler).resolve().is_relative_to(prefix):
+                raise ValueError(f"Compiler must belong to the Pixi cpp environment: {compiler}")
+        compilers = json.dumps({"c": compiler_cc, "cpp": compiler_cxx})
+        args.extend(["-c:a", f"tools.build:compiler_executables={compilers}"])
+    sysroot = os.environ.get("CONDA_BUILD_SYSROOT")
+    if sys.platform == "linux":
+        if not sysroot or not Path(sysroot).resolve().is_relative_to(_pixi_cpp_env_path().resolve()):
+            raise ValueError("Activate the Pixi cpp environment's CONDA_BUILD_SYSROOT before building")
+    if sysroot:
+        args.extend(["-c:a", f"tools.build:sysroot={sysroot}"])
+    return args
 
 
 def _prepend_path_list(env: dict[str, str], name: str, paths: list[Path]) -> None:
@@ -161,6 +196,7 @@ def _pixi_gtest_cmake_directory() -> Path | None:
 
 
 def _bootstrap() -> None:
+    toolchain_args = _conan_toolchain_args()
     if USER_PRESETS_PATH.is_file():
         USER_PRESETS_PATH.unlink()
 
@@ -169,7 +205,7 @@ def _bootstrap() -> None:
             "Missing conan.lock at repository root. Run `python scripts/cpp_ci.py lock-refresh` first."
         )
 
-    _run([_cpp_tool("conan"), "profile", "detect", "--force"], use_host_pkg_config=True)
+    _run([_cpp_tool("conan"), "profile", "detect", "--force"])
     _run(
         [
             _cpp_tool("conan"),
@@ -185,8 +221,8 @@ def _bootstrap() -> None:
             "--lockfile",
             "conan.lock",
             "--lockfile-partial",
+            *toolchain_args,
         ],
-        use_host_pkg_config=True,
     )
 
     _generated_presets_path()
@@ -256,13 +292,12 @@ def _configure_release(*, build_tests: bool) -> None:
         configure_args.append(f"-DGTest_DIR={gtest_cmake_directory}")
     _run(
         configure_args,
-        use_pixi_cpp_paths=True,
     )
 
 
 def _build() -> None:
     conan_presets = _select_conan_release_presets()
-    _run([_cpp_tool("cmake"), "--build", "--preset", conan_presets.build_preset_name, "--parallel"], use_pixi_cpp_paths=True)
+    _run([_cpp_tool("cmake"), "--build", "--preset", conan_presets.build_preset_name, "--parallel"])
     _run(
         [
             _cpp_tool("cmake"),
@@ -273,7 +308,6 @@ def _build() -> None:
             "f8_deploy_all_runtime",
             "--parallel",
         ],
-        use_pixi_cpp_paths=True,
     )
 
 
@@ -292,7 +326,6 @@ def _build_target(target: str) -> None:
             target_s,
             "--parallel",
         ],
-        use_pixi_cpp_paths=True,
     )
 
 
@@ -302,7 +335,7 @@ def _run_target(target: str) -> None:
     executable = _cmake_build_directory() / "bin" / (target + suffix)
     if not executable.is_file():
         raise FileNotFoundError(f"Built target executable is missing: {executable}")
-    _run([str(executable)], use_pixi_cpp_paths=True)
+    _run([str(executable)])
 
 
 def _test() -> None:
@@ -319,12 +352,12 @@ def _test() -> None:
             "-C",
             "Release",
         ],
-        use_pixi_cpp_paths=True,
     )
 
 
 def _lock_refresh() -> None:
-    _run([_cpp_tool("conan"), "profile", "detect", "--force"], use_host_pkg_config=True)
+    toolchain_args = _conan_toolchain_args()
+    _run([_cpp_tool("conan"), "profile", "detect", "--force"])
     if LOCKFILE_PATH.is_file():
         LOCKFILE_PATH.unlink()
     _run(
@@ -338,8 +371,8 @@ def _lock_refresh() -> None:
             "--lockfile-out",
             "conan.lock",
             "--build=missing",
+            *toolchain_args,
         ],
-        use_host_pkg_config=True,
     )
 
 

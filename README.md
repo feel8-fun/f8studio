@@ -26,6 +26,9 @@ integration tests. Official artifact assembly lives in the separate
 - `resources/models` — shared model definitions and installed weights.
 - `scripts` — Studio contract generation, describe regeneration, benchmarks, and integration tooling.
 
+To remove old build/test output, use `pixi run -e build-check workspace_clean`.
+For a rebuild with fresh local environments, see [clean and rebuild](docs/developers/build-from-source.md#clean-and-rebuild-the-development-workspace).
+
 ## Runtime Backend
 - Default: `--bus-backend zenoh`
 - Local tests may use `--bus-backend mem` where supported.

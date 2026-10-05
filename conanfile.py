@@ -52,6 +52,9 @@ class F8Build(ConanFile):
         self.options["opencv"].tracking = True
         # Disable FFmpeg integration to avoid pulling ffmpeg/libx264/libx265.
         self.options["opencv"].with_ffmpeg = False
+        # Match CVKit's standalone recipe: services consume SDK frames and do
+        # not use OpenCV windows or their system Wayland/Xorg dependencies.
+        self.options["opencv"].highgui = False
 
     def configure(self):
         # When building shared libs, fPIC option is not needed

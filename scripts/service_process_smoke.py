@@ -186,15 +186,9 @@ def _build_zenoh_config(args: argparse.Namespace, zenoh_module: Any) -> Any:
     if not bool(args.no_shm):
         apply_zenoh_shared_memory_config(
             config,
-            zenoh_module=zenoh_module,
             shm_pool_bytes=max(0, int(args.zenoh_shm_pool_bytes)),
-            log_context="service-process-smoke",
         )
-    apply_zenoh_timestamping_config(
-        config,
-        zenoh_module=zenoh_module,
-        log_context="service-process-smoke",
-    )
+    apply_zenoh_timestamping_config(config)
     return config
 
 
@@ -529,7 +523,7 @@ def main(argv: list[str]) -> int:
     try:
         targets = _targets_from_args(args)
         catalog = _load_catalog(_discovery_roots_from_args(args))
-        missing = [target.service_class for target in targets if catalog.service_entry_path(target.service_class) is None]
+        missing = [target.service_class for target in targets if catalog.service_entry(target.service_class) is None]
         if missing:
             print(f"[smoke] missing service discovery entries: {', '.join(missing)}", file=sys.stderr, flush=True)
             return 2
