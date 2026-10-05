@@ -25,27 +25,18 @@ udp_pcap_replay = "python scripts/udp_pcap_replay.py"
 [feature.pydl.pypi-dependencies]
 f8pydl = { path = "extensions/f8pydl", editable = true }
 
-[feature.pydl.tasks]
-f8pydl_detector = "python -m f8pydl.main_detector"
-f8pydl_humandetector = "python -m f8pydl.main_humandetector"
-f8pydl_classifier = "python -m f8pydl.main_classifier"
-f8pydl_optflow = "python -m f8pydl.main_optflow"
-f8pydl_detsorter = "python -m f8pydl.main_detsorter"
-f8pydl_tcnwave = "python -m f8pydl.main_tcnwave"
-f8pydl_bench = "python scripts/bench_dl_baseline.py"
-
 [feature.sdk.pypi-dependencies]
 f8pysdk = { path = "sdk/python", editable = true }
 eclipse-zenoh = ">=1.9.0,<1.10"
 
 [feature.sdk.tasks]
-workspace_catalog = "python scripts/extension_workspace.py sync"
-workspace_prepare = { cmd = "python scripts/workspace_inputs.py prepare", depends-on = ["workspace_catalog"] }
-install_services = { cmd = "python scripts/install_services.py", depends-on = ["workspace_catalog"] }
-update_describes = { cmd = "python scripts/install_services.py --refresh", depends-on = ["workspace_catalog"] }
-protocol_codegen_py = "pixi run --manifest-path sdk/pixi.toml codegen_py"
-protocol_codegen_cpp = "pixi run --manifest-path sdk/pixi.toml codegen_cpp"
-protocol_codegen_all = "pixi run --manifest-path sdk/pixi.toml codegen && python scripts/web_studio/generate_contracts.py"
+workspace_catalog = { cmd = "python scripts/extension_workspace.py sync", description = "Generate development registrations from extension declarations" }
+workspace_prepare = { cmd = "python scripts/workspace_inputs.py prepare", depends-on = ["workspace_catalog"], description = "Prepare library checkout inputs and development registrations" }
+install_services = { cmd = "python scripts/install_services.py --index build/workspace/config/service-index.json", depends-on = ["workspace_prepare"], description = "Prepare extension environments and missing service descriptions" }
+update_describes = { cmd = "python scripts/install_services.py --index build/workspace/config/service-index.json --refresh", depends-on = ["workspace_prepare"], description = "Refresh descriptions using each extension's own environment" }
+workspace_native_describes = { cmd = "python scripts/install_services.py --index build/workspace/config/service-index.json --native-only --no-install --refresh", depends-on = ["workspace_catalog"], description = "Refresh native descriptions after compiling service binaries" }
+protocol_codegen_py = "pixi run --locked --manifest-path sdk/pixi.toml codegen_py"
+protocol_codegen_cpp = "pixi run --locked --manifest-path sdk/pixi.toml codegen_cpp"
 
 [feature.test.dependencies]
 pytest = ">=8.4.2,<9"
@@ -56,11 +47,14 @@ import-linter = ">=2.11,<3"
 
 [feature.test.tasks]
 pytest = { cmd = "python -m pytest", depends-on = ["workspace_catalog"] }
-pytest_sdk = "pixi run --manifest-path sdk/pixi.toml test"
+pytest_sdk = "pixi run --locked --manifest-path sdk/pixi.toml test"
+workspace_python_describes = { cmd = "pixi run --locked -e build-check python scripts/install_services.py --index build/workspace/config/service-index.json --python-only --build-check --no-install --refresh", depends-on = ["workspace_catalog"], description = "Generate Python descriptions using the integration test environment" }
+protocol_codegen_all = "pixi run --locked --manifest-path sdk/pixi.toml codegen && python scripts/web_studio/generate_contracts.py"
+contracts_check = "python scripts/web_studio/generate_contracts.py --check"
 # Keep the initial repo-level static guards narrow and green. We can widen the
 # checked surface incrementally as more packages are annotated and cleaned up.
 lint = "ruff check extensions/f8webstudio/f8studio_core/f8studio_core sdk/python/f8media_protocol extensions/f8mediagateway/f8media_gateway extensions/f8webstudio/f8studio_server/f8studio_server"
-extensions_check = "python scripts/extension_workspace.py check"
+extensions_check = { cmd = "python scripts/extension_workspace.py check", depends-on = ["workspace_catalog"] }
 typecheck = "basedpyright -p pyrightconfig.web-studio.json"
 quality_exceptions = "python scripts/quality/except_metrics.py launcher extensions --exclude-glob '**/tests/**' --exclude-glob 'f8unitymods/**' --max-broad 110 --max-silent 0"
 lint_imports = "lint-imports --cache-dir build/cache/imports"
@@ -69,22 +63,12 @@ lint_imports = "lint-imports --cache-dir build/cache/imports"
 librosa = ">=0.11.0, <0.12"
 f8pyaudiofeat = { path = "extensions/f8pyaudiofeat", editable = true }
 
-[feature.audio.tasks]
-f8pyaudiofeat_core = "python -m f8pyaudiofeat.main_core"
-f8pyaudiofeat_rhythm = "python -m f8pyaudiofeat.main_rhythm"
-
 [feature.engine.pypi-dependencies]
 f8diagnostics = { path = "extensions/f8diagnostics", editable = true }
 scipy = ">=1.17.1,<2"
 scikit-learn = ">=1.8.0,<2"
 f8pyengine = { path = "extensions/f8pyengine", editable = true }
 f8proclauncher = { path = "extensions/f8proclauncher", editable = true }
-
-[feature.engine.tasks]
-f8pyengine = "python -m f8pyengine.main"
-f8pyscript = "python -m f8pyscript.main_script"
-f8pyexpr = "python -m f8pyscript.main_expr"
-f8proclauncher = "python -m f8proclauncher.main"
 
 [feature.doc.pypi-dependencies]
 zensical = ">=0.0.23,<0.1.0"
@@ -141,7 +125,7 @@ hatchling = ">=1.28.0,<2"
 msgspec = ">=0.18.6,<1"
 
 [feature.ci.tasks]
-workspace_snapshot = "python scripts/workspace_ci.py"
+workspace_snapshot = { cmd = "pixi run --locked -e build-check workspace_catalog && pixi run --locked -e build-check python scripts/workspace_ci.py", description = "Build a local integration snapshot; official assembly belongs to f8distribution" }
 workspace_clean = "python scripts/workspace_clean.py"
 
 [feature.web-studio.target.linux-64.dependencies]
@@ -165,23 +149,20 @@ mcp = { version = ">=1.24,<2", extras = ["cli"] }
 
 [feature.web-studio.tasks]
 studio_media_gateway = "python -m f8media_gateway"
-studio_server = { cmd = "python -m f8studio_server", depends-on = ["workspace_catalog"] }
-studio_launch = { cmd = "python -m f8studio_server --open-browser", depends-on = ["workspace_catalog"] }
-studio_cli = { cmd = "python -m f8studio_server.cli", depends-on = ["workspace_catalog"] }
-studio_mcp = { cmd = "python -m f8studio_server.mcp_server", depends-on = ["workspace_catalog"] }
+studio_server = { cmd = "python -m f8studio_server", depends-on = ["workspace_catalog"], env = { F8_SERVICE_INDEX = "build/workspace/config/service-index.json" }, description = "Run the development server in this terminal" }
+studio_launch = { cmd = "python -m f8studio_server --open-browser", depends-on = ["workspace_catalog"], env = { F8_SERVICE_INDEX = "build/workspace/config/service-index.json" }, description = "Run the development server and open its browser page" }
+studio_tray = { cmd = "python -m f8studio_server --tray", depends-on = ["workspace_catalog"], env = { F8_SERVICE_INDEX = "build/workspace/config/service-index.json" }, description = "Debug the desktop tray supervisor and managed server" }
+studio_cli = { cmd = "python -m f8studio_server.cli", description = "Connect the CLI to a running Studio server" }
+studio_mcp = { cmd = "python -m f8studio_server.mcp_server", description = "Connect MCP to a running Studio server" }
 studio_agent_model_smoke = "python scripts/web_studio/probe_agent_model.py"
-unitymods_validate = "python scripts/unitymods_ci.py validate"
-unitymods_build = "python scripts/unitymods_ci.py build"
-unitymods_test = "python scripts/unitymods_ci.py test"
-unitymods_package = "python scripts/unitymods_ci.py package"
-unitymods_contract = "python scripts/verify_skeleton_contract.py"
 
 [feature.web-studio-dev.dependencies]
 nodejs = ">=24,<25"
 
 [feature.web-studio-dev.tasks]
 studio_web_dev = "npm --prefix extensions/f8webstudio/f8studio_web run dev"
-studio_web_build = "npm --prefix extensions/f8webstudio/f8studio_web run build"
+studio_web_install = { cmd = "npm --prefix extensions/f8webstudio/f8studio_web ci", description = "Install frontend dependencies from the npm lock" }
+studio_web_build = { cmd = "npm --prefix extensions/f8webstudio/f8studio_web run build", description = "Build WebStudio frontend assets; run studio_web_install on a fresh checkout" }
 
 [feature.web-studio-test.dependencies]
 pytest = ">=8.4.2,<9"
@@ -193,33 +174,31 @@ basedpyright = ">=1.31,<2"
 
 [feature.web-studio-test.tasks]
 studio_core_test = "python -m pytest -q extensions/f8webstudio/f8studio_core/tests"
-studio_server_test = "python -m pytest -q extensions/f8webstudio/f8studio_server/tests"
+studio_server_test = { cmd = "python -m pytest -q extensions/f8webstudio/f8studio_server/tests", depends-on = ["workspace_catalog"], env = { F8_SERVICE_INDEX = "build/workspace/config/service-index.json" } }
 studio_media_gateway_test = "python -m pytest -q extensions/f8mediagateway/tests"
 studio_web_test = "npm --prefix extensions/f8webstudio/f8studio_web run test"
 studio_web_ci = "npm --prefix extensions/f8webstudio/f8studio_web ci && npm --prefix extensions/f8webstudio/f8studio_web run typecheck && npm --prefix extensions/f8webstudio/f8studio_web run test"
 studio_web_typecheck = "npm --prefix extensions/f8webstudio/f8studio_web run typecheck"
 studio_web_e2e = { cmd = "npm --prefix extensions/f8webstudio/f8studio_web run test:e2e", depends-on = ["studio_web_build"] }
 studio_graph_bench = { cmd = "npm --prefix extensions/f8webstudio/f8studio_web run test:graph-performance", depends-on = ["studio_web_build"] }
-studio_python_typecheck = "basedpyright -p pyrightconfig.web-studio.json"
-studio_no_qt_check = "python scripts/web_studio/check_no_qt.py"
+studio_no_qt_check = { cmd = "python scripts/web_studio/check_no_qt.py", depends-on = ["workspace_catalog"], env = { F8_SERVICE_INDEX = "build/workspace/config/service-index.json" } }
 studio_dependency_probe = "python scripts/web_studio/probe_environment.py"
-studio_runtime_probe = "python scripts/web_studio/probe_real_runtime.py"
+studio_runtime_probe = { cmd = "python scripts/web_studio/probe_real_runtime.py --base-url http://127.0.0.1:8210", description = "Probe PyEngine against an already running Studio server" }
 studio_media_probe = "python scripts/web_studio/probe_webrtc_media.py"
 studio_real_video_probe = "python scripts/web_studio/probe_real_video.py"
 studio_media_bench = "python scripts/web_studio/benchmark_media.py"
 studio_stream_restart_probe = "python scripts/web_studio/probe_stream_restart.py"
-studio_p3_combined_bench = "python scripts/web_studio/benchmark_p3_combined.py"
+studio_p3_combined_bench = { cmd = "python scripts/web_studio/benchmark_p3_combined.py", depends-on = ["workspace_catalog"], env = { F8_SERVICE_INDEX = "build/workspace/config/service-index.json" } }
 studio_wheel_smoke = "python scripts/web_studio/verify_release_install.py"
+unitymods_validate = "python scripts/unitymods_ci.py validate"
+unitymods_contract = "python scripts/verify_skeleton_contract.py"
 
 # Developer and CI workspaces only. Studio uses its extension workspace;
 # extensions own their runtime definitions and locks.
 [environments]
 build-check = { features = ["python", "sdk", "engine", "web-studio", "web-studio-dev", "web-studio-test", "vision", "audio", "test", "debug", "ci", "pydl"], solve-group = "build-check" }
-# Pixi tasks are feature-scoped, not environment-scoped. If a task's feature is
-# included by multiple development environments, `pixi run <task>` without
-# `-e` can resolve differently
-# depending on the active Pixi environment. Keep `service.yml` launch entries
-# explicit with `-e` for shared runtime tasks.
+# Root tasks serve development integration. Run individual services through
+# their extension's manifest and explicitly select its environment.
 default = { features = ["python", "sdk", "engine", "web-studio", "web-studio-dev", "vision", "audio", "test", "debug"], solve-group = "default" }
 doc = { features = ["python", "doc"] }
 cpp = { features = ["cpp"], solve-group = "cpp" }

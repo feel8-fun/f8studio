@@ -140,12 +140,12 @@ recipes.
 
 ## Build And Distribution
 
-Root tasks delegate into the pinned submodule:
+Build and package the pinned extension in its own Windows workspace:
 
 ```bash
-pixi run -e default unitymods_build
-pixi run -e default unitymods_test
-pixi run -e default unitymods_package
+pixi run --locked --manifest-path extensions/f8unitymods/pixi.toml build
+pixi run --locked --manifest-path extensions/f8unitymods/pixi.toml test
+pixi run --locked --manifest-path extensions/f8unitymods/pixi.toml release-package
 ```
 
 Windows distribution builds place setup wheels, exporter archives, release

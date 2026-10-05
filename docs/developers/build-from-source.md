@@ -40,13 +40,13 @@ the interpreter must remain outside the environments being removed:
 python scripts/workspace_clean.py --environments
 pixi install --locked -e build-check -e cpp
 pixi run --locked -e build-check workspace_prepare
-pixi run --locked -e build-check python scripts/install_services.py --python-only --build-check --no-install --refresh
+pixi run --locked -e build-check workspace_python_describes
 pixi run --locked -e build-check studio_web_ci
 pixi run --locked -e build-check studio_web_build
 pixi run --locked -e cpp cpp_bootstrap
 pixi run --locked -e cpp cpp_configure_release
 pixi run --locked -e cpp cpp_build_release
-pixi run --locked -e build-check python scripts/install_services.py --native-only --no-install --refresh
+pixi run --locked -e build-check workspace_native_describes
 pixi run --locked -e build-check pytest -q
 pixi run --locked -e build-check typecheck
 pixi run --locked -e build-check lint
@@ -80,6 +80,13 @@ pixi run -e web-studio studio_web_build
 pixi run -e web-studio studio_server
 ```
 
+For desktop tray debugging, run `pixi run --locked -e web-studio studio_tray`.
+This uses the generated development catalog, as does `studio_server`. After
+cleaning build output, run `workspace_python_describes` to restore Python
+descriptions; rebuild native services before `workspace_native_describes`.
+Extension environments remain independently installed through Extensions.
+See [workspace tasks](workspace-tasks.md) for task ownership and prerequisites.
+
 For frontend development, keep the server running and start Vite in another terminal:
 
 ```bash
@@ -96,7 +103,7 @@ pixi run -e web-studio-test studio_media_gateway_test
 pixi run -e web-studio-test studio_server_test
 pixi run -e web-studio-test studio_web_test
 pixi run -e web-studio-test studio_web_e2e
-pixi run -e web-studio-test studio_python_typecheck
+pixi run --locked -e build-check typecheck
 pixi run -e web-studio-test studio_web_typecheck
 pixi run -e web-studio-test studio_no_qt_check
 pixi run pytest_sdk

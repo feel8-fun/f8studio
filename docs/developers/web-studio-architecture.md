@@ -66,7 +66,7 @@ C++ JSON models use concrete nested structs, maps, vectors, enums and recursive 
 
 ## Static checks and shared lifecycle helpers
 
-`pixi run typecheck` uses Pyright standard mode for SDK, engine and Python services; `pixi run -e web-studio-test studio_python_typecheck` retains strict Studio/media checking. Argument, assignment, call and optional-member diagnostics are enabled. Missing third-party stubs remain exempt; two localized SciPy `interp1d` suppressions document an incorrect installed annotation. `pixi run lint` checks E4/E7/E9/F and Bugbear rules; `lint_imports` checks package boundaries and `quality_exceptions` prevents broad/silent exception regressions.
+`pixi run --locked -e build-check typecheck` performs strict checking of Platform, Studio, media components, and their integration tools. Individual extensions own their implementation type checks. Missing third-party stubs remain exempt. `pixi run lint` checks E4/E7/E9/F and Bugbear rules; `lint_imports` checks package boundaries and `quality_exceptions` prevents broad/silent exception regressions.
 
 All seven built-in Viz nodes share typed presentation injection and configuration conversion. Wave, track and 3D views share one throttled refresh owner that coalesces pending updates, reports background failures and finishes shutdown before detach. Audio/video gateway managers share typed negotiation, source leases, disconnected-session reaping and shutdown through `SessionManager`; media-specific tracks, quality settings, overlays and drop accounting stay in their concrete managers. Shutdown cancels in-flight negotiations and attempts all session cleanup before reporting failures.
 

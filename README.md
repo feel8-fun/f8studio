@@ -39,6 +39,7 @@ For a rebuild with fresh local environments, see [clean and rebuild](docs/develo
 ## Web Studio
 - Build: `pixi run -e web-studio studio_web_build`
 - Start: `pixi run -e web-studio studio_server`
+- Debug the desktop tray: `pixi run --locked -e web-studio studio_tray`
 - Open: `http://127.0.0.1:8210`
 
 ## Service installation and registration
@@ -60,7 +61,11 @@ Registered services receive an absolute `F8_MODEL_ROOT`. Standalone service comm
 - Human detector: `pixi run --manifest-path extensions/f8pydl/pixi.toml -e dl f8pydl_humandetector`
 - Classifier: `pixi run --manifest-path extensions/f8pydl/pixi.toml -e dl f8pydl_classifier`
 - MediaPipe pose: `pixi run --manifest-path extensions/f8pymppose/pixi.toml -e mediapipe f8pymppose`
-- Baseline benchmark (developer tooling): `pixi run -e build-check f8pydl_bench -- --model-yaml <yaml> --video <video>`
+- Baseline benchmark: `pixi run --locked --manifest-path extensions/f8pydl/pixi.toml -e dl python ../../scripts/bench_dl_baseline.py --model-yaml <absolute-yaml-path> --video <absolute-video-path>`
+
+Individual service tasks belong to their extension workspaces. Root tasks cover
+Studio startup, workspace preparation, integration checks, and documentation;
+see [workspace tasks](docs/developers/workspace-tasks.md).
 
 ## Audio capture
 - List recording devices: `build/bin/f8audiocap_service.exe --list-devices`
