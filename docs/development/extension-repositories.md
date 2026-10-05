@@ -82,6 +82,8 @@ pixi run -e build-check python scripts/extension_workspace.py check
 
 各独立仓库的 CI checkout `feel8-fun/f8sdk` 的固定提交到 `.sdk`，不再下载 Studio 仓库。Python 依赖路径是 `.sdk/python`。C++ SDK 使用自己的精简 Conan 配方和锁，扩展使用本包的 Conan 锁；依赖准备成功后立即保存 Conan 缓存，避免后续编译失败时丢失缓存。每个仓库维护自己的 Pixi/Conan 锁，升级 SDK 时同时更新固定提交和锁。生成锁时的 SDK 源码须与固定提交一致。
 
+生成 Pixi lock 时，`.sdk` 和 `.platform` 必须使用真实目录 checkout 或源码副本。不要用指向开发 workspace 其他仓库的 symlink：Pixi 会把链接目标写入 lock，导致独立 checkout 和 CI 找不到依赖。
+
 SDK 自己的 CI 负责 Python/C++ 单元测试、协议生成校验、跨语言通信及安装后 CMake 包验证，上传 wheel 和 CMake SDK 制品。主仓库的默认 quality 检查只负责 Studio 核心及集成测试；需要单独运行 SDK 测试时使用 `pixi run -e build-check pytest_sdk`。共享协议的唯一来源是 `sdk/schemas/`，Studio 私有 HTTP/document 合同归 WebStudio 子仓库所有。原 `packages/f8sdk_demo` 已精简为 SDK 内的 `cpp/examples/minimal_service`，默认不构建、不进入发行包。
 
 更新 submodule 前先发布独立仓库提交，再提交主仓库 gitlink；不要提交指向仅存在于本机的提交或 `file://` 仓库。

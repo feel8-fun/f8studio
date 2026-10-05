@@ -20,8 +20,8 @@ def prepare(root: Path = ROOT) -> None:
             continue
         if not source.is_dir():
             raise FileNotFoundError(f'Application dependency checkout missing: {source}')
-        # Copies also work on Windows without symlink privileges. Individual
-        # repositories can instead use their CI checkout layout or local links.
+        # Use the same real directory layout as independent CI checkouts.
+        # Pixi canonicalizes symlink targets into external paths in lock files.
         shutil.copytree(source, destination, ignore=shutil.ignore_patterns(
             '.git', '.pixi', '.sdk', '.platform', '.media-dependency', 'build', 'dist',
             'node_modules', '__pycache__', '*.egg-info', '.pytest_cache', '.ruff_cache'))

@@ -6298,138 +6298,6 @@
       "title": "F8AnyTypeSchema",
       "type": "object"
     },
-    "F8ApplicationRecord": {
-      "additionalProperties": false,
-      "properties": {
-        "componentId": {
-          "type": "string"
-        },
-        "content": {
-          "additionalProperties": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "number"
-              },
-              {
-                "type": "integer"
-              },
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "object"
-              },
-              {
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Any JSON value."
-          },
-          "type": "object"
-        },
-        "createdAt": {
-          "default": "",
-          "type": "string"
-        },
-        "description": {
-          "default": "",
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        },
-        "tags": {
-          "default": [],
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "updatedAt": {
-          "default": "",
-          "type": "string"
-        }
-      },
-      "required": [
-        "componentId",
-        "content",
-        "name"
-      ],
-      "title": "F8ApplicationRecord",
-      "type": "object"
-    },
-    "F8ApplicationRecordInput": {
-      "additionalProperties": false,
-      "properties": {
-        "componentId": {
-          "type": "string"
-        },
-        "content": {
-          "additionalProperties": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "number"
-              },
-              {
-                "type": "integer"
-              },
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "object"
-              },
-              {
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Any JSON value."
-          },
-          "type": "object"
-        },
-        "createdAt": {
-          "default": "",
-          "type": "string"
-        },
-        "description": {
-          "default": "",
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        },
-        "tags": {
-          "default": [],
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "updatedAt": {
-          "default": "",
-          "type": "string"
-        }
-      },
-      "required": [
-        "componentId",
-        "name",
-        "content"
-      ],
-      "title": "F8ApplicationRecord",
-      "type": "object"
-    },
     "F8ArrayTypeSchema": {
       "properties": {
         "$comment": {
@@ -7490,6 +7358,138 @@
         "properties"
       ],
       "title": "F8ComplexObjectTypeSchema",
+      "type": "object"
+    },
+    "F8ComponentRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "componentId": {
+          "type": "string"
+        },
+        "content": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "object"
+              },
+              {
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Any JSON value."
+          },
+          "type": "object"
+        },
+        "createdAt": {
+          "default": "",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "tags": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "updatedAt": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "componentId",
+        "content",
+        "name"
+      ],
+      "title": "F8ComponentRecord",
+      "type": "object"
+    },
+    "F8ComponentRecordInput": {
+      "additionalProperties": false,
+      "properties": {
+        "componentId": {
+          "type": "string"
+        },
+        "content": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "object"
+              },
+              {
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Any JSON value."
+          },
+          "type": "object"
+        },
+        "createdAt": {
+          "default": "",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "tags": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "updatedAt": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "componentId",
+        "name",
+        "content"
+      ],
+      "title": "F8ComponentRecord",
       "type": "object"
     },
     "F8DataPayloadSpec": {
@@ -20670,9 +20670,6 @@
       "$ref": "#/$defs/F8AnyTypeSchema"
     },
     {
-      "$ref": "#/$defs/F8ApplicationRecord"
-    },
-    {
       "$ref": "#/$defs/F8ArrayTypeSchema"
     },
     {
@@ -20701,6 +20698,9 @@
     },
     {
       "$ref": "#/$defs/F8ComplexObjectTypeSchema"
+    },
+    {
+      "$ref": "#/$defs/F8ComponentRecord"
     },
     {
       "$ref": "#/$defs/F8DataPayloadSpec"
@@ -21567,9 +21567,6 @@
       "$ref": "#/$defs/F8AnyTypeSchemaInput"
     },
     {
-      "$ref": "#/$defs/F8ApplicationRecordInput"
-    },
-    {
       "$ref": "#/$defs/F8ArrayTypeSchemaInput"
     },
     {
@@ -21598,6 +21595,9 @@
     },
     {
       "$ref": "#/$defs/F8ComplexObjectTypeSchemaInput"
+    },
+    {
+      "$ref": "#/$defs/F8ComponentRecordInput"
     },
     {
       "$ref": "#/$defs/F8DataPayloadSpecInput"
