@@ -5,7 +5,7 @@ No description.
 
 - Service class: `f8.cvkit.denseoptflow`
 - Version: `0.0.1`
-- Source directory: `f8/cvkit/dense_optflow`
+- Source directory: `services/f8.cvkit.denseoptflow`
 - Tags: `cv`, `optical_flow`, `flow_field`
 
 ## When to Use
@@ -31,10 +31,10 @@ No description.
 ### How to Run
 
 ```bash
-../linux/f8cvkit_dense_optflow_service
+${F8_BUNDLE_ROOT}/f8cvkit_dense_optflow_service
 ```
 
-- Workdir: `./`
+- Workdir: `${F8_BUNDLE_ROOT}`
 - Environment overrides: none
 
 ### Typical Inputs / Outputs

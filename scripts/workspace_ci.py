@@ -21,6 +21,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'launcher'))
 from release_wheels import build_wheels
 from f8platform.environment_definitions import read_manifest, selected_lock, write_manifest
 from f8platform.runtime_sources import read_runtime_sources
+from f8pysdk.codec import copy_model
+from f8pysdk.extension_spec import ExtensionCatalog
+from f8pysdk.service_runtime_tools.inventory.index import IndexedService, read_service_index
+from extension_workspace import workspace_root
+import msgspec
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -399,15 +404,37 @@ def _validate_dist_service_environments(services_root: Path, runtime_environment
 
 def _copy_dist_services(dist_dir: Path) -> None:
     # Only installed versioned artifacts are distributable; migration backups are local.
-    shutil.copytree(REPO_ROOT / "runtime" / "bundles", dist_dir / "runtime" / "bundles", dirs_exist_ok=True)
+    shutil.copytree(workspace_root(REPO_ROOT) / "runtime" / "bundles", dist_dir / "runtime" / "bundles", dirs_exist_ok=True)
 
 
 def _copy_dist_config(dist_dir: Path) -> Path | None:
-    config_root = REPO_ROOT / "config"
+    config_root = workspace_root(REPO_ROOT) / "config"
     if not config_root.is_dir():
         return None
     dist_config_root = dist_dir / "config"
     shutil.copytree(config_root, dist_config_root, dirs_exist_ok=True)
+    (dist_config_root / 'extension-sources.json').unlink(missing_ok=True)
+    index_path = dist_config_root / 'service-index.json'
+    index = read_service_index(index_path)
+    if index.packageRoot is not None:
+        prefix = '${F8_PACKAGE_ROOT}/build/workspace/'
+        services = tuple(IndexedService(
+            serviceClass=item.serviceClass,
+            manifests={name: path.replace(prefix, '${F8_PACKAGE_ROOT}/') for name, path in item.manifests.items()},
+            describe=item.describe.replace(prefix, '${F8_PACKAGE_ROOT}/'),
+            bundleRoots={name: path.replace(prefix, '${F8_PACKAGE_ROOT}/') for name, path in item.bundleRoots.items()},
+        ) for item in index.services)
+        index_path.write_bytes(msgspec.json.encode(copy_model(index, update={'services': services, 'packageRoot': None})))
+        catalog = msgspec.json.decode((config_root / 'extensions.json').read_bytes(), type=ExtensionCatalog)
+        for manifest in catalog.extensions:
+            for asset in (*manifest.skills, *manifest.resources):
+                relative = asset.path.removeprefix('${F8_PACKAGE_ROOT}/')
+                target = dist_dir / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(REPO_ROOT / relative, target)
+    models = workspace_root(REPO_ROOT) / 'resources/models'
+    if models.is_dir():
+        shutil.copytree(models, dist_dir / 'resources/models', dirs_exist_ok=True)
     return dist_config_root
 
 
@@ -577,7 +604,19 @@ def _write_dist_lock(dist_dir: Path, runtime_environment_names: list[str]) -> No
 
 
 def _build_independent_runtime_manifests(dist_dir: Path) -> list[str]:
-    sources = read_runtime_sources(REPO_ROOT)
+    config = workspace_root(REPO_ROOT) / 'config'
+    sources = read_runtime_sources(REPO_ROOT, catalog_path=config / 'runtime-environments.json')
+    source_path = config / 'extension-sources.json'
+    if source_path.is_file():
+        checkouts = msgspec.json.decode(source_path.read_bytes(), type=dict[str, str])
+        catalog = msgspec.json.decode((config / 'extensions.json').read_bytes(), type=ExtensionCatalog)
+        for extension in catalog.extensions:
+            name = extension.runtime.environment
+            if name is not None:
+                checkout = REPO_ROOT / checkouts[extension.extension_id].removeprefix('${F8_PACKAGE_ROOT}/')
+                if name in sources and sources[name][0] != checkout:
+                    raise ValueError('Integration snapshot runtime aliases collide; publish these extensions independently')
+                sources[name] = checkout, None
     manifests = {name: read_manifest(root) for name, (root, _) in sources.items()}
     runtime_names = list(sources)
     base_environment = 'platform-runtime' if 'platform-runtime' in runtime_names else DIST_RUNTIME_ENVIRONMENT_NAME
@@ -663,7 +702,7 @@ def _build_independent_runtime_manifests(dist_dir: Path) -> list[str]:
 
 def build_runtime_manifest(dist_dir: Path) -> list[str]:
     """Build local runtime wheels and portable, independently locked workspaces."""
-    if (REPO_ROOT / 'config/runtime-environments.json').is_file():
+    if (workspace_root(REPO_ROOT) / 'config/runtime-environments.json').is_file():
         return _build_independent_runtime_manifests(dist_dir)
     environments = _discover_launcher_runtime_environments()
     features = _discover_environment_feature_names(environment_names=environments)

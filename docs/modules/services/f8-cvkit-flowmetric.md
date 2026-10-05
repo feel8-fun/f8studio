@@ -5,7 +5,7 @@ No description.
 
 - Service class: `f8.cvkit.flowmetric`
 - Version: `0.0.1`
-- Source directory: `f8/cvkit/flow_metric`
+- Source directory: `services/f8.cvkit.flowmetric`
 - Tags: `cv`, `optical_flow`, `flow_metric`, `scalar_field`
 
 ## When to Use
@@ -31,10 +31,10 @@ No description.
 ### How to Run
 
 ```bash
-../linux/f8cvkit_flow_metric_service
+${F8_BUNDLE_ROOT}/f8cvkit_flow_metric_service
 ```
 
-- Workdir: `./`
+- Workdir: `${F8_BUNDLE_ROOT}`
 - Environment overrides: none
 
 ### Typical Inputs / Outputs

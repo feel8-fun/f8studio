@@ -5,7 +5,7 @@ MediaPipe single-person pose extraction service (33 landmarks).
 
 - Service class: `f8.mp.pose`
 - Version: `0.0.1`
-- Source directory: `f8/mp/pose`
+- Source directory: `services/f8.mp.pose`
 - Tags: `mediapipe`, `vision`, `human`, `pose`
 
 ## When to Use

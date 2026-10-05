@@ -12,8 +12,9 @@ WebStudio frontend/backend are always one release unit. The previous
 `config/studio-runtime/` aggregate workspace has been removed.
 
 Each Python extension owns its workspace and lock in its own repository.
-`config/runtime-environments.json` references these source workspaces for
-integrated development. Installed extension artifacts carry their own runtime
+`build/workspace/config/extension-sources.json` references extension source
+workspaces for integrated development; the generated `runtime-environments.json`
+lists bootstrap runtime providers. Installed extension artifacts carry their own runtime
 inputs. The previous top-level `runtimes/` profiles and feature generator have
 been removed. The root `pixi.toml` is a developer/CI workspace.
 

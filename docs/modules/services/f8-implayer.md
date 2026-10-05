@@ -5,7 +5,7 @@ C++ MPV-based player service with Zenoh latest-frame video output.
 
 - Service class: `f8.implayer`
 - Version: `0.0.1`
-- Source directory: `f8/implayer`
+- Source directory: `services/f8.implayer`
 - Tags: none
 
 ## When to Use
@@ -31,10 +31,10 @@ C++ MPV-based player service with Zenoh latest-frame video output.
 ### How to Run
 
 ```bash
-linux/f8implayer_service
+${F8_BUNDLE_ROOT}/f8implayer_service
 ```
 
-- Workdir: `./`
+- Workdir: `${F8_BUNDLE_ROOT}`
 - Environment overrides: none
 
 ### Typical Inputs / Outputs

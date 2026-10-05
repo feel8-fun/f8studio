@@ -59,7 +59,7 @@ enable_testing()
 
 # options
 option(BUILD_TESTS "Enable building of tests" OFF)
-option(F8_DEPLOY_SERVICE_RUNTIME "Deploy service runtime to runtime/bundles/... after build" ON)
+option(F8_DEPLOY_SERVICE_RUNTIME "Deploy service runtime to build/workspace/runtime/bundles/... after build" ON)
 option(F8_DEPLOY_SERVICE_RUNTIME_POST_BUILD "Run deploy as POST_BUILD step" ON)
 option(F8_DEPLOY_SERVICE_CLEAN "Clean runtime/bundles/<bundle>/<version>/<platform> before deploy" ON)
 option(F8_WITH_ZENOH "Enable Zenoh C/C++ runtime backend when zenohcxx/zenohc are available" ON)
@@ -88,7 +88,7 @@ set(CMAKE_DEBUG_POSTFIX "_d")
 
 find_package(Threads REQUIRED)
 
-set(F8_SERVICE_BUNDLES_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/runtime/bundles")
+set(F8_SERVICE_BUNDLES_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/build/workspace/runtime/bundles")
 
 set(F8SDK_BUILD_TESTS ${BUILD_TESTS})
 add_subdirectory(sdk)

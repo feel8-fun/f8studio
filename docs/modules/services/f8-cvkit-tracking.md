@@ -5,7 +5,7 @@ No description.
 
 - Service class: `f8.cvkit.tracking`
 - Version: `0.0.1`
-- Source directory: `f8/cvkit/tracking`
+- Source directory: `services/f8.cvkit.tracking`
 - Tags: `cv`, `tracking`
 
 ## When to Use
@@ -31,10 +31,10 @@ No description.
 ### How to Run
 
 ```bash
-../linux/f8cvkit_tracking_service
+${F8_BUNDLE_ROOT}/f8cvkit_tracking_service
 ```
 
-- Workdir: `./`
+- Workdir: `${F8_BUNDLE_ROOT}`
 - Environment overrides: none
 
 ### Typical Inputs / Outputs
@@ -49,7 +49,7 @@ No description.
 | --- | --- | --- | --- | --- | --- |
 | `initSelect` | `rw` | `true` | `true` | `string / enum[first_box, closest_center, largest_area, highest_score] / default=closest_center` | Init bbox selection strategy: first_box \| closest_center \| largest_area \| highest_score. |
 | `trackerKind` | `rw` | `true` | `true` | `string / enum[csrt, kcf, mil, nano, vit] / default=csrt` | OpenCV tracker backend: csrt \| kcf \| mil \| nano \| vit. |
-| `modelDir` | `rw` | `true` | `false` | `string / default=models` | Directory containing downloaded tracker model files for nano \| vit. |
+| `modelDir` | `rw` | `true` | `false` | `string / default=` | Directory containing downloaded tracker model files for nano \| vit. |
 | `autoDownloadModels` | `rw` | `true` | `false` | `boolean / default=True` | Auto-download missing tracker model files when a model-based tracker is selected. |
 | `maxTrackingFps` | `rw` | `true` | `false` | `number / default=30.0` | Maximum tracker update rate. Set to 0 to process every incoming video frame. |
 | `stopTrackingCooldownMs` | `rw` | `true` | `true` | `integer / default=1000` | After stopTracking, ignore initBox for this many ms. Set to 0 to disable. |
@@ -62,7 +62,7 @@ No description.
 
 - `initSelect` (Init Select, `rw`): Init bbox selection strategy: first_box | closest_center | largest_area | highest_score. Schema: `string / enum[first_box, closest_center, largest_area, highest_score] / default=closest_center`.
 - `trackerKind` (Tracker Kind, `rw`): OpenCV tracker backend: csrt | kcf | mil | nano | vit. Schema: `string / enum[csrt, kcf, mil, nano, vit] / default=csrt`.
-- `modelDir` (Model Dir, `rw`): Directory containing downloaded tracker model files for nano | vit. Schema: `string / default=models`.
+- `modelDir` (Model Dir, `rw`): Directory containing downloaded tracker model files for nano | vit. Schema: `string / default=`.
 - `autoDownloadModels` (Auto Download Models, `rw`): Auto-download missing tracker model files when a model-based tracker is selected. Schema: `boolean / default=True`.
 - `maxTrackingFps` (Max Tracking FPS, `rw`): Maximum tracker update rate. Set to 0 to process every incoming video frame. Schema: `number / default=30.0`.
 - `stopTrackingCooldownMs` (Stop Cooldown (ms), `rw`): After stopTracking, ignore initBox for this many ms. Set to 0 to disable. Schema: `integer / default=1000`.

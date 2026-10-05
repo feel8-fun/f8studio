@@ -14,6 +14,7 @@ For an existing checkout:
 ```bash
 git submodule update --init --recursive
 pixi install --locked -e build-check -e cpp
+pixi run --locked -e build-check workspace_prepare
 ```
 
 Python extensions own their source workspaces. Before running an extension from
@@ -62,8 +63,11 @@ part of Conan binary package IDs, so packages built with different toolchains
 cannot be mistaken for compatible binaries. The first build may compile native
 dependencies; subsequent builds with the same lock reuse them.
 
-Pixi and npm download caches outside the checkout are reused. Model weights under
-`resources/models/` are inputs and are not removed. Legacy runtime migration
+Pixi and npm download caches outside the checkout are reused. Models live in
+`${F8_MODEL_ROOT}` (by default the platform user data directory)
+and are not removed. Extension-owned model declarations stay in their source
+repositories. `build/workspace/config` and runtime bundles are regenerated from
+those declarations. Legacy runtime migration
 backups, old release smoke workspaces and generated documentation are removed.
 Pytest, Ruff, import checks and compiler temporary files write into `build/cache/`.
 

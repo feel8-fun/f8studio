@@ -38,6 +38,7 @@ jobs:
           pixi-version: v0.81.0
           environments: build-check
           cache: true
+      - run: pixi run --locked -e build-check workspace_catalog
       - run: pixi run --locked -e build-check pytest -q
       - run: pixi run --locked -e build-check python scripts/extension_workspace.py check
       - run: pixi run --locked -e build-check extensions_check

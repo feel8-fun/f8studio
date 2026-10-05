@@ -5,7 +5,7 @@ C++ execution engine for high-frequency Feel8 operator graphs.
 
 - Service class: `f8.cppengine`
 - Version: `0.0.1`
-- Source directory: `f8/cppengine`
+- Source directory: `services/f8.cppengine`
 - Tags: `engine`, `cpp`, `native`
 
 ## When to Use
@@ -31,10 +31,10 @@ C++ execution engine for high-frequency Feel8 operator graphs.
 ### How to Run
 
 ```bash
-linux/f8cppengine_service
+${F8_BUNDLE_ROOT}/f8cppengine_service
 ```
 
-- Workdir: `./`
+- Workdir: `${F8_BUNDLE_ROOT}`
 - Environment overrides: none
 
 ### Typical Inputs / Outputs
@@ -572,6 +572,73 @@ Evaluate a C++ scalar expression using numeric input values. Python-only syntax 
 
 - No bundled scenario references this node yet.
 
+<a id="operator-f8-data-mux"></a>
+### Data Mux (`f8.data_mux`)
+Data Mux operator described for C++ engine graphs. Native runtime is pending.
+
+#### When to Use
+
+- `Data Mux` describes a planned C++ Engine operator for selecting one JSON-compatible data input and exposing it through `out`.
+- Its native runtime is not implemented yet. Use the `f8.data_mux` operator in PyEngine when a graph needs working data selection today.
+
+#### Common Wiring Patterns
+
+- The declared inputs are `branch_a`, `branch_b`, `branch_c`, and `default`; the declared output is `out`. Additional named data inputs may be added in the graph definition.
+- Set `selectedInput` to the name of the desired input port. The declared `resolvedInput` state is intended to show which port was used after fallback.
+- The declared `exec` input and output allow a selection step to sit in an execution chain once a native implementation exists.
+
+#### Pitfalls / Gotchas
+
+- The C++ node currently reports `CPP_OPERATOR_UNIMPLEMENTED`: it emits no exec output, and requests for `out` return null. Wiring it into a deployed C++ graph will not select or forward data.
+- Adding ports or changing `selectedInput` does not enable the pending runtime. Build the active path with PyEngine until native support is implemented.
+
+#### Operator Reference
+
+- Exec in ports: `exec`
+- Exec out ports: `exec`
+
+##### Typical Inputs / Outputs
+
+- Exec inputs: `exec`
+- Exec outputs: `exec`
+- Data inputs: `branch_a`, `branch_b`, `branch_c`, `default`
+- Data outputs: `out`
+
+##### State Fields
+
+| Name | Access | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- | --- |
+| `selectedInput` | `rw` | `true` | `true` | `string / default=branch_a` | Data input port to pull for the selected output. |
+| `resolvedInput` | `ro` | `true` | `true` | `string / default=` | Readonly input port actually pulled after fallback. |
+| `svcId` | `ro` | `true` | `false` | `string` | Readonly: current service instance id (svcId). |
+| `operatorId` | `ro` | `true` | `false` | `string` | Readonly: current operator/node id (operatorId). |
+
+##### Key Fields That Matter
+
+- `selectedInput` (Selected Input, `rw`): Data input port to pull for the selected output. Schema: `string / default=branch_a`.
+- `resolvedInput` (Resolved Input, `ro`): Readonly input port actually pulled after fallback. Schema: `string / default=`.
+- `svcId` (Service Id, `ro`): Readonly: current service instance id (svcId). Schema: `string`.
+- `operatorId` (Operator Id, `ro`): Readonly: current operator/node id (operatorId). Schema: `string`.
+
+##### Data Input Ports
+
+| Name | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- |
+| `branch_a` | `false` | `true` | `any` | Branch A input. |
+| `branch_b` | `false` | `true` | `any` | Branch B input. |
+| `branch_c` | `false` | `true` | `any` | Branch C input. |
+| `default` | `false` | `true` | `any` | Fallback input. |
+
+##### Data Output Ports
+
+| Name | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- |
+| `out` | `false` | `true` | `any` | Selected data output. |
+
+#### Related Scenarios
+
+- No bundled scenario references this node yet.
+
 <a id="operator-f8-data-pick"></a>
 ### Data Pick (`f8.data_pick`)
 Pick a value from a JSON-compatible input payload using a small path such as center.y, pos[1], or ["weird-key"].score.
@@ -777,6 +844,124 @@ Envelope operator described for C++ engine graphs. Native runtime is pending.
 | `lower` | `false` | `true` | `any` | Lower envelope. |
 | `upper` | `false` | `true` | `any` | Upper envelope. |
 | `normalized` | `false` | `true` | `any` | Normalized output. |
+
+#### Related Scenarios
+
+- No bundled scenario references this node yet.
+
+<a id="operator-f8-exec-branch"></a>
+### Exec Branch (`f8.exec_branch`)
+Exec Branch operator described for C++ engine graphs. Native runtime is pending.
+
+#### When to Use
+
+- Use this declaration when designing a C++ graph with mutually exclusive exec branches.
+- The native runtime is pending. Use PyEngine's `Exec Branch` for executable graphs.
+
+#### Common Wiring Patterns
+
+- Connect a trigger to `exec` and map `branch_a`, `branch_b`, and `branch_c` to separate paths.
+- Select a port with `selectedBranch`; reserve `default` for an explicit fallback.
+- Rejoin exclusive paths with `Exec Merge` when preparing a future native graph.
+
+#### Pitfalls / Gotchas
+
+- The current C++ implementation reports `CPP_OPERATOR_UNIMPLEMENTED` and emits no exec outputs.
+- The selector represents low-frequency mode configuration.
+- Use `Sequence` when every branch must run in order.
+
+#### Operator Reference
+
+- Exec in ports: `exec`
+- Exec out ports: `branch_a`, `branch_b`, `branch_c`, `default`
+
+##### Typical Inputs / Outputs
+
+- Exec inputs: `exec`
+- Exec outputs: `branch_a`, `branch_b`, `branch_c`, `default`
+- Data inputs: none
+- Data outputs: none
+
+##### State Fields
+
+| Name | Access | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- | --- |
+| `selectedBranch` | `rw` | `true` | `true` | `string / default=branch_a` | Exec output port to emit for each trigger. |
+| `resolvedBranch` | `ro` | `true` | `true` | `string / default=` | Readonly branch output actually emitted after fallback. |
+| `svcId` | `ro` | `true` | `false` | `string` | Readonly: current service instance id (svcId). |
+| `operatorId` | `ro` | `true` | `false` | `string` | Readonly: current operator/node id (operatorId). |
+
+##### Key Fields That Matter
+
+- `selectedBranch` (Selected Branch, `rw`): Exec output port to emit for each trigger. Schema: `string / default=branch_a`.
+- `resolvedBranch` (Resolved Branch, `ro`): Readonly branch output actually emitted after fallback. Schema: `string / default=`.
+- `svcId` (Service Id, `ro`): Readonly: current service instance id (svcId). Schema: `string`.
+- `operatorId` (Operator Id, `ro`): Readonly: current operator/node id (operatorId). Schema: `string`.
+
+##### Data Input Ports
+
+_None_
+
+##### Data Output Ports
+
+_None_
+
+#### Related Scenarios
+
+- No bundled scenario references this node yet.
+
+<a id="operator-f8-exec-merge"></a>
+### Exec Merge (`f8.exec_merge`)
+Exec Merge operator described for C++ engine graphs. Native runtime is pending.
+
+#### When to Use
+
+- Use this declaration to describe a continuation shared by mutually exclusive C++ exec branches.
+- The native runtime is pending. Use PyEngine's `Exec Merge` for executable graphs.
+
+#### Common Wiring Patterns
+
+- Connect each branch's terminal exec output to a named merge input.
+- Route `exec` to the common continuation.
+- Select branch-specific data separately with `Data Mux`.
+
+#### Pitfalls / Gotchas
+
+- The current C++ implementation reports `CPP_OPERATOR_UNIMPLEMENTED` and emits no exec outputs.
+- This contract does not promise deduplication of simultaneous triggers.
+- Merging control flow does not combine data values.
+
+#### Operator Reference
+
+- Exec in ports: `branch_a`, `branch_b`, `branch_c`
+- Exec out ports: `exec`
+
+##### Typical Inputs / Outputs
+
+- Exec inputs: `branch_a`, `branch_b`, `branch_c`
+- Exec outputs: `exec`
+- Data inputs: none
+- Data outputs: none
+
+##### State Fields
+
+| Name | Access | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- | --- |
+| `svcId` | `ro` | `true` | `false` | `string` | Readonly: current service instance id (svcId). |
+| `operatorId` | `ro` | `true` | `false` | `string` | Readonly: current operator/node id (operatorId). |
+
+##### Key Fields That Matter
+
+- `svcId` (Service Id, `ro`): Readonly: current service instance id (svcId). Schema: `string`.
+- `operatorId` (Operator Id, `ro`): Readonly: current operator/node id (operatorId). Schema: `string`.
+
+##### Data Input Ports
+
+_None_
+
+##### Data Output Ports
+
+_None_
 
 #### Related Scenarios
 
@@ -1978,6 +2163,76 @@ _None_
 
 - No bundled scenario references this node yet.
 
+<a id="operator-f8-relative-pose-axes"></a>
+### Relative Pose Axes (`f8.relative_pose_axes`)
+Relative Pose Axes operator described for C++ engine graphs. Native runtime is pending.
+
+#### When to Use
+
+- Use this declaration when designing translation and rotation signals relative to a reference bone.
+- The native runtime is pending. Use PyEngine's `Relative Pose Axes` for live pose calculations.
+
+#### Common Wiring Patterns
+
+- Feed bone poses into `referenceBone` and `targetBone`.
+- Select `primaryAxis` and inspect the planned `L0/L1/L2` and `R0/R1/R2` outputs.
+- Normalize, limit, and smooth geometric values before device output.
+
+#### Pitfalls / Gotchas
+
+- The current C++ implementation reports `CPP_OPERATOR_UNIMPLEMENTED` and returns null data outputs.
+- Local axes depend on the reference bone's orientation.
+- Missing or stale poses require explicit downstream validity checks.
+
+#### Operator Reference
+
+- Exec in ports: none
+- Exec out ports: none
+
+##### Typical Inputs / Outputs
+
+- Data inputs: `referenceBone`, `targetBone`
+- Data outputs: `L0`, `L1`, `L2`, `R0`, `R1`, `R2`, `status`
+
+##### State Fields
+
+| Name | Access | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- | --- |
+| `primaryAxis` | `rw` | `true` | `true` | `string / enum[local_x, local_y, local_z, distance] / default=local_y` | Reference-local axis used for L0. |
+| `invertPrimary` | `rw` | `true` | `true` | `boolean / default=False` | Invert the raw L0 direction before normalization. |
+| `svcId` | `ro` | `true` | `false` | `string` | Readonly: current service instance id (svcId). |
+| `operatorId` | `ro` | `true` | `false` | `string` | Readonly: current operator/node id (operatorId). |
+
+##### Key Fields That Matter
+
+- `primaryAxis` (Primary Axis, `rw`): Reference-local axis used for L0. Schema: `string / enum[local_x, local_y, local_z, distance] / default=local_y`.
+- `invertPrimary` (Invert L0, `rw`): Invert the raw L0 direction before normalization. Schema: `boolean / default=False`.
+- `svcId` (Service Id, `ro`): Readonly: current service instance id (svcId). Schema: `string`.
+- `operatorId` (Operator Id, `ro`): Readonly: current operator/node id (operatorId). Schema: `string`.
+
+##### Data Input Ports
+
+| Name | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- |
+| `referenceBone` | `true` | `true` | `object{pos, rot}` | Reference bone with pos and rot. |
+| `targetBone` | `true` | `true` | `object{pos, rot}` | Target bone with pos and rot. |
+
+##### Data Output Ports
+
+| Name | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- |
+| `L0` | `true` | `true` | `number / default=0.0` | Raw relative L0 signal. |
+| `L1` | `true` | `true` | `number / default=0.0` | Raw relative L1 signal. |
+| `L2` | `true` | `true` | `number / default=0.0` | Raw relative L2 signal. |
+| `R0` | `true` | `true` | `number / default=0.0` | Raw relative R0 signal. |
+| `R1` | `true` | `true` | `number / default=0.0` | Raw relative R1 signal. |
+| `R2` | `true` | `true` | `number / default=0.0` | Raw relative R2 signal. |
+| `status` | `true` | `true` | `object{L0, L1, L2, R0, ...}` | Per-sample pose calculation status. |
+
+#### Related Scenarios
+
+- No bundled scenario references this node yet.
+
 <a id="operator-f8-replayer"></a>
 ### Replayer (`f8.replayer`)
 Replayer operator described for C++ engine graphs. Native runtime is pending.
@@ -2320,6 +2575,79 @@ Skeleton Decoder operator described for C++ engine graphs. Native runtime is pen
 
 - No bundled scenario references this node yet.
 
+<a id="operator-f8-skeleton-selector"></a>
+### Skeleton Selector (`f8.skeleton_selector`)
+Skeleton Selector operator described for C++ engine graphs. Native runtime is pending.
+
+#### When to Use
+
+- Use this declaration when planning stable character selection by exporter profile, role, and role index.
+- The native runtime is pending. Use PyEngine's `Skeleton Selector` to process live streams.
+
+#### Common Wiring Patterns
+
+- Connect decoded skeleton lists to `skeletons` and the selected `skeleton` to a bone selector.
+- Set `profileId`, `role`, and zero-based `roleIndex` for the desired character.
+- For legacy streams, declare `fallbackModelName` and enable `allowLegacyFallback` explicitly.
+
+#### Pitfalls / Gotchas
+
+- The current C++ implementation reports `CPP_OPERATOR_UNIMPLEMENTED` and returns null data outputs.
+- Model names do not establish stable semantic roles in new exporter protocols.
+- Keep selection status on the data channel and treat missing characters as invalid input.
+
+#### Operator Reference
+
+- Exec in ports: none
+- Exec out ports: none
+
+##### Typical Inputs / Outputs
+
+- Data inputs: `skeletons`
+- Data outputs: `skeleton`, `stableKey`, `status`
+
+##### State Fields
+
+| Name | Access | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- | --- |
+| `profileId` | `rw` | `true` | `true` | `string / default=` | Exporter game profile ID. Empty accepts any profile. |
+| `role` | `rw` | `true` | `true` | `string / enum[, male, female, other] / default=` | Stable character role. |
+| `roleIndex` | `rw` | `true` | `true` | `integer / default=0` | Zero-based index within the selected role. |
+| `fallbackModelName` | `rw` | `true` | `false` | `string / default=` | Exact modelName used only for LMEX v1 streams. |
+| `allowLegacyFallback` | `rw` | `true` | `false` | `boolean / default=True` | Allow exact modelName fallback for LMEX v1 packets. |
+| `availableKeys` | `ro` | `true` | `false` | `array[string]` | Low-frequency list of currently available stable keys. |
+| `svcId` | `ro` | `true` | `false` | `string` | Readonly: current service instance id (svcId). |
+| `operatorId` | `ro` | `true` | `false` | `string` | Readonly: current operator/node id (operatorId). |
+
+##### Key Fields That Matter
+
+- `profileId` (Profile ID, `rw`): Exporter game profile ID. Empty accepts any profile. Schema: `string / default=`.
+- `role` (Role, `rw`): Stable character role. Schema: `string / enum[, male, female, other] / default=`.
+- `roleIndex` (Role Index, `rw`): Zero-based index within the selected role. Schema: `integer / default=0`.
+- `fallbackModelName` (Legacy Model, `rw`): Exact modelName used only for LMEX v1 streams. Schema: `string / default=`.
+- `allowLegacyFallback` (Legacy Fallback, `rw`): Allow exact modelName fallback for LMEX v1 packets. Schema: `boolean / default=True`.
+- `availableKeys` (Available Characters, `ro`): Low-frequency list of currently available stable keys. Schema: `array[string]`.
+- `svcId` (Service Id, `ro`): Readonly: current service instance id (svcId). Schema: `string`.
+- `operatorId` (Operator Id, `ro`): Readonly: current operator/node id (operatorId). Schema: `string`.
+
+##### Data Input Ports
+
+| Name | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- |
+| `skeletons` | `true` | `true` | `any` | Decoded skeleton list. |
+
+##### Data Output Ports
+
+| Name | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- |
+| `skeleton` | `true` | `true` | `any` | Selected skeleton. |
+| `stableKey` | `true` | `true` | `string / default=` | Stable profile/role/index key. |
+| `status` | `true` | `true` | `object{profileId, reason, role, roleIndex, ...}` | Selection status on the data channel. |
+
+#### Related Scenarios
+
+- No bundled scenario references this node yet.
+
 <a id="operator-f8-smooth-filter"></a>
 ### Smooth Filter (`f8.smooth_filter`)
 Smooths scalar or vector inputs with EMA/DEMA/One Euro filtering.
@@ -2513,6 +2841,72 @@ _None_
 ##### Data Output Ports
 
 _None_
+
+#### Related Scenarios
+
+- No bundled scenario references this node yet.
+
+<a id="operator-f8-stream-watchdog"></a>
+### Stream Watchdog (`f8.stream_watchdog`)
+Stream Watchdog operator described for C++ engine graphs. Native runtime is pending.
+
+#### When to Use
+
+- Use this declaration when designing freshness checks for timestamped streaming data.
+- The native runtime is pending. Use PyEngine's `Stream Watchdog` for executable freshness gates.
+
+#### Common Wiring Patterns
+
+- Connect timestamped input to `value` and a periodic trigger to `check`.
+- Configure `timeoutMs` for the expected stream cadence.
+- Use the intended `valid` exec output to gate a downstream output stage.
+
+#### Pitfalls / Gotchas
+
+- The current C++ implementation reports `CPP_OPERATOR_UNIMPLEMENTED`, returns null data, and emits no exec outputs.
+- This declaration currently provides no operational freshness protection.
+- Sample age and validity belong on data or monitor channels; arming remains a separate configuration choice.
+
+#### Operator Reference
+
+- Exec in ports: `check`
+- Exec out ports: `valid`
+
+##### Typical Inputs / Outputs
+
+- Exec inputs: `check`
+- Exec outputs: `valid`
+- Data inputs: `value`
+- Data outputs: `value`, `valid`, `ageMs`, `status`
+
+##### State Fields
+
+| Name | Access | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- | --- |
+| `timeoutMs` | `rw` | `true` | `true` | `integer / default=250` | Maximum input age before output and exec flow are blocked. |
+| `svcId` | `ro` | `true` | `false` | `string` | Readonly: current service instance id (svcId). |
+| `operatorId` | `ro` | `true` | `false` | `string` | Readonly: current operator/node id (operatorId). |
+
+##### Key Fields That Matter
+
+- `timeoutMs` (Timeout (ms), `rw`): Maximum input age before output and exec flow are blocked. Schema: `integer / default=250`.
+- `svcId` (Service Id, `ro`): Readonly: current service instance id (svcId). Schema: `string`.
+- `operatorId` (Operator Id, `ro`): Readonly: current operator/node id (operatorId). Schema: `string`.
+
+##### Data Input Ports
+
+| Name | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- |
+| `value` | `true` | `true` | `any` | Timestamped stream value. |
+
+##### Data Output Ports
+
+| Name | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- |
+| `value` | `true` | `true` | `any` | Input while fresh, otherwise null. |
+| `valid` | `true` | `true` | `boolean / default=False` | Whether the input is fresh. |
+| `ageMs` | `true` | `true` | `number / default=0.0` | Age of the oldest input sample. |
+| `status` | `true` | `true` | `object{ageMs, reason, timeoutMs, valid}` | Per-check freshness status. |
 
 #### Related Scenarios
 

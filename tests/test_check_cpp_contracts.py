@@ -4,12 +4,13 @@ from unittest.mock import patch
 import pytest
 
 from scripts.quality.check_cpp_contracts import PRODUCTS, service_executables, validate_executable_paths
+from scripts.extension_workspace import workspace_index
 
 
 @pytest.mark.parametrize('platform,suffix', [('win32', '.exe'), ('linux', '')])
 def test_deployed_products_resolve_from_platform_manifests(platform: str, suffix: str) -> None:
     with patch('sys.platform', platform):
-        executables = service_executables(Path('config/service-index.json'))
+        executables = service_executables(workspace_index())
     assert [path.name for path in executables] == [name + suffix for name in PRODUCTS]
     assert all(path.is_absolute() and 'runtime/bundles' in path.as_posix() for path in executables)
     assert all(('win' if platform == 'win32' else 'linux') == path.parent.name for path in executables)

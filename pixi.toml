@@ -39,8 +39,10 @@ f8pysdk = { path = "sdk/python", editable = true }
 eclipse-zenoh = ">=1.9.0,<1.10"
 
 [feature.sdk.tasks]
-install_services = "python scripts/install_services.py"
-update_describes = "python scripts/install_services.py --refresh"
+workspace_catalog = "python scripts/extension_workspace.py sync"
+workspace_prepare = { cmd = "python scripts/workspace_inputs.py prepare", depends-on = ["workspace_catalog"] }
+install_services = { cmd = "python scripts/install_services.py", depends-on = ["workspace_catalog"] }
+update_describes = { cmd = "python scripts/install_services.py --refresh", depends-on = ["workspace_catalog"] }
 protocol_codegen_py = "pixi run --manifest-path sdk/pixi.toml codegen_py"
 protocol_codegen_cpp = "pixi run --manifest-path sdk/pixi.toml codegen_cpp"
 protocol_codegen_all = "pixi run --manifest-path sdk/pixi.toml codegen && python scripts/web_studio/generate_contracts.py"
@@ -53,7 +55,7 @@ ruff = ">=0.12.0,<0.13"
 import-linter = ">=2.11,<3"
 
 [feature.test.tasks]
-pytest = "python -m pytest"
+pytest = { cmd = "python -m pytest", depends-on = ["workspace_catalog"] }
 pytest_sdk = "pixi run --manifest-path sdk/pixi.toml test"
 # Keep the initial repo-level static guards narrow and green. We can widen the
 # checked surface incrementally as more packages are annotated and cleaned up.
@@ -90,11 +92,13 @@ pyyaml = ">=6.0.3,<7"
 mkdocs-static-i18n = ">=1.2.3,<2"
 
 [feature.doc.tasks]
-doc_gen = "python scripts/generate_service_docs.py && python scripts/generate_node_atlas.py"
+# Inventory generation uses the SDK and generated integration catalog; the doc
+# environment remains dedicated to the static site renderer.
+doc_gen = "pixi run --locked -e build-check workspace_catalog && pixi run --locked -e build-check python scripts/generate_service_docs.py && pixi run --locked -e build-check python scripts/generate_node_atlas.py"
 doc_build = "zensical build"
 doc_serve = "python scripts/zensical_serve_pretty.py"
 doc_serve_raw = "zensical serve"
-doc_check = "python scripts/generate_service_docs.py --check && python scripts/generate_node_atlas.py --check && python scripts/check_docs_nav.py && python scripts/check_docs_links.py"
+doc_check = "pixi run --locked -e build-check workspace_catalog && pixi run --locked -e build-check python scripts/generate_service_docs.py --check && pixi run --locked -e build-check python scripts/generate_node_atlas.py --check && python scripts/check_docs_nav.py && python scripts/check_docs_links.py"
 
 [feature.cpp.dependencies]
 pip = ">=26.0.1,<27"
@@ -138,7 +142,6 @@ msgspec = ">=0.18.6,<1"
 
 [feature.ci.tasks]
 workspace_snapshot = "python scripts/workspace_ci.py"
-workspace_prepare = "python scripts/workspace_inputs.py prepare"
 workspace_clean = "python scripts/workspace_clean.py"
 
 [feature.web-studio.target.linux-64.dependencies]
@@ -162,10 +165,10 @@ mcp = { version = ">=1.24,<2", extras = ["cli"] }
 
 [feature.web-studio.tasks]
 studio_media_gateway = "python -m f8media_gateway"
-studio_server = "python -m f8studio_server"
-studio_launch = "python -m f8studio_server --open-browser"
-studio_cli = "python -m f8studio_server.cli"
-studio_mcp = "python -m f8studio_server.mcp_server"
+studio_server = { cmd = "python -m f8studio_server", depends-on = ["workspace_catalog"] }
+studio_launch = { cmd = "python -m f8studio_server --open-browser", depends-on = ["workspace_catalog"] }
+studio_cli = { cmd = "python -m f8studio_server.cli", depends-on = ["workspace_catalog"] }
+studio_mcp = { cmd = "python -m f8studio_server.mcp_server", depends-on = ["workspace_catalog"] }
 studio_agent_model_smoke = "python scripts/web_studio/probe_agent_model.py"
 unitymods_validate = "python scripts/unitymods_ci.py validate"
 unitymods_build = "python scripts/unitymods_ci.py build"

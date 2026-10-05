@@ -96,9 +96,5 @@ extensions/f8webstudio/f8studio_web/test-results/
 extensions/f8webstudio/f8studio_web/playwright-report/
 
 
-# Installed model binaries, independent of service bundles.
-resources/models/**/*.task
-resources/models/**/*.onnx
-
-# Generated versioned service bundles and local migration backups.
-/runtime/
+# Downloaded models live outside the source workspace. Development registrations
+# and runtime bundles live under the ignored build/workspace directory.

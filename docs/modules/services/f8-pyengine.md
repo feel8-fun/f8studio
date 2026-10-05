@@ -5,7 +5,7 @@ Python-based execution engine for Feel8 operators.
 
 - Service class: `f8.pyengine`
 - Version: `0.0.1`
-- Source directory: `f8/engine`
+- Source directory: `services/f8.pyengine`
 - Tags: `engine`, `python`, `py`
 
 ## When to Use
@@ -104,7 +104,7 @@ Source operator that generates periodic exec ticks.
 
 - Exec outputs: `exec`
 - Data inputs: none
-- Data outputs: `processingMs`, `intervalMs`, `latenessMs`
+- Data outputs: `elapsedSec`, `processingMs`, `intervalMs`, `latenessMs`
 
 ##### State Fields
 
@@ -130,6 +130,7 @@ _None_
 
 | Name | Required | On Node | Schema | Description |
 | --- | --- | --- | --- | --- |
+| `elapsedSec` | `true` | `true` | `number` | Seconds since this Tick entrypoint started, sampled on each tick. |
 | `processingMs` | `true` | `false` | `integer / default=0` | Per-tick processing time in milliseconds (excluding sleep). |
 | `intervalMs` | `true` | `false` | `integer / default=0` | Actual interval between tick starts in milliseconds. |
 | `latenessMs` | `true` | `false` | `integer / default=0` | How late this tick started relative to its scheduled deadline (ms). |
@@ -191,6 +192,219 @@ _None_
 ##### Data Output Ports
 
 _None_
+
+#### Related Scenarios
+
+- No bundled scenario references this node yet.
+
+<a id="operator-f8-exec-branch"></a>
+### Exec Branch (`f8.exec_branch`)
+Mutually-exclusive exec branch selected by low-frequency state.
+
+#### When to Use
+
+- Use `Exec Branch` when one low-frequency mode selection must route an exec
+  event into exactly one branch.
+- Prefer it over duplicating condition expressions across several trigger
+  nodes; the selected branch remains visible in graph state.
+- Pair it with `Exec Merge` when mutually exclusive branches later rejoin.
+
+#### Common Wiring Patterns
+
+- **Mode Router**: Connect one trigger to `exec`, choose the branch in state,
+  and wire each named exec output to one implementation path.
+- **Safe Fallback**: Reserve one branch for an idle or disarmed path so every
+  accepted mode has explicit behavior.
+- **Branch And Rejoin**: Route outputs through separate processing nodes and
+  connect their terminal exec outputs to one `Exec Merge`.
+
+#### Pitfalls / Gotchas
+
+- The selector is low-frequency configuration state; do not rewrite it for
+  every data frame.
+- Only the selected output fires. Do not use this node when every branch must
+  run; use `Sequence` for ordered fan-out.
+- Keep branch labels and downstream purpose aligned so recipes remain readable.
+
+#### Operator Reference
+
+- Exec in ports: `exec`
+- Exec out ports: `branch_a`, `branch_b`, `branch_c`, `default`
+
+##### Typical Inputs / Outputs
+
+- Exec inputs: `exec`
+- Exec outputs: `branch_a`, `branch_b`, `branch_c`, `default`
+- Data inputs: none
+- Data outputs: none
+
+##### State Fields
+
+| Name | Access | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- | --- |
+| `selectedBranch` | `rw` | `true` | `true` | `string / default=branch_a` | Exec output port to emit for each trigger. |
+| `resolvedBranch` | `ro` | `true` | `true` | `string / default=` | Readonly branch output actually emitted after fallback. |
+| `svcId` | `ro` | `true` | `false` | `string` | Readonly: current service instance id (svcId). |
+| `operatorId` | `ro` | `true` | `false` | `string` | Readonly: current operator/node id (operatorId). |
+
+##### Key Fields That Matter
+
+- `selectedBranch` (Selected Branch, `rw`): Exec output port to emit for each trigger. Schema: `string / default=branch_a`.
+- `resolvedBranch` (Resolved Branch, `ro`): Readonly branch output actually emitted after fallback. Schema: `string / default=`.
+- `svcId` (Service Id, `ro`): Readonly: current service instance id (svcId). Schema: `string`.
+- `operatorId` (Operator Id, `ro`): Readonly: current operator/node id (operatorId). Schema: `string`.
+
+##### Data Input Ports
+
+_None_
+
+##### Data Output Ports
+
+_None_
+
+#### Related Scenarios
+
+- No bundled scenario references this node yet.
+
+<a id="operator-f8-exec-merge"></a>
+### Exec Merge (`f8.exec_merge`)
+Merge mutually-exclusive exec branches into one continuation.
+
+#### When to Use
+
+- Use `Exec Merge` to join mutually exclusive control-flow branches into one
+  continuation.
+- Use it after `Exec Branch` when all modes should eventually trigger the same
+  downstream output stage.
+- Keep it limited to control flow; data selection belongs in `Data Mux`.
+
+#### Common Wiring Patterns
+
+- **Mode Rejoin**: Connect the terminal exec output of each exclusive branch to
+  a merge input, then wire the single output to the shared continuation.
+- **Shared Output Rack**: Merge several mode-specific preparation paths before
+  one guarded device-output trigger.
+- **Readable Layout**: Place it at the visual convergence point so branch
+  ownership is obvious on the canvas.
+
+#### Pitfalls / Gotchas
+
+- The node does not deduplicate simultaneous triggers. Its intended contract is
+  mutually exclusive input branches.
+- Merging exec flow does not merge or select data values. Pair it with an
+  explicit `Data Mux` when downstream data also varies by mode.
+- Preserve watchdog and arm gates after the merge when the continuation reaches
+  physical output.
+
+#### Operator Reference
+
+- Exec in ports: `branch_a`, `branch_b`, `branch_c`
+- Exec out ports: `exec`
+
+##### Typical Inputs / Outputs
+
+- Exec inputs: `branch_a`, `branch_b`, `branch_c`
+- Exec outputs: `exec`
+- Data inputs: none
+- Data outputs: none
+
+##### State Fields
+
+| Name | Access | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- | --- |
+| `svcId` | `ro` | `true` | `false` | `string` | Readonly: current service instance id (svcId). |
+| `operatorId` | `ro` | `true` | `false` | `string` | Readonly: current operator/node id (operatorId). |
+
+##### Key Fields That Matter
+
+- `svcId` (Service Id, `ro`): Readonly: current service instance id (svcId). Schema: `string`.
+- `operatorId` (Operator Id, `ro`): Readonly: current operator/node id (operatorId). Schema: `string`.
+
+##### Data Input Ports
+
+_None_
+
+##### Data Output Ports
+
+_None_
+
+#### Related Scenarios
+
+- No bundled scenario references this node yet.
+
+<a id="operator-f8-data-mux"></a>
+### Data Mux (`f8.data_mux`)
+Select one data input by low-frequency state and expose it as one output.
+
+#### When to Use
+
+- Use `Data Mux` when one low-frequency mode selects which named data input is
+  exposed on a shared output.
+- Pair it with `Exec Branch` for graphs that switch both control flow and data
+  source using the same semantic mode.
+- Use it to feed one normalization or output rack from several mutually
+  exclusive motion strategies.
+
+#### Common Wiring Patterns
+
+- **Mode Data Selection**: Connect each mode's value to a named input, set the
+  selector state, and route the single output into shared processing.
+- **Branch/Mux Pair**: Keep branch and mux selector values identical so exec
+  flow and selected data cannot disagree.
+- **Fallback Value**: Provide an explicit idle input rather than relying on a
+  stale value from a previously active mode.
+
+#### Pitfalls / Gotchas
+
+- The selector is configuration state, not per-frame telemetry. Use ordinary
+  graph data flow for high-frequency switching.
+- An unconnected selected input cannot provide valid fresh data. Downstream
+  safety logic must treat that condition explicitly.
+- `Data Mux` selects; it does not blend. Use a mixer operator when transitions
+  must interpolate between sources.
+
+#### Operator Reference
+
+- Exec in ports: `exec`
+- Exec out ports: `exec`
+
+##### Typical Inputs / Outputs
+
+- Exec inputs: `exec`
+- Exec outputs: `exec`
+- Data inputs: `branch_a`, `branch_b`, `branch_c`, `default`
+- Data outputs: `out`
+
+##### State Fields
+
+| Name | Access | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- | --- |
+| `selectedInput` | `rw` | `true` | `true` | `string / default=branch_a` | Data input port to pull for the selected output. |
+| `resolvedInput` | `ro` | `true` | `true` | `string / default=` | Readonly input port actually pulled after fallback. |
+| `svcId` | `ro` | `true` | `false` | `string` | Readonly: current service instance id (svcId). |
+| `operatorId` | `ro` | `true` | `false` | `string` | Readonly: current operator/node id (operatorId). |
+
+##### Key Fields That Matter
+
+- `selectedInput` (Selected Input, `rw`): Data input port to pull for the selected output. Schema: `string / default=branch_a`.
+- `resolvedInput` (Resolved Input, `ro`): Readonly input port actually pulled after fallback. Schema: `string / default=`.
+- `svcId` (Service Id, `ro`): Readonly: current service instance id (svcId). Schema: `string`.
+- `operatorId` (Operator Id, `ro`): Readonly: current operator/node id (operatorId). Schema: `string`.
+
+##### Data Input Ports
+
+| Name | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- |
+| `branch_a` | `false` | `true` | `any` | Branch A input. |
+| `branch_b` | `false` | `true` | `any` | Branch B input. |
+| `branch_c` | `false` | `true` | `any` | Branch C input. |
+| `default` | `false` | `true` | `any` | Fallback input. |
+
+##### Data Output Ports
+
+| Name | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- |
+| `out` | `false` | `true` | `any` | Selected data output. |
 
 #### Related Scenarios
 
@@ -873,7 +1087,7 @@ Writes incoming values to a serial port (pyserial).
 
 | Name | Access | Required | On Node | Schema | Description |
 | --- | --- | --- | --- | --- | --- |
-| `enabled` | `rw` | `true` | `true` | `boolean / default=True` | Enable/disable serial output. |
+| `enabled` | `rw` | `true` | `true` | `boolean / default=False` | Enable/disable serial output. |
 | `port` | `rw` | `true` | `true` | `string / default=COM4` | Serial port name (e.g., COM3). |
 | `baudrate` | `rw` | `true` | `false` | `integer / default=115200` | Serial baud rate. |
 | `svcId` | `ro` | `true` | `false` | `string` | Readonly: current service instance id (svcId). |
@@ -881,7 +1095,7 @@ Writes incoming values to a serial port (pyserial).
 
 ##### Key Fields That Matter
 
-- `enabled` (Enabled, `rw`): Enable/disable serial output. Schema: `boolean / default=True`.
+- `enabled` (Enabled, `rw`): Enable/disable serial output. Schema: `boolean / default=False`.
 - `port` (Port, `rw`): Serial port name (e.g., COM3). Schema: `string / default=COM4`.
 - `baudrate` (Baudrate, `rw`): Serial baud rate. Schema: `integer / default=115200`.
 - `svcId` (Service Id, `ro`): Readonly: current service instance id (svcId). Schema: `string`.
@@ -1046,6 +1260,314 @@ Decodes udp_in packet payloads into skeleton streams with chunk reassembly.
 | --- | --- | --- | --- | --- |
 | `skeletons` | `true` | `true` | `array[object]` | List of latest payloads (ordered by key). |
 | `selectedSkeleton` | `true` | `true` | `object{boneCount, bones, modelName, schema, ...}` | Latest payload matching `selectedKey` (or None). |
+
+#### Related Scenarios
+
+- No bundled scenario references this node yet.
+
+<a id="operator-f8-fbx-skeleton-player"></a>
+### FBX Skeleton Player (`f8.fbx_skeleton_player`)
+Play an animated FBX armature as a skeleton stream using Blender for import.
+
+#### When to Use
+
+Play an animated FBX armature from PyEngine and connect its `skeletons` data output directly to `3D Viz.skeletons` on the Studio service. The player samples the file's animation at its original frame rate and outputs bone positions and rotations in Y-up world coordinates. Bone parent links become skeleton lines in 3D Viz.
+
+#### Common Wiring Patterns
+
+Set `FBX Path` to an absolute path visible to the PyEngine process. Blender must be installed on the PyEngine machine. The player finds it on `PATH` or under `Program Files\Blender Foundation` on Windows; otherwise set `Blender Path` to the Blender executable. Import runs once in the background when the output is first requested. Loading and import errors are written to the PyEngine log.
+
+Connect `Tick.elapsedSec` to `FBX Skeleton Player.timeSec`. A time input is required; without one the player does not load the file or output a pose. The incoming time is in seconds from the Tick entrypoint's start. With `Loop` enabled, the frame position is `timeSec % sequenceLength`; with `Loop` disabled, the player stops outputting poses once `timeSec >= sequenceLength`. The clip length is its frame count divided by its frame rate. Transform the incoming time to pause, seek, or change speed.
+
+The 3D Viz cross-service sampling interval determines how often the output is observed; set `upstreamSampleIntervalMs` to about 33 for a 30 FPS clip when full frame-rate inspection is needed.
+
+#### Pitfalls / Gotchas
+
+- The FBX path and Blender executable must be accessible on the machine running PyEngine.
+- A connected time input is required before import begins or any pose is emitted.
+- With looping disabled, reaching the end of the clip produces no further poses.
+
+#### Operator Reference
+
+- Exec in ports: none
+- Exec out ports: none
+
+##### Typical Inputs / Outputs
+
+- Data inputs: `timeSec`
+- Data outputs: `skeletons`
+
+##### State Fields
+
+| Name | Access | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- | --- |
+| `path` | `rw` | `true` | `true` | `string / default=` | FBX Path |
+| `blenderPath` | `rw` | `true` | `false` | `string / default=` | Blender Path |
+| `loop` | `rw` | `true` | `true` | `boolean / default=True` | Loop |
+| `svcId` | `ro` | `true` | `false` | `string` | Readonly: current service instance id (svcId). |
+| `operatorId` | `ro` | `true` | `false` | `string` | Readonly: current operator/node id (operatorId). |
+
+##### Key Fields That Matter
+
+- `path` (FBX Path, `rw`): FBX Path Schema: `string / default=`.
+- `blenderPath` (Blender Path, `rw`): Blender Path Schema: `string / default=`.
+- `loop` (Loop, `rw`): Loop Schema: `boolean / default=True`.
+- `svcId` (Service Id, `ro`): Readonly: current service instance id (svcId). Schema: `string`.
+- `operatorId` (Operator Id, `ro`): Readonly: current operator/node id (operatorId). Schema: `string`.
+
+##### Data Input Ports
+
+| Name | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- |
+| `timeSec` | `true` | `true` | `number` | Playback time in seconds. |
+
+##### Data Output Ports
+
+| Name | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- |
+| `skeletons` | `true` | `true` | `any` | Current animated skeleton pose. |
+
+#### Related Scenarios
+
+- No bundled scenario references this node yet.
+
+<a id="operator-f8-skeleton-selector"></a>
+### Skeleton Selector (`f8.skeleton_selector`)
+Select a character by stable exporter profile, role, and role index.
+
+#### When to Use
+
+- Use `Skeleton Selector` after `Skeleton Decoder` when several Unity
+  characters are present and the graph must follow a stable semantic role.
+- Prefer its `profileId`, `role`, and `roleIndex` fields over runtime model
+  names, which can change as characters are loaded or renamed.
+- Use one selector for the reference character and another for the target
+  character before selecting individual bones.
+
+#### Common Wiring Patterns
+
+- **Stable Pair**: Connect `Skeleton Decoder.skeletons` to two selectors, then
+  send each `skeleton` output to its own `Bone Selector`.
+- **Role Debugging**: Inspect the selector's data status alongside
+  `Skeleton Decoder.skeletons` to distinguish a missing role from a missing
+  bone.
+- **Legacy Stream**: Set an exact `modelName` and explicitly enable legacy
+  fallback only when consuming a pre-LMEX-v2 exporter.
+
+#### Pitfalls / Gotchas
+
+- **No Fuzzy Identity**: The node does not guess roles from model names. A v2
+  stream must match all three stable identity fields exactly.
+- **Role Indices Start At Zero**: A second character with the same role uses
+  `roleIndex=1`; it is not selected by a `roleIndex=0` node.
+- **Legacy Fallback Is Explicit**: Enabling fallback without an exact model
+  name remains invalid. Keep it disabled in new recipes.
+
+#### Operator Reference
+
+- Exec in ports: none
+- Exec out ports: none
+
+##### Typical Inputs / Outputs
+
+- Data inputs: `skeletons`
+- Data outputs: `skeleton`, `stableKey`, `status`
+
+##### State Fields
+
+| Name | Access | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- | --- |
+| `profileId` | `rw` | `true` | `true` | `string / default=` | Exporter game profile ID. Empty accepts any profile. |
+| `role` | `rw` | `true` | `true` | `string / enum[, male, female, other] / default=` | Stable character role. |
+| `roleIndex` | `rw` | `true` | `true` | `integer / default=0` | Zero-based index within the selected role. |
+| `fallbackModelName` | `rw` | `true` | `false` | `string / default=` | Exact modelName used only for LMEX v1 streams. |
+| `allowLegacyFallback` | `rw` | `true` | `false` | `boolean / default=True` | Allow exact modelName fallback for LMEX v1 packets. |
+| `availableKeys` | `ro` | `true` | `false` | `array[string]` | Low-frequency list of currently available stable keys. |
+| `svcId` | `ro` | `true` | `false` | `string` | Readonly: current service instance id (svcId). |
+| `operatorId` | `ro` | `true` | `false` | `string` | Readonly: current operator/node id (operatorId). |
+
+##### Key Fields That Matter
+
+- `profileId` (Profile ID, `rw`): Exporter game profile ID. Empty accepts any profile. Schema: `string / default=`.
+- `role` (Role, `rw`): Stable character role. Schema: `string / enum[, male, female, other] / default=`.
+- `roleIndex` (Role Index, `rw`): Zero-based index within the selected role. Schema: `integer / default=0`.
+- `fallbackModelName` (Legacy Model, `rw`): Exact modelName used only for LMEX v1 streams. Schema: `string / default=`.
+- `allowLegacyFallback` (Legacy Fallback, `rw`): Allow exact modelName fallback for LMEX v1 packets. Schema: `boolean / default=True`.
+- `availableKeys` (Available Characters, `ro`): Low-frequency list of currently available stable keys. Schema: `array[string]`.
+- `svcId` (Service Id, `ro`): Readonly: current service instance id (svcId). Schema: `string`.
+- `operatorId` (Operator Id, `ro`): Readonly: current operator/node id (operatorId). Schema: `string`.
+
+##### Data Input Ports
+
+| Name | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- |
+| `skeletons` | `true` | `true` | `any` | Decoded skeleton list. |
+
+##### Data Output Ports
+
+| Name | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- |
+| `skeleton` | `true` | `true` | `any` | Selected skeleton. |
+| `stableKey` | `true` | `true` | `string` | Stable profile/role/index key. |
+| `status` | `true` | `true` | `object{profileId, reason, role, roleIndex, ...}` | Selection status on the data channel. |
+
+#### Related Scenarios
+
+- No bundled scenario references this node yet.
+
+<a id="operator-f8-relative-pose-axes"></a>
+### Relative Pose Axes (`f8.relative_pose_axes`)
+Convert a target bone pose into reference-local L0/L1/L2 and R0/R1/R2 signals.
+
+#### When to Use
+
+- Use `Relative Pose Axes` when motion must be measured in a reference bone's
+  local coordinate frame instead of world coordinates.
+- Use the `L0` output as the raw travel signal for a basic OSR graph.
+- Keep all six raw outputs available when a graph may later grow from one-axis
+  travel into translation and rotation channels.
+
+#### Common Wiring Patterns
+
+- **OSR L0**: Connect reference and target `Bone Selector` outputs, then route
+  `L0` through calibration, range mapping, smoothing, and rate limiting before
+  `TCode.L0`.
+- **Axis Inspection**: Monitor `L0/L1/L2` and `R0/R1/R2` before normalization to
+  verify the selected bone orientation.
+- **Direction Correction**: Use `invertPrimary` for a reversed reference axis;
+  keep device travel limits in a downstream `Range Map`.
+
+#### Pitfalls / Gotchas
+
+- **Local Frame Matters**: `primaryAxis=local_y` means the reference bone's Y
+  axis, not world Y. A wrong bone rotation can produce plausible but incorrect
+  motion.
+- **Raw Values Are Not Device Commands**: Translation outputs are geometric
+  values and rotation outputs are signed relative values. Normalize and limit
+  them before TCode.
+- **Missing Pose Is Invalid**: Do not hold the last valid pose as fresh input;
+  use `Stream Watchdog` to gate physical output.
+
+#### Operator Reference
+
+- Exec in ports: none
+- Exec out ports: none
+
+##### Typical Inputs / Outputs
+
+- Data inputs: `referenceBone`, `targetBone`
+- Data outputs: `L0`, `L1`, `L2`, `R0`, `R1`, `R2`, `status`
+
+##### State Fields
+
+| Name | Access | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- | --- |
+| `primaryAxis` | `rw` | `true` | `true` | `string / enum[local_x, local_y, local_z, distance] / default=local_y` | Reference-local axis used for L0. |
+| `invertPrimary` | `rw` | `true` | `true` | `boolean / default=False` | Invert the raw L0 direction before normalization. |
+| `svcId` | `ro` | `true` | `false` | `string` | Readonly: current service instance id (svcId). |
+| `operatorId` | `ro` | `true` | `false` | `string` | Readonly: current operator/node id (operatorId). |
+
+##### Key Fields That Matter
+
+- `primaryAxis` (Primary Axis, `rw`): Reference-local axis used for L0. Schema: `string / enum[local_x, local_y, local_z, distance] / default=local_y`.
+- `invertPrimary` (Invert L0, `rw`): Invert the raw L0 direction before normalization. Schema: `boolean / default=False`.
+- `svcId` (Service Id, `ro`): Readonly: current service instance id (svcId). Schema: `string`.
+- `operatorId` (Operator Id, `ro`): Readonly: current operator/node id (operatorId). Schema: `string`.
+
+##### Data Input Ports
+
+| Name | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- |
+| `referenceBone` | `true` | `true` | `object{pos, rot}` | Reference bone with pos and rot. |
+| `targetBone` | `true` | `true` | `object{pos, rot}` | Target bone with pos and rot. |
+
+##### Data Output Ports
+
+| Name | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- |
+| `L0` | `true` | `true` | `number` | Raw relative L0 signal. |
+| `L1` | `true` | `true` | `number` | Raw relative L1 signal. |
+| `L2` | `true` | `true` | `number` | Raw relative L2 signal. |
+| `R0` | `true` | `true` | `number` | Raw relative R0 signal. |
+| `R1` | `true` | `true` | `number` | Raw relative R1 signal. |
+| `R2` | `true` | `true` | `number` | Raw relative R2 signal. |
+| `status` | `true` | `true` | `object{L0, L1, L2, R0, ...}` | Per-sample pose calculation status. |
+
+#### Related Scenarios
+
+- No bundled scenario references this node yet.
+
+<a id="operator-f8-stream-watchdog"></a>
+### Stream Watchdog (`f8.stream_watchdog`)
+Invalidate stale timestamped data and gate exec flow when a stream stops.
+
+#### When to Use
+
+- Use `Stream Watchdog` at every physical-output boundary driven by live
+  skeleton or tracking data.
+- Drive `check` from a fixed `Tick` and feed the latest decoded data into
+  `value`.
+- Connect `valid` to the output node's exec input so stale tracking cannot
+  continue sending commands.
+
+#### Common Wiring Patterns
+
+- **Skeleton Safety Gate**: `Skeleton Decoder.skeletons -> value`, `Tick.exec ->
+  check`, and `valid -> Serial Out.exec`.
+- **TCode Preview Plus Hardware**: Let TCode visualization continue receiving
+  data while only the serial execution path is watchdog-gated.
+- **250 ms Default**: Start with `timeoutMs=250` for a 50 Hz Unity stream and
+  adjust only from observed frame cadence.
+
+#### Pitfalls / Gotchas
+
+- **Receive Time, Not Source Clock**: Freshness uses local `receivedAtMs`
+  attached by the decoder, avoiding clock synchronization assumptions.
+- **Data Output, Not State Telemetry**: Validity and per-frame timing belong on
+  data/monitor channels; do not mirror them into service state fields.
+- **Not An Arm Switch**: The watchdog handles stale input. Keep `Serial
+  Out.enabled=false` until the user separately validates and arms hardware.
+
+#### Operator Reference
+
+- Exec in ports: `check`
+- Exec out ports: `valid`
+
+##### Typical Inputs / Outputs
+
+- Exec inputs: `check`
+- Exec outputs: `valid`
+- Data inputs: `value`
+- Data outputs: `value`, `valid`, `ageMs`, `status`
+
+##### State Fields
+
+| Name | Access | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- | --- |
+| `timeoutMs` | `rw` | `true` | `true` | `integer / default=250` | Maximum input age before output and exec flow are blocked. |
+| `svcId` | `ro` | `true` | `false` | `string` | Readonly: current service instance id (svcId). |
+| `operatorId` | `ro` | `true` | `false` | `string` | Readonly: current operator/node id (operatorId). |
+
+##### Key Fields That Matter
+
+- `timeoutMs` (Timeout (ms), `rw`): Maximum input age before output and exec flow are blocked. Schema: `integer / default=250`.
+- `svcId` (Service Id, `ro`): Readonly: current service instance id (svcId). Schema: `string`.
+- `operatorId` (Operator Id, `ro`): Readonly: current operator/node id (operatorId). Schema: `string`.
+
+##### Data Input Ports
+
+| Name | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- |
+| `value` | `true` | `true` | `any` | Timestamped stream value. |
+
+##### Data Output Ports
+
+| Name | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- |
+| `value` | `true` | `true` | `any` | Input while fresh, otherwise None. |
+| `valid` | `true` | `true` | `boolean / default=False` | Whether the input is fresh. |
+| `ageMs` | `true` | `true` | `number` | Age of the oldest input sample. |
+| `status` | `true` | `true` | `object{ageMs, reason, timeoutMs, valid}` | Per-check freshness status. |
 
 #### Related Scenarios
 
@@ -1404,6 +1926,93 @@ Examples
 | Name | Required | On Node | Schema | Description |
 | --- | --- | --- | --- | --- |
 | `out` | `false` | `true` | `any` | Expression result. |
+
+#### Related Scenarios
+
+- No bundled scenario references this node yet.
+
+<a id="operator-f8-decision"></a>
+### Decision (`f8.decision`)
+Typed probabilistic decisions through a configured System-One host. Samples the latest video frame only on exec.
+
+#### When to Use
+
+- Use `Decision` to evaluate typed Choice, Score, or Noul questions through a configured System-One provider.
+- Provide structured `state` and optionally a `video` stream; the latest image is sampled only on an exec trigger.
+- Set `providerId` to a connection configured in Studio and `routeQuestion` to a question in `questions`.
+
+#### Common Wiring Patterns
+
+- Trigger `exec` at a controlled interval and route `decided` into logic that reads the selected `value`.
+- Route `uncertain` to a review or idle path, and `error` to logging or an explicit fallback.
+- Inspect `answers`, `probabilities`, and `confidence`; tune `minConfidence` and `minProbability` for the question type.
+- Leave `studioUrl` empty when Studio launches the engine; set it explicitly for a separate server.
+
+#### Pitfalls / Gotchas
+
+- Decisions are asynchronous. A newer pending trigger can supersede an older one, and expired results are discarded using `maxAgeMs`.
+- `minIntervalMs` limits request cadence; sending more triggers does not create a request queue of every frame.
+- Choice acceptance checks both confidence and selected probability; Score uses confidence, and Noul uses the stronger boolean probability.
+- Changing configuration or lifecycle invalidates pending results. Keep per-request timing and counters on the `metrics` data output.
+
+#### Operator Reference
+
+- Exec in ports: `exec`
+- Exec out ports: `decided`, `uncertain`, `error`
+
+##### Typical Inputs / Outputs
+
+- Exec inputs: `exec`
+- Exec outputs: `decided`, `uncertain`, `error`
+- Data inputs: `state`, `video`
+- Data outputs: `answers`, `value`, `probabilities`, `confidence`, `probability`, `metrics`, `error`, `accepted`
+
+##### State Fields
+
+| Name | Access | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- | --- |
+| `studioUrl` | `rw` | `false` | `false` | `string / default=` | Empty uses the Studio server that launched this engine; standalone defaults to http://127.0.0.1:8210. |
+| `providerId` | `rw` | `false` | `true` | `string / default=typesafe` | Connection ID of a System-One provider in Studio settings. |
+| `questions` | `rw` | `false` | `false` | `any / default={'decision': {'type': 'choice', 'instructions': 'Which route best matches the input?', 'criteria': {'accept': 'The input clearly meets the requested condition.', 'review': 'More information is needed.', 'ignore': 'The input is not relevant.'}}}` | Map of Choice, Score, or Noul questions evaluated together. |
+| `routeQuestion` | `rw` | `false` | `true` | `string / default=decision` |  |
+| `minConfidence` | `rw` | `false` | `false` | `number / default=0.8` |  |
+| `minProbability` | `rw` | `false` | `false` | `number / default=0.8` |  |
+| `minIntervalMs` | `rw` | `false` | `false` | `integer / default=100` |  |
+| `maxAgeMs` | `rw` | `false` | `false` | `integer / default=2000` |  |
+| `imageMaxSide` | `rw` | `false` | `false` | `integer / default=768` |  |
+| `svcId` | `ro` | `true` | `false` | `string` | Readonly: current service instance id (svcId). |
+| `operatorId` | `ro` | `true` | `false` | `string` | Readonly: current operator/node id (operatorId). |
+
+##### Key Fields That Matter
+
+- `studioUrl` (studioUrl, `rw`): Empty uses the Studio server that launched this engine; standalone defaults to http://127.0.0.1:8210. Schema: `string / default=`.
+- `providerId` (providerId, `rw`): Connection ID of a System-One provider in Studio settings. Schema: `string / default=typesafe`.
+- `questions` (questions, `rw`): Map of Choice, Score, or Noul questions evaluated together. Schema: `any / default={'decision': {'type': 'choice', 'instructions': 'Which route best matches the input?', 'criteria': {'accept': 'The input clearly meets the requested condition.', 'review': 'More information is needed.', 'ignore': 'The input is not relevant.'}}}`.
+- `routeQuestion` (routeQuestion, `rw`): No description. Schema: `string / default=decision`.
+- `minConfidence` (minConfidence, `rw`): No description. Schema: `number / default=0.8`.
+- `minProbability` (minProbability, `rw`): No description. Schema: `number / default=0.8`.
+- `minIntervalMs` (minIntervalMs, `rw`): No description. Schema: `integer / default=100`.
+- `maxAgeMs` (maxAgeMs, `rw`): No description. Schema: `integer / default=2000`.
+
+##### Data Input Ports
+
+| Name | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- |
+| `state` | `true` | `true` | `any` |  |
+| `video` | `true` | `true` | `object{format, frameId, height, pitch, ...}` | Optional latest video frame, sampled on exec. |
+
+##### Data Output Ports
+
+| Name | Required | On Node | Schema | Description |
+| --- | --- | --- | --- | --- |
+| `answers` | `true` | `true` | `any` |  |
+| `value` | `true` | `true` | `any` |  |
+| `probabilities` | `true` | `true` | `any` |  |
+| `confidence` | `true` | `true` | `any` |  |
+| `probability` | `true` | `true` | `any` |  |
+| `metrics` | `true` | `true` | `any` |  |
+| `error` | `true` | `true` | `any` |  |
+| `accepted` | `true` | `true` | `boolean` |  |
 
 #### Related Scenarios
 

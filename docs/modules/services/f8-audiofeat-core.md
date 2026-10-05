@@ -5,7 +5,7 @@ Zenoh latest-audio core feature extraction service (rms, onset, centroid).
 
 - Service class: `f8.audiofeat.core`
 - Version: `0.0.1`
-- Source directory: `f8/audiofeat/core`
+- Source directory: `services/f8.audiofeat.core`
 - Tags: `audio`, `feature`, `rms`, `onset`, `centroid`
 
 ## When to Use

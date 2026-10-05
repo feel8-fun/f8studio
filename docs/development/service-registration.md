@@ -73,7 +73,7 @@ pixi run update_describes --service-class f8.pyengine
 `F8_SERVICE_INDEX` 可指定其他安装的索引。重复服务类、服务类不匹配、非法或缺失描述会报错，不自动回退到动态发现；不支持的平台跳过，不尝试其他平台启动文件。
 需要临时禁用服务时，设置 `F8_DISABLED_SERVICE_CLASSES`（多个服务类用逗号分隔）；旧的 `config/service_discovery_policy.yml` 已移除。
 
-CMake 已部署到 `runtime/bundles/`。发行打包复制声明、运行包及共享资源，不携带迁移备份或历史用户配置。文档与节点图鉴也默认读取索引。旧 `scripts/update_static_describes.py` 已删除。
+开发 workspace 的 CMake 产物部署到 `build/workspace/runtime/bundles/`。各扩展维护自己的 `config/services`、`config/service-index.json` 和资源声明；`pixi run workspace_catalog` 只在 `build/workspace` 生成汇总索引、启动适配和模型元数据副本。下载权重位于 `${F8_MODEL_ROOT}`，不参与 workspace 清理。正式发行由独立发行仓库组装已发布扩展产物。文档与节点图鉴默认读取生成索引。
 
 SDK 仍保留显式 `roots` 目录工具用于外部迁移和测试；它不是默认启动路径。旧 `F8_SERVICE_DISCOVERY_DIRS` 不控制正式加载，请使用 `F8_SERVICE_INDEX`。
 
@@ -94,19 +94,19 @@ pixi run update_describes
 
 索引为服务注入绝对 `F8_MODEL_ROOT`。空 `weightsDir` / tracking `modelDir` 使用安装默认目录；用户输入的其他相对路径仍相对于服务工作目录，不再回退搜索源码仓库。独立运行服务时，未设置环境变量会使用平台用户数据目录下的 `f8studio/models`。模型不是可随意删除的临时缓存。
 
-## 本机迁移与保留内容
+## 开发 workspace 与扩展的边界
 
-旧目录完整保存在 `runtime/migration-backup/legacy-service-tree/`，不参与发现、运行或发行打包。未注册的历史 offline player 也仅保存在迁移备份中。
+根目录只保留 `config/extension-workspace.toml`，声明参与集成的源码包、默认启用策略和 bootstrap runtime。扩展的服务定义、模型描述和默认资源由各自仓库维护。
 
-旧 `implayer/imgui.ini` 已复制至用户配置目录下的 `f8.implayer/imgui.ini`。当前仓库没有消费该配置的 ImGui 代码；保留此文件用于用户恢复，不宣称当前服务会读取它。
+```sh
+pixi run --locked -e build-check workspace_prepare
+pixi run --locked -e build-check workspace_catalog
+```
 
-模型定义 YAML 已迁移到新目录；31 个资源文件与 163 个运行产物/配置文件已进行复制校验。原文件保存在备份中，未自动清除用户数据。
+生成的 `build/workspace/config/service-index.json` 用 `packageRoot` 声明源码根的绝对路径，使深层生成目录仍能解析扩展配置和构建产物。这个字段用于本地登记；普通扩展索引省略它，继续相对于安装包解析。导入扩展时仍检查所有元数据路径是否位于包内。
 
-## 验证与边界
+`extension-sources.json` 按 extension ID 关联源码 workspace。各扩展的 Pixi 环境名称和数量独立，相同名称不会合并解释器或造成冲突。开发集成需要的 Pixi 启动适配由生成器从扩展的 module 声明和任务生成。
 
-- 旧根目录不存在时，22 个服务描述重新生成成功；C++ 全部运行产物构建、部署成功。
-- 真实 Studio → PyEngine 启动与部署通过；C++ 视频服务通过 1920×1080 WebRTC 连续变化帧解码验证。
-- Python lint、SDK/Studio 类型检查和 CTest 通过；全量 Python 回归 **1066 passed、7 skipped、1 warning**。
-- 节点图鉴通过索引生成成功。原缺失手册 `docs/modules/manual/operators/f8-cppengine/f8-data-mux.md` 已补齐；完整服务文档生成尚未复验。
-- 本次未构建完整跨平台发行包；发行目录复制与环境改写有定向测试。
-- 稳定模型 ID/内容摘要绑定、下载版本锁定和数据库工程批量迁移仍是后续工作，不影响根目录 `services/` 的移除。
+模型 YAML 的原始定义保留在扩展资源目录。安装时向 `${F8_MODEL_ROOT}` 补充缺失定义，保留用户已有配置。模型下载地址、后端和下载行为由对应扩展管理；平台负责通用安装、路径解析与生命周期。
+
+`workspace_clean` 可删除整个 `build/workspace`。后续 workspace 任务重新生成目录；模型和用户配置仍留在独立可写目录。

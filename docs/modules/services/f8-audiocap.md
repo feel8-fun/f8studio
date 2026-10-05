@@ -5,7 +5,7 @@ No description.
 
 - Service class: `f8.audiocap`
 - Version: `0.0.1`
-- Source directory: `f8/audiocap`
+- Source directory: `services/f8.audiocap`
 - Tags: `audio`, `capture`, `zenoh`
 
 ## When to Use
@@ -33,10 +33,10 @@ No description.
 ### How to Run
 
 ```bash
-linux/f8audiocap_service
+${F8_BUNDLE_ROOT}/f8audiocap_service
 ```
 
-- Workdir: `./`
+- Workdir: `${F8_BUNDLE_ROOT}`
 - Environment overrides: none
 
 ### Typical Inputs / Outputs

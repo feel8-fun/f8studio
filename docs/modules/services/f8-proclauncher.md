@@ -5,7 +5,7 @@ Launches an external OS process (optionally detached).
 
 - Service class: `f8.proclauncher`
 - Version: `0.0.1`
-- Source directory: `f8/proclauncher`
+- Source directory: `services/f8.proclauncher`
 - Tags: `utility`, `process`, `launcher`
 
 ## When to Use

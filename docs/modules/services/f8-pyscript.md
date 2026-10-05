@@ -5,7 +5,7 @@ Standalone python script runtime service with lifecycle/tick/command hooks.
 
 - Service class: `f8.pyscript`
 - Version: `0.0.1`
-- Source directory: `f8/pyscript`
+- Source directory: `services/f8.pyscript`
 - Tags: `python`, `script`, `service`
 
 ## When to Use

@@ -5,7 +5,7 @@ Standalone expression runtime service for simplified data-flow transforms.
 
 - Service class: `f8.pyexpr`
 - Version: `0.0.1`
-- Source directory: `f8/pyexpr`
+- Source directory: `services/f8.pyexpr`
 - Tags: `python`, `expr`, `service`
 
 ## When to Use

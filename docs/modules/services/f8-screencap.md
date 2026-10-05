@@ -5,7 +5,7 @@ No description.
 
 - Service class: `f8.screencap`
 - Version: `0.0.1`
-- Source directory: `f8/screencap`
+- Source directory: `services/f8.screencap`
 - Tags: `video`, `capture`, `zenoh`
 
 ## When to Use
@@ -31,10 +31,10 @@ No description.
 ### How to Run
 
 ```bash
-linux/f8screencap_service
+${F8_BUNDLE_ROOT}/f8screencap_service
 ```
 
-- Workdir: `./`
+- Workdir: `${F8_BUNDLE_ROOT}`
 - Environment overrides: none
 
 ### Typical Inputs / Outputs
@@ -51,11 +51,11 @@ linux/f8screencap_service
 | `videoFrameSchemaVersion` | `ro` | `true` | `false` | `integer` | Frame schema version |
 | `mode` | `rw` | `true` | `false` | `string / enum[display, window, region]` | display\|window\|region |
 | `fps` | `rw` | `true` | `true` | `number` | Capture rate |
-| `displayId` | `ro` | `true` | `false` | `integer` | 0..N-1 (see listDisplays) |
-| `windowId` | `ro` | `true` | `false` | `string` | backend-specific (e.g. win32:hwnd:0x... or x11:win:0x...) |
+| `displayId` | `rw` | `true` | `false` | `integer` | 0..N-1 (see listDisplays) |
+| `windowId` | `rw` | `true` | `false` | `string` | backend-specific (e.g. win32:hwnd:0x... or x11:win:0x...) |
 | `window` | `ro` | `true` | `false` | `object{backend, id, pid, rect, ...}` | Resolved window metadata (best-effort) |
-| `region` | `ro` | `true` | `false` | `object{h, w, x, y}` | Virtual desktop coordinates |
-| `scale` | `ro` | `true` | `false` | `object{h, w}` | Optional output size (0 disables) |
+| `region` | `rw` | `true` | `false` | `object{h, w, x, y}` | Virtual desktop coordinates |
+| `scale` | `rw` | `true` | `false` | `object{h, w}` | Optional output size (0 disables) |
 | `captureRunning` | `ro` | `true` | `false` | `boolean` | Is capture currently running |
 | `videoWidth` | `ro` | `true` | `true` | `integer` | Width of the video frame in pixels |
 | `videoHeight` | `ro` | `true` | `true` | `integer` | Height of the video frame in pixels |
@@ -69,10 +69,10 @@ linux/f8screencap_service
 - `videoFrameSchemaVersion` (Video Schema, `ro`): Frame schema version Schema: `integer`.
 - `mode` (Mode, `rw`): display|window|region Schema: `string / enum[display, window, region]`.
 - `fps` (FPS, `rw`): Capture rate Schema: `number`.
-- `displayId` (Display ID, `ro`): 0..N-1 (see listDisplays) Schema: `integer`.
-- `windowId` (Window ID, `ro`): backend-specific (e.g. win32:hwnd:0x... or x11:win:0x...) Schema: `string`.
+- `displayId` (Display ID, `rw`): 0..N-1 (see listDisplays) Schema: `integer`.
+- `windowId` (Window ID, `rw`): backend-specific (e.g. win32:hwnd:0x... or x11:win:0x...) Schema: `string`.
 - `window` (Window, `ro`): Resolved window metadata (best-effort) Schema: `object{backend, id, pid, rect, ...}`.
-- `region` (Region, `ro`): Virtual desktop coordinates Schema: `object{h, w, x, y}`.
+- `region` (Region, `rw`): Virtual desktop coordinates Schema: `object{h, w, x, y}`.
 
 ### Service Commands
 

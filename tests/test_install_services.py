@@ -1,4 +1,3 @@
-from f8pysdk.service_paths import ServicePaths
 from f8pysdk._specs.builtin_fields import normalize_describe_payload_dict
 
 from pathlib import Path
@@ -7,6 +6,7 @@ import json
 import pytest
 
 from scripts.install_services import copy_verified, migrate_resources
+from scripts.extension_workspace import workspace_index
 
 
 def _describe_payload(service_class: str) -> str:
@@ -61,10 +61,12 @@ def service_index(tmp_path: Path) -> Path:
     import yaml
 
     root = Path.cwd()
-    index = json.loads((root / "config/service-index.json").read_text())
+    base_index = workspace_index()
+    index = json.loads(base_index.read_text())
+    index.pop('packageRoot', None)
     index["services"] = [item for item in index["services"] if item["serviceClass"] in {"f8.pyexpr", "f8.pyscript"}]
     for item in index["services"]:
-        original = ServicePaths.for_index(root / "config/service-index.json").package_path(item["manifests"]["any"], relative_to=root / "config")
+        original = Path(item['manifests']['any'].replace('${F8_PACKAGE_ROOT}', str(root)))
         entry = yaml.safe_load(original.read_text())
         entry["launch"]["workdir"] = str(root / "extensions/f8pyengine")
         manifest = tmp_path / (item["serviceClass"] + ".yml")

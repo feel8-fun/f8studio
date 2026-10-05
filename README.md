@@ -20,10 +20,12 @@ integration tests. Official artifact assembly lives in the separate
 - `extensions/f8webstudio/f8studio_web` — React graph editor and presentation workspaces.
 - `extensions/f8mediagateway` — process-isolated Zenoh to WebRTC media gateway.
 - `extensions/` — optional service implementations and the Unity game integration submodule; see [extension repositories](docs/development/extension-repositories.md).
-- `config/service-index.json` — explicit service registrations and model storage location.
-- `config/services` — tracked, platform-specific launch declarations.
-- `runtime/bundles/<bundle>/<version>` — generated descriptions, executables, and bundled libraries/resources.
-- `resources/models` — shared model definitions and installed weights.
+- `config/extension-workspace.toml` — source checkout ownership and development integration policy.
+- `extensions/*/config` — extension-owned service declarations.
+- `extensions/*/resources` — extension-owned model definitions and default assets.
+- `build/workspace/config` — generated development catalog, service launch adapters and runtime references.
+- `build/workspace/runtime/bundles/<bundle>/<version>` — generated descriptions, executables and bundled libraries.
+- `${F8_MODEL_ROOT}` — downloaded weights and user model definitions, outside the source workspace.
 - `scripts` — Studio contract generation, describe regeneration, benchmarks, and integration tooling.
 
 To remove old build/test output, use `pixi run -e build-check workspace_clean`.
@@ -40,9 +42,12 @@ For a rebuild with fresh local environments, see [clean and rebuild](docs/develo
 - Open: `http://127.0.0.1:8210`
 
 ## Service installation and registration
-Studio loads `config/service-index.json` deterministically. Startup does not scan service directories, hash source files, or run `--describe`.
+Workspace tasks first generate `build/workspace/config/service-index.json` from
+extension declarations. Studio loads this index deterministically. Startup does
+not scan service directories, hash source files or run `--describe`.
 
 - Install missing descriptions: `pixi run install_services`
+- Regenerate development registrations: `pixi run workspace_catalog`
 - Refresh descriptions after changing service definitions: `pixi run update_describes`
 - Refresh one: `pixi run update_describes --service-class f8.pyengine`
 - Copy and verify existing models: `pixi run install_services --migrate-resources /path/to/old/services --migrate-layout /path/to/old/services`

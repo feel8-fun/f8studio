@@ -5,7 +5,7 @@ Sort detection payloads by a score-map metric.
 
 - Service class: `f8.dl.detsorter`
 - Version: `0.0.1`
-- Source directory: `f8/dl/detsorter`
+- Source directory: `services/f8.dl.detsorter`
 - Tags: `vision`, `detection`, `sort`, `score_map`
 
 ## When to Use

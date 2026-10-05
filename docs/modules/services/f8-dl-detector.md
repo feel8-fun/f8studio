@@ -5,7 +5,7 @@ ONNXRuntime object detector service (no tracking).
 
 - Service class: `f8.dl.detector`
 - Version: `0.0.1`
-- Source directory: `f8/dl/detector`
+- Source directory: `services/f8.dl.detector`
 - Tags: `onnx`, `vision`, `detection`
 
 ## When to Use
@@ -47,7 +47,7 @@ pixi run -e dl f8pydl_detector
 
 | Name | Access | Required | On Node | Schema | Description |
 | --- | --- | --- | --- | --- | --- |
-| `weightsDir` | `rw` | `true` | `true` | `string / default=services/f8/dl/weights` | Directory containing *.yaml + *.onnx model files. Reset to the default relative path when exporting publish JSON. |
+| `weightsDir` | `rw` | `true` | `true` | `string / default=` | Directory containing *.yaml + *.onnx model files. Empty uses the installed model directory. |
 | `modelId` | `rw` | `true` | `true` | `string / default=` | Model id selected from weightsDir (ignored if modelYamlPath is set). |
 | `modelYamlPath` | `rw` | `true` | `false` | `string / default=` | Optional explicit model yaml path (overrides modelId). Cleared when exporting publish JSON. |
 | `ortProvider` | `rw` | `true` | `true` | `string / enum[auto, cuda, cpu] / default=auto` | auto prefers CUDAExecutionProvider when available. |
@@ -55,10 +55,10 @@ pixi run -e dl f8pydl_detector
 | `inferEveryN` | `rw` | `true` | `true` | `integer / default=1` | Run model inference every N frames (>=1). |
 | `confThreshold` | `rw` | `true` | `false` | `number / default=-1.0` | Override confidence threshold (negative uses model yaml). |
 | `iouThreshold` | `rw` | `true` | `false` | `number / default=-1.0` | Override IoU threshold for NMS (negative uses model yaml). |
-| `enabledClasses` | `rw` | `true` | `false` | `array[string]` | Optional class whitelist for output. Empty means all classes. |
+| `enabledClasses` | `rw` | `true` | `false` | `array[string] / default=[]` | Optional class whitelist for output. Empty means all classes. |
 | `perClassK` | `rw` | `true` | `true` | `integer / default=0` | Per-class top-K by score (<=0 means unlimited). |
-| `modelClasses` | `ro` | `true` | `false` | `array[string]` | Current loaded model class labels. |
-| `availableModels` | `ro` | `true` | `false` | `array[string]` | List of model ids discovered from weightsDir. |
+| `modelClasses` | `ro` | `true` | `false` | `array[string] / default=[]` | Current loaded model class labels. |
+| `availableModels` | `ro` | `true` | `false` | `array[string] / default=[]` | List of model ids discovered from weightsDir. |
 | `loadedModel` | `ro` | `true` | `false` | `string / default=` | Current loaded model id/task. |
 | `ortActiveProviders` | `ro` | `true` | `false` | `string / default=` | JSON list of active ONNX Runtime providers for this session. |
 | `active` | `rw` | `true` | `false` | `boolean / default=True` | Service lifecycle state (activate/deactivate). |
@@ -66,7 +66,7 @@ pixi run -e dl f8pydl_detector
 
 ### Key Fields That Matter
 
-- `weightsDir` (Weights Dir, `rw`): Directory containing *.yaml + *.onnx model files. Reset to the default relative path when exporting publish JSON. Schema: `string / default=services/f8/dl/weights`.
+- `weightsDir` (Weights Dir, `rw`): Directory containing *.yaml + *.onnx model files. Empty uses the installed model directory. Schema: `string / default=`.
 - `modelId` (Model Id, `rw`): Model id selected from weightsDir (ignored if modelYamlPath is set). Schema: `string / default=`.
 - `modelYamlPath` (Model YAML Path, `rw`): Optional explicit model yaml path (overrides modelId). Cleared when exporting publish JSON. Schema: `string / default=`.
 - `ortProvider` (ONNX Runtime Provider, `rw`): auto prefers CUDAExecutionProvider when available. Schema: `string / enum[auto, cuda, cpu] / default=auto`.

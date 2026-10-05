@@ -222,7 +222,7 @@ def build(
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate node-atlas inventory pages")
-    parser.add_argument("--service-index", "--services-root", dest="services_root", default="config/service-index.json", help="Service index (or explicit legacy fixture directory)")
+    parser.add_argument("--service-index", "--services-root", dest="services_root", default="build/workspace/config/service-index.json", help="Service index (or explicit legacy fixture directory)")
     parser.add_argument("--service-nodes-path", default="docs/node-atlas/service-nodes.md")
     parser.add_argument("--pyengine-operators-path", default="docs/node-atlas/pyengine-operators.md")
     parser.add_argument("--check", action="store_true", help="Validate generated files without writing")

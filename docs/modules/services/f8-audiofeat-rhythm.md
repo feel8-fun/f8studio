@@ -5,7 +5,7 @@ Rhythm analysis service consuming core features (tempo + pulse clarity).
 
 - Service class: `f8.audiofeat.rhythm`
 - Version: `0.0.1`
-- Source directory: `f8/audiofeat/rhythm`
+- Source directory: `services/f8.audiofeat.rhythm`
 - Tags: `audio`, `feature`, `tempo`, `beat`, `pulse`
 
 ## When to Use

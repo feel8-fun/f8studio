@@ -63,7 +63,7 @@ pixi run python -m f8pysdk.extension_packaging \
   --runtime-root build/native/runtime/bundles --output build/extension.zip
 ```
 
-SDK 与扩展必须使用同一平台、工具链和 Linux sysroot。不能把主机新 GCC/新 glibc 编译的静态 SDK 库交给旧部署基线的工具链链接。SDK 的依赖前缀可通过 `F8_PIXI_CPP_ENV_DIR` 显式指定；部署输出默认进入扩展的构建目录。superbuild 仍把集成输出部署到自己的 `runtime/bundles`。
+SDK 与扩展必须使用同一平台、工具链和 Linux sysroot。不能把主机新 GCC/新 glibc 编译的静态 SDK 库交给旧部署基线的工具链链接。SDK 的依赖前缀可通过 `F8_PIXI_CPP_ENV_DIR` 显式指定；部署输出默认进入扩展的构建目录。开发 workspace 把集成输出部署到 `build/workspace/runtime/bundles`。
 
 两类 ZIP 都包含通用扩展目录和索引，执行真实 `--describe`、服务类及 monitor 契约验证后再落盘，并附带 `.zip.sha256`。C++ 制品携带部署后的运行库。GUI 截图、摄像头、模型推理等硬件测试仍由各仓库按平台补充，描述验证不替代功能测试。
 
@@ -76,9 +76,11 @@ pixi run -e build-check python scripts/extension_workspace.py sync
 pixi run -e build-check python scripts/extension_workspace.py check
 ```
 
-`extension_workspace.py` 只负责目录同步和归属检查，不创建仓库、生成 CI、配置 Git 身份或提交源码。
+`extension_workspace.py` 负责生成开发目录、启动适配、模型元数据副本和归属检查。
 
-`extension.json` 是各包的扩展元数据；`config/extensions.json` 是 superbuild 的合并目录和预装选择。修改包元数据后运行 `extension_workspace.py sync`，检查会拒绝漏配或重复归属。源码包的直接模块声明用于独立制品，主仓库的服务启动声明目前仍是集成环境中的 Pixi 任务入口。
+`extension.json` 和包内 `config/services` 是各包声明的唯一来源；根目录 `config/extension-workspace.toml` 维护源码归属和开发预装选择。修改声明后运行 `extension_workspace.py sync`，在 `build/workspace/config` 生成汇总清单和开发启动适配，检查会拒绝漏配或重复归属。扩展的直接模块声明用于独立制品，开发适配从它生成 Pixi 任务入口。
+
+模型描述和默认资源随对应扩展维护；下载权重及用户模型 YAML 存放在 `${F8_MODEL_ROOT}`，默认使用平台用户数据目录。workspace 清理和扩展卸载保留这些用户数据。
 
 各独立仓库的 CI checkout `feel8-fun/f8sdk` 的固定提交到 `.sdk`，不再下载 Studio 仓库。Python 依赖路径是 `.sdk/python`。C++ SDK 使用自己的精简 Conan 配方和锁，扩展使用本包的 Conan 锁；依赖准备成功后立即保存 Conan 缓存，避免后续编译失败时丢失缓存。每个仓库维护自己的 Pixi/Conan 锁，升级 SDK 时同时更新固定提交和锁。生成锁时的 SDK 源码须与固定提交一致。
 

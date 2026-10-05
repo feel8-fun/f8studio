@@ -48,7 +48,7 @@ class WorkspaceDiscoveryTest(unittest.TestCase):
             "migration-backup/legacy-service-tree/imgui.ini",
         )
         for relative in paths:
-            path = self.root / "runtime" / relative
+            path = self.root / "build/workspace/runtime" / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("fixture")
         dist = self.root / "dist"
@@ -413,7 +413,7 @@ class WorkspaceDiscoveryTest(unittest.TestCase):
             self.module._validate_dist_service_environments(self.root / "services", ["studio-runtime", "onnx"])
 
     def test_copy_dist_config_copies_service_index(self) -> None:
-        config_root = self.root / "config"
+        config_root = self.root / "build/workspace/config"
         config_root.mkdir(parents=True, exist_ok=True)
         index_path = config_root / "service-index.json"
         index_path.write_text('{"schemaVersion":"f8serviceIndex/1","services":[],"modelRoot":"../resources/models"}\n', encoding="utf-8")
@@ -621,7 +621,8 @@ def test_distribution_reads_independent_runtime_sources_and_writes_portable_refe
             'environments': {name: {'packages': {'linux-64': [{'pypi': '../../package'}]}}},
             'packages': [{'pypi': '../../package', 'name': 'local-package'}]}))
         catalog.append({'runtimeId': name, 'manifest': '${F8_PACKAGE_ROOT}/runtimes/' + name + '/pixi.toml'})
-    (root / 'config/runtime-environments.json').write_text(json.dumps({'schemaVersion': 'f8runtimeCatalog/1', 'runtimes': catalog}))
+    (root / 'build/workspace/config').mkdir(parents=True)
+    (root / 'build/workspace/config/runtime-environments.json').write_text(json.dumps({'schemaVersion': 'f8runtimeCatalog/1', 'runtimes': catalog}))
     output = tmp_path / 'release'
     output.mkdir()
     with mock.patch.object(module, 'REPO_ROOT', root), mock.patch.object(module, '_run') as run, mock.patch.object(

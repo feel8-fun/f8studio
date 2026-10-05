@@ -8,7 +8,7 @@ Web Studio 管理服务包的安装状态；一个包可以提供多个服务。
 
 ## 清单与制品
 
-`config/service-index.json` 保存服务的启动声明和预先构建的描述，`config/extensions.json` 保存服务归属、扩展版本、环境要求和模型元数据目录。每个服务只能属于一个扩展，索引中的服务必须全部有归属。清单类型定义在 `f8studio_server/extension_models.py`；独立包可使用生成的 `schemas/extensions.gen.json` 验证格式。
+每个扩展维护自己的 `config/service-index.json`、服务启动声明和 `extension.json`。发布制品内的 `config/extensions.json` 保存服务归属、扩展版本、环境要求和模型元数据目录。每个服务只能属于一个扩展，索引中的服务必须全部有归属。清单类型定义在 SDK 的 `f8pysdk.extension_spec`；独立包可使用生成的 `schemas/extensions.gen.json` 验证格式。开发 workspace 只维护 `config/extension-workspace.toml`，通过 `pixi run workspace_catalog` 在 `build/workspace/config` 生成汇总登记。
 
 一个可导入的 ZIP 在根目录包含下列内容，不额外包一层目录：
 
@@ -26,18 +26,18 @@ resources/models/<name>/*.yaml
 
 发布者提供 HTTPS 地址和 ZIP 的 SHA-256。导入校验下载哈希、归档路径与服务归属，并保存发布源；不会执行服务，也不会采纳外部包的预装标记。用户点击安装后才准备环境并执行各服务的 `--describe`，校验协议、监控契约与服务类身份。当前导入来源由用户指定并信任，哈希用于完整性校验；没有公共市场、发布者签名或代码沙箱。版本冲突会明确拒绝，不覆盖现有扩展。
 
-原生扩展声明 `runtime.kind = "native"`，随包携带目标平台可执行文件及动态库。Python 扩展声明 `runtime.kind = "pixi"` 和明确的 `environment`，提供自己的发布 manifest、lock 和 wheels。服务启动声明必须明确使用该环境：
+原生扩展声明 `runtime.kind = "native"`，随包携带目标平台可执行文件及动态库。Python 扩展声明 `runtime.kind = "pixi"` 和明确的 `environment`，提供自己的发布 manifest、lock 和 wheels。服务启动声明只描述扩展自身入口，平台根据所属 workspace 绑定运行环境：
 
 ```yaml
 launch:
-  command: pixi
-  args: [run, -e, inference, detector]
+  command: python
+  args: [-m, my_detector.main]
   workdir: ${F8_PACKAGE_ROOT}
 ```
 
 安装器将其绑定到受管理 workspace，启动时使用 `--frozen --no-install --manifest-path ...`，避免继承 Studio 的活动环境或启动时临时安装。安装前检查环境已经声明，安装后的描述检查将 stderr 日志与 stdout JSON 分开。服务描述不需要下载模型权重。
 
-本仓库开发清单使用 `workspace` 复用根目录下的开发环境，保留 editable 调试方式；发行包生成时把基础 Python 服务改为 `bundled`，把可选服务改为锁定的 `pixi`。外部制品接受 `native`、`shared` 或 `pixi`；不会接受任意 `workspace` 路径或改动官方环境。
+本仓库开发清单使用 `workspace` 指向各扩展自己的 Pixi workspace，保留 editable 调试方式；生成登记把服务入口适配到扩展声明的 Pixi 任务。发行包携带锁定的独立运行环境。外部制品接受 `native`、`shared` 或 `pixi`；不会接受任意 `workspace` 路径或改动官方环境。
 
 ## 第三方共享官方运行时
 
@@ -95,6 +95,6 @@ launch:
 
 各服务仓库负责单元测试、协议描述、平台二进制/wheel、自己的依赖锁和扩展 ZIP。Python 服务通过进程与协议协作，不导入 Studio 服务端内部模块。发布依赖必须使用非 editable wheel，依赖锁应在各仓库 CI 中检查，发布前执行安装和真实入口描述验证。
 
-各功能包的源码边界、独立 CMake/SDK 接口、制品工具和本地仓库导出见[扩展源码仓库与 superbuild](extension-repositories.md)。主仓库 pytest 默认运行核心及集成测试，各包自己的测试和 Windows/Linux CI 随独立仓库导出。源码尚未替换成新的远程 submodule；远程仓库需要先有可拉取的固定提交。
+各功能包的源码边界、独立 CMake/SDK 接口和制品工具见[扩展源码仓库与 superbuild](extension-repositories.md)。主仓库通过 submodule 固定各独立仓库的源码版本，pytest 默认运行核心及集成测试；各包自己的测试和 Windows/Linux CI 由其仓库管理。
 
 主仓库已提供按版本、SHA-256 和平台锁定的制品组装入口，以及独立运行环境发布契约。新制品工作流无需检出或构建扩展服务，扩展包通过正常的 Extension Manager 安装。具体契约、发布命令和迁移路径见[独立扩展与运行环境发布](../developers/extension-releases.md)。现有导入入口支持卸载后导入新版本，再安装；也可以导入旧制品回滚，选择跨重启保留。旧运行环境仍可以被绑定它的其他扩展使用。发行目录回滚可以使用保留的旧 release lock 和制品。签名目录、运行中的自动替换仍是后续工作。

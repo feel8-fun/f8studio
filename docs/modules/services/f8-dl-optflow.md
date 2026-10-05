@@ -5,7 +5,7 @@ ONNXRuntime NeuFlowV2 dense optical flow service (Zenoh latest-frame flow output
 
 - Service class: `f8.dl.optflow`
 - Version: `0.0.1`
-- Source directory: `f8/dl/optflow`
+- Source directory: `services/f8.dl.optflow`
 - Tags: `onnx`, `vision`, `optical_flow`, `zenoh_flow`
 
 ## When to Use
@@ -48,12 +48,12 @@ pixi run -e dl f8pydl_optflow
 | Name | Access | Required | On Node | Schema | Description |
 | --- | --- | --- | --- | --- | --- |
 | `computeEveryNFrames` | `rw` | `true` | `false` | `integer / default=2` | Compute optical flow once per N new frames. |
-| `weightsDir` | `rw` | `true` | `false` | `string / default=services/f8/dl/weights` | Directory containing *.yaml + *.onnx model files. Reset to the default relative path when exporting publish JSON. |
+| `weightsDir` | `rw` | `true` | `false` | `string / default=` | Directory containing *.yaml + *.onnx model files. Empty uses the installed model directory. |
 | `modelId` | `rw` | `true` | `false` | `string / default=` | Model id selected from weightsDir (ignored if modelYamlPath is set). |
 | `modelYamlPath` | `rw` | `true` | `false` | `string / default=` | Optional explicit model yaml path (overrides modelId). Cleared when exporting publish JSON. |
 | `ortProvider` | `rw` | `true` | `false` | `string / enum[auto, cuda, cpu] / default=auto` | auto prefers CUDAExecutionProvider when available. |
 | `autoDownloadWeights` | `rw` | `true` | `false` | `boolean / default=True` | When model file is missing, download from onnxUrl in model yaml. |
-| `availableModels` | `ro` | `true` | `false` | `array[string]` | List of model ids discovered from weightsDir. |
+| `availableModels` | `ro` | `true` | `false` | `array[string] / default=[]` | List of model ids discovered from weightsDir. |
 | `loadedModel` | `ro` | `true` | `false` | `string / default=` | Current loaded model id/task. |
 | `ortActiveProviders` | `ro` | `true` | `false` | `string / default=` | JSON list of active ONNX Runtime providers for this session. |
 | `flowFormat` | `ro` | `true` | `false` | `string / enum[flow2_f16] / default=flow2_f16` | Flow payload format. Fixed to flow2_f16. |
@@ -63,12 +63,12 @@ pixi run -e dl f8pydl_optflow
 ### Key Fields That Matter
 
 - `computeEveryNFrames` (Compute Every N Frames, `rw`): Compute optical flow once per N new frames. Schema: `integer / default=2`.
-- `weightsDir` (Weights Dir, `rw`): Directory containing *.yaml + *.onnx model files. Reset to the default relative path when exporting publish JSON. Schema: `string / default=services/f8/dl/weights`.
+- `weightsDir` (Weights Dir, `rw`): Directory containing *.yaml + *.onnx model files. Empty uses the installed model directory. Schema: `string / default=`.
 - `modelId` (Model Id, `rw`): Model id selected from weightsDir (ignored if modelYamlPath is set). Schema: `string / default=`.
 - `modelYamlPath` (Model YAML Path, `rw`): Optional explicit model yaml path (overrides modelId). Cleared when exporting publish JSON. Schema: `string / default=`.
 - `ortProvider` (ONNX Runtime Provider, `rw`): auto prefers CUDAExecutionProvider when available. Schema: `string / enum[auto, cuda, cpu] / default=auto`.
 - `autoDownloadWeights` (Auto Download Weights, `rw`): When model file is missing, download from onnxUrl in model yaml. Schema: `boolean / default=True`.
-- `availableModels` (Available Models, `ro`): List of model ids discovered from weightsDir. Schema: `array[string]`.
+- `availableModels` (Available Models, `ro`): List of model ids discovered from weightsDir. Schema: `array[string] / default=[]`.
 - `loadedModel` (Loaded Model, `ro`): Current loaded model id/task. Schema: `string / default=`.
 
 ### Service Commands

@@ -5,7 +5,7 @@ No description.
 
 - Service class: `f8.cvkit.videostab`
 - Version: `0.0.1`
-- Source directory: `f8/cvkit/video_stab`
+- Source directory: `services/f8.cvkit.videostab`
 - Tags: `cv`, `stabilization`, `video`
 
 ## When to Use
@@ -31,10 +31,10 @@ No description.
 ### How to Run
 
 ```bash
-../linux/f8cvkit_video_stab_service
+${F8_BUNDLE_ROOT}/f8cvkit_video_stab_service
 ```
 
-- Workdir: `./`
+- Workdir: `${F8_BUNDLE_ROOT}`
 - Environment overrides: none
 
 ### Typical Inputs / Outputs

@@ -1,6 +1,11 @@
 # Source layout only. Runtime manifests live with each extension package.
 core = []
 applications = ["f8webstudio", "f8mediagateway"]
+preinstalled = ["audiocap", "audiofeat", "cppengine", "cvkit", "dl", "implayer", "mediapipe", "pyengine", "proclauncher", "screencap"]
+
+[[runtimes]]
+package = "launcher"
+environment = "platform-runtime"
 
 [[extensions]]
 package = "f8screencap"

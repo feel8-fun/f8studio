@@ -5,7 +5,7 @@ ONNXRuntime image classifier service (no tracking).
 
 - Service class: `f8.dl.classifier`
 - Version: `0.0.1`
-- Source directory: `f8/dl/classifier`
+- Source directory: `services/f8.dl.classifier`
 - Tags: `onnx`, `vision`, `classification`
 
 ## When to Use
@@ -47,14 +47,14 @@ pixi run -e dl f8pydl_classifier
 
 | Name | Access | Required | On Node | Schema | Description |
 | --- | --- | --- | --- | --- | --- |
-| `weightsDir` | `rw` | `true` | `true` | `string / default=services/f8/dl/weights` | Directory containing *.yaml + *.onnx model files. Reset to the default relative path when exporting publish JSON. |
+| `weightsDir` | `rw` | `true` | `true` | `string / default=` | Directory containing *.yaml + *.onnx model files. Empty uses the installed model directory. |
 | `modelId` | `rw` | `true` | `true` | `string / default=` | Model id selected from weightsDir (ignored if modelYamlPath is set). |
 | `modelYamlPath` | `rw` | `true` | `false` | `string / default=` | Optional explicit model yaml path (overrides modelId). Cleared when exporting publish JSON. |
 | `ortProvider` | `rw` | `true` | `true` | `string / enum[auto, cuda, cpu] / default=auto` | auto prefers CUDAExecutionProvider when available. |
 | `autoDownloadWeights` | `rw` | `true` | `false` | `boolean / default=True` | When model file is missing, download from onnxUrl in model yaml. |
 | `inferEveryN` | `rw` | `true` | `true` | `integer / default=1` | Run model inference every N frames (>=1). |
 | `topK` | `rw` | `true` | `true` | `integer / default=5` | Number of top classes to emit. |
-| `availableModels` | `ro` | `true` | `false` | `array[string]` | List of model ids discovered from weightsDir. |
+| `availableModels` | `ro` | `true` | `false` | `array[string] / default=[]` | List of model ids discovered from weightsDir. |
 | `loadedModel` | `ro` | `true` | `false` | `string / default=` | Current loaded model id/task. |
 | `ortActiveProviders` | `ro` | `true` | `false` | `string / default=` | JSON list of active ONNX Runtime providers for this session. |
 | `active` | `rw` | `true` | `false` | `boolean / default=True` | Service lifecycle state (activate/deactivate). |
@@ -62,14 +62,14 @@ pixi run -e dl f8pydl_classifier
 
 ### Key Fields That Matter
 
-- `weightsDir` (Weights Dir, `rw`): Directory containing *.yaml + *.onnx model files. Reset to the default relative path when exporting publish JSON. Schema: `string / default=services/f8/dl/weights`.
+- `weightsDir` (Weights Dir, `rw`): Directory containing *.yaml + *.onnx model files. Empty uses the installed model directory. Schema: `string / default=`.
 - `modelId` (Model Id, `rw`): Model id selected from weightsDir (ignored if modelYamlPath is set). Schema: `string / default=`.
 - `modelYamlPath` (Model YAML Path, `rw`): Optional explicit model yaml path (overrides modelId). Cleared when exporting publish JSON. Schema: `string / default=`.
 - `ortProvider` (ONNX Runtime Provider, `rw`): auto prefers CUDAExecutionProvider when available. Schema: `string / enum[auto, cuda, cpu] / default=auto`.
 - `autoDownloadWeights` (Auto Download Weights, `rw`): When model file is missing, download from onnxUrl in model yaml. Schema: `boolean / default=True`.
 - `inferEveryN` (Infer Every N Frames, `rw`): Run model inference every N frames (>=1). Schema: `integer / default=1`.
 - `topK` (Top K, `rw`): Number of top classes to emit. Schema: `integer / default=5`.
-- `availableModels` (Available Models, `ro`): List of model ids discovered from weightsDir. Schema: `array[string]`.
+- `availableModels` (Available Models, `ro`): List of model ids discovered from weightsDir. Schema: `array[string] / default=[]`.
 
 ### Service Commands
 
