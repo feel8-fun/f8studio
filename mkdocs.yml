@@ -25,6 +25,7 @@ nav:
       - Overview: developers/index.md
       - Build from Source: developers/build-from-source.md
       - Workspace Tasks: developers/workspace-tasks.md
+      - Platform Management: developers/platform-management.md
       - Unity Modding Architecture: developers/unity-modding-architecture.md
       - Runtime Environments: developers/runtime-environments.md
       - Extension Releases: developers/extension-releases.md

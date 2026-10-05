@@ -30,8 +30,8 @@ f8pysdk = { path = "sdk/python", editable = true }
 eclipse-zenoh = ">=1.9.0,<1.10"
 
 [feature.sdk.tasks]
-workspace_catalog = { cmd = "python scripts/extension_workspace.py sync", description = "Generate development registrations from extension declarations" }
-workspace_prepare = { cmd = "python scripts/workspace_inputs.py prepare", depends-on = ["workspace_catalog"], description = "Prepare library checkout inputs and development registrations" }
+workspace_catalog = { cmd = "python scripts/extension_workspace.py sync", default-environment = "workspace", description = "Generate development registrations from extension declarations" }
+workspace_prepare = { cmd = "python scripts/workspace_inputs.py prepare", depends-on = [{ task = "workspace_catalog", environment = "workspace" }], description = "Prepare library checkout inputs and development registrations", default-environment = "workspace" }
 install_services = { cmd = "python scripts/install_services.py --index build/workspace/config/service-index.json", depends-on = ["workspace_prepare"], description = "Prepare extension environments and missing service descriptions" }
 update_describes = { cmd = "python scripts/install_services.py --index build/workspace/config/service-index.json --refresh", depends-on = ["workspace_prepare"], description = "Refresh descriptions using each extension's own environment" }
 workspace_native_describes = { cmd = "python scripts/install_services.py --index build/workspace/config/service-index.json --native-only --no-install --refresh", depends-on = ["workspace_catalog"], description = "Refresh native descriptions after compiling service binaries" }
@@ -56,7 +56,7 @@ contracts_check = "python scripts/web_studio/generate_contracts.py --check"
 lint = "ruff check extensions/f8webstudio/f8studio_core/f8studio_core sdk/python/f8media_protocol extensions/f8mediagateway/f8media_gateway extensions/f8webstudio/f8studio_server/f8studio_server"
 extensions_check = { cmd = "python scripts/extension_workspace.py check", depends-on = ["workspace_catalog"] }
 typecheck = "basedpyright -p pyrightconfig.web-studio.json"
-quality_exceptions = "python scripts/quality/except_metrics.py launcher extensions --exclude-glob '**/tests/**' --exclude-glob 'f8unitymods/**' --max-broad 110 --max-silent 0"
+quality_exceptions = "python scripts/quality/except_metrics.py platform extensions --exclude-glob '**/tests/**' --exclude-glob 'f8unitymods/**' --max-broad 110 --max-silent 0"
 lint_imports = "lint-imports --cache-dir build/cache/imports"
 
 [feature.audio.pypi-dependencies]
@@ -128,12 +128,28 @@ msgspec = ">=0.18.6,<1"
 workspace_snapshot = { cmd = "pixi run --locked -e build-check workspace_catalog && pixi run --locked -e build-check python scripts/workspace_ci.py", description = "Build a local integration snapshot; official assembly belongs to f8distribution" }
 workspace_clean = "python scripts/workspace_clean.py"
 
-[feature.web-studio.target.linux-64.dependencies]
+# Root entrypoints only coordinate checkout inputs. Launcher runs in its own lock.
+[tasks]
+platform_ensure = { cmd = "pixi run --locked --manifest-path platform/pixi.toml -e platform-runtime python scripts/platform_workspace.py ensure", depends-on = [{ task = "workspace_prepare", environment = "workspace" }], default-environment = "workspace", description = "Ensure Launcher is running in its own headless environment" }
+platform_dev = { cmd = "pixi run --locked --manifest-path platform/pixi.toml -e platform-runtime python scripts/platform_workspace.py serve", depends-on = [{ task = "workspace_prepare", environment = "workspace" }], default-environment = "workspace", description = "Run Launcher and its portal in the Launcher environment" }
+platform_tray = { cmd = "pixi run --locked --manifest-path platform/pixi.toml -e platform-desktop python scripts/platform_workspace.py tray", depends-on = [{ task = "workspace_prepare", environment = "workspace" }], default-environment = "workspace", description = "Run the tray and portal in Launcher's desktop environment" }
+platform_open = { cmd = "pixi run --locked --manifest-path platform/pixi.toml -e platform-runtime python scripts/platform_workspace.py open", depends-on = [{ task = "workspace_prepare", environment = "workspace" }], default-environment = "workspace" }
+platform_stop = { cmd = "pixi run --locked --manifest-path platform/pixi.toml -e platform-runtime python scripts/platform_workspace.py stop", depends-on = [{ task = "workspace_prepare", environment = "workspace" }], default-environment = "workspace" }
+platform_cli = { cmd = "pixi run --locked --manifest-path platform/pixi.toml -e platform-runtime python scripts/platform_workspace.py cli", depends-on = [{ task = "workspace_prepare", environment = "workspace" }], default-environment = "workspace" }
+
+# Integration tests import Launcher; WebStudio's development runtime does not.
+[feature.platform.pypi-dependencies]
+f8platform = { path = "platform", editable = true }
+
+[feature.platform-desktop.pypi-dependencies]
+pystray = ">=0.19.5,<0.20"
+pillow = ">=11,<13"
+
+[feature.platform-desktop.target.linux-64.dependencies]
 pygobject = ">=3.50,<4"
 gtk3 = ">=3.24,<4"
 
 [feature.web-studio.pypi-dependencies]
-f8platform = { path = "launcher", editable = true }
 f8studio-core = { path = "extensions/f8webstudio/f8studio_core", editable = true }
 f8media-gateway = { path = "extensions/f8mediagateway", editable = true }
 f8studio-server = { path = "extensions/f8webstudio/f8studio_server", editable = true }
@@ -149,9 +165,8 @@ mcp = { version = ">=1.24,<2", extras = ["cli"] }
 
 [feature.web-studio.tasks]
 studio_media_gateway = "python -m f8media_gateway"
-studio_server = { cmd = "python -m f8studio_server", depends-on = ["workspace_catalog"], env = { F8_SERVICE_INDEX = "build/workspace/config/service-index.json" }, description = "Run the development server in this terminal" }
-studio_launch = { cmd = "python -m f8studio_server --open-browser", depends-on = ["workspace_catalog"], env = { F8_SERVICE_INDEX = "build/workspace/config/service-index.json" }, description = "Run the development server and open its browser page" }
-studio_tray = { cmd = "python -m f8studio_server --tray", depends-on = ["workspace_catalog"], env = { F8_SERVICE_INDEX = "build/workspace/config/service-index.json" }, description = "Debug the desktop tray supervisor and managed server" }
+studio_server = { cmd = "python -m f8studio_server", depends-on = ["platform_ensure"], env = { F8_SERVICE_INDEX = "build/workspace/config/service-index.json", F8_PLATFORM_CONNECTION_FILE = "build/workspace/platform-connection.json" }, description = "Run the development server in this terminal" }
+studio_launch = { cmd = "python -m f8studio_server --open-browser", depends-on = ["platform_ensure"], env = { F8_SERVICE_INDEX = "build/workspace/config/service-index.json", F8_PLATFORM_CONNECTION_FILE = "build/workspace/platform-connection.json" }, description = "Run the development server and open its browser page" }
 studio_cli = { cmd = "python -m f8studio_server.cli", description = "Connect the CLI to a running Studio server" }
 studio_mcp = { cmd = "python -m f8studio_server.mcp_server", description = "Connect MCP to a running Studio server" }
 studio_agent_model_smoke = "python scripts/web_studio/probe_agent_model.py"
@@ -181,14 +196,14 @@ studio_web_ci = "npm --prefix extensions/f8webstudio/f8studio_web ci && npm --pr
 studio_web_typecheck = "npm --prefix extensions/f8webstudio/f8studio_web run typecheck"
 studio_web_e2e = { cmd = "npm --prefix extensions/f8webstudio/f8studio_web run test:e2e", depends-on = ["studio_web_build"] }
 studio_graph_bench = { cmd = "npm --prefix extensions/f8webstudio/f8studio_web run test:graph-performance", depends-on = ["studio_web_build"] }
-studio_no_qt_check = { cmd = "python scripts/web_studio/check_no_qt.py", depends-on = ["workspace_catalog"], env = { F8_SERVICE_INDEX = "build/workspace/config/service-index.json" } }
+studio_no_qt_check = { cmd = "python scripts/web_studio/check_no_qt.py", depends-on = ["platform_ensure"], env = { F8_SERVICE_INDEX = "build/workspace/config/service-index.json", F8_PLATFORM_CONNECTION_FILE = "build/workspace/platform-connection.json" } }
 studio_dependency_probe = "python scripts/web_studio/probe_environment.py"
 studio_runtime_probe = { cmd = "python scripts/web_studio/probe_real_runtime.py --base-url http://127.0.0.1:8210", description = "Probe PyEngine against an already running Studio server" }
 studio_media_probe = "python scripts/web_studio/probe_webrtc_media.py"
 studio_real_video_probe = "python scripts/web_studio/probe_real_video.py"
 studio_media_bench = "python scripts/web_studio/benchmark_media.py"
 studio_stream_restart_probe = "python scripts/web_studio/probe_stream_restart.py"
-studio_p3_combined_bench = { cmd = "python scripts/web_studio/benchmark_p3_combined.py", depends-on = ["workspace_catalog"], env = { F8_SERVICE_INDEX = "build/workspace/config/service-index.json" } }
+studio_p3_combined_bench = { cmd = "python scripts/web_studio/benchmark_p3_combined.py", depends-on = ["platform_ensure"], env = { F8_SERVICE_INDEX = "build/workspace/config/service-index.json", F8_PLATFORM_CONNECTION_FILE = "build/workspace/platform-connection.json" } }
 studio_wheel_smoke = "python scripts/web_studio/verify_release_install.py"
 unitymods_validate = "python scripts/unitymods_ci.py validate"
 unitymods_contract = "python scripts/verify_skeleton_contract.py"
@@ -196,12 +211,13 @@ unitymods_contract = "python scripts/verify_skeleton_contract.py"
 # Developer and CI workspaces only. Studio uses its extension workspace;
 # extensions own their runtime definitions and locks.
 [environments]
-build-check = { features = ["python", "sdk", "engine", "web-studio", "web-studio-dev", "web-studio-test", "vision", "audio", "test", "debug", "ci", "pydl"], solve-group = "build-check" }
+workspace = { features = ["python", "sdk"], solve-group = "workspace" }
+build-check = { features = ["python", "sdk", "engine", "web-studio", "platform", "platform-desktop", "web-studio-dev", "web-studio-test", "vision", "audio", "test", "debug", "ci", "pydl"], solve-group = "build-check" }
 # Root tasks serve development integration. Run individual services through
 # their extension's manifest and explicitly select its environment.
-default = { features = ["python", "sdk", "engine", "web-studio", "web-studio-dev", "vision", "audio", "test", "debug"], solve-group = "default" }
+default = { features = ["python", "sdk", "engine", "web-studio", "platform", "platform-desktop", "web-studio-dev", "vision", "audio", "test", "debug"], solve-group = "default" }
 doc = { features = ["python", "doc"] }
 cpp = { features = ["cpp"], solve-group = "cpp" }
 ci = { features = ["python", "ci"], solve-group = "ci" }
 web-studio = { features = ["python", "sdk", "web-studio", "web-studio-dev"], solve-group = "web-studio" }
-web-studio-test = { features = ["python", "sdk", "engine", "web-studio", "web-studio-dev", "web-studio-test"], solve-group = "web-studio" }
+web-studio-test = { features = ["python", "sdk", "engine", "web-studio", "platform", "platform-desktop", "web-studio-dev", "web-studio-test"], solve-group = "web-studio" }

@@ -963,6 +963,582 @@
       "title": "AgentToolCall",
       "type": "object"
     },
+    "ApplicationDependency": {
+      "additionalProperties": false,
+      "properties": {
+        "extensionId": {
+          "type": "string"
+        },
+        "protocolId": {
+          "type": "string"
+        },
+        "versions": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "extensionId",
+        "protocolId",
+        "versions"
+      ],
+      "title": "ApplicationDependency",
+      "type": "object"
+    },
+    "ApplicationDependencyInput": {
+      "additionalProperties": false,
+      "properties": {
+        "extensionId": {
+          "type": "string"
+        },
+        "protocolId": {
+          "type": "string"
+        },
+        "versions": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "extensionId",
+        "protocolId",
+        "versions"
+      ],
+      "title": "ApplicationDependency",
+      "type": "object"
+    },
+    "ApplicationEndpoint": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "url"
+      ],
+      "title": "ApplicationEndpoint",
+      "type": "object"
+    },
+    "ApplicationEndpointInput": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "url"
+      ],
+      "title": "ApplicationEndpoint",
+      "type": "object"
+    },
+    "ApplicationHealth": {
+      "additionalProperties": false,
+      "properties": {
+        "bootstrapPath": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "protocolVersion": {
+          "type": "string"
+        },
+        "service": {
+          "type": "string"
+        },
+        "timeoutSeconds": {
+          "default": 30.0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "bootstrapPath",
+        "endpoint",
+        "path",
+        "protocolVersion",
+        "service",
+        "timeoutSeconds"
+      ],
+      "title": "ApplicationHealth",
+      "type": "object"
+    },
+    "ApplicationHealthInput": {
+      "additionalProperties": false,
+      "properties": {
+        "bootstrapPath": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "protocolVersion": {
+          "type": "string"
+        },
+        "service": {
+          "type": "string"
+        },
+        "timeoutSeconds": {
+          "default": 30.0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "endpoint",
+        "path",
+        "service",
+        "protocolVersion"
+      ],
+      "title": "ApplicationHealth",
+      "type": "object"
+    },
+    "ApplicationLaunch": {
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "distribution": {
+          "type": "string"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "environment": {
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "args",
+        "distribution",
+        "env",
+        "environment",
+        "module"
+      ],
+      "title": "ApplicationLaunch",
+      "type": "object"
+    },
+    "ApplicationLaunchInput": {
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "distribution": {
+          "type": "string"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "environment": {
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "environment",
+        "module",
+        "distribution"
+      ],
+      "title": "ApplicationLaunch",
+      "type": "object"
+    },
+    "ApplicationManifest": {
+      "description": "Resolved lifecycle view derived from an extension manifest.",
+      "properties": {
+        "endpoints": {
+          "items": {
+            "$ref": "#/$defs/ApplicationEndpoint"
+          },
+          "type": "array"
+        },
+        "extensionId": {
+          "type": "string"
+        },
+        "health": {
+          "$ref": "#/$defs/ApplicationHealth"
+        },
+        "launch": {
+          "$ref": "#/$defs/ApplicationLaunch"
+        },
+        "provides": {
+          "items": {
+            "$ref": "#/$defs/ApplicationProtocol"
+          },
+          "type": "array"
+        },
+        "releaseRole": {
+          "default": "application",
+          "enum": [
+            "application",
+            "webstudio"
+          ]
+        },
+        "requires": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ApplicationDependency"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "webAssets": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "endpoints",
+        "extensionId",
+        "health",
+        "launch",
+        "provides",
+        "releaseRole",
+        "requires",
+        "title",
+        "version",
+        "webAssets"
+      ],
+      "title": "ApplicationManifest",
+      "type": "object"
+    },
+    "ApplicationManifestInput": {
+      "description": "Resolved lifecycle view derived from an extension manifest.",
+      "properties": {
+        "endpoints": {
+          "items": {
+            "$ref": "#/$defs/ApplicationEndpointInput"
+          },
+          "type": "array"
+        },
+        "extensionId": {
+          "type": "string"
+        },
+        "health": {
+          "$ref": "#/$defs/ApplicationHealthInput"
+        },
+        "launch": {
+          "$ref": "#/$defs/ApplicationLaunchInput"
+        },
+        "provides": {
+          "items": {
+            "$ref": "#/$defs/ApplicationProtocolInput"
+          },
+          "type": "array"
+        },
+        "releaseRole": {
+          "default": "application",
+          "enum": [
+            "application",
+            "webstudio"
+          ]
+        },
+        "requires": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ApplicationDependencyInput"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "webAssets": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "extensionId",
+        "version",
+        "title",
+        "launch",
+        "provides",
+        "endpoints",
+        "health"
+      ],
+      "title": "ApplicationManifest",
+      "type": "object"
+    },
+    "ApplicationOperation": {
+      "properties": {
+        "action": {
+          "enum": [
+            "stop"
+          ]
+        },
+        "detail": {
+          "default": "",
+          "type": "string"
+        },
+        "extensionId": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "failed",
+            "running",
+            "succeeded"
+          ]
+        }
+      },
+      "required": [
+        "action",
+        "detail",
+        "extensionId",
+        "state"
+      ],
+      "title": "ApplicationOperation",
+      "type": "object"
+    },
+    "ApplicationOperationInput": {
+      "properties": {
+        "action": {
+          "enum": [
+            "stop"
+          ]
+        },
+        "detail": {
+          "default": "",
+          "type": "string"
+        },
+        "extensionId": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "failed",
+            "running",
+            "succeeded"
+          ]
+        }
+      },
+      "required": [
+        "extensionId",
+        "action",
+        "state"
+      ],
+      "title": "ApplicationOperation",
+      "type": "object"
+    },
+    "ApplicationProtocol": {
+      "additionalProperties": false,
+      "properties": {
+        "protocolId": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolId",
+        "version"
+      ],
+      "title": "ApplicationProtocol",
+      "type": "object"
+    },
+    "ApplicationProtocolInput": {
+      "additionalProperties": false,
+      "properties": {
+        "protocolId": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolId",
+        "version"
+      ],
+      "title": "ApplicationProtocol",
+      "type": "object"
+    },
+    "ApplicationStatus": {
+      "properties": {
+        "endpoints": {
+          "items": {
+            "$ref": "#/$defs/ApplicationEndpoint"
+          },
+          "type": "array"
+        },
+        "logPath": {
+          "type": "string"
+        },
+        "manifest": {
+          "$ref": "#/$defs/ApplicationManifest"
+        },
+        "prepared": {
+          "type": "boolean"
+        },
+        "selected": {
+          "type": "boolean"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "failed",
+            "running",
+            "stopped"
+          ]
+        }
+      },
+      "required": [
+        "endpoints",
+        "logPath",
+        "manifest",
+        "prepared",
+        "selected",
+        "sha256",
+        "state"
+      ],
+      "title": "ApplicationStatus",
+      "type": "object"
+    },
+    "ApplicationStatusInput": {
+      "properties": {
+        "endpoints": {
+          "items": {
+            "$ref": "#/$defs/ApplicationEndpointInput"
+          },
+          "type": "array"
+        },
+        "logPath": {
+          "type": "string"
+        },
+        "manifest": {
+          "$ref": "#/$defs/ApplicationManifestInput"
+        },
+        "prepared": {
+          "type": "boolean"
+        },
+        "selected": {
+          "type": "boolean"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "failed",
+            "running",
+            "stopped"
+          ]
+        }
+      },
+      "required": [
+        "manifest",
+        "sha256",
+        "selected",
+        "prepared",
+        "state",
+        "logPath",
+        "endpoints"
+      ],
+      "title": "ApplicationStatus",
+      "type": "object"
+    },
+    "ApplicationVersion": {
+      "additionalProperties": false,
+      "properties": {
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sha256"
+      ],
+      "title": "ApplicationVersion",
+      "type": "object"
+    },
+    "ApplicationVersionInput": {
+      "additionalProperties": false,
+      "properties": {
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sha256"
+      ],
+      "title": "ApplicationVersion",
+      "type": "object"
+    },
     "ApprovalStatus": {
       "enum": [
         "approved",
@@ -4028,109 +4604,6 @@
       "title": "Entry",
       "type": "object"
     },
-    "EnvironmentCreateRequest": {
-      "additionalProperties": false,
-      "properties": {
-        "baseEnvironmentId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "condaDependencies": {
-          "default": [],
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "name": {
-          "type": "string"
-        },
-        "policy": {
-          "default": "preserve",
-          "enum": [
-            "adjust",
-            "preserve"
-          ]
-        },
-        "pypiDependencies": {
-          "default": [],
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "python": {
-          "default": "3.12.*",
-          "type": "string"
-        }
-      },
-      "required": [
-        "baseEnvironmentId",
-        "condaDependencies",
-        "name",
-        "policy",
-        "pypiDependencies",
-        "python"
-      ],
-      "title": "EnvironmentCreateRequest",
-      "type": "object"
-    },
-    "EnvironmentCreateRequestInput": {
-      "additionalProperties": false,
-      "properties": {
-        "baseEnvironmentId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "condaDependencies": {
-          "default": [],
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "name": {
-          "type": "string"
-        },
-        "policy": {
-          "default": "preserve",
-          "enum": [
-            "adjust",
-            "preserve"
-          ]
-        },
-        "pypiDependencies": {
-          "default": [],
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "python": {
-          "default": "3.12.*",
-          "type": "string"
-        }
-      },
-      "required": [
-        "name"
-      ],
-      "title": "EnvironmentCreateRequest",
-      "type": "object"
-    },
     "EnvironmentDetail": {
       "properties": {
         "abi": {
@@ -4144,31 +4617,8 @@
           ],
           "default": null
         },
-        "baseEnvironmentId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "cachePath": {
           "type": "string"
-        },
-        "changedPackages": {
-          "default": [],
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "condaDependencies": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
         },
         "definitionPath": {
           "default": "",
@@ -4183,22 +4633,19 @@
         "name": {
           "type": "string"
         },
-        "pinned": {
-          "default": false,
-          "type": "boolean"
-        },
-        "policy": {
-          "anyOf": [
-            {
-              "enum": [
-                "adjust",
-                "preserve"
-              ]
-            },
-            {
-              "type": "null"
-            }
+        "packageInventory": {
+          "default": "locked",
+          "enum": [
+            "installed",
+            "locked"
           ]
+        },
+        "packages": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/EnvironmentPackage"
+          },
+          "type": "array"
         },
         "providerId": {
           "anyOf": [
@@ -4222,12 +4669,6 @@
           ],
           "default": null
         },
-        "pypiDependencies": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
         "revision": {
           "type": "string"
         },
@@ -4244,19 +4685,15 @@
       },
       "required": [
         "abi",
-        "baseEnvironmentId",
         "cachePath",
-        "changedPackages",
-        "condaDependencies",
         "definitionPath",
         "environmentId",
         "manifest",
         "name",
-        "pinned",
-        "policy",
+        "packageInventory",
+        "packages",
         "providerId",
         "providerVersion",
-        "pypiDependencies",
         "revision",
         "sourceEnvironment",
         "storagePath",
@@ -4278,31 +4715,8 @@
           ],
           "default": null
         },
-        "baseEnvironmentId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "cachePath": {
           "type": "string"
-        },
-        "changedPackages": {
-          "default": [],
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "condaDependencies": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
         },
         "definitionPath": {
           "default": "",
@@ -4317,22 +4731,19 @@
         "name": {
           "type": "string"
         },
-        "pinned": {
-          "default": false,
-          "type": "boolean"
-        },
-        "policy": {
-          "anyOf": [
-            {
-              "enum": [
-                "adjust",
-                "preserve"
-              ]
-            },
-            {
-              "type": "null"
-            }
+        "packageInventory": {
+          "default": "locked",
+          "enum": [
+            "installed",
+            "locked"
           ]
+        },
+        "packages": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/EnvironmentPackageInput"
+          },
+          "type": "array"
         },
         "providerId": {
           "anyOf": [
@@ -4356,12 +4767,6 @@
           ],
           "default": null
         },
-        "pypiDependencies": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
         "revision": {
           "type": "string"
         },
@@ -4381,10 +4786,6 @@
         "name",
         "revision",
         "manifest",
-        "baseEnvironmentId",
-        "policy",
-        "condaDependencies",
-        "pypiDependencies",
         "storagePath",
         "cachePath",
         "usage"
@@ -4392,44 +4793,75 @@
       "title": "EnvironmentDetail",
       "type": "object"
     },
-    "EnvironmentRetentionRequest": {
-      "additionalProperties": false,
+    "EnvironmentPackage": {
       "properties": {
-        "pinned": {
-          "type": "boolean"
+        "build": {
+          "default": "",
+          "type": "string"
+        },
+        "manager": {
+          "enum": [
+            "conda",
+            "pypi"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "platform": {
+          "default": "",
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
         }
       },
       "required": [
-        "pinned"
+        "build",
+        "manager",
+        "name",
+        "platform",
+        "version"
       ],
-      "title": "EnvironmentRetentionRequest",
+      "title": "EnvironmentPackage",
       "type": "object"
     },
-    "EnvironmentRetentionRequestInput": {
-      "additionalProperties": false,
+    "EnvironmentPackageInput": {
       "properties": {
-        "pinned": {
-          "type": "boolean"
+        "build": {
+          "default": "",
+          "type": "string"
+        },
+        "manager": {
+          "enum": [
+            "conda",
+            "pypi"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "platform": {
+          "default": "",
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
         }
       },
       "required": [
-        "pinned"
+        "name",
+        "version",
+        "manager"
       ],
-      "title": "EnvironmentRetentionRequest",
+      "title": "EnvironmentPackage",
       "type": "object"
     },
     "EnvironmentStatus": {
       "properties": {
-        "baseEnvironmentId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
+        "canRemove": {
+          "default": false,
+          "type": "boolean"
         },
         "detail": {
           "default": "",
@@ -4447,10 +4879,6 @@
         "name": {
           "default": "",
           "type": "string"
-        },
-        "pinned": {
-          "default": false,
-          "type": "boolean"
         },
         "ready": {
           "type": "boolean"
@@ -4476,9 +4904,8 @@
           "type": "array"
         },
         "source": {
-          "default": "official",
+          "default": "package",
           "enum": [
-            "developer",
             "official",
             "package"
           ]
@@ -4503,12 +4930,11 @@
         }
       },
       "required": [
-        "baseEnvironmentId",
+        "canRemove",
         "detail",
         "environmentId",
         "extensionIds",
         "name",
-        "pinned",
         "ready",
         "revision",
         "runtimeKind",
@@ -4522,16 +4948,9 @@
     },
     "EnvironmentStatusInput": {
       "properties": {
-        "baseEnvironmentId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
+        "canRemove": {
+          "default": false,
+          "type": "boolean"
         },
         "detail": {
           "default": "",
@@ -4549,10 +4968,6 @@
         "name": {
           "default": "",
           "type": "string"
-        },
-        "pinned": {
-          "default": false,
-          "type": "boolean"
         },
         "ready": {
           "type": "boolean"
@@ -4578,9 +4993,8 @@
           "type": "array"
         },
         "source": {
-          "default": "official",
+          "default": "package",
           "enum": [
-            "developer",
             "official",
             "package"
           ]
@@ -4615,6 +5029,28 @@
     },
     "EnvironmentUsage": {
       "properties": {
+        "allocatedBytes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "exclusiveAllocatedBytes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "exclusiveFileBytes": {
           "default": 0,
           "type": "integer"
@@ -4633,6 +5069,8 @@
         }
       },
       "required": [
+        "allocatedBytes",
+        "exclusiveAllocatedBytes",
         "exclusiveFileBytes",
         "logicalBytes",
         "sharedLinkBytes",
@@ -4643,6 +5081,28 @@
     },
     "EnvironmentUsageInput": {
       "properties": {
+        "allocatedBytes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "exclusiveAllocatedBytes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "exclusiveFileBytes": {
           "default": 0,
           "type": "integer"
@@ -5216,6 +5676,17 @@
     },
     "ExtensionDetail": {
       "properties": {
+        "application": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ApplicationManifest"
+            }
+          ],
+          "default": null
+        },
         "extensionId": {
           "type": "string"
         },
@@ -5239,6 +5710,7 @@
         }
       },
       "required": [
+        "application",
         "extensionId",
         "services",
         "skills",
@@ -5249,6 +5721,17 @@
     },
     "ExtensionDetailInput": {
       "properties": {
+        "application": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ApplicationManifestInput"
+            }
+          ],
+          "default": null
+        },
         "extensionId": {
           "type": "string"
         },
@@ -5410,46 +5893,6 @@
       "title": "ExtensionInstallPlan",
       "type": "object"
     },
-    "ExtensionRuntimeRequest": {
-      "additionalProperties": false,
-      "properties": {
-        "environmentId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "environmentId"
-      ],
-      "title": "ExtensionRuntimeRequest",
-      "type": "object"
-    },
-    "ExtensionRuntimeRequestInput": {
-      "additionalProperties": false,
-      "properties": {
-        "environmentId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "environmentId"
-      ],
-      "title": "ExtensionRuntimeRequest",
-      "type": "object"
-    },
     "ExtensionServiceDetail": {
       "properties": {
         "describe": {
@@ -5530,6 +5973,21 @@
     },
     "ExtensionStatus": {
       "properties": {
+        "application": {
+          "default": false,
+          "type": "boolean"
+        },
+        "applicationOperation": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ApplicationOperation"
+            }
+          ],
+          "default": null
+        },
         "description": {
           "type": "string"
         },
@@ -5549,11 +6007,26 @@
         "extensionId": {
           "type": "string"
         },
+        "managed": {
+          "default": false,
+          "type": "boolean"
+        },
         "name": {
           "type": "string"
         },
         "preinstalled": {
           "type": "boolean"
+        },
+        "releaseSha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "resourceIds": {
           "default": [],
@@ -5561,6 +6034,14 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "running": {
+          "default": false,
+          "type": "boolean"
+        },
+        "runningSource": {
+          "default": false,
+          "type": "boolean"
         },
         "runtimeEnvironment": {
           "anyOf": [
@@ -5582,10 +6063,6 @@
             "workspace"
           ]
         },
-        "runtimeSelectable": {
-          "default": false,
-          "type": "boolean"
-        },
         "serviceClasses": {
           "items": {
             "type": "string"
@@ -5598,6 +6075,21 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "sourceCheckout": {
+          "default": false,
+          "type": "boolean"
+        },
+        "sourcePath": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "state": {
           "enum": [
@@ -5621,18 +6113,25 @@
         }
       },
       "required": [
+        "application",
+        "applicationOperation",
         "description",
         "detail",
         "environmentId",
         "extensionId",
+        "managed",
         "name",
         "preinstalled",
+        "releaseSha256",
         "resourceIds",
+        "running",
+        "runningSource",
         "runtimeEnvironment",
         "runtimeKind",
-        "runtimeSelectable",
         "serviceClasses",
         "skillIds",
+        "sourceCheckout",
+        "sourcePath",
         "state",
         "toolIds",
         "version"
@@ -5642,6 +6141,21 @@
     },
     "ExtensionStatusInput": {
       "properties": {
+        "application": {
+          "default": false,
+          "type": "boolean"
+        },
+        "applicationOperation": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ApplicationOperationInput"
+            }
+          ],
+          "default": null
+        },
         "description": {
           "type": "string"
         },
@@ -5661,11 +6175,26 @@
         "extensionId": {
           "type": "string"
         },
+        "managed": {
+          "default": false,
+          "type": "boolean"
+        },
         "name": {
           "type": "string"
         },
         "preinstalled": {
           "type": "boolean"
+        },
+        "releaseSha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "resourceIds": {
           "default": [],
@@ -5673,6 +6202,14 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "running": {
+          "default": false,
+          "type": "boolean"
+        },
+        "runningSource": {
+          "default": false,
+          "type": "boolean"
         },
         "runtimeEnvironment": {
           "anyOf": [
@@ -5694,10 +6231,6 @@
             "workspace"
           ]
         },
-        "runtimeSelectable": {
-          "default": false,
-          "type": "boolean"
-        },
         "serviceClasses": {
           "items": {
             "type": "string"
@@ -5710,6 +6243,21 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "sourceCheckout": {
+          "default": false,
+          "type": "boolean"
+        },
+        "sourcePath": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "state": {
           "enum": [
@@ -13436,6 +13984,40 @@
       "title": "HotkeyBinding",
       "type": "object"
     },
+    "ImportApplication": {
+      "additionalProperties": false,
+      "properties": {
+        "location": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "location",
+        "sha256"
+      ],
+      "title": "ImportApplication",
+      "type": "object"
+    },
+    "ImportApplicationInput": {
+      "additionalProperties": false,
+      "properties": {
+        "location": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "location",
+        "sha256"
+      ],
+      "title": "ImportApplication",
+      "type": "object"
+    },
     "In": {
       "properties": {
         "showOnNode": {
@@ -13816,6 +14398,338 @@
         "running"
       ],
       "title": "ManagedProcessResult",
+      "type": "object"
+    },
+    "ManagementJob": {
+      "properties": {
+        "cancelRequested": {
+          "default": false,
+          "type": "boolean"
+        },
+        "cancellable": {
+          "default": true,
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "detail": {
+          "default": "",
+          "type": "string"
+        },
+        "finishedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "jobId": {
+          "type": "string"
+        },
+        "request": {
+          "$ref": "#/$defs/ManagementJobRequest"
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "state": {
+          "enum": [
+            "cancelled",
+            "failed",
+            "queued",
+            "running",
+            "succeeded"
+          ]
+        }
+      },
+      "required": [
+        "cancelRequested",
+        "cancellable",
+        "createdAt",
+        "detail",
+        "finishedAt",
+        "jobId",
+        "request",
+        "startedAt",
+        "state"
+      ],
+      "title": "ManagementJob",
+      "type": "object"
+    },
+    "ManagementJobInput": {
+      "properties": {
+        "cancelRequested": {
+          "default": false,
+          "type": "boolean"
+        },
+        "cancellable": {
+          "default": true,
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "detail": {
+          "default": "",
+          "type": "string"
+        },
+        "finishedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "jobId": {
+          "type": "string"
+        },
+        "request": {
+          "$ref": "#/$defs/ManagementJobRequestInput"
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "state": {
+          "enum": [
+            "cancelled",
+            "failed",
+            "queued",
+            "running",
+            "succeeded"
+          ]
+        }
+      },
+      "required": [
+        "jobId",
+        "request",
+        "state",
+        "createdAt"
+      ],
+      "title": "ManagementJob",
+      "type": "object"
+    },
+    "ManagementJobLog": {
+      "properties": {
+        "log": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "log"
+      ],
+      "title": "ManagementJobLog",
+      "type": "object"
+    },
+    "ManagementJobLogInput": {
+      "properties": {
+        "log": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "log"
+      ],
+      "title": "ManagementJobLog",
+      "type": "object"
+    },
+    "ManagementJobRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "clean-unused-environments",
+            "deselect-application",
+            "disable-extension",
+            "enable-extension",
+            "import-application",
+            "import-extension",
+            "install-extension",
+            "prepare-application",
+            "prepare-environment",
+            "remove-environment",
+            "select-application",
+            "start-application",
+            "start-source",
+            "uninstall-application",
+            "uninstall-extension",
+            "update-application"
+          ]
+        },
+        "environmentId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "extensionId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "location": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "package": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ExtensionImportRequest"
+            }
+          ],
+          "default": null
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "action",
+        "environmentId",
+        "extensionId",
+        "location",
+        "package",
+        "sha256"
+      ],
+      "title": "ManagementJobRequest",
+      "type": "object"
+    },
+    "ManagementJobRequestInput": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "clean-unused-environments",
+            "deselect-application",
+            "disable-extension",
+            "enable-extension",
+            "import-application",
+            "import-extension",
+            "install-extension",
+            "prepare-application",
+            "prepare-environment",
+            "remove-environment",
+            "select-application",
+            "start-application",
+            "start-source",
+            "uninstall-application",
+            "uninstall-extension",
+            "update-application"
+          ]
+        },
+        "environmentId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "extensionId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "location": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "package": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ExtensionImportRequestInput"
+            }
+          ],
+          "default": null
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "title": "ManagementJobRequest",
       "type": "object"
     },
     "MediaFrameMapping": {
@@ -15699,38 +16613,6 @@
       "title": "PresentationCommand",
       "type": "object"
     },
-    "PresetEnvironmentStatus": {
-      "properties": {
-        "environment": {
-          "type": "string"
-        },
-        "ready": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "environment",
-        "ready"
-      ],
-      "title": "PresetEnvironmentStatus",
-      "type": "object"
-    },
-    "PresetEnvironmentStatusInput": {
-      "properties": {
-        "environment": {
-          "type": "string"
-        },
-        "ready": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "environment",
-        "ready"
-      ],
-      "title": "PresetEnvironmentStatus",
-      "type": "object"
-    },
     "ProbeProviderRequest": {
       "additionalProperties": false,
       "properties": {
@@ -16833,17 +17715,49 @@
         "cachePath": {
           "type": "string"
         },
+        "cacheUsage": {
+          "$ref": "#/$defs/EnvironmentUsage"
+        },
         "canChange": {
           "type": "boolean"
         },
+        "environmentUsage": {
+          "$ref": "#/$defs/EnvironmentUsage"
+        },
         "path": {
           "type": "string"
+        },
+        "totalUsage": {
+          "$ref": "#/$defs/EnvironmentUsage"
+        },
+        "unusedEnvironments": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/UnusedEnvironment"
+          },
+          "type": "array"
+        },
+        "usageUpdatedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
         "cachePath",
+        "cacheUsage",
         "canChange",
-        "path"
+        "environmentUsage",
+        "path",
+        "totalUsage",
+        "unusedEnvironments",
+        "usageUpdatedAt"
       ],
       "title": "RuntimeStorageStatus",
       "type": "object"
@@ -16853,11 +17767,38 @@
         "cachePath": {
           "type": "string"
         },
+        "cacheUsage": {
+          "$ref": "#/$defs/EnvironmentUsageInput"
+        },
         "canChange": {
           "type": "boolean"
         },
+        "environmentUsage": {
+          "$ref": "#/$defs/EnvironmentUsageInput"
+        },
         "path": {
           "type": "string"
+        },
+        "totalUsage": {
+          "$ref": "#/$defs/EnvironmentUsageInput"
+        },
+        "unusedEnvironments": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/UnusedEnvironmentInput"
+          },
+          "type": "array"
+        },
+        "usageUpdatedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -18787,6 +19728,85 @@
       ],
       "title": "Source2"
     },
+    "SourceApplicationStatus": {
+      "properties": {
+        "endpoints": {
+          "items": {
+            "$ref": "#/$defs/ApplicationEndpoint"
+          },
+          "type": "array"
+        },
+        "extensionId": {
+          "type": "string"
+        },
+        "logPath": {
+          "type": "string"
+        },
+        "managed": {
+          "default": true,
+          "type": "boolean"
+        },
+        "state": {
+          "enum": [
+            "failed",
+            "running",
+            "stopped"
+          ]
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "endpoints",
+        "extensionId",
+        "logPath",
+        "managed",
+        "state",
+        "version"
+      ],
+      "title": "SourceApplicationStatus",
+      "type": "object"
+    },
+    "SourceApplicationStatusInput": {
+      "properties": {
+        "endpoints": {
+          "items": {
+            "$ref": "#/$defs/ApplicationEndpointInput"
+          },
+          "type": "array"
+        },
+        "extensionId": {
+          "type": "string"
+        },
+        "logPath": {
+          "type": "string"
+        },
+        "managed": {
+          "default": true,
+          "type": "boolean"
+        },
+        "state": {
+          "enum": [
+            "failed",
+            "running",
+            "stopped"
+          ]
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "extensionId",
+        "version",
+        "state",
+        "endpoints",
+        "logPath"
+      ],
+      "title": "SourceApplicationStatus",
+      "type": "object"
+    },
     "SourceInput": {
       "enum": [
         "data_in_ports"
@@ -19996,6 +21016,46 @@
       "title": "TrackScene",
       "type": "object"
     },
+    "UnusedEnvironment": {
+      "properties": {
+        "environmentId": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "usage": {
+          "$ref": "#/$defs/EnvironmentUsage"
+        }
+      },
+      "required": [
+        "environmentId",
+        "path",
+        "usage"
+      ],
+      "title": "UnusedEnvironment",
+      "type": "object"
+    },
+    "UnusedEnvironmentInput": {
+      "properties": {
+        "environmentId": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "usage": {
+          "$ref": "#/$defs/EnvironmentUsageInput"
+        }
+      },
+      "required": [
+        "environmentId",
+        "path",
+        "usage"
+      ],
+      "title": "UnusedEnvironment",
+      "type": "object"
+    },
     "UpdateAssetRequest": {
       "properties": {
         "content": {
@@ -21046,6 +22106,84 @@
     },
     {
       "items": {
+        "$ref": "#/$defs/ManagementJob"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/ManagementJobRequest"
+    },
+    {
+      "$ref": "#/$defs/ManagementJob"
+    },
+    {
+      "$ref": "#/$defs/ManagementJob"
+    },
+    {
+      "$ref": "#/$defs/ManagementJobLog"
+    },
+    {
+      "$ref": "#/$defs/ManagementJob"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/ApplicationStatus"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/ImportApplication"
+    },
+    {
+      "$ref": "#/$defs/ManagementJob"
+    },
+    {
+      "$ref": "#/$defs/ApplicationVersion"
+    },
+    {
+      "$ref": "#/$defs/ManagementJob"
+    },
+    {
+      "$ref": "#/$defs/ApplicationVersion"
+    },
+    {
+      "$ref": "#/$defs/ManagementJob"
+    },
+    {
+      "$ref": "#/$defs/ManagementJob"
+    },
+    {
+      "$ref": "#/$defs/ApplicationVersion"
+    },
+    {
+      "$ref": "#/$defs/ManagementJob"
+    },
+    {
+      "$ref": "#/$defs/ApplicationVersion"
+    },
+    {
+      "$ref": "#/$defs/ManagementJob"
+    },
+    {
+      "$ref": "#/$defs/ManagementJob"
+    },
+    {
+      "$ref": "#/$defs/ApplicationOperation"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/SourceApplicationStatus"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/ManagementJob"
+    },
+    {
+      "$ref": "#/$defs/ApplicationOperation"
+    },
+    {
+      "items": {
         "$ref": "#/$defs/ToolView"
       },
       "type": "array"
@@ -21078,6 +22216,69 @@
       "$ref": "#/$defs/ResourceContent"
     },
     {
+      "items": {
+        "$ref": "#/$defs/ExtensionStatus"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/ExtensionImportRequest"
+    },
+    {
+      "$ref": "#/$defs/ManagementJob"
+    },
+    {
+      "$ref": "#/$defs/ExtensionDetail"
+    },
+    {
+      "$ref": "#/$defs/ExtensionInstallPlan"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/EnvironmentStatus"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/RuntimeStorageStatus"
+    },
+    {
+      "$ref": "#/$defs/RuntimeStorageRequest"
+    },
+    {
+      "$ref": "#/$defs/RuntimeStorageStatus"
+    },
+    {
+      "$ref": "#/$defs/ManagementJob"
+    },
+    {
+      "$ref": "#/$defs/EnvironmentDetail"
+    },
+    {
+      "$ref": "#/$defs/ManagementJob"
+    },
+    {
+      "$ref": "#/$defs/ManagementJob"
+    },
+    {
+      "$ref": "#/$defs/ManagementJob"
+    },
+    {
+      "$ref": "#/$defs/ManagementJob"
+    },
+    {
+      "$ref": "#/$defs/ManagementJob"
+    },
+    {
+      "$ref": "#/$defs/ExtensionToggleRequest"
+    },
+    {
+      "$ref": "#/$defs/ManagementJob"
+    },
+    {
+      "$ref": "#/$defs/ManagementJob"
+    },
+    {
       "$ref": "#/$defs/HealthStatus"
     },
     {
@@ -21097,90 +22298,6 @@
     },
     {
       "$ref": "#/$defs/CatalogSnapshot"
-    },
-    {
-      "items": {
-        "$ref": "#/$defs/ExtensionStatus"
-      },
-      "type": "array"
-    },
-    {
-      "$ref": "#/$defs/ExtensionImportRequest"
-    },
-    {
-      "items": {
-        "$ref": "#/$defs/ExtensionStatus"
-      },
-      "type": "array"
-    },
-    {
-      "$ref": "#/$defs/ExtensionDetail"
-    },
-    {
-      "$ref": "#/$defs/ExtensionInstallPlan"
-    },
-    {
-      "items": {
-        "$ref": "#/$defs/EnvironmentStatus"
-      },
-      "type": "array"
-    },
-    {
-      "items": {
-        "$ref": "#/$defs/PresetEnvironmentStatus"
-      },
-      "type": "array"
-    },
-    {
-      "$ref": "#/$defs/RuntimeStorageStatus"
-    },
-    {
-      "$ref": "#/$defs/RuntimeStorageRequest"
-    },
-    {
-      "$ref": "#/$defs/RuntimeStorageStatus"
-    },
-    {
-      "$ref": "#/$defs/EnvironmentCreateRequest"
-    },
-    {
-      "$ref": "#/$defs/EnvironmentStatus"
-    },
-    {
-      "$ref": "#/$defs/EnvironmentDetail"
-    },
-    {
-      "$ref": "#/$defs/EnvironmentStatus"
-    },
-    {
-      "$ref": "#/$defs/EnvironmentStatus"
-    },
-    {
-      "$ref": "#/$defs/EnvironmentRetentionRequest"
-    },
-    {
-      "$ref": "#/$defs/EnvironmentStatus"
-    },
-    {
-      "$ref": "#/$defs/ExtensionRuntimeRequest"
-    },
-    {
-      "$ref": "#/$defs/ExtensionStatus"
-    },
-    {
-      "$ref": "#/$defs/ExtensionStatus"
-    },
-    {
-      "$ref": "#/$defs/ExtensionStatus"
-    },
-    {
-      "$ref": "#/$defs/ExtensionToggleRequest"
-    },
-    {
-      "$ref": "#/$defs/ExtensionStatus"
-    },
-    {
-      "$ref": "#/$defs/ExtensionStatus"
     },
     {
       "$ref": "#/$defs/CreateCatalogNodeRequest"
@@ -21943,6 +23060,84 @@
     },
     {
       "items": {
+        "$ref": "#/$defs/ManagementJobInput"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/ManagementJobRequestInput"
+    },
+    {
+      "$ref": "#/$defs/ManagementJobInput"
+    },
+    {
+      "$ref": "#/$defs/ManagementJobInput"
+    },
+    {
+      "$ref": "#/$defs/ManagementJobLogInput"
+    },
+    {
+      "$ref": "#/$defs/ManagementJobInput"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/ApplicationStatusInput"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/ImportApplicationInput"
+    },
+    {
+      "$ref": "#/$defs/ManagementJobInput"
+    },
+    {
+      "$ref": "#/$defs/ApplicationVersionInput"
+    },
+    {
+      "$ref": "#/$defs/ManagementJobInput"
+    },
+    {
+      "$ref": "#/$defs/ApplicationVersionInput"
+    },
+    {
+      "$ref": "#/$defs/ManagementJobInput"
+    },
+    {
+      "$ref": "#/$defs/ManagementJobInput"
+    },
+    {
+      "$ref": "#/$defs/ApplicationVersionInput"
+    },
+    {
+      "$ref": "#/$defs/ManagementJobInput"
+    },
+    {
+      "$ref": "#/$defs/ApplicationVersionInput"
+    },
+    {
+      "$ref": "#/$defs/ManagementJobInput"
+    },
+    {
+      "$ref": "#/$defs/ManagementJobInput"
+    },
+    {
+      "$ref": "#/$defs/ApplicationOperationInput"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/SourceApplicationStatusInput"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/ManagementJobInput"
+    },
+    {
+      "$ref": "#/$defs/ApplicationOperationInput"
+    },
+    {
+      "items": {
         "$ref": "#/$defs/ToolViewInput"
       },
       "type": "array"
@@ -21975,6 +23170,69 @@
       "$ref": "#/$defs/ResourceContentInput"
     },
     {
+      "items": {
+        "$ref": "#/$defs/ExtensionStatusInput"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/ExtensionImportRequestInput"
+    },
+    {
+      "$ref": "#/$defs/ManagementJobInput"
+    },
+    {
+      "$ref": "#/$defs/ExtensionDetailInput"
+    },
+    {
+      "$ref": "#/$defs/ExtensionInstallPlanInput"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/EnvironmentStatusInput"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/RuntimeStorageStatusInput"
+    },
+    {
+      "$ref": "#/$defs/RuntimeStorageRequestInput"
+    },
+    {
+      "$ref": "#/$defs/RuntimeStorageStatusInput"
+    },
+    {
+      "$ref": "#/$defs/ManagementJobInput"
+    },
+    {
+      "$ref": "#/$defs/EnvironmentDetailInput"
+    },
+    {
+      "$ref": "#/$defs/ManagementJobInput"
+    },
+    {
+      "$ref": "#/$defs/ManagementJobInput"
+    },
+    {
+      "$ref": "#/$defs/ManagementJobInput"
+    },
+    {
+      "$ref": "#/$defs/ManagementJobInput"
+    },
+    {
+      "$ref": "#/$defs/ManagementJobInput"
+    },
+    {
+      "$ref": "#/$defs/ExtensionToggleRequestInput"
+    },
+    {
+      "$ref": "#/$defs/ManagementJobInput"
+    },
+    {
+      "$ref": "#/$defs/ManagementJobInput"
+    },
+    {
       "$ref": "#/$defs/HealthStatusInput"
     },
     {
@@ -21994,90 +23252,6 @@
     },
     {
       "$ref": "#/$defs/CatalogSnapshotInput"
-    },
-    {
-      "items": {
-        "$ref": "#/$defs/ExtensionStatusInput"
-      },
-      "type": "array"
-    },
-    {
-      "$ref": "#/$defs/ExtensionImportRequestInput"
-    },
-    {
-      "items": {
-        "$ref": "#/$defs/ExtensionStatusInput"
-      },
-      "type": "array"
-    },
-    {
-      "$ref": "#/$defs/ExtensionDetailInput"
-    },
-    {
-      "$ref": "#/$defs/ExtensionInstallPlanInput"
-    },
-    {
-      "items": {
-        "$ref": "#/$defs/EnvironmentStatusInput"
-      },
-      "type": "array"
-    },
-    {
-      "items": {
-        "$ref": "#/$defs/PresetEnvironmentStatusInput"
-      },
-      "type": "array"
-    },
-    {
-      "$ref": "#/$defs/RuntimeStorageStatusInput"
-    },
-    {
-      "$ref": "#/$defs/RuntimeStorageRequestInput"
-    },
-    {
-      "$ref": "#/$defs/RuntimeStorageStatusInput"
-    },
-    {
-      "$ref": "#/$defs/EnvironmentCreateRequestInput"
-    },
-    {
-      "$ref": "#/$defs/EnvironmentStatusInput"
-    },
-    {
-      "$ref": "#/$defs/EnvironmentDetailInput"
-    },
-    {
-      "$ref": "#/$defs/EnvironmentStatusInput"
-    },
-    {
-      "$ref": "#/$defs/EnvironmentStatusInput"
-    },
-    {
-      "$ref": "#/$defs/EnvironmentRetentionRequestInput"
-    },
-    {
-      "$ref": "#/$defs/EnvironmentStatusInput"
-    },
-    {
-      "$ref": "#/$defs/ExtensionRuntimeRequestInput"
-    },
-    {
-      "$ref": "#/$defs/ExtensionStatusInput"
-    },
-    {
-      "$ref": "#/$defs/ExtensionStatusInput"
-    },
-    {
-      "$ref": "#/$defs/ExtensionStatusInput"
-    },
-    {
-      "$ref": "#/$defs/ExtensionToggleRequestInput"
-    },
-    {
-      "$ref": "#/$defs/ExtensionStatusInput"
-    },
-    {
-      "$ref": "#/$defs/ExtensionStatusInput"
     },
     {
       "$ref": "#/$defs/CreateCatalogNodeRequestInput"

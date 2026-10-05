@@ -7,32 +7,34 @@ with `pixi run --locked -e <environment> <task>`.
 ## Studio and tray debugging
 
 ```bash
-pixi run --locked -e web-studio studio_web_install
-pixi run --locked -e web-studio studio_web_build
-pixi run --locked -e web-studio studio_tray
+pixi run --locked platform_tray
 ```
 
-`studio_server` runs in the current terminal; `studio_launch` also opens the
-browser; `studio_tray` runs the desktop supervisor with its console/log menu.
-Pass server options directly, for example `studio_tray --port 8230 --no-browser`.
-Linux tray mode uses the Pixi GTK backend and needs a desktop session. When no
-tray backend is available, Studio logs the cause and runs in console mode.
+Platform tasks select the small `workspace` orchestration environment automatically
+and delegate execution to `platform/pixi.toml`: `platform-runtime` for headless
+operations and `platform-desktop` for the tray. WebStudio is not installed into
+either Launcher environment.
 
-These startup tasks regenerate the development catalog and explicitly select
-`build/workspace/config/service-index.json`. They do not compile native services
-or install every extension. A missing or invalid extension registration appears
-as a failed extension with a reinstall action instead of blocking the server.
-Stopped or disabled extensions keep their user settings and models.
+The tray belongs to Launcher and opens the independent management portal. Select
+Start source on WebStudio to run the editor and its declared application dependencies.
+Use `platform_dev` for a foreground platform, `platform_open` for its portal, and
+`platform_stop` to stop it. These entrypoints share one development platform.
 
-`studio_cli` and `studio_mcp` connect to a running server. `studio_web_dev` starts
-Vite; run it beside `studio_server` after installing frontend dependencies.
+`studio_server` remains a direct source debugging entrypoint. It ensures a separate
+platform is available and registers Studio as externally managed. Stop that source
+process in its terminal. `studio_launch` also opens the browser. Server options can
+be passed directly, for example `studio_server --port 8230 --no-browser`.
+`studio_cli` and `studio_mcp` connect to a running Studio server.
+
+See [Platform management](platform-management.md) for ownership, data paths and
+headless CLI operations.
 
 ## Prepare and verify the workspace
 
 | Task | Environment | Purpose |
 | --- | --- | --- |
 | `workspace_prepare` | `build-check` | Prepare library inputs and generated registrations. |
-| `workspace_catalog` | `build-check` or `web-studio` | Regenerate registrations without changing built binaries. |
+| `workspace_catalog` | `workspace`, `build-check` or `web-studio` | Regenerate registrations without changing built binaries. |
 | `workspace_python_describes` | `build-check` | Refresh Python service descriptions using the integration interpreter. |
 | `cpp_bootstrap` | `cpp` | Prepare locked Conan dependencies inside the Pixi toolchain. |
 | `cpp_configure_release` | `cpp` | Configure the integration CMake build after bootstrap. |

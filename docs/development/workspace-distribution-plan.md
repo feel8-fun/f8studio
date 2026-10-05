@@ -52,7 +52,7 @@ WebStudio UI. Initial platform API binds loopback and requires a persisted token
 
 ## Repository roles
 
-The current repository becomes the development workspace. `launcher/`, `sdk/` and
+The current repository becomes the development workspace. `platform/`, `sdk/` and
 `extensions/` contain independent source checkouts pinned for integration.
 The separate sibling `f8distribution` repository consumes published artifacts only.
 Applications are ordinary extensions carrying an `application` declaration, not

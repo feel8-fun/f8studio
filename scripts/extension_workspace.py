@@ -192,7 +192,7 @@ def check_workspace(root: Path = REPO_ROOT) -> None:
     extension_modules = {module for item in source_packages(root) for module in item.python_modules}
     roots = [root / 'packages' / package for package in workspace['core']]
     roots.extend(root / 'extensions' / package for package in workspace.get('applications', []))
-    roots.append(root / 'launcher')
+    roots.append(root / 'platform')
     for source_root in roots:
         for source in source_root.rglob('*.py'):
             if any(part in {'node_modules', '.pixi', '.git', '__pycache__', 'tests', '.sdk', '.platform', '.media-dependency', 'build'} for part in source.parts):

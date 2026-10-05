@@ -77,3 +77,12 @@ All seven built-in Viz nodes share typed presentation injection and configuratio
 `GraphWorkspace` composes the view and owns selection/Inspector sizing. `useGraphProject` owns authoritative project snapshots, event synchronization and the edit queue; its queue is the single source for pending mutation counts. `useGraphCanvas` owns React Flow projections and gesture handlers, with pure move/resize patch construction in `layoutEdits.ts`. `useProjectDeployment` owns deployment subscriptions and cancellation, `useGraphCommands` owns command dialogs/in-flight commands/toasts, and `GraphInspectors` owns field/hotkey presentation. Hooks receive explicit typed inputs; no component receives an opaque workspace object or calls back into another component's private methods.
 
 Refactoring acceptance is based on state ownership, dependency direction and behavior preservation. Main-file line counts describe navigation improvements; they do not measure total source reduction. New imports, constructor signatures and regression tests count toward the overall maintenance cost.
+
+## Independent platform authority
+
+WebStudio uses the SDK platform client for Extensions, Runtime Environments,
+Tools, application lifecycle and service process operations. The platform daemon
+owns their state and execution. Studio has no implementation dependency on
+`f8platform`; its existing management pages are authenticated API clients.
+The launcher owns desktop tray and startup configuration and bundles its own
+small portal. See [Platform management](platform-management.md).

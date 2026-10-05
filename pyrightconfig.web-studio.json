@@ -3,7 +3,7 @@
   "pythonVersion": "3.14",
   "typeCheckingMode": "strict",
   "include": [
-    "launcher/f8platform",
+    "platform/f8platform",
     "extensions/f8webstudio/f8studio_core/f8studio_core",
     "sdk/python/f8media_protocol",
     "extensions/f8mediagateway/f8media_gateway",
@@ -15,6 +15,11 @@
     "sdk/python/f8pysdk/application_spec.py",
     "sdk/python/f8pysdk/platform_spec.py",
     "sdk/python/f8pysdk/platform_api.py",
+    "sdk/python/f8pysdk/management_job.py",
+    "sdk/python/f8pysdk/platform_client.py",
+    "sdk/python/f8pysdk/extension_status.py",
+    "sdk/python/f8pysdk/tool_spec.py",
+    "scripts/platform_workspace.py",
     "sdk/python/f8pysdk/application_package.py",
     "sdk/python/f8pysdk/application_packaging.py",
     "sdk/python/f8pysdk/release_spec.py",
@@ -34,7 +39,7 @@
       "extraPaths": [
         "scripts",
         "sdk/python",
-        "launcher"
+        "platform"
       ]
     },
     {

@@ -4,42 +4,20 @@ Extension repositories own their build dependencies, tests, native deployment or
 
 ## Runtime ownership and compatibility
 
-Build dependencies stay in the publisher's build environment. Released runtime definitions contain runtime dependencies and built wheels. They must not contain editable projects, source-directory package references, or installation-time build tasks.
+Build dependencies stay in each publisher's build environment. Released runtime
+inputs contain locked dependencies and built wheels, with no editable projects or
+installation-time builds. The Launcher bootstrap has its own runtime; WebStudio,
+Media Gateway and other extensions use their own independent environments.
 
-A runtime release identifies its provider, release version, and ABI contract. Its `runtimeId` is the launch environment's name. Use distinct runtime IDs for baselines that need to coexist, such as `python-services-v1` and `python-services-v2`. `platform-runtime` is the official bootstrap environment. WebStudio and Media Gateway are application extensions; neither is installed into its interpreter.
+Environment names are local to a package. Compatible package files can be reused
+through F8's Pixi cache without sharing a mutable interpreter. Package updates
+therefore change only that extension's environment and do not upgrade another
+extension's dependencies. Communication compatibility is expressed through the
+application/service protocol contracts and verified in integration tests.
 
-```json
-{
-  "schemaVersion": "f8runtimeCatalog/1",
-  "runtimes": [{
-    "runtimeId": "python-services-v1",
-    "providerId": "feel8.python-services",
-    "version": "1.2.0",
-    "abi": "cpython314-numpy2",
-    "manifest": "${F8_PACKAGE_ROOT}/runtimes/python-services-v1/pixi.toml"
-  }]
-}
-```
-
-Publishers choose and test ABI names; they are exact compatibility contracts rather than claims inferred by Studio. A shared extension can declare:
-
-```json
-{
-  "runtime": {
-    "kind": "shared",
-    "environment": "python-services-v1",
-    "providerId": "feel8.python-services",
-    "providerVersion": ">=1.2,<2",
-    "abi": "cpython314-numpy2",
-    "requiresPython": ">=3.14,<3.15",
-    "dependencies": ["numpy>=2.4,<3", "f8pysdk>=0.1,<0.2"]
-  }
-}
-```
-
-Runtime selection and installation check provider/version/ABI. Installation also probes the actual interpreter's wheel tags, Python version, installed dependency versions and transitive requirements, and checks module/distribution collisions. Declaring a version range does not replace those checks. Shared installations copy only extension code and keep the interpreter's dependencies unchanged.
-
-A developer revision with `preserve` retains the base provider's ABI contract because base package versions/builds remain pinned. A revision with `adjust` retains base provenance but no longer claims its ABI. Extensions requiring that ABI must use a verified published runtime or a preserving revision. These metadata checks supplement dependency checks; publisher integration tests remain necessary for binary and protocol compatibility.
+Runtime catalogs identify contained Pixi workspaces and selected environments.
+Provider/version/ABI metadata can document a published runtime's provenance; the
+management GUI/API does not expose a runtime selector or derived-environment editor.
 
 ## Publishing artifacts
 
@@ -49,9 +27,9 @@ Build and test a Python extension's wheel in its own repository. The SDK builder
 pixi run python -m f8pysdk.extension_packaging --source . --wheel dist/example-1.0-py3-none-any.whl --output dist/example-1.0.zip
 ```
 
-For Python source extensions declaring `workspace`, the builder converts local inputs to wheels and generates an independent locked runtime at publication time. It carries all declared environments and verifies that the default environment exists. This publisher step may build local dependency wheels and run the solver; Studio installation never does. Publishers can instead supply an already prepared `--runtime-root` to control the released dependencies precisely. `shared` must be selected explicitly and is not the default conversion.
+For Python source extensions declaring `workspace`, the builder converts local inputs to wheels and generates an independent locked runtime at publication time. It carries all declared environments and verifies that the default environment exists. This publisher step may build local dependency wheels and run the solver; Studio installation never does. Publishers can instead supply an already prepared `--runtime-root` to control the released dependencies precisely. Each extension retains its own runtime; users do not choose another extension's interpreter.
 
-For native extensions, supply their independently deployed executable directory with `--runtime-root`. Publisher ZIPs contain `config/artifact.json` with extension ID, version, platform and wheel tags, alongside the capability catalog. Studio validates descriptions again when installing. Extensions with their own interpreter declare `kind: "pixi"` and an environment ID. Pass `--wheel` together with `--runtime-root`, pointing at an unpacked published runtime package. The wheel must appear with identical bytes in that package's lock. The builder embeds its runtime definition and checks the lock; services may declare the same explicit `python -m module` entrypoint as shared services. Tools use their declared module through the private interpreter. Other shared extensions can explicitly select this package runtime and reuse it after provider/dependency checks.
+For native extensions, supply their independently deployed executable directory with `--runtime-root`. Publisher ZIPs contain `config/artifact.json` with extension ID, version, platform and wheel tags, alongside the capability catalog. Studio validates descriptions again when installing. Extensions with their own interpreter declare `kind: "pixi"` and an environment ID. Pass `--wheel` together with `--runtime-root`, pointing at an unpacked published runtime package. The wheel must appear with identical bytes in that package's lock. The builder embeds its runtime definition and checks the lock; services may declare the same explicit `python -m module` entrypoint through its own interpreter. Tools use their declared module through the private interpreter. Other extensions retain their own locked workspaces and may reuse cached package files.
 
 A runtime publisher first builds or downloads all required wheels and locks a standard Pixi workspace against them. The publishing command snapshots those inputs, checks that they are portable wheels, and verifies the existing lock with `pixi lock --check`. It does not run a dependency solver or compile packages:
 
@@ -113,9 +91,9 @@ extension ID. All referenced release inputs must still be contained, locked
 and portable.
 
 Independent prefixes share the F8 package cache, rather than a mutable
-interpreter. Existing shared-provider declarations remain an explicit legacy
-integration path; new extensions should carry their own locked runtime inputs.
-WebStudio has its own application runtime at `extensions/f8webstudio/pixi.toml`; the platform bootstrap lives in `launcher/pixi.toml`.
+interpreter. Extensions carry their own locked runtime inputs; the GUI and API offer no
+interpreter sharing or runtime rebinding.
+WebStudio has its own application runtime at `extensions/f8webstudio/pixi.toml`; the platform bootstrap lives in `platform/pixi.toml`.
 
 The `pyengine` extension contains `f8.pyengine`, `f8.pyexpr`, and `f8.pyscript`.
 Its source workspace and lock are owned by `extensions/f8pyengine`; both Python
@@ -123,11 +101,17 @@ namespaces are included in the single `f8pyengine` wheel.
 
 ## Updates and rollback
 
-Updating one extension changes its artifact version/checksum in the release lock. Compatible shared extensions can retain the same runtime artifact. Incompatible updates publish/select a new runtime baseline or an independent locked environment. Existing environments are not upgraded in place.
+Updating one extension changes its artifact version/checksum. Its locked runtime
+is prepared independently; other extension environments remain unchanged. Retain
+prior release locks and artifacts for reproducible rollback. Application updates
+validate selected protocol consumers and restore the previous version if readiness
+fails. Stop services/tools before uninstalling an extension; there is no automatic
+replacement of a running extension.
 
-Keep prior release locks and their artifacts to reproduce or roll back an assembled release. Parallel runtime IDs let extensions continue using an older baseline while another uses the newer one. In Studio, uninstall an extension, import a new version through the existing extension import API, then install it. Importing an old cached artifact after uninstall selects that version again for rollback. Installed extensions must be uninstalled before version selection, same-version content changes are rejected, and source selections survive restarts. Older payloads and their runtime definitions remain available for other extensions already bound to those environments. If persistence fails, the previous catalog/runtime selection is restored. The environment selector supports explicit rebind to a prepared compatible environment; running services/tools must stop before uninstall. There is no automatic replacement of a running extension.
-
-Dependency declarations, cached package files and installed interpreters have different sharing boundaries. Independent locks can reuse package-cache files without sharing a mutable interpreter. Runtime baselines are reused only after compatibility checks. This avoids requiring Studio to maintain a globally solved distribution of every extension.
+Uninstall/import/install selects a service or tool extension version. Same-version
+content changes are rejected. Old payloads and cached package files can support
+rollback; unused managed environment files and package caches can be released from
+Runtime Environments. No environment selection or rebinding operation is exposed.
 
 ## Source development
 
@@ -154,7 +138,7 @@ variables, named endpoints, provided/required protocols, and a readiness probe.
 Endpoint overrides live in platform user data and change while affected processes
 are stopped.
 
-`launcher/`, `extensions/f8webstudio/` and `extensions/f8mediagateway/` have independent
+`platform/`, `extensions/f8webstudio/` and `extensions/f8mediagateway/` have independent
 publisher workflows. WebStudio frontend/backend versions must match and its archive
 must contain both. The SDK owns `f8media_protocol`, shared by Gateway and Studio.
 

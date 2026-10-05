@@ -17,7 +17,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'sdk/python'))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'launcher'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'platform'))
 from release_wheels import build_wheels
 from f8platform.environment_definitions import read_manifest, selected_lock, write_manifest
 from f8platform.runtime_sources import read_runtime_sources
@@ -38,7 +38,7 @@ CPP_PRESET_CANDIDATES = (
     DEFAULT_CPP_PRESET_PATH,
 )
 CPP_BUILD_PRESET_NAME = "conan-release"
-LOCAL_EDITABLE_PATH_PREFIXES = ("launcher/", "extensions/", "sdk/")
+LOCAL_EDITABLE_PATH_PREFIXES = ("platform/", "extensions/", "sdk/")
 # C++ runtime deploy targets are owned by CMake's f8_deploy_all_runtime aggregator.
 CPP_DEPLOY_ALL_TARGET = "f8_deploy_all_runtime"
 LAUNCHER_RUNTIME_FEATURE = "launcher-runtime"

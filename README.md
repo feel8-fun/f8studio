@@ -9,7 +9,7 @@ integration tests. Official artifact assembly lives in the separate
 - local large-payload transfers can use Zenoh shared-memory optimization
 
 ## Layout
-- `launcher/` — independent `f8platform` bootstrap and lifecycle manager, not an extension.
+- `platform/` — independent `f8platform` bootstrap and lifecycle manager, not an extension.
 - `schemas` — generated Studio API contracts.
 - `sdk` — [independent SDK repository](https://github.com/feel8-fun/f8sdk), including canonical shared protocols and generators.
 - `docs` — architecture, service/operator manuals, and development guides.
@@ -39,7 +39,9 @@ For a rebuild with fresh local environments, see [clean and rebuild](docs/develo
 ## Web Studio
 - Build: `pixi run -e web-studio studio_web_build`
 - Start: `pixi run -e web-studio studio_server`
-- Debug the desktop tray: `pixi run --locked -e web-studio studio_tray`
+- Start the platform tray and management portal: `pixi run --locked platform_tray`
+- Run the platform in a terminal: `pixi run --locked platform_dev`
+- Manage components without Studio: `pixi run --locked platform_cli extensions list`
 - Open: `http://127.0.0.1:8210`
 
 ## Service installation and registration

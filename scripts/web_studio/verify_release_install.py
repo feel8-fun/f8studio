@@ -18,7 +18,7 @@ from release_wheels import build_wheels
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WEB_SOURCE_DIR = REPO_ROOT / "extensions/f8webstudio/build/web-studio"
 PACKAGE_DIRS = (
-    REPO_ROOT / "launcher",
+    REPO_ROOT / "platform",
     REPO_ROOT / "sdk" / "python",
     REPO_ROOT / "extensions" / "f8webstudio" / "f8studio_core",
     REPO_ROOT / "extensions" / "f8mediagateway",
@@ -102,7 +102,9 @@ import f8studio_core
 import f8studio_server
 import f8unitymods_setup
 from f8media_gateway.service import InProcessMediaGateway
-from f8platform.applications import ApplicationManager
+from f8platform.api import create_app as create_platform_app
+from f8pysdk.platform_client import PlatformClient, PlatformConnection
+import httpx
 from f8studio_server.app import create_app, default_web_dist
 
 prefix = Path(sys.prefix).resolve()
@@ -121,12 +123,16 @@ web_dist = default_web_dist()
 if not web_dist.is_relative_to(prefix) or not (web_dist / 'index.html').is_file():
     raise RuntimeError(f'embedded Web bundle is unavailable: {web_dist}')
 with tempfile.TemporaryDirectory(prefix='f8studio-wheel-smoke-') as data_dir:
-    manager = ApplicationManager(Path(data_dir) / 'platform')
-    os.environ['F8_SERVICE_INDEX'] = str(manager.data_dir / 'distribution/config/service-index.json')
-    app = create_app(data_dir=Path(data_dir), service_roots=(), media_gateway=InProcessMediaGateway())
-    with TestClient(app) as client:
-        health = client.get('/api/health')
-        root = client.get('/')
+    platform_data = Path(data_dir) / 'platform'
+    with TestClient(create_platform_app(platform_data)) as platform_http:
+        def forward(request):
+            response = platform_http.request(request.method, str(request.url), headers=request.headers, content=request.read())
+            return httpx.Response(response.status_code, content=response.content, headers=response.headers)
+        platform = PlatformClient(PlatformConnection(url='http://testserver', token_file=str(platform_data / 'platform-token')), transport=httpx.MockTransport(forward))
+        app = create_app(data_dir=Path(data_dir), service_roots=(), media_gateway=InProcessMediaGateway(), platform=platform)
+        with TestClient(app) as client:
+            health = client.get('/api/health')
+            root = client.get('/')
     if health.status_code != 200:
         raise RuntimeError(f'health request failed: {health.status_code} {health.text}')
     if root.status_code != 200 or '<div id="root"></div>' not in root.text:

@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | f8studio | 开发工作区与集成检查 | 源码版本组合与开发工具 |
 | f8sdk | 公共协议、调用约定、SDK | Python/C++ SDK |
-| f8platform（launcher/） | 安装、运行环境、进程生命周期、版本选择与回滚 | bootstrap runtime |
+| f8platform（platform/） | 安装、运行环境、进程生命周期、版本选择与回滚 | bootstrap runtime |
 | f8webstudio | Web UI、后端、私有图文档/API | 前后端一起发布的 extension |
 | f8mediagateway | 媒体传输应用 | extension 与私有锁定环境 |
 | f8distribution | 官方发行组合、校验与离线打包 | 已发布产物的组合 |

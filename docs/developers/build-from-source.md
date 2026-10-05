@@ -80,8 +80,9 @@ pixi run -e web-studio studio_web_build
 pixi run -e web-studio studio_server
 ```
 
-For desktop tray debugging, run `pixi run --locked -e web-studio studio_tray`.
-This uses the generated development catalog, as does `studio_server`. After
+For desktop management, run `pixi run --locked platform_tray`
+and start WebStudio from the platform portal. The platform and direct
+`studio_server` source entrypoint use the generated development catalog. After
 cleaning build output, run `workspace_python_describes` to restore Python
 descriptions; rebuild native services before `workspace_native_describes`.
 Extension environments remain independently installed through Extensions.
@@ -146,7 +147,7 @@ Prepare development library checkouts with `pixi run -e build-check python scrip
 Each repository builds and publishes its own artifact:
 
 ```bash
-pixi run --locked --manifest-path launcher/.ci/pixi.toml publish
+pixi run --locked --manifest-path platform/.ci/pixi.toml publish
 pixi run --locked --manifest-path extensions/f8mediagateway/.ci/pixi.toml publish
 pixi run --locked --manifest-path extensions/f8webstudio/.ci/pixi.toml publish
 ```

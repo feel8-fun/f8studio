@@ -45,3 +45,11 @@ forbidden_modules =
     f8studio_core
     f8media_gateway
     f8media_protocol
+
+[importlinter:contract:studio-platform-client]
+name = WebStudio uses SDK platform contracts without platform implementation imports
+type = forbidden
+source_modules =
+    f8studio_server
+forbidden_modules =
+    f8platform
