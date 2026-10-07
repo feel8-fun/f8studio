@@ -24,6 +24,7 @@ nav:
   - For Developers:
       - Overview: developers/index.md
       - Build from Source: developers/build-from-source.md
+      - Windows Source Deployment: developers/windows-source-deployment.md
       - Workspace Tasks: developers/workspace-tasks.md
       - Platform Management: developers/platform-management.md
       - Unity Modding Architecture: developers/unity-modding-architecture.md

@@ -1,6 +1,9 @@
 # Build from Source
 
-Clone the repository with its Unity exporter submodule and use Pixi for every managed Python or Node command.
+Clone the repository with all its submodules and use Pixi for every managed Python or Node command.
+
+For PowerShell commands, SDK input revisions and Windows native build prerequisites,
+see [Windows source deployment](windows-source-deployment.md).
 
 ```bash
 git clone --recurse-submodules <your-repo-url>

@@ -117,7 +117,11 @@ def test_wheel_extraction_rejects_paths_outside_package(tmp_path: Path, name: st
 
     wheel = tmp_path / 'evil.whl'
     with zipfile.ZipFile(wheel, 'w') as archive:
-        archive.writestr(name, 'malicious')
+        info = zipfile.ZipInfo(name)
+        # ZipInfo normalizes Windows separators when constructed. Preserve the
+        # malicious archive member exactly as received from an external wheel.
+        info.filename = name
+        archive.writestr(info, 'malicious')
     with pytest.raises(ValueError, match='Unsafe wheel path'):
         _extract_wheel(wheel, tmp_path / 'python')
     assert not (tmp_path / 'escape.py').exists()

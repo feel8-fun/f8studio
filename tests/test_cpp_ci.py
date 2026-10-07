@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
@@ -75,7 +76,9 @@ class CppCiBootstrapTest(unittest.TestCase):
             args = module._conan_toolchain_args()
             self.assertIn(f"user.f8:toolchain={module._toolchain_id()}", args)
         self.assertIn(f"tools.build:sysroot={prefix / 'sysroot'}", args)
-        self.assertTrue(any(str(prefix / "bin/c++") in arg for arg in args))
+        compiler_argument = next(arg for arg in args if arg.startswith("tools.build:compiler_executables="))
+        compilers = json.loads(compiler_argument.split("=", 1)[1])
+        self.assertEqual(compilers, {"c": str(prefix / "bin/cc"), "cpp": str(prefix / "bin/c++")})
         self.assertIn('tools.info.package_id:confs=["user.f8:toolchain"]', args)
 
     def test_host_sysroot_is_rejected_with_pixi_compilers(self) -> None:

@@ -2,6 +2,7 @@ from f8pysdk._specs.builtin_fields import normalize_describe_payload_dict
 
 from pathlib import Path
 import json
+import os
 
 import pytest
 
@@ -50,7 +51,8 @@ def test_runtime_layout_migration_preserves_executable_and_user_config(tmp_path:
     assert migrate_runtime_layout(old, tmp_path / "install") == 2
     installed = tmp_path / "install/runtime/bundles/f8.cppengine/0.0.1/linux/engine"
     assert installed.read_bytes() == executable.read_bytes()
-    assert installed.stat().st_mode & 0o111
+    if os.name != 'nt':
+        assert installed.stat().st_mode & 0o111
     assert (tmp_path / "user-config/f8.implayer/imgui.ini").read_text() == "user settings"
     assert executable.exists() and config.exists()
 

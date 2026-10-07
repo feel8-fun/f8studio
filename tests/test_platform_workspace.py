@@ -40,7 +40,7 @@ def test_development_config_uses_package_root(tmp_path: Path, monkeypatch: pytes
     assert len(applications) == 1
     assert applications[0].manifest.extension_id == 'editor'
     assert applications[0].runtime_manifest == str(package / 'pixi.toml')
-    assert applications[0].arguments[3] == str(package / 'assets')
+    assert Path(applications[0].arguments[3]) == package / 'assets'
     # Resolve dependency endpoints at launch time, after release selection/configuration.
     assert applications[0].arguments[-1] == '${F8_PORT:editor.http}'
     assert applications[0].environment['F8_PLATFORM_CONNECTION_FILE'] == str(connection)
