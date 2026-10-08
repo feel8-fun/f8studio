@@ -1,6 +1,6 @@
 # AssetCloud 重新接入方案
 
-2026-10-08。状态：P0 合同与 revision 已实施并验收；P1 本地组件闭环待实施；Cloud 重接入仍为设计提案。本文基于当前 checkout 的实现核对；旧文档中的功能描述不作为实现完成的依据。
+2026-10-08。状态：P0 合同与 revision 已提交；P1 本地组件闭环已实施并验收；Cloud 重接入仍为设计提案。本文基于当前 checkout 的实现核对；旧文档中的功能描述不作为实现完成的依据。
 
 建议将产品定位调整为 **Feel8 Cloud**，代码名称候选为 `f8cloud`：为 Studio 提供账号、资产发布、发现、订阅和扩展 registry。用户在 WebStudio 中完成主要操作；Cloud 保留独立 API、数据库和精简管理后台。重新接入前先收敛发布合同与版本语义，再连接网络同步。
 
@@ -11,16 +11,16 @@
 | 本地编辑文档 | `f8studio-document/3`（兼容读取 /2），typed patch，graph/layout revision，原子提交、撤销及幂等 | 编辑计数与用户发布版本的呈现需要分开；已声明的 transient 触发不再修改保存状态 |
 | 可移植完整图 | `f8graph/4`（兼容读取 /3）；定义快照去重、SHA-256 校验、稳定端口身份、导入校验；独立发布 manifest 与 content hash；不携带编辑 revision | 可复现安装锁和 Cloud 发布接口待 P2/P3；`resources` 尚不支持 |
 | Cloud 组件 | `f8studio-session/1`，内容为 `{schemaVersion, layout}`，layout 为旧会话对象 | 与当前图和组件格式不兼容；Cloud 尚无独立 graph 和 extension 类型 |
-| 本地 component | 本地仓库仍读写 `f8studio-component/2`；新增可移植 `f8component/1` 合同及 /1、/2 显式转换，定义引用、宿主要求、切断接口和独立发布 manifest | 选区 UI、宿主绑定和 Server 插入属 P1；参数化入口后续另立合同 |
+| 本地 component | 新捕获与新建使用 `f8component/1`；兼容读取旧本地 /1、/2，定义引用、外部宿主、选区端点、Server 原子插入与来源记录 | 参数化入口后续另立合同；Cloud 发布接口属 P2 |
 | 本地 variant | `f8studio-variant/1`，保存 service/operator class 和 stateValues | 应用时只设置 state；不会保存或恢复定制的节点 spec/端口；不能完整替代 PyScript 模板 |
 | Cloud variant | 保存完整 `spec` | 与本地 state preset 的含义不同，不能直接按名称映射 |
 | Cloud 版本 | 每次内容更新增加 `versionNumber`；有独立 metadata 更新接口 | 内容去重、发布请求持久幂等、原子并发控制尚需补齐 |
 | 多用户 | 账号、所有者、public/private、订阅、fork、管理员 | 发布者身份与权限、依赖来源、许可证、协作者授权；尚非多人实时共编 |
-| 前端 | WebStudio 使用 React Flow 投影当前文档；Cloud 有独立 React console | 需要可独立运行的只读图视图；当前 Cloud 内容页仅提供下载，没有当前图预览 |
+| 前端 | 编辑器与独立只读 GraphView 共用 React Flow 投影、节点/端口视觉和样式；已生成独立预览 JS/CSS | 当前 Cloud 内容页未接预览入口；接入属 P2/P4 |
 
 主要实现位置：`f8studio_core/graph/{models,exchange,store}.py`、`f8studio_core/compiler.py`、`f8studio_server/{assets,automation_tools,application,jobs,projects}.py`、`f8studio_web/src/{assets,graph}`、`cloud/src/repository.js`、`platform/f8platform/extension_artifacts.py`。
 
-当前 `component-authoring.md` 还描述了官方组件库、linked draft、分类表单和 `graph_match_library`。本次未在当前 WebStudio 找到对应完整实现，后续需要核对并更新该文档，不能将这些描述计入完成项。
+`docs/developers/component-authoring.md` 已更新为当前实现；官方组件库、linked draft、分类表单和 `graph_match_library` 尚未实现，不计入完成项。
 
 ## 协议稳定性与生态边界
 
@@ -203,13 +203,13 @@ D1 先继续承载现有规模的元数据和小型版本内容。是否将大�
 
 例：作者在 `f8.pyscript` 中写好平滑算法，定义输入 value、输出 smoothed 与参数 alpha，然后将选中节点保存为 component。用户从 Library 插入，选择当前 PyEngine 作为宿主，得到保留代码、端口、状态 schema 与默认参数的普通 PyScript 节点。更新库中模板只提示新版本；旧图不会被替换。
 
-需要补齐以下行为：
+P0/P1 已实现以下行为（组件参数仍另行设计）：
 
 1. “保存选区为组件”，支持单节点和多个节点；保留选区内部连线，跨选区边转为显式连接提示或接口声明。
 2. 完整保存定义快照及配置，复用 `f8graph/4` 的定义引用与端口身份模型；不要把内部派生 ports 和整个 GraphNode 当长期发布协议。
 3. P0 已实施独立 `f8component/1`，带 required host bindings、暴露端点及独立依赖 manifest，复用定义引用与端口身份。旧本地 component/1、/2 可显式转换；参数化入口未纳入第一版。
-4. Server 完成宿主绑定、节点/边 ID 重映射、布局定位和原子校验，HTTP、Agent、CLI/MCP 共用这条操作。当前 Assets UI 自己重映射 ID 的实现不作为最终公共语义。
-5. 保存来源 asset ID、固定版本及插入映射以便追溯，但来源关系不改变节点所有权，不做自动替换。
+4. Server 完成宿主绑定、节点/边 ID 重映射、布局偏移和原子校验，HTTP、Agent、CLI/MCP 共用这条操作；Assets UI 已移除浏览器 ID 重映射。只读 GraphView 与编辑器共用节点视觉和样式，有独立 JS/CSS 构建入口。
+5. 来源 asset ID、固定版本、宿主及插入映射与图变更同事务保存。记录属于本地数据库，不改变节点所有权，不做自动替换；本地 graph 备份暂不携带这份插入历史。重试遵循项目已有的有限回执保留窗口。
 6. PyScript 第三方依赖通过 extension/runtime 声明；复用脚本不在插入时偷偷 pip install。预览和下载不执行代码，用户部署时才进入既有运行边界。
 
 以后若需要可折叠、可复用且保持外部接口的真正子图实例，应另立设计讨论生命周期、升级、调试和编译展开；首期模板系统不预先承担这些语义。
@@ -234,8 +234,10 @@ P0/P1 可先在本地完成，无需部署 Cloud；P2 在测试环境验证完�
 
 本地合同已实现：SDK 显式状态策略及 Python/C++/Web 生成，document/graph/component 旧格式读取，运行时更新不保存、不增加 revision，共享 graph/component 清理实例值及作者勾选，asset 历史和 variant 值策略校验。默认值和示例保留。已有动作继续使用 command/exec，没有增加 input 发布策略。
 
-P0 补齐：独立 publication/manifest/component 静态模型和生成 schema；发布 hash 的 Python/Web 共用 fixture；缺失 extension、版本、协议、service/operator 和能力的明确诊断；embedded definitions 支持离线预览；capabilities 返回支持窗口。合同层已表达外部宿主和选区端点，实际插入与 UI 属 P1。
+P0 补齐：独立 publication/manifest/component 静态模型和生成 schema；发布 hash 的 Python/Web 共用 fixture；缺失 extension、版本、协议、service/operator 和能力的明确诊断；embedded definitions 支持离线预览；capabilities 返回支持窗口。
+
+P1 补齐：选区捕获与实例排除 UI、完整 PyScript spec/代码/端口往返、现有宿主选择、固定版本的 Server 原子插入与来源记录、重试和重复插入、缺失/不兼容定义预览、复用编辑器视觉的独立 GraphView。回归覆盖并发 revision 冲突、重启后重试、数据库写入失败回滚和 Agent 原有审批路径。
 
 完成 Pixi 管理环境下的核心、服务端、SDK、Web 回归，严格 Python/TypeScript 类型检查，合同生成一致性检查，以及 C++ SDK 测试和播放器编译。新增回归覆盖旧图 hash 校验与迁移、运行时触发和重试、私有值清理、定义默认值保留、有效上游连接、作者排除及历史资产导出。
 
-此次仍不包含 Cloud 部署、旧在线资产转换、extension registry、组件参数/宿主绑定、选区捕获、持久发布 profile 或网络同步；这些继续按 P1–P4 推进。测试不替代线上数据迁移验收。
+此次仍不包含 Cloud 部署、旧在线资产转换、extension registry、组件参数、持久发布 profile 或网络同步；这些继续按 P2–P4 及后续组件参数设计推进。测试不替代线上数据迁移验收。

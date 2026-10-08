@@ -179,6 +179,7 @@ nodejs = ">=24,<25"
 studio_web_dev = "npm --prefix extensions/f8webstudio/f8studio_web run dev"
 studio_web_install = { cmd = "npm --prefix extensions/f8webstudio/f8studio_web ci", description = "Install frontend dependencies from the npm lock" }
 studio_web_build = { cmd = "npm --prefix extensions/f8webstudio/f8studio_web run build", description = "Build WebStudio frontend assets; run studio_web_install on a fresh checkout" }
+studio_graph_view_build = { cmd = "npm --prefix extensions/f8webstudio/f8studio_web run build:graph-view", description = "Build the standalone read-only graph preview library" }
 
 [feature.web-studio-test.dependencies]
 pytest = ">=8.4.2,<9"

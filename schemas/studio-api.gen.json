@@ -2373,13 +2373,28 @@
         "name": {
           "default": "Component",
           "type": "string"
+        },
+        "nodeIds": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
         "excludedStates",
         "expectedGraphRevision",
         "expectedLayoutRevision",
-        "name"
+        "name",
+        "nodeIds"
       ],
       "title": "CaptureComponentRequest",
       "type": "object"
@@ -2403,6 +2418,20 @@
         "name": {
           "default": "Component",
           "type": "string"
+        },
+        "nodeIds": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -2924,6 +2953,112 @@
       "title": "ComponentEndpoint",
       "type": "object"
     },
+    "ComponentPreview": {
+      "additionalProperties": false,
+      "properties": {
+        "assetId": {
+          "type": "string"
+        },
+        "component": {
+          "$ref": "#/$defs/PortableComponent"
+        },
+        "document": {
+          "$ref": "#/$defs/StudioDocument"
+        },
+        "issues": {
+          "items": {
+            "$ref": "#/$defs/ComponentPreviewIssue"
+          },
+          "type": "array"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "assetId",
+        "component",
+        "document",
+        "issues",
+        "version"
+      ],
+      "title": "ComponentPreview",
+      "type": "object"
+    },
+    "ComponentPreviewInput": {
+      "additionalProperties": false,
+      "properties": {
+        "assetId": {
+          "type": "string"
+        },
+        "component": {
+          "$ref": "#/$defs/PortableComponentInput"
+        },
+        "document": {
+          "$ref": "#/$defs/StudioDocumentInput"
+        },
+        "issues": {
+          "items": {
+            "$ref": "#/$defs/ComponentPreviewIssueInput"
+          },
+          "type": "array"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "assetId",
+        "version",
+        "component",
+        "document",
+        "issues"
+      ],
+      "title": "ComponentPreview",
+      "type": "object"
+    },
+    "ComponentPreviewIssue": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "nodeId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "nodeId"
+      ],
+      "title": "ComponentPreviewIssue",
+      "type": "object"
+    },
+    "ComponentPreviewIssueInput": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "nodeId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "nodeId",
+        "message"
+      ],
+      "title": "ComponentPreviewIssue",
+      "type": "object"
+    },
     "ComponentPublication": {
       "additionalProperties": false,
       "properties": {
@@ -2989,6 +3124,97 @@
         "contentHash"
       ],
       "title": "ComponentPublication",
+      "type": "object"
+    },
+    "ComponentSource": {
+      "additionalProperties": false,
+      "properties": {
+        "assetId": {
+          "type": "string"
+        },
+        "edgeMap": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "endpoints": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ComponentEndpoint"
+          },
+          "type": "array"
+        },
+        "hostBindings": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "nodeMap": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "assetId",
+        "edgeMap",
+        "endpoints",
+        "hostBindings",
+        "nodeMap",
+        "version"
+      ],
+      "title": "ComponentSource",
+      "type": "object"
+    },
+    "ComponentSourceInput": {
+      "additionalProperties": false,
+      "properties": {
+        "assetId": {
+          "type": "string"
+        },
+        "edgeMap": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "endpoints": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ComponentEndpointInput"
+          },
+          "type": "array"
+        },
+        "hostBindings": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "nodeMap": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "assetId",
+        "version",
+        "nodeMap",
+        "edgeMap",
+        "hostBindings"
+      ],
+      "title": "ComponentSource",
       "type": "object"
     },
     "ConnectEdgeOp": {
@@ -14482,6 +14708,131 @@
       "title": "In",
       "type": "object"
     },
+    "InsertComponentRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "assetId": {
+          "type": "string"
+        },
+        "expectedGraphRevision": {
+          "type": "integer"
+        },
+        "expectedLayoutRevision": {
+          "type": "integer"
+        },
+        "hostBindings": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "x": {
+          "default": 40,
+          "type": "number"
+        },
+        "y": {
+          "default": 40,
+          "type": "number"
+        }
+      },
+      "required": [
+        "assetId",
+        "expectedGraphRevision",
+        "expectedLayoutRevision",
+        "hostBindings",
+        "requestId",
+        "version",
+        "x",
+        "y"
+      ],
+      "title": "InsertComponentRequest",
+      "type": "object"
+    },
+    "InsertComponentRequestInput": {
+      "additionalProperties": false,
+      "properties": {
+        "assetId": {
+          "type": "string"
+        },
+        "expectedGraphRevision": {
+          "type": "integer"
+        },
+        "expectedLayoutRevision": {
+          "type": "integer"
+        },
+        "hostBindings": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "x": {
+          "default": 40,
+          "type": "number"
+        },
+        "y": {
+          "default": 40,
+          "type": "number"
+        }
+      },
+      "required": [
+        "requestId",
+        "expectedGraphRevision",
+        "expectedLayoutRevision",
+        "assetId",
+        "version"
+      ],
+      "title": "InsertComponentRequest",
+      "type": "object"
+    },
+    "InsertComponentResult": {
+      "additionalProperties": false,
+      "properties": {
+        "patch": {
+          "$ref": "#/$defs/PatchResult"
+        },
+        "source": {
+          "$ref": "#/$defs/ComponentSource"
+        }
+      },
+      "required": [
+        "patch",
+        "source"
+      ],
+      "title": "InsertComponentResult",
+      "type": "object"
+    },
+    "InsertComponentResultInput": {
+      "additionalProperties": false,
+      "properties": {
+        "patch": {
+          "$ref": "#/$defs/PatchResultInput"
+        },
+        "source": {
+          "$ref": "#/$defs/ComponentSourceInput"
+        }
+      },
+      "required": [
+        "patch",
+        "source"
+      ],
+      "title": "InsertComponentResult",
+      "type": "object"
+    },
     "InsertFragmentOp": {
       "properties": {
         "edges": {
@@ -23398,6 +23749,21 @@
       "$ref": "#/$defs/AssetRecord"
     },
     {
+      "$ref": "#/$defs/ComponentPreview"
+    },
+    {
+      "$ref": "#/$defs/InsertComponentRequest"
+    },
+    {
+      "$ref": "#/$defs/InsertComponentResult"
+    },
+    {
+      "$ref": "#/$defs/InsertComponentRequest"
+    },
+    {
+      "$ref": "#/$defs/InsertComponentResult"
+    },
+    {
       "$ref": "#/$defs/GraphExchange"
     },
     {
@@ -24374,6 +24740,21 @@
     },
     {
       "$ref": "#/$defs/AssetRecordInput"
+    },
+    {
+      "$ref": "#/$defs/ComponentPreviewInput"
+    },
+    {
+      "$ref": "#/$defs/InsertComponentRequestInput"
+    },
+    {
+      "$ref": "#/$defs/InsertComponentResultInput"
+    },
+    {
+      "$ref": "#/$defs/InsertComponentRequestInput"
+    },
+    {
+      "$ref": "#/$defs/InsertComponentResultInput"
     },
     {
       "$ref": "#/$defs/GraphExchangeInput"

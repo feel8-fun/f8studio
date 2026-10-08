@@ -1,116 +1,113 @@
 # Component Authoring
 
-Components are reusable authoring-time graph templates. They are not runtime
-nodes and they do not introduce a second graph execution model.
+Components are reusable authoring templates. Inserting one creates ordinary
+nodes and connections; updating the source asset leaves inserted nodes alone.
+A component can be one customized PyScript node or a selection of nodes.
 
-## Insertion Semantics
+## Save a selection
 
-When a component is placed on the canvas, Studio:
+1. Configure the nodes, script code, schemas and ports in Graph.
+2. Select one or more nodes and choose **Save selection as component** in the
+   graph toolbar.
+3. Name the template and choose which eligible saved state values to include.
+4. Open **Assets** to inspect, preview or export the saved component.
 
-1. copies its saved graph content
-2. remaps conflicting node and edge identities
-3. places the copied nodes and connections on the canvas
-4. returns ownership of those ordinary nodes to the current graph
+**Capture graph** in Assets captures the complete project instead. Neither
+capture changes the project or collects live runtime state.
 
-There is no parent component node after insertion. Users may edit, delete, or
-replace every inserted node. Updating the source component does not silently
-modify graphs that previously inserted it.
+The template retains full definition snapshots, script code/configuration,
+port IDs, layout and internal connections. Private/transient/read-only instance
+values are removed. Definition defaults/examples stay intact. Author exclusions
+remove values, never fields, ports or definitions.
 
-Linked drafts describe the relationship between a local asset draft and its
-publish target. They do not create linked component instances on the canvas.
+When an operator's service is outside the selection, the component records a
+required host binding. The host's local configuration is not captured. A cut
+external connection becomes an exposed endpoint rather than a dangling edge.
+Retained internal state connections omit the target's initial value. A cut state
+connection keeps an eligible authored fallback; if a required state has no saved
+fallback or schema default, capture reports the exact unresolved field.
 
-## Component Roles
+## Preview and insert
 
-Use one primary role tag:
+Select a component in Assets to see its read-only graph preview. Embedded
+snapshots permit preview even when its extension is absent. The preview has
+static state/port visuals and media placeholders; it never executes script code,
+starts services, installs extensions or connects device/media streams.
 
-- `role:source`: produces media, network, mod, or skeleton input
-- `role:detect`: extracts a bounded signal or event from a source
-- `role:shape`: maps, filters, mixes, limits, or encodes signals
-- `role:output`: terminates at one or more device/protocol outputs
-- `role:view`: visualizes or diagnoses values
-- `role:complete`: provides a complete starter workflow
+Choose a target project, a fixed component version, and an existing matching
+service for every external host binding, then choose **Apply**. A single PyScript
+template can reuse the project's current PyEngine. Selecting a service as part
+of the original component intentionally includes that service in the template.
 
-Additional tags describe discovery dimensions:
+Server remaps every inserted node and edge ID, preserves node-scoped port IDs,
+translates layout by the requested x/y offsets and validates the complete graph.
+Insertion uses one graph patch, so undo removes the whole insertion. Source asset
+ID, fixed version, host bindings, and node/edge/endpoint mappings are recorded in
+the same database transaction. A database failure changes neither the project
+nor its insertion source record. A retry with the same request ID returns its
+saved result; use a new request ID to insert another copy. Request replay follows
+the project's existing bounded receipt-history window.
 
-- `workflow:video`, `workflow:audio`, `workflow:modding`, `workflow:skeleton`
-- `signal:position`, `signal:vibrate`, `signal:rotate`, `signal:tcode`
-- `protocol:tcode`, `protocol:serial`, `protocol:handy`, `protocol:lovense`, `protocol:buttplug`
-- `level:starter`, `level:advanced`
+Connect the exposed ports in Graph after insertion. Missing implementations,
+incorrect hosts, schema conflicts and stale revisions produce errors before
+commit. A newer asset version does not replace nodes already inserted.
 
-Unknown tags remain valid for forward compatibility. Reserved role, workflow,
-signal, protocol, and level prefixes must use normalized lowercase values.
+## Public and local contracts
 
-Studio edits these dimensions through Component-specific metadata fields. The
-Role field is a single-choice selector. Workflows, Signals, Protocols, Levels,
-and custom Tags accept comma-separated values. The editor serializes them back
-to the existing flat `tags` list, so component files, local drafts, and cloud
-records do not require a schema migration. Custom tags, including unknown
-namespaced tags such as `author:example`, are preserved separately from the
-reserved dimensions.
+New captures use portable `f8component/1`. It reuses graph definition references
+and stable port identity, adds explicit external `hostBindings` and `endpoints`,
+and avoids internal derived GraphNode/ports as its saved format. Readers retain
+explicit conversion of older local `f8studio-component/1` and `/2` assets.
 
-## Composition Rules
+Cloud publication is a separate `f8publication/1` envelope containing a manifest
+and content hash. License, provenance and extension dependencies belong in that
+manifest; local editing revisions never become publication versions. Contract
+specification, generated JSON Schema and Python/Web fixtures live in
+`extensions/f8webstudio/contracts`.
 
-Protocol-independent components should expose normalized semantic signals and
-stop before device transport. Output components should consume those signals
-and contain the protocol-specific tail of the graph.
+A variant remains a lightweight state preset, not a complete script template.
+Use a component when custom ports, state schemas or code must be retained.
 
-Do not translate one device protocol into another. Reuse happens before the
-protocol boundary:
+## Shared automation paths
 
-```text
-source -> detect -> shape -> normalized signal -> output node
-```
+HTTP, Agent, CLI and MCP all call the same application-service operations:
 
-Components with physical outputs must:
+| Operation | HTTP |
+| --- | --- |
+| Capture selection | `POST /api/projects/{id}/components` |
+| Preview fixed version | `GET /api/assets/{assetId}/versions/{version}/preview` |
+| Preview insertion | `POST /api/projects/{id}/components:preview` |
+| Insert atomically | `POST /api/projects/{id}/components:insert` |
 
-- store every physical output node as disabled
-- omit local device selections, URLs, tokens, and connection keys
-- include or document a safe visualization path
-- state the expected input range in their description
+Capture requests include `expectedGraphRevision`, `expectedLayoutRevision`,
+`name`, optional `nodeIds` and `excludedStates`. Omit nodeIds to capture all;
+an explicitly empty selection is rejected.
 
-## Compatibility
+Insertion requests include `requestId`, both expected revisions, `assetId`,
+`version`, `hostBindings` (binding ID to target service ID), and optional x/y.
+The response contains the patch result and source mappings. Preview uses the
+exact same request and IDs while leaving the project unchanged. Agent mutations
+retain the existing preview/approval workflow.
 
-Component tags support search and recommendations only. They do not change
-runtime compilation or bypass normal port schema validation. A recommendation
-is valid only when both the semantic signal tag and the actual graph port schema
-are compatible.
-
-`graph_match_library` returns component candidates alongside node candidates.
-Every component candidate includes its role, workflows, signals, and protocols.
-Compatibility is marked as not evaluated unless the caller supplies all three
-of `source_node_id`, `source_port`, and `signal`. With that context, Studio uses
-the source output's declared schema and returns explicit compatibility reasons
-and warnings. Matching never inserts a component, creates a connection, enables
-an output node, or starts a physical device.
-
-## Bundled Official Components
-
-Studio ships a small read-only official library for common protocol boundaries:
-
-- `Position to Lovense`: normalized position to Lovense `sendPositionCmd`
-- `Position to Buttplug`: normalized position to Buttplug/Intiface `sendPositionCmd`
-- `Position to Handy`: normalized position to The Handy HDSP output
-- `Position to TCode`: normalized axis values to a TCode v0.3 string
-- `TCode to Serial`: a TCode string to serial transport
-
-These are protocol tails and encoders, not complete graphs. They do not create a
-PyEngine service, media source, detector, Tick node, or visualization. Place
-them inside an existing PyEngine service and connect the visible data and exec
-ports to the graph's existing flow.
-
-Bundled assets use stable component and node IDs, are loaded directly from
-package resources, and are never seeded into the user's database. They appear
-as installed Official entries and may be copied to an editable draft. They
-cannot be pulled, removed, published in place, or queried for remote history.
-
-Every physical output in a bundled component stores `enabled=false` and clears
-device selections, serial ports, connection keys, and target toy IDs. The user
-must configure the transport and explicitly enable it after inspecting the
-signal path.
-
-Regenerate or validate the assets after changing an embedded OperatorSpec:
+CLI commands take a typed JSON request file:
 
 ```text
-pixi run official_components
-pixi run official_components_check
+pixi run studio_cli capture-component PROJECT request.json
+pixi run studio_cli component-preview ASSET VERSION
+pixi run studio_cli preview-component-insertion PROJECT request.json
+pixi run studio_cli insert-component PROJECT request.json
 ```
+
+The standalone `GraphView` entry is `f8studio_web/src/graph-view.ts`; it shares
+node surfaces, styles and projection with the editor and accepts a validated
+StudioDocument snapshot. Build it with `pixi run studio_graph_view_build`.
+The JS/CSS library outputs are in `extensions/f8webstudio/build/graph-view`,
+with React and React Flow as peer dependencies. It needs no Studio server,
+installed catalog or live store once supplied with a snapshot.
+
+## Later work
+
+Cloud publishing/Library synchronization, extension registry, reusable publication
+profiles, component parameters and nested runtime subgraphs remain separate
+work. Official bundled templates, linked cloud drafts, role/category forms and
+`graph_match_library` are not implemented by the current WebStudio.
