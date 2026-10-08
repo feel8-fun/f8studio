@@ -166,6 +166,7 @@ mcp = { version = ">=1.24,<2", extras = ["cli"] }
 [feature.web-studio.tasks]
 studio_media_gateway = "python -m f8media_gateway"
 studio_server = { cmd = "python -m f8studio_server", depends-on = ["platform_ensure"], env = { F8_SERVICE_INDEX = "build/workspace/config/service-index.json", F8_PLATFORM_CONNECTION_FILE = "build/workspace/platform-connection.json" }, description = "Run the development server in this terminal" }
+studio_server_e2e = { cmd = "python extensions/f8webstudio/f8studio_server/tests/e2e_server.py", depends-on = ["platform_ensure"], env = { F8_SERVICE_INDEX = "build/workspace/config/service-index.json", F8_PLATFORM_CONNECTION_FILE = "build/workspace/platform-connection.json" }, description = "Run the Playwright server with its offline test provider" }
 studio_launch = { cmd = "python -m f8studio_server --open-browser", depends-on = ["platform_ensure"], env = { F8_SERVICE_INDEX = "build/workspace/config/service-index.json", F8_PLATFORM_CONNECTION_FILE = "build/workspace/platform-connection.json" }, description = "Run the development server and open its browser page" }
 studio_cli = { cmd = "python -m f8studio_server.cli", description = "Connect the CLI to a running Studio server" }
 studio_mcp = { cmd = "python -m f8studio_server.mcp_server", description = "Connect MCP to a running Studio server" }

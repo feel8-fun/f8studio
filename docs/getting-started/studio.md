@@ -40,7 +40,7 @@ Service nodes represent deployable runtime processes. Operator nodes execute ins
 | Assets | Components, variants, immutable versions and project snapshots |
 | Code | Local Monaco editor with completion, hover and diagnostics |
 | Local | Unity setup, serial devices, skeleton verification and hotkeys |
-| Agents | Deterministic or model-backed graph construction and diagnosis |
+| Agents | AI model-backed graph construction and diagnosis |
 | Logs | Recent service output, deployment results, runtime errors, and media signaling errors |
 
 Graph changes are saved to the local SQLite store. Layout and graph revisions are tracked separately, and other open tabs receive committed changes over the event stream without rebuilding the whole page.
@@ -62,7 +62,7 @@ pixi run -e web-studio studio_cli --help
 pixi run -e web-studio studio_mcp --help
 ```
 
-Provider credentials remain server-side. Deterministic graph tools work without a model credential.
+Provider credentials remain server-side. Configure an AI provider in Studio Settings to use Agents.
 
 ## Troubleshooting
 

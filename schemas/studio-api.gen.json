@@ -2848,14 +2848,12 @@
     "CreateAgentSessionRequest": {
       "properties": {
         "modelId": {
-          "default": "graph-builder-v1",
           "type": "string"
         },
         "projectId": {
           "type": "string"
         },
         "providerId": {
-          "default": "deterministic",
           "type": "string"
         },
         "title": {
@@ -2875,14 +2873,12 @@
     "CreateAgentSessionRequestInput": {
       "properties": {
         "modelId": {
-          "default": "graph-builder-v1",
           "type": "string"
         },
         "projectId": {
           "type": "string"
         },
         "providerId": {
-          "default": "deterministic",
           "type": "string"
         },
         "title": {
@@ -2891,7 +2887,9 @@
         }
       },
       "required": [
-        "projectId"
+        "projectId",
+        "providerId",
+        "modelId"
       ],
       "title": "CreateAgentSessionRequest",
       "type": "object"

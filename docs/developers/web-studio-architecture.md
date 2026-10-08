@@ -32,7 +32,7 @@ There is no dynamic GUI plugin loader. Repository-owned capabilities register ex
 
 ## Automation
 
-`StudioAutomationTools` is the shared boundary for deterministic agents and provider-backed agents. The HTTP API, `studio_cli`, and `studio_mcp` call the same application service and therefore use identical revision, idempotency, approval, and event semantics. Provider credentials are read only by the server process.
+`StudioAutomationTools` is the shared boundary for provider-backed agents and offline test workflows. The HTTP API, `studio_cli`, and `studio_mcp` call the same application service and therefore use identical revision, idempotency, approval, and event semantics. Provider credentials are read only by the server process.
 
 ## Distribution
 
@@ -72,7 +72,7 @@ All seven built-in Viz nodes share typed presentation injection and configuratio
 
 ## Agent and graph workspace responsibilities
 
-`AgentService` is the public facade for session CRUD, provider selection and run task lifecycle. `AgentSessions` owns persisted records, the shared per-session locks and event publication. `AgentToolExecution` owns approval futures, revision checks, operation auditing and terminal transitions; model-driven and deterministic workflows use the same executor. `AgentModelTools.bind` creates run-local preview/proposal collections, while `DeterministicWorkflow` contains the offline workflow. Neither depends on the service facade. Wire summaries and conversation evidence are pure functions in `agents/evidence.py`.
+`AgentService` is the public facade for session CRUD, provider selection and run task lifecycle. `AgentSessions` owns persisted records, the shared per-session locks and event publication. `AgentToolExecution` owns approval futures, revision checks, operation auditing and terminal transitions; model-driven and deterministic workflows use the same executor. `AgentModelTools.bind` creates run-local preview/proposal collections, while `DeterministicWorkflow` contains an offline test workflow, enabled only by explicit test provider injection. Production provider discovery never includes this demo. Neither depends on the service facade. Wire summaries and conversation evidence are pure functions in `agents/evidence.py`.
 
 `GraphWorkspace` composes the view and owns selection/Inspector sizing. `useGraphProject` owns authoritative project snapshots, event synchronization and the edit queue; its queue is the single source for pending mutation counts. `useGraphCanvas` owns React Flow projections and gesture handlers, with pure move/resize patch construction in `layoutEdits.ts`. `useProjectDeployment` owns deployment subscriptions and cancellation, `useGraphCommands` owns command dialogs/in-flight commands/toasts, and `GraphInspectors` owns field/hotkey presentation. Hooks receive explicit typed inputs; no component receives an opaque workspace object or calls back into another component's private methods.
 
