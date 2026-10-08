@@ -108,6 +108,7 @@ async function checkNavigation(browser, ignoreAbort) {
 
     jobs = [{ jobId: 'job-one', extensionId: 'debug', toolId: 'inspect', status: 'running' }];
     await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await page.locator('.tool-history summary').click();
     await expect(page.getByRole('button', { name: 'Result / logs', exact: true })).toBeVisible();
     const oldDetail = gate();
     delayed = { ...oldDetail, path: '/api/tool-jobs/job-one' };
@@ -209,7 +210,13 @@ async function checkTasksAndUrls(browser) {
     jobs[1] = { ...jobs[1], state: 'running' };
     await expect(first.getByRole('button', { name: 'Uninstall', exact: true })).toBeVisible();
     jobs[1] = { ...jobs[1], state: 'failed', detail: 'Dependency resolution failed', cancellable: false };
-    await expect(page.locator('#tasks')).toContainText('Dependency resolution failed');
+    await expect(page.locator('#tasks')).toContainText('failed');
+    await expect(page.locator('#tasks .task-row').first()).toBeHidden();
+    await page.locator('#tasks summary').click();
+    await expect(page.locator('#tasks .task-row').first()).toBeVisible();
+    await page.getByRole('button', { name: 'Close tasks', exact: true }).click();
+    await expect(page.locator('#tasks .task-row')).toHaveCount(0);
+    await page.getByRole('button', { name: /Show maintenance tasks/ }).click();
 
     await page.getByRole('button', { name: 'Runtime Environments', exact: true }).click();
     await page.getByRole('button', { name: 'Packages and details' }).click();
@@ -234,6 +241,13 @@ async function checkTasksAndUrls(browser) {
     log = 'Dependency resolution failed: package conflict';
     await page.locator('#content .task-row').filter({ hasText: 'second' }).getByRole('button', { name: 'Task details / logs' }).click();
     await expect(page.locator('#detail pre')).toContainText('package conflict');
+    await page.getByRole('button', { name: 'Close details', exact: true }).click();
+    await expect(page.locator('#detail')).toBeHidden();
+    await page.getByRole('button', { name: 'Clear completed', exact: true }).click();
+    await expect(page.locator('#content .task-row')).toHaveCount(0);
+    await page.reload();
+    await expect(page.locator('#content h1')).toHaveText('Tasks');
+    await expect(page.locator('#content .task-row')).toHaveCount(0);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 }

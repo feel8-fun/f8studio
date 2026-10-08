@@ -1,12 +1,63 @@
 """Generated indexes must resolve applications against their declared package root."""
 import json
+import os
 from pathlib import Path
+import signal
+import subprocess
+import sys
 
 import msgspec
 import pytest
 
 from f8pysdk.platform_spec import DevelopmentCatalog
 from scripts import platform_workspace
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='POSIX terminal process-group interrupt')
+def test_foreground_ctrl_c_waits_for_child_cleanup_without_traceback() -> None:
+    child = """
+import signal
+import time
+stopping = False
+def stop(signum, frame):
+    global stopping
+    stopping = True
+signal.signal(signal.SIGINT, stop)
+print('ready', flush=True)
+while not stopping:
+    time.sleep(0.01)
+time.sleep(0.1)
+print('child cleanup complete', flush=True)
+"""
+    wrapper = f"""
+import sys
+from scripts.platform_workspace import run_foreground
+run_foreground([sys.executable, '-u', '-c', {child!r}])
+print('wrapper complete', flush=True)
+"""
+    process = subprocess.Popen([sys.executable, '-u', '-c', wrapper],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+    try:
+        assert process.stdout is not None
+        assert process.stdout.readline().strip() == 'ready'
+        os.killpg(process.pid, signal.SIGINT)
+        stdout, stderr = process.communicate(timeout=10)
+        assert process.returncode == 0
+        assert 'Stopping Platform' in stdout
+        assert stdout.index('child cleanup complete') < stdout.index('wrapper complete')
+        assert 'Traceback' not in stderr
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait(timeout=5)
+
+
+def test_foreground_preserves_real_failure_and_restores_interrupt_handler() -> None:
+    previous = signal.getsignal(signal.SIGINT)
+    with pytest.raises(subprocess.CalledProcessError) as error:
+        platform_workspace.run_foreground([sys.executable, '-c', 'raise SystemExit(7)'])
+    assert error.value.returncode == 7
+    assert signal.getsignal(signal.SIGINT) == previous
 
 
 def test_development_config_uses_package_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

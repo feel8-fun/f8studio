@@ -7,9 +7,11 @@ import logging
 import os
 from pathlib import Path
 import socket
+import signal
 import subprocess
 import sys
 import time
+from types import FrameType
 from urllib.parse import urlsplit
 
 import msgspec
@@ -24,6 +26,29 @@ ROOT = Path(__file__).resolve().parents[1]
 GENERATED = ROOT / 'build/workspace'
 CONNECTION = GENERATED / 'platform-connection.json'
 logger = logging.getLogger(__name__)
+
+
+def run_foreground(command: list[str]) -> None:
+    """Let the foreground child handle Ctrl+C and wait for its shutdown."""
+    interrupted = False
+
+    def interrupt(_signum: int, _frame: FrameType | None) -> None:
+        nonlocal interrupted
+        if not interrupted:
+            interrupted = True
+            print('Stopping Platform…', flush=True)
+        # The terminal sends SIGINT to the entire foreground process group,
+        # including the child. Do not interrupt our wait or send it twice.
+
+    previous = signal.signal(signal.SIGINT, interrupt)
+    try:
+        subprocess.run(command, check=True)
+    except subprocess.CalledProcessError as exc:
+        if interrupted and exc.returncode in {-signal.SIGINT, 130}:
+            raise SystemExit(130) from None
+        raise
+    finally:
+        signal.signal(signal.SIGINT, previous)
 
 
 def expand_workspace_argument(argument: str, substitutions: dict[str, str]) -> str:
@@ -124,7 +149,7 @@ def main() -> None:
     if args.action in {'serve','tray'}:
         if args.action == 'tray':
             command.append('--tray')
-        subprocess.run(command,check=True)
+        run_foreground(command)
         return
     log_path = data/'platform-console.log'
     with log_path.open('ab') as log:
