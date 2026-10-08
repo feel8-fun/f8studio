@@ -154,6 +154,9 @@ def describe_service(entry: F8ServiceEntry) -> object:
         args[1:1] = ["--frozen", "--no-install"]
     command = [entry.launch.command, *args, *(entry.describeArgs or ["--describe"])]
     env = os.environ.copy()
+    if entry.launch.command in {'pixi', 'pixi.exe'}:
+        for key in ('PYTHONPATH', 'PYTHONHOME', 'PIXI_PROJECT_MANIFEST', 'PIXI_ENVIRONMENT_NAME'):
+            env.pop(key, None)
     env.update(entry.launch.env or {})
     print(f"Describe {entry.serviceClass}: {command!r}", flush=True)
     try:
@@ -170,7 +173,8 @@ def describe_service(entry: F8ServiceEntry) -> object:
 
 
 def install(index_path: Path, *, refresh: bool, service_classes: set[str],
-            python_only: bool = False, no_install: bool = False, build_check: bool = False, native_only: bool = False) -> int:
+            python_only: bool = False, no_install: bool = False, build_check: bool = False, native_only: bool = False,
+            validate_only: bool = False) -> int:
     index_path = index_path.resolve()
     index = read_service_index(index_path)
     known = {item.serviceClass for item in index.services}
@@ -194,7 +198,7 @@ def install(index_path: Path, *, refresh: bool, service_classes: set[str],
         if python_only and not python_service:
             continue
         selected.append((entry, target))
-        if environment is not None and (refresh or not target.is_file()):
+        if environment is not None:
             root = Path(entry.launch.workdir or ".").resolve()
             environments.setdefault(root, set()).add(environment)
     # Validate every selected binding before installing or running anything.
@@ -207,7 +211,7 @@ def install(index_path: Path, *, refresh: bool, service_classes: set[str],
             subprocess.run(command, cwd=root, check=True)
     outputs: list[tuple[Path, bytes]] = []
     for entry, target in selected:
-        if target.is_file() and not refresh:
+        if target.is_file() and not refresh and pixi_environment(entry) is None:
             raw = msgspec.json.decode(target.read_bytes())
         else:
             raw = describe_service(entry)
@@ -220,6 +224,8 @@ def install(index_path: Path, *, refresh: bool, service_classes: set[str],
             raise ValueError(f"Description class mismatch: {entry.serviceClass}")
         outputs.append((target, msgspec.json.format(msgspec.json.encode(describe), indent=2) + b"\n"))
     # Validate the entire selection before publishing any new descriptions.
+    if validate_only:
+        return len(outputs)
     for target, content in outputs:
         target.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(dir=target.parent, delete=False) as temporary:

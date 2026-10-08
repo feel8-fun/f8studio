@@ -33,7 +33,11 @@ headless CLI operations.
 
 | Task | Environment | Purpose |
 | --- | --- | --- |
-| `workspace_prepare` | `build-check` | Prepare library inputs and generated registrations. |
+| `workspace_prepare` | `workspace` | Synchronize declared SDK inputs and generated registrations. |
+| `workspace_runtime_prepare` | `workspace` | Synchronize SDKs, install independent locked runtimes, rebuild stale SDK wheels, verify imported source and entrypoints. |
+| `workspace_runtime_check` | `workspace` | Verify current source and real entrypoints without installing or synchronizing dependencies. |
+| `workspace_runtime_ensure` | `workspace` | Automatically prepare already installed runtimes before development startup. |
+| `workspace_runtime_test` | `build-check` | Reproduce source-only SDK updates and deleted modules in a disposable real PyEngine environment. |
 | `workspace_catalog` | `workspace`, `build-check` or `web-studio` | Regenerate registrations without changing built binaries. |
 | `workspace_python_describes` | `build-check` | Refresh Python service descriptions using the integration interpreter. |
 | `cpp_bootstrap` | `cpp` | Prepare locked Conan dependencies inside the Pixi toolchain. |
@@ -52,9 +56,13 @@ headless CLI operations.
 | `workspace_clean` | `build-check` | Remove disposable outputs; use `--dry-run` to preview. |
 | `doc_gen`, `doc_check`, `doc_build` | `doc` | Generate service documentation, validate it, and build the site. |
 
-Python description generation is a development check. It does not prepare the
-extension's runtime environment. Use Extensions to install an extension before
-launching its services. For a full clean rebuild, follow
+`workspace_python_describes` uses the integration interpreter and does not prepare
+independent runtime environments. Use `workspace_runtime_prepare` for the complete
+source-development workflow; `--workspace extensions/f8pyengine` selects one owner.
+Development startup refreshes installed runtimes and skips missing optional ones.
+Preparation detects source changes, preserves local SDK work, and uses each
+extension's own lock. Stop/open/CLI management tasks remain independent of runtime
+preparation. Published extension installation still belongs to Platform. For a full clean rebuild, follow
 [Build from Source](build-from-source.md).
 
 Tasks ending in `_probe` that take a server URL operate on an already running

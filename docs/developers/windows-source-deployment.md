@@ -21,54 +21,39 @@ pixi install --locked -e workspace -e build-check -e cpp
 pixi run --locked -e workspace workspace_prepare
 ```
 
-`workspace_prepare` supplies the SDK inputs for Platform, WebStudio and Media
-Gateway. The other Python extensions use the SDK revision declared in their own
-CI workflow. For the extension revisions in this workspace, the service
-extensions and Diagnostics use `16ba9e68434d0a0ed419a1a691c924c2e12590a8`. Their older
-`DEVELOPMENT.md` references to `d0e42420` do not match their locks.
-
-Prepare missing checkouts without changing an existing SDK input:
+The workspace tool synchronizes SDK inputs for Platform and all Python extensions,
+including optional Diagnostics. Clean nested SDK checkouts advance from the local
+root SDK; no GitHub push or manual checkout loop is required. Uncommitted root SDK
+edits are mirrored and tracked by the tool. Local extension SDK edits, staged work
+and independent commits are preserved and reported before synchronization.
 
 ```powershell
-$serviceExtensions = @(
-    'f8pyengine', 'f8pymppose', 'f8pydl', 'f8pyaudiofeat', 'f8proclauncher',
-    'f8diagnostics'
-)
-foreach ($extension in $serviceExtensions) {
-    $sdkInput = "extensions/$extension/.sdk"
-    if (-not (Test-Path -LiteralPath $sdkInput)) {
-        git clone --no-hardlinks sdk $sdkInput
-        if ($LASTEXITCODE -ne 0) { throw "SDK clone failed: $extension" }
-        git -C $sdkInput checkout 16ba9e68434d0a0ed419a1a691c924c2e12590a8
-        if ($LASTEXITCODE -ne 0) { throw "SDK checkout failed: $extension" }
-    }
-    if (-not (Test-Path -LiteralPath "$sdkInput/.git")) {
-        throw "Back up the copied SDK input and prepare a pinned Git checkout: $sdkInput"
-    }
-    $sdkRevision = git -C $sdkInput rev-parse HEAD
-    if ($LASTEXITCODE -ne 0 -or $sdkRevision -ne '16ba9e68434d0a0ed419a1a691c924c2e12590a8') {
-        throw "SDK input does not match the extension CI revision: $sdkInput"
-    }
-}
-pixi install --locked --manifest-path extensions/f8pyengine/pixi.toml -e pyengine
-pixi install --locked --manifest-path extensions/f8pyaudiofeat/pixi.toml -e audiofeat
-pixi install --locked --manifest-path extensions/f8proclauncher/pixi.toml -e proclauncher
-pixi install --locked --manifest-path extensions/f8pydl/pixi.toml -e dl
-pixi install --locked --manifest-path extensions/f8pymppose/pixi.toml -e mediapipe
-pixi install --locked --manifest-path extensions/f8diagnostics/pixi.toml -e diagnostics
+pixi run --locked workspace_runtime_prepare
+pixi run --locked workspace_runtime_check
 ```
 
-When updating an extension, check its CI dependency revision again. A locked
-installation failure can indicate a mismatched SDK input; do not regenerate the
-extension lock solely to bypass that mismatch.
+Preparation installs each declared environment with its own lock, compares the
+actually imported SDK with workspace source, rebuilds stale noneditable SDK
+installations, and verifies real service entrypoints with `--frozen --no-install`.
+For a selected extension:
 
-Diagnostics is optional and has its own SDK input. Copying the current root SDK
-into `extensions/f8diagnostics/.sdk` adds optional dependency metadata absent from
-its lock, causing `lock file not up-to-date with the workspace`. If that input
-already exists as a directory copy or at a different revision, move it to a backup
-outside the extension before running the preparation commands above. After the
-locked install succeeds, retry Prepare in Runtime Environments. Install Diagnostics
-in Extensions to make its two tools available.
+```powershell
+pixi run --locked workspace_runtime_prepare --workspace extensions/f8pyengine
+pixi run --locked workspace_runtime_check --workspace extensions/f8pyengine
+pixi run --locked workspace_runtime_test
+```
+
+The runtime regression uses a disposable real PyEngine environment and covers
+source-only SDK edits and deleted modules without changing package versions.
+Source-only `workspace_python_describes` checks cannot replace deployment validation.
+Platform/Studio startup refreshes already installed environments; full preparation
+also installs missing optional environments. Stop and management tasks do not run
+runtime preparation.
+
+Keep independent extension CI SDK pins and locks updated together when SDK
+package metadata changes. A locked installation failure is actionable; do not
+regenerate all dependencies merely to bypass a mismatch. Official extension
+artifacts remain independent of the workspace's source mirrors.
 
 The DL workspace supplies CUDA 12 and pins ONNX Runtime GPU to `1.24.x`.
 ONNX Runtime `1.30` wheels require CUDA 13 DLLs and cannot use this environment's

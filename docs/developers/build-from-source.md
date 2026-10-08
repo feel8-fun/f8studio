@@ -20,10 +20,49 @@ pixi install --locked -e build-check -e cpp
 pixi run --locked -e build-check workspace_prepare
 ```
 
-Python extensions own their source workspaces. Before running an extension from
-source, prepare the SDK checkout it declares (usually `.sdk`) as documented in
-that repository’s `DEVELOPMENT.md`. Published extension artifacts contain wheels
-and locked runtime inputs and do not need SDK source checkouts.
+Python extensions own their source workspaces. For a ready-to-run development
+workspace, use one preparation command:
+
+```bash
+pixi run --locked workspace_runtime_prepare
+pixi run --locked workspace_runtime_check
+```
+
+Preparation synchronizes the root SDK into every declared Python workspace,
+installs each environment with its own lock, checks the SDK actually imported
+inside that environment, and validates real service entrypoints. Source-only SDK
+changes also rebuild stale noneditable installations; existing describe files do
+not bypass runtime checks. Platform/Studio startup automatically prepares already
+installed runtimes. Optional environments are installed only by explicit full
+preparation or the owning extension's installation workflow.
+
+`workspace_prepare` only synchronizes source inputs and registrations. Clean SDK
+Git checkouts advance from the local root SDK without needing a GitHub push.
+Uncommitted root SDK edits are mirrored as managed changes. Subsequent preparation
+replaces only unchanged tool-managed contents, removes deleted managed files,
+and preserves local edits or independent commits in extension SDK checkouts by
+stopping with their exact paths. Copies retain unchanged file timestamps.
+Preparation records live under disposable `build/workspace/`.
+
+Select one workspace when needed:
+
+```bash
+pixi run --locked workspace_runtime_prepare --workspace extensions/f8pyengine
+pixi run --locked workspace_runtime_check --workspace extensions/f8pyengine
+pixi run --locked workspace_runtime_test
+```
+
+`workspace_runtime_check` performs no dependency installation or SDK synchronization.
+It checks preparation receipts against current source and runs the independent
+entrypoints again. The test command reproduces a source-only SDK edit and module
+deletion inside a disposable real PyEngine environment; it runs in Linux and
+Windows integration CI. Root integration tests and `workspace_python_describes`
+do not replace these independent-runtime checks.
+
+SDK dependency metadata changes require updating the affected extension locks
+and independent CI SDK pins together. Preparation uses `--locked` and never
+silently resolves new dependency versions. Published artifacts retain their own
+wheels, locks and fixed SDK dependencies; they do not use development mirrors.
 
 ## Clean and rebuild the development workspace
 

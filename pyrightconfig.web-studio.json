@@ -10,6 +10,8 @@
     "extensions/f8webstudio/f8studio_server/f8studio_server",
     "scripts/web_studio",
     "scripts/workspace_inputs.py",
+    "scripts/workspace_runtime.py",
+    "scripts/verify_workspace_sdk.py",
     "scripts/workspace_clean.py",
     "sdk/python/f8pysdk/runtime_packaging.py",
     "sdk/python/f8pysdk/application_spec.py",

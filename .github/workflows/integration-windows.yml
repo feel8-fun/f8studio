@@ -15,6 +15,7 @@ jobs:
           pixi-version: v0.81.0
           environments: build-check
       - run: pixi run --locked -e build-check pytest -q
+      - run: pixi run --locked workspace_runtime_test
       - run: pixi run --locked -e build-check studio_web_ci
       - run: pixi run --locked -e build-check typecheck
       - run: pixi run --locked -e build-check studio_wheel_smoke

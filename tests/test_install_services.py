@@ -80,12 +80,15 @@ def service_index(tmp_path: Path) -> Path:
     return path
 
 
-def test_refresh_prepares_shared_environment_once_before_timed_describes(service_index: Path) -> None:
+@pytest.mark.parametrize('refresh', [True, False])
+def test_cached_describes_still_prepare_environment_and_verify_entrypoints(service_index: Path, refresh: bool) -> None:
     import subprocess
     from unittest.mock import patch
     from scripts.install_services import install
 
     payloads = {name: _describe_payload(name) for name in ('f8.pyexpr', 'f8.pyscript')}
+    for item in json.loads(service_index.read_text())['services']:
+        Path(item['describe']).write_text(payloads[item['serviceClass']])
     calls: list[list[str]] = []
 
     def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -102,7 +105,7 @@ def test_refresh_prepares_shared_environment_once_before_timed_describes(service
         return subprocess.CompletedProcess(command, 0, stdout=payloads[name])
 
     with patch("scripts.install_services.subprocess.run", side_effect=run):
-        assert install(service_index, refresh=True, service_classes=set()) == 2
+        assert install(service_index, refresh=refresh, service_classes=set()) == 2
     assert len(calls) == 3
     assert (service_index.parent / "f8.pyexpr.json").is_file()
 
