@@ -7,6 +7,7 @@
 - [扩展安装与环境复用](extensions.md)
 - [扩展源码仓库与 superbuild](extension-repositories.md)
 - [图 schema 与可移植格式](graph-schema.md)
+- [AssetCloud 重新接入方案](assetcloud-reconnection-plan.md)
 - [Web Studio 远程访问](web-studio-remote-access.md)
 - [Web Studio 后续工作与验收](web-studio-remaining-work.md)
 - [后续架构工作](remaining-architecture-work.md)

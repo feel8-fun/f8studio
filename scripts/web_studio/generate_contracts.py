@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from f8studio_core.graph import HistoryRequest, PatchRequest, PatchResult, StudioDocument
+from f8studio_core.publication import ComponentPublication, GraphPublication, PortableComponent, PublicationCapabilities
 from f8studio_server import models
 from f8studio_server import presentation_models
 from f8pysdk import generated as protocol_models
@@ -39,6 +40,10 @@ ROOTS = (
     + struct_roots(presentation_models)
     + (
         StudioDocument,
+        GraphPublication,
+        ComponentPublication,
+        PortableComponent,
+        PublicationCapabilities,
         PatchRequest,
         PatchResult,
         HistoryRequest,
@@ -151,6 +156,7 @@ def generate() -> dict[Path, str]:
     return {
         REPO / "schemas/studio-api.gen.json": json.dumps(schema, indent=2, sort_keys=True) + "\n",
         REPO / "schemas/extensions.gen.json": json.dumps(msgspec.json.schema(ExtensionCatalog), indent=2, sort_keys=True) + "\n",
+        REPO / "extensions/f8webstudio/contracts/publication.gen.json": json.dumps(msgspec.json.schema(GraphPublication | ComponentPublication), indent=2, sort_keys=True) + "\n",
         REPO / "extensions/f8webstudio/f8studio_web/src/api/contracts.gen.ts": types,
     }
 

@@ -2280,11 +2280,15 @@
           "enum": [
             "f8studio-api/1"
           ]
+        },
+        "publication": {
+          "$ref": "#/$defs/PublicationCapabilities"
         }
       },
       "required": [
         "capabilities",
-        "protocol_version"
+        "protocol_version",
+        "publication"
       ],
       "title": "CapabilitiesResponse",
       "type": "object"
@@ -2298,6 +2302,9 @@
           "enum": [
             "f8studio-api/1"
           ]
+        },
+        "publication": {
+          "$ref": "#/$defs/PublicationCapabilitiesInput"
         }
       },
       "required": [
@@ -2345,6 +2352,64 @@
         "description"
       ],
       "title": "CapabilityResource",
+      "type": "object"
+    },
+    "CaptureComponentRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "excludedStates": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExcludedState"
+          },
+          "type": "array"
+        },
+        "expectedGraphRevision": {
+          "type": "integer"
+        },
+        "expectedLayoutRevision": {
+          "type": "integer"
+        },
+        "name": {
+          "default": "Component",
+          "type": "string"
+        }
+      },
+      "required": [
+        "excludedStates",
+        "expectedGraphRevision",
+        "expectedLayoutRevision",
+        "name"
+      ],
+      "title": "CaptureComponentRequest",
+      "type": "object"
+    },
+    "CaptureComponentRequestInput": {
+      "additionalProperties": false,
+      "properties": {
+        "excludedStates": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExcludedStateInput"
+          },
+          "type": "array"
+        },
+        "expectedGraphRevision": {
+          "type": "integer"
+        },
+        "expectedLayoutRevision": {
+          "type": "integer"
+        },
+        "name": {
+          "default": "Component",
+          "type": "string"
+        }
+      },
+      "required": [
+        "expectedGraphRevision",
+        "expectedLayoutRevision"
+      ],
+      "title": "CaptureComponentRequest",
       "type": "object"
     },
     "CatalogSnapshot": {
@@ -2807,6 +2872,123 @@
       },
       "required": [],
       "title": "Commands",
+      "type": "object"
+    },
+    "ComponentEndpoint": {
+      "additionalProperties": false,
+      "properties": {
+        "direction": {
+          "$ref": "#/$defs/PortDirection"
+        },
+        "endpointId": {
+          "type": "string"
+        },
+        "nodeId": {
+          "type": "string"
+        },
+        "portId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "direction",
+        "endpointId",
+        "nodeId",
+        "portId"
+      ],
+      "title": "ComponentEndpoint",
+      "type": "object"
+    },
+    "ComponentEndpointInput": {
+      "additionalProperties": false,
+      "properties": {
+        "direction": {
+          "$ref": "#/$defs/PortDirectionInput"
+        },
+        "endpointId": {
+          "type": "string"
+        },
+        "nodeId": {
+          "type": "string"
+        },
+        "portId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "endpointId",
+        "nodeId",
+        "portId",
+        "direction"
+      ],
+      "title": "ComponentEndpoint",
+      "type": "object"
+    },
+    "ComponentPublication": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "$ref": "#/$defs/PortableComponent"
+        },
+        "contentHash": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "component"
+          ]
+        },
+        "manifest": {
+          "$ref": "#/$defs/PublicationManifest"
+        },
+        "schemaVersion": {
+          "default": "f8publication/1",
+          "enum": [
+            "f8publication/1"
+          ]
+        }
+      },
+      "required": [
+        "content",
+        "contentHash",
+        "kind",
+        "manifest",
+        "schemaVersion"
+      ],
+      "title": "ComponentPublication",
+      "type": "object"
+    },
+    "ComponentPublicationInput": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "$ref": "#/$defs/PortableComponentInput"
+        },
+        "contentHash": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "component"
+          ]
+        },
+        "manifest": {
+          "$ref": "#/$defs/PublicationManifestInput"
+        },
+        "schemaVersion": {
+          "default": "f8publication/1",
+          "enum": [
+            "f8publication/1"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "manifest",
+        "content",
+        "contentHash"
+      ],
+      "title": "ComponentPublication",
       "type": "object"
     },
     "ConnectEdgeOp": {
@@ -5672,6 +5854,40 @@
       "title": "ExchangeService",
       "type": "object"
     },
+    "ExcludedState": {
+      "additionalProperties": false,
+      "properties": {
+        "field": {
+          "type": "string"
+        },
+        "nodeId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "field",
+        "nodeId"
+      ],
+      "title": "ExcludedState",
+      "type": "object"
+    },
+    "ExcludedStateInput": {
+      "additionalProperties": false,
+      "properties": {
+        "field": {
+          "type": "string"
+        },
+        "nodeId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "nodeId",
+        "field"
+      ],
+      "title": "ExcludedState",
+      "type": "object"
+    },
     "ExtensionDetail": {
       "properties": {
         "application": {
@@ -5889,6 +6105,107 @@
         "requiresNetwork"
       ],
       "title": "ExtensionInstallPlan",
+      "type": "object"
+    },
+    "ExtensionRequirement": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "compatibleVersions": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "extensionId": {
+          "type": "string"
+        },
+        "operators": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/OperatorRequirement"
+          },
+          "type": "array"
+        },
+        "protocolVersions": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "serviceClasses": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "capabilities",
+        "compatibleVersions",
+        "extensionId",
+        "operators",
+        "protocolVersions",
+        "serviceClasses"
+      ],
+      "title": "ExtensionRequirement",
+      "type": "object"
+    },
+    "ExtensionRequirementInput": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "compatibleVersions": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "extensionId": {
+          "type": "string"
+        },
+        "operators": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/OperatorRequirementInput"
+          },
+          "type": "array"
+        },
+        "protocolVersions": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "serviceClasses": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "extensionId"
+      ],
+      "title": "ExtensionRequirement",
       "type": "object"
     },
     "ExtensionServiceDetail": {
@@ -10510,13 +10827,15 @@
     },
     "F8OperatorSchemaVersion": {
       "enum": [
-        "f8operator/1"
+        "f8operator/1",
+        "f8operator/2"
       ],
       "title": "F8OperatorSchemaVersion"
     },
     "F8OperatorSchemaVersionInput": {
       "enum": [
-        "f8operator/1"
+        "f8operator/1",
+        "f8operator/2"
       ],
       "title": "F8OperatorSchemaVersion"
     },
@@ -11418,13 +11737,15 @@
     },
     "F8ServiceSchemaVersion": {
       "enum": [
-        "f8service/1"
+        "f8service/1",
+        "f8service/2"
       ],
       "title": "F8ServiceSchemaVersion"
     },
     "F8ServiceSchemaVersionInput": {
       "enum": [
-        "f8service/1"
+        "f8service/1",
+        "f8service/2"
       ],
       "title": "F8ServiceSchemaVersion"
     },
@@ -12368,6 +12689,14 @@
         "name": {
           "type": "string"
         },
+        "persistent": {
+          "description": "Save this state's configured value in the local project. False means runtime only. When omitted, writable fields are persistent and read-only fields are not.",
+          "type": "boolean"
+        },
+        "publishable": {
+          "description": "Allow the saved value in reusable components and shared graphs. False excludes the value, not the field definition. Runtime state broadcasting is unaffected. When omitted, persistent fields are publishable unless redactOnPublish is true.",
+          "type": "boolean"
+        },
         "redactOnPublish": {
           "default": false,
           "description": "If true, clear this state's saved value when exporting a publish-safe session JSON.",
@@ -12459,6 +12788,14 @@
         },
         "name": {
           "type": "string"
+        },
+        "persistent": {
+          "description": "Save this state's configured value in the local project. False means runtime only. When omitted, writable fields are persistent and read-only fields are not.",
+          "type": "boolean"
+        },
+        "publishable": {
+          "description": "Allow the saved value in reusable components and shared graphs. False excludes the value, not the field definition. Runtime state broadcasting is unaffected. When omitted, persistent fields are publishable unless redactOnPublish is true.",
+          "type": "boolean"
         },
         "redactOnPublish": {
           "default": false,
@@ -13775,6 +14112,73 @@
       "title": "GraphPort",
       "type": "object"
     },
+    "GraphPublication": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "$ref": "#/$defs/GraphExchange"
+        },
+        "contentHash": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "graph"
+          ]
+        },
+        "manifest": {
+          "$ref": "#/$defs/PublicationManifest"
+        },
+        "schemaVersion": {
+          "default": "f8publication/1",
+          "enum": [
+            "f8publication/1"
+          ]
+        }
+      },
+      "required": [
+        "content",
+        "contentHash",
+        "kind",
+        "manifest",
+        "schemaVersion"
+      ],
+      "title": "GraphPublication",
+      "type": "object"
+    },
+    "GraphPublicationInput": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "$ref": "#/$defs/GraphExchangeInput"
+        },
+        "contentHash": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "graph"
+          ]
+        },
+        "manifest": {
+          "$ref": "#/$defs/PublicationManifestInput"
+        },
+        "schemaVersion": {
+          "default": "f8publication/1",
+          "enum": [
+            "f8publication/1"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "manifest",
+        "content",
+        "contentHash"
+      ],
+      "title": "GraphPublication",
+      "type": "object"
+    },
     "HealthStatus": {
       "properties": {
         "application_instance": {
@@ -13896,6 +14300,48 @@
         "expectedLayoutRevision"
       ],
       "title": "HistoryRequest",
+      "type": "object"
+    },
+    "HostBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "bindingId": {
+          "type": "string"
+        },
+        "definitionRef": {
+          "type": "string"
+        },
+        "serviceClass": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "bindingId",
+        "definitionRef",
+        "serviceClass"
+      ],
+      "title": "HostBinding",
+      "type": "object"
+    },
+    "HostBindingInput": {
+      "additionalProperties": false,
+      "properties": {
+        "bindingId": {
+          "type": "string"
+        },
+        "definitionRef": {
+          "type": "string"
+        },
+        "serviceClass": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "bindingId",
+        "serviceClass",
+        "definitionRef"
+      ],
+      "title": "HostBinding",
       "type": "object"
     },
     "HotkeyBinding": {
@@ -16061,6 +16507,40 @@
       "title": "OperatorNode",
       "type": "object"
     },
+    "OperatorRequirement": {
+      "additionalProperties": false,
+      "properties": {
+        "operatorClass": {
+          "type": "string"
+        },
+        "serviceClass": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "operatorClass",
+        "serviceClass"
+      ],
+      "title": "OperatorRequirement",
+      "type": "object"
+    },
+    "OperatorRequirementInput": {
+      "additionalProperties": false,
+      "properties": {
+        "operatorClass": {
+          "type": "string"
+        },
+        "serviceClass": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "serviceClass",
+        "operatorClass"
+      ],
+      "title": "OperatorRequirement",
+      "type": "object"
+    },
     "Out": {
       "properties": {
         "showOnNode": {
@@ -16495,6 +16975,138 @@
         "state"
       ],
       "title": "PortKind"
+    },
+    "PortableComponent": {
+      "additionalProperties": false,
+      "properties": {
+        "connections": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/GraphEdge"
+          },
+          "type": "array"
+        },
+        "definitions": {
+          "$ref": "#/$defs/ExchangeDefinitions"
+        },
+        "endpoints": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ComponentEndpoint"
+          },
+          "type": "array"
+        },
+        "format": {
+          "default": "f8component",
+          "enum": [
+            "f8component"
+          ]
+        },
+        "formatVersion": {
+          "default": 1,
+          "enum": [
+            1
+          ]
+        },
+        "hostBindings": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/HostBinding"
+          },
+          "type": "array"
+        },
+        "operators": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ExchangeOperator"
+          },
+          "type": "object"
+        },
+        "presentation": {
+          "$ref": "#/$defs/ExchangePresentation"
+        },
+        "services": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ExchangeService"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "connections",
+        "definitions",
+        "endpoints",
+        "format",
+        "formatVersion",
+        "hostBindings",
+        "operators",
+        "presentation",
+        "services"
+      ],
+      "title": "PortableComponent",
+      "type": "object"
+    },
+    "PortableComponentInput": {
+      "additionalProperties": false,
+      "properties": {
+        "connections": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/GraphEdgeInput"
+          },
+          "type": "array"
+        },
+        "definitions": {
+          "$ref": "#/$defs/ExchangeDefinitionsInput"
+        },
+        "endpoints": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ComponentEndpointInput"
+          },
+          "type": "array"
+        },
+        "format": {
+          "default": "f8component",
+          "enum": [
+            "f8component"
+          ]
+        },
+        "formatVersion": {
+          "default": 1,
+          "enum": [
+            1
+          ]
+        },
+        "hostBindings": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/HostBindingInput"
+          },
+          "type": "array"
+        },
+        "operators": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ExchangeOperatorInput"
+          },
+          "type": "object"
+        },
+        "presentation": {
+          "$ref": "#/$defs/ExchangePresentationInput"
+        },
+        "services": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ExchangeServiceInput"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "definitions",
+        "services",
+        "operators"
+      ],
+      "title": "PortableComponent",
+      "type": "object"
     },
     "PresentationCommand": {
       "properties": {
@@ -17159,6 +17771,305 @@
         "source"
       ],
       "title": "ProviderSettingsView",
+      "type": "object"
+    },
+    "PublicationCapabilities": {
+      "additionalProperties": false,
+      "properties": {
+        "componentVersions": {
+          "default": [
+            1
+          ],
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "graphVersions": {
+          "default": [
+            3,
+            4
+          ],
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "hashProfiles": {
+          "default": [
+            "f8publication-hash/1"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "legacyComponentVersions": {
+          "default": [
+            "f8studio-component/1",
+            "f8studio-component/2"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "publicationVersions": {
+          "default": [
+            "f8publication/1"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "componentVersions",
+        "graphVersions",
+        "hashProfiles",
+        "legacyComponentVersions",
+        "publicationVersions"
+      ],
+      "title": "PublicationCapabilities",
+      "type": "object"
+    },
+    "PublicationCapabilitiesInput": {
+      "additionalProperties": false,
+      "properties": {
+        "componentVersions": {
+          "default": [
+            1
+          ],
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "graphVersions": {
+          "default": [
+            3,
+            4
+          ],
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "hashProfiles": {
+          "default": [
+            "f8publication-hash/1"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "legacyComponentVersions": {
+          "default": [
+            "f8studio-component/1",
+            "f8studio-component/2"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "publicationVersions": {
+          "default": [
+            "f8publication/1"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [],
+      "title": "PublicationCapabilities",
+      "type": "object"
+    },
+    "PublicationManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "contentFormat": {
+          "enum": [
+            "f8component",
+            "f8graph"
+          ]
+        },
+        "contentVersion": {
+          "type": "integer"
+        },
+        "dependencies": {
+          "items": {
+            "$ref": "#/$defs/ExtensionRequirement"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "enum": [
+            "component",
+            "graph"
+          ]
+        },
+        "license": {
+          "type": "string"
+        },
+        "schemaVersion": {
+          "default": "f8publication-manifest/1",
+          "enum": [
+            "f8publication-manifest/1"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/PublicationSource"
+        }
+      },
+      "required": [
+        "contentFormat",
+        "contentVersion",
+        "dependencies",
+        "kind",
+        "license",
+        "schemaVersion",
+        "source"
+      ],
+      "title": "PublicationManifest",
+      "type": "object"
+    },
+    "PublicationManifestInput": {
+      "additionalProperties": false,
+      "properties": {
+        "contentFormat": {
+          "enum": [
+            "f8component",
+            "f8graph"
+          ]
+        },
+        "contentVersion": {
+          "type": "integer"
+        },
+        "dependencies": {
+          "items": {
+            "$ref": "#/$defs/ExtensionRequirementInput"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "enum": [
+            "component",
+            "graph"
+          ]
+        },
+        "license": {
+          "type": "string"
+        },
+        "schemaVersion": {
+          "default": "f8publication-manifest/1",
+          "enum": [
+            "f8publication-manifest/1"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/PublicationSourceInput"
+        }
+      },
+      "required": [
+        "kind",
+        "contentFormat",
+        "contentVersion",
+        "license",
+        "source",
+        "dependencies"
+      ],
+      "title": "PublicationManifest",
+      "type": "object"
+    },
+    "PublicationSource": {
+      "additionalProperties": false,
+      "properties": {
+        "assetId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "assetVersion": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "repositoryUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "assetId",
+        "assetVersion",
+        "repositoryUrl"
+      ],
+      "title": "PublicationSource",
+      "type": "object"
+    },
+    "PublicationSourceInput": {
+      "additionalProperties": false,
+      "properties": {
+        "assetId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "assetVersion": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "repositoryUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [],
+      "title": "PublicationSource",
       "type": "object"
     },
     "RefreshInstalledSpecOp": {
@@ -19260,6 +20171,55 @@
         "spec"
       ],
       "title": "SetServiceSpecOp",
+      "type": "object"
+    },
+    "ShareGraphRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "excludedStates": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExcludedState"
+          },
+          "type": "array"
+        },
+        "expectedGraphRevision": {
+          "type": "integer"
+        },
+        "expectedLayoutRevision": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "excludedStates",
+        "expectedGraphRevision",
+        "expectedLayoutRevision"
+      ],
+      "title": "ShareGraphRequest",
+      "type": "object"
+    },
+    "ShareGraphRequestInput": {
+      "additionalProperties": false,
+      "properties": {
+        "excludedStates": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExcludedStateInput"
+          },
+          "type": "array"
+        },
+        "expectedGraphRevision": {
+          "type": "integer"
+        },
+        "expectedLayoutRevision": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "expectedGraphRevision",
+        "expectedLayoutRevision"
+      ],
+      "title": "ShareGraphRequest",
       "type": "object"
     },
     "SkeletonLimits": {
@@ -22022,6 +22982,18 @@
       "$ref": "#/$defs/StudioDocument"
     },
     {
+      "$ref": "#/$defs/GraphPublication"
+    },
+    {
+      "$ref": "#/$defs/ComponentPublication"
+    },
+    {
+      "$ref": "#/$defs/PortableComponent"
+    },
+    {
+      "$ref": "#/$defs/PublicationCapabilities"
+    },
+    {
       "$ref": "#/$defs/PatchRequest"
     },
     {
@@ -22412,6 +23384,18 @@
     },
     {
       "$ref": "#/$defs/GraphExchange"
+    },
+    {
+      "$ref": "#/$defs/ShareGraphRequest"
+    },
+    {
+      "$ref": "#/$defs/GraphExchange"
+    },
+    {
+      "$ref": "#/$defs/CaptureComponentRequest"
+    },
+    {
+      "$ref": "#/$defs/AssetRecord"
     },
     {
       "$ref": "#/$defs/GraphExchange"
@@ -22976,6 +23960,18 @@
       "$ref": "#/$defs/StudioDocumentInput"
     },
     {
+      "$ref": "#/$defs/GraphPublicationInput"
+    },
+    {
+      "$ref": "#/$defs/ComponentPublicationInput"
+    },
+    {
+      "$ref": "#/$defs/PortableComponentInput"
+    },
+    {
+      "$ref": "#/$defs/PublicationCapabilitiesInput"
+    },
+    {
       "$ref": "#/$defs/PatchRequestInput"
     },
     {
@@ -23366,6 +24362,18 @@
     },
     {
       "$ref": "#/$defs/GraphExchangeInput"
+    },
+    {
+      "$ref": "#/$defs/ShareGraphRequestInput"
+    },
+    {
+      "$ref": "#/$defs/GraphExchangeInput"
+    },
+    {
+      "$ref": "#/$defs/CaptureComponentRequestInput"
+    },
+    {
+      "$ref": "#/$defs/AssetRecordInput"
     },
     {
       "$ref": "#/$defs/GraphExchangeInput"
