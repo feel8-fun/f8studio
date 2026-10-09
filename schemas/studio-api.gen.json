@@ -2359,6 +2359,10 @@
     "CaptureComponentRequest": {
       "additionalProperties": false,
       "properties": {
+        "description": {
+          "default": "",
+          "type": "string"
+        },
         "excludedStates": {
           "default": [],
           "items": {
@@ -2389,14 +2393,23 @@
             }
           ],
           "default": null
+        },
+        "tags": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
+        "description",
         "excludedStates",
         "expectedGraphRevision",
         "expectedLayoutRevision",
         "name",
-        "nodeIds"
+        "nodeIds",
+        "tags"
       ],
       "title": "CaptureComponentRequest",
       "type": "object"
@@ -2404,6 +2417,10 @@
     "CaptureComponentRequestInput": {
       "additionalProperties": false,
       "properties": {
+        "description": {
+          "default": "",
+          "type": "string"
+        },
         "excludedStates": {
           "default": [],
           "items": {
@@ -2434,6 +2451,13 @@
             }
           ],
           "default": null
+        },
+        "tags": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -3088,6 +3112,40 @@
         "direction"
       ],
       "title": "ComponentEndpoint",
+      "type": "object"
+    },
+    "ComponentOffset": {
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "ComponentOffset",
+      "type": "object"
+    },
+    "ComponentOffsetInput": {
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "ComponentOffset",
       "type": "object"
     },
     "ComponentPreview": {
@@ -14864,6 +14922,13 @@
           "default": {},
           "type": "object"
         },
+        "hostOffsets": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ComponentOffset"
+          },
+          "default": {},
+          "type": "object"
+        },
         "requestId": {
           "type": "string"
         },
@@ -14884,6 +14949,7 @@
         "expectedGraphRevision",
         "expectedLayoutRevision",
         "hostBindings",
+        "hostOffsets",
         "requestId",
         "version",
         "x",
@@ -14907,6 +14973,13 @@
         "hostBindings": {
           "additionalProperties": {
             "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "hostOffsets": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ComponentOffsetInput"
           },
           "default": {},
           "type": "object"

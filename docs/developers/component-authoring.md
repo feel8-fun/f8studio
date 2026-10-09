@@ -10,8 +10,11 @@ A component can be one customized PyScript node or a selection of nodes.
 2. Select one or more nodes, right-click a selected node or the canvas, and choose
    **Save selection as Component…**. Right-clicking an unselected node captures
    that node directly, without changing the current selection.
-3. Name the template and choose which eligible saved state values to include.
-4. Open **Assets** to inspect, preview or export the saved component.
+3. Name the template, add a Markdown introduction and search tags, and choose
+   which eligible saved state values to include.
+4. Find it in the node catalog's **Components** section or **Add from Library**
+   (the canvas plus button, Tab, or right-click **Add node…**). Assets remains
+   available for metadata/content editing and export.
 
 **Capture graph** in Assets captures the complete project instead. Neither
 capture changes the project or collects live runtime state.
@@ -30,13 +33,21 @@ fallback or schema default, capture reports the exact unresolved field.
 
 ## Preview and insert
 
-Select a component in Assets to see its read-only graph preview. Embedded
+Choose **Details / Versions…** in the catalog, or **Details** in Add from Library,
+to see the introduction, tags, fixed version, read-only graph preview, required
+hosts and exposed endpoints in the same search window. Search matches names,
+descriptions and tags; All / Nodes / Variants / Components filters share one
+result list. Select a component in Assets for the same graph preview. Embedded
 snapshots permit preview even when its extension is absent. The preview has
 static state/port visuals and media placeholders; it never executes script code,
 starts services, installs extensions or connects device/media streams.
 
-Choose a target project, a fixed component version, and an existing matching
-service for every external host binding, then choose **Apply**. A single PyScript
+Click a component or press Enter in the search to add the displayed fixed version.
+The selected/right-clicked matching service takes priority for external bindings;
+a unique matching host is automatic. When choices remain, choose an existing
+matching service for every external host binding in the same window, then choose
+**Add node**. Details always waits for confirmation. In Assets, choose a target
+project and version, bind hosts and choose **Apply**. A single PyScript
 template can reuse the project's current PyEngine. Selecting a service as part
 of the original component intentionally includes that service in the template.
 
@@ -49,6 +60,10 @@ be deployed as executable graphs.
 
 Server remaps inserted node and edge IDs, preserves node-scoped port IDs,
 translates layout by the requested x/y offsets and validates the complete graph.
+Library additions place each externally hosted group inside its chosen container,
+preserving relative positions within the group and reserving space for other
+groups bound to the same host. Optional `hostOffsets` provide translations per
+external binding; callers omitting them retain the original global translation.
 Insertion uses one graph patch, so undo removes the whole insertion. Source asset
 ID, fixed version, host bindings, and node/edge/endpoint mappings are recorded in
 the same database transaction. A database failure changes neither the project
@@ -157,7 +172,8 @@ Capture requests include `expectedGraphRevision`, `expectedLayoutRevision`,
 an explicitly empty selection is rejected.
 
 Insertion requests include `requestId`, both expected revisions, `assetId`,
-`version`, `hostBindings` (binding ID to target service ID), and optional x/y.
+`version`, `hostBindings` (binding ID to target service ID), optional x/y and
+`hostOffsets` (external binding ID to finite x/y translation).
 The response contains the patch result and source mappings. Preview uses the
 exact same request and IDs while leaving the project unchanged. Agent mutations
 retain the existing preview/approval workflow.
@@ -180,7 +196,19 @@ installed catalog or live store once supplied with a snapshot.
 
 ## Later work
 
-Cloud publishing/Library synchronization, extension registry, reusable publication
+Cloud publishing/direct Library queries, extension registry, reusable publication
 profiles, component parameters and nested runtime subgraphs remain separate
 work. Official bundled templates, linked cloud drafts, role/category forms and
 `graph_match_library` are not implemented by the current WebStudio.
+
+The [Unified Library plan](../development/unified-library-plan.md) records the
+implemented local search/details workflow and the remaining Cloud work. The Web
+Library provider boundary uses explicit local and Cloud references; Cloud
+references retain registry ID, fixed version and content hash. Local routes
+reject Cloud references. A future Cloud adapter calls Studio Server rather than
+importing online entries into the local Assets database. Online search has
+separate debounced, cancellable, paginated request state; provider contract tests
+cover stale responses, errors and fixed-version insertion. No Cloud provider is
+configured in the product yet, so online source filters and social controls are
+not displayed. Cloud login/publication, linked drafts and social actions remain
+unimplemented.
