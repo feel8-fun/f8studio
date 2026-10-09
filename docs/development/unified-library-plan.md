@@ -1,6 +1,6 @@
 # Unified Library：本地模板与在线发现
 
-2026-10-09。本地统一入口及 Web Library provider 边界已实施；Cloud 接入、发布草稿和社区能力仍是后续设计。更新 AssetCloud 重接入方案中有关 Library 同步、草稿和发现入口的设计；不表示 Cloud 已接通。
+2026-10-09。本地统一入口及 P2 Cloud 接入、发布草稿和社区操作已实施并完成隔离环境验收；线上迁移和部署尚未执行。本文更新 AssetCloud 重接入方案中有关 Library 同步、草稿和发现入口的设计。
 
 ## 已有能力
 
@@ -8,7 +8,7 @@
 
 Variant 已是完整单节点模板，使用 `f8component/1`，已进入 Add node 和左侧节点库。仅参数模板叫 Preset。Component 是展开为普通节点的创作模板，尚非封装的 runtime 子图。
 
-Cloud 现有资产、版本、搜索、订阅和 fork API 可作为迁移基础；旧内容合同不能直接插入当前 Studio。点赞、作者关注、新发布合同接入及统一 Library 均需新增或适配。
+Cloud v2 已新增当前 publication 合同、搜索、固定版本、点赞及作者/资产关注；v1 资产和版本继续保留，旧内容合同不能直接插入当前 Studio，显式转换属 P4。
 
 ## 用户入口
 
@@ -41,7 +41,7 @@ Library 的来源用显式联合类型：installed node、local asset、cloud as
 
 Cloud 详情中的 currentVersion 在用户开始预览/添加时解析并固定。后续下载按该版本和 hash 校验；发布者此时发布新版本不会改变用户正在添加的内容。获取、合同校验、依赖检查通过后，复用 Server 的同一套组件插入事务。失败不得留下半个组件。
 
-现有插入 API 以本地 assetId 为入口，需拆出可复用的“已校验固定模板插入”服务，并增加显式来源解析。项目来源记录需容纳 Cloud 引用；不能为了复用旧 API 而把每个下载项变成用户可编辑的本地资产。
+本地插入 API 继续以本地 assetId 为入口；P2 已拆出可复用的固定模板预览和插入服务，并增加显式 Cloud 来源解析。项目来源记录容纳 Cloud 引用；下载项不会自动变成用户可编辑的本地资产。
 
 本地与在线独立分页，合并显示时使用明确来源分组，不虚构可比较的跨源热度分数。草稿与它的已发布资产通过显式来源关系展示；不按名称猜测或自动合并。
 
@@ -73,14 +73,16 @@ Cloud 详情中的 currentVersion 在用户开始预览/添加时解析并固定
 3. **Cloud 接入**：迁移当前内容合同、登录、在线搜索/详情、固定版本下载校验、本地草稿与显式发布。验收分页、过期响应、断网、并发发布、幂等重试、权限和旧在线内容不可直接插入的诊断。
 4. **社区能力**：点赞、作者/资产关注、动态视图。验收取消操作、重复请求和账户切换后的关系状态。
 
-首轮目标是完成本地添加体验并固定 Cloud 接口边界；在线目录、账号和社区功能在 Cloud 阶段接通。
+本地添加体验已完成；Cloud 阶段已接通在线目录、账号、显式草稿发布和社区操作，并复用相同模板预览及插入入口。
 
 ## 首轮实现边界
 
-`f8studio_web/src/library` 提供显式 local/cloud 固定版本引用、LibraryProvider、现有本地 HTTP 的适配、模板详情/添加及在线搜索状态。产品只配置本地 provider。在线 provider 的测试替身验证防抖、游标分页、重复项去重、过期响应取消、断网及固定 hash 引用传给插入 provider，不向用户展示测试内容。
+`f8studio_web/src/library` 提供显式 local/cloud 固定版本引用、LibraryProvider、本地/Cloud HTTP 适配、模板详情/添加及在线搜索状态。Cloud 未配置时使用本地 provider；配置后启用在线 provider。测试覆盖防抖、游标分页、重复项去重、过期响应取消、断网及固定 hash 引用传给插入 provider，不向用户展示测试内容。
 
-实际 Cloud 的内容解析、hash 校验和来源记录仍须在 Studio Server 实施。当前 Server 插入仍使用本地 assetId/version，未宣称已支持远端引用。未来 Cloud adapter 必须调用专用服务端解析入口；不能把远端 ID 传给本地资产 API。
+P2 已实现 Studio Server 的 Cloud 内容解析、hash 校验和来源记录。Cloud adapter 调用专用服务端解析入口，远端引用包含 registry/asset/version/hash；本地和远端不会共用一个 assetId 命名空间。Cloud 内容获取和合同校验通过后，复用同一模板插入服务及项目事务；回执重试可以离线完成。
 
 Component 保存支持介绍和标签。统一添加复用既有事务、来源记录及撤销；增加可选外部宿主分组平移 `hostOffsets`，不改变可移植 component 内容合同，旧调用省略该参数时行为保持兼容。Component 的 builtin Studio 外部绑定与 Variant 一样按需创建/复用唯一宿主。
 
 保存 Component 的 HTTP 接口现在发送本地 `asset.created` 事件，库在保存后立即刷新。验收通过：230 个前端测试、106 个核心/相关服务端测试、3 个桌面浏览器流程、Python 严格类型检查、TypeScript/生产构建和生成合同一致性检查。浏览器覆盖保存选区与介绍/标签、无需刷新检索、图预览、分别选择两个宿主、保留内部连线、一次撤销，以及 Variant/离线配置回归。这些测试不代表 Cloud 集成或移动端验收已完成。
+
+P2 另完成真实 Worker HTTP 集成与桌面浏览器登录、发布、查询、关注及统一搜索插入验收；发布回包丢失后刷新页面，仍恢复原请求并保持单个云版本。最终 Web 回归 235 项、Cloud 集成组 9 项通过；完整检查记录见 [P2 实现](cloud-p2-implementation.md) 和 [重接入方案](assetcloud-reconnection-plan.md)。线上迁移和移动端验收仍独立进行。

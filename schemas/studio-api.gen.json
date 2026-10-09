@@ -3018,6 +3018,873 @@
       "title": "ChoiceQuestion",
       "type": "object"
     },
+    "CloudAsset": {
+      "properties": {
+        "assetId": {
+          "type": "string"
+        },
+        "author": {
+          "$ref": "#/$defs/CloudUser"
+        },
+        "contentHash": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "component",
+            "graph",
+            "variant"
+          ]
+        },
+        "license": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "visibility": {
+          "enum": [
+            "private",
+            "public"
+          ]
+        }
+      },
+      "required": [
+        "assetId",
+        "author",
+        "contentHash",
+        "description",
+        "kind",
+        "license",
+        "name",
+        "tags",
+        "updatedAt",
+        "version",
+        "visibility"
+      ],
+      "title": "CloudAsset",
+      "type": "object"
+    },
+    "CloudAssetInput": {
+      "properties": {
+        "assetId": {
+          "type": "string"
+        },
+        "author": {
+          "$ref": "#/$defs/CloudUserInput"
+        },
+        "contentHash": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "component",
+            "graph",
+            "variant"
+          ]
+        },
+        "license": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "visibility": {
+          "enum": [
+            "private",
+            "public"
+          ]
+        }
+      },
+      "required": [
+        "assetId",
+        "kind",
+        "name",
+        "description",
+        "tags",
+        "visibility",
+        "version",
+        "contentHash",
+        "license",
+        "author",
+        "updatedAt"
+      ],
+      "title": "CloudAsset",
+      "type": "object"
+    },
+    "CloudDraftLink": {
+      "properties": {
+        "authorId": {
+          "default": "",
+          "type": "string"
+        },
+        "authorSource": {
+          "$ref": "#/$defs/PublicationSource"
+        },
+        "localAssetId": {
+          "type": "string"
+        },
+        "owned": {
+          "type": "boolean"
+        },
+        "reference": {
+          "$ref": "#/$defs/CloudReference"
+        },
+        "source": {
+          "$ref": "#/$defs/PublicationSource"
+        }
+      },
+      "required": [
+        "authorId",
+        "authorSource",
+        "localAssetId",
+        "owned",
+        "reference",
+        "source"
+      ],
+      "title": "CloudDraftLink",
+      "type": "object"
+    },
+    "CloudDraftLinkInput": {
+      "properties": {
+        "authorId": {
+          "default": "",
+          "type": "string"
+        },
+        "authorSource": {
+          "$ref": "#/$defs/PublicationSourceInput"
+        },
+        "localAssetId": {
+          "type": "string"
+        },
+        "owned": {
+          "type": "boolean"
+        },
+        "reference": {
+          "$ref": "#/$defs/CloudReferenceInput"
+        },
+        "source": {
+          "$ref": "#/$defs/PublicationSourceInput"
+        }
+      },
+      "required": [
+        "localAssetId",
+        "reference",
+        "owned"
+      ],
+      "title": "CloudDraftLink",
+      "type": "object"
+    },
+    "CloudGraphOpenRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "reference": {
+          "$ref": "#/$defs/CloudReference"
+        }
+      },
+      "required": [
+        "name",
+        "reference"
+      ],
+      "title": "CloudGraphOpenRequest",
+      "type": "object"
+    },
+    "CloudGraphOpenRequestInput": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "reference": {
+          "$ref": "#/$defs/CloudReferenceInput"
+        }
+      },
+      "required": [
+        "reference",
+        "name"
+      ],
+      "title": "CloudGraphOpenRequest",
+      "type": "object"
+    },
+    "CloudGraphPreview": {
+      "properties": {
+        "document": {
+          "$ref": "#/$defs/StudioDocument"
+        },
+        "issues": {
+          "items": {
+            "$ref": "#/$defs/ComponentPreviewIssue"
+          },
+          "type": "array"
+        },
+        "reference": {
+          "$ref": "#/$defs/CloudReference"
+        }
+      },
+      "required": [
+        "document",
+        "issues",
+        "reference"
+      ],
+      "title": "CloudGraphPreview",
+      "type": "object"
+    },
+    "CloudGraphPreviewInput": {
+      "properties": {
+        "document": {
+          "$ref": "#/$defs/StudioDocumentInput"
+        },
+        "issues": {
+          "items": {
+            "$ref": "#/$defs/ComponentPreviewIssueInput"
+          },
+          "type": "array"
+        },
+        "reference": {
+          "$ref": "#/$defs/CloudReferenceInput"
+        }
+      },
+      "required": [
+        "reference",
+        "document",
+        "issues"
+      ],
+      "title": "CloudGraphPreview",
+      "type": "object"
+    },
+    "CloudGraphPublishRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "changeSummary": {
+          "default": "",
+          "type": "string"
+        },
+        "expectedGraphRevision": {
+          "type": "integer"
+        },
+        "expectedLayoutRevision": {
+          "type": "integer"
+        },
+        "license": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "visibility": {
+          "default": "public",
+          "enum": [
+            "private",
+            "public"
+          ]
+        }
+      },
+      "required": [
+        "changeSummary",
+        "expectedGraphRevision",
+        "expectedLayoutRevision",
+        "license",
+        "requestId",
+        "visibility"
+      ],
+      "title": "CloudGraphPublishRequest",
+      "type": "object"
+    },
+    "CloudGraphPublishRequestInput": {
+      "additionalProperties": false,
+      "properties": {
+        "changeSummary": {
+          "default": "",
+          "type": "string"
+        },
+        "expectedGraphRevision": {
+          "type": "integer"
+        },
+        "expectedLayoutRevision": {
+          "type": "integer"
+        },
+        "license": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "visibility": {
+          "default": "public",
+          "enum": [
+            "private",
+            "public"
+          ]
+        }
+      },
+      "required": [
+        "requestId",
+        "expectedGraphRevision",
+        "expectedLayoutRevision",
+        "license"
+      ],
+      "title": "CloudGraphPublishRequest",
+      "type": "object"
+    },
+    "CloudLoginStart": {
+      "properties": {
+        "authorizationUrl": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "authorizationUrl"
+      ],
+      "title": "CloudLoginStart",
+      "type": "object"
+    },
+    "CloudLoginStartInput": {
+      "properties": {
+        "authorizationUrl": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "authorizationUrl"
+      ],
+      "title": "CloudLoginStart",
+      "type": "object"
+    },
+    "CloudMetadataRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "visibility": {
+          "enum": [
+            "private",
+            "public"
+          ]
+        }
+      },
+      "required": [
+        "description",
+        "name",
+        "tags",
+        "visibility"
+      ],
+      "title": "CloudMetadataRequest",
+      "type": "object"
+    },
+    "CloudMetadataRequestInput": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "visibility": {
+          "enum": [
+            "private",
+            "public"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "tags",
+        "visibility"
+      ],
+      "title": "CloudMetadataRequest",
+      "type": "object"
+    },
+    "CloudPage": {
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/CloudAsset"
+          },
+          "type": "array"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
+      ],
+      "title": "CloudPage",
+      "type": "object"
+    },
+    "CloudPageInput": {
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/CloudAssetInput"
+          },
+          "type": "array"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
+      ],
+      "title": "CloudPage",
+      "type": "object"
+    },
+    "CloudPublicationResult": {
+      "properties": {
+        "assetId": {
+          "type": "string"
+        },
+        "changed": {
+          "type": "boolean"
+        },
+        "contentHash": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "assetId",
+        "changed",
+        "contentHash",
+        "version"
+      ],
+      "title": "CloudPublicationResult",
+      "type": "object"
+    },
+    "CloudPublicationResultInput": {
+      "properties": {
+        "assetId": {
+          "type": "string"
+        },
+        "changed": {
+          "type": "boolean"
+        },
+        "contentHash": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "assetId",
+        "version",
+        "contentHash",
+        "changed"
+      ],
+      "title": "CloudPublicationResult",
+      "type": "object"
+    },
+    "CloudPublishRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "changeSummary": {
+          "default": "",
+          "type": "string"
+        },
+        "license": {
+          "type": "string"
+        },
+        "localVersion": {
+          "type": "integer"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "visibility": {
+          "default": "public",
+          "enum": [
+            "private",
+            "public"
+          ]
+        }
+      },
+      "required": [
+        "changeSummary",
+        "license",
+        "localVersion",
+        "requestId",
+        "visibility"
+      ],
+      "title": "CloudPublishRequest",
+      "type": "object"
+    },
+    "CloudPublishRequestInput": {
+      "additionalProperties": false,
+      "properties": {
+        "changeSummary": {
+          "default": "",
+          "type": "string"
+        },
+        "license": {
+          "type": "string"
+        },
+        "localVersion": {
+          "type": "integer"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "visibility": {
+          "default": "public",
+          "enum": [
+            "private",
+            "public"
+          ]
+        }
+      },
+      "required": [
+        "requestId",
+        "localVersion",
+        "license"
+      ],
+      "title": "CloudPublishRequest",
+      "type": "object"
+    },
+    "CloudReference": {
+      "additionalProperties": false,
+      "properties": {
+        "assetId": {
+          "type": "string"
+        },
+        "contentHash": {
+          "type": "string"
+        },
+        "registryId": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "assetId",
+        "contentHash",
+        "registryId",
+        "version"
+      ],
+      "title": "CloudReference",
+      "type": "object"
+    },
+    "CloudReferenceInput": {
+      "additionalProperties": false,
+      "properties": {
+        "assetId": {
+          "type": "string"
+        },
+        "contentHash": {
+          "type": "string"
+        },
+        "registryId": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "registryId",
+        "assetId",
+        "version",
+        "contentHash"
+      ],
+      "title": "CloudReference",
+      "type": "object"
+    },
+    "CloudRelations": {
+      "properties": {
+        "following": {
+          "type": "boolean"
+        },
+        "followingAuthor": {
+          "type": "boolean"
+        },
+        "hasUpdate": {
+          "type": "boolean"
+        },
+        "latestVersion": {
+          "type": "integer"
+        },
+        "liked": {
+          "type": "boolean"
+        },
+        "likes": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "following",
+        "followingAuthor",
+        "hasUpdate",
+        "latestVersion",
+        "liked",
+        "likes"
+      ],
+      "title": "CloudRelations",
+      "type": "object"
+    },
+    "CloudRelationsInput": {
+      "properties": {
+        "following": {
+          "type": "boolean"
+        },
+        "followingAuthor": {
+          "type": "boolean"
+        },
+        "hasUpdate": {
+          "type": "boolean"
+        },
+        "latestVersion": {
+          "type": "integer"
+        },
+        "liked": {
+          "type": "boolean"
+        },
+        "likes": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "likes",
+        "liked",
+        "following",
+        "followingAuthor",
+        "hasUpdate",
+        "latestVersion"
+      ],
+      "title": "CloudRelations",
+      "type": "object"
+    },
+    "CloudSettingsRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "baseUrl": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "baseUrl"
+      ],
+      "title": "CloudSettingsRequest",
+      "type": "object"
+    },
+    "CloudSettingsRequestInput": {
+      "additionalProperties": false,
+      "properties": {
+        "baseUrl": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "baseUrl"
+      ],
+      "title": "CloudSettingsRequest",
+      "type": "object"
+    },
+    "CloudStatus": {
+      "properties": {
+        "configured": {
+          "type": "boolean"
+        },
+        "registryId": {
+          "type": "string"
+        },
+        "user": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/CloudUser"
+            }
+          ]
+        }
+      },
+      "required": [
+        "configured",
+        "registryId",
+        "user"
+      ],
+      "title": "CloudStatus",
+      "type": "object"
+    },
+    "CloudStatusInput": {
+      "properties": {
+        "configured": {
+          "type": "boolean"
+        },
+        "registryId": {
+          "type": "string"
+        },
+        "user": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/CloudUserInput"
+            }
+          ]
+        }
+      },
+      "required": [
+        "configured",
+        "registryId",
+        "user"
+      ],
+      "title": "CloudStatus",
+      "type": "object"
+    },
+    "CloudUser": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "title": "CloudUser",
+      "type": "object"
+    },
+    "CloudUserInput": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "title": "CloudUser",
+      "type": "object"
+    },
+    "CloudVersion": {
+      "properties": {
+        "contentHash": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "contentHash",
+        "createdAt",
+        "note",
+        "version"
+      ],
+      "title": "CloudVersion",
+      "type": "object"
+    },
+    "CloudVersionInput": {
+      "properties": {
+        "contentHash": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "contentHash",
+        "createdAt",
+        "note"
+      ],
+      "title": "CloudVersion",
+      "type": "object"
+    },
     "Code": {
       "enum": [
         "CONFLICT",
@@ -3327,6 +4194,17 @@
         "assetId": {
           "type": "string"
         },
+        "contentHash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "edgeMap": {
           "additionalProperties": {
             "type": "string"
@@ -3352,16 +4230,29 @@
           },
           "type": "object"
         },
+        "registryId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "version": {
           "type": "integer"
         }
       },
       "required": [
         "assetId",
+        "contentHash",
         "edgeMap",
         "endpoints",
         "hostBindings",
         "nodeMap",
+        "registryId",
         "version"
       ],
       "title": "ComponentSource",
@@ -3372,6 +4263,17 @@
       "properties": {
         "assetId": {
           "type": "string"
+        },
+        "contentHash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "edgeMap": {
           "additionalProperties": {
@@ -3397,6 +4299,17 @@
             "type": "string"
           },
           "type": "object"
+        },
+        "registryId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "version": {
           "type": "integer"
@@ -14903,6 +15816,104 @@
       "title": "In",
       "type": "object"
     },
+    "InsertCloudComponentRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "expectedGraphRevision": {
+          "type": "integer"
+        },
+        "expectedLayoutRevision": {
+          "type": "integer"
+        },
+        "hostBindings": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "hostOffsets": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ComponentOffset"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "reference": {
+          "$ref": "#/$defs/CloudReference"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "x": {
+          "default": 40,
+          "type": "number"
+        },
+        "y": {
+          "default": 40,
+          "type": "number"
+        }
+      },
+      "required": [
+        "expectedGraphRevision",
+        "expectedLayoutRevision",
+        "hostBindings",
+        "hostOffsets",
+        "reference",
+        "requestId",
+        "x",
+        "y"
+      ],
+      "title": "InsertCloudComponentRequest",
+      "type": "object"
+    },
+    "InsertCloudComponentRequestInput": {
+      "additionalProperties": false,
+      "properties": {
+        "expectedGraphRevision": {
+          "type": "integer"
+        },
+        "expectedLayoutRevision": {
+          "type": "integer"
+        },
+        "hostBindings": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "hostOffsets": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ComponentOffsetInput"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "reference": {
+          "$ref": "#/$defs/CloudReferenceInput"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "x": {
+          "default": 40,
+          "type": "number"
+        },
+        "y": {
+          "default": 40,
+          "type": "number"
+        }
+      },
+      "required": [
+        "requestId",
+        "expectedGraphRevision",
+        "expectedLayoutRevision",
+        "reference"
+      ],
+      "title": "InsertCloudComponentRequest",
+      "type": "object"
+    },
     "InsertComponentRequest": {
       "additionalProperties": false,
       "properties": {
@@ -23980,6 +24991,116 @@
       "$ref": "#/$defs/ManagementJob"
     },
     {
+      "$ref": "#/$defs/CloudStatus"
+    },
+    {
+      "$ref": "#/$defs/CloudSettingsRequest"
+    },
+    {
+      "$ref": "#/$defs/CloudStatus"
+    },
+    {
+      "$ref": "#/$defs/CloudLoginStart"
+    },
+    {
+      "$ref": "#/$defs/CloudStatus"
+    },
+    {
+      "$ref": "#/$defs/CloudPage"
+    },
+    {
+      "$ref": "#/$defs/CloudAsset"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/CloudVersion"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/CloudReference"
+    },
+    {
+      "$ref": "#/$defs/ComponentPreview"
+    },
+    {
+      "$ref": "#/$defs/CloudReference"
+    },
+    {
+      "$ref": "#/$defs/CloudGraphPreview"
+    },
+    {
+      "$ref": "#/$defs/CloudGraphOpenRequest"
+    },
+    {
+      "$ref": "#/$defs/ProjectRecord"
+    },
+    {
+      "$ref": "#/$defs/InsertCloudComponentRequest"
+    },
+    {
+      "$ref": "#/$defs/InsertComponentResult"
+    },
+    {
+      "$ref": "#/$defs/CloudReference"
+    },
+    {
+      "$ref": "#/$defs/AssetRecord"
+    },
+    {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/CloudDraftLink"
+        }
+      ]
+    },
+    {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/CloudDraftLink"
+        }
+      ]
+    },
+    {
+      "$ref": "#/$defs/CloudPublishRequest"
+    },
+    {
+      "$ref": "#/$defs/CloudPublicationResult"
+    },
+    {
+      "$ref": "#/$defs/CloudMetadataRequest"
+    },
+    {
+      "$ref": "#/$defs/CloudAsset"
+    },
+    {
+      "$ref": "#/$defs/CloudMetadataRequest"
+    },
+    {
+      "$ref": "#/$defs/CloudAsset"
+    },
+    {
+      "$ref": "#/$defs/CloudGraphPublishRequest"
+    },
+    {
+      "$ref": "#/$defs/CloudPublicationResult"
+    },
+    {
+      "$ref": "#/$defs/CloudRelations"
+    },
+    {
+      "$ref": "#/$defs/CloudRelations"
+    },
+    {
+      "$ref": "#/$defs/CloudRelations"
+    },
+    {
       "$ref": "#/$defs/HealthStatus"
     },
     {
@@ -24989,6 +26110,116 @@
     },
     {
       "$ref": "#/$defs/ManagementJobInput"
+    },
+    {
+      "$ref": "#/$defs/CloudStatusInput"
+    },
+    {
+      "$ref": "#/$defs/CloudSettingsRequestInput"
+    },
+    {
+      "$ref": "#/$defs/CloudStatusInput"
+    },
+    {
+      "$ref": "#/$defs/CloudLoginStartInput"
+    },
+    {
+      "$ref": "#/$defs/CloudStatusInput"
+    },
+    {
+      "$ref": "#/$defs/CloudPageInput"
+    },
+    {
+      "$ref": "#/$defs/CloudAssetInput"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/CloudVersionInput"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/CloudReferenceInput"
+    },
+    {
+      "$ref": "#/$defs/ComponentPreviewInput"
+    },
+    {
+      "$ref": "#/$defs/CloudReferenceInput"
+    },
+    {
+      "$ref": "#/$defs/CloudGraphPreviewInput"
+    },
+    {
+      "$ref": "#/$defs/CloudGraphOpenRequestInput"
+    },
+    {
+      "$ref": "#/$defs/ProjectRecordInput"
+    },
+    {
+      "$ref": "#/$defs/InsertCloudComponentRequestInput"
+    },
+    {
+      "$ref": "#/$defs/InsertComponentResultInput"
+    },
+    {
+      "$ref": "#/$defs/CloudReferenceInput"
+    },
+    {
+      "$ref": "#/$defs/AssetRecordInput"
+    },
+    {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/CloudDraftLinkInput"
+        }
+      ]
+    },
+    {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/CloudDraftLinkInput"
+        }
+      ]
+    },
+    {
+      "$ref": "#/$defs/CloudPublishRequestInput"
+    },
+    {
+      "$ref": "#/$defs/CloudPublicationResultInput"
+    },
+    {
+      "$ref": "#/$defs/CloudMetadataRequestInput"
+    },
+    {
+      "$ref": "#/$defs/CloudAssetInput"
+    },
+    {
+      "$ref": "#/$defs/CloudMetadataRequestInput"
+    },
+    {
+      "$ref": "#/$defs/CloudAssetInput"
+    },
+    {
+      "$ref": "#/$defs/CloudGraphPublishRequestInput"
+    },
+    {
+      "$ref": "#/$defs/CloudPublicationResultInput"
+    },
+    {
+      "$ref": "#/$defs/CloudRelationsInput"
+    },
+    {
+      "$ref": "#/$defs/CloudRelationsInput"
+    },
+    {
+      "$ref": "#/$defs/CloudRelationsInput"
     },
     {
       "$ref": "#/$defs/HealthStatusInput"

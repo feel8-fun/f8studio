@@ -194,21 +194,27 @@ The JS/CSS library outputs are in `extensions/f8webstudio/build/graph-view`,
 with React and React Flow as peer dependencies. It needs no Studio server,
 installed catalog or live store once supplied with a snapshot.
 
+## Cloud Library
+
+P2 adds online content to the same Add from Library search. Configure and sign in under **Assets → Feel8 Cloud**. Choose Online to search published Components/Variants, inspect Markdown/versions/GraphView, and add a fixed version using the same host-binding rules. Missing dependencies can still be previewed and are explained before insertion. Online browsing and insertion do not copy the item into Local assets.
+
+**Assets → Online Library** also provides author and asset following, Like/Unlike, and explicit **Create local draft**. Saving that draft remains local. Open **Publish template to Cloud** to choose a license and publish its saved version; **Update listing** changes metadata separately. Repeated identical content keeps the published version. A publication conflict preserves the draft and reports that its Cloud base changed. Following new versions never replaces nodes already added to a project.
+
+Graphs have separate Publish/Open as project actions, rather than being inserted as nodes. Credentials are owned by Studio Server. Current login uses a loopback Studio address; production Cloud must have the v2 API and incremental migration deployed before configuring it.
+
 ## Later work
 
-Cloud publishing/direct Library queries, extension registry, reusable publication
-profiles, component parameters and nested runtime subgraphs remain separate
-work. Official bundled templates, linked cloud drafts, role/category forms and
+Extension registry, reusable publication profiles, component parameters and
+nested runtime subgraphs remain separate work. Official bundled templates, role/category forms and
 `graph_match_library` are not implemented by the current WebStudio.
 
 The [Unified Library plan](../development/unified-library-plan.md) records the
-implemented local search/details workflow and the remaining Cloud work. The Web
+implemented local/online search/details workflow and the remaining work. The Web
 Library provider boundary uses explicit local and Cloud references; Cloud
 references retain registry ID, fixed version and content hash. Local routes
-reject Cloud references. A future Cloud adapter calls Studio Server rather than
+reject Cloud references. The Cloud adapter calls Studio Server rather than
 importing online entries into the local Assets database. Online search has
 separate debounced, cancellable, paginated request state; provider contract tests
-cover stale responses, errors and fixed-version insertion. No Cloud provider is
-configured in the product yet, so online source filters and social controls are
-not displayed. Cloud login/publication, linked drafts and social actions remain
-unimplemented.
+cover stale responses, errors and fixed-version insertion. Online filters and
+social controls become available after Cloud is configured; production Cloud
+deployment and legacy content migration remain separate release work.

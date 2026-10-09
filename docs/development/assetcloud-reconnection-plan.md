@@ -1,8 +1,8 @@
 # AssetCloud 重新接入方案
 
-2026-10-08。状态：P0 合同与 revision 已提交；P1 本地组件闭环已实施并验收；Cloud 重接入仍为设计提案。本文基于当前 checkout 的实现核对；旧文档中的功能描述不作为实现完成的依据。
+2026-10-09。状态：P0/P1 已完成并提交；P2 Cloud 发布与 Library 已实现并完成隔离环境验收；线上迁移和部署尚未执行。本文基于当前 checkout 的实现核对；旧文档中的功能描述不作为实现完成的依据。
 
-2026-10-09 更新：Variant 已实现完整单节点模板。Component 已接入统一搜索、同窗详情与左侧库，Web Library provider 已区分 local/cloud 固定来源。本地实现完成；实际 Cloud 接入仍待后续。Library 采用在线目录直接查询、按需获取固定版本、本地独立草稿的设计，不建立双向同步的在线库镜像。详情、草稿发布及社区操作见 [Unified Library 方案](unified-library-plan.md)，其规则取代本文早期的 Library 同步/pull 设想。
+2026-10-09 更新：Variant 已实现完整单节点模板。Component 已接入统一搜索、同窗详情与左侧库。P2 增加 `/v2/library`、增量 D1 迁移、Studio Server Cloud 客户端、PKCE 登录、在线预览/插入、独立草稿、显式发布及点赞/关注。Library 采用在线目录直接查询、按需获取固定版本、本地独立草稿的设计，不建立双向同步的在线库镜像。详情、草稿发布及社区操作见 [Unified Library 方案](unified-library-plan.md)，其规则取代本文早期的 Library 同步/pull 设想。
 
 建议将产品定位调整为 **Feel8 Cloud**，代码名称候选为 `f8cloud`：为 Studio 提供账号、资产发布、发现、订阅和扩展 registry。用户在 WebStudio 中完成主要操作；Cloud 保留独立 API、数据库和精简管理后台。重新接入前先收敛发布合同与版本语义，再连接网络同步。
 
@@ -11,18 +11,18 @@
 | 边界 | 已确认的实现 | 接入前的缺口 |
 | --- | --- | --- |
 | 本地编辑文档 | `f8studio-document/3`（兼容读取 /2），typed patch，graph/layout revision，原子提交、撤销及幂等 | 编辑计数与用户发布版本的呈现需要分开；已声明的 transient 触发不再修改保存状态 |
-| 可移植完整图 | `f8graph/4`（兼容读取 /3）；定义快照去重、SHA-256 校验、稳定端口身份、导入校验；独立发布 manifest 与 content hash；不携带编辑 revision | 可复现安装锁和 Cloud 发布接口待 P2/P3；`resources` 尚不支持 |
-| Cloud 组件 | `f8studio-session/1`，内容为 `{schemaVersion, layout}`，layout 为旧会话对象 | 与当前图和组件格式不兼容；Cloud 尚无独立 graph 和 extension 类型 |
-| 本地 component | 新捕获与新建使用 `f8component/1`；兼容读取旧本地 /1、/2，定义引用、外部宿主、选区端点、Server 原子插入与来源记录 | 参数化入口后续另立合同；Cloud 发布接口属 P2 |
-| 本地 variant | 完整单节点 `f8component/1` 模板，保存定制 spec/端口/代码及合规实例值；旧参数资产迁为 Preset | 已进入 Add node 搜索及左侧节点库；Cloud 来源尚待接入 |
-| Cloud variant | 保存完整 `spec` | 旧内容须显式转换为当前单节点 `f8component/1` 模板，并通过发布合同校验；不能直接按名称映射 |
-| Cloud 版本 | 每次内容更新增加 `versionNumber`；有独立 metadata 更新接口 | 内容去重、发布请求持久幂等、原子并发控制尚需补齐 |
-| 多用户 | 账号、所有者、public/private、订阅、fork、管理员 | 发布者身份与权限、依赖来源、许可证、协作者授权；尚非多人实时共编 |
-| 前端 | 编辑器与独立只读 GraphView 共用 React Flow 投影、节点/端口视觉和样式；已生成独立预览 JS/CSS | 当前 Cloud 内容页未接预览入口；接入属 P2/P4 |
+| 可移植完整图 | `f8graph/4`（兼容读取 /3）；定义快照去重、SHA-256 校验、稳定端口身份、导入校验；独立发布 manifest 与 content hash；不携带编辑 revision；已接 Cloud 发布 | 可复现安装锁属 P3；`resources` 尚不支持 |
+| Cloud 组件 | v2 使用 `f8publication/1` 和 `f8component/1`；v1 的 `f8studio-session/1` 原始内容继续保留 | 旧内容转换属 P4；extension 类型属 P3 |
+| 本地 component | 新捕获与新建使用 `f8component/1`；兼容读取旧本地 /1、/2，定义引用、外部宿主、选区端点、Server 原子插入与来源记录；已接显式 Cloud 发布 | 参数化入口后续另立合同 |
+| 本地 variant | 完整单节点 `f8component/1` 模板，保存定制 spec/端口/代码及合规实例值；旧参数资产迁为 Preset | 本地和在线模板已共用 Add 搜索；在线库不镜像为本地资产 |
+| Cloud variant | v2 使用完整单节点 Component publication；v1 保留旧 `spec` | 旧内容须显式转换，并通过发布合同校验；不能直接按名称映射 |
+| Cloud 版本 | v2 有不可变版本、内容 hash 去重、持久发布回执和原子版本冲突检查；metadata 独立更新 | 线上增量迁移与部署待执行；v1 版本语义不自动改写 |
+| 多用户 | 账号、所有者、public/private、点赞/关注、固定来源派生作品及许可检查、管理员 | 扩展发布者归属和协作者授权；尚非多人实时共编 |
+| 前端 | 编辑器与独立只读 GraphView 共用 React Flow 投影、节点/端口视觉和样式；WebStudio 已复用其预览 Cloud 内容 | Cloud 独立分享页和旧内容页收敛属 P4 |
 
 主要实现位置：`f8studio_core/graph/{models,exchange,store}.py`、`f8studio_core/compiler.py`、`f8studio_server/{assets,automation_tools,application,jobs,projects}.py`、`f8studio_web/src/{assets,graph}`、`cloud/src/repository.js`、`platform/f8platform/extension_artifacts.py`。
 
-`docs/developers/component-authoring.md` 已更新为当前实现；官方组件库、linked draft、分类表单和 `graph_match_library` 尚未实现，不计入完成项。
+`docs/developers/component-authoring.md` 已更新为当前实现；Cloud 独立草稿已记录发布来源和基线。官方组件库、分类表单和 `graph_match_library` 尚未实现，不计入完成项。
 
 ## 协议稳定性与生态边界
 
@@ -143,13 +143,13 @@ component 从选区导出时尤其要分析跨边界连接。若原上游没有�
 
 ### 发布、同步和冲突
 
-第一期默认显式 Publish；订阅只提示有新版本，用户 Pull 后才下载内容并选择应用。导入的 component 是普通节点副本，源组件升级不会改变已插入的节点。扩展也不因订阅或图预览而自动安装、升级或运行。
+第一期默认显式 Publish；关注只提示有新版本，用户预览、添加或创建草稿时才获取固定版本内容。导入的 component 是普通节点副本，源组件升级不会改变已插入的节点。扩展也不因关注或图预览而自动安装、升级或运行。
 
 如以后提供个人云草稿备份，使用单独的可变 draft 记录与防抖策略；备份不生成公开 asset version，不通知订阅者。每次 patch 不直接请求远程发布。
 
 已实施的 `f8publication-hash/1` 覆盖完整发布内容及 manifest，排除本地 revision、时间戳、运行状态和本机 project/graph ID；图内节点与端口身份仍保留。按模型定义集合排序、展开模型默认值，以带类型标记的 JSON 树与 binary64 数字 token 避免 Python/JS 数字打印差异；两端共用固定 fixture。保留会影响预览/复用的名称、布局和端口显示信息。完整规范与生成 schema 见 `extensions/f8webstudio/contracts/README.md`。
 
-Cloud 收到相同当前 hash 的发布时返回当前版本，不追加版本。相同请求的网络重试使用持久 idempotency key 重放结果。发布要求 expected head/version，冲突返回 409；版本插入、head 更新和请求结果须原子提交，并在数据库写入中执行条件比较。现有实现先读版本再更新 head，且多条 SQL 分开执行，仅增加前置比较不足以防并发覆盖。
+Cloud 收到相同当前 hash 的发布时返回当前版本，不追加版本。相同请求的网络重试使用持久 idempotency key 重放结果。发布要求 expected version，冲突返回 409；v2 以单次 INSERT 和数据库触发器完成版本插入、head 更新及回执保存，条件比较和写入处于同一事务。v1 的旧版本流程保持原状，不作为 v2 发布入口。
 
 metadata 修改继续使用独立接口，不生成内容版本。当前历史查询以当前 head metadata 组合旧 blob，因此要明确哪些 metadata 是可变目录信息；许可证、依赖、发布者来源等复现所需信息必须随版本保存。内容版本不可原地修改，回滚通过选择旧版本或发布新版本表达。
 
@@ -222,7 +222,7 @@ P0/P1 已实现以下行为（组件参数仍另行设计）：
 | --- | --- | --- | --- |
 | P0 合同与 revision | 已完成、已提交 | 发布 manifest、component 合同、hash fixture、持久化语义、发布脱敏与版本策略 | 运行触发不污染保存内容；同一发布内容 hash 稳定；布局变化保留；依赖和缺失能力有明确错误；旧格式迁移规则明确 |
 | P1 本地组件闭环 | 已完成、已验收 | 选区保存、PyScript 完整模板、宿主绑定、Server 原子插入、只读 GraphView、统一 Library 搜索与详情 | 脚本端口/代码完整往返；重复插入不冲突；无需新建重复 Engine；缺失扩展仍可预览；失败不修改项目 |
-| P2 Cloud 发布与 Library | 待实施 | 新 API 合同、数据库增量迁移、并发/幂等发布、WebStudio 登录/在线查询/草稿发布/关注更新/固定版本获取 | 相同内容不增版本；重试只发布一次；并发更新一个成功一个冲突；离线编辑可用；本地 revision 不触发上传；按需获取固定版本，无本地在线库镜像 |
+| P2 Cloud 发布与 Library | 已完成隔离环境验收；未上线 | 新 API 合同、数据库增量迁移、并发/幂等发布、WebStudio 登录/在线查询/草稿发布/关注更新/固定版本获取 | 相同内容不增版本；重试只发布一次；并发更新一个成功一个冲突；离线编辑可用；本地 revision 不触发上传；按需获取固定版本，无本地在线库镜像 |
 | P3 Extension Registry | 待实施 | 发布者归属、版本/平台/协议清单、GitHub 制品解析、Platform 安装入口 | URL/hash 校验；版本不能改写；缺失依赖可解释；安装/升级不隐式改变正在运行的图；原有回退机制可用 |
 | P4 前端收敛与迁移 | 待实施 | Feel8 Cloud 文案、精简 console、分享预览、旧数据转换工具 | WebStudio 覆盖日常资产操作；认证页面迁移无断链；管理员可审核；旧资产转换有成功/失败报告且保留原始内容 |
 
@@ -238,10 +238,14 @@ P0/P1 已在本地完成，无需部署 Cloud；P2 在测试环境验证完整 g
 
 P0 补齐：独立 publication/manifest/component 静态模型和生成 schema；发布 hash 的 Python/Web 共用 fixture；缺失 extension、版本、协议、service/operator 和能力的明确诊断；embedded definitions 支持离线预览；capabilities 返回支持窗口。
 
-P1 补齐：选区捕获与实例排除 UI、完整 PyScript spec/代码/端口往返、现有宿主选择和多宿主分组布局、固定版本的 Server 原子插入与来源记录、重试和重复插入、缺失/不兼容定义预览、复用编辑器视觉的独立 GraphView。Node、Variant、Component 已共用 Add from Library 搜索入口，支持同窗详情/版本预览及左侧组件库。回归覆盖并发 revision 冲突、重启后重试、数据库写入失败回滚和 Agent 原有审批路径。Web Library provider 已预留 Cloud 来源；服务端远程内容获取、hash 校验和 Cloud 来源记录仍属 P2。
+P1 补齐：选区捕获与实例排除 UI、完整 PyScript spec/代码/端口往返、现有宿主选择和多宿主分组布局、固定版本的 Server 原子插入与来源记录、重试和重复插入、缺失/不兼容定义预览、复用编辑器视觉的独立 GraphView。Node、Variant、Component 已共用 Add from Library 搜索入口，支持同窗详情/版本预览及左侧组件库。回归覆盖并发 revision 冲突、重启后重试、数据库写入失败回滚和 Agent 原有审批路径。
 
 2026-10-09 本地闭环验收：230 项 Web 单元测试、106 项核心及相关服务端测试、3 项桌面端 Playwright 流程（Component、Variant、state authoring）通过；严格 Python/TypeScript 类型检查、Web 生产构建和合同生成一致性检查通过。
 
 完成 Pixi 管理环境下的核心、服务端、SDK、Web 回归，严格 Python/TypeScript 类型检查，合同生成一致性检查，以及 C++ SDK 测试和播放器编译。新增回归覆盖旧图 hash 校验与迁移、运行时触发和重试、私有值清理、定义默认值保留、有效上游连接、作者排除及历史资产导出。
 
-此次仍不包含 Cloud 部署、旧在线资产转换、extension registry、组件参数、持久发布 profile 或网络同步；这些继续按 P2–P4 及后续组件参数设计推进。测试不替代线上数据迁移验收。
+P2 补齐：独立 TypeScript Cloud API、生成 publication schema/fixture、D1 增量迁移和单 SQL 发布事务；相同内容去重、不可变历史、并发冲突、持久发布回执和独立 metadata 更新。Studio Server 持有凭据并刷新，WebStudio 使用 PKCE 登录、直接在线查询及固定版本下载校验。远端模板复用现有插入事务，Cloud 来源与图变更一起保存，浏览和插入不创建本地资产；创建草稿是显式操作。草稿来源、许可及待发送发布快照持久保存，网络结果不确定时重试原始快照。新增点赞、作者/资产关注、Following 视图及新版本提示；不会自动替换节点。完整 graph 支持发布、预览和创建独立项目。
+
+P2 验收：382 项核心/服务端完整回归、最终 235 项 Web 测试、55 项 Cloud 后端及 21 项旧 console 测试通过；新增 Cloud 集成组最终 9 项通过。4 条桌面 Playwright 流程通过（Cloud、Component、Variant、state authoring）；Cloud 最终复测增加回包丢失、页面刷新和原请求恢复。严格 Python/TypeScript 检查、生成合同一致性、Web/console 构建及 Wrangler 临时本地 D1 迁移通过。详见 [P2 实现与检查](cloud-p2-implementation.md)。
+
+此次仍不包含线上 Cloud 部署、旧在线资产转换、extension registry、组件参数、托管分享页或多人实时共编。D1 版本内容当前限 1 MiB，不托管附件。登录沿用 Cloud 的 loopback 客户端流程；远程托管 Studio 的登录方式另行设计。测试不替代线上数据迁移验收。
