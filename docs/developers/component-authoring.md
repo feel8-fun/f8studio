@@ -39,7 +39,14 @@ service for every external host binding, then choose **Apply**. A single PyScrip
 template can reuse the project's current PyEngine. Selecting a service as part
 of the original component intentionally includes that service in the template.
 
-Server remaps every inserted node and edge ID, preserves node-scoped port IDs,
+Web Studio Runtime is a builtin singleton. Even when captured inside a template,
+insertion reuses the target project's `studio` host, preserving its settings and
+layout, or creates that host if absent. Ordinary included services still receive
+new IDs. External Studio host bindings may have arbitrary template aliases, but
+must bind to the target's `studio` host. Preview hosts are placeholders and cannot
+be deployed as executable graphs.
+
+Server remaps inserted node and edge IDs, preserves node-scoped port IDs,
 translates layout by the requested x/y offsets and validates the complete graph.
 Insertion uses one graph patch, so undo removes the whole insertion. Source asset
 ID, fixed version, host bindings, and node/edge/endpoint mappings are recorded in
