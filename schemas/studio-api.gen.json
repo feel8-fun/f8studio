@@ -1611,6 +1611,7 @@
       "enum": [
         "component",
         "modding_recipe",
+        "preset",
         "variant"
       ],
       "title": "AssetKind"
@@ -1619,6 +1620,7 @@
       "enum": [
         "component",
         "modding_recipe",
+        "preset",
         "variant"
       ],
       "title": "AssetKind"
@@ -2439,6 +2441,141 @@
         "expectedLayoutRevision"
       ],
       "title": "CaptureComponentRequest",
+      "type": "object"
+    },
+    "CaptureVariantRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "assetId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "description": {
+          "default": "",
+          "type": "string"
+        },
+        "excludedStates": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExcludedState"
+          },
+          "type": "array"
+        },
+        "expectedGraphRevision": {
+          "type": "integer"
+        },
+        "expectedLayoutRevision": {
+          "type": "integer"
+        },
+        "expectedVersion": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "name": {
+          "type": "string"
+        },
+        "nodeId": {
+          "type": "string"
+        },
+        "tags": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "assetId",
+        "description",
+        "excludedStates",
+        "expectedGraphRevision",
+        "expectedLayoutRevision",
+        "expectedVersion",
+        "name",
+        "nodeId",
+        "tags"
+      ],
+      "title": "CaptureVariantRequest",
+      "type": "object"
+    },
+    "CaptureVariantRequestInput": {
+      "additionalProperties": false,
+      "properties": {
+        "assetId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "description": {
+          "default": "",
+          "type": "string"
+        },
+        "excludedStates": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExcludedStateInput"
+          },
+          "type": "array"
+        },
+        "expectedGraphRevision": {
+          "type": "integer"
+        },
+        "expectedLayoutRevision": {
+          "type": "integer"
+        },
+        "expectedVersion": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "name": {
+          "type": "string"
+        },
+        "nodeId": {
+          "type": "string"
+        },
+        "tags": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "nodeId",
+        "expectedGraphRevision",
+        "expectedLayoutRevision",
+        "name"
+      ],
+      "title": "CaptureVariantRequest",
       "type": "object"
     },
     "CatalogSnapshot": {
@@ -22397,6 +22534,17 @@
           "default": "",
           "type": "string"
         },
+        "expectedVersion": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "name": {
           "type": "string"
         },
@@ -22411,6 +22559,7 @@
       "required": [
         "content",
         "description",
+        "expectedVersion",
         "name",
         "tags"
       ],
@@ -22448,6 +22597,17 @@
         "description": {
           "default": "",
           "type": "string"
+        },
+        "expectedVersion": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "name": {
           "type": "string"
@@ -22714,6 +22874,153 @@
         "layoutRevision"
       ],
       "title": "ValidationResponse",
+      "type": "object"
+    },
+    "VariantSource": {
+      "properties": {
+        "assetId": {
+          "type": "string"
+        },
+        "nodeId": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "assetId",
+        "nodeId",
+        "version"
+      ],
+      "title": "VariantSource",
+      "type": "object"
+    },
+    "VariantSourceInput": {
+      "properties": {
+        "assetId": {
+          "type": "string"
+        },
+        "nodeId": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "nodeId",
+        "assetId",
+        "version"
+      ],
+      "title": "VariantSource",
+      "type": "object"
+    },
+    "VariantSummary": {
+      "properties": {
+        "assetId": {
+          "type": "string"
+        },
+        "currentVersion": {
+          "type": "integer"
+        },
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "nodeKind": {
+          "enum": [
+            "operator",
+            "service"
+          ]
+        },
+        "operatorClass": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "serviceClass": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "assetId",
+        "currentVersion",
+        "description",
+        "name",
+        "nodeKind",
+        "operatorClass",
+        "serviceClass",
+        "tags"
+      ],
+      "title": "VariantSummary",
+      "type": "object"
+    },
+    "VariantSummaryInput": {
+      "properties": {
+        "assetId": {
+          "type": "string"
+        },
+        "currentVersion": {
+          "type": "integer"
+        },
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "nodeKind": {
+          "enum": [
+            "operator",
+            "service"
+          ]
+        },
+        "operatorClass": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "serviceClass": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "assetId",
+        "name",
+        "description",
+        "tags",
+        "currentVersion",
+        "nodeKind",
+        "serviceClass"
+      ],
+      "title": "VariantSummary",
       "type": "object"
     },
     "VideoConfig": {
@@ -23645,6 +23952,24 @@
         "$ref": "#/$defs/AssetSummary"
       },
       "type": "array"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/VariantSummary"
+      },
+      "type": "array"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/VariantSource"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/CaptureVariantRequest"
+    },
+    {
+      "$ref": "#/$defs/AssetRecord"
     },
     {
       "$ref": "#/$defs/CreateAssetRequest"
@@ -24638,6 +24963,24 @@
         "$ref": "#/$defs/AssetSummaryInput"
       },
       "type": "array"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/VariantSummaryInput"
+      },
+      "type": "array"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/VariantSourceInput"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/CaptureVariantRequestInput"
+    },
+    {
+      "$ref": "#/$defs/AssetRecordInput"
     },
     {
       "$ref": "#/$defs/CreateAssetRequestInput"

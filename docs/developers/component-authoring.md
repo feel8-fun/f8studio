@@ -7,8 +7,9 @@ A component can be one customized PyScript node or a selection of nodes.
 ## Save a selection
 
 1. Configure the nodes, script code, schemas and ports in Graph.
-2. Select one or more nodes and choose **Save selection as component** in the
-   graph toolbar.
+2. Select one or more nodes, right-click a selected node or the canvas, and choose
+   **Save selection as Component…**. Right-clicking an unselected node captures
+   that node directly, without changing the current selection.
 3. Name the template and choose which eligible saved state values to include.
 4. Open **Assets** to inspect, preview or export the saved component.
 
@@ -72,8 +73,73 @@ manifest; local editing revisions never become publication versions. Contract
 specification, generated JSON Schema and Python/Web fixtures live in
 `extensions/f8webstudio/contracts`.
 
-A variant remains a lightweight state preset, not a complete script template.
-Use a component when custom ports, state schemas or code must be retained.
+A Variant is a complete single-node template; it uses `f8component/1` content
+with exactly one template node. Presets contain only parameter values. Existing
+`f8studio-variant/1` parameter assets are migrated to Presets without changing
+their asset IDs or stored versions; older exports remain importable.
+
+## Node Variants
+
+Right-click the customized operator or service and choose **Save as Variant…**.
+Enter a name, description and tags, and choose which eligible saved values to
+include. Full definition snapshots, custom schemas/ports, script code and saved
+node dimensions are retained. Service Variants capture only the service; use a
+Component to include its operators. Runtime/private/read-only values are cleaned
+using the same publication contract as Components. Saving does not deploy or
+change the source graph.
+
+Ordinary authored configuration (intervals, frequencies, thresholds and display
+settings) is persistent and publishable. Machine-specific file/executable paths
+and device selections stay persistent locally but are not published. Read-only
+outputs and transient controls (for example, rescan or clear triggers) are not
+persistent. Unchanged configuration uses the embedded definition's default;
+the capture dialog marks it as included through the definition. An absent
+`stateValues` entry does not mean the configuration is lost. Saved overrides
+are selectable separately; excluding an override restores the definition default.
+
+Inline node controls and the Inspector share the saved project document.
+Persistent, writable configuration displays that document's value or definition
+default, even when the service is stopped or a retained runtime sample differs.
+Runtime samples drive read-only outputs, connected state inputs and transient
+controls. Editing saved configuration does not require a runtime broadcast.
+
+Find Variants underneath their service/operator type by expanding **Variants**
+in the node catalog. **Add node** (Tab or the right-click menu) searches node
+types and Variants together. Clicking a Variant or pressing Enter adds its
+current version directly. **Versions…** opens compact version/host options in
+the same search popup. A selected matching host takes priority; a unique matching
+host is selected automatically. Multiple hosts otherwise require a choice. Builtin
+Studio operators reuse `studio`, creating that host if absent. New instances
+receive new IDs and record their source asset and version in the same transaction
+as graph insertion. Missing/incompatible extensions remain previewable but block
+insertion. Script operators added through Graph are placed inside their host.
+
+Edit the instance using the normal Inspector, schema or code editors, then
+right-click **Update Variant…** to explicitly save a template update. The current
+node's source is preselected; another compatible Variant may be chosen. **Save as
+new Variant…** creates an independent asset. Updating the asset leaves other
+instances untouched. Source records survive server restarts and graph undo/redo;
+they are local authoring provenance and are not part of shared graph exports.
+
+Only changed normalized template content increments its version. Moving the
+source node, changing asset name/description/tags, or saving unchanged content
+does not create a content version. Variant update requests require
+`expectedVersion`; stale writers receive a revision conflict. Identity changes
+to service/operator classes require a new Variant.
+
+| Operation | HTTP |
+| --- | --- |
+| Node Variant catalog | `GET /api/variants` |
+| Node source versions | `GET /api/projects/{id}/variants` |
+| Capture/update node Variant | `POST /api/projects/{id}/variants` |
+| Preview/insert fixed Variant version | Same Component preview/insertion routes |
+
+Capture accepts `nodeId`, both expected graph/layout revisions, `name`,
+`description`, `tags`, `excludedStates`, and optional `assetId` + `expectedVersion`
+for updates. Content and source association commit atomically. Assets provides
+metadata editing, fixed version preview/insertion, export and deletion for both
+Components and Variants; Presets retain their separate apply-to-existing-node
+behavior with class compatibility checks.
 
 ## Shared automation paths
 
