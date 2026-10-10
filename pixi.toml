@@ -180,6 +180,7 @@ studio_agent_model_smoke = "python scripts/web_studio/probe_agent_model.py"
 nodejs = ">=24,<25"
 
 [feature.web-studio-dev.tasks]
+cloud_sandbox = { cmd = "node cloud/scripts/library_sandbox.js", description = "Run a persistent local Cloud Library with two test accounts in this terminal; no remote access" }
 studio_web_dev = "npm --prefix extensions/f8webstudio/f8studio_web run dev"
 studio_web_install = { cmd = "npm --prefix extensions/f8webstudio/f8studio_web ci", description = "Install frontend dependencies from the npm lock" }
 studio_web_build = { cmd = "npm --prefix extensions/f8webstudio/f8studio_web run build", description = "Build WebStudio frontend assets; run studio_web_install on a fresh checkout" }

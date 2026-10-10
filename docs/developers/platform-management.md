@@ -43,8 +43,14 @@ For desktop use, start `platform_tray` instead of `platform_dev`. The tray opens
 platform management and logs, and owns the daemon's lifetime. It remains available
 when WebStudio stops. If desktop support is unavailable, it runs in console mode.
 Installed applications with HTTP(S) endpoints also get browser shortcuts in the
-tray. They are enabled only while the application is running, and update in the
-background every two seconds. Source application shortcuts are marked `(source)`.
+tray's **Endpoints** submenu. They are enabled only while the application is
+running, and update in the background every two seconds. Source application
+shortcuts are marked `(source)`.
+**Restart Platform** keeps the tray open while it stops the daemon and launches
+a replacement with the same arguments, port and log file. The replacement reads
+the saved application startup settings. Restart and browser shortcuts are disabled
+while the restart runs in the background; Exit remains available. A failed launch
+is reported with a traceback and leaves Restart available for retry.
 Tray polling allows up to 30 seconds for the daemon's HTTP listener to start;
 initial connection refusals are recorded as startup waiting rather than warnings.
 Startup timeouts and connection failures after startup retain error tracebacks.
@@ -110,6 +116,17 @@ exit. This allows a running application to request its own shutdown without
 blocking its HTTP response. Tool and service process operations retain their own
 lifecycle semantics.
 
+Extension cards use icon buttons with hover labels for Start, Stop, Restart, Open,
+installation, details and logs. Restart is available for running applications
+managed by Platform, including source checkouts. It queues one operation that
+waits for the old process to stop, starts the same source or selected release,
+and waits for its health check. Start/Stop/Restart controls are disabled during
+the operation. A stop failure prevents the new start and is recorded in task logs.
+Externally managed processes must be restarted at their original entrypoint.
+The restart endpoints are `POST /api/applications/{extension_id}/restart` and
+`POST /api/source-applications/{extension_id}/restart`; both return a
+`ManagementJob` with HTTP 202.
+
 Package import, installation, uninstall, enablement, application release changes,
 application startup and environment prepare/release requests return HTTP 202 with a
 `ManagementJob`, rather than holding an HTTP request open until completion. They
@@ -125,6 +142,13 @@ tasks expose cancellation only when their installer supports it. Cancellation
 returns immediately while the process shuts down in the background. Task history
 survives daemon restarts. Interrupted tasks are marked failed and are not replayed
 automatically, because their filesystem changes may have partially completed.
+
+Clear completed and Dismiss remove finished maintenance records and their task
+traceback files from platform storage, so they stay cleared after a daemon restart
+and in other browsers. The endpoint is `POST /api/management-jobs/clear-completed`
+with `{"jobIds": ["task-id", ...]}`. It rejects queued or running tasks without
+clearing any requested records; already removed IDs are safe to submit again.
+Clearing records does not stop applications or remove installed extensions.
 
 The portal polls task state and updates the current page when operations complete.
 Each page has a `?view=extensions|environments|tools|processes|tasks` URL, preserved

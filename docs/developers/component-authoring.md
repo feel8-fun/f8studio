@@ -196,11 +196,15 @@ installed catalog or live store once supplied with a snapshot.
 
 ## Cloud Library
 
-P2 adds online content to the same Add from Library search. Configure and sign in under **Assets → Feel8 Cloud**. Choose Online to search published Components/Variants, inspect Markdown/versions/GraphView, and add a fixed version using the same host-binding rules. Missing dependencies can still be previewed and are explained before insertion. Online browsing and insertion do not copy the item into Local assets.
+P2 adds online content to the same Add from Library search. Configure and sign in under **Settings → Cloud**. Choose Online to search published Components/Variants, inspect Markdown/versions/GraphView, and add a fixed version using the same host-binding rules. Missing dependencies can still be previewed and are explained before insertion. Online browsing and insertion do not copy the item into Local assets.
 
-**Assets → Online Library** also provides author and asset following, Like/Unlike, and explicit **Create local draft**. Saving that draft remains local. Open **Publish template to Cloud** to choose a license and publish its saved version; **Update listing** changes metadata separately. Repeated identical content keeps the published version. A publication conflict preserves the draft and reports that its Cloud base changed. Following new versions never replaces nodes already added to a project.
+**Assets → My Local** lists local project graphs, Components and Variants in one sidebar, with **All / Graphs / Components / Variants** filters and a shared search. For Component/Variant drafts, **Save draft** and deleting only affect the local copy. Name/description changes preserve the content version; changing graph content creates a new local version. Click **Publish Variant to Cloud** or **Publish Component to Cloud** to publish a saved version; unsaved changes must be saved first. Rows show the current account's Cloud baseline or another author's source. Repeated identical content keeps the published version; a conflict preserves the draft and reports that its Cloud base changed.
 
-Graphs have separate Publish/Open as project actions, rather than being inserted as nodes. Credentials are owned by Studio Server. Current login uses a loopback Studio address; production Cloud must have the v2 API and incremental migration deployed before configuring it.
+**Assets → My Cloud** lists the signed-in account's published works. **Manage your Cloud listing** edits the Cloud name, Markdown introduction, tags and visibility without changing the content version or the local draft. **Edit local draft** opens an existing linked draft, or a local copy can be created explicitly. Content changes are published from that draft.
+
+**Assets → Discover / Following** provides author and asset following, Like/Unlike, fixed-version use and **Create local draft**. Another author's Cloud work has no edit, delete or overwrite controls. Studio and Cloud enforce ownership; publishing a derivative creates a new asset with a fixed source. Setting your publication to private removes public access. Owners can delete an entire publication through **More publication actions → Delete Cloud publication** in My Cloud, preserving local projects and drafts. Following new versions never replaces nodes already added to a project.
+
+**Assets → My Local → Graphs** manages complete graphs. **Publish Project to Cloud** shares the entire saved graph; **Local snapshots** are named checkpoints kept on this device, independent of Cloud content versions. Snapshot names and notes can be edited without changing the captured graph. Restoring replaces the current graph as a new revision; deleting a snapshot preserves both the current graph and Cloud publications. Graphs opened from Cloud become local projects. Credentials are owned by Studio Server. Current login uses a loopback Studio address; production Cloud must have the v2 API and incremental migration deployed before configuring it.
 
 ## Later work
 
@@ -218,3 +222,11 @@ separate debounced, cancellable, paginated request state; provider contract test
 cover stale responses, errors and fixed-version insertion. Online filters and
 social controls become available after Cloud is configured; production Cloud
 deployment and legacy content migration remain separate release work.
+
+Cloud browsing uses the same main sidebar as local drafts: navigation, search and
+results stay on the left; selected details stay on the right. In your Cloud
+publication's **More publication actions**, choose **Delete Cloud publication**
+and confirm to remove its listing and all releases. Local drafts, inserted nodes
+and projects remain available. Publishing the retained draft again creates a new
+Cloud work and preserves any original derivative attribution. Other authors'
+Cloud works expose no delete action.

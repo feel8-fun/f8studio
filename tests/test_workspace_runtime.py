@@ -34,7 +34,8 @@ def runtime_root(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def _run(root: Path, calls: list[list[str]], *, stale: bool = False, describe_failure: bool = False):
+def _run(root: Path, calls: list[list[str]], *, stale: bool = False, describe_failure: bool = False,
+         verification_failure: bool = False, repair_failure: bool = False):
     needs_rebuild = stale
 
     def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -49,11 +50,13 @@ def _run(root: Path, calls: list[list[str]], *, stale: bool = False, describe_fa
             assert '--locked' in command
         elif command[1] == 'reinstall':
             assert command[-1] == 'f8pysdk' and '--locked' in command
-            needs_rebuild = False
+            needs_rebuild = repair_failure
         elif any(item.endswith('verify_workspace_sdk.py') for item in command):
             assert '--frozen' in command and '--no-install' in command
+            if verification_failure:
+                return subprocess.CompletedProcess(command, 1, stdout='', stderr='Traceback: fixture SDK import failure')
             if needs_rebuild:
-                return subprocess.CompletedProcess(command, 1, stdout='', stderr='Stale installed SDK')
+                return subprocess.CompletedProcess(command, 2, stdout='', stderr='f8pysdk needs updating: changed files: management_job.py')
             return subprocess.CompletedProcess(command, 0, stdout='SDK verified', stderr='')
         elif command[-1] == '--describe':
             if describe_failure:
@@ -67,12 +70,19 @@ def _run(root: Path, calls: list[list[str]], *, stale: bool = False, describe_fa
     return run
 
 
-def test_preparation_repairs_stale_wheel_even_when_description_already_exists(runtime_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_preparation_repairs_stale_wheel_even_when_description_already_exists(
+    runtime_root: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
     monkeypatch.setenv('PYTHONPATH', '/root/integration/sdk')
     monkeypatch.setenv('PIXI_PROJECT_MANIFEST', '/root/pixi.toml')
     calls: list[list[str]] = []
     with patch('scripts.workspace_runtime.subprocess.run', side_effect=_run(runtime_root, calls, stale=True)):
         assert prepare_runtimes(runtime_root, workspaces=(WORKSPACE,)) == 1
+    output = capsys.readouterr()
+    assert 'Updating SDK in extensions/fixture / runtime' in output.err
+    assert 'management_job.py' in output.err
+    assert 'Traceback' not in output.err
+    assert '(1 SDK updates)' in output.out
     assert any(command[1] == 'reinstall' for command in calls)
     assert calls[-1][-1] == '--describe'
     record = receipt_path(runtime_root, WORKSPACE, 'runtime')
@@ -88,6 +98,24 @@ def test_preparation_repairs_stale_wheel_even_when_description_already_exists(ru
         prepare_runtimes(runtime_root, workspaces=(WORKSPACE,))
     assert any(command[1] == 'reinstall' for command in calls)
     assert calls[-1][-1] == '--describe'
+
+
+def test_sdk_verification_error_is_reported_without_attempting_a_reinstall(runtime_root: Path) -> None:
+    calls: list[list[str]] = []
+    with patch('scripts.workspace_runtime.subprocess.run', side_effect=_run(runtime_root, calls, verification_failure=True)):
+        with pytest.raises(RuntimeError, match='fixture SDK import failure'):
+            prepare_runtimes(runtime_root, workspaces=(WORKSPACE,))
+    assert not any(command[1] == 'reinstall' for command in calls)
+    assert not receipt_path(runtime_root, WORKSPACE, 'runtime').exists()
+
+
+def test_unsuccessful_sdk_reinstall_does_not_record_preparation_success(runtime_root: Path) -> None:
+    calls: list[list[str]] = []
+    with patch('scripts.workspace_runtime.subprocess.run', side_effect=_run(runtime_root, calls, stale=True, repair_failure=True)):
+        with pytest.raises(RuntimeError, match='SDK still differs after reinstall for extensions/fixture / runtime'):
+            prepare_runtimes(runtime_root, workspaces=(WORKSPACE,))
+    assert sum(command[1] == 'reinstall' for command in calls) == 1
+    assert not receipt_path(runtime_root, WORKSPACE, 'runtime').exists()
 
 
 def test_source_edits_invalidate_receipt_and_failed_entrypoint_does_not_record_success(runtime_root: Path) -> None:

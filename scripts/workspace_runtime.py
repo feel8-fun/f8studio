@@ -12,6 +12,7 @@ import msgspec
 from f8pysdk.service_runtime_tools.inventory.index import index_paths, indexed_entry, read_service_index
 from .install_services import install
 from .workspace_inputs import PYTHON_WORKSPACES, ROOT, PythonWorkspace, sync_inputs, tree_hash, workspace_lock
+from .verify_workspace_sdk import STALE_SDK_EXIT_CODE
 
 
 class RuntimeReceipt(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
@@ -65,6 +66,17 @@ def entrypoint_checks(workspace: PythonWorkspace) -> tuple[tuple[str, ...], ...]
     return ()
 
 
+def verify_runtime_sdk(root: Path, workspace: PythonWorkspace, environment: str) -> subprocess.CompletedProcess[str]:
+    command = runtime_command(root, workspace, environment, 'python',
+        str(root / 'scripts/verify_workspace_sdk.py'), str(root / 'sdk/python'))
+    probe = subprocess.run(command, cwd=root / workspace.path, env=runtime_environment(),
+                           capture_output=True, text=True, timeout=30, check=False)
+    if probe.returncode not in {0, STALE_SDK_EXIT_CODE}:
+        raise RuntimeError(f'SDK verification failed for {workspace.path} / {environment} '
+            f'(exit {probe.returncode}).\n{probe.stdout}\n{probe.stderr}')
+    return probe
+
+
 def prepare_runtimes(root: Path = ROOT, *, workspaces: tuple[PythonWorkspace, ...] = PYTHON_WORKSPACES,
                      installed_only: bool = False, check_only: bool = False) -> int:
     with workspace_lock(root):
@@ -83,6 +95,7 @@ def _prepare_runtimes(root: Path, *, workspaces: tuple[PythonWorkspace, ...],
     tooling_hash = tree_hash(root / 'scripts')
     validated: list[tuple[PythonWorkspace, str, RuntimeReceipt]] = []
     changed: list[PythonWorkspace] = []
+    updated_sdks = 0
     for workspace in workspaces:
         directory = root / workspace.path
         workspace_hash = tree_hash(directory)
@@ -98,21 +111,21 @@ def _prepare_runtimes(root: Path, *, workspaces: tuple[PythonWorkspace, ...],
             if not check_only:
                 subprocess.run(['pixi', 'install', '--locked', '--manifest-path', str(directory / 'pixi.toml'),
                                 '-e', environment], cwd=directory, env=runtime_environment(), check=True)
-            verification = runtime_command(root, workspace, environment, 'python',
-                str(root / 'scripts/verify_workspace_sdk.py'), str(root / 'sdk/python'))
-            probe = subprocess.run(verification, cwd=directory, env=runtime_environment(),
-                                   capture_output=True, text=True, timeout=30, check=False)
-            if probe.returncode != 0:
+            probe = verify_runtime_sdk(root, workspace, environment)
+            if probe.returncode == STALE_SDK_EXIT_CODE:
                 if check_only:
                     raise RuntimeError(f'SDK verification failed for {workspace.path} / {environment}. '
                         f'Run pixi run workspace_runtime_prepare.\n{probe.stdout}\n{probe.stderr}')
-                print(f'Rebuilding stale SDK in {workspace.path} / {environment}:\n{probe.stderr}', file=sys.stderr, flush=True)
+                print(f'Updating SDK in {workspace.path} / {environment}:\n{probe.stderr.strip()}', file=sys.stderr, flush=True)
                 subprocess.run(['pixi', 'reinstall', '--locked', '--manifest-path', str(directory / 'pixi.toml'),
                                 '-e', environment, 'f8pysdk'], cwd=directory, env=runtime_environment(), check=True)
-                subprocess.run(verification, cwd=directory, env=runtime_environment(), check=True, timeout=30)
+                probe = verify_runtime_sdk(root, workspace, environment)
+                if probe.returncode != 0:
+                    raise RuntimeError(f'SDK still differs after reinstall for {workspace.path} / {environment}. '
+                        f'Inspect the SDK source and Pixi environment.\n{probe.stdout}\n{probe.stderr}')
+                updated_sdks += 1
                 needs_check = True
-            else:
-                print(probe.stdout.strip(), flush=True)
+            print(probe.stdout.strip(), flush=True)
             if previous != expected:
                 needs_check = True
             validated.append((workspace, environment, expected))
@@ -138,7 +151,7 @@ def _prepare_runtimes(root: Path, *, workspaces: tuple[PythonWorkspace, ...],
             temporary = record.with_suffix('.tmp')
             temporary.write_bytes(msgspec.json.encode(receipt))
             temporary.replace(record)
-    print(f'Verified {len(validated)} independent runtime environments.', flush=True)
+    print(f'Verified {len(validated)} independent runtime environments ({updated_sdks} SDK updates).', flush=True)
     return len(validated)
 
 

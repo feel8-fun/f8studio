@@ -3080,6 +3080,30 @@
       "title": "CloudAsset",
       "type": "object"
     },
+    "CloudAssetDeletion": {
+      "properties": {
+        "assetId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "assetId"
+      ],
+      "title": "CloudAssetDeletion",
+      "type": "object"
+    },
+    "CloudAssetDeletionInput": {
+      "properties": {
+        "assetId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "assetId"
+      ],
+      "title": "CloudAssetDeletion",
+      "type": "object"
+    },
     "CloudAssetInput": {
       "properties": {
         "assetId": {
@@ -3292,6 +3316,13 @@
           "default": "",
           "type": "string"
         },
+        "excludedStates": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExcludedState"
+          },
+          "type": "array"
+        },
         "expectedGraphRevision": {
           "type": "integer"
         },
@@ -3314,6 +3345,7 @@
       },
       "required": [
         "changeSummary",
+        "excludedStates",
         "expectedGraphRevision",
         "expectedLayoutRevision",
         "license",
@@ -3329,6 +3361,13 @@
         "changeSummary": {
           "default": "",
           "type": "string"
+        },
+        "excludedStates": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExcludedStateInput"
+          },
+          "type": "array"
         },
         "expectedGraphRevision": {
           "type": "integer"
@@ -3845,6 +3884,10 @@
         "createdAt": {
           "type": "string"
         },
+        "license": {
+          "default": "",
+          "type": "string"
+        },
         "note": {
           "type": "string"
         },
@@ -3855,6 +3898,7 @@
       "required": [
         "contentHash",
         "createdAt",
+        "license",
         "note",
         "version"
       ],
@@ -3867,6 +3911,10 @@
           "type": "string"
         },
         "createdAt": {
+          "type": "string"
+        },
+        "license": {
+          "default": "",
           "type": "string"
         },
         "note": {
@@ -4892,12 +4940,17 @@
     },
     "CreateProjectVersionRequest": {
       "properties": {
+        "description": {
+          "default": "",
+          "type": "string"
+        },
         "name": {
           "default": "Snapshot",
           "type": "string"
         }
       },
       "required": [
+        "description",
         "name"
       ],
       "title": "CreateProjectVersionRequest",
@@ -4905,6 +4958,10 @@
     },
     "CreateProjectVersionRequestInput": {
       "properties": {
+        "description": {
+          "default": "",
+          "type": "string"
+        },
         "name": {
           "default": "Snapshot",
           "type": "string"
@@ -16588,6 +16645,8 @@
             "prepare-application",
             "prepare-environment",
             "remove-environment",
+            "restart-application",
+            "restart-source",
             "select-application",
             "start-application",
             "start-source",
@@ -16678,6 +16737,8 @@
             "prepare-application",
             "prepare-environment",
             "remove-environment",
+            "restart-application",
+            "restart-source",
             "select-application",
             "start-application",
             "start-source",
@@ -16746,6 +16807,38 @@
         "action"
       ],
       "title": "ManagementJobRequest",
+      "type": "object"
+    },
+    "ManagementJobsClearRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "jobIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "jobIds"
+      ],
+      "title": "ManagementJobsClearRequest",
+      "type": "object"
+    },
+    "ManagementJobsClearRequestInput": {
+      "additionalProperties": false,
+      "properties": {
+        "jobIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "jobIds"
+      ],
+      "title": "ManagementJobsClearRequest",
       "type": "object"
     },
     "MediaFrameMapping": {
@@ -19016,6 +19109,10 @@
         "createdAt": {
           "type": "string"
         },
+        "description": {
+          "default": "",
+          "type": "string"
+        },
         "document": {
           "$ref": "#/$defs/StudioDocument"
         },
@@ -19031,6 +19128,7 @@
       },
       "required": [
         "createdAt",
+        "description",
         "document",
         "name",
         "projectId",
@@ -19042,6 +19140,10 @@
     "ProjectVersionInput": {
       "properties": {
         "createdAt": {
+          "type": "string"
+        },
+        "description": {
+          "default": "",
           "type": "string"
         },
         "document": {
@@ -23776,6 +23878,41 @@
       "title": "UpdateProjectRequest",
       "type": "object"
     },
+    "UpdateProjectVersionRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "default": "",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "description",
+        "name"
+      ],
+      "title": "UpdateProjectVersionRequest",
+      "type": "object"
+    },
+    "UpdateProjectVersionRequestInput": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "default": "",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "UpdateProjectVersionRequest",
+      "type": "object"
+    },
     "UpdateProviderSettings": {
       "additionalProperties": false,
       "properties": {
@@ -24829,6 +24966,15 @@
       "$ref": "#/$defs/ManagementJob"
     },
     {
+      "$ref": "#/$defs/ManagementJobsClearRequest"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/ManagementJob"
+      },
+      "type": "array"
+    },
+    {
       "$ref": "#/$defs/ManagementJob"
     },
     {
@@ -24883,6 +25029,9 @@
       "$ref": "#/$defs/ApplicationOperation"
     },
     {
+      "$ref": "#/$defs/ManagementJob"
+    },
+    {
       "items": {
         "$ref": "#/$defs/SourceApplicationStatus"
       },
@@ -24893,6 +25042,9 @@
     },
     {
       "$ref": "#/$defs/ApplicationOperation"
+    },
+    {
+      "$ref": "#/$defs/ManagementJob"
     },
     {
       "items": {
@@ -25012,6 +25164,9 @@
       "$ref": "#/$defs/CloudAsset"
     },
     {
+      "$ref": "#/$defs/CloudAssetDeletion"
+    },
+    {
       "items": {
         "$ref": "#/$defs/CloudVersion"
       },
@@ -25046,6 +25201,18 @@
     },
     {
       "$ref": "#/$defs/AssetRecord"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/CloudDraftLink"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/CloudMetadataRequest"
+    },
+    {
+      "$ref": "#/$defs/CloudAsset"
     },
     {
       "anyOf": [
@@ -25302,6 +25469,12 @@
     },
     {
       "$ref": "#/$defs/CreateProjectVersionRequest"
+    },
+    {
+      "$ref": "#/$defs/ProjectVersion"
+    },
+    {
+      "$ref": "#/$defs/UpdateProjectVersionRequest"
     },
     {
       "$ref": "#/$defs/ProjectVersion"
@@ -25950,6 +26123,15 @@
       "$ref": "#/$defs/ManagementJobInput"
     },
     {
+      "$ref": "#/$defs/ManagementJobsClearRequestInput"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/ManagementJobInput"
+      },
+      "type": "array"
+    },
+    {
       "$ref": "#/$defs/ManagementJobInput"
     },
     {
@@ -26004,6 +26186,9 @@
       "$ref": "#/$defs/ApplicationOperationInput"
     },
     {
+      "$ref": "#/$defs/ManagementJobInput"
+    },
+    {
       "items": {
         "$ref": "#/$defs/SourceApplicationStatusInput"
       },
@@ -26014,6 +26199,9 @@
     },
     {
       "$ref": "#/$defs/ApplicationOperationInput"
+    },
+    {
+      "$ref": "#/$defs/ManagementJobInput"
     },
     {
       "items": {
@@ -26133,6 +26321,9 @@
       "$ref": "#/$defs/CloudAssetInput"
     },
     {
+      "$ref": "#/$defs/CloudAssetDeletionInput"
+    },
+    {
       "items": {
         "$ref": "#/$defs/CloudVersionInput"
       },
@@ -26167,6 +26358,18 @@
     },
     {
       "$ref": "#/$defs/AssetRecordInput"
+    },
+    {
+      "items": {
+        "$ref": "#/$defs/CloudDraftLinkInput"
+      },
+      "type": "array"
+    },
+    {
+      "$ref": "#/$defs/CloudMetadataRequestInput"
+    },
+    {
+      "$ref": "#/$defs/CloudAssetInput"
     },
     {
       "anyOf": [
@@ -26423,6 +26626,12 @@
     },
     {
       "$ref": "#/$defs/CreateProjectVersionRequestInput"
+    },
+    {
+      "$ref": "#/$defs/ProjectVersionInput"
+    },
+    {
+      "$ref": "#/$defs/UpdateProjectVersionRequestInput"
     },
     {
       "$ref": "#/$defs/ProjectVersionInput"

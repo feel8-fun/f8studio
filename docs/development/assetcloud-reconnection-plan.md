@@ -4,6 +4,8 @@
 
 2026-10-09 更新：Variant 已实现完整单节点模板。Component 已接入统一搜索、同窗详情与左侧库。P2 增加 `/v2/library`、增量 D1 迁移、Studio Server Cloud 客户端、PKCE 登录、在线预览/插入、独立草稿、显式发布及点赞/关注。Library 采用在线目录直接查询、按需获取固定版本、本地独立草稿的设计，不建立双向同步的在线库镜像。详情、草稿发布及社区操作见 [Unified Library 方案](unified-library-plan.md)，其规则取代本文早期的 Library 同步/pull 设想。
 
+P2 本地实测已准备：统一历史版本选择、按版本展示许可、完整图发布配置选择、失败重试与迟到响应隔离；提供持久本地 Cloud 沙盒和两个普通测试账号。按 [Cloud Library 本地实测](cloud-library-manual-test.md) 可验证发布和社区闭环。生产域名仍缺少 Library v2，沙盒验收不代表已完成生产迁移或部署。
+
 建议将产品定位调整为 **Feel8 Cloud**，代码名称候选为 `f8cloud`：为 Studio 提供账号、资产发布、发现、订阅和扩展 registry。用户在 WebStudio 中完成主要操作；Cloud 保留独立 API、数据库和精简管理后台。重新接入前先收敛发布合同与版本语义，再连接网络同步。
 
 ## 当前实现与缺口

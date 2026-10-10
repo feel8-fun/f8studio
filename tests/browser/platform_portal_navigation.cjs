@@ -152,7 +152,8 @@ async function checkTasksAndUrls(browser) {
   let version = '1.0';
   let storageReads = 0;
   let log = 'Installer is downloading packages';
-  await page.route('http://platform.test/**', async route => {
+  let failClear = false;
+  const serve = async route => {
     const path = new URL(route.request().url()).pathname;
     if (!path.startsWith('/api/')) {
       const file = path === '/' ? 'index.html' : path.slice(1);
@@ -171,6 +172,12 @@ async function checkTasksAndUrls(browser) {
       jobs.push(body);
       if (action === 'prepare-environment') environment.state = 'preparing';
       status = 202;
+    } else if (path === '/api/management-jobs/clear-completed') {
+      assert.equal(route.request().method(), 'POST');
+      const { jobIds } = route.request().postDataJSON();
+      assert(jobs.filter(job => jobIds.includes(job.jobId)).every(job => !['queued', 'running'].includes(job.state)));
+      if (failClear) { status = 503; body = { detail: 'Task storage unavailable' }; }
+      else { jobs = jobs.filter(job => !jobIds.includes(job.jobId)); body = jobs; }
     } else if (path === '/api/management-jobs') body = jobs;
     else if (path.endsWith('/logs')) body = { log };
     else if (path === '/api/extensions') body = items;
@@ -181,7 +188,8 @@ async function checkTasksAndUrls(browser) {
       body = { ...storage, totalUsage: { uniqueFileBytes: usage }, environmentUsage: { uniqueFileBytes: usage } };
     } else if (path === '/api/environments/runtime/detail') body = { packages: [{ name: 'numpy', version }] };
     await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
-  });
+  };
+  await page.route('http://platform.test/**', serve);
   try {
     await page.goto('http://platform.test/?view=environments');
     await expect(page.locator('#content h1')).toHaveText('Runtime Environments');
@@ -243,13 +251,110 @@ async function checkTasksAndUrls(browser) {
     await expect(page.locator('#detail pre')).toContainText('package conflict');
     await page.getByRole('button', { name: 'Close details', exact: true }).click();
     await expect(page.locator('#detail')).toBeHidden();
+    failClear = true;
+    await page.getByRole('button', { name: 'Clear completed', exact: true }).click();
+    await expect(page.locator('#error')).toHaveText('Task storage unavailable');
+    await expect(page.locator('#content .task-row')).toHaveCount(3);
+    failClear = false;
+    await page.locator('#content .task-row').filter({ hasText: 'second' }).getByRole('button', { name: 'Dismiss', exact: true }).click();
+    await expect(page.locator('#content .task-row')).toHaveCount(2);
+    assert(!jobs.some(job => job.jobId === 'second'));
     await page.getByRole('button', { name: 'Clear completed', exact: true }).click();
     await expect(page.locator('#content .task-row')).toHaveCount(0);
+    assert.deepEqual(jobs, []);
+    await page.evaluate(() => localStorage.clear());
     await page.reload();
     await expect(page.locator('#content h1')).toHaveText('Tasks');
     await expect(page.locator('#content .task-row')).toHaveCount(0);
+    const otherBrowser = await browser.newPage();
+    try {
+      await otherBrowser.route('http://platform.test/**', serve);
+      await otherBrowser.goto('http://platform.test/');
+      await expect(otherBrowser.locator('#content h1')).toHaveText('Extensions');
+      await expect(otherBrowser.locator('#tasks')).toBeHidden();
+      await otherBrowser.getByRole('button', { name: 'Tasks', exact: true }).click();
+      await expect(otherBrowser.locator('#content')).toContainText('No task records.');
+    } finally { await otherBrowser.close(); }
+
+    const legacy = { jobId: 'legacy-dismissed', request: { action: 'install-extension', extensionId: 'old' },
+      state: 'succeeded', createdAt: 1, cancellable: false };
+    jobs = [legacy, { ...legacy, jobId: 'still-running', state: 'running', cancellable: true }];
+    await page.evaluate(() => localStorage.setItem('f8-maintenance-dismissed', 'legacy-dismissed\nstill-running'));
+    await page.reload();
+    await expect(page.locator('#content .task-row')).toHaveCount(1);
+    await expect(page.locator('#content .task-row')).toContainText('running');
+    assert.deepEqual(jobs.map(job => job.jobId), ['still-running']);
+    assert.equal(await page.evaluate(() => localStorage.getItem('f8-maintenance-dismissed')), null);
+    jobs[0] = { ...jobs[0], state: 'succeeded', cancellable: false };
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await expect(page.locator('#content .task-row')).toContainText('succeeded');
+    await page.getByRole('button', { name: 'Extensions', exact: true }).click();
+    await expect(page.locator('#tasks')).toBeVisible();
+    await page.getByRole('button', { name: 'Clear completed', exact: true }).click();
+    await expect(page.locator('#tasks')).toBeHidden();
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
+}
+
+async function checkExtensionActions(browser, viewport) {
+  const page = await browser.newPage({ viewport });
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  const extension=(extensionId,extra={})=>({extensionId,name:extensionId,description:'Application fixture',version:'1.0',
+    state:'installed',serviceClasses:[],toolIds:[],skillIds:[],application:true,running:true,managed:true,...extra});
+  const items=[extension('Source Studio',{sourceCheckout:true}),extension('Installed Studio',{releaseSha256:'a'.repeat(64)}),
+    extension('External Studio',{sourceCheckout:true,managed:false})];
+  const sources=[{extensionId:'Source Studio',state:'running',managed:true,endpoints:[{name:'http',url:'http://source.test'}]},
+    {extensionId:'External Studio',state:'running',managed:false,endpoints:[{name:'http',url:'http://external.test'}]}];
+  const apps=[{manifest:{extensionId:'Installed Studio',webAssets:'web',health:{endpoint:'http'}},state:'running',selected:true,endpoints:[{name:'http',url:'http://installed.test'}]}];
+  let jobs=[];const mutations=[];
+  await page.route('http://platform.test/**',async route=>{
+    const path=new URL(route.request().url()).pathname;
+    if(!path.startsWith('/api/')) {
+      const file=path==='/'?'index.html':path.slice(1);
+      await route.fulfill({contentType:file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html',body:readFileSync(resolve(assets,file),'utf8')});return;
+    }
+    let body=path==='/api/extensions'?items:path==='/api/source-applications'?sources:path==='/api/applications'?apps:
+      path==='/api/startup'?{applications:[]}:path==='/api/management-jobs'?jobs:[];
+    let status=200;
+    if(route.request().method()==='POST'&&path.endsWith('/restart')) {
+      mutations.push(path);
+      const source=path.startsWith('/api/source-applications');
+      body={jobId:`restart-${mutations.length}`,request:{action:source?'restart-source':'restart-application',extensionId:source?'Source Studio':'Installed Studio'},
+        state:'queued',createdAt:Date.now()/1000,cancellable:false};jobs=[body,...jobs];status=202;
+    }
+    await route.fulfill({status,contentType:'application/json',body:JSON.stringify(body)});
+  });
+  try {
+    await page.goto('http://platform.test/');
+    const source=page.locator('#content .card').filter({has:page.getByRole('heading',{name:'Source Studio',exact:true})});
+    const installed=page.locator('#content .card').filter({has:page.getByRole('heading',{name:'Installed Studio',exact:true})});
+    const external=page.locator('#content .card').filter({has:page.getByRole('heading',{name:'External Studio',exact:true})});
+    await expect(source.getByRole('button',{name:'Restart source',exact:true})).toBeVisible();
+    await expect(external.getByRole('button',{name:/Restart|Stop source/})).toHaveCount(0);
+    for(const card of [source,installed]) {
+      const buttons=card.locator('.extension-actions button');
+      for(const button of await buttons.all()) {
+        await expect(button).toHaveText('');await expect(button.locator('svg')).toHaveCount(1);
+        assert(await button.getAttribute('title'));assert(await button.getAttribute('aria-label'));
+        const box=await button.boundingBox();assert.equal(box.width,36);assert.equal(box.height,36);
+      }
+    }
+    await page.screenshot({path:`/tmp/f8-platform-extension-icons-${viewport.width}.png`,fullPage:true});
+    await source.getByRole('button',{name:'Restart source',exact:true}).click();
+    await expect(source.getByRole('button',{name:'Restart source',exact:true})).toBeDisabled();
+    await expect(source.getByRole('button',{name:'Stop source',exact:true})).toBeDisabled();
+    await expect(source.locator('.badge.restarting')).toBeVisible();
+    assert.deepEqual(mutations,['/api/source-applications/Source%20Studio/restart']);
+    jobs[0]={...jobs[0],state:'succeeded'};
+    await expect(source.getByRole('button',{name:'Restart source',exact:true})).toBeEnabled();
+    await installed.getByRole('button',{name:'Restart',exact:true}).click();
+    await expect(installed.getByRole('button',{name:'Restart',exact:true})).toBeDisabled();
+    await expect(installed.getByRole('button',{name:'Stop',exact:true})).toBeDisabled();
+    assert.equal(mutations[1],'/api/applications/Installed%20Studio/restart');
+    jobs[0]={...jobs[0],state:'failed',detail:'Health probe failed'};
+    await expect(installed.getByRole('button',{name:'Restart',exact:true})).toBeEnabled();
+    assert.deepEqual(errors,[]);
+  } finally {await page.close();}
 }
 
 (async () => {
@@ -259,6 +364,8 @@ async function checkTasksAndUrls(browser) {
     await checkNavigation(browser, false);
     await checkNavigation(browser, true);
     await checkTasksAndUrls(browser);
-    console.log('PASS: navigation races, queued task completion, failures, environment refresh and page URLs');
+    await checkExtensionActions(browser,{width:1440,height:900});
+    await checkExtensionActions(browser,{width:390,height:844});
+    console.log('PASS: navigation, maintenance, extension restart and accessible icons on desktop and mobile');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

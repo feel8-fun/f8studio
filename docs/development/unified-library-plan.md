@@ -21,6 +21,10 @@ Cloud v2 已新增当前 publication 合同、搜索、固定版本、点赞及�
 - Variant 保持单宿主便捷规则。多节点 Component 逐个解析外部宿主绑定，不把它简化成 Variant 的第一个节点；选中/右键指向的匹配宿主优先，唯一匹配可自动选择，否则让用户选择。保留模板内部相对布局，一次插入一次撤销。
 - 左侧库增加 Components 分组；Service/Operator 下的 Variants 保留。完整草稿管理和发布也可从 Assets/Library 工作区进入，共用搜索与详情组件。
 
+Assets 工作区使用 My Local、My Cloud、Discover、Following 四个入口。My Local 合并本地图、Component 和 Variant，搜索和作品列表统一集成到主左侧栏，右侧只展示所选详情；本地和云端均提供 All / Graphs / Components / Variants 筛选。同名作品保留独立身份，本地项目与草稿即使 ID 相同也不会混淆。图详情保留本地快照及发布，草稿详情保留编辑和插入；旧 Projects / History 链接进入 My Local 的 Graphs 筛选。Cloud 尚未配置时入口仍显示连接说明。本地保存/删除仅作用于当前设备；发布是显式操作。云作品按登录账号判断归属，作者管理云端介绍和可见性，内容更新从关联本地草稿发布；他人的详情只提供社区、使用和创建独立草稿操作，两层服务均校验所有者。作者可从 More publication actions 删除整份发布及全部版本，确认后保留本地草稿、项目和派生来源；可重试丢失响应，旧发布请求不能恢复已删除作品。
+
+详情中的固定版本选择覆盖预览、添加、创建独立草稿和打开完整图，并显示该历史版本的许可。搜索、详情和下载失败可原地重试；切换账号、作品或本地项目时会忽略旧请求结果。本地 Cloud 实测入口和双账号流程见 [实测指南](cloud-library-manual-test.md)，无需等待生产服务上线。
+
 关键词检索本地名称、描述和标签；Cloud 在服务端索引名称、描述、标签和作者。在线搜索做输入防抖、取消过期请求和游标分页。Local 结果立即可用，Cloud 加载或失败状态独立显示，不能让网络失败阻塞本地添加。
 
 ## 数据归属：直接查询 Cloud，不镜像在线库
@@ -86,3 +90,5 @@ Component 保存支持介绍和标签。统一添加复用既有事务、来源�
 保存 Component 的 HTTP 接口现在发送本地 `asset.created` 事件，库在保存后立即刷新。验收通过：230 个前端测试、106 个核心/相关服务端测试、3 个桌面浏览器流程、Python 严格类型检查、TypeScript/生产构建和生成合同一致性检查。浏览器覆盖保存选区与介绍/标签、无需刷新检索、图预览、分别选择两个宿主、保留内部连线、一次撤销，以及 Variant/离线配置回归。这些测试不代表 Cloud 集成或移动端验收已完成。
 
 P2 另完成真实 Worker HTTP 集成与桌面浏览器登录、发布、查询、关注及统一搜索插入验收；发布回包丢失后刷新页面，仍恢复原请求并保持单个云版本。最终 Web 回归 235 项、Cloud 集成组 9 项通过；完整检查记录见 [P2 实现](cloud-p2-implementation.md) 和 [重接入方案](assetcloud-reconnection-plan.md)。线上迁移和移动端验收仍独立进行。
+
+全局 Settings 使用 AI / Cloud 左侧分类，Cloud URL、连接、登录和退出统一在 Cloud 分类管理。Assets 不再嵌入连接配置。My Local 的 Graphs 筛选用于完整图；Local snapshots 是保存在本机的命名检查点，可修改名称和备注、恢复和删除，与 Cloud 内容版本相互独立。草稿详情突出 Variant / Component 的名称、介绍和预览，发布选项在独立对话框中；JSON 编辑、导出和删除通过 More draft actions 进入。

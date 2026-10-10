@@ -16,7 +16,9 @@ pytestmark = pytest.mark.skipif(os.environ.get('F8_TEST_RUNTIME_WORKSPACES') != 
     reason='Run pixi run workspace_runtime_test for the real extension environment regression')
 
 
-def test_noneditable_sdk_refreshes_after_source_only_edit_and_module_deletion(tmp_path: Path) -> None:
+def test_noneditable_sdk_refreshes_after_source_only_edit_and_module_deletion(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
     root = Path(__file__).resolve().parents[1]
     shutil.copytree(root / 'sdk/python', tmp_path / 'sdk/python',
                     ignore=shutil.ignore_patterns('__pycache__', '*.egg-info', '.pytest_cache', '.ruff_cache'))
@@ -39,6 +41,7 @@ def test_noneditable_sdk_refreshes_after_source_only_edit_and_module_deletion(tm
     obsolete = tmp_path / 'sdk/python/f8pysdk/workspace_obsolete.py'
     obsolete.write_text('VALUE = "old"\n')
     prepare_runtimes(tmp_path, workspaces=(workspace,))
+    capsys.readouterr()
     # No pyproject/version/lock metadata changes: this is the original missed case.
     policy = tmp_path / 'sdk/python/f8pysdk/_specs/state_policy.py'
     policy.write_text(policy.read_text() + '\nWORKSPACE_REFRESH_PROBE: str = "new SDK source"\n')
@@ -47,6 +50,9 @@ def test_noneditable_sdk_refreshes_after_source_only_edit_and_module_deletion(tm
     entrypoint.write_text(entrypoint.read_text().replace('from __future__ import annotations\n',
         'from __future__ import annotations\nfrom f8pysdk._specs.state_policy import WORKSPACE_REFRESH_PROBE\n'))
     prepare_runtimes(tmp_path, workspaces=(workspace,))
+    output = capsys.readouterr()
+    assert 'Updating SDK in extensions/f8pyengine / pyengine' in output.err
+    assert 'Traceback' not in output.err
     assert not (directory / '.sdk/python/f8pysdk/workspace_obsolete.py').exists()
     probe = subprocess.run(runtime_command(tmp_path, workspace, 'pyengine', 'python', '-c',
         'from f8pysdk._specs.state_policy import WORKSPACE_REFRESH_PROBE; print(WORKSPACE_REFRESH_PROBE)'),

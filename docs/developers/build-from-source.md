@@ -43,6 +43,11 @@ replaces only unchanged tool-managed contents, removes deleted managed files,
 and preserves local edits or independent commits in extension SDK checkouts by
 stopping with their exact paths. Copies retain unchanged file timestamps.
 Preparation records live under disposable `build/workspace/`.
+When an installed SDK differs from the current source, preparation reports
+`Updating SDK` with the changed files, reinstalls the SDK and verifies it again.
+This expected update does not produce a traceback. Verification errors and SDKs
+that still differ after reinstall fail preparation and retain their error details;
+they do not write a success receipt.
 
 Select one workspace when needed:
 
