@@ -218,7 +218,7 @@ class CppCiConfigureTest(unittest.TestCase):
         self.assertIn("-DBUILD_TESTS=ON", configure_command)
         self.assertEqual(build_command[:4], ["cmake", "--build", "--preset", "conan-release"])
         self.assertIn("f8cppsdk_tests", build_command)
-        self.assertEqual(ctest_command[:3], ["ctest", "--test-dir", str(self.root / "build")])
+        self.assertEqual(ctest_command[:3], ["ctest", "--test-dir", str((self.root / "build").resolve())])
         self.assertIn("f8cppsdk_tests", ctest_command)
 
 

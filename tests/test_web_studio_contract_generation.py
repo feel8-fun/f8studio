@@ -7,9 +7,9 @@ from scripts.web_studio.generate_contracts import generate, ts_type
 
 def test_generated_contracts_are_current_and_facade_has_no_wire_definitions() -> None:
     for path, content in generate().items():
-        assert path.read_text() == content, f"Regenerate {path}"
+        assert path.read_text(encoding="utf-8") == content, f"Regenerate {path}"
     facade = Path(__file__).resolve().parents[1] / "extensions/f8webstudio/f8studio_web/src/api/contracts.ts"
-    assert "export interface " not in facade.read_text()
+    assert "export interface " not in facade.read_text(encoding="utf-8")
 
 
 def test_tuple_generation_preserves_each_element_type() -> None:

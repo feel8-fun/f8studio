@@ -160,7 +160,7 @@ def generate() -> dict[Path, str]:
     types += "export interface ApiRequests {\n" + "\n".join(requests) + "\n}\n\n"
     types += "export interface ApiResponses {\n" + "\n".join(responses) + "\n}\n"
     return {
-        **{REPO / f"cloud/test/fixtures/{name}": (REPO / f"extensions/f8webstudio/contracts/fixtures/{name}").read_text()
+        **{REPO / f"cloud/test/fixtures/{name}": (REPO / f"extensions/f8webstudio/contracts/fixtures/{name}").read_text(encoding="utf-8")
             for name in ("graph-v1.json", "component-v1.json", "hash-v1.json")},
         REPO / "cloud/contracts/publication.gen.json": json.dumps(publication_schema, indent=2, sort_keys=True) + "\n",
         REPO / "cloud/contracts/publication.gen.ts": publication_types,
@@ -177,10 +177,10 @@ def main() -> None:
     args = parser.parse_args()
     for path, content in generate().items():
         if args.check:
-            if not path.exists() or path.read_text() != content:
+            if not path.exists() or path.read_text(encoding="utf-8") != content:
                 raise SystemExit(f"Generated contract is stale: {path}")
         else:
-            path.write_text(content)
+            path.write_text(content, encoding="utf-8")
 
 
 if __name__ == "__main__":

@@ -37,20 +37,6 @@ verification that writes data uses isolated temporary test instances.
 
 Record commit IDs, workflow run URLs, and limitations here as work completes.
 
-### SDK foundation (first pushed slice)
-
-- SDK `8fbe8057f2a25759336f8e08e49cf808687de11c` pushed to `main`.
-- SDK local: contracts, lint, typecheck, wheel, 308 Python passed / 3 optional
-  integration skipped; C++ tests passed, including failed-deployment preservation
-  and padded BGRA rows.
-- SDK CI: https://github.com/feel8-fun/f8sdk/actions/runs/38018039337 (Linux and Windows passed).
-- Consumers local: PyEngine/Pose + expression integration 333 passed; Pose
-  restart regression 19 passed; DL 116 passed and typecheck passed; all five
-  CVKit service binaries built and CVKit tests passed; ProcLauncher lifecycle
-  plus Unity checks 19 passed.
-- StateStore now receives a retained-state reader directly. Other bus owners
-  still need further dependency boundary work.
-
 ### Completed implementation and local verification
 
 - SDK `a977f137b8280db8566bd52a62a1805092725fb9`: routing transport and
@@ -65,18 +51,30 @@ Record commit IDs, workflow run URLs, and limitations here as work completes.
   CI: https://github.com/feel8-fun/f8assetcloud/actions/runs/38019282662.
 - WebStudio: domain routes, graph/component/provider migrations, and shared
   expression evaluation are separate owners. Standalone strict types passed;
-  core/server 406 passed; frontend 271 passed; production build passed. The
-  cross-repository contract-generation tests now live in the root workspace.
+  core/server 404 passed; frontend 274 passed; production build passed. The
+  cross-repository contract-generation and assembled workspace tests now live
+  in the root workspace. Project selection has request ownership regression
+  coverage; late initial loads and old selections cannot replace newer ones.
+  End-to-end tests and Playwright configuration are included in strict TypeScript
+  checks. Default operator spacing accounts for port hit areas, and container
+  minimum width is derived from the same geometry.
 - Platform: standalone strict types and 76 tests passed. Windows daemon startup
   polling accepts connection timeouts as well as refused connections.
 - MediaGateway: standalone strict types and 33 tests passed.
 - IMPlayer: media source parsing/authentication and playlist control are separate
   translation units. Service builds and native tests passed. Screencap and
   CVKit consume the SDK BGRA sink and monitor accumulation respectively.
-- Workspace: 657 passed / 8 optional checks skipped in the first full run; the
-  one failed dependency-boundary check was corrected and its 11-test suite passed.
+- Consumers local: PyEngine/Pose + expression integration 333 passed; Pose
+  restart regression 19 passed; DL 116 passed and typecheck passed; all five
+  CVKit service binaries built and CVKit tests passed; ProcLauncher lifecycle
+  plus Unity checks 19 passed. SDK, CVKit and IMPlayer native test suites passed.
+- Workspace Linux CI: 658 passed / 8 optional checks skipped.
   Strict types, lint, import boundaries, contracts and exception checks passed.
-  Workspace SDK replacement integration passed.
+  Workspace SDK replacement integration and installed-wheel startup passed.
+  Windows integration uncovered default-codepage reads, temporary-path aliases
+  and a POSIX-only permission assertion; those checks now use explicit UTF-8,
+  resolved paths and the correct platform semantics. The affected 43-test local
+  suite passed.
 - All extension SDK workflow references are synchronized to the exact SDK commit.
   Native lock metadata was refreshed without changing resolved package versions.
   Platform, WebStudio and MediaGateway now have independent Linux/Windows quality
