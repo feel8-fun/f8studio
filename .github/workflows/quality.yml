@@ -39,6 +39,8 @@ jobs:
           environments: build-check
           cache: true
       - run: pixi run --locked -e build-check workspace_catalog
+      - name: Install Cloud dependencies for real Worker integration tests
+        run: pixi run --locked -e build-check npm --prefix cloud ci
       - run: pixi run --locked -e build-check pytest -q
       - run: pixi run --locked workspace_runtime_test
       - run: pixi run --locked -e build-check python scripts/extension_workspace.py check
@@ -83,4 +85,26 @@ jobs:
           pixi-version: v0.81.0
           environments: build-check
           cache: true
+      - run: pixi run --locked -e build-check studio_wheel_smoke
+
+  windows-integration:
+    needs: debounce
+    if: ${{ !cancelled() && (github.event_name != 'push' || needs.debounce.result == 'success') }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - run: python scripts/workspace_inputs.py prepare
+      - uses: prefix-dev/setup-pixi@v0.9.3
+        with:
+          pixi-version: v0.81.0
+          environments: build-check
+          cache: true
+      - name: Install Cloud dependencies for real Worker integration tests
+        run: pixi run --locked -e build-check npm --prefix cloud ci
+      - run: pixi run --locked -e build-check pytest -q
+      - run: pixi run --locked workspace_runtime_test
+      - run: pixi run --locked -e build-check studio_web_ci
+      - run: pixi run --locked -e build-check typecheck
       - run: pixi run --locked -e build-check studio_wheel_smoke
