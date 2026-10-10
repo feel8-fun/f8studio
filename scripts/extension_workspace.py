@@ -195,7 +195,7 @@ def check_workspace(root: Path = REPO_ROOT) -> None:
     roots.append(root / 'platform')
     for source_root in roots:
         for source in source_root.rglob('*.py'):
-            if any(part in {'node_modules', '.pixi', '.git', '__pycache__', 'tests', '.sdk', '.platform', '.media-dependency', 'build'} for part in source.parts):
+            if any(part in {'node_modules', '.pixi', '.git', '__pycache__', 'tests', '.sdk', '.platform', '.media-dependency', '.engine', '.diagnostics', 'build'} for part in source.parts):
                 continue
             tree = ast.parse(source.read_text(encoding='utf-8'), filename=str(source))
             for node in ast.walk(tree):

@@ -4,92 +4,17 @@ from __future__ import annotations
 import argparse
 import json
 import socket
-import struct
 import time
 from typing import Any
 
-
-def _read_aligned_string(buf: bytes, offset: int) -> tuple[str, int]:
-    end = buf.find(b"\x00", offset)
-    if end < 0:
-        raise ValueError("missing string terminator")
-    value = buf[offset:end].decode("utf-8")
-    end += 1
-    pad = (4 - (end & 0x03)) & 0x03
-    return value, end + pad
+from f8pysdk.motion.skeleton_codec import SkeletonPacketDecodeError, decode_skeleton_packet as decode_sdk_skeleton_packet
 
 
 def decode_skeleton_packet(data: bytes) -> dict[str, Any] | None:
-    offset = 0
+    # A format probe: malformed/non-skeleton packets continue to text/raw output.
     try:
-        model_name, offset = _read_aligned_string(data, offset)
-        if offset + 8 > len(data):
-            return None
-        (timestamp_ms,) = struct.unpack_from("<Q", data, offset)
-        offset += 8
-
-        schema, offset = _read_aligned_string(data, offset)
-        if offset + 4 > len(data):
-            return None
-        (bone_count,) = struct.unpack_from("<i", data, offset)
-        offset += 4
-        if bone_count < 0 or bone_count > 100000:
-            return None
-
-        bones: list[dict[str, Any]] = []
-        for _ in range(int(bone_count)):
-            name, offset = _read_aligned_string(data, offset)
-            if offset + 28 > len(data):
-                return None
-            x, y, z, qw, qx, qy, qz = struct.unpack_from("<fffffff", data, offset)
-            offset += 28
-            bones.append(
-                {
-                    "name": name,
-                    "pos": [x, y, z],
-                    "rot": [qw, qx, qy, qz],
-                }
-            )
-
-        trailer = None
-        if offset + 30 <= len(data) and data[offset : offset + 4] == b"LMEX":
-            # LMEX + extVersion(u16) + frameId(u64) + chunkIndex(i32) + chunkCount(i32)
-            # + totalBoneCount(i32) + characterId(i32)
-            ext_ver, frame_id, chunk_i, chunk_n, total_bones, character_id = struct.unpack_from(
-                "<HQiiii", data, offset + 4
-            )
-            trailer = {
-                "magic": "LMEX",
-                "extVersion": ext_ver,
-                "frameId": frame_id,
-                "chunkIndex": chunk_i,
-                "chunkCount": chunk_n,
-                "totalBoneCount": total_bones,
-                "characterId": character_id,
-            }
-            ext_offset = offset + 30
-            if ext_offset + 12 <= len(data) and data[ext_offset : ext_offset + 4] == b"ANIM":
-                normalized_time = struct.unpack_from("<f", data, ext_offset + 4)[0]
-                layer_index = struct.unpack_from("<i", data, ext_offset + 8)[0]
-                clip_name, next_offset = _read_aligned_string(data, ext_offset + 12)
-                pose_key, _ = _read_aligned_string(data, next_offset)
-                trailer["anim"] = {
-                    "normalizedTime": normalized_time,
-                    "layerIndex": layer_index,
-                    "clipName": clip_name,
-                    "poseKey": pose_key,
-                }
-
-        return {
-            "type": "skeleton_binary",
-            "modelName": model_name,
-            "timestampMs": int(timestamp_ms),
-            "schema": schema,
-            "boneCount": int(bone_count),
-            "bones": bones,
-            "trailer": trailer,
-        }
-    except (UnicodeDecodeError, struct.error, ValueError):
+        return decode_sdk_skeleton_packet(data).to_payload()
+    except SkeletonPacketDecodeError:
         return None
 
 
